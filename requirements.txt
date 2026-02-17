@@ -1,0 +1,17 @@
+# WebJam - Music Collaboration Platform
+# Python dependencies
+
+# Modern UI framework (optional but recommended)
+customtkinter>=5.2.0
+
+# For building executables
+pyinstaller>=5.13.0
+
+# Core modernization dependencies
+numpy>=1.26.0
+sounddevice>=0.4.7
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pycasbin>=1.36.0
+sentry-sdk>=2.0.0
+
