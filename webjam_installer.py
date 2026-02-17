@@ -10,6 +10,10 @@ import subprocess
 import time
 import glob
 import shutil
+import platform
+import urllib.request
+import urllib.error
+import json
 from pathlib import Path
 # import webbrowser  # Reserved for future use
 
@@ -29,6 +33,11 @@ JAMULUS_CANDIDATES = [
     r"C:\Program Files\Jamulus\Jamulus.exe",
     r"C:\Program Files (x86)\Jamulus\Jamulus.exe",
 ]
+
+# Upstream download sources
+JAMULUS_RELEASES_API = "https://api.github.com/repos/jamulussoftware/jamulus/releases/latest"
+WEBEX_MSI_WIN_X64 = "https://binaries.webex.com/WebexOfclDesktop-Win-64-Gold/Webex.msi"
+WEBEX_MSI_WIN_ARM64 = "https://binaries.webex.com/WebexOfclDesktop-Win-Arm-64-Gold/Webex.msi"
 
 # Runtime paths
 def base_dir() -> Path:
@@ -62,7 +71,7 @@ def print_header(text):
 
 def print_step(step, text):
     """Print a step indicator"""
-    print(f"\n[{step}/5] {text}")
+    print(f"\n[{step}/6] {text}")
     print("-" * 70)
 
 def run(cmd, check=False, shell=False):
@@ -115,6 +124,86 @@ def copy_resource(rel_src: str | Path, dest_dir: Path) -> Path:
     if src.exists():
         shutil.copy2(src, dst)
     return dst
+
+def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
+    """Download URL to destination path."""
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(url, headers={"User-Agent": "WebJamInstaller/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            data = response.read()
+        dest.write_bytes(data)
+        return True
+    except Exception as e:
+        print(f"   ⚠️  Download failed from {url}: {e}")
+        return False
+
+def fetch_latest_jamulus_installer() -> Path | None:
+    """
+    Attempt to fetch latest Windows Jamulus installer from GitHub releases.
+    Returns local installer path in WORK or None on failure.
+    """
+    print("   Checking latest Jamulus release...")
+    try:
+        req = urllib.request.Request(JAMULUS_RELEASES_API, headers={"User-Agent": "WebJamInstaller/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception as e:
+        print(f"   ⚠️  Could not query Jamulus releases API: {e}")
+        return None
+
+    assets = payload.get("assets", [])
+    if not isinstance(assets, list):
+        return None
+
+    candidate_url = None
+    candidate_name = None
+    # Prefer a 64-bit Windows setup executable, then any Windows installer .exe.
+    for asset in assets:
+        name = str(asset.get("name", ""))
+        url = str(asset.get("browser_download_url", ""))
+        if not url:
+            continue
+        lowered = name.lower()
+        if lowered.endswith(".exe") and "win64" in lowered and ("setup" in lowered or "installer" in lowered):
+            candidate_url = url
+            candidate_name = name
+            break
+    if not candidate_url:
+        for asset in assets:
+            name = str(asset.get("name", ""))
+            url = str(asset.get("browser_download_url", ""))
+            lowered = name.lower()
+            if lowered.endswith(".exe") and "win" in lowered:
+                candidate_url = url
+                candidate_name = name
+                break
+
+    if not candidate_url:
+        print("   ⚠️  No Windows Jamulus installer found in latest release assets.")
+        return None
+
+    local_name = candidate_name or "jamulus_latest_win.exe"
+    local_path = WORK / local_name
+    if download_file(candidate_url, local_path):
+        print(f"   ✓ Downloaded latest Jamulus installer: {local_name}")
+        return local_path
+    return None
+
+def webex_installed() -> bool:
+    """Best-effort check for Webex desktop app presence on Windows."""
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Cisco Spark" / "CiscoCollabHost.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Cisco Spark" / "Webex.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Cisco Spark" / "CiscoCollabHost.exe",
+    ]
+    return any(p.exists() for p in candidates)
+
+def webex_msi_url_for_host() -> str:
+    machine = platform.machine().lower()
+    if "arm" in machine or "aarch" in machine:
+        return WEBEX_MSI_WIN_ARM64
+    return WEBEX_MSI_WIN_X64
 
 # ====== VB-Cable Installation ======
 def vb_cable_present():
@@ -208,7 +297,7 @@ def install_vb_cable():
 
 # ====== Jamulus Installation ======
 def jamulus_installer_path():
-    """Find Jamulus installer"""
+    """Find bundled Jamulus installer"""
     files = sorted(glob.glob(str(HERE / "jamulus*_win*.exe")))
     return Path(files[0]) if files else None
 
@@ -219,15 +308,20 @@ def install_jamulus():
     if find_jamulus():
         print("   ✓ Jamulus already installed")
         return True
-    
-    installer = jamulus_installer_path()
-    if not installer or not installer.exists():
-        print("   ⚠️  Jamulus installer not found (jamulus*_win*.exe)")
-        print("   You can download Jamulus from: https://jamulus.io")
-        return False
-    
-    inst_copy = copy_resource(installer.name, WORK)
-    print(f"   Installing Jamulus from {installer.name}...")
+
+    installer = fetch_latest_jamulus_installer()
+    if not installer:
+        bundled = jamulus_installer_path()
+        if bundled and bundled.exists():
+            installer = copy_resource(bundled.name, WORK)
+            print(f"   Using bundled Jamulus installer: {bundled.name}")
+        else:
+            print("   ⚠️  No online or bundled Jamulus installer available.")
+            print("   You can download Jamulus from: https://jamulus.io")
+            return False
+
+    inst_copy = installer
+    print(f"   Installing Jamulus from {inst_copy.name}...")
     
     # Try silent installation
     for switch in ["/S", "/silent", "/verysilent"]:
@@ -255,6 +349,48 @@ def install_jamulus():
     print("   ⚠️  Jamulus not detected after waiting.")
     print("   Please complete the installation manually and run this installer again.")
     return False
+
+# ====== Webex Installation ======
+def install_webex():
+    """Install Webex desktop app from official Cisco MSI links."""
+    print("\n📹 Checking Webex Desktop App...")
+
+    if webex_installed():
+        print("   ✓ Webex appears to be already installed")
+        return True
+
+    msi_url = webex_msi_url_for_host()
+    msi_name = "Webex_latest.msi"
+    msi_path = WORK / msi_name
+
+    print(f"   Downloading Webex installer from Cisco binaries...")
+    if not download_file(msi_url, msi_path):
+        print("   ⚠️  Could not download Webex MSI. Skipping Webex installation.")
+        return False
+
+    print("   Installing Webex silently...")
+    silent_cmd = [
+        "msiexec",
+        "/i",
+        str(msi_path),
+        "/qn",
+        "ACCEPT_EULA=TRUE",
+        "ALLUSERS=1",
+    ]
+    result = run(silent_cmd)
+    if result.returncode == 0:
+        print("   ✓ Webex installed successfully")
+        return True
+
+    print("   Silent install did not complete. Launching interactive installer...")
+    interactive_cmd = ["msiexec", "/i", str(msi_path)]
+    try:
+        subprocess.Popen(interactive_cmd)
+        print("   ✓ Webex installer launched")
+        return True
+    except Exception as e:
+        print(f"   ⚠️  Failed to launch interactive Webex installer: {e}")
+        return False
 
 # ====== Audio Configuration ======
 def configure_audio_devices():
@@ -409,6 +545,7 @@ def main():
     print("\nThis installer will set up:")
     print("  • VB-Cable (Virtual Audio Device)")
     print("  • Jamulus (Low-Latency Audio Client)")
+    print("  • Webex Desktop App (official Cisco MSI)")
     print("  • WebJam GUI Application")
     print("  • Audio device configuration")
     print("  • Desktop shortcuts")
@@ -438,14 +575,18 @@ def main():
         input("\nPress Enter to exit...")
         return
     
-    print_step(3, "Configuring Audio Devices")
+    print_step(3, "Installing Webex Desktop App")
+    webex_ok = install_webex()
+    success = success and webex_ok
+
+    print_step(4, "Configuring Audio Devices")
     configure_audio_devices()
     
-    print_step(4, "Installing WebJam Application")
+    print_step(5, "Installing WebJam Application")
     install_webjam_app()
     install_python_dependencies()
     
-    print_step(5, "Creating Shortcuts")
+    print_step(6, "Creating Shortcuts")
     create_desktop_shortcut()
     create_start_menu_shortcut()
     

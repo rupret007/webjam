@@ -38,7 +38,8 @@ WebJam is a revolutionary music collaboration application that provides musician
 2. **Run the Installer**
    - The installer will automatically set up:
      - VB-Cable (virtual audio device)
-     - Jamulus client
+     - Jamulus client (latest available installer, with bundled fallback)
+     - Webex desktop app (official Cisco MSI by architecture)
      - Desktop shortcuts
      - Audio device configuration
 
