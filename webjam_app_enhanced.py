@@ -1,12 +1,12 @@
 """
-WebJam Enhanced - Music Collaboration Platform with Full Jamulus Integration
+WebJam Enhanced - Creative Collaboration Platform with Jamulus Integration
 Integrates Jamulus low-latency audio with Webex video conferencing
-Features a virtual mixer panel with real-time audio control
+Features a mode-based room flow and shared session canvas
 """
 
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import subprocess
 import webbrowser
 import logging
@@ -33,8 +33,10 @@ from ui.dialogs import show_bootstrap_admin_notice, show_usage_metrics_window
 from ui.preferences import UiPreferencesService
 from ui.services import MetricsService, RetryService
 from ui.views.diagnostics_panel import show_diagnostics_panel
+from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
+from core.creative_modes import CREATIVE_MODES, get_mode_by_label, get_mode_by_key
 
 # Try to use customtkinter for modern UI
 try:
@@ -403,7 +405,7 @@ class WebJamEnhancedApp:
             self.root = tk.Tk()
             self.root.configure(bg=THEME.bg_primary)
         
-        self.root.title("WebJam Enhanced - Music Collaboration Platform")
+        self.root.title("WebJam - Creative Collaboration Platform")
         self.root.geometry("1600x900")
         
         # Initialize Jamulus controller
@@ -423,6 +425,14 @@ class WebJamEnhancedApp:
         self.auto_tour_enabled = True
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
+        self.room_key = "default_room"
+        saved_room = self.repository.get_room_context(self.room_key)
+        self.mode_key = saved_room.get("mode_key", "music_jam")
+        active_mode = get_mode_by_key(self.mode_key)
+        self.template_name = saved_room.get("template_name", active_mode.default_template)
+        self.session_goal_text = saved_room.get("session_goal", active_mode.default_goal)
+        self.review_state = saved_room.get("review_state", "draft")
+        self.cohort_name = self.repository.get_setting("cohort_name", "mixed_discipline") or "mixed_discipline"
         self.preferences_service = UiPreferencesService(self.repository)
         self.metrics_service = MetricsService(self.repository)
         self._load_accessibility_preferences()
@@ -439,6 +449,7 @@ class WebJamEnhancedApp:
             LOGGER.warning("Local companion API bridge unavailable (install fastapi + uvicorn).")
         
         self.setup_ui()
+        self.save_room_context()
         self._bind_shortcuts()
         self._apply_accessibility_mode()
         self._show_bootstrap_admin_notice()
@@ -523,6 +534,11 @@ class WebJamEnhancedApp:
         startup_menu.add_separator()
         startup_menu.add_command(label="Reset All UI Preferences", command=self.reset_all_ui_preferences)
         startup_menu.add_command(label="Reset Window Position", command=self.reset_window_geometry)
+
+        validation_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Validation", menu=validation_menu)
+        validation_menu.add_command(label="Set Cohort Name", command=self.set_cohort_name)
+        validation_menu.add_command(label="Record Session Complete", command=self.record_session_complete)
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -539,7 +555,7 @@ class WebJamEnhancedApp:
         control_bar.pack(fill=tk.X, padx=10, pady=10)
         
         # Logo/Title
-        title_text = "🎵 WebJam Enhanced"
+        title_text = "WebJam Creative"
         title = self._create_label(control_bar, title_text, font_size=20, bold=True)
         title.pack(side=tk.LEFT, padx=15)
         
@@ -550,6 +566,30 @@ class WebJamEnhancedApp:
         self.status_label = self._create_label(control_bar, "Ready to connect", font_size=11)
         self.status_label.pack(side=tk.LEFT)
         
+        mode_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
+        mode_frame.pack(side=tk.LEFT, padx=12)
+        self._create_label(mode_frame, "Mode", font_size=9, bold=True).pack(anchor="w")
+        self.mode_var = tk.StringVar(value=get_mode_by_key(self.mode_key).label)
+        mode_menu = tk.OptionMenu(mode_frame, self.mode_var, *[m.label for m in CREATIVE_MODES], command=self.on_mode_selected)
+        mode_menu.configure(width=18)
+        mode_menu.pack(anchor="w")
+
+        template_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
+        template_frame.pack(side=tk.LEFT, padx=8)
+        self._create_label(template_frame, "Template", font_size=9, bold=True).pack(anchor="w")
+        self.template_var = tk.StringVar(value=self.template_name)
+        self.template_entry = tk.Entry(template_frame, textvariable=self.template_var, width=24)
+        self.template_entry.pack(anchor="w")
+        self.template_entry.bind("<FocusOut>", lambda _e: self.save_room_context())
+
+        goal_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
+        goal_frame.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
+        self._create_label(goal_frame, "Session Goal", font_size=9, bold=True).pack(anchor="w")
+        self.session_goal_var = tk.StringVar(value=self.session_goal_text)
+        self.session_goal_entry = tk.Entry(goal_frame, textvariable=self.session_goal_var, width=56)
+        self.session_goal_entry.pack(anchor="w", fill=tk.X)
+        self.session_goal_entry.bind("<FocusOut>", lambda _e: self.save_room_context())
+
         # Control buttons
         btn_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
         btn_frame.pack(side=tk.RIGHT, padx=10)
@@ -561,7 +601,7 @@ class WebJamEnhancedApp:
         self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.save_mix)
         self.save_mix_btn.pack(side=tk.LEFT, padx=5)
 
-        hint_text = "Hint: Run Help -> Run Setup Wizard on first launch. Use Session -> Open Diagnostics Panel if connection/audio fails."
+        hint_text = "Hint: Pick a mode, set a session goal, and use Shared Session Canvas for references/notes."
         self.hint_label = self._create_label(control_bar, hint_text, font_size=9)
         self.hint_label.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0))
         
@@ -569,8 +609,13 @@ class WebJamEnhancedApp:
         content = ctk.CTkFrame(self.root) if CTK_AVAILABLE else tk.Frame(self.root, bg="#1a1a1a")
         content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
-        # Mixer panel (full width)
-        mixer_frame = ctk.CTkFrame(content) if CTK_AVAILABLE else tk.Frame(content, bg="#2b2b2b", relief=tk.RAISED, borderwidth=2)
+        left_content = ctk.CTkFrame(content) if CTK_AVAILABLE else tk.Frame(content, bg="#1a1a1a")
+        left_content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        right_content = tk.Frame(content, bg="#1a1a1a")
+        right_content.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(10, 0))
+
+        # Mixer panel (left side)
+        mixer_frame = ctk.CTkFrame(left_content) if CTK_AVAILABLE else tk.Frame(left_content, bg="#2b2b2b", relief=tk.RAISED, borderwidth=2)
         mixer_frame.pack(fill=tk.BOTH, expand=True)
         
         # Mixer title
@@ -611,6 +656,20 @@ class WebJamEnhancedApp:
             h_scrollbar.pack(side="bottom", fill="x")
         
         self.channels_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.session_canvas = SessionCanvasPanel(
+            right_content,
+            get_mode=lambda: get_mode_by_key(self.mode_key),
+            get_room_context=lambda: self.repository.get_room_context(self.room_key),
+            on_review_state_change=self.on_review_state_change,
+            list_artifacts=lambda: self.repository.list_session_artifacts(self.room_key),
+            add_artifact=lambda title, artifact_type, reference: self.repository.add_session_artifact(self.room_key, title, artifact_type, reference),
+            remove_artifact=self.repository.remove_session_artifact,
+            load_notes=lambda: self.repository.get_session_notes(self.room_key),
+            save_notes=lambda notes: self.repository.save_session_notes(self.room_key, notes),
+        )
+        self.session_canvas.configure(width=420)
+        self.session_canvas.pack(fill=tk.BOTH, expand=True)
         
         # Bottom status bar
         status_bar = ctk.CTkFrame(self.root) if CTK_AVAILABLE else tk.Frame(self.root, bg="#2b2b2b", relief=tk.SUNKEN, borderwidth=1)
@@ -622,7 +681,7 @@ class WebJamEnhancedApp:
         self.connection_summary = self._create_label(status_bar, "Jamulus: Not launched | Webex: Not opened", font_size=9)
         self.connection_summary.pack(side=tk.LEFT, padx=10, pady=5)
 
-        self.readiness_label = self._create_label(status_bar, "Mixer: waiting for participants", font_size=9)
+        self.readiness_label = self._create_label(status_bar, "Room: waiting for participants", font_size=9)
         self.readiness_label.pack(side=tk.LEFT, padx=10, pady=5)
 
         self.latency_label = self._create_label(status_bar, "Latency: n/a", font_size=9)
@@ -711,6 +770,7 @@ class WebJamEnhancedApp:
 
     def show_setup_wizard(self, mark_complete: bool = False):
         self.metrics_service.increment("metric_setup_wizard_opened")
+        active_mode = get_mode_by_key(self.mode_key)
 
         def on_complete() -> None:
             if mark_complete:
@@ -723,7 +783,53 @@ class WebJamEnhancedApp:
             settings=SETTINGS,
             find_jamulus=self.find_jamulus,
             diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
+            mode_label=active_mode.label,
+            mode_help=active_mode.quick_help,
         ).show()
+
+    def on_mode_selected(self, mode_label: str) -> None:
+        selected = get_mode_by_label(mode_label)
+        self.mode_key = selected.key
+        if not self.template_var.get().strip():
+            self.template_var.set(selected.default_template)
+        if not self.session_goal_var.get().strip():
+            self.session_goal_var.set(selected.default_goal)
+        self.save_room_context()
+        self.session_canvas.refresh()
+        self.metrics_service.increment(f"metric_mode_selected_{selected.key}")
+        self.repository.append_cohort_event(
+            self.cohort_name,
+            "mode_selected",
+            {"mode_key": selected.key, "template_name": self.template_var.get().strip()},
+        )
+
+    def on_review_state_change(self, state: str) -> None:
+        self.review_state = state
+        self.save_room_context()
+        self.repository.append_cohort_event(self.cohort_name, "review_state_changed", {"state": state, "mode_key": self.mode_key})
+
+    def save_room_context(self) -> None:
+        template_name = (self.template_var.get() if hasattr(self, "template_var") else self.template_name).strip()
+        session_goal = (self.session_goal_var.get() if hasattr(self, "session_goal_var") else self.session_goal_text).strip()
+        active_mode = get_mode_by_key(self.mode_key)
+        if not template_name:
+            template_name = active_mode.default_template
+            if hasattr(self, "template_var"):
+                self.template_var.set(template_name)
+        if not session_goal:
+            session_goal = active_mode.default_goal
+            if hasattr(self, "session_goal_var"):
+                self.session_goal_var.set(session_goal)
+        self.template_name = template_name
+        self.session_goal_text = session_goal
+        self.repository.upsert_room_context(
+            self.room_key,
+            mode_key=self.mode_key,
+            template_name=self.template_name,
+            session_goal=self.session_goal_text,
+            review_state=self.review_state,
+        )
+        self._refresh_readiness()
 
     def start_guided_tour(self, mark_complete: bool = False) -> None:
         self.metrics_service.increment("metric_guided_tour_opened")
@@ -953,6 +1059,34 @@ class WebJamEnhancedApp:
         self.metrics_service.reset_with_prefix("metric_")
         messagebox.showinfo("Metrics Reset", "Local usage metrics were reset.")
 
+    def set_cohort_name(self) -> None:
+        cohort = simpledialog.askstring(
+            "Validation Cohort",
+            "Set creator cohort tag (visual_artists, writers, designers, mixed_discipline):",
+            parent=self.root,
+            initialvalue=self.cohort_name,
+        )
+        if not cohort:
+            return
+        self.cohort_name = cohort.strip().lower().replace(" ", "_")
+        self.repository.set_setting("cohort_name", self.cohort_name)
+        self.metrics_service.increment(f"metric_cohort_tagged_{self.cohort_name}")
+        messagebox.showinfo("Cohort Updated", f"Current validation cohort: {self.cohort_name}")
+
+    def record_session_complete(self) -> None:
+        self.metrics_service.increment("metric_session_completed")
+        self.metrics_service.increment(f"metric_mode_session_completed_{self.mode_key}")
+        self.repository.append_cohort_event(
+            self.cohort_name,
+            "session_completed",
+            {
+                "mode_key": self.mode_key,
+                "template_name": self.template_var.get().strip(),
+                "review_state": self.review_state,
+            },
+        )
+        messagebox.showinfo("Session Recorded", "Session completion was logged for cohort validation metrics.")
+
     def export_diagnostics_snapshot(self) -> None:
         try:
             out_path = self.metrics_service.export_snapshot(
@@ -992,10 +1126,11 @@ class WebJamEnhancedApp:
     def _refresh_readiness(self) -> None:
         participant_count = len(self.jamulus_controller.get_participants())
         readiness_text, readiness_color = readiness_state(participant_count)
+        mode_label = get_mode_by_key(self.mode_key).label
 
         self.readiness_label.configure(text=readiness_text)
-        self.connection_summary.configure(text=connection_summary(self.jamulus_state, self.webex_state))
-        self._set_status_banner(f"{self.jamulus_state} | {self.webex_state}", color=readiness_color)
+        self.connection_summary.configure(text=f"{connection_summary(self.jamulus_state, self.webex_state)} | Mode: {mode_label}")
+        self._set_status_banner(f"{mode_label}: {self.jamulus_state} | {self.webex_state}", color=readiness_color)
 
     def _poll_connection_health(self) -> None:
         if self.jamulus_process is not None:
@@ -1296,14 +1431,16 @@ class WebJamEnhancedApp:
     def show_about(self):
         """Show about dialog"""
         about_text = """WebJam Enhanced
-Music Collaboration Platform
+Creative Collaboration Platform
 
 Version 2.0
 
 Integrates Jamulus low-latency audio
-with Webex video conferencing.
+with Webex plus shared session canvas.
 
 Features:
+• Mode-based creative rooms
+• Shared session canvas for artifacts and notes
 • Virtual mixing console
 • Real-time audio level monitoring
 • Individual channel control
@@ -1333,6 +1470,9 @@ Common fixes:
 
         help_text = """Quick Start Guide
 
+Choose your mode in the top bar (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room).
+Set a template and session goal before launch.
+
 1. Launch Jamulus
    Click 'Launch Jamulus' to connect to the audio server.
    Wait for other participants to connect.
@@ -1340,13 +1480,18 @@ Common fixes:
 2. Launch Webex
    Click 'Launch Webex' to join the video meeting.
 
-3. Mix Your Session
+3. Collaborate in Session Canvas
+   • Add links/artifacts for references
+   • Capture live notes and critique prompts
+   • Track review state (draft/review/final)
+
+4. Mix Your Session
    • Use vertical faders to adjust volume
    • Use pan controls for stereo positioning
    • Click MUTE to silence a channel
    • Click SOLO to hear only that channel
 
-4. Save Your Mix
+5. Save Your Mix
    Click 'Save Mix' to save your settings for next time.
 
 Tips:
@@ -1387,7 +1532,7 @@ def main():
     """Main entry point"""
     if not CTK_AVAILABLE:
         print("\n" + "="*60)
-        print("WebJam Enhanced - Music Collaboration Platform")
+        print("WebJam Enhanced - Creative Collaboration Platform")
         print("="*60)
         print("\nNote: For an enhanced UI experience, install customtkinter:")
         print("  pip install customtkinter")

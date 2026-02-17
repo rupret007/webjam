@@ -9,6 +9,7 @@ from admin.policy import PolicyEngine, UserContext
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
 from core.settings import AppSettings, load_settings
+from core.creative_modes import get_mode_by_key, get_mode_labels
 from storage.repository import WebJamRepository
 from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
 from ui.auth_controller import AuthController
@@ -141,6 +142,47 @@ class TestModernizationCore(unittest.TestCase):
                     except PermissionError:
                         time.sleep(0.05)
 
+    def test_repository_session_canvas_storage(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            repo.upsert_room_context(
+                room_key="default_room",
+                mode_key="visual_studio",
+                template_name="Critique Circle",
+                session_goal="Review two sketches and choose revision direction.",
+                review_state="review",
+            )
+            ctx = repo.get_room_context("default_room")
+            self.assertEqual(ctx["mode_key"], "visual_studio")
+            self.assertEqual(ctx["review_state"], "review")
+
+            artifact_id = repo.add_session_artifact("default_room", "Inspiration Board", "link", "https://example.com/board")
+            artifacts = repo.list_session_artifacts("default_room")
+            self.assertEqual(len(artifacts), 1)
+            self.assertEqual(artifacts[0]["id"], str(artifact_id))
+
+            repo.save_session_notes("default_room", "Keep color palette muted.")
+            self.assertIn("muted", repo.get_session_notes("default_room"))
+
+            repo.remove_session_artifact(artifact_id)
+            self.assertEqual(len(repo.list_session_artifacts("default_room")), 0)
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_creative_modes_schema(self):
+        labels = get_mode_labels()
+        self.assertIn("Music Jam", labels)
+        mode = get_mode_by_key("writers_room")
+        self.assertIn("draft", mode.default_template.lower())
+
     def test_protocol_adapter_cache(self):
         adapter = JamulusProtocolAdapter("127.0.0.1", 22124)
         adapter.set_cached_participants({0: "Local", 1: "Peer"})
@@ -203,8 +245,8 @@ class TestModernizationCore(unittest.TestCase):
     def test_readiness_and_connection_summary(self):
         ready_text, _ = readiness_state(3)
         waiting_text, _ = readiness_state(0)
-        self.assertEqual(ready_text, "Mixer: ready")
-        self.assertEqual(waiting_text, "Mixer: waiting for participants")
+        self.assertEqual(ready_text, "Room: ready")
+        self.assertEqual(waiting_text, "Room: waiting for participants")
         self.assertEqual(
             connection_summary("Connected", "Opened in browser"),
             "Jamulus: Connected | Webex: Opened in browser",
@@ -260,6 +302,47 @@ class TestModernizationCore(unittest.TestCase):
             metrics.reset_with_prefix("metric_")
             collected_after = metrics.collect()
             self.assertEqual(collected_after["metric_setup_wizard_opened"], "0")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_metrics_service_collect_includes_dynamic_metric_keys(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            metrics = MetricsService(repo)
+            repo.set_setting("metric_mode_selected_visual_studio", "3")
+            collected = metrics.collect()
+            self.assertEqual(collected.get("metric_mode_selected_visual_studio"), "3")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_repository_append_cohort_event(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            repo.append_cohort_event(
+                cohort="mixed_discipline",
+                event_type="session_completed",
+                payload={"mode_key": "music_jam"},
+            )
+            raw = repo.get_setting("cohort_events_mixed_discipline", "[]")
+            self.assertIsNotNone(raw)
+            self.assertIn("session_completed", raw or "")
+            self.assertIn("music_jam", raw or "")
         finally:
             if os.path.exists(db):
                 for _ in range(10):

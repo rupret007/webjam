@@ -18,12 +18,16 @@ class SetupWizard:
         settings: AppSettings | None = None,
         find_jamulus: Callable[[], str | None] | None = None,
         diagnostics_provider: Callable[[], dict[str, str]] | None = None,
+        mode_label: str = "Music Jam",
+        mode_help: str = "",
     ):
         self.root = root
         self.on_complete = on_complete
         self.settings = settings or load_settings()
         self.find_jamulus = find_jamulus or (lambda: None)
         self.diagnostics_provider = diagnostics_provider or (lambda: {})
+        self.mode_label = mode_label
+        self.mode_help = mode_help
 
         self.step_index = 0
         self.steps = [
@@ -86,7 +90,9 @@ class SetupWizard:
             "1) Use wired Ethernet when possible.\n"
             "2) Use headphones to avoid feedback.\n"
             "3) Keep Jamulus buffer around 64-128 samples.\n"
-            "4) Confirm input/output devices before joining."
+            "4) Confirm input/output devices before joining.\n\n"
+            f"Current mode: {self.mode_label}\n"
+            f"Mode hint: {self.mode_help or 'Use session canvas notes and prompts to align creative goals.'}"
         )
         messagebox.showinfo("Setup Help", help_text, parent=self.window)
 
@@ -118,6 +124,7 @@ class SetupWizard:
             self.title_var.set("Step 1 of 3 - Welcome")
             self.body_var.set(
                 "This wizard helps you verify audio and connection basics before your first session.\n\n"
+                f"Current creative mode: {self.mode_label}\n"
                 "Click Next to run preflight checks."
             )
             self._set_results_text(

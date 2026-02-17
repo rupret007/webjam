@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -49,6 +50,40 @@ class WebJamRepository:
                     actor TEXT NOT NULL,
                     details TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collaboration_rooms (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_key TEXT UNIQUE NOT NULL,
+                    mode_key TEXT NOT NULL,
+                    template_name TEXT NOT NULL,
+                    session_goal TEXT NOT NULL,
+                    review_state TEXT NOT NULL DEFAULT 'draft',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collaboration_artifacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_key TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL,
+                    reference TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collaboration_notes (
+                    room_key TEXT PRIMARY KEY,
+                    notes TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -205,4 +240,109 @@ class WebJamRepository:
                 (limit,),
             ).fetchall()
         return rows
+
+    def upsert_room_context(self, room_key: str, mode_key: str, template_name: str, session_goal: str, review_state: str = "draft") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO collaboration_rooms (room_key, mode_key, template_name, session_goal, review_state)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(room_key) DO UPDATE SET
+                    mode_key = excluded.mode_key,
+                    template_name = excluded.template_name,
+                    session_goal = excluded.session_goal,
+                    review_state = excluded.review_state,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (room_key, mode_key, template_name, session_goal, review_state),
+            )
+            conn.commit()
+
+    def get_room_context(self, room_key: str) -> Dict[str, str]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT mode_key, template_name, session_goal, review_state FROM collaboration_rooms WHERE room_key = ?",
+                (room_key,),
+            ).fetchone()
+        if not row:
+            return {
+                "mode_key": "music_jam",
+                "template_name": "Band Rehearsal",
+                "session_goal": "",
+                "review_state": "draft",
+            }
+        return {
+            "mode_key": row[0],
+            "template_name": row[1],
+            "session_goal": row[2],
+            "review_state": row[3],
+        }
+
+    def add_session_artifact(self, room_key: str, title: str, artifact_type: str, reference: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO collaboration_artifacts (room_key, title, artifact_type, reference) VALUES (?, ?, ?, ?)",
+                (room_key, title, artifact_type, reference),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def remove_session_artifact(self, artifact_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM collaboration_artifacts WHERE id = ?", (artifact_id,))
+            conn.commit()
+
+    def list_session_artifacts(self, room_key: str) -> List[Dict[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, artifact_type, reference, created_at FROM collaboration_artifacts WHERE room_key = ? ORDER BY id DESC",
+                (room_key,),
+            ).fetchall()
+        return [
+            {
+                "id": str(row[0]),
+                "title": row[1],
+                "artifact_type": row[2],
+                "reference": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
+    def save_session_notes(self, room_key: str, notes: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO collaboration_notes (room_key, notes)
+                VALUES (?, ?)
+                ON CONFLICT(room_key) DO UPDATE SET notes = excluded.notes, updated_at = CURRENT_TIMESTAMP
+                """,
+                (room_key, notes),
+            )
+            conn.commit()
+
+    def get_session_notes(self, room_key: str) -> str:
+        with self._connect() as conn:
+            row = conn.execute("SELECT notes FROM collaboration_notes WHERE room_key = ?", (room_key,)).fetchone()
+        if not row:
+            return ""
+        return row[0]
+
+    def append_cohort_event(self, cohort: str, event_type: str, payload: Dict[str, str]) -> None:
+        key = f"cohort_events_{cohort}"
+        current = self.get_setting(key, "[]") or "[]"
+        try:
+            events = json.loads(current)
+            if not isinstance(events, list):
+                events = []
+        except Exception:
+            events = []
+        events.append(
+            {
+                "ts": int(time.time()),
+                "event_type": event_type,
+                "payload": payload,
+            }
+        )
+        self.set_setting(key, json.dumps(events))
 

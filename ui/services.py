@@ -57,6 +57,9 @@ class MetricsService:
         values: dict[str, str] = {}
         for key in self.METRIC_KEYS:
             values[key] = self.repository.get_setting(key, "0") or "0"
+        for key, value in self.repository.list_settings().items():
+            if key.startswith("metric_") and key not in values:
+                values[key] = value
         return values
 
     def reset_with_prefix(self, prefix: str = "metric_") -> None:

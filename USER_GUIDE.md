@@ -1,5 +1,5 @@
 # WebJam User Guide
-## Complete Guide to Music Collaboration with WebJam
+## Complete Guide to Creative Collaboration with WebJam
 
 ---
 
@@ -20,10 +20,11 @@
 
 ### What is WebJam?
 
-WebJam is a revolutionary music collaboration platform that combines:
+WebJam is a creative collaboration platform that combines:
 - **Jamulus**: Ultra-low latency audio (<50ms) for real-time musical performance
 - **Webex**: Professional video conferencing for face-to-face collaboration
 - **Virtual Mixer**: Professional-grade mixing console built into the interface
+- **Shared Session Canvas**: Artifacts, references, and live collaboration notes
 
 ### Who is WebJam For?
 
@@ -32,6 +33,21 @@ WebJam is a revolutionary music collaboration platform that combines:
 - 🎤 **Singers** practicing with accompaniment
 - 🥁 **Jam Session Enthusiasts** connecting with musicians worldwide
 - 🎺 **Ensembles** maintaining musical connection when apart
+- 🎨 **Visual artists** running critique circles
+- ✍️ **Writers** collaborating on drafts
+- 🧩 **Design teams** reviewing work with decisions captured
+- 🎬 **Storyboard/film creators** planning scenes together
+
+### Creative Modes
+
+WebJam supports one unified experience with mode templates:
+- Music Jam
+- Visual Studio
+- Writer's Room
+- Design Critique
+- Storyboard/Film Room
+
+Modes set defaults and prompts; collaboration primitives stay shared.
 
 ### Key Features
 
@@ -116,6 +132,11 @@ Before joining a session:
    - Other musicians appear as channels in the mixer
    - Adjust faders to create your personal mix
    - Everyone creates their own mix independently!
+
+5. **Use Shared Session Canvas**
+   - Choose a Creative Mode, template, and session goal from the top control bar
+   - Pin links/references/artifacts for the session
+   - Capture live notes and set review state (`draft`, `review`, `final`)
 
 ### Step 3: Run Preflight + Diagnostics (Recommended)
 
@@ -255,6 +276,8 @@ At the top of the mixer:
 
 ## Session Management
 
+Before each session, set your mode, template, and goal in the top bar. WebJam stores this context so repeated teams can keep momentum across sessions.
+
 ### Saving Your Mix
 
 Once you've created the perfect mix:
@@ -309,6 +332,12 @@ Use this order for fastest recovery:
 From either Diagnostics Panel or Usage Metrics:
 - **Export Snapshot** writes a timestamped local JSON report with states, diagnostics, and counters.
 - **Reset Metrics** clears local counters when starting a new observation window.
+
+For pilot programs, use the `Validation` menu:
+- **Set Cohort Name** to tag creator groups (visual_artists, writers, designers, mixed_discipline)
+- **Record Session Complete** when a room finishes
+
+This enables local cohort-level tracking for activation and cross-mode adoption.
 
 #### ❌ "No Audio from Other Musicians"
 

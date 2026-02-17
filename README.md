@@ -1,12 +1,25 @@
-# WebJam - Music Collaboration Platform
+# WebJam - Creative Collaboration Platform
 
 **Merge the power of Jamulus low-latency audio with Webex video conferencing!**
 
 New here? Start with the quick guide: `README_SIMPLE.md`
 
-WebJam is a revolutionary music collaboration application that provides musicians with a professional mixing experience while maintaining video communication. Perfect for remote band rehearsals, music lessons, jam sessions, and collaborative recording.
+Planning and rollout docs:
+- `CREATIVE_MODES_MVP_SPEC.md`
+- `COHORT_VALIDATION_PLAYBOOK.md`
+
+WebJam is a single-brand creative collaboration app with a flagship music mode. It supports live creative sessions across music, visual art, writing, design critique, and storyboard/film planning through shared collaboration primitives.
 
 ## 🎵 Features
+
+### Creative Modes (Single App)
+- **Music Jam** (flagship): low-latency performance and mixer control
+- **Visual Studio**: references + critique loops for art sessions
+- **Writer's Room**: draft checkpoints and revision prompts
+- **Design Critique**: structured review and decision tracking
+- **Storyboard/Film Room**: shot planning and continuity notes
+
+Each mode configures defaults and prompts, without creating separate products.
 
 ### Virtual Mixer Panel
 - **Individual Channel Faders**: Control the volume of each musician independently
@@ -26,6 +39,8 @@ WebJam is a revolutionary music collaboration application that provides musician
 - Automatic audio device configuration
 - Session management and presets
 - Hover tooltips on controls and live latency quality indicator
+- Shared Session Canvas for artifacts, references, and collaborative notes
+- Room template + session goal entry in the main launch flow
 
 ## 🚀 Quick Start
 
@@ -54,6 +69,7 @@ WebJam is a revolutionary music collaboration application that provides musician
 1. **Start the Application**
    - Launch WebJam from your desktop
    - On first run, complete **Help -> Run Setup Wizard**
+   - Choose your **Creative Mode**, session template, and goal from the top control bar
 
 2. **Connect Audio**
    - Click "Launch Jamulus" to connect to the audio server
@@ -63,7 +79,12 @@ WebJam is a revolutionary music collaboration application that provides musician
    - Click "Launch Webex" to open the video conference
    - Join meeting: `https://webjam-sbx.webex.com/meet/webjam01`
 
-4. **Mix Your Session**
+4. **Use Shared Session Canvas**
+   - Add links/artifacts/references
+   - Capture live notes for decisions and next actions
+   - Track review state: draft/review/final
+
+5. **Mix Your Session**
    - Adjust individual faders for each musician
    - Use pan controls to position musicians in stereo
    - Mute or solo channels as needed
@@ -79,8 +100,14 @@ WebJam is a revolutionary music collaboration application that provides musician
   - Shows current endpoint checks, audio backend state, and recovery hints
 - **Troubleshooting Shortcut**: `Help -> Quick Start Guide` includes a troubleshooting mode used by actionable error dialogs
 - **Usage Metrics**: `Help -> View Usage Metrics`
-  - Shows local-only counters (wizard usage, launch success/failure, diagnostics usage, save/load outcomes)
+  - Shows local-only counters (wizard usage, launch success/failure, diagnostics usage, save/load outcomes, mode adoption)
   - Includes quick actions to reset metrics and export diagnostics snapshot
+
+### Cohort Validation
+
+- Use `Validation -> Set Cohort Name` to tag pilot groups (visual_artists, writers, designers, mixed_discipline).
+- Use `Validation -> Record Session Complete` at the end of creator sessions.
+- Review outcomes in the usage metrics panel and diagnostics snapshot export.
 
 ### Accessibility Options
 

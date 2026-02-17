@@ -16,8 +16,8 @@ def classify_latency_ms(latency_ms: float | None) -> tuple[str, str]:
 
 def readiness_state(participant_count: int) -> tuple[str, str]:
     if participant_count > 0:
-        return ("Mixer: ready", "#00cc66")
-    return ("Mixer: waiting for participants", "#ffcc00")
+        return ("Room: ready", "#00cc66")
+    return ("Room: waiting for participants", "#ffcc00")
 
 
 def connection_summary(jamulus_state: str, webex_state: str) -> str:
