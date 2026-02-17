@@ -28,9 +28,6 @@ class MetricsService:
     METRIC_KEYS = [
         "metric_setup_wizard_opened",
         "metric_setup_wizard_completed",
-        "metric_guided_tour_opened",
-        "metric_guided_tour_completed",
-        "metric_guided_tour_cancelled",
         "metric_jamulus_launch_attempt",
         "metric_jamulus_launch_success",
         "metric_jamulus_launch_failed",

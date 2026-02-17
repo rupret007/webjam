@@ -94,8 +94,6 @@ Each mode configures defaults and prompts, without creating separate products.
 
 - **Setup Wizard**: `Help -> Run Setup Wizard`
   - Runs preflight checks (Jamulus path, server reachability hint, Webex URL, audio diagnostics)
-- **Guided Tour**: `Help -> Start Guided Tour`
-  - Walks first-time users through launch order, status interpretation, recovery flow, and saving mixes
 - **Diagnostics Panel**: `Session -> Open Diagnostics Panel`
   - Shows current endpoint checks, audio backend state, and recovery hints
 - **Troubleshooting Shortcut**: `Help -> Quick Start Guide` includes a troubleshooting mode used by actionable error dialogs
@@ -119,10 +117,9 @@ Each mode configures defaults and prompts, without creating separate products.
 ### Startup Preferences
 
 - `Startup -> Run Setup Wizard on startup` (toggle)
-- `Startup -> Run Guided Tour on startup` (toggle)
 - `Startup -> Reset All UI Preferences` (restores defaults and re-enables first-run guidance)
 - `Startup -> Reset Window Position`
-- Window size/position and startup toggles persist between launches
+- Window size/position and startup preferences persist between launches
 
 ### Security Notes
 

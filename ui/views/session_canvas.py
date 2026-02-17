@@ -37,10 +37,10 @@ class SessionCanvasPanel(tk.Frame):
         self.refresh()
 
     def _build(self) -> None:
-        title = tk.Label(self, text="Shared Session Canvas", bg="#2b2b2b", fg="white", font=("Arial", 12, "bold"))
+        title = tk.Label(self, text="Shared Session Canvas", bg="#2b2b2b", fg="white", font=("Arial", 13, "bold"))
         title.pack(anchor="w", padx=10, pady=(10, 6))
 
-        self.mode_help = tk.Label(self, text="", bg="#2b2b2b", fg="#d0d0d0", justify=tk.LEFT, wraplength=360)
+        self.mode_help = tk.Label(self, text="", bg="#2b2b2b", fg="#d0d0d0", justify=tk.LEFT, wraplength=390)
         self.mode_help.pack(anchor="w", padx=10)
 
         state_row = tk.Frame(self, bg="#2b2b2b")
@@ -54,19 +54,19 @@ class SessionCanvasPanel(tk.Frame):
         tk.Label(self, text="Pinned Artifacts & References", bg="#2b2b2b", fg="white", font=("Arial", 10, "bold")).pack(
             anchor="w", padx=10, pady=(8, 4)
         )
-        self.artifacts_list = tk.Listbox(self, height=7)
+        self.artifacts_list = tk.Listbox(self, height=8, font=("Arial", 10))
         self.artifacts_list.pack(fill=tk.X, padx=10)
 
         btn_row = tk.Frame(self, bg="#2b2b2b")
         btn_row.pack(fill=tk.X, padx=10, pady=(5, 8))
-        tk.Button(btn_row, text="Add", command=self._add_artifact).pack(side=tk.LEFT)
-        tk.Button(btn_row, text="Remove", command=self._remove_selected).pack(side=tk.LEFT, padx=(6, 0))
-        tk.Button(btn_row, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=(6, 0))
+        tk.Button(btn_row, text="Add", command=self._add_artifact, padx=10).pack(side=tk.LEFT)
+        tk.Button(btn_row, text="Remove", command=self._remove_selected, padx=10).pack(side=tk.LEFT, padx=(6, 0))
+        tk.Button(btn_row, text="Refresh", command=self.refresh, padx=10).pack(side=tk.LEFT, padx=(6, 0))
 
         tk.Label(self, text="Live Notes", bg="#2b2b2b", fg="white", font=("Arial", 10, "bold")).pack(
             anchor="w", padx=10, pady=(2, 4)
         )
-        self.notes = tk.Text(self, height=10, wrap=tk.WORD)
+        self.notes = tk.Text(self, height=12, wrap=tk.WORD, font=("Arial", 10))
         self.notes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 6))
         self.notes.bind("<FocusOut>", self._save_notes)
 

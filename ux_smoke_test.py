@@ -44,7 +44,6 @@ def main() -> int:
     # Ensure key UX affordances are still present.
     for marker in (
         "Run Setup Wizard",
-        "Start Guided Tour",
         "Open Diagnostics Panel",
         "Reset All UI Preferences",
         "View Usage Metrics",

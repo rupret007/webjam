@@ -105,12 +105,10 @@ class TestModernizationCore(unittest.TestCase):
             repo.set_setting("ui_font_scale", "1.20")
             repo.set_setting("ui_high_contrast", "1")
             repo.set_setting("ui_auto_setup_on_start", "0")
-            repo.set_setting("ui_auto_tour_on_start", "0")
             repo.set_setting("ui_window_geometry", "1600x900+40+40")
             self.assertEqual(repo.get_setting("ui_font_scale"), "1.20")
             self.assertEqual(repo.get_setting("ui_high_contrast"), "1")
             self.assertEqual(repo.get_setting("ui_auto_setup_on_start"), "0")
-            self.assertEqual(repo.get_setting("ui_auto_tour_on_start"), "0")
             self.assertEqual(repo.get_setting("ui_window_geometry"), "1600x900+40+40")
         finally:
             if os.path.exists(db):
@@ -367,7 +365,6 @@ class TestModernizationCore(unittest.TestCase):
                 font_scale=1.2,
                 high_contrast_enabled=True,
                 auto_setup_enabled=False,
-                auto_tour_enabled=False,
             )
             prefs_service.save_window_geometry("1800x1000+20+20")
 
@@ -375,7 +372,6 @@ class TestModernizationCore(unittest.TestCase):
             self.assertAlmostEqual(loaded.font_scale, 1.2, places=2)
             self.assertTrue(loaded.high_contrast_enabled)
             self.assertFalse(loaded.auto_setup_enabled)
-            self.assertFalse(loaded.auto_tour_enabled)
             self.assertEqual(prefs_service.get_window_geometry(), "1800x1000+20+20")
 
             self.assertEqual(prefs_service.reset_window_geometry(), "1600x900")

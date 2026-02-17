@@ -151,13 +151,13 @@ Before your first real rehearsal, run:
 3. **Help -> View Usage Metrics**
    - View local counters to track successful launches and recurring issues
 
-### Step 4: Run Guided Tour (Recommended)
+### Step 4: Use Session Canvas + Mode Defaults (Recommended)
 
-Open `Help -> Start Guided Tour` for a quick walkthrough of:
-- launch order
-- status/latency interpretation
-- troubleshooting path
-- accessibility controls
+Before each room starts:
+- choose your creative mode
+- confirm template and session goal
+- pin references in Session Canvas
+- capture notes and review state for continuity
 
 ---
 
@@ -522,7 +522,6 @@ Use `View` menu for:
 
 Use `Startup` menu for:
 - Run Setup Wizard automatically on launch
-- Run Guided Tour automatically on launch
 - Reset all UI preferences to defaults
 - Reset window size/position to defaults
 

@@ -58,7 +58,6 @@ Use `View` menu:
 
 Use `Startup` menu:
 - Run Setup Wizard on startup
-- Run Guided Tour on startup
 - Reset All UI Preferences
 
 ## More Detailed Docs

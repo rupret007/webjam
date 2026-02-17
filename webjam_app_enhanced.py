@@ -11,6 +11,8 @@ import subprocess
 import webbrowser
 import logging
 import time
+import threading
+import json
 from pathlib import Path
 from typing import Optional, Dict
 import sys
@@ -398,6 +400,9 @@ class WebJamEnhancedApp:
     """Enhanced WebJam application with full Jamulus integration"""
     
     def __init__(self):
+        # #region agent log
+        self._debug_run_id = f"run-{int(time.time() * 1000)}"
+        # #endregion
         # Setup main window
         if CTK_AVAILABLE:
             self.root = ctk.CTk()
@@ -407,6 +412,7 @@ class WebJamEnhancedApp:
         
         self.root.title("WebJam - Creative Collaboration Platform")
         self.root.geometry("1600x900")
+        self.root.minsize(1280, 760)
         
         # Initialize Jamulus controller
         self.jamulus_controller = JamulusController(JAMULUS_SERVER, int(JAMULUS_PORT))
@@ -418,11 +424,13 @@ class WebJamEnhancedApp:
         self.jamulus_state = "Not launched"
         self.webex_state = "Not opened"
         self.network_latency_ms: float | None = None
+        self._latency_probe_inflight = False
+        self._service_bootstrapped = False
+        self._startup_started_at = time.perf_counter()
         self._tooltips = []
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
-        self.auto_tour_enabled = True
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
         self.room_key = "default_room"
@@ -444,11 +452,24 @@ class WebJamEnhancedApp:
             get_participants=self._bridge_participants,
             get_diagnostics=self.jamulus_controller.get_audio_diagnostics,
         )
-        bridge_started = self.api_bridge.start()
-        if not bridge_started:
-            LOGGER.warning("Local companion API bridge unavailable (install fastapi + uvicorn).")
+        # #region agent log
+        self._debug_log(
+            hypothesis_id="H3",
+            location="webjam_app_enhanced.py:__init__",
+            message="init_pre_ui",
+            data={"ctk_available": CTK_AVAILABLE},
+        )
+        # #endregion
         
         self.setup_ui()
+        # #region agent log
+        self._debug_log(
+            hypothesis_id="H3",
+            location="webjam_app_enhanced.py:__init__",
+            message="ui_setup_complete",
+            data={"elapsed_ms": int((time.perf_counter() - self._startup_started_at) * 1000)},
+        )
+        # #endregion
         self.save_room_context()
         self._bind_shortcuts()
         self._apply_accessibility_mode()
@@ -457,17 +478,28 @@ class WebJamEnhancedApp:
         # Register callback for participant updates
         self.jamulus_controller.register_callback(self.on_participants_updated)
         
-        # Start controllers
-        self.jamulus_controller.start()
-        self.audio_monitor.start()
-        self.webex_controller.start()
-        
         # Start UI update loop
         self.update_vu_meters()
         self._refresh_readiness()
         self._poll_connection_health()
+        self._defer_service_start()
         self._show_setup_once()
-        self._show_guided_tour_once()
+
+    def _debug_log(self, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+        try:
+            payload = {
+                "sessionId": "65adf8",
+                "runId": self._debug_run_id,
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "message": message,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            }
+            with open(r"c:\Users\rupret\Desktop\WebJam\debug-65adf8.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
     
     def setup_ui(self):
         """Setup the main application UI"""
@@ -520,16 +552,10 @@ class WebJamEnhancedApp:
         startup_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Startup", menu=startup_menu)
         self.auto_setup_var = tk.BooleanVar(value=self.auto_setup_enabled)
-        self.auto_tour_var = tk.BooleanVar(value=self.auto_tour_enabled)
         startup_menu.add_checkbutton(
             label="Run Setup Wizard on startup",
             variable=self.auto_setup_var,
             command=self.toggle_auto_setup,
-        )
-        startup_menu.add_checkbutton(
-            label="Run Guided Tour on startup",
-            variable=self.auto_tour_var,
-            command=self.toggle_auto_tour,
         )
         startup_menu.add_separator()
         startup_menu.add_command(label="Reset All UI Preferences", command=self.reset_all_ui_preferences)
@@ -546,7 +572,6 @@ class WebJamEnhancedApp:
         help_menu.add_command(label="About", command=self.show_about)
         help_menu.add_command(label="Quick Start Guide", command=self.show_help)
         help_menu.add_command(label="Run Setup Wizard", command=self.show_setup_wizard)
-        help_menu.add_command(label="Start Guided Tour", command=self.start_guided_tour)
         help_menu.add_separator()
         help_menu.add_command(label="View Usage Metrics", command=self.show_usage_metrics)
         
@@ -578,7 +603,7 @@ class WebJamEnhancedApp:
         template_frame.pack(side=tk.LEFT, padx=8)
         self._create_label(template_frame, "Template", font_size=9, bold=True).pack(anchor="w")
         self.template_var = tk.StringVar(value=self.template_name)
-        self.template_entry = tk.Entry(template_frame, textvariable=self.template_var, width=24)
+        self.template_entry = tk.Entry(template_frame, textvariable=self.template_var, width=28)
         self.template_entry.pack(anchor="w")
         self.template_entry.bind("<FocusOut>", lambda _e: self.save_room_context())
 
@@ -586,7 +611,7 @@ class WebJamEnhancedApp:
         goal_frame.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
         self._create_label(goal_frame, "Session Goal", font_size=9, bold=True).pack(anchor="w")
         self.session_goal_var = tk.StringVar(value=self.session_goal_text)
-        self.session_goal_entry = tk.Entry(goal_frame, textvariable=self.session_goal_var, width=56)
+        self.session_goal_entry = tk.Entry(goal_frame, textvariable=self.session_goal_var, width=74)
         self.session_goal_entry.pack(anchor="w", fill=tk.X)
         self.session_goal_entry.bind("<FocusOut>", lambda _e: self.save_room_context())
 
@@ -601,7 +626,7 @@ class WebJamEnhancedApp:
         self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.save_mix)
         self.save_mix_btn.pack(side=tk.LEFT, padx=5)
 
-        hint_text = "Hint: Pick a mode, set a session goal, and use Shared Session Canvas for references/notes."
+        hint_text = "Tip: pick mode + goal first. Launch is now deferred for faster startup on lower-end PCs."
         self.hint_label = self._create_label(control_bar, hint_text, font_size=9)
         self.hint_label.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0))
         
@@ -609,10 +634,12 @@ class WebJamEnhancedApp:
         content = ctk.CTkFrame(self.root) if CTK_AVAILABLE else tk.Frame(self.root, bg="#1a1a1a")
         content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
-        left_content = ctk.CTkFrame(content) if CTK_AVAILABLE else tk.Frame(content, bg="#1a1a1a")
-        left_content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        right_content = tk.Frame(content, bg="#1a1a1a")
-        right_content.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(10, 0))
+        splitter = tk.PanedWindow(content, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=8, bg="#1a1a1a")
+        splitter.pack(fill=tk.BOTH, expand=True)
+        left_content = ctk.CTkFrame(splitter) if CTK_AVAILABLE else tk.Frame(splitter, bg="#1a1a1a")
+        right_content = tk.Frame(splitter, bg="#1a1a1a")
+        splitter.add(left_content, minsize=820)
+        splitter.add(right_content, minsize=360)
 
         # Mixer panel (left side)
         mixer_frame = ctk.CTkFrame(left_content) if CTK_AVAILABLE else tk.Frame(left_content, bg="#2b2b2b", relief=tk.RAISED, borderwidth=2)
@@ -748,8 +775,24 @@ class WebJamEnhancedApp:
 
     def _show_setup_once(self):
         if not self.auto_setup_enabled:
+            # #region agent log
+            self._debug_log(
+                hypothesis_id="H5",
+                location="webjam_app_enhanced.py:_show_setup_once",
+                message="setup_skipped_autosetup_disabled",
+                data={},
+            )
+            # #endregion
             return
         setup_seen = self.repository.get_setting("setup_completed", "0")
+        # #region agent log
+        self._debug_log(
+            hypothesis_id="H5",
+            location="webjam_app_enhanced.py:_show_setup_once",
+            message="setup_flag_checked",
+            data={"setup_seen": setup_seen},
+        )
+        # #endregion
         if setup_seen == "1":
             return
 
@@ -759,14 +802,6 @@ class WebJamEnhancedApp:
         bootstrap_password = self.repository.get_bootstrap_admin_password()
         if bootstrap_password:
             show_bootstrap_admin_notice(bootstrap_password)
-
-    def _show_guided_tour_once(self) -> None:
-        if not self.auto_tour_enabled:
-            return
-        tour_seen = self.repository.get_setting("guided_tour_completed", "0")
-        if tour_seen == "1":
-            return
-        self.start_guided_tour(mark_complete=True)
 
     def show_setup_wizard(self, mark_complete: bool = False):
         self.metrics_service.increment("metric_setup_wizard_opened")
@@ -831,59 +866,6 @@ class WebJamEnhancedApp:
         )
         self._refresh_readiness()
 
-    def start_guided_tour(self, mark_complete: bool = False) -> None:
-        self.metrics_service.increment("metric_guided_tour_opened")
-        steps = [
-            (
-                "Step 1: Launch order",
-                "Use this order for every session:\n"
-                "1) Launch Jamulus\n"
-                "2) Launch Webex\n"
-                "3) Confirm participants appear in mixer",
-            ),
-            (
-                "Step 2: Read status area",
-                "Watch the bottom bar for:\n"
-                "- Connection summary\n"
-                "- Mixer readiness\n"
-                "- Latency quality",
-            ),
-            (
-                "Step 3: Recovery tools",
-                "If something fails:\n"
-                "1) Session -> Open Diagnostics Panel\n"
-                "2) Help -> Run Setup Wizard\n"
-                "3) Retry from the actionable dialog",
-            ),
-            (
-                "Step 4: Accessibility",
-                "Use View menu for:\n"
-                "- High Contrast Mode\n"
-                "- Large Text Mode\n"
-                "- Manual text scaling",
-            ),
-            (
-                "Step 5: Save your mix",
-                "After balancing channels, click Save Mix so your setup is ready next time.",
-            ),
-        ]
-
-        proceed = messagebox.askokcancel("Guided Tour", "Start the quick guided tour?")
-        if not proceed:
-            self.metrics_service.increment("metric_guided_tour_cancelled")
-            return
-
-        for title, body in steps:
-            keep_going = messagebox.askokcancel(title, body + "\n\nClick OK for next step.")
-            if not keep_going:
-                self.metrics_service.increment("metric_guided_tour_cancelled")
-                return
-
-        if mark_complete:
-            self.repository.set_setting("guided_tour_completed", "1")
-        self.metrics_service.increment("metric_guided_tour_completed")
-        messagebox.showinfo("Tour Complete", "Guided tour complete. Re-run any time from Help -> Start Guided Tour.")
-
     def _set_status_banner(self, text: str, color: str = "#ffffff") -> None:
         self.status_label.configure(text=text)
         try:
@@ -893,6 +875,61 @@ class WebJamEnhancedApp:
                 self.status_indicator.configure(fg=color)
         except Exception:
             pass
+
+    def _defer_service_start(self) -> None:
+        # #region agent log
+        self._debug_log(
+            hypothesis_id="H1",
+            location="webjam_app_enhanced.py:_defer_service_start",
+            message="defer_service_start",
+            data={"elapsed_ms": int((time.perf_counter() - self._startup_started_at) * 1000)},
+        )
+        # #endregion
+        self._set_status_banner("Initializing background services...", color="#ffcc00")
+        self.root.after(120, self._start_background_services)
+
+    def _start_background_services(self) -> None:
+        if self._service_bootstrapped:
+            return
+        self._service_bootstrapped = True
+        # #region agent log
+        t0 = time.perf_counter()
+        self._debug_log(
+            hypothesis_id="H1",
+            location="webjam_app_enhanced.py:_start_background_services",
+            message="service_start_begin",
+            data={},
+        )
+        # #endregion
+
+        bridge_started = self.api_bridge.start()
+        if not bridge_started:
+            LOGGER.warning("Local companion API bridge unavailable (install fastapi + uvicorn).")
+
+        try:
+            self.jamulus_controller.start()
+            self.audio_monitor.start()
+            self.webex_controller.start()
+        except Exception as exc:
+            LOGGER.exception("Service startup failed: %s", exc)
+            self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
+            return
+
+        startup_elapsed = time.perf_counter() - self._startup_started_at
+        # #region agent log
+        self._debug_log(
+            hypothesis_id="H1",
+            location="webjam_app_enhanced.py:_start_background_services",
+            message="service_start_complete",
+            data={
+                "bridge_started": bridge_started,
+                "service_elapsed_ms": int((time.perf_counter() - t0) * 1000),
+                "startup_elapsed_ms": int(startup_elapsed * 1000),
+            },
+        )
+        # #endregion
+        self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66")
+        self._refresh_readiness()
 
     def _safe_invoke(self, callback):
         try:
@@ -978,22 +1015,16 @@ class WebJamEnhancedApp:
         self.font_scale = prefs.font_scale
         self.high_contrast_enabled = prefs.high_contrast_enabled
         self.auto_setup_enabled = prefs.auto_setup_enabled
-        self.auto_tour_enabled = prefs.auto_tour_enabled
 
     def _save_accessibility_preferences(self) -> None:
         self.preferences_service.save_ui(
             font_scale=self.font_scale,
             high_contrast_enabled=self.high_contrast_enabled,
             auto_setup_enabled=self.auto_setup_enabled,
-            auto_tour_enabled=self.auto_tour_enabled,
         )
 
     def toggle_auto_setup(self) -> None:
         self.auto_setup_enabled = bool(self.auto_setup_var.get())
-        self._save_accessibility_preferences()
-
-    def toggle_auto_tour(self) -> None:
-        self.auto_tour_enabled = bool(self.auto_tour_var.get())
         self._save_accessibility_preferences()
 
     def _save_window_geometry(self) -> None:
@@ -1019,22 +1050,19 @@ class WebJamEnhancedApp:
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
-        self.auto_tour_enabled = True
 
         self.large_text_var.set(False)
         self.high_contrast_var.set(False)
         self.auto_setup_var.set(True)
-        self.auto_tour_var.set(True)
 
         self.root.geometry("1600x900")
         self._apply_accessibility_mode()
         self.preferences_service.reset_window_geometry()
         self.repository.set_setting("setup_completed", "0")
-        self.repository.set_setting("guided_tour_completed", "0")
 
         messagebox.showinfo(
             "UI Preferences Reset",
-            "UI preferences were reset.\n\nSetup wizard and guided tour will show again on next launch.",
+            "UI preferences were reset.\n\nSetup wizard will show again on next launch.",
         )
 
     def show_usage_metrics(self) -> None:
@@ -1102,17 +1130,7 @@ class WebJamEnhancedApp:
         except Exception as exc:
             messagebox.showerror("Export Failed", f"Could not export diagnostics snapshot:\n{exc}")
 
-    def _measure_server_latency(self) -> float | None:
-        start = time.perf_counter()
-        try:
-            with socket.create_connection((JAMULUS_SERVER, int(JAMULUS_PORT)), timeout=1.5):
-                elapsed_ms = (time.perf_counter() - start) * 1000.0
-                return max(0.0, elapsed_ms)
-        except Exception:
-            return None
-
     def _update_latency_widget(self) -> None:
-        self.network_latency_ms = self._measure_server_latency()
         label, color = classify_latency_ms(self.network_latency_ms)
         self.latency_label.configure(text=label)
         try:
@@ -1122,6 +1140,39 @@ class WebJamEnhancedApp:
                 self.latency_label.configure(fg=color)
         except Exception:
             pass
+
+    def _measure_server_latency_async(self) -> None:
+        if self._latency_probe_inflight:
+            return
+        self._latency_probe_inflight = True
+
+        def _probe() -> None:
+            measured: float | None = None
+            start = time.perf_counter()
+            try:
+                with socket.create_connection((JAMULUS_SERVER, int(JAMULUS_PORT)), timeout=0.45):
+                    measured = max(0.0, (time.perf_counter() - start) * 1000.0)
+            except Exception:
+                measured = None
+            # #region agent log
+            self._debug_log(
+                hypothesis_id="H2",
+                location="webjam_app_enhanced.py:_measure_server_latency_async",
+                message="latency_probe_finished",
+                data={
+                    "latency_ms": None if measured is None else int(measured),
+                    "probe_elapsed_ms": int((time.perf_counter() - start) * 1000),
+                },
+            )
+            # #endregion
+            self.root.after(0, lambda: self._complete_latency_probe(measured))
+
+        threading.Thread(target=_probe, daemon=True).start()
+
+    def _complete_latency_probe(self, measured: float | None) -> None:
+        self._latency_probe_inflight = False
+        self.network_latency_ms = measured
+        self._update_latency_widget()
 
     def _refresh_readiness(self) -> None:
         participant_count = len(self.jamulus_controller.get_participants())
@@ -1142,9 +1193,9 @@ class WebJamEnhancedApp:
         if self.webex_controller.is_connected and self.webex_state in {"Not opened", "Open failed"}:
             self.webex_state = "Opened in browser"
 
-        self._update_latency_widget()
+        self._measure_server_latency_async()
         self._refresh_readiness()
-        self.root.after(2000, self._poll_connection_health)
+        self.root.after(2500, self._poll_connection_health)
 
     def _show_actionable_error(
         self,
@@ -1245,8 +1296,21 @@ class WebJamEnhancedApp:
             level = self.audio_monitor.get_level(channel_id)
             channel.update_vu_meter(level)
         
-        # Schedule next update
-        self.root.after(50, self.update_vu_meters)  # 20 FPS
+        # Lower idle refresh rate to reduce background CPU.
+        interval_ms = 50 if self.mixer_channels else 220
+        # #region agent log
+        if not hasattr(self, "_vu_debug_count"):
+            self._vu_debug_count = 0
+        if self._vu_debug_count < 2:
+            self._debug_log(
+                hypothesis_id="H4",
+                location="webjam_app_enhanced.py:update_vu_meters",
+                message="vu_schedule",
+                data={"participants": len(self.mixer_channels), "interval_ms": interval_ms},
+            )
+            self._vu_debug_count += 1
+        # #endregion
+        self.root.after(interval_ms, self.update_vu_meters)
     
     def add_test_participants(self):
         """Add demo participants to preview mixer controls"""
