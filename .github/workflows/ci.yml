@@ -3,6 +3,7 @@ name: WebJam CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -28,4 +29,43 @@ jobs:
       - name: Run test suite
         run: |
           python -m unittest test_webjam.py test_modernization.py
+
+  build-desktop:
+    name: Build Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build standalone app with PyInstaller
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
+            echo "ARTIFACT=dist/WebJam.exe" >> $GITHUB_ENV
+          else
+            python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
+            echo "ARTIFACT=dist/WebJam" >> $GITHUB_ENV
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webjam-${{ matrix.os }}
+          path: ${{ env.ARTIFACT }}
 
