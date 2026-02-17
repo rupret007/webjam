@@ -195,6 +195,11 @@ pyinstaller --onefile --windowed --name WebJam webjam_app.py
 # The executable will be in dist/WebJam.exe
 ```
 
+### Repository Hygiene
+
+- Build artifacts and large binaries are intentionally ignored in git.
+- Publish installer/exe outputs through **GitHub Releases** instead of committing them to source control.
+
 ## 🔮 Roadmap
 
 ### Upcoming Features

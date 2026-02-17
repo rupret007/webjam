@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime files
+*.log
+*.db
+*.sqlite
+*.tmp
+
+# Build and packaging outputs
+build/
+dist/
+FINAL/
+
+# Generated results
+test_results.json
+
+# Large local binaries (publish via GitHub Releases instead)
+jamulus_3.11.0_win.exe
+webjam_launch_session.exe
