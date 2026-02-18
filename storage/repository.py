@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import hashlib
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -10,6 +11,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
+
+LOGGER = logging.getLogger(__name__)
 
 
 class WebJamRepository:
@@ -221,14 +224,24 @@ class WebJamRepository:
             conn.commit()
 
     def increment_setting(self, key: str, amount: int = 1) -> int:
-        current_raw = self.get_setting(key, "0") or "0"
+        with self._managed_connection() as conn:
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO NOTHING",
+                (key, "0"),
+            )
+            conn.execute(
+                "UPDATE app_settings SET value = CAST(value AS INTEGER) + ? WHERE key = ?",
+                (amount, key),
+            )
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            conn.commit()
+        if not row:
+            return amount
         try:
-            current_val = int(current_raw)
-        except ValueError:
-            current_val = 0
-        new_val = current_val + amount
-        self.set_setting(key, str(new_val))
-        return new_val
+            return int(row[0])
+        except (TypeError, ValueError):
+            return amount
 
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         with self._managed_connection() as conn:
@@ -352,21 +365,34 @@ class WebJamRepository:
 
     def append_cohort_event(self, cohort: str, event_type: str, payload: Dict[str, str]) -> None:
         key = f"cohort_events_{cohort}"
-        current = self.get_setting(key, "[]") or "[]"
-        try:
-            events = json.loads(current)
-            if not isinstance(events, list):
+        with self._managed_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            current = row[0] if row else "[]"
+            try:
+                events = json.loads(current)
+                if not isinstance(events, list):
+                    events = []
+            except json.JSONDecodeError:
                 events = []
-        except Exception:
-            events = []
-        events.append(
-            {
-                "ts": int(time.time()),
-                "event_type": event_type,
-                "payload": payload,
-            }
-        )
-        if len(events) > self._MAX_COHORT_EVENTS:
-            events = events[-self._MAX_COHORT_EVENTS :]
-        self.set_setting(key, json.dumps(events))
+            except TypeError:
+                events = []
+            except Exception as exc:
+                LOGGER.warning("Unexpected cohort event payload decode failure for '%s': %s", key, exc)
+                events = []
+            events.append(
+                {
+                    "ts": int(time.time()),
+                    "event_type": event_type,
+                    "payload": payload,
+                }
+            )
+            if len(events) > self._MAX_COHORT_EVENTS:
+                events = events[-self._MAX_COHORT_EVENTS :]
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, json.dumps(events)),
+            )
+            conn.commit()
 

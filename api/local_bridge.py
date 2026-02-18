@@ -22,6 +22,7 @@ class LocalApiBridge:
         self.get_diagnostics = get_diagnostics
         self.host = host
         self.port = port
+        self._state_lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._server = None
         self._running = False
@@ -50,8 +51,9 @@ class LocalApiBridge:
         return app
 
     def start(self) -> bool:
-        if self._running:
-            return True
+        with self._state_lock:
+            if self._running:
+                return True
         try:
             from fastapi import FastAPI, HTTPException  # type: ignore
             import uvicorn  # type: ignore
@@ -67,20 +69,25 @@ class LocalApiBridge:
             try:
                 self._server.run()
             finally:
-                self._running = False
+                with self._state_lock:
+                    self._running = False
 
-        self._thread = threading.Thread(target=run_server, daemon=True)
-        self._thread.start()
-        self._running = True
+        with self._state_lock:
+            self._thread = threading.Thread(target=run_server, daemon=True)
+            self._thread.start()
+            self._running = True
         return True
 
     def stop(self) -> None:
-        self._running = False
-        if self._server is not None:
+        with self._state_lock:
+            self._running = False
+            server = self._server
+            thread = self._thread
+        if server is not None:
             try:
-                self._server.should_exit = True
+                server.should_exit = True
             except Exception:
                 pass
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2)
+        if thread and thread.is_alive():
+            thread.join(timeout=2)
 

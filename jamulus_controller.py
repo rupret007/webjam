@@ -4,11 +4,14 @@ Provides real-time participant detection and mixer control
 """
 
 import logging
+import os
 import threading
 import time
 from typing import List, Callable, Optional, Dict
 from dataclasses import dataclass
 import json
+import tempfile
+from pathlib import Path
 
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
@@ -114,7 +117,7 @@ class JamulusController:
         """Manually add a participant (for testing or manual setup)"""
         with self._participants_lock:
             if channel_id is None:
-                channel_id = len(self.participants)
+                channel_id = max(self.participants.keys(), default=-1) + 1
 
             participant = JamulusParticipant(
                 channel_id=channel_id,
@@ -260,9 +263,26 @@ class JamulusController:
                 for p in participants
             ]
         }
-        
-        with open(filename, 'w') as f:
-            json.dump(mix_data, f, indent=2)
+        target_path = Path(filename)
+        temp_path = None
+        try:
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f"{target_path.stem}.",
+                suffix=".tmp",
+                dir=str(target_path.parent or Path(".")),
+            )
+            temp_path = Path(temp_name)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(mix_data, f, indent=2)
+            temp_path.replace(target_path)
+        except OSError as exc:
+            self.logger.warning("Failed to save mix file '%s': %s", filename, exc)
+        finally:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
     
     def load_mix(self, filename: str):
         """Load mix from file"""

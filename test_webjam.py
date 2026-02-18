@@ -139,6 +139,18 @@ class TestJamulusController(unittest.TestCase):
         
         self.assertEqual(p1.channel_id, 0)
         self.assertEqual(p2.channel_id, 1)
+
+    def test_add_participant_auto_id_after_removal_no_collision(self):
+        """Test auto IDs do not collide after participant removal"""
+        p1 = self.controller.add_participant("User 1")
+        p2 = self.controller.add_participant("User 2")
+        self.controller.remove_participant(p1.channel_id)
+        p3 = self.controller.add_participant("User 3")
+
+        self.assertEqual(p2.channel_id, 1)
+        self.assertEqual(p3.channel_id, 2)
+        self.assertIn(1, self.controller.participants)
+        self.assertIn(2, self.controller.participants)
     
     def test_remove_participant(self):
         """Test removing participant"""
@@ -254,6 +266,21 @@ class TestJamulusController(unittest.TestCase):
             self.assertEqual(self.controller.participants[0].fader_level, 75)
             self.assertEqual(self.controller.participants[0].pan, 25)
             self.assertTrue(self.controller.participants[1].muted)
+        finally:
+            Path(temp_file).unlink(missing_ok=True)
+
+    def test_save_mix_preserves_existing_file_on_write_error(self):
+        """Test atomic save keeps original file on serialization failure"""
+        self.controller.add_participant("User 1", 0)
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+            temp_file = f.name
+            f.write('{"sentinel": true}')
+        try:
+            with patch("jamulus_controller.json.dump", side_effect=OSError("disk error")):
+                self.controller.save_mix(temp_file)
+            with open(temp_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertEqual(content, '{"sentinel": true}')
         finally:
             Path(temp_file).unlink(missing_ok=True)
 

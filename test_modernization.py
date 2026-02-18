@@ -285,6 +285,15 @@ class TestModernizationCore(unittest.TestCase):
             [r"C:\Jamulus\Jamulus.exe", r"D:\Audio\Jamulus.exe"],
         )
 
+    def test_settings_rejects_out_of_range_jamulus_port_from_env(self):
+        with patch.dict(os.environ, {"WEBJAM_JAMULUS_PORT": "70000"}, clear=False):
+            loaded = load_settings(settings_path="__nonexistent_settings_file__.json")
+        self.assertEqual(loaded.jamulus_port, 22124)
+
+        with patch.dict(os.environ, {"WEBJAM_JAMULUS_PORT": "-2"}, clear=False):
+            loaded_negative = load_settings(settings_path="__nonexistent_settings_file__.json")
+        self.assertEqual(loaded_negative.jamulus_port, 22124)
+
     def test_latency_classification(self):
         self.assertEqual(classify_latency_ms(None)[0], "Latency: n/a")
         self.assertIn("Good", classify_latency_ms(20.0)[0])
@@ -417,6 +426,69 @@ class TestModernizationCore(unittest.TestCase):
             self.assertEqual(len(events), 1000)
             self.assertEqual(events[-1]["event_type"], "event_1104")
             self.assertEqual(events[0]["event_type"], "event_105")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_repository_increment_setting_is_atomic_under_concurrency(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            workers = 10
+            per_worker = 40
+
+            def worker():
+                for _ in range(per_worker):
+                    repo.increment_setting("metric_atomic_counter")
+
+            threads = [threading.Thread(target=worker) for _ in range(workers)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=3)
+
+            final_value = repo.get_setting("metric_atomic_counter")
+            self.assertEqual(final_value, str(workers * per_worker))
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_repository_append_cohort_event_concurrent_no_loss(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            workers = 8
+            per_worker = 25
+
+            def worker(worker_id: int):
+                for idx in range(per_worker):
+                    repo.append_cohort_event(
+                        cohort="concurrent",
+                        event_type=f"w{worker_id}_{idx}",
+                        payload={"worker": str(worker_id)},
+                    )
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(workers)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=3)
+
+            raw = repo.get_setting("cohort_events_concurrent", "[]")
+            events = json.loads(raw or "[]")
+            self.assertEqual(len(events), workers * per_worker)
         finally:
             if os.path.exists(db):
                 for _ in range(10):

@@ -60,11 +60,24 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         raw = os.getenv(env_name)
         if raw is None:
             continue
-        if key in {"jamulus_port", "audio_blocksize", "audio_samplerate"}:
+        if key == "jamulus_port":
             try:
-                data[key] = int(raw)
+                parsed = int(raw)
             except ValueError:
                 continue
+            if 1 <= parsed <= 65535:
+                data[key] = parsed
+            continue
+        if key in {"audio_blocksize", "audio_samplerate"}:
+            try:
+                parsed = int(raw)
+            except ValueError:
+                continue
+            if key == "audio_blocksize" and parsed < 0:
+                continue
+            if key == "audio_samplerate" and parsed <= 0:
+                continue
+            data[key] = parsed
         elif key == "enable_sentry":
             data[key] = raw.strip().lower() in {"1", "true", "yes", "on"}
         elif key == "jamulus_candidates":
