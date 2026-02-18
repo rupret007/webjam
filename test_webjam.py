@@ -257,6 +257,97 @@ class TestJamulusController(unittest.TestCase):
         finally:
             Path(temp_file).unlink(missing_ok=True)
 
+    def test_load_mix_ignores_invalid_payload(self):
+        """Test load_mix tolerates malformed payloads without crashing"""
+        self.controller.add_participant("User 1", 0)
+        self.controller.set_fader_level(0, 77)
+        self.controller.set_pan(0, 33)
+        self.controller.set_mute(0, True)
+
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+            temp_file = f.name
+            f.write('{"not_participants": []}')
+
+        try:
+            self.controller.load_mix(temp_file)
+            self.assertEqual(self.controller.participants[0].fader_level, 77)
+            self.assertEqual(self.controller.participants[0].pan, 33)
+            self.assertTrue(self.controller.participants[0].muted)
+
+            with open(temp_file, "w", encoding="utf-8") as bad_file:
+                bad_file.write("{bad json")
+            self.controller.load_mix(temp_file)
+            self.assertEqual(self.controller.participants[0].fader_level, 77)
+        finally:
+            Path(temp_file).unlink(missing_ok=True)
+
+    def test_load_mix_clamps_and_coerces_values(self):
+        """Test load_mix clamps bounds and coerces value types"""
+        self.controller.add_participant("User 1", 0)
+        self.controller.set_fader_level(0, 100)
+        self.controller.set_pan(0, 50)
+        self.controller.set_mute(0, False)
+        self.controller.set_solo(0, False)
+
+        payload = {
+            "participants": [
+                {
+                    "channel_id": "0",
+                    "fader_level": 1000,
+                    "pan": -200,
+                    "muted": "false",
+                    "solo": "true",
+                }
+            ]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+            temp_file = f.name
+            json.dump(payload, f)
+
+        try:
+            self.controller.load_mix(temp_file)
+            self.assertEqual(self.controller.participants[0].fader_level, 100)
+            self.assertEqual(self.controller.participants[0].pan, 0)
+            self.assertFalse(self.controller.participants[0].muted)
+            self.assertTrue(self.controller.participants[0].solo)
+        finally:
+            Path(temp_file).unlink(missing_ok=True)
+
+    def test_concurrent_participant_access_does_not_crash(self):
+        """Test concurrent participant reads/writes remain stable"""
+        self.controller.add_participant("User 1", 0)
+        self.controller.add_participant("User 2", 1)
+        stop_event = threading.Event()
+        errors = []
+
+        def writer():
+            try:
+                while not stop_event.is_set():
+                    self.controller.set_fader_level(0, 65)
+                    self.controller.set_pan(1, 35)
+                    self.controller.set_mute(0, True)
+                    self.controller.set_mute(0, False)
+            except Exception as exc:
+                errors.append(exc)
+
+        def reader():
+            try:
+                while not stop_event.is_set():
+                    _ = self.controller.get_participants()
+                    self.controller.save_mix(tempfile.NamedTemporaryFile(delete=True, suffix=".json").name)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+        for t in threads:
+            t.start()
+        time.sleep(0.2)
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=2)
+
+        self.assertEqual(errors, [])
+
 
 # ============================================================================
 # UNIT TESTS - JAMULUS AUDIO MONITOR

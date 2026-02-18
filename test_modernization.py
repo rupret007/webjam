@@ -1,11 +1,17 @@
 import os
+import sys
 import tempfile
 import time
+import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from pathlib import Path
+import threading
+import json
 
+from admin.admin_panel import AdminPanel
 from admin.policy import PolicyEngine, UserContext
+from api.local_bridge import LocalApiBridge
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
 from core.settings import AppSettings, load_settings
@@ -17,6 +23,12 @@ from ui.preferences import UiPreferencesService
 from ui.services import MetricsService, RetryService
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
 from ui.views.setup_wizard import SetupWizard
+
+try:
+    from fastapi.testclient import TestClient
+    FASTAPI_TESTCLIENT_AVAILABLE = True
+except Exception:
+    FASTAPI_TESTCLIENT_AVAILABLE = False
 
 
 class TestModernizationCore(unittest.TestCase):
@@ -65,6 +77,45 @@ class TestModernizationCore(unittest.TestCase):
             self.assertEqual(status, "locked")
             _role, status2 = repo.authenticate_with_status("admin", "wrong-password")
             self.assertEqual(status2, "locked")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_repository_lockout_is_stable_under_concurrent_failures(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            repo.ensure_default_admin()
+            statuses: list[str] = []
+            status_lock = threading.Lock()
+
+            def worker():
+                _role, status = repo.authenticate_with_status("admin", "wrong-password")
+                with status_lock:
+                    statuses.append(status)
+
+            threads = [threading.Thread(target=worker) for _ in range(12)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=2)
+
+            self.assertEqual(len(statuses), 12)
+            with repo._managed_connection() as conn:
+                row = conn.execute(
+                    "SELECT failed_attempts, locked_until FROM users WHERE username = ?",
+                    ("admin",),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row[0]), 5)
+            self.assertGreater(int(row[1]), 0)
+            self.assertIn("locked", statuses)
         finally:
             if os.path.exists(db):
                 for _ in range(10):
@@ -349,6 +400,242 @@ class TestModernizationCore(unittest.TestCase):
                         break
                     except PermissionError:
                         time.sleep(0.05)
+
+    def test_repository_append_cohort_event_is_bounded(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            for idx in range(1105):
+                repo.append_cohort_event(
+                    cohort="bounded",
+                    event_type=f"event_{idx}",
+                    payload={"i": str(idx)},
+                )
+            raw = repo.get_setting("cohort_events_bounded", "[]")
+            events = json.loads(raw or "[]")
+            self.assertEqual(len(events), 1000)
+            self.assertEqual(events[-1]["event_type"], "event_1104")
+            self.assertEqual(events[0]["event_type"], "event_105")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_settings_logs_warning_on_malformed_settings_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json", encoding="utf-8") as f:
+            settings_path = f.name
+            f.write("{bad json")
+        try:
+            with self.assertLogs("core.settings", level="WARNING") as captured:
+                loaded = load_settings(settings_path=settings_path)
+            self.assertIsInstance(loaded, AppSettings)
+            self.assertTrue(any("Failed to parse settings file" in line for line in captured.output))
+        finally:
+            if os.path.exists(settings_path):
+                os.remove(settings_path)
+
+    def test_admin_panel_rejects_invalid_port_input(self):
+        repo = Mock()
+        repo.list_settings.return_value = {}
+        panel = AdminPanel(root=Mock(), repository=repo, user=UserContext(username="admin", role="admin"))
+        listbox = Mock()
+
+        with patch("admin.admin_panel.simpledialog.askstring", side_effect=["127.0.0.1", "invalid"]), patch("admin.admin_panel.messagebox.showerror") as showerror:
+            panel._set_endpoint(listbox)
+
+        repo.set_setting.assert_not_called()
+        repo.add_audit.assert_not_called()
+        showerror.assert_called()
+
+    def test_admin_panel_accepts_valid_port_input(self):
+        repo = Mock()
+        repo.list_settings.return_value = {}
+        panel = AdminPanel(root=Mock(), repository=repo, user=UserContext(username="admin", role="admin"))
+        listbox = Mock()
+
+        with patch("admin.admin_panel.simpledialog.askstring", side_effect=["127.0.0.1", "22124"]), patch("admin.admin_panel.messagebox.showinfo") as showinfo:
+            panel._set_endpoint(listbox)
+
+        repo.set_setting.assert_any_call("jamulus_server", "127.0.0.1")
+        repo.set_setting.assert_any_call("jamulus_port", "22124")
+        repo.add_audit.assert_called_once()
+        showinfo.assert_called_once()
+
+    def test_repository_connect_sets_busy_timeout_and_wal_mode(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            with repo._managed_connection() as conn:
+                busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()
+                self.assertIsNotNone(busy_timeout)
+                self.assertGreaterEqual(int(busy_timeout[0]), 5000)
+                journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
+                self.assertIsNotNone(journal_mode)
+                self.assertEqual(str(journal_mode[0]).lower(), "wal")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_local_api_bridge_stop_signals_server_exit(self):
+        class FakeHTTPException(Exception):
+            def __init__(self, status_code: int, detail: str):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
+
+        class FakeFastAPI:
+            def __init__(self, title: str):
+                self.title = title
+                self.routes = {}
+
+            def get(self, path: str):
+                def decorator(fn):
+                    self.routes[path] = fn
+                    return fn
+                return decorator
+
+        class FakeConfig:
+            def __init__(self, app, host, port, log_level):
+                self.app = app
+                self.host = host
+                self.port = port
+                self.log_level = log_level
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+
+            def run(self):
+                while not self.should_exit:
+                    time.sleep(0.01)
+
+        fake_fastapi_module = types.SimpleNamespace(FastAPI=FakeFastAPI, HTTPException=FakeHTTPException)
+        fake_uvicorn_module = types.SimpleNamespace(Config=FakeConfig, Server=FakeServer)
+        bridge = LocalApiBridge(lambda: [], lambda: {})
+
+        with patch.dict(sys.modules, {"fastapi": fake_fastapi_module, "uvicorn": fake_uvicorn_module}):
+            started = bridge.start()
+            self.assertTrue(started)
+            self.assertIsNotNone(bridge._thread)
+            self.assertIsNotNone(bridge._server)
+            self.assertTrue(bridge._thread.is_alive())
+
+            bridge.stop()
+            self.assertFalse(bridge._running)
+            self.assertTrue(bridge._server.should_exit)
+
+    def test_local_api_bridge_wraps_callback_errors(self):
+        class FakeHTTPException(Exception):
+            def __init__(self, status_code: int, detail: str):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
+
+        class FakeFastAPI:
+            def __init__(self, title: str):
+                self.title = title
+                self.routes = {}
+
+            def get(self, path: str):
+                def decorator(fn):
+                    self.routes[path] = fn
+                    return fn
+                return decorator
+
+        class FakeConfig:
+            def __init__(self, app, host, port, log_level):
+                self.app = app
+                self.host = host
+                self.port = port
+                self.log_level = log_level
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+
+            def run(self):
+                # exit quickly so start() can return and we can inspect routes
+                self.should_exit = True
+
+        fake_fastapi_module = types.SimpleNamespace(FastAPI=FakeFastAPI, HTTPException=FakeHTTPException)
+        fake_uvicorn_module = types.SimpleNamespace(Config=FakeConfig, Server=FakeServer)
+        bridge = LocalApiBridge(
+            get_participants=lambda: (_ for _ in ()).throw(RuntimeError("participants exploded")),
+            get_diagnostics=lambda: (_ for _ in ()).throw(RuntimeError("diagnostics exploded")),
+        )
+
+        with patch.dict(sys.modules, {"fastapi": fake_fastapi_module, "uvicorn": fake_uvicorn_module}):
+            started = bridge.start()
+            self.assertTrue(started)
+            participants_handler = bridge._server.config.app.routes["/participants"]
+            diagnostics_handler = bridge._server.config.app.routes["/diagnostics"]
+
+            with self.assertRaises(FakeHTTPException) as participants_err:
+                participants_handler()
+            self.assertEqual(participants_err.exception.status_code, 500)
+            self.assertIn("participants callback failed", participants_err.exception.detail)
+
+            with self.assertRaises(FakeHTTPException) as diagnostics_err:
+                diagnostics_handler()
+            self.assertEqual(diagnostics_err.exception.status_code, 500)
+            self.assertIn("diagnostics callback failed", diagnostics_err.exception.detail)
+
+            bridge.stop()
+
+    @unittest.skipUnless(FASTAPI_TESTCLIENT_AVAILABLE, "FastAPI TestClient not available")
+    def test_local_api_bridge_testclient_endpoints_success(self):
+        bridge = LocalApiBridge(
+            get_participants=lambda: [{"channel_id": 1, "name": "Tester"}],
+            get_diagnostics=lambda: {"backend": "test", "active": "True"},
+        )
+        from fastapi import FastAPI, HTTPException
+
+        app = bridge._create_app(FastAPI, HTTPException)
+        client = TestClient(app)
+
+        health = client.get("/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json(), {"status": "ok"})
+
+        participants = client.get("/participants")
+        self.assertEqual(participants.status_code, 200)
+        self.assertEqual(participants.json()["participants"][0]["name"], "Tester")
+
+        diagnostics = client.get("/diagnostics")
+        self.assertEqual(diagnostics.status_code, 200)
+        self.assertEqual(diagnostics.json()["diagnostics"]["backend"], "test")
+
+    @unittest.skipUnless(FASTAPI_TESTCLIENT_AVAILABLE, "FastAPI TestClient not available")
+    def test_local_api_bridge_testclient_endpoints_failure(self):
+        bridge = LocalApiBridge(
+            get_participants=lambda: (_ for _ in ()).throw(RuntimeError("participants exploded")),
+            get_diagnostics=lambda: (_ for _ in ()).throw(RuntimeError("diagnostics exploded")),
+        )
+        from fastapi import FastAPI, HTTPException
+
+        app = bridge._create_app(FastAPI, HTTPException)
+        client = TestClient(app)
+
+        participants = client.get("/participants")
+        self.assertEqual(participants.status_code, 500)
+        self.assertIn("participants callback failed", participants.json()["detail"])
+
+        diagnostics = client.get("/diagnostics")
+        self.assertEqual(diagnostics.status_code, 500)
+        self.assertIn("diagnostics callback failed", diagnostics.json()["detail"])
 
     def test_ui_preferences_service_roundtrip(self):
         fd, db = tempfile.mkstemp(suffix=".db")
