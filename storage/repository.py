@@ -1,25 +1,44 @@
 from __future__ import annotations
 
+import hmac
 import hashlib
 import json
 import os
 import secrets
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 
 class WebJamRepository:
+    _MAX_COHORT_EVENTS = 1000
+
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or str(Path.home() / ".webjam_app.db")
         self._ensure_schema()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        conn.execute("PRAGMA busy_timeout = 5000")
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.DatabaseError:
+            # Keep default journal mode if WAL is unavailable.
+            pass
+        return conn
+
+    @contextmanager
+    def _managed_connection(self) -> Iterator[sqlite3.Connection]:
+        conn = self._connect()
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -98,7 +117,7 @@ class WebJamRepository:
             conn.commit()
 
     def ensure_default_admin(self) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
             if row and row[0] > 0:
                 return
@@ -129,7 +148,10 @@ class WebJamRepository:
 
     def authenticate_with_status(self, username: str, password: str) -> Tuple[Optional[str], str]:
         now = int(time.time())
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
+            # Serialize login mutation flow so failed_attempt counters remain consistent
+            # under concurrent attempts.
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT salt, password_hash, role, must_change_password, failed_attempts, locked_until FROM users WHERE username = ?",
                 (username,),
@@ -150,7 +172,7 @@ class WebJamRepository:
                 locked_until = 0
 
             actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-            if actual_digest == expected_digest:
+            if hmac.compare_digest(actual_digest, expected_digest):
                 conn.execute(
                     "UPDATE users SET failed_attempts = 0, locked_until = 0 WHERE username = ?",
                     (username,),
@@ -178,7 +200,7 @@ class WebJamRepository:
             return False
         salt = os.urandom(16)
         digest = hashlib.pbkdf2_hmac("sha256", new_password.encode("utf-8"), salt, 120_000)
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             updated = conn.execute(
                 "UPDATE users SET salt = ?, password_hash = ?, must_change_password = 0, failed_attempts = 0, locked_until = 0 "
                 "WHERE username = ?",
@@ -190,7 +212,7 @@ class WebJamRepository:
         return bool(updated)
 
     def set_setting(self, key: str, value: str) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute(
                 "INSERT INTO app_settings (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -209,24 +231,24 @@ class WebJamRepository:
         return new_val
 
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
         if not row:
             return default
         return row[0]
 
     def list_settings(self) -> Dict[str, str]:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             rows = conn.execute("SELECT key, value FROM app_settings ORDER BY key").fetchall()
         return {k: v for k, v in rows}
 
     def delete_setting(self, key: str) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
             conn.commit()
 
     def add_audit(self, action: str, actor: str, details: str) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute(
                 "INSERT INTO audit_log (action, actor, details) VALUES (?, ?, ?)",
                 (action, actor, details),
@@ -234,7 +256,7 @@ class WebJamRepository:
             conn.commit()
 
     def get_audit_log(self, limit: int = 50) -> List[Tuple[int, str, str, str, str]]:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             rows = conn.execute(
                 "SELECT id, action, actor, details, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
                 (limit,),
@@ -242,7 +264,7 @@ class WebJamRepository:
         return rows
 
     def upsert_room_context(self, room_key: str, mode_key: str, template_name: str, session_goal: str, review_state: str = "draft") -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO collaboration_rooms (room_key, mode_key, template_name, session_goal, review_state)
@@ -259,7 +281,7 @@ class WebJamRepository:
             conn.commit()
 
     def get_room_context(self, room_key: str) -> Dict[str, str]:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             row = conn.execute(
                 "SELECT mode_key, template_name, session_goal, review_state FROM collaboration_rooms WHERE room_key = ?",
                 (room_key,),
@@ -279,7 +301,7 @@ class WebJamRepository:
         }
 
     def add_session_artifact(self, room_key: str, title: str, artifact_type: str, reference: str) -> int:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             cur = conn.execute(
                 "INSERT INTO collaboration_artifacts (room_key, title, artifact_type, reference) VALUES (?, ?, ?, ?)",
                 (room_key, title, artifact_type, reference),
@@ -288,12 +310,12 @@ class WebJamRepository:
             return int(cur.lastrowid)
 
     def remove_session_artifact(self, artifact_id: int) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute("DELETE FROM collaboration_artifacts WHERE id = ?", (artifact_id,))
             conn.commit()
 
     def list_session_artifacts(self, room_key: str) -> List[Dict[str, str]]:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             rows = conn.execute(
                 "SELECT id, title, artifact_type, reference, created_at FROM collaboration_artifacts WHERE room_key = ? ORDER BY id DESC",
                 (room_key,),
@@ -310,7 +332,7 @@ class WebJamRepository:
         ]
 
     def save_session_notes(self, room_key: str, notes: str) -> None:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO collaboration_notes (room_key, notes)
@@ -322,7 +344,7 @@ class WebJamRepository:
             conn.commit()
 
     def get_session_notes(self, room_key: str) -> str:
-        with self._connect() as conn:
+        with self._managed_connection() as conn:
             row = conn.execute("SELECT notes FROM collaboration_notes WHERE room_key = ?", (room_key,)).fetchone()
         if not row:
             return ""
@@ -344,5 +366,7 @@ class WebJamRepository:
                 "payload": payload,
             }
         )
+        if len(events) > self._MAX_COHORT_EVENTS:
+            events = events[-self._MAX_COHORT_EVENTS :]
         self.set_setting(key, json.dumps(events))
 
