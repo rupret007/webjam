@@ -14,13 +14,16 @@
 
 ### Runtime and Concurrency
 - Participant map access in `jamulus_controller.py` guarded with `RLock`.
+- Auto-generated participant channel IDs now avoid remove/re-add collisions.
 - `load_mix()` now validates payload shape, coerces types, and clamps ranges.
+- `save_mix()` now uses atomic write/replace semantics to reduce corruption risk on write failures.
 - Local API bridge now stops cleanly and isolates callback failures behind HTTP 500 responses.
-- Repository now uses explicit managed sqlite connections and applies `busy_timeout`/best-effort WAL mode.
+- Repository now uses explicit managed sqlite connections, applies `busy_timeout`/best-effort WAL mode, and performs atomic settings/event updates under concurrent load.
 
 ### Configuration and Docs
 - Admin endpoint host/port validation in `admin/admin_panel.py`.
 - Malformed settings file warnings in `core/settings.py`.
+- Env-driven Jamulus port now enforces `1..65535`; invalid values fall back safely.
 - New env flags documented:
   - `WEBJAM_AGENT_DEBUG_LOG`
   - `WEBJAM_AGENT_DEBUG_LOG_PATH`
@@ -51,4 +54,6 @@
 - `6b2ae75` Harden local API bridge lifecycle and callback error isolation.
 - `3b54447` Expand regression coverage for hardening and edge-case behavior.
 - `328d189` Document runtime defaults and consolidate shared installer helpers.
+- `a365bfa` Add changelog and PR release notes for hardening rollout.
+- `be11e8a` Harden concurrency boundaries and atomicity across repository and controller paths.
 

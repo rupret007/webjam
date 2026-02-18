@@ -12,12 +12,15 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Stability and Runtime Safety
 - Hardened `JamulusController.load_mix()` against malformed files and invalid payload shapes with bounded coercion/clamping.
+- Added atomic mix save behavior (`tempfile` + replace) to reduce partial-write corruption risk.
 - Added participant-state synchronization (`RLock`) across controller and monitor paths to avoid cross-thread mutation hazards.
+- Fixed participant auto-ID allocation after removals to avoid channel ID collisions.
 - Added explicit sqlite connection management helper to prevent lingering connection warnings and improve cleanup reliability.
 - Added sqlite runtime defaults for local repository usage:
   - `busy_timeout=5000`
   - best-effort `journal_mode=WAL`
 - Added bounded retention for cohort telemetry events (latest 1000 kept per cohort key).
+- Updated settings increment and cohort event append paths to run atomically under concurrency.
 
 ### Local API Bridge Resilience
 - Added explicit bridge shutdown signaling and thread join behavior.
@@ -27,6 +30,7 @@ All notable improvements and features for the WebJam music collaboration platfor
 ### Configuration and Operational Updates
 - Added admin endpoint validation for empty host and out-of-range/non-numeric port values.
 - Added warning logging when settings JSON is malformed and defaults are used.
+- Added env bounds validation for `WEBJAM_JAMULUS_PORT` (`1..65535`) and sanity checks for numeric audio env values.
 - Added env-gated startup debug logging controls:
   - `WEBJAM_AGENT_DEBUG_LOG`
   - `WEBJAM_AGENT_DEBUG_LOG_PATH`
