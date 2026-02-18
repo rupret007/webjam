@@ -5,6 +5,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: windows-latest
@@ -31,12 +38,19 @@ jobs:
           python -m unittest test_webjam.py test_modernization.py
 
   build-desktop:
-    name: Build Desktop (${{ matrix.os }})
+    name: Build Desktop (${{ matrix.target }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            target: windows-x64
+          - os: macos-13
+            target: macos-x64
+          - os: macos-14
+            target: macos-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,22 +64,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
 
-      - name: Build standalone app with PyInstaller
+      - name: Build desktop artifact
         shell: bash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          mkdir -p out
+
+          if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
             python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
-            echo "ARTIFACT=dist/WebJam.exe" >> $GITHUB_ENV
+            cp dist/WebJam.exe "out/WebJam-${{ matrix.target }}.exe"
           else
-            python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
-            echo "ARTIFACT=dist/WebJam" >> $GITHUB_ENV
+            # Build a macOS app bundle for distribution.
+            python -m PyInstaller --clean --noconfirm --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
+            ditto -c -k --sequesterRsrc --keepParent dist/WebJam.app "out/WebJam-${{ matrix.target }}.zip"
           fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: webjam-${{ matrix.os }}
-          path: ${{ env.ARTIFACT }}
+          name: webjam-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
 
