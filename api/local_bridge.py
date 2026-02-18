@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 class LocalApiBridge:
@@ -23,17 +23,10 @@ class LocalApiBridge:
         self.host = host
         self.port = port
         self._thread: Optional[threading.Thread] = None
+        self._server = None
         self._running = False
 
-    def start(self) -> bool:
-        if self._running:
-            return True
-        try:
-            from fastapi import FastAPI  # type: ignore
-            import uvicorn  # type: ignore
-        except Exception:
-            return False
-
+    def _create_app(self, FastAPI: Any, HTTPException: Any) -> Any:
         app = FastAPI(title="WebJam Local Bridge")
 
         @app.get("/health")
@@ -42,14 +35,39 @@ class LocalApiBridge:
 
         @app.get("/participants")
         def participants() -> Dict[str, List[Dict]]:
-            return {"participants": self.get_participants()}
+            try:
+                return {"participants": self.get_participants()}
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"participants callback failed: {exc}") from exc
 
         @app.get("/diagnostics")
         def diagnostics() -> Dict[str, Dict[str, str]]:
-            return {"diagnostics": self.get_diagnostics()}
+            try:
+                return {"diagnostics": self.get_diagnostics()}
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"diagnostics callback failed: {exc}") from exc
+
+        return app
+
+    def start(self) -> bool:
+        if self._running:
+            return True
+        try:
+            from fastapi import FastAPI, HTTPException  # type: ignore
+            import uvicorn  # type: ignore
+        except Exception:
+            return False
+
+        app = self._create_app(FastAPI, HTTPException)
+
+        config = uvicorn.Config(app=app, host=self.host, port=self.port, log_level="warning")
+        self._server = uvicorn.Server(config)
 
         def run_server() -> None:
-            uvicorn.run(app, host=self.host, port=self.port, log_level="warning")
+            try:
+                self._server.run()
+            finally:
+                self._running = False
 
         self._thread = threading.Thread(target=run_server, daemon=True)
         self._thread.start()
@@ -57,6 +75,12 @@ class LocalApiBridge:
         return True
 
     def stop(self) -> None:
-        # Uvicorn stop signaling is omitted in this lightweight integration.
         self._running = False
+        if self._server is not None:
+            try:
+                self._server.should_exit = True
+            except Exception:
+                pass
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2)
 
