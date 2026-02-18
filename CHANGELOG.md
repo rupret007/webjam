@@ -4,6 +4,51 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## Unreleased - Reliability and Hardening Rollup
+
+### Security and Data Integrity
+- Added serialized lockout mutation flow in `WebJamRepository.authenticate_with_status()` to avoid race-driven counter drift under concurrent failed authentication attempts.
+- Switched password hash comparison to constant-time `hmac.compare_digest()` during authentication checks.
+
+### Stability and Runtime Safety
+- Hardened `JamulusController.load_mix()` against malformed files and invalid payload shapes with bounded coercion/clamping.
+- Added participant-state synchronization (`RLock`) across controller and monitor paths to avoid cross-thread mutation hazards.
+- Added explicit sqlite connection management helper to prevent lingering connection warnings and improve cleanup reliability.
+- Added sqlite runtime defaults for local repository usage:
+  - `busy_timeout=5000`
+  - best-effort `journal_mode=WAL`
+- Added bounded retention for cohort telemetry events (latest 1000 kept per cohort key).
+
+### Local API Bridge Resilience
+- Added explicit bridge shutdown signaling and thread join behavior.
+- Wrapped `/participants` and `/diagnostics` callback errors into HTTP 500 responses with actionable details.
+- Added lightweight app-construction helper used by integration tests.
+
+### Configuration and Operational Updates
+- Added admin endpoint validation for empty host and out-of-range/non-numeric port values.
+- Added warning logging when settings JSON is malformed and defaults are used.
+- Added env-gated startup debug logging controls:
+  - `WEBJAM_AGENT_DEBUG_LOG`
+  - `WEBJAM_AGENT_DEBUG_LOG_PATH`
+- Updated diagnostics timestamp generation to timezone-aware UTC.
+
+### Tests and Verification
+- Expanded modernization and integration coverage:
+  - auth lockout behavior under concurrency
+  - bounded cohort event retention
+  - API bridge callback error wrapping
+  - TestClient endpoint integration checks (`/health`, `/participants`, `/diagnostics`)
+  - malformed mix payload resilience and clamping/coercion behavior
+- Full regression suites pass:
+  - `python -m unittest test_modernization`
+  - `python -m unittest test_webjam`
+
+### Legacy Launcher Maintenance
+- Extracted low-risk shared installer helpers into `utils/installer_helpers.py`.
+- Rewired legacy launcher paths to use shared helper implementations to reduce maintenance drift.
+
+---
+
 ## Version 2.0 - Enhanced Edition (Current Release)
 
 ### 🎉 Major New Features
