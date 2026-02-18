@@ -10,6 +10,7 @@ from tkinter import ttk, messagebox, simpledialog
 import subprocess
 import webbrowser
 import logging
+import os
 import time
 import threading
 import json
@@ -402,6 +403,10 @@ class WebJamEnhancedApp:
     def __init__(self):
         # #region agent log
         self._debug_run_id = f"run-{int(time.time() * 1000)}"
+        debug_flag = os.getenv("WEBJAM_AGENT_DEBUG_LOG", "")
+        self._agent_debug_enabled = debug_flag.strip().lower() in {"1", "true", "yes", "on"}
+        debug_log_path = os.getenv("WEBJAM_AGENT_DEBUG_LOG_PATH", "").strip()
+        self._agent_debug_log_path = Path(debug_log_path) if debug_log_path else (Path.home() / ".webjam_agent_debug.log")
         # #endregion
         # Setup main window
         if CTK_AVAILABLE:
@@ -486,9 +491,12 @@ class WebJamEnhancedApp:
         self._show_setup_once()
 
     def _debug_log(self, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+        if not self._agent_debug_enabled:
+            return
         try:
+            self._agent_debug_log_path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
-                "sessionId": "65adf8",
+                "sessionId": "agent_debug",
                 "runId": self._debug_run_id,
                 "hypothesisId": hypothesis_id,
                 "location": location,
@@ -496,7 +504,7 @@ class WebJamEnhancedApp:
                 "data": data,
                 "timestamp": int(time.time() * 1000),
             }
-            with open(r"c:\Users\rupret\Desktop\WebJam\debug-65adf8.log", "a", encoding="utf-8") as f:
+            with open(self._agent_debug_log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(payload, separators=(",", ":")) + "\n")
         except Exception:
             pass
@@ -1577,6 +1585,7 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
     
     def cleanup(self):
         """Cleanup on exit"""
+        self.api_bridge.stop()
         self.audio_monitor.stop()
         self.jamulus_controller.stop()
         self.webex_controller.stop()

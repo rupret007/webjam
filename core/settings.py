@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -36,9 +39,9 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             loaded = json.loads(file_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 data.update(loaded)
-        except Exception:
+        except Exception as exc:
             # Keep defaults on malformed settings.
-            pass
+            LOGGER.warning("Failed to parse settings file '%s'; using defaults. Error: %s", file_path, exc)
 
     env_map = {
         "WEBJAM_JAMULUS_SERVER": "jamulus_server",

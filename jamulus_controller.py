@@ -49,6 +49,7 @@ class JamulusController:
         self.callbacks: List[Callable] = []
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
+        self._participants_lock = threading.RLock()
         self.protocol = JamulusProtocolAdapter(self.host, self.port, enabled=False)
         self.audio_engine = RealAudioEngine(self.settings, logger=self.logger.getChild("audio_engine"))
         self.last_error: str = ""
@@ -90,43 +91,53 @@ class JamulusController:
         if not protocol_participants:
             return
 
-        known_ids = set(self.participants.keys())
-        incoming_ids = set(protocol_participants.keys())
+        with self._participants_lock:
+            known_ids = set(self.participants.keys())
+            incoming_ids = set(protocol_participants.keys())
 
-        for channel_id in incoming_ids - known_ids:
-            self.participants[channel_id] = JamulusParticipant(
-                channel_id=channel_id,
-                name=protocol_participants[channel_id],
-            )
+            for channel_id in incoming_ids - known_ids:
+                self.participants[channel_id] = JamulusParticipant(
+                    channel_id=channel_id,
+                    name=protocol_participants[channel_id],
+                )
 
-        for channel_id in known_ids - incoming_ids:
-            del self.participants[channel_id]
+            for channel_id in known_ids - incoming_ids:
+                del self.participants[channel_id]
 
-        for channel_id in incoming_ids & known_ids:
-            self.participants[channel_id].name = protocol_participants[channel_id]
-            self.participants[channel_id].is_connected = True
+            for channel_id in incoming_ids & known_ids:
+                self.participants[channel_id].name = protocol_participants[channel_id]
+                self.participants[channel_id].is_connected = True
 
         self._notify_callbacks()
     
     def add_participant(self, name: str, channel_id: int = None) -> JamulusParticipant:
         """Manually add a participant (for testing or manual setup)"""
-        if channel_id is None:
-            channel_id = len(self.participants)
-        
-        participant = JamulusParticipant(
-            channel_id=channel_id,
-            name=name
-        )
-        self.participants[channel_id] = participant
-        self.protocol.set_cached_participants({cid: p.name for cid, p in self.participants.items()})
+        with self._participants_lock:
+            if channel_id is None:
+                channel_id = len(self.participants)
+
+            participant = JamulusParticipant(
+                channel_id=channel_id,
+                name=name
+            )
+            self.participants[channel_id] = participant
+            cached = {cid: p.name for cid, p in self.participants.items()}
+        self.protocol.set_cached_participants(cached)
         self._notify_callbacks()
         return participant
     
     def remove_participant(self, channel_id: int):
         """Remove a participant"""
-        if channel_id in self.participants:
-            del self.participants[channel_id]
-            self.protocol.set_cached_participants({cid: p.name for cid, p in self.participants.items()})
+        should_notify = False
+        cached = None
+        with self._participants_lock:
+            if channel_id in self.participants:
+                del self.participants[channel_id]
+                cached = {cid: p.name for cid, p in self.participants.items()}
+                should_notify = True
+        if cached is not None:
+            self.protocol.set_cached_participants(cached)
+        if should_notify:
             self._notify_callbacks()
     
     def set_fader_level(self, channel_id: int, level: int):
@@ -136,35 +147,47 @@ class JamulusController:
         In a full implementation, this would send a command to Jamulus.
         For now, we just update our internal state.
         """
-        if channel_id in self.participants:
-            self.participants[channel_id].fader_level = max(0, min(100, level))
-            self._apply_mixer_setting(channel_id)
+        with self._participants_lock:
+            if channel_id in self.participants:
+                self.participants[channel_id].fader_level = max(0, min(100, level))
+            else:
+                return
+        self._apply_mixer_setting(channel_id)
     
     def set_pan(self, channel_id: int, pan: int):
         """Set pan position (0=left, 50=center, 100=right)"""
-        if channel_id in self.participants:
-            self.participants[channel_id].pan = max(0, min(100, pan))
-            self._apply_mixer_setting(channel_id)
+        with self._participants_lock:
+            if channel_id in self.participants:
+                self.participants[channel_id].pan = max(0, min(100, pan))
+            else:
+                return
+        self._apply_mixer_setting(channel_id)
     
     def set_mute(self, channel_id: int, muted: bool):
         """Mute/unmute a channel"""
-        if channel_id in self.participants:
-            self.participants[channel_id].muted = muted
-            self._apply_mixer_setting(channel_id)
+        with self._participants_lock:
+            if channel_id in self.participants:
+                self.participants[channel_id].muted = muted
+            else:
+                return
+        self._apply_mixer_setting(channel_id)
     
     def set_solo(self, channel_id: int, solo: bool):
         """Solo/unsolo a channel"""
-        if channel_id in self.participants:
-            self.participants[channel_id].solo = solo
-            
-            # If soloing, mute all other channels
-            if solo:
-                for cid, p in self.participants.items():
-                    if cid != channel_id:
-                        p.muted = True
-                    else:
-                        p.muted = False
-            self._apply_mixer_setting(channel_id)
+        with self._participants_lock:
+            if channel_id in self.participants:
+                self.participants[channel_id].solo = solo
+
+                # If soloing, mute all other channels
+                if solo:
+                    for cid, p in self.participants.items():
+                        if cid != channel_id:
+                            p.muted = True
+                        else:
+                            p.muted = False
+            else:
+                return
+        self._apply_mixer_setting(channel_id)
     
     def _apply_mixer_setting(self, channel_id: int):
         """
@@ -176,7 +199,8 @@ class JamulusController:
         - Or by implementing the Jamulus network protocol
         - Or by using command-line arguments on launch
         """
-        participant = self.participants.get(channel_id)
+        with self._participants_lock:
+            participant = self.participants.get(channel_id)
         if participant:
             self.protocol.apply_mixer(
                 channel_id=channel_id,
@@ -192,7 +216,8 @@ class JamulusController:
     
     def get_participants(self) -> List[JamulusParticipant]:
         """Get list of all participants"""
-        return list(self.participants.values())
+        with self._participants_lock:
+            return list(self.participants.values())
 
     def get_audio_diagnostics(self) -> Dict[str, str]:
         diag = self.audio_engine.diagnostics()
@@ -220,6 +245,8 @@ class JamulusController:
     
     def save_mix(self, filename: str):
         """Save current mix to file"""
+        with self._participants_lock:
+            participants = list(self.participants.values())
         mix_data = {
             'participants': [
                 {
@@ -230,7 +257,7 @@ class JamulusController:
                     'muted': p.muted,
                     'solo': p.solo
                 }
-                for p in self.participants.values()
+                for p in participants
             ]
         }
         
@@ -239,18 +266,61 @@ class JamulusController:
     
     def load_mix(self, filename: str):
         """Load mix from file"""
-        with open(filename, 'r') as f:
-            mix_data = json.load(f)
-        
-        for p_data in mix_data['participants']:
-            channel_id = p_data['channel_id']
-            if channel_id in self.participants:
+        def _coerce_bool(value: object, default: bool) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in {"1", "true", "yes", "on"}:
+                    return True
+                if lowered in {"0", "false", "no", "off"}:
+                    return False
+            if isinstance(value, (int, float)):
+                return bool(value)
+            return default
+
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                mix_data = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            self.logger.warning("Failed to load mix file '%s': %s", filename, exc)
+            return
+
+        participants_data = mix_data.get("participants") if isinstance(mix_data, dict) else None
+        if not isinstance(participants_data, list):
+            self.logger.warning("Mix file '%s' is missing a valid participants list.", filename)
+            return
+
+        for p_data in participants_data:
+            if not isinstance(p_data, dict):
+                continue
+
+            try:
+                channel_id = int(p_data.get("channel_id"))
+            except (TypeError, ValueError):
+                continue
+
+            with self._participants_lock:
+                if channel_id not in self.participants:
+                    continue
+
                 p = self.participants[channel_id]
-                p.fader_level = p_data['fader_level']
-                p.pan = p_data['pan']
-                p.muted = p_data['muted']
-                p.solo = p_data['solo']
-                self._apply_mixer_setting(channel_id)
+
+                try:
+                    fader_level = int(p_data.get("fader_level", p.fader_level))
+                except (TypeError, ValueError):
+                    fader_level = p.fader_level
+                p.fader_level = max(0, min(100, fader_level))
+
+                try:
+                    pan = int(p_data.get("pan", p.pan))
+                except (TypeError, ValueError):
+                    pan = p.pan
+                p.pan = max(0, min(100, pan))
+
+                p.muted = _coerce_bool(p_data.get("muted", p.muted), p.muted)
+                p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
+            self._apply_mixer_setting(channel_id)
 
 
 class JamulusAudioMonitor:
@@ -287,8 +357,9 @@ class JamulusAudioMonitor:
         """Monitor audio levels"""
         while self.running:
             try:
-                for channel_id in self.controller.participants.keys():
-                    p = self.controller.participants[channel_id]
+                participants = self.controller.get_participants()
+                for p in participants:
+                    channel_id = p.channel_id
                     if not p.muted:
                         self.audio_levels[channel_id] = self.controller.audio_engine.get_level(channel_id)
                     else:

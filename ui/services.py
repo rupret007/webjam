@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Callable
 
@@ -74,9 +74,9 @@ class MetricsService:
         webex_url: str,
         audio_diagnostics: dict[str, Any],
     ) -> Path:
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(UTC)
         snapshot = {
-            "created_at": timestamp.isoformat() + "Z",
+            "created_at": timestamp.isoformat().replace("+00:00", "Z"),
             "jamulus_state": jamulus_state,
             "webex_state": webex_state,
             "latency_ms": latency_ms,

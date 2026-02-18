@@ -56,9 +56,22 @@ class AdminPanel:
         port = simpledialog.askstring("Port", "Jamulus Server Port:")
         if not server or not port:
             return
+        server = server.strip()
+        if not server:
+            messagebox.showerror("Invalid Server", "Server host cannot be empty.")
+            return
+        try:
+            port_number = int(port.strip())
+        except ValueError:
+            messagebox.showerror("Invalid Port", "Port must be a whole number between 1 and 65535.")
+            return
+        if port_number < 1 or port_number > 65535:
+            messagebox.showerror("Invalid Port", "Port must be between 1 and 65535.")
+            return
+
         self.repository.set_setting("jamulus_server", server)
-        self.repository.set_setting("jamulus_port", str(port))
-        self.repository.add_audit("change_endpoint", self.user.username if self.user else "unknown", f"{server}:{port}")
+        self.repository.set_setting("jamulus_port", str(port_number))
+        self.repository.add_audit("change_endpoint", self.user.username if self.user else "unknown", f"{server}:{port_number}")
         self._refresh_settings(listbox)
         messagebox.showinfo("Saved", "Server endpoint updated in local settings.")
 
