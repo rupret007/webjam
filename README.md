@@ -267,6 +267,21 @@ Jamulus candidate paths can also be provided with:
 WEBJAM_JAMULUS_CANDIDATES="C:\Path\Jamulus.exe;D:\Alt\Jamulus.exe"
 ```
 
+Optional debug logging for startup diagnostics:
+```
+WEBJAM_AGENT_DEBUG_LOG=1
+WEBJAM_AGENT_DEBUG_LOG_PATH="C:\Temp\webjam_agent_debug.log"
+```
+
+SQLite runtime defaults (local repository):
+- `busy_timeout` is set to 5000ms to reduce lock errors under concurrent writes.
+- `journal_mode` is set to WAL when supported.
+
+### Legacy Launchers
+
+- `webjam_launch_session.py` and `webjam_win_oneclick.py` are legacy launcher paths.
+- Prefer `webjam_installer.py` for current install/launch behavior.
+
 ## 🤝 Contributing
 
 Contributions welcome! Please:

@@ -15,6 +15,7 @@ import urllib.request
 import urllib.error
 import json
 from pathlib import Path
+from utils.installer_helpers import is_admin, run, find_jamulus as find_jamulus_in_paths, vb_cable_present
 # import webbrowser  # Reserved for future use
 
 # ====== CONFIG ======
@@ -74,17 +75,6 @@ def print_step(step, text):
     print(f"\n[{step}/6] {text}")
     print("-" * 70)
 
-def run(cmd, check=False, shell=False):
-    """Run a command and return result"""
-    return subprocess.run(cmd, check=check, shell=shell, capture_output=True, text=True)
-
-def is_admin():
-    """Check if running with admin privileges"""
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
-        return False
-
 def elevate_if_needed():
     """Re-launch with admin privileges if needed"""
     if not is_admin():
@@ -103,10 +93,7 @@ def elevate_if_needed():
 
 def find_jamulus():
     """Find installed Jamulus executable"""
-    for p in JAMULUS_CANDIDATES:
-        if Path(p).exists():
-            return p
-    return None
+    return find_jamulus_in_paths(JAMULUS_CANDIDATES)
 
 def copy_resource(rel_src: str | Path, dest_dir: Path) -> Path:
     """Copy a resource file to destination"""
@@ -206,24 +193,6 @@ def webex_msi_url_for_host() -> str:
     return WEBEX_MSI_WIN_X64
 
 # ====== VB-Cable Installation ======
-def vb_cable_present():
-    """Check if VB-Cable is installed"""
-    ps = r'''
-    $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\SWD\MMDEVAPI"
-    if (Test-Path $reg) {
-      $all = Get-ChildItem $reg -Recurse -ErrorAction SilentlyContinue | 
-             Get-ItemProperty -ErrorAction SilentlyContinue
-      if ($all.FriendlyName -match "VB-Audio Virtual Cable|CABLE Input|CABLE Output") { 
-        exit 0 
-      } else { 
-        exit 1 
-      }
-    } else { 
-      exit 1 
-    }
-    '''
-    result = run(["powershell", "-NoP", "-NonI", "-Command", ps])
-    return result.returncode == 0
 
 def wait_until(predicate, max_secs, interval, label):
     """Wait until predicate returns True or timeout"""

@@ -8,6 +8,10 @@ import webbrowser
 import glob
 import shutil
 from pathlib import Path
+from utils.installer_helpers import is_admin, run, find_jamulus as find_jamulus_in_paths, vb_cable_present
+
+# Legacy one-click launcher retained for compatibility.
+# Prefer using webjam_installer.py for current installer behavior.
 
 # ====== CONFIG ======
 JAMULUS_SERVER = "172.24.194.9"
@@ -54,15 +58,6 @@ def copy_resource(rel_src: str | Path, dest_dir: Path) -> Path:
     return dst
 
 # ====== helpers ======
-def run(cmd, check=False, shell=False):
-    return subprocess.run(cmd, check=check, shell=shell, capture_output=True, text=True)
-
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
-        return False
-
 def elevate_if_needed():
     if not is_admin():
         params = " ".join([f'"{a}"' for a in sys.argv[1:]])
@@ -70,21 +65,7 @@ def elevate_if_needed():
         sys.exit(0)
 
 def find_jamulus():
-    for p in JAMULUS_CANDIDATES:
-        if Path(p).exists():
-            return p
-    return None
-
-def vb_cable_present():
-    ps = r'''
-    $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\SWD\MMDEVAPI"
-    if (Test-Path $reg) {
-      $all = Get-ChildItem $reg -Recurse -ErrorAction SilentlyContinue | Get-ItemProperty -ErrorAction SilentlyContinue
-      if ($all.FriendlyName -match "VB-Audio Virtual Cable|CABLE Input|CABLE Output") { exit 0 } else { exit 1 }
-    } else { exit 1 }
-    '''
-    r_ = run(["powershell","-NoP","-NonI","-Command", ps])
-    return r_.returncode == 0
+    return find_jamulus_in_paths(JAMULUS_CANDIDATES)
 
 def wait_until(predicate, max_secs, interval, label):
     waited = 0
