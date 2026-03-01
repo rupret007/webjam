@@ -79,12 +79,16 @@ jobs:
           fi
 
       - name: Sign Windows executable (optional)
-        if: matrix.target == 'windows-x64' && secrets.WINDOWS_CODESIGN_PFX != ''
+        if: matrix.target == 'windows-x64'
         shell: pwsh
         env:
           PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
           PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: |
+          if ([string]::IsNullOrEmpty($env:PFX_B64)) {
+            Write-Host "No code-signing cert configured; skipping sign step."
+            exit 0
+          }
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
           $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
