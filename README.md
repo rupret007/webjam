@@ -46,12 +46,15 @@ Each mode configures defaults and prompts, without creating separate products.
 
 ### Installation
 
-1. **Download WebJam Installer**
-   - For Windows: `WebJam_Windows_Install.exe`
-   - For development: Clone this repository
+1. **Download WebJam**
+   - **Windows**: Download `WebJam.exe` (or the Windows build) from the [GitHub Actions artifacts](https://github.com/rupret007/webjam/actions) after a successful CI run, or from [Releases](https://github.com/rupret007/webjam/releases) when published.
+   - **macOS**: Download the matching build from the same place (e.g. `WebJam-macos-x64.zip` or `WebJam-macos-arm64.zip`).
+   - **From source**: Clone this repository and run with Python (see Development below).
 
-2. **Run the Installer**
-   - The installer will automatically set up:
+2. **Run the Installer or App**
+   - If using the **Python installer** (`webjam_installer.py`): run it to set up VB-Cable, Jamulus, Webex, and shortcuts.
+   - If using a **built executable** (`WebJam.exe` or macOS app): no installer required; run the app and use **Help -> Run Setup Wizard** on first launch.
+   - The installer (when used) will set up:
      - VB-Cable (virtual audio device)
      - Jamulus client (latest available installer, with bundled fallback)
      - Webex desktop app (official Cisco MSI by architecture)
@@ -184,7 +187,7 @@ For best results:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/webjam.git
+git clone https://github.com/rupret007/webjam.git
 cd webjam
 
 # Install dependencies
@@ -214,11 +217,13 @@ WebJam/
 # Install PyInstaller
 pip install pyinstaller
 
-# Build the application
-pyinstaller --onefile --windowed --name WebJam webjam_app.py
+# Build the application (entry point is webjam_app_enhanced.py)
+pyinstaller --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
 
-# The executable will be in dist/WebJam.exe
+# The executable will be in dist/WebJam.exe (Windows)
 ```
+
+CI builds (see `.github/workflows/ci.yml`) produce Windows and macOS artifacts on push; download them from the Actions run or from Releases.
 
 ### Repository Hygiene
 
@@ -242,35 +247,24 @@ pyinstaller --onefile --windowed --name WebJam webjam_app.py
 
 ### Custom Server Settings
 
-Edit `webjam_app.py` to change default server:
+Settings are loaded from a single config file and environment variables. To change defaults, edit the config file (see below) or set:
 
-```python
-JAMULUS_SERVER = "your.server.address"
-JAMULUS_PORT = "22124"
-WEBEX_URL = "https://your-webex-meeting-url"
-```
+- `WEBJAM_JAMULUS_SERVER` – Jamulus server host
+- `WEBJAM_JAMULUS_PORT` – Jamulus port (default 22124)
+- `WEBJAM_WEBEX_URL` – Webex meeting URL
+
+You can also edit `core/settings.py` to change default values used when no config exists.
 
 ### Saved Settings Location
 
-Mix settings are saved to:
-```
-Windows: %USERPROFILE%\.webjam_config.json
-```
+App and mix settings use a single config file:
 
-General app settings are loaded from:
-```
-Windows: %USERPROFILE%\.webjam_settings.json
-```
+- **Config file**: `%USERPROFILE%\.webjam_config.json` (Windows) or `~/.webjam_config.json` (macOS/Linux)
 
-Jamulus candidate paths can also be provided with:
+Optional override via environment:
+
 ```
 WEBJAM_JAMULUS_CANDIDATES="C:\Path\Jamulus.exe;D:\Alt\Jamulus.exe"
-```
-
-Optional debug logging for startup diagnostics:
-```
-WEBJAM_AGENT_DEBUG_LOG=1
-WEBJAM_AGENT_DEBUG_LOG_PATH="C:\Temp\webjam_agent_debug.log"
 ```
 
 SQLite runtime defaults (local repository):
@@ -309,7 +303,7 @@ Having issues? Contact us:
 
 - 📧 Email: support@webjam.io
 - 💬 Discord: [WebJam Community](https://discord.gg/webjam)
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/webjam/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/rupret007/webjam/issues)
 
 ---
 

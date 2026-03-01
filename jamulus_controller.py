@@ -119,7 +119,7 @@ class JamulusController:
         with self._participants_lock:
             if channel_id is None:
                 channel_id = max(self.participants.keys(), default=-1) + 1
-
+            participant = JamulusParticipant(
                 channel_id=channel_id,
                 name=name
             )
@@ -168,54 +168,7 @@ class JamulusController:
     
     def set_mute(self, channel_id: int, muted: bool):
         """Mute/unmute a channel"""
-<<<<<<< HEAD
         with self._participants_lock:
-            if channel_id in self.participants:
-                self.participants[channel_id].muted = muted
-            else:
-                return
-        self._apply_mixer_setting(channel_id)
-    
-    def set_solo(self, channel_id: int, solo: bool):
-        """Solo/unsolo a channel"""
-        with self._participants_lock:
-            if channel_id in self.participants:
-                self.participants[channel_id].solo = solo
-
-                # If soloing, mute all other channels
-                if solo:
-                    for cid, p in self.participants.items():
-                        if cid != channel_id:
-                            p.muted = True
-                        else:
-                            p.muted = False
-            else:
-                return
-        self._apply_mixer_setting(channel_id)
-    
-    def _apply_mixer_setting(self, channel_id: int):
-        """
-        Apply mixer settings to Jamulus
-        
-        Implementation notes:
-        - Jamulus stores mixer settings in ini file
-        - Settings can be updated by modifying the ini and reloading
-        - Or by implementing the Jamulus network protocol
-        - Or by using command-line arguments on launch
-        """
-        with self._participants_lock:
-            participant = self.participants.get(channel_id)
-        if participant:
-            self.protocol.apply_mixer(
-                channel_id=channel_id,
-                fader_level=participant.fader_level,
-                pan=participant.pan,
-                muted=participant.muted,
-            )
-            effective_level = participant.fader_level / 100.0
-            if participant.muted:
-=======
-        with self._lock:
             if channel_id not in self.participants:
                 return
             self.participants[channel_id].muted = muted
@@ -223,7 +176,7 @@ class JamulusController:
     
     def set_solo(self, channel_id: int, solo: bool):
         """Solo/unsolo a channel, preserving prior mute state."""
-        with self._lock:
+        with self._participants_lock:
             if channel_id not in self.participants:
                 return
             self.participants[channel_id].solo = solo
@@ -296,7 +249,6 @@ class JamulusController:
     
     def save_mix(self, filename: str):
         """Save current mix to file"""
-<<<<<<< HEAD
         with self._participants_lock:
             participants = list(self.participants.values())
         mix_data = {

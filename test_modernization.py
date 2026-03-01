@@ -852,14 +852,16 @@ class TestModernizationCore(unittest.TestCase):
         controller = JamulusController.__new__(JamulusController)
         import threading
         controller._lock = threading.Lock()
+        controller._participants_lock = threading.RLock()
         controller.participants = {}
+        controller.logger = type("L", (), {"warning": lambda *a, **kw: None, "getChild": lambda *a: type("L", (), {"warning": lambda *a, **kw: None})()})()
         fd, tmp = tempfile.mkstemp(suffix=".json")
         os.close(fd)
         try:
             with open(tmp, "w") as f:
                 f.write('{"bad": true}')
-            with self.assertRaises(ValueError):
-                controller.load_mix(tmp)
+            controller.load_mix(tmp)
+            self.assertEqual(controller.participants, {})
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -873,6 +875,7 @@ class TestModernizationCore(unittest.TestCase):
         ctrl = JamulusController.__new__(JamulusController)
         import threading
         ctrl._lock = threading.Lock()
+        ctrl._participants_lock = threading.RLock()
         ctrl._pre_solo_mute = {}
         ctrl.participants = {}
         ctrl.callbacks = []
@@ -903,6 +906,7 @@ class TestModernizationCore(unittest.TestCase):
         ctrl = JamulusController.__new__(JamulusController)
         import threading
         ctrl._lock = threading.Lock()
+        ctrl._participants_lock = threading.RLock()
         ctrl._pre_solo_mute = {}
         ctrl.participants = {}
         ctrl.callbacks = []
@@ -1000,23 +1004,27 @@ class TestModernizationCore(unittest.TestCase):
         import threading
         ctrl = JamulusController.__new__(JamulusController)
         ctrl._lock = threading.Lock()
+        ctrl._participants_lock = threading.RLock()
         ctrl.participants = {}
-        with self.assertRaises(FileNotFoundError):
-            ctrl.load_mix("__does_not_exist__.json")
+        ctrl.logger = type("L", (), {"warning": lambda *a, **kw: None, "getChild": lambda *a: type("L", (), {"warning": lambda *a, **kw: None})()})()
+        ctrl.load_mix("__does_not_exist__.json")
+        self.assertEqual(ctrl.participants, {})
 
     def test_load_mix_corrupt_json(self):
         from jamulus_controller import JamulusController
         import threading
         ctrl = JamulusController.__new__(JamulusController)
         ctrl._lock = threading.Lock()
+        ctrl._participants_lock = threading.RLock()
         ctrl.participants = {}
+        ctrl.logger = type("L", (), {"warning": lambda *a, **kw: None, "getChild": lambda *a: type("L", (), {"warning": lambda *a, **kw: None})()})()
         fd, tmp = tempfile.mkstemp(suffix=".json")
         os.close(fd)
         try:
             with open(tmp, "w") as f:
                 f.write("{broken json")
-            with self.assertRaises(ValueError):
-                ctrl.load_mix(tmp)
+            ctrl.load_mix(tmp)
+            self.assertEqual(ctrl.participants, {})
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)

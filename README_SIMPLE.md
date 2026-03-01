@@ -8,9 +8,9 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 
 ## 1) Install
 
-1. Run the WebJam installer.
-2. If prompted, restart your PC.
-3. Launch WebJam.
+1. **Get the app**: Download `WebJam.exe` (Windows) or the macOS build from [GitHub Actions](https://github.com/rupret007/webjam/actions) or [Releases](https://github.com/rupret007/webjam/releases). Or clone the repo and run the Python installer (`webjam_installer.py`) to set up VB-Cable, Jamulus, and Webex.
+2. If prompted, restart your PC after installing drivers.
+3. Launch WebJam (desktop shortcut or run the app).
 
 ## 2) First Launch
 

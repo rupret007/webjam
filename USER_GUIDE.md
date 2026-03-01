@@ -71,24 +71,23 @@ Modes set defaults and prompts; collaboration primitives stay shared.
 
 ### Installation Steps
 
-1. **Download WebJam Installer**
-   - Download `WebJam_Installer.exe` from the distribution package
-   - Right-click and select "Run as Administrator"
+1. **Get WebJam**
+   - **Option A (recommended)**: Download the built app from [GitHub Actions](https://github.com/rupret007/webjam/actions) (artifacts after a successful run) or [Releases](https://github.com/rupret007/webjam/releases). Use `WebJam.exe` on Windows or the macOS app/zip for your architecture.
+   - **Option B**: Clone the repo and run the Python installer script `webjam_installer.py` (run as Administrator) to install VB-Cable, Jamulus, Webex, and create shortcuts.
 
-2. **Follow Installation Wizard**
-   - The installer will automatically install:
+2. **Follow Installation Wizard** (if using Option B)
+   - The installer will set up:
      - VB-Cable virtual audio device
      - Jamulus audio client
-     - WebJam GUI application
-   - Click "Install" when prompted for VB-Cable driver
+     - Webex desktop app (official Cisco MSI by architecture)
+     - WebJam GUI and desktop shortcut
+   - Click "Install" when prompted for VB-Cable driver.
 
 3. **Restart Computer** (if prompted)
-   - Required if VB-Cable was just installed
-   - Ensures audio devices are properly recognized
+   - Required if VB-Cable was just installed.
 
 4. **Launch WebJam**
-   - Find "WebJam" shortcut on your Desktop
-   - Or search for "WebJam" in Start Menu
+   - Use the desktop shortcut, or run `WebJam.exe` (built app) or `python webjam_app_enhanced.py` (from source).
 
 ---
 
@@ -557,7 +556,7 @@ These preferences persist across sessions.
 
 - **Email**: support@webjam.io
 - **Discord**: [WebJam Community](https://discord.gg/webjam)
-- **GitHub**: [Report Issues](https://github.com/yourusername/webjam/issues)
+- **GitHub**: [Report Issues](https://github.com/rupret007/webjam/issues)
 - **Jamulus Help**: [jamulus.io](https://jamulus.io)
 - **Webex Help**: [help.webex.com](https://help.webex.com)
 
