@@ -128,17 +128,22 @@ class WebJamRepository:
             password = secrets.token_urlsafe(12)
             salt = os.urandom(16)
             digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-            conn.execute(
-                "INSERT INTO users (username, salt, password_hash, role, must_change_password, failed_attempts, locked_until) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (username, salt, digest, "admin", 1, 0, 0),
-            )
-            conn.execute(
-                "INSERT INTO app_settings (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                ("admin_bootstrap_password", password),
-            )
-            conn.commit()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    "INSERT INTO users (username, salt, password_hash, role, must_change_password, failed_attempts, locked_until) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (username, salt, digest, "admin", 1, 0, 0),
+                )
+                conn.execute(
+                    "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    ("admin_bootstrap_password", password),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def get_bootstrap_admin_password(self) -> Optional[str]:
         return self.get_setting("admin_bootstrap_password")
@@ -199,7 +204,7 @@ class WebJamRepository:
             return None, status
 
     def update_password(self, username: str, new_password: str) -> bool:
-        if not new_password or len(new_password) < 8:
+        if not new_password or len(new_password) < 8 or len(new_password) > 128:
             return False
         salt = os.urandom(16)
         digest = hashlib.pbkdf2_hmac("sha256", new_password.encode("utf-8"), salt, 120_000)
@@ -362,6 +367,8 @@ class WebJamRepository:
         if not row:
             return ""
         return row[0]
+
+    _MAX_COHORT_EVENTS = 1000
 
     def append_cohort_event(self, cohort: str, event_type: str, payload: Dict[str, str]) -> None:
         key = f"cohort_events_{cohort}"

@@ -728,49 +728,52 @@ class TestCodeQuality(unittest.TestCase):
         """Test jamulus_controller.py has no syntax errors"""
         import py_compile
         import tempfile
-        
+
+        _root = Path(__file__).resolve().parent
+        temp_file = None
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            
-            py_compile.compile('jamulus_controller.py', temp_file, doraise=True)
-            self.assertTrue(True)  # If we get here, syntax is valid
+            py_compile.compile(str(_root / 'jamulus_controller.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in jamulus_controller.py: {e}")
         finally:
-            Path(temp_file).unlink(missing_ok=True)
-    
+            if temp_file:
+                Path(temp_file).unlink(missing_ok=True)
+
     def test_syntax_webex_integration(self):
         """Test webex_integration.py has no syntax errors"""
         import py_compile
         import tempfile
-        
+
+        _root = Path(__file__).resolve().parent
+        temp_file = None
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            
-            py_compile.compile('webex_integration.py', temp_file, doraise=True)
-            self.assertTrue(True)
+            py_compile.compile(str(_root / 'webex_integration.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in webex_integration.py: {e}")
         finally:
-            Path(temp_file).unlink(missing_ok=True)
-    
+            if temp_file:
+                Path(temp_file).unlink(missing_ok=True)
+
     def test_syntax_webjam_app_enhanced(self):
         """Test webjam_app_enhanced.py has no syntax errors"""
         import py_compile
         import tempfile
-        
+
+        _root = Path(__file__).resolve().parent
+        temp_file = None
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            
-            py_compile.compile('webjam_app_enhanced.py', temp_file, doraise=True)
-            self.assertTrue(True)
+            py_compile.compile(str(_root / 'webjam_app_enhanced.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in webjam_app_enhanced.py: {e}")
         finally:
-            Path(temp_file).unlink(missing_ok=True)
+            if temp_file:
+                Path(temp_file).unlink(missing_ok=True)
     
     def test_imports_available(self):
         """Test all required imports are available"""

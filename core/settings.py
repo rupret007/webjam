@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
-LOGGER = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,7 +31,7 @@ class AppSettings:
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
     base = AppSettings()
-    file_path = Path(settings_path or (Path.home() / ".webjam_settings.json"))
+    file_path = Path(settings_path or base.config_file)
     data = asdict(base)
 
     if file_path.exists():
@@ -40,8 +40,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if isinstance(loaded, dict):
                 data.update(loaded)
         except Exception as exc:
-            # Keep defaults on malformed settings.
-            LOGGER.warning("Failed to parse settings file '%s'; using defaults. Error: %s", file_path, exc)
+            _logger.warning("Failed to parse settings file %s: %s – using defaults", file_path, exc)
 
     env_map = {
         "WEBJAM_JAMULUS_SERVER": "jamulus_server",
@@ -85,5 +84,17 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         else:
             data[key] = raw
 
-    return AppSettings(**data)
+    settings = AppSettings(**data)
+
+    if not (1 <= settings.jamulus_port <= 65535):
+        _logger.warning("jamulus_port %d out of range; resetting to 22124", settings.jamulus_port)
+        settings = AppSettings(**{**asdict(settings), "jamulus_port": 22124})
+    if settings.audio_blocksize < 0:
+        _logger.warning("audio_blocksize %d negative; resetting to 0", settings.audio_blocksize)
+        settings = AppSettings(**{**asdict(settings), "audio_blocksize": 0})
+    if settings.audio_samplerate <= 0:
+        _logger.warning("audio_samplerate %d invalid; resetting to 48000", settings.audio_samplerate)
+        settings = AppSettings(**{**asdict(settings), "audio_samplerate": 48000})
+
+    return settings
 

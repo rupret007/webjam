@@ -68,14 +68,13 @@ jobs:
       - name: Build desktop artifact
         shell: bash
         run: |
+          HIDDEN="--hidden-import=customtkinter --hidden-import=numpy --hidden-import=sounddevice --hidden-import=fastapi --hidden-import=uvicorn"
           mkdir -p out
-
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
-            python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
+            python -m PyInstaller --clean --noconfirm --onefile --windowed --name WebJam $HIDDEN webjam_app_enhanced.py
             cp dist/WebJam.exe "out/WebJam-${{ matrix.target }}.exe"
           else
-            # Build a macOS app bundle for distribution.
-            python -m PyInstaller --clean --noconfirm --windowed --name WebJam --hidden-import=customtkinter webjam_app_enhanced.py
+            python -m PyInstaller --clean --noconfirm --windowed --name WebJam $HIDDEN webjam_app_enhanced.py
             ditto -c -k --sequesterRsrc --keepParent dist/WebJam.app "out/WebJam-${{ matrix.target }}.zip"
           fi
 
@@ -86,4 +85,3 @@ jobs:
           path: out/*
           if-no-files-found: error
           retention-days: 14
-

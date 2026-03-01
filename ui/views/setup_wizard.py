@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import messagebox
 from typing import Callable
@@ -6,6 +7,7 @@ import socket
 import time
 
 from core.settings import AppSettings, load_settings
+from ui.theme import DEFAULT_THEME
 
 
 class SetupWizard:
@@ -20,7 +22,11 @@ class SetupWizard:
         diagnostics_provider: Callable[[], dict[str, str]] | None = None,
         mode_label: str = "Music Jam",
         mode_help: str = "",
+        bg_color: str | None = None,
+        fg_color: str | None = None,
     ):
+        self._bg = bg_color or DEFAULT_THEME.bg_secondary
+        self._fg = fg_color or DEFAULT_THEME.text_primary
         self.root = root
         self.on_complete = on_complete
         self.settings = settings or load_settings()
@@ -51,15 +57,16 @@ class SetupWizard:
         self.window.resizable(False, False)
         self.window.grab_set()
         self.window.transient(self.root)
+        self.window.configure(bg=self._bg)
         self.window.protocol("WM_DELETE_WINDOW", self._close_without_complete)
 
-        frame = tk.Frame(self.window, padx=16, pady=16)
+        frame = tk.Frame(self.window, padx=16, pady=16, bg=self._bg)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        title = tk.Label(frame, textvariable=self.title_var, font=("Arial", 15, "bold"), anchor="w", justify=tk.LEFT)
+        title = tk.Label(frame, textvariable=self.title_var, font=("Arial", 15, "bold"), anchor="w", justify=tk.LEFT, bg=self._bg, fg=self._fg)
         title.pack(fill=tk.X, pady=(0, 8))
 
-        body = tk.Label(frame, textvariable=self.body_var, justify=tk.LEFT, anchor="nw", font=("Arial", 10), wraplength=640)
+        body = tk.Label(frame, textvariable=self.body_var, justify=tk.LEFT, anchor="nw", font=("Arial", 10), wraplength=640, bg=self._bg, fg=self._fg)
         body.pack(fill=tk.X, pady=(0, 12))
 
         results_box = tk.Text(frame, height=11, width=76, state=tk.DISABLED, wrap=tk.WORD)
@@ -151,10 +158,14 @@ class SetupWizard:
                 "3) Verify participants and adjust mixer levels\n"
                 "4) Save your mix preset"
             )
-            passed = sum(1 for _, ok, _ in self.check_results if ok)
-            total = len(self.check_results)
-            self._set_results_text("Setup complete. You can re-open this wizard from Help -> Run Setup Wizard.")
-            self.summary_var.set(f"Checks passed: {passed}/{total}. Click Finish.")
+            if self.check_results:
+                passed = sum(1 for _, ok, _ in self.check_results if ok)
+                total = len(self.check_results)
+                self._set_results_text("Setup complete. You can re-open this wizard from Help -> Run Setup Wizard.")
+                self.summary_var.set(f"Checks passed: {passed}/{total}. Click Finish.")
+            else:
+                self._set_results_text("No preflight checks were run. You can run them from Step 2 at any time.")
+                self.summary_var.set("Checks passed: 0/0 (skipped). Click Finish.")
 
         if self.back_btn is not None:
             self.back_btn.configure(state=(tk.NORMAL if self.step_index > 0 else tk.DISABLED))
@@ -195,18 +206,26 @@ class SetupWizard:
         results: list[tuple[str, bool, str]] = []
 
         jamulus_path = find_jamulus()
-        jamulus_ok = jamulus_path is not None
-        jamulus_detail = (
-            f"Jamulus found at: {jamulus_path}"
-            if jamulus_ok
-            else "Jamulus executable not found in default install paths. Run installer or install Jamulus manually."
-        )
+        jamulus_ok = jamulus_path is not None and os.access(jamulus_path, os.X_OK)
+        if jamulus_path and not os.access(jamulus_path, os.X_OK):
+            jamulus_detail = f"Found {jamulus_path} but it is not marked as executable."
+        elif jamulus_ok:
+            jamulus_detail = f"Jamulus found at: {jamulus_path}"
+        else:
+            jamulus_detail = "Jamulus executable not found in default install paths. Run installer or install Jamulus manually."
         results.append(("Jamulus executable", jamulus_ok, jamulus_detail))
 
         host = settings.jamulus_server
-        port = int(settings.jamulus_port)
-        server_ok, server_detail = SetupWizard.check_tcp_hint(host, port)
-        results.append(("Jamulus server reachability", server_ok, server_detail))
+        try:
+            port = int(settings.jamulus_port)
+            if not (1 <= port <= 65535):
+                raise ValueError("out of range")
+        except (ValueError, TypeError):
+            results.append(("Jamulus server reachability", False, f"Invalid port: {settings.jamulus_port}"))
+            port = None
+        if port is not None:
+            server_ok, server_detail = SetupWizard.check_tcp_hint(host, port)
+            results.append(("Jamulus server reachability", server_ok, server_detail))
 
         webex_ok, webex_detail = SetupWizard.check_webex_url(settings.webex_url)
         results.append(("Webex URL", webex_ok, webex_detail))
@@ -232,20 +251,21 @@ class SetupWizard:
 
     @staticmethod
     def check_tcp_hint(host: str, port: int, retries: int = 3) -> tuple[bool, str]:
-        # Jamulus uses UDP, but a quick DNS/socket hint still helps catch obvious config errors.
+        """TCP connectivity hint. Jamulus uses UDP, so this only verifies DNS and basic network path."""
         last_exc: Exception | None = None
+        note = " (Note: Jamulus uses UDP; this TCP check is a hint only.)"
         for attempt in range(retries):
             try:
                 with socket.create_connection((host, port), timeout=1.5):
                     if attempt == 0:
-                        return True, f"Resolved and reached {host}:{port}."
-                    return True, f"Reached {host}:{port} after retry {attempt}."
+                        return True, f"Resolved and reached {host}:{port}.{note}"
+                    return True, f"Reached {host}:{port} after retry {attempt}.{note}"
             except Exception as exc:
                 last_exc = exc
                 if attempt < retries - 1:
                     time.sleep(0.25 * (attempt + 1))
         return False, (
             f"Could not reach {host}:{port} after {retries} attempts ({last_exc}). "
-            "Confirm server/port and network path, then retry."
+            f"Confirm server/port and network path, then retry.{note}"
         )
 

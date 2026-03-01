@@ -50,6 +50,8 @@ class JamulusController:
         self.port = port
         self.participants: Dict[int, JamulusParticipant] = {}
         self.callbacks: List[Callable] = []
+        self._lock = threading.Lock()
+        self._pre_solo_mute: Dict[int, bool] = {}
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
         self._participants_lock = threading.RLock()
@@ -95,7 +97,6 @@ class JamulusController:
             return
 
         with self._participants_lock:
-            known_ids = set(self.participants.keys())
             incoming_ids = set(protocol_participants.keys())
 
             for channel_id in incoming_ids - known_ids:
@@ -119,7 +120,6 @@ class JamulusController:
             if channel_id is None:
                 channel_id = max(self.participants.keys(), default=-1) + 1
 
-            participant = JamulusParticipant(
                 channel_id=channel_id,
                 name=name
             )
@@ -168,6 +168,7 @@ class JamulusController:
     
     def set_mute(self, channel_id: int, muted: bool):
         """Mute/unmute a channel"""
+<<<<<<< HEAD
         with self._participants_lock:
             if channel_id in self.participants:
                 self.participants[channel_id].muted = muted
@@ -213,8 +214,51 @@ class JamulusController:
             )
             effective_level = participant.fader_level / 100.0
             if participant.muted:
+=======
+        with self._lock:
+            if channel_id not in self.participants:
+                return
+            self.participants[channel_id].muted = muted
+        self._apply_mixer_setting(channel_id)
+    
+    def set_solo(self, channel_id: int, solo: bool):
+        """Solo/unsolo a channel, preserving prior mute state."""
+        with self._lock:
+            if channel_id not in self.participants:
+                return
+            self.participants[channel_id].solo = solo
+            if solo:
+                self._pre_solo_mute = {
+                    cid: p.muted for cid, p in self.participants.items()
+                }
+                for cid, p in self.participants.items():
+                    p.muted = cid != channel_id
+            else:
+                for cid, p in self.participants.items():
+                    p.muted = self._pre_solo_mute.get(cid, False)
+                self._pre_solo_mute.clear()
+        self._apply_mixer_setting(channel_id)
+    
+    def _apply_mixer_setting(self, channel_id: int):
+        """Apply mixer settings to Jamulus via protocol adapter and audio engine."""
+        with self._participants_lock:
+            participant = self.participants.get(channel_id)
+            if not participant:
+                return
+            fader_level = participant.fader_level
+            pan = participant.pan
+            muted = participant.muted
+            effective_level = fader_level / 100.0
+            if muted:
                 effective_level = 0.0
-            self.audio_engine.set_level_override(channel_id, effective_level)
+
+        self.protocol.apply_mixer(
+            channel_id=channel_id,
+            fader_level=fader_level,
+            pan=pan,
+            muted=muted,
+        )
+        self.audio_engine.set_level_override(channel_id, effective_level)
         self._notify_callbacks()
     
     def get_participants(self) -> List[JamulusParticipant]:
@@ -236,18 +280,23 @@ class JamulusController:
     
     def register_callback(self, callback: Callable):
         """Register a callback for participant updates"""
-        self.callbacks.append(callback)
+        with self._lock:
+            self.callbacks.append(callback)
     
     def _notify_callbacks(self):
         """Notify all registered callbacks of changes"""
-        for callback in self.callbacks:
+        with self._lock:
+            snapshot = list(self.callbacks)
+        participants = self.get_participants()
+        for callback in snapshot:
             try:
-                callback(self.get_participants())
+                callback(participants)
             except Exception as e:
                 self.logger.warning("Callback error: %s", e)
     
     def save_mix(self, filename: str):
         """Save current mix to file"""
+<<<<<<< HEAD
         with self._participants_lock:
             participants = list(self.participants.values())
         mix_data = {
@@ -342,7 +391,6 @@ class JamulusController:
                 p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
             self._apply_mixer_setting(channel_id)
 
-
 class JamulusAudioMonitor:
     """
     Monitor audio levels from Jamulus
@@ -356,6 +404,7 @@ class JamulusAudioMonitor:
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
         self.audio_levels: Dict[int, float] = {}
+        self._levels_lock = threading.Lock()
         self.logger = self.controller.logger.getChild("audio_monitor")
     
     def start(self):
@@ -377,23 +426,29 @@ class JamulusAudioMonitor:
         """Monitor audio levels"""
         while self.running:
             try:
-                participants = self.controller.get_participants()
-                for p in participants:
-                    channel_id = p.channel_id
-                    if not p.muted:
-                        self.audio_levels[channel_id] = self.controller.audio_engine.get_level(channel_id)
+                with self.controller._participants_lock:
+                    snapshot = [
+                        (cid, p.muted) for cid, p in self.controller.participants.items()
+                    ]
+                levels = {}
+                for channel_id, muted in snapshot:
+                    if not muted:
+                        levels[channel_id] = self.controller.audio_engine.get_level(channel_id)
                     else:
-                        self.audio_levels[channel_id] = 0.0
-                
-                time.sleep(0.05)  # 20 times per second
-                
+                        levels[channel_id] = 0.0
+                with self._levels_lock:
+                    self.audio_levels = levels
+
+                time.sleep(0.05)
+
             except Exception as e:
                 self.logger.warning("Audio monitoring error: %s", e)
                 time.sleep(1)
     
     def get_level(self, channel_id: int) -> float:
         """Get current audio level for channel (0.0-1.0)"""
-        return self.audio_levels.get(channel_id, 0.0)
+        with self._levels_lock:
+            return self.audio_levels.get(channel_id, 0.0)
 
 
 # Protocol constants for future implementation

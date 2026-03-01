@@ -53,6 +53,7 @@ class WebexController:
         self.is_connected = False
         self.participants: Dict[str, WebexParticipant] = {}
         self.callbacks: List[Callable] = []
+        self._lock = threading.Lock()
         self.monitor_thread: Optional[threading.Thread] = None
         self.running = False
         self.last_error: str = ""
@@ -124,66 +125,73 @@ class WebexController:
     
     def add_participant(self, participant: WebexParticipant):
         """Add a participant to the tracking"""
-        self.participants[participant.id] = participant
+        with self._lock:
+            self.participants[participant.id] = participant
         self._notify_callbacks()
     
     def remove_participant(self, participant_id: str):
         """Remove a participant from tracking"""
-        if participant_id in self.participants:
+        with self._lock:
+            if participant_id not in self.participants:
+                return
             del self.participants[participant_id]
-            self._notify_callbacks()
+        self._notify_callbacks()
     
     def get_participants(self) -> List[WebexParticipant]:
         """Get list of all participants"""
-        return list(self.participants.values())
+        with self._lock:
+            return list(self.participants.values())
     
     def register_callback(self, callback: Callable):
         """Register callback for participant updates"""
-        self.callbacks.append(callback)
+        with self._lock:
+            self.callbacks.append(callback)
     
     def _notify_callbacks(self):
         """Notify all registered callbacks"""
-        for callback in self.callbacks:
+        with self._lock:
+            snapshot = list(self.callbacks)
+        participants = self.get_participants()
+        for callback in snapshot:
             try:
-                callback(self.get_participants())
+                callback(participants)
             except Exception as e:
                 self.logger.warning("Callback error: %s", e)
     
-    def mute_audio(self, participant_id: str = None):
-        """
-        Mute audio (self or specific participant if host)
-        
-        Args:
-            participant_id: ID of participant to mute, or None for self
-        """
+    def mute_audio(self, participant_id: str = None) -> bool:
+        """Mute audio (self or specific participant if host)"""
         if participant_id:
-            if participant_id in self.participants:
+            with self._lock:
+                if participant_id not in self.participants:
+                    return False
                 self.participants[participant_id].is_audio_on = False
-        # Future: webex_sdk.mute_participant(participant_id)
         return True
-    
-    def unmute_audio(self, participant_id: str = None):
+
+    def unmute_audio(self, participant_id: str = None) -> bool:
         """Unmute audio"""
         if participant_id:
-            if participant_id in self.participants:
+            with self._lock:
+                if participant_id not in self.participants:
+                    return False
                 self.participants[participant_id].is_audio_on = True
-        # Future: webex_sdk.unmute_participant(participant_id)
         return True
-    
-    def enable_video(self, participant_id: str = None):
+
+    def enable_video(self, participant_id: str = None) -> bool:
         """Enable video"""
         if participant_id:
-            if participant_id in self.participants:
+            with self._lock:
+                if participant_id not in self.participants:
+                    return False
                 self.participants[participant_id].is_video_on = True
-        # Future: webex_sdk.enable_video(participant_id)
         return True
-    
-    def disable_video(self, participant_id: str = None):
+
+    def disable_video(self, participant_id: str = None) -> bool:
         """Disable video"""
         if participant_id:
-            if participant_id in self.participants:
+            with self._lock:
+                if participant_id not in self.participants:
+                    return False
                 self.participants[participant_id].is_video_on = False
-        # Future: webex_sdk.disable_video(participant_id)
         return True
     
     def start_screen_share(self):
@@ -304,20 +312,27 @@ class WebexConfig:
     
     def load_config(self) -> Dict:
         """Load Webex configuration"""
-        if self.config_file.exists():
-            with open(self.config_file, 'r') as f:
-                return json.load(f)
-        return {
+        default = {
             'default_meeting_url': '',
             'auto_join': False,
             'default_name': '',
-            'embedded_mode': False,  # Future feature
-            'sync_with_jamulus': True
+            'embedded_mode': False,
+            'sync_with_jamulus': True,
         }
-    
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    return loaded
+            except (json.JSONDecodeError, OSError):
+                pass
+        return default
+
     def save_config(self):
         """Save Webex configuration"""
-        with open(self.config_file, 'w') as f:
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(self.config, f, indent=2)
     
     def get(self, key: str, default=None):

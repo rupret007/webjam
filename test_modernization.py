@@ -295,7 +295,7 @@ class TestModernizationCore(unittest.TestCase):
         self.assertEqual(loaded_negative.jamulus_port, 22124)
 
     def test_latency_classification(self):
-        self.assertEqual(classify_latency_ms(None)[0], "Latency: n/a")
+        self.assertIn("n/a", classify_latency_ms(None)[0])
         self.assertIn("Good", classify_latency_ms(20.0)[0])
         self.assertIn("Fair", classify_latency_ms(45.0)[0])
         self.assertIn("Poor", classify_latency_ms(120.0)[0])
@@ -776,6 +776,250 @@ class TestModernizationCore(unittest.TestCase):
             self.assertFalse(controller.authorize(None, "save_mix", require_sign_in=True))
             self.assertTrue(controller.authorize(admin, "bulk_reset", require_sign_in=False))
             self.assertFalse(controller.authorize(performer, "bulk_reset", require_sign_in=False))
+
+
+    def test_increment_setting_atomicity(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            self.assertEqual(repo.increment_setting("counter", 1), 1)
+            self.assertEqual(repo.increment_setting("counter", 5), 6)
+            self.assertEqual(repo.get_setting("counter"), "6")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_check_tcp_hint_invalid_port(self):
+        ok, detail = SetupWizard.check_tcp_hint("127.0.0.1", 0, retries=1)
+        self.assertFalse(ok)
+        self.assertIn("TCP check is a hint only", detail)
+
+    def test_preferences_boolean_case_insensitivity(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            repo.set_setting("ui_high_contrast", "True")
+            repo.set_setting("ui_auto_setup_on_start", "YES")
+            prefs = UiPreferencesService(repo).load()
+            self.assertTrue(prefs.high_contrast_enabled)
+            self.assertTrue(prefs.auto_setup_enabled)
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_geometry_validation_rejects_garbage(self):
+        from ui.preferences import _is_valid_geometry
+        self.assertTrue(_is_valid_geometry("1600x900"))
+        self.assertTrue(_is_valid_geometry("800x600+10+10"))
+        self.assertFalse(_is_valid_geometry("garbage"))
+        self.assertFalse(_is_valid_geometry(""))
+        self.assertFalse(_is_valid_geometry("x100"))
+
+    def test_config_validation_clamps_bad_port(self):
+        settings = load_settings()
+        self.assertTrue(1 <= settings.jamulus_port <= 65535)
+
+    def test_password_max_length_rejected(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            repo.ensure_default_admin()
+            self.assertFalse(repo.update_password("admin", "A" * 200))
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_load_mix_validates_structure(self):
+        from jamulus_controller import JamulusController
+        controller = JamulusController.__new__(JamulusController)
+        import threading
+        controller._lock = threading.Lock()
+        controller.participants = {}
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(tmp, "w") as f:
+                f.write('{"bad": true}')
+            with self.assertRaises(ValueError):
+                controller.load_mix(tmp)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+    def test_latency_na_shows_explanation(self):
+        label, _ = classify_latency_ms(None)
+        self.assertIn("unreachable", label)
+
+    def test_solo_restores_mute_state(self):
+        from jamulus_controller import JamulusController
+        ctrl = JamulusController.__new__(JamulusController)
+        import threading
+        ctrl._lock = threading.Lock()
+        ctrl._pre_solo_mute = {}
+        ctrl.participants = {}
+        ctrl.callbacks = []
+        ctrl.protocol = type("P", (), {
+            "apply_mixer": lambda *a, **kw: None,
+            "set_cached_participants": lambda *a: None,
+        })()
+        ctrl.audio_engine = type("E", (), {
+            "set_level_override": lambda *a: None,
+        })()
+        ctrl.logger = type("L", (), {"warning": lambda *a, **kw: None, "getChild": lambda *a: type("L", (), {"warning": lambda *a, **kw: None})()})()
+
+        ctrl.add_participant("Alice", 0)
+        ctrl.add_participant("Bob", 1)
+        ctrl.set_mute(1, True)
+        self.assertTrue(ctrl.participants[1].muted)
+
+        ctrl.set_solo(0, True)
+        self.assertFalse(ctrl.participants[0].muted)
+        self.assertTrue(ctrl.participants[1].muted)
+
+        ctrl.set_solo(0, False)
+        self.assertFalse(ctrl.participants[0].muted)
+        self.assertTrue(ctrl.participants[1].muted)
+
+    def test_add_participant_collision_free(self):
+        from jamulus_controller import JamulusController
+        ctrl = JamulusController.__new__(JamulusController)
+        import threading
+        ctrl._lock = threading.Lock()
+        ctrl._pre_solo_mute = {}
+        ctrl.participants = {}
+        ctrl.callbacks = []
+        ctrl.protocol = type("P", (), {
+            "apply_mixer": lambda *a, **kw: None,
+            "set_cached_participants": lambda *a: None,
+        })()
+        ctrl.audio_engine = type("E", (), {
+            "set_level_override": lambda *a: None,
+        })()
+        ctrl.logger = type("L", (), {"warning": lambda *a, **kw: None, "getChild": lambda *a: type("L", (), {"warning": lambda *a, **kw: None})()})()
+
+        ctrl.add_participant("A", 0)
+        ctrl.add_participant("B", 2)
+        p = ctrl.add_participant("C")
+        self.assertEqual(p.channel_id, 3)
+        self.assertNotIn(1, ctrl.participants)
+
+    def test_local_api_bridge_lifecycle(self):
+        from api.local_bridge import LocalApiBridge
+        bridge = LocalApiBridge(
+            get_participants=lambda: [],
+            get_diagnostics=lambda: {"status": "ok"},
+        )
+        self.assertFalse(bridge._running)
+        bridge.stop()
+        self.assertIsNone(bridge._thread)
+
+    def test_webex_mute_returns_false_on_missing_participant(self):
+        from webex_integration import WebexController
+        ctrl = WebexController("https://example.webex.com/meet/test")
+        self.assertFalse(ctrl.mute_audio("nonexistent_id"))
+        self.assertFalse(ctrl.unmute_audio("nonexistent_id"))
+        self.assertFalse(ctrl.enable_video("nonexistent_id"))
+        self.assertFalse(ctrl.disable_video("nonexistent_id"))
+
+    def test_webex_config_load_handles_missing_file(self):
+        from webex_integration import WebexConfig
+        cfg = WebexConfig.__new__(WebexConfig)
+        cfg.config_file = Path(tempfile.mkdtemp()) / "nonexistent.json"
+        loaded = cfg.load_config()
+        self.assertIn("default_meeting_url", loaded)
+        self.assertEqual(loaded["default_meeting_url"], "")
+
+    def test_config_file_path_aligned(self):
+        settings = load_settings()
+        from core.settings import AppSettings
+        base = AppSettings()
+        self.assertEqual(settings.config_file, base.config_file)
+
+    def test_cohort_events_capped(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            for i in range(5):
+                repo.append_cohort_event("test", "evt", {"i": str(i)})
+            import json
+            raw = repo.get_setting("cohort_events_test", "[]")
+            events = json.loads(raw or "[]")
+            self.assertEqual(len(events), 5)
+            self.assertLessEqual(len(events), repo._MAX_COHORT_EVENTS)
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_geometry_save_rejects_tiny(self):
+        fd, db = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            repo = WebJamRepository(db_path=db)
+            prefs = UiPreferencesService(repo)
+            prefs.save_window_geometry("1x1+0+0")
+            self.assertEqual(prefs.get_window_geometry(), "1600x900")
+            prefs.save_window_geometry("garbage")
+            self.assertEqual(prefs.get_window_geometry(), "1600x900")
+            prefs.save_window_geometry("1200x800+50+50")
+            self.assertEqual(prefs.get_window_geometry(), "1200x800+50+50")
+        finally:
+            if os.path.exists(db):
+                for _ in range(10):
+                    try:
+                        os.remove(db)
+                        break
+                    except PermissionError:
+                        time.sleep(0.05)
+
+    def test_load_mix_file_not_found(self):
+        from jamulus_controller import JamulusController
+        import threading
+        ctrl = JamulusController.__new__(JamulusController)
+        ctrl._lock = threading.Lock()
+        ctrl.participants = {}
+        with self.assertRaises(FileNotFoundError):
+            ctrl.load_mix("__does_not_exist__.json")
+
+    def test_load_mix_corrupt_json(self):
+        from jamulus_controller import JamulusController
+        import threading
+        ctrl = JamulusController.__new__(JamulusController)
+        ctrl._lock = threading.Lock()
+        ctrl.participants = {}
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(tmp, "w") as f:
+                f.write("{broken json")
+            with self.assertRaises(ValueError):
+                ctrl.load_mix(tmp)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
 
 if __name__ == "__main__":

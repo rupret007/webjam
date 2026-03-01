@@ -6,7 +6,7 @@ def classify_latency_ms(latency_ms: float | None) -> tuple[str, str]:
     Return a user-facing latency quality label and color.
     """
     if latency_ms is None:
-        return ("Latency: n/a", "#999999")
+        return ("Latency: n/a (server unreachable or probe timed out)", "#999999")
     if latency_ms < 30.0:
         return (f"Latency: {latency_ms:.0f} ms (Good)", "#00cc66")
     if latency_ms < 70.0:

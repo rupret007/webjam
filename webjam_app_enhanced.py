@@ -33,7 +33,7 @@ from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
 from ui.auth_controller import AuthController
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
 from ui.dialogs import show_bootstrap_admin_notice, show_usage_metrics_window
-from ui.preferences import UiPreferencesService
+from ui.preferences import UiPreferencesService, _is_valid_geometry
 from ui.services import MetricsService, RetryService
 from ui.views.diagnostics_panel import show_diagnostics_panel
 from ui.views.session_canvas import SessionCanvasPanel
@@ -401,13 +401,6 @@ class WebJamEnhancedApp:
     """Enhanced WebJam application with full Jamulus integration"""
     
     def __init__(self):
-        # #region agent log
-        self._debug_run_id = f"run-{int(time.time() * 1000)}"
-        debug_flag = os.getenv("WEBJAM_AGENT_DEBUG_LOG", "")
-        self._agent_debug_enabled = debug_flag.strip().lower() in {"1", "true", "yes", "on"}
-        debug_log_path = os.getenv("WEBJAM_AGENT_DEBUG_LOG_PATH", "").strip()
-        self._agent_debug_log_path = Path(debug_log_path) if debug_log_path else (Path.home() / ".webjam_agent_debug.log")
-        # #endregion
         # Setup main window
         if CTK_AVAILABLE:
             self.root = ctk.CTk()
@@ -433,6 +426,7 @@ class WebJamEnhancedApp:
         self._service_bootstrapped = False
         self._startup_started_at = time.perf_counter()
         self._tooltips = []
+        self._poll_after_id: str | None = None
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
@@ -457,24 +451,7 @@ class WebJamEnhancedApp:
             get_participants=self._bridge_participants,
             get_diagnostics=self.jamulus_controller.get_audio_diagnostics,
         )
-        # #region agent log
-        self._debug_log(
-            hypothesis_id="H3",
-            location="webjam_app_enhanced.py:__init__",
-            message="init_pre_ui",
-            data={"ctk_available": CTK_AVAILABLE},
-        )
-        # #endregion
-        
         self.setup_ui()
-        # #region agent log
-        self._debug_log(
-            hypothesis_id="H3",
-            location="webjam_app_enhanced.py:__init__",
-            message="ui_setup_complete",
-            data={"elapsed_ms": int((time.perf_counter() - self._startup_started_at) * 1000)},
-        )
-        # #endregion
         self.save_room_context()
         self._bind_shortcuts()
         self._apply_accessibility_mode()
@@ -490,25 +467,6 @@ class WebJamEnhancedApp:
         self._defer_service_start()
         self._show_setup_once()
 
-    def _debug_log(self, hypothesis_id: str, location: str, message: str, data: dict) -> None:
-        if not self._agent_debug_enabled:
-            return
-        try:
-            self._agent_debug_log_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "sessionId": "agent_debug",
-                "runId": self._debug_run_id,
-                "hypothesisId": hypothesis_id,
-                "location": location,
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }
-            with open(self._agent_debug_log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, separators=(",", ":")) + "\n")
-        except Exception:
-            pass
-    
     def setup_ui(self):
         """Setup the main application UI"""
         # Top menu bar
@@ -702,6 +660,8 @@ class WebJamEnhancedApp:
             remove_artifact=self.repository.remove_session_artifact,
             load_notes=lambda: self.repository.get_session_notes(self.room_key),
             save_notes=lambda notes: self.repository.save_session_notes(self.room_key, notes),
+            bg_color=THEME.bg_secondary,
+            fg_color=THEME.text_primary,
         )
         self.session_canvas.configure(width=420)
         self.session_canvas.pack(fill=tk.BOTH, expand=True)
@@ -783,24 +743,8 @@ class WebJamEnhancedApp:
 
     def _show_setup_once(self):
         if not self.auto_setup_enabled:
-            # #region agent log
-            self._debug_log(
-                hypothesis_id="H5",
-                location="webjam_app_enhanced.py:_show_setup_once",
-                message="setup_skipped_autosetup_disabled",
-                data={},
-            )
-            # #endregion
             return
         setup_seen = self.repository.get_setting("setup_completed", "0")
-        # #region agent log
-        self._debug_log(
-            hypothesis_id="H5",
-            location="webjam_app_enhanced.py:_show_setup_once",
-            message="setup_flag_checked",
-            data={"setup_seen": setup_seen},
-        )
-        # #endregion
         if setup_seen == "1":
             return
 
@@ -885,31 +829,16 @@ class WebJamEnhancedApp:
             pass
 
     def _defer_service_start(self) -> None:
-        # #region agent log
-        self._debug_log(
-            hypothesis_id="H1",
-            location="webjam_app_enhanced.py:_defer_service_start",
-            message="defer_service_start",
-            data={"elapsed_ms": int((time.perf_counter() - self._startup_started_at) * 1000)},
-        )
-        # #endregion
         self._set_status_banner("Initializing background services...", color="#ffcc00")
-        self.root.after(120, self._start_background_services)
+        self.root.after(120, self._kick_background_services)
 
-    def _start_background_services(self) -> None:
+    def _kick_background_services(self) -> None:
         if self._service_bootstrapped:
             return
         self._service_bootstrapped = True
-        # #region agent log
-        t0 = time.perf_counter()
-        self._debug_log(
-            hypothesis_id="H1",
-            location="webjam_app_enhanced.py:_start_background_services",
-            message="service_start_begin",
-            data={},
-        )
-        # #endregion
+        threading.Thread(target=self._start_background_services, daemon=True).start()
 
+    def _start_background_services(self) -> None:
         bridge_started = self.api_bridge.start()
         if not bridge_started:
             LOGGER.warning("Local companion API bridge unavailable (install fastapi + uvicorn).")
@@ -920,24 +849,12 @@ class WebJamEnhancedApp:
             self.webex_controller.start()
         except Exception as exc:
             LOGGER.exception("Service startup failed: %s", exc)
-            self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
+            self.root.after(0, lambda: self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555"))
             return
 
         startup_elapsed = time.perf_counter() - self._startup_started_at
-        # #region agent log
-        self._debug_log(
-            hypothesis_id="H1",
-            location="webjam_app_enhanced.py:_start_background_services",
-            message="service_start_complete",
-            data={
-                "bridge_started": bridge_started,
-                "service_elapsed_ms": int((time.perf_counter() - t0) * 1000),
-                "startup_elapsed_ms": int(startup_elapsed * 1000),
-            },
-        )
-        # #endregion
-        self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66")
-        self._refresh_readiness()
+        self.root.after(0, lambda: self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66"))
+        self.root.after(0, self._refresh_readiness)
 
     def _safe_invoke(self, callback):
         try:
@@ -958,10 +875,22 @@ class WebJamEnhancedApp:
         self.root.bind("<Control-w>", lambda _e: self._safe_invoke(self.launch_webex))
         self.root.bind("<Control-r>", lambda _e: self._safe_invoke(self.reset_all_faders))
         self.root.bind("<Control-p>", lambda _e: self._safe_invoke(self.center_all_pans))
-        self.root.bind("<space>", lambda _e: self._safe_invoke(self.unmute_all))
+        self.root.bind("<space>", self._space_key_handler)
         self.root.bind("<Control-plus>", lambda _e: self._safe_invoke(self.increase_text_size))
         self.root.bind("<Control-minus>", lambda _e: self._safe_invoke(self.decrease_text_size))
         self.root.bind("<Control-h>", lambda _e: self._safe_invoke(self.toggle_high_contrast))
+
+    def _space_key_handler(self, event) -> None:
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, tk.Text)):
+            return
+        try:
+            if CTK_AVAILABLE and hasattr(focused, '_entry'):
+                return
+        except Exception:
+            pass
+        self._safe_invoke(self.unmute_all)
+        return "break"
 
     def toggle_high_contrast(self) -> None:
         self.high_contrast_enabled = bool(self.high_contrast_var.get())
@@ -1038,7 +967,7 @@ class WebJamEnhancedApp:
     def _save_window_geometry(self) -> None:
         try:
             geometry = self.root.winfo_geometry()
-            if geometry:
+            if geometry and _is_valid_geometry(geometry) and not geometry.startswith("1x1"):
                 self.preferences_service.save_window_geometry(geometry)
         except Exception as exc:
             LOGGER.warning("Failed to persist window geometry: %s", exc)
@@ -1162,17 +1091,6 @@ class WebJamEnhancedApp:
                     measured = max(0.0, (time.perf_counter() - start) * 1000.0)
             except Exception:
                 measured = None
-            # #region agent log
-            self._debug_log(
-                hypothesis_id="H2",
-                location="webjam_app_enhanced.py:_measure_server_latency_async",
-                message="latency_probe_finished",
-                data={
-                    "latency_ms": None if measured is None else int(measured),
-                    "probe_elapsed_ms": int((time.perf_counter() - start) * 1000),
-                },
-            )
-            # #endregion
             self.root.after(0, lambda: self._complete_latency_probe(measured))
 
         threading.Thread(target=_probe, daemon=True).start()
@@ -1203,7 +1121,7 @@ class WebJamEnhancedApp:
 
         self._measure_server_latency_async()
         self._refresh_readiness()
-        self.root.after(2500, self._poll_connection_health)
+        self._poll_after_id = self.root.after(2500, self._poll_connection_health)
 
     def _show_actionable_error(
         self,
@@ -1267,23 +1185,30 @@ class WebJamEnhancedApp:
             on_open_help=lambda: self.show_help(topic="troubleshooting"),
             on_export_snapshot=self.export_diagnostics_snapshot,
             on_reset_metrics=self.reset_usage_metrics,
+            bg_color=THEME.bg_secondary,
+            fg_color=THEME.text_primary,
         )
     
     def on_participants_updated(self, participants):
-        """Called when participants list changes"""
-        # Update participants count
+        """Called from monitor thread -- schedule actual UI work on the main thread."""
+        try:
+            if self.root.winfo_exists():
+                self.root.after(0, lambda p=list(participants): self._do_participants_update(p))
+        except (tk.TclError, RuntimeError):
+            pass
+
+    def _do_participants_update(self, participants):
+        """Main-thread handler for participant list changes."""
         self.participants_count.configure(text=f"Participants: {len(participants)}")
-        
-        # Add/remove mixer channels as needed
+
         current_ids = set(self.mixer_channels.keys())
         new_ids = set(p.channel_id for p in participants)
-        
-        # Remove channels for disconnected participants
+
         for channel_id in current_ids - new_ids:
-            self.mixer_channels[channel_id].destroy()
-            del self.mixer_channels[channel_id]
-        
-        # Add channels for new participants
+            if channel_id in self.mixer_channels:
+                self.mixer_channels[channel_id].destroy()
+                del self.mixer_channels[channel_id]
+
         for participant in participants:
             if participant.channel_id not in self.mixer_channels:
                 channel = EnhancedMixerChannel(
@@ -1306,18 +1231,6 @@ class WebJamEnhancedApp:
         
         # Lower idle refresh rate to reduce background CPU.
         interval_ms = 50 if self.mixer_channels else 220
-        # #region agent log
-        if not hasattr(self, "_vu_debug_count"):
-            self._vu_debug_count = 0
-        if self._vu_debug_count < 2:
-            self._debug_log(
-                hypothesis_id="H4",
-                location="webjam_app_enhanced.py:update_vu_meters",
-                message="vu_schedule",
-                data={"participants": len(self.mixer_channels), "interval_ms": interval_ms},
-            )
-            self._vu_debug_count += 1
-        # #endregion
         self.root.after(interval_ms, self.update_vu_meters)
     
     def add_test_participants(self):
@@ -1343,73 +1256,84 @@ class WebJamEnhancedApp:
                 retry_callback=lambda: self.show_setup_wizard(mark_complete=False),
             )
             return
-        
-        try:
-            if self.jamulus_process and self.jamulus_process.poll() is None:
-                self.jamulus_state = "Already running"
-                self._refresh_readiness()
-                messagebox.showinfo("Jamulus", "Jamulus is already running.")
-                return
-            server = f"{JAMULUS_SERVER}:{JAMULUS_PORT}"
-            self.jamulus_process = self._retry_action(
-                lambda: subprocess.Popen([jamulus_path, "--connect", server]),
-                attempts=3,
-                base_delay=0.5,
-            )
-            self.jamulus_state = f"Connecting ({server})"
+
+        if self.jamulus_process and self.jamulus_process.poll() is None:
+            self.jamulus_state = "Already running"
             self._refresh_readiness()
-            messagebox.showinfo("Success", f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.")
-            
-            # Add local user
-            self.jamulus_controller.add_participant("You (Local)", 0)
-            self.jamulus_state = "Connected"
-            self.metrics_service.increment("metric_jamulus_launch_success")
-            self._refresh_readiness()
-            
-        except Exception as e:
-            LOGGER.exception("Failed to launch Jamulus: %s", e)
-            self.jamulus_state = "Launch failed"
-            self.metrics_service.increment("metric_jamulus_launch_failed")
-            self._refresh_readiness()
-            self._show_actionable_error(
-                "Jamulus Launch Failed",
-                what_failed=f"Jamulus could not start ({e}).",
-                likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
-                next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
-                retry_callback=self.launch_jamulus,
-            )
+            messagebox.showinfo("Jamulus", "Jamulus is already running.")
+            return
+
+        self._set_status_banner("Launching Jamulus...", color="#ffcc00")
+        server = f"{JAMULUS_SERVER}:{JAMULUS_PORT}"
+
+        def _do_launch() -> None:
+            try:
+                proc = self._retry_action(
+                    lambda: subprocess.Popen([jamulus_path, "--connect", server]),
+                    attempts=3,
+                    base_delay=0.5,
+                )
+                self.jamulus_process = proc
+                self.jamulus_state = f"Connecting ({server})"
+                self.root.after(0, self._refresh_readiness)
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Success",
+                    f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
+                ))
+                self.jamulus_controller.add_participant("You (Local)", 0)
+                self.jamulus_state = "Connected"
+                self.metrics_service.increment("metric_jamulus_launch_success")
+                self.root.after(0, self._refresh_readiness)
+            except Exception as e:
+                LOGGER.exception("Failed to launch Jamulus: %s", e)
+                self.jamulus_state = "Launch failed"
+                self.metrics_service.increment("metric_jamulus_launch_failed")
+                self.root.after(0, self._refresh_readiness)
+                self.root.after(0, lambda: self._show_actionable_error(
+                    "Jamulus Launch Failed",
+                    what_failed=f"Jamulus could not start ({e}).",
+                    likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
+                    next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
+                    retry_callback=self.launch_jamulus,
+                ))
+
+        threading.Thread(target=_do_launch, daemon=True).start()
     
     def launch_webex(self):
         """Launch Webex meeting"""
         self.metrics_service.increment("metric_webex_open_attempt")
-        try:
-            def _open_once() -> bool:
-                opened_once = self.webex_controller.join_meeting()
-                if not opened_once:
-                    raise RuntimeError(getattr(self.webex_controller, "last_error", "Unknown browser launch failure"))
-                return True
+        self._set_status_banner("Opening Webex...", color="#ffcc00")
 
-            opened = self._retry_action(
-                _open_once,
-                attempts=3,
-                base_delay=0.4,
-            )
-            self.webex_state = "Opened in browser"
-            self.metrics_service.increment("metric_webex_open_success")
-            self._refresh_readiness()
-            messagebox.showinfo("Webex Opened", f"Webex meeting opened in your browser:\n\n{WEBEX_URL}\n\nJoin the meeting to see and hear other participants.")
-        except Exception as e:
-            LOGGER.exception("Failed to open Webex: %s", e)
-            self.webex_state = "Open failed"
-            self.metrics_service.increment("metric_webex_open_failed")
-            self._refresh_readiness()
-            self._show_actionable_error(
-                "Webex Open Failed",
-                what_failed=f"Webex URL could not be opened ({e}).",
-                likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
-                next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
-                retry_callback=self.launch_webex,
-            )
+        def _do_open() -> None:
+            try:
+                def _open_once() -> bool:
+                    opened_once = self.webex_controller.join_meeting()
+                    if not opened_once:
+                        raise RuntimeError(getattr(self.webex_controller, "last_error", "Unknown browser launch failure"))
+                    return True
+
+                self._retry_action(_open_once, attempts=3, base_delay=0.4)
+                self.webex_state = "Opened in browser"
+                self.metrics_service.increment("metric_webex_open_success")
+                self.root.after(0, self._refresh_readiness)
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Webex Opened",
+                    f"Webex meeting opened in your browser:\n\n{WEBEX_URL}\n\nJoin the meeting to see and hear other participants.",
+                ))
+            except Exception as e:
+                LOGGER.exception("Failed to open Webex: %s", e)
+                self.webex_state = "Open failed"
+                self.metrics_service.increment("metric_webex_open_failed")
+                self.root.after(0, self._refresh_readiness)
+                self.root.after(0, lambda: self._show_actionable_error(
+                    "Webex Open Failed",
+                    what_failed=f"Webex URL could not be opened ({e}).",
+                    likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
+                    next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
+                    retry_callback=self.launch_webex,
+                ))
+
+        threading.Thread(target=_do_open, daemon=True).start()
     
     def find_jamulus(self):
         """Find Jamulus installation"""
@@ -1474,6 +1398,8 @@ class WebJamEnhancedApp:
         """Reset all faders to unity (0dB)"""
         if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
             return
+        if not messagebox.askokcancel("Confirm", "Reset all faders to default?"):
+            return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_fader_level(participant.channel_id, 100)
             if participant.channel_id in self.mixer_channels:
@@ -1484,6 +1410,8 @@ class WebJamEnhancedApp:
         """Unmute all channels"""
         if not self.auth_controller.authorize(self.current_user, "bulk_mute", require_sign_in=False):
             return
+        if not messagebox.askokcancel("Confirm", "Unmute all channels?"):
+            return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_mute(participant.channel_id, False)
             if participant.channel_id in self.mixer_channels:
@@ -1493,6 +1421,8 @@ class WebJamEnhancedApp:
     def center_all_pans(self):
         """Center all pan controls"""
         if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
+            return
+        if not messagebox.askokcancel("Confirm", "Center all pan controls?"):
             return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_pan(participant.channel_id, 50)
@@ -1585,14 +1515,20 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
     
     def cleanup(self):
         """Cleanup on exit"""
-        self.api_bridge.stop()
+        if self._poll_after_id is not None:
+            try:
+                self.root.after_cancel(self._poll_after_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._poll_after_id = None
         self.audio_monitor.stop()
         self.jamulus_controller.stop()
         self.webex_controller.stop()
+        self.api_bridge.stop()
         if self.jamulus_process:
             try:
                 self.jamulus_process.terminate()
-            except:
+            except (OSError, ProcessLookupError):
                 pass
     
     def run(self):
