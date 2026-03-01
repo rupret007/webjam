@@ -54,6 +54,7 @@ Each mode configures defaults and prompts, without creating separate products.
 2. **Run the Installer or App**
    - If using the **Python installer** (`webjam_installer.py`): run it to set up VB-Cable, Jamulus, Webex, and shortcuts.
    - If using a **built executable** (`WebJam.exe` or macOS app): no installer required; run the app and use **Help -> Run Setup Wizard** on first launch.
+   - **Windows – first-run security prompt:** When you run the downloaded `WebJam-windows-x64.exe` (or `WebJam.exe`) for the first time, Windows may show **"Windows protected your PC"** (SmartScreen) because the app is unsigned. This is expected when downloading from GitHub. To run the app: click **"More info"**, then **"Run anyway"**. Only download the executable from the [official repo](https://github.com/rupret007/webjam) (Actions artifacts or Releases).
    - The installer (when used) will set up:
      - VB-Cable (virtual audio device)
      - Jamulus client (latest available installer, with bundled fallback)
@@ -224,6 +225,8 @@ pyinstaller --onefile --windowed --name WebJam --hidden-import=customtkinter web
 ```
 
 CI builds (see `.github/workflows/ci.yml`) produce Windows and macOS artifacts on push; download them from the Actions run or from Releases.
+
+**Code signing (optional):** To sign the Windows executable so SmartScreen shows your publisher instead of "Unknown publisher", add a code-signing certificate (PFX) as repository secrets and the CI will sign the built exe automatically. In GitHub: **Settings → Secrets and variables → Actions**, add `WINDOWS_CODESIGN_PFX` (base64-encoded PFX file) and `WINDOWS_CODESIGN_PASSWORD` (certificate password). The workflow signs the Windows build when these secrets are present.
 
 ### Repository Hygiene
 

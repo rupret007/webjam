@@ -78,6 +78,20 @@ jobs:
             ditto -c -k --sequesterRsrc --keepParent dist/WebJam.app "out/WebJam-${{ matrix.target }}.zip"
           fi
 
+      - name: Sign Windows executable (optional)
+        if: matrix.target == 'windows-x64' && secrets.WINDOWS_CODESIGN_PFX != ''
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
+          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+          & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 "out/WebJam-windows-x64.exe"
+          Remove-Item -Force $pfxPath -ErrorAction SilentlyContinue
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
