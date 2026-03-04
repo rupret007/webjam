@@ -379,14 +379,14 @@ class MixerPanel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(settings, f, indent=2)
-            messagebox.showinfo("Saved", "Mixer settings saved successfully!")
+            messagebox.showinfo("Saved", "Mixer settings saved successfully!", parent=self)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save settings: {e}")
+            messagebox.showerror("Error", f"Failed to save settings: {e}", parent=self)
     
     def load_mix(self):
         """Load saved mixer settings"""
         if not CONFIG_FILE.exists():
-            messagebox.showwarning("No Settings", "No saved mixer settings found.")
+            messagebox.showwarning("No Settings", "No saved mixer settings found.", parent=self)
             return
         
         try:
@@ -419,9 +419,9 @@ class MixerPanel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
                         solo_color = channel.solo_btn.active_color if p.solo else channel.solo_btn.inactive_color
                         channel.solo_btn.configure(bg=solo_color)
             
-            messagebox.showinfo("Loaded", "Mixer settings loaded successfully!")
+            messagebox.showinfo("Loaded", "Mixer settings loaded successfully!", parent=self)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load settings: {e}")
+            messagebox.showerror("Error", f"Failed to load settings: {e}", parent=self)
     
     def reset_all(self):
         """Reset all channels to default values"""
@@ -596,7 +596,8 @@ class WebJamApp:
         if not jamulus_path:
             messagebox.showerror(
                 "Jamulus Not Found",
-                "Jamulus is not installed. Please run the WebJam installer first."
+                "Jamulus is not installed. Please run the WebJam installer first.",
+                parent=self.root,
             )
             return
         
@@ -604,9 +605,9 @@ class WebJamApp:
             server = f"{JAMULUS_SERVER}:{JAMULUS_PORT}"
             self.jamulus_process = subprocess.Popen([jamulus_path, "--connect", server])
             self.status_label.configure(text=f"Jamulus connected to {server}")
-            messagebox.showinfo("Success", f"Jamulus launched and connecting to {server}")
+            messagebox.showinfo("Success", f"Jamulus launched and connecting to {server}", parent=self.root)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to launch Jamulus: {e}")
+            messagebox.showerror("Error", f"Failed to launch Jamulus: {e}", parent=self.root)
     
     def launch_webex(self):
         """Launch Webex meeting"""
@@ -614,7 +615,7 @@ class WebJamApp:
             webbrowser.open(WEBEX_URL)
             self.status_label.configure(text="Webex meeting opened in browser")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open Webex: {e}")
+            messagebox.showerror("Error", f"Failed to open Webex: {e}", parent=self.root)
     
     def find_jamulus(self):
         """Find Jamulus installation"""

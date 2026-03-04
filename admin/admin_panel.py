@@ -24,7 +24,7 @@ class AdminPanel:
 
     def show(self) -> None:
         if not self.user:
-            messagebox.showwarning("Admin Panel", "Sign in as admin or operator to open admin panel.")
+            messagebox.showwarning("Admin Panel", "Sign in as admin or operator to open admin panel.", parent=self.root)
             return
 
         bg = DEFAULT_THEME.bg_secondary

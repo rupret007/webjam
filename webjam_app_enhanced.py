@@ -6,17 +6,15 @@ Features a mode-based room flow and shared session canvas
 
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import messagebox, simpledialog
 import subprocess
 import webbrowser
 import logging
 import os
 import time
 import threading
-import json
 from pathlib import Path
 from typing import Optional, Dict
-import sys
 import socket
 
 # Import Jamulus controller
@@ -39,7 +37,7 @@ from ui.views.diagnostics_panel import show_diagnostics_panel
 from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
-from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default_or_default, get_mode_by_key_or_default_or_default
+from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
 # Try to use customtkinter for modern UI
@@ -378,7 +376,7 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
                 size = scaled_font_size(abs(int(f.actual("size") or 10)), self.font_scale)
                 weight = f.actual("weight")
                 widget.configure(font=(family, size, weight))
-        except Exception:
+        except tk.TclError:
             pass
 
         try:
@@ -392,7 +390,7 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
                     widget.configure(fg=palette["fg"])
                 if "bg" in widget.configure():
                     widget.configure(bg=palette["bg"])
-        except Exception:
+        except tk.TclError:
             pass
 
         for child in widget.winfo_children():
@@ -766,7 +764,7 @@ class WebJamEnhancedApp:
     def _show_bootstrap_admin_notice(self) -> None:
         bootstrap_password = self.repository.get_bootstrap_admin_password()
         if bootstrap_password:
-            show_bootstrap_admin_notice(bootstrap_password)
+            show_bootstrap_admin_notice(bootstrap_password, parent=self.root)
 
     def show_setup_wizard(self, mark_complete: bool = False):
         self.metrics_service.increment("metric_setup_wizard_opened")
@@ -853,7 +851,7 @@ class WebJamEnhancedApp:
                 self.status_indicator.configure(text_color=color)
             else:
                 self.status_indicator.configure(fg=color)
-        except Exception:
+        except tk.TclError:
             pass
 
     def _defer_service_start(self) -> None:
@@ -889,7 +887,7 @@ class WebJamEnhancedApp:
             callback()
         except Exception as exc:
             LOGGER.exception("Shortcut action failed: %s", exc)
-            messagebox.showwarning("Action Failed", f"Shortcut action failed:\n{exc}")
+            messagebox.showwarning("Action Failed", f"Shortcut action failed:\n{exc}", parent=self.root)
 
     def _retry_action(self, action, attempts: int = 3, base_delay: float = 0.4):
         return RetryService.retry_action(action, attempts=attempts, base_delay=base_delay)
@@ -915,7 +913,7 @@ class WebJamEnhancedApp:
         try:
             if CTK_AVAILABLE and hasattr(focused, '_entry'):
                 return
-        except Exception:
+        except tk.TclError:
             pass
         self._safe_invoke(self.unmute_all)
         return "break"
@@ -955,7 +953,7 @@ class WebJamEnhancedApp:
                 size = scaled_font_size(abs(int(f.actual("size") or 10)), self.font_scale)
                 weight = f.actual("weight")
                 widget.configure(font=(family, size, weight))
-        except Exception:
+        except tk.TclError:
             pass
 
         try:
@@ -969,7 +967,7 @@ class WebJamEnhancedApp:
                     widget.configure(fg=palette["fg"])
                 if "bg" in widget.configure():
                     widget.configure(bg=palette["bg"])
-        except Exception:
+        except tk.TclError:
             pass
 
         for child in widget.winfo_children():
@@ -1002,12 +1000,13 @@ class WebJamEnhancedApp:
 
     def reset_window_geometry(self) -> None:
         self.root.geometry(self.preferences_service.reset_window_geometry())
-        messagebox.showinfo("Window Reset", "Window size and position reset to default.")
+        messagebox.showinfo("Window Reset", "Window size and position reset to default.", parent=self.root)
 
     def reset_all_ui_preferences(self) -> None:
         confirmed = messagebox.askokcancel(
             "Reset UI Preferences",
             "This will reset text size, contrast mode, startup toggles, and window position.\n\nContinue?",
+            parent=self.root,
         )
         if not confirmed:
             return
@@ -1028,6 +1027,7 @@ class WebJamEnhancedApp:
         messagebox.showinfo(
             "UI Preferences Reset",
             "UI preferences were reset.\n\nSetup wizard will show again on next launch.",
+            parent=self.root,
         )
 
     def show_usage_metrics(self) -> None:
@@ -1046,11 +1046,12 @@ class WebJamEnhancedApp:
         confirmed = messagebox.askokcancel(
             "Reset Usage Metrics",
             "This will clear all local metric counters. Continue?",
+            parent=self.root,
         )
         if not confirmed:
             return
         self.metrics_service.reset_with_prefix("metric_")
-        messagebox.showinfo("Metrics Reset", "Local usage metrics were reset.")
+        messagebox.showinfo("Metrics Reset", "Local usage metrics were reset.", parent=self.root)
 
     def set_cohort_name(self) -> None:
         cohort = simpledialog.askstring(
@@ -1064,7 +1065,7 @@ class WebJamEnhancedApp:
         self.cohort_name = cohort.strip().lower().replace(" ", "_")
         self.repository.set_setting("cohort_name", self.cohort_name)
         self.metrics_service.increment(f"metric_cohort_tagged_{self.cohort_name}")
-        messagebox.showinfo("Cohort Updated", f"Current validation cohort: {self.cohort_name}")
+        messagebox.showinfo("Cohort Updated", f"Current validation cohort: {self.cohort_name}", parent=self.root)
 
     def record_session_complete(self) -> None:
         self.metrics_service.increment("metric_session_completed")
@@ -1078,7 +1079,7 @@ class WebJamEnhancedApp:
                 "review_state": self.review_state,
             },
         )
-        messagebox.showinfo("Session Recorded", "Session completion was logged for cohort validation metrics.")
+        messagebox.showinfo("Session Recorded", "Session completion was logged for cohort validation metrics.", parent=self.root)
 
     def export_diagnostics_snapshot(self) -> None:
         try:
@@ -1091,9 +1092,9 @@ class WebJamEnhancedApp:
                 webex_url=WEBEX_URL,
                 audio_diagnostics=self.jamulus_controller.get_audio_diagnostics(),
             )
-            messagebox.showinfo("Snapshot Exported", f"Diagnostics snapshot written to:\n{out_path}")
+            messagebox.showinfo("Snapshot Exported", f"Diagnostics snapshot written to:\n{out_path}", parent=self.root)
         except Exception as exc:
-            messagebox.showerror("Export Failed", f"Could not export diagnostics snapshot:\n{exc}")
+            messagebox.showerror("Export Failed", f"Could not export diagnostics snapshot:\n{exc}", parent=self.root)
 
     def _update_latency_widget(self) -> None:
         try:
@@ -1119,7 +1120,7 @@ class WebJamEnhancedApp:
             try:
                 with socket.create_connection((JAMULUS_SERVER, int(JAMULUS_PORT)), timeout=0.45):
                     measured = max(0.0, (time.perf_counter() - start) * 1000.0)
-            except Exception:
+            except (socket.error, OSError, TimeoutError):
                 measured = None
             self.root.after(0, lambda: self._complete_latency_probe(measured))
 
@@ -1174,7 +1175,7 @@ class WebJamEnhancedApp:
             "Choose Yes to retry now.\n"
             "Choose No to open quick troubleshooting."
         )
-        retry = messagebox.askyesno(title, message)
+        retry = messagebox.askyesno(title, message, parent=self.root)
         if retry and retry_callback:
             retry_callback()
             return
@@ -1200,7 +1201,7 @@ class WebJamEnhancedApp:
         self.metrics_service.increment("metric_audio_diagnostics_opened")
         diag = self.jamulus_controller.get_audio_diagnostics()
         text = "\n".join(f"{k}: {v}" for k, v in diag.items())
-        messagebox.showinfo("Audio Diagnostics", text)
+        messagebox.showinfo("Audio Diagnostics", text, parent=self.root)
 
     def open_diagnostics_panel(self):
         self.metrics_service.increment("metric_diagnostics_panel_opened")
@@ -1297,7 +1298,7 @@ class WebJamEnhancedApp:
         if self.jamulus_process and self.jamulus_process.poll() is None:
             self.jamulus_state = "Already running"
             self._refresh_readiness()
-            messagebox.showinfo("Jamulus", "Jamulus is already running.")
+            messagebox.showinfo("Jamulus", "Jamulus is already running.", parent=self.root)
             return
 
         self._set_status_banner("Launching Jamulus...", color="#ffcc00")
@@ -1316,6 +1317,7 @@ class WebJamEnhancedApp:
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Success",
                     f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
+                    parent=self.root,
                 ))
                 self.jamulus_controller.add_participant("You (Local)", 0)
                 self.jamulus_state = "Connected"
@@ -1356,6 +1358,7 @@ class WebJamEnhancedApp:
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Webex Opened",
                     f"Webex meeting opened in your browser:\n\n{WEBEX_URL}\n\nJoin the meeting to see and hear other participants.",
+                    parent=self.root,
                 ))
             except Exception as e:
                 LOGGER.exception("Failed to open Webex: %s", e)
@@ -1388,7 +1391,7 @@ class WebJamEnhancedApp:
             self.jamulus_controller.save_mix(str(MIX_FILE))
             self.metrics_service.increment("metric_save_mix_success")
             self.repository.add_audit("save_mix", self.current_user.username if self.current_user else "anonymous", str(MIX_FILE))
-            messagebox.showinfo("Saved", f"Mix settings saved to:\n{MIX_FILE}")
+            messagebox.showinfo("Saved", f"Mix settings saved to:\n{MIX_FILE}", parent=self.root)
         except Exception as e:
             LOGGER.exception("save_mix failed: %s", e)
             self.metrics_service.increment("metric_save_mix_failed")
@@ -1406,7 +1409,7 @@ class WebJamEnhancedApp:
         if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
             return
         if not MIX_FILE.exists():
-            messagebox.showwarning("No Settings", "No saved mix settings found.")
+            messagebox.showwarning("No Settings", "No saved mix settings found.", parent=self.root)
             return
         
         try:
@@ -1421,7 +1424,7 @@ class WebJamEnhancedApp:
                 except (KeyError, tk.TclError):
                     pass
             self._refresh_readiness()
-            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}")
+            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}", parent=self.root)
             self.metrics_service.increment("metric_load_mix_success")
         except Exception as e:
             LOGGER.exception("load_mix failed: %s", e)
@@ -1438,7 +1441,7 @@ class WebJamEnhancedApp:
         """Reset all faders to unity (0dB)"""
         if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
             return
-        if not messagebox.askokcancel("Confirm", "Reset all faders to default?"):
+        if not messagebox.askokcancel("Confirm", "Reset all faders to default?", parent=self.root):
             return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_fader_level(participant.channel_id, 100)
@@ -1450,7 +1453,7 @@ class WebJamEnhancedApp:
         """Unmute all channels"""
         if not self.auth_controller.authorize(self.current_user, "bulk_mute", require_sign_in=False):
             return
-        if not messagebox.askokcancel("Confirm", "Unmute all channels?"):
+        if not messagebox.askokcancel("Confirm", "Unmute all channels?", parent=self.root):
             return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_mute(participant.channel_id, False)
@@ -1462,7 +1465,7 @@ class WebJamEnhancedApp:
         """Center all pan controls"""
         if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
             return
-        if not messagebox.askokcancel("Confirm", "Center all pan controls?"):
+        if not messagebox.askokcancel("Confirm", "Center all pan controls?", parent=self.root):
             return
         for participant in self.jamulus_controller.get_participants():
             self.jamulus_controller.set_pan(participant.channel_id, 50)
@@ -1492,7 +1495,7 @@ Features:
 
 © 2024 WebJam"""
         
-        messagebox.showinfo("About WebJam", about_text)
+        messagebox.showinfo("About WebJam", about_text, parent=self.root)
     
     def show_help(self, topic: str = "quickstart"):
         """Show quick start guide or troubleshooting guidance."""
@@ -1509,7 +1512,7 @@ Common fixes:
 - Audio issues: open Audio Diagnostics and verify backend/active status.
 - Launch failures: retry after verifying install paths and network.
 """
-            messagebox.showinfo("Troubleshooting", help_text)
+            messagebox.showinfo("Troubleshooting", help_text, parent=self.root)
             return
 
         help_text = """Quick Start Guide
@@ -1546,11 +1549,11 @@ Tips:
 
 For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics Panel."""
         
-        messagebox.showinfo("Quick Start Guide", help_text)
+        messagebox.showinfo("Quick Start Guide", help_text, parent=self.root)
     
     def quit_app(self):
         """Cleanup and quit"""
-        if messagebox.askokcancel("Quit", "Are you sure you want to quit WebJam?"):
+        if messagebox.askokcancel("Quit", "Are you sure you want to quit WebJam?", parent=self.root):
             self._save_window_geometry()
             self.cleanup()
             self.root.quit()
