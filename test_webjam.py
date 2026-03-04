@@ -277,7 +277,8 @@ class TestJamulusController(unittest.TestCase):
             f.write('{"sentinel": true}')
         try:
             with patch("jamulus_controller.json.dump", side_effect=OSError("disk error")):
-                self.controller.save_mix(temp_file)
+                with self.assertRaises(OSError):
+                    self.controller.save_mix(temp_file)
             with open(temp_file, "r", encoding="utf-8") as f:
                 content = f.read()
             self.assertEqual(content, '{"sentinel": true}')

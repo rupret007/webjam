@@ -15,7 +15,7 @@ from api.local_bridge import LocalApiBridge
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
 from core.settings import AppSettings, load_settings
-from core.creative_modes import get_mode_by_key, get_mode_labels
+from core.creative_modes import get_mode_by_key, get_mode_by_key_or_default, get_mode_labels
 from storage.repository import WebJamRepository
 from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
 from ui.auth_controller import AuthController
