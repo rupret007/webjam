@@ -98,6 +98,7 @@ class JamulusController:
 
         with self._participants_lock:
             incoming_ids = set(protocol_participants.keys())
+            known_ids = set(self.participants.keys())
 
             for channel_id in incoming_ids - known_ids:
                 self.participants[channel_id] = JamulusParticipant(
@@ -175,7 +176,14 @@ class JamulusController:
         self._apply_mixer_setting(channel_id)
     
     def set_solo(self, channel_id: int, solo: bool):
-        """Solo/unsolo a channel, preserving prior mute state."""
+        """
+        Solo/unsolo a channel, preserving prior mute state.
+
+        Solo semantics: Only one channel can be soloed at a time. When entering solo,
+        all others are muted and prior mute states are stored. When unsoloing, prior
+        mute states are restored. Soloing channel B while A is already soloed will
+        overwrite the stored state; unsolo order matters for correct restoration.
+        """
         with self._participants_lock:
             if channel_id not in self.participants:
                 return
@@ -267,10 +275,12 @@ class JamulusController:
         target_path = Path(filename)
         temp_path = None
         try:
+            parent = target_path.parent or Path(".")
+            parent.mkdir(parents=True, exist_ok=True)
             fd, temp_name = tempfile.mkstemp(
                 prefix=f"{target_path.stem}.",
                 suffix=".tmp",
-                dir=str(target_path.parent or Path(".")),
+                dir=str(parent),
             )
             temp_path = Path(temp_name)
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -341,6 +351,7 @@ class JamulusController:
 
                 p.muted = _coerce_bool(p_data.get("muted", p.muted), p.muted)
                 p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
+            # Mixer apply is best-effort; may race with protocol monitor updates.
             self._apply_mixer_setting(channel_id)
 
 class JamulusAudioMonitor:

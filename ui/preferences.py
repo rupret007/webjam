@@ -12,6 +12,11 @@ _MIN_WINDOW_DIM = 100
 
 
 def _is_valid_geometry(value: str) -> bool:
+    """
+    Validate window geometry string. Only the WxH portion is checked;
+    Tkinter returns full format (e.g. '1600x900+0+0') but we only validate
+    width and height for minimum dimensions. Position (+X+Y) is ignored.
+    """
     if not value:
         return False
     m = _GEOMETRY_RE.match(value)

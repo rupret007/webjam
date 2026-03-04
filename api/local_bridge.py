@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any, Callable, Dict, List, Optional
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class LocalApiBridge:
@@ -91,4 +94,6 @@ class LocalApiBridge:
                 pass
         if thread and thread.is_alive():
             thread.join(timeout=2)
+            if thread.is_alive():
+                _LOGGER.warning("LocalApiBridge server thread did not exit within 2s; may still be shutting down")
 

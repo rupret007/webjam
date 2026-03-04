@@ -6,13 +6,14 @@ Note: This is a foundation for future Webex SDK integration.
 Currently uses browser-based approach with future extensibility.
 """
 
-import webbrowser
-import time
 import json
+import tempfile
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from typing import Optional, List, Dict, Callable
 from dataclasses import dataclass
-import threading
 
 from core.logging_config import configure_logging
 from core.settings import load_settings
@@ -148,10 +149,10 @@ class WebexController:
             self.callbacks.append(callback)
     
     def _notify_callbacks(self):
-        """Notify all registered callbacks"""
+        """Notify all registered callbacks. Snapshot under lock, invoke without holding it."""
         with self._lock:
             snapshot = list(self.callbacks)
-        participants = self.get_participants()
+            participants = list(self.participants.values())
         for callback in snapshot:
             try:
                 callback(participants)
@@ -236,8 +237,9 @@ class WebexEmbeddedView:
             from core.logging_config import configure_logging
             from core.settings import load_settings
             configure_logging(load_settings()).getChild("webex_embedded").info(logging_msg)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("Could not log embedded view message: %s", exc)
         
         return None
     
@@ -285,8 +287,9 @@ class WebexParticipantSync:
                         configure_logging(load_settings()).getChild("webex_sync").info(
                             "Matched %s (Webex) -> %s (Jamulus)", wp.name, jp.name
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        import logging
+                        logging.getLogger(__name__).debug("Could not log sync match: %s", exc)
         
         return self.participant_map
     
@@ -329,11 +332,39 @@ class WebexConfig:
                 pass
         return default
 
-    def save_config(self):
-        """Save Webex configuration"""
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, indent=2)
+    def save_config(self) -> bool:
+        """Save Webex configuration. Returns True on success, False on failure."""
+        try:
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            parent = self.config_file.parent or Path(".")
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f"{self.config_file.stem}.",
+                suffix=".tmp",
+                dir=str(parent),
+            )
+            temp_path = Path(temp_name)
+            try:
+                with open(fd, "w", encoding="utf-8") as f:
+                    json.dump(self.config, f, indent=2)
+                temp_path.replace(self.config_file)
+                return True
+            finally:
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+        except (OSError, PermissionError) as exc:
+            try:
+                from core.logging_config import configure_logging
+                from core.settings import load_settings
+                configure_logging(load_settings()).getChild("webex_config").warning(
+                    "Failed to save Webex config to %s: %s", self.config_file, exc
+                )
+            except Exception as log_exc:
+                import logging
+                logging.getLogger(__name__).debug("Could not log save failure: %s", log_exc)
+            return False
     
     def get(self, key: str, default=None):
         """Get configuration value"""
@@ -356,8 +387,9 @@ def open_webex_meeting(url: str):
             from core.logging_config import configure_logging
             from core.settings import load_settings
             configure_logging(load_settings()).getChild("webex_util").warning("Failed to open Webex: %s", e)
-        except Exception:
-            pass
+        except Exception as log_exc:
+            import logging
+            logging.getLogger(__name__).debug("Could not log open failure: %s", log_exc)
         return False
 
 

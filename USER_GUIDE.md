@@ -512,7 +512,7 @@ Position instruments to avoid "masking":
 
 ### Accessibility Controls
 
-Use `View` menu for:
+WebJam is built for diverse creators—musicians, artists, writers, and designers of all abilities. Use `View` menu for:
 - High Contrast Mode
 - Large Text Mode
 - Fine-grained text size adjustments

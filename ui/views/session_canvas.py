@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from typing import Callable
 
 from core.creative_modes import CreativeMode
+
+_logger = logging.getLogger(__name__)
 from ui.theme import DEFAULT_THEME
 
 ALLOWED_ARTIFACT_TYPES = {"image", "link", "note", "doc", "board"}
@@ -160,23 +163,31 @@ class SessionCanvasPanel(tk.Frame):
 
         try:
             artifacts = self.list_artifacts_cb()
-        except Exception:
+        except Exception as exc:
+            _logger.debug("list_artifacts_cb failed: %s", exc)
             artifacts = []
         self.artifact_index = {}
         self.artifacts_list.delete(0, tk.END)
-        for idx, artifact in enumerate(artifacts):
-            self.artifact_index[idx] = int(artifact["id"])
-            ref = artifact['reference']
+        listbox_idx = 0
+        for artifact in artifacts:
+            try:
+                aid = int(artifact["id"])
+            except (ValueError, KeyError, TypeError) as exc:
+                _logger.warning("Skipping artifact with invalid id: %s", exc)
+                continue
+            self.artifact_index[listbox_idx] = aid
+            listbox_idx += 1
+            ref = artifact.get("reference", "")
             if len(ref) > 80:
                 ref = ref[:77] + "..."
-            line = f"[{artifact['artifact_type']}] {artifact['title']} - {ref}"
+            line = f"[{artifact.get('artifact_type', '?')}] {artifact.get('title', '')} - {ref}"
             self.artifacts_list.insert(tk.END, line)
 
         self.notes.delete("1.0", tk.END)
         try:
             self.notes.insert("1.0", self.load_notes_cb())
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("load_notes_cb failed: %s", exc)
 
         prompts = "\n".join(f"- {prompt}" for prompt in mode.review_prompts)
         self.prompts.configure(text=prompts)

@@ -14,6 +14,11 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
+# Must match ALLOWED_ARTIFACT_TYPES in ui/views/session_canvas.py
+VALID_ARTIFACT_TYPES = {"image", "link", "note", "doc", "board"}
+TITLE_MAX_LEN = 256
+REFERENCE_MAX_LEN = 1024
+
 
 class WebJamRepository:
     _MAX_COHORT_EVENTS = 1000
@@ -230,6 +235,7 @@ class WebJamRepository:
 
     def increment_setting(self, key: str, amount: int = 1) -> int:
         with self._managed_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 "INSERT INTO app_settings (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO NOTHING",
@@ -319,6 +325,10 @@ class WebJamRepository:
         }
 
     def add_session_artifact(self, room_key: str, title: str, artifact_type: str, reference: str) -> int:
+        title = (title or "")[:TITLE_MAX_LEN]
+        reference = (reference or "")[:REFERENCE_MAX_LEN]
+        if artifact_type not in VALID_ARTIFACT_TYPES:
+            artifact_type = "note"
         with self._managed_connection() as conn:
             cur = conn.execute(
                 "INSERT INTO collaboration_artifacts (room_key, title, artifact_type, reference) VALUES (?, ?, ?, ?)",
@@ -367,8 +377,6 @@ class WebJamRepository:
         if not row:
             return ""
         return row[0]
-
-    _MAX_COHORT_EVENTS = 1000
 
     def append_cohort_event(self, cohort: str, event_type: str, payload: Dict[str, str]) -> None:
         key = f"cohort_events_{cohort}"

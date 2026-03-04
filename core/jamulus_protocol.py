@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 import socket
 import struct
+import threading
 from typing import Dict, List, Optional
+
+_logger = logging.getLogger(__name__)
 
 
 class JamulusProtocolAdapter:
@@ -20,6 +24,7 @@ class JamulusProtocolAdapter:
         self.enabled = enabled
         self._sock: Optional[socket.socket] = None
         self._participants: Dict[int, str] = {}
+        self._participants_lock = threading.Lock()
 
     def connect(self) -> None:
         if not self.enabled:
@@ -34,8 +39,8 @@ class JamulusProtocolAdapter:
         if self._sock:
             try:
                 self._sock.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.debug("Socket close error: %s", exc)
             self._sock = None
 
     def request_clients(self) -> Dict[int, str]:
@@ -45,9 +50,11 @@ class JamulusProtocolAdapter:
         """
         self.connect()
         if not self.enabled:
-            return dict(self._participants)
+            with self._participants_lock:
+                return dict(self._participants)
         if not self._sock:
-            return dict(self._participants)
+            with self._participants_lock:
+                return dict(self._participants)
 
         try:
             # Simplified message body: [msg_type=REQ_CONN_CLIENTS_LIST]
@@ -56,12 +63,13 @@ class JamulusProtocolAdapter:
             data, _ = self._sock.recvfrom(4096)
             parsed = self._parse_clients_payload(data)
             if parsed:
-                self._participants = parsed
-        except Exception:
-            # Keep cached participant map.
-            pass
+                with self._participants_lock:
+                    self._participants = parsed
+        except Exception as exc:
+            _logger.debug("request_clients failed, keeping cache: %s", exc)
 
-        return dict(self._participants)
+        with self._participants_lock:
+            return dict(self._participants)
 
     def apply_mixer(
         self,
@@ -79,8 +87,8 @@ class JamulusProtocolAdapter:
             # Minimal custom packet for extension, not strict Jamulus binary schema.
             payload = struct.pack("!BHHHB", 2, channel_id, fader_level, pan, int(muted))
             self._sock.sendto(payload, (self.host, self.port))
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("apply_mixer send failed: %s", exc)
 
     def _parse_clients_payload(self, data: bytes) -> Dict[int, str]:
         """
@@ -92,7 +100,8 @@ class JamulusProtocolAdapter:
         """
         try:
             text = data.decode("utf-8", errors="strict")
-        except Exception:
+        except Exception as exc:
+            _logger.debug("_parse_clients_payload decode failed: %s", exc)
             return {}
 
         parsed: Dict[int, str] = {}
@@ -107,8 +116,10 @@ class JamulusProtocolAdapter:
         return parsed
 
     def set_cached_participants(self, participants: Dict[int, str]) -> None:
-        self._participants = dict(participants)
+        with self._participants_lock:
+            self._participants = dict(participants)
 
     def get_cached_participants(self) -> List[str]:
-        return [self._participants[k] for k in sorted(self._participants.keys())]
+        with self._participants_lock:
+            return [self._participants[k] for k in sorted(self._participants.keys())]
 

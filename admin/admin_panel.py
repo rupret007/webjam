@@ -4,15 +4,22 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 from typing import Optional
 
-from admin.policy import UserContext
+from admin.policy import PolicyEngine, UserContext
 from storage.repository import WebJamRepository
 
 
 class AdminPanel:
-    def __init__(self, root: tk.Misc, repository: WebJamRepository, user: Optional[UserContext]):
+    def __init__(
+        self,
+        root: tk.Misc,
+        repository: WebJamRepository,
+        user: Optional[UserContext],
+        policy: Optional[PolicyEngine] = None,
+    ):
         self.root = root
         self.repository = repository
         self.user = user
+        self.policy = policy or PolicyEngine()
 
     def show(self) -> None:
         if not self.user:
@@ -37,7 +44,10 @@ class AdminPanel:
 
         btn_frame = tk.Frame(window)
         btn_frame.pack(fill=tk.X, padx=10, pady=5)
-        tk.Button(btn_frame, text="Set Endpoint", command=lambda: self._set_endpoint(listbox)).pack(side=tk.LEFT, padx=5)
+        set_endpoint_btn = tk.Button(btn_frame, text="Set Endpoint", command=lambda: self._set_endpoint(listbox))
+        if self.user and not self.policy.allows(self.user, "change_endpoint"):
+            set_endpoint_btn.config(state=tk.DISABLED)
+        set_endpoint_btn.pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Refresh", command=lambda: self._refresh_settings(listbox)).pack(side=tk.LEFT, padx=5)
 
         audit_frame = tk.Frame(window)
@@ -52,6 +62,9 @@ class AdminPanel:
             )
 
     def _set_endpoint(self, listbox: tk.Listbox) -> None:
+        if not self.user or not self.policy.allows(self.user, "change_endpoint"):
+            messagebox.showwarning("Permission Denied", "Only admins can change the Jamulus endpoint.")
+            return
         server = simpledialog.askstring("Server", "Jamulus Server Host:")
         port = simpledialog.askstring("Port", "Jamulus Server Port:")
         if not server or not port:

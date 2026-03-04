@@ -1,10 +1,13 @@
 # WebJam - Creative Collaboration Platform
 
+*The app that knows we're making something together.*
+
 **Merge the power of Jamulus low-latency audio with Webex video conferencing!**
 
 New here? Start with the quick guide: `README_SIMPLE.md`
 
 Planning and rollout docs:
+- [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) – North star, themes, and phased roadmap
 - `CREATIVE_MODES_MVP_SPEC.md`
 - `COHORT_VALIDATION_PLAYBOOK.md`
 
@@ -41,6 +44,9 @@ Each mode configures defaults and prompts, without creating separate products.
 - Hover tooltips on controls and live latency quality indicator
 - Shared Session Canvas for artifacts, references, and collaborative notes
 - Room template + session goal entry in the main launch flow
+
+### Accessibility
+WebJam is designed for inclusive creative collaboration. High contrast mode, scalable text, and keyboard shortcuts let musicians and creators of all abilities participate fully. Use `View -> High Contrast Mode`, `View -> Large Text Mode`, and `View -> Increase/Decrease Text Size`; shortcuts: `Ctrl+H`, `Ctrl++`, `Ctrl+-`.
 
 ## 🚀 Quick Start
 
@@ -173,6 +179,10 @@ Webex Audio → VB-Cable Input → Your Speakers/Headphones
 - **Network**: Broadband internet with <30ms latency to server
 - **Audio**: ASIO-compatible audio interface recommended (not required)
 
+### Companion API
+
+WebJam exposes an optional localhost API so external tools (DAWs, editors, scripts) can read live session state. See **[COMPANION_API.md](COMPANION_API.md)** for endpoints (`/health`, `/participants`, `/diagnostics`), usage, and dependencies.
+
 ### Latency Optimization
 
 For best results:
@@ -235,16 +245,22 @@ CI builds (see `.github/workflows/ci.yml`) produce Windows and macOS artifacts o
 
 ## 🔮 Roadmap
 
-### Upcoming Features
+WebJam is being built to be **unlike any collaboration app before or after**: one room, one goal, one shared canvas, with sessions that have shape and context that carries forward. See **[VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md)** for the full vision and phased plan.
 
-- [ ] **Direct Jamulus Integration**: Control Jamulus mixer programmatically
-- [ ] **Webex Embedded View**: Show video participants within the app
-- [ ] **Recording**: Capture multitrack audio directly in the app
-- [ ] **Effects Processing**: Add reverb, compression, EQ per channel
-- [ ] **Multiple Servers**: Quick switching between Jamulus servers
-- [ ] **MIDI Control**: Use physical faders/controllers for mixing
-- [ ] **Automated Mixing**: AI-powered level balancing
-- [ ] **Mobile Companion**: iOS/Android app for remote control
+### Upcoming (selected)
+
+- **Phase 1:** One-click session templates, review states driving next session, documented Companion API, accessibility as a differentiator.
+- **Phase 2:** Mode-specific layouts, room sound & shared metronome, listening profiles, in-session rituals, time-linked notes, exportable session brief, offline-first notes, cohort analytics.
+- **Phase 3:** Effects per channel, E2E encrypted canvas, recording + timeline, community template gallery.
+
+### Also on the list
+
+- [ ] Direct Jamulus integration (programmatic mixer control)
+- [ ] Webex embedded view (video in-app)
+- [ ] Recording: capture multitrack audio in the app
+- [ ] Multiple servers: quick switching between Jamulus servers
+- [ ] MIDI control: physical faders/controllers for mixing
+- [ ] Mobile companion: remote control app
 
 ## 📝 Configuration
 

@@ -40,6 +40,7 @@ from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label, get_mode_by_key
+from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
 # Try to use customtkinter for modern UI
 try:
@@ -60,6 +61,7 @@ JAMULUS_SERVER = SETTINGS.jamulus_server
 JAMULUS_PORT = str(SETTINGS.jamulus_port)
 WEBEX_URL = SETTINGS.webex_url
 CONFIG_FILE = Path(SETTINGS.config_file)
+MIX_FILE = Path(SETTINGS.mix_file)
 JAMULUS_CANDIDATES = SETTINGS.jamulus_candidates
 
 
@@ -427,6 +429,7 @@ class WebJamEnhancedApp:
         self._startup_started_at = time.perf_counter()
         self._tooltips = []
         self._poll_after_id: str | None = None
+        self._vu_after_id: str | None = None
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
@@ -565,6 +568,15 @@ class WebJamEnhancedApp:
         mode_menu.configure(width=18)
         mode_menu.pack(anchor="w")
 
+        quick_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
+        quick_frame.pack(side=tk.LEFT, padx=8)
+        self._create_label(quick_frame, "Quick templates", font_size=9, bold=True).pack(anchor="w")
+        template_labels = ["— Custom —"] + [t.label for t in get_templates_for_mode(self.mode_key)]
+        self.quick_template_var = tk.StringVar(value="— Custom —")
+        self.quick_template_menu = tk.OptionMenu(quick_frame, self.quick_template_var, *template_labels, command=self._on_quick_template_selected)
+        self.quick_template_menu.configure(width=16)
+        self.quick_template_menu.pack(anchor="w")
+
         template_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
         template_frame.pack(side=tk.LEFT, padx=8)
         self._create_label(template_frame, "Template", font_size=9, bold=True).pack(anchor="w")
@@ -592,7 +604,7 @@ class WebJamEnhancedApp:
         self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.save_mix)
         self.save_mix_btn.pack(side=tk.LEFT, padx=5)
 
-        hint_text = "Tip: pick mode + goal first. Launch is now deferred for faster startup on lower-end PCs."
+        hint_text = "Tip: pick mode + goal first. Launch is deferred for faster startup. We're making something together."
         self.hint_label = self._create_label(control_bar, hint_text, font_size=9)
         self.hint_label.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(4, 0))
         
@@ -687,6 +699,7 @@ class WebJamEnhancedApp:
 
         self._tooltips.extend(
             [
+                Tooltip(self.quick_template_menu, "One-click presets for template and goal"),
                 Tooltip(self.launch_jamulus_btn, "Start Jamulus and connect to configured server"),
                 Tooltip(self.launch_webex_btn, "Open the Webex meeting URL in your browser"),
                 Tooltip(self.save_mix_btn, "Save current channel faders/pan/mute state"),
@@ -773,6 +786,21 @@ class WebJamEnhancedApp:
             mode_label=active_mode.label,
             mode_help=active_mode.quick_help,
         ).show()
+
+    def _on_quick_template_selected(self, choice: str) -> None:
+        if choice == "— Custom —":
+            return
+        for t in SESSION_TEMPLATES:
+            if t.label == choice:
+                self.template_var.set(t.template_name)
+                self.session_goal_var.set(t.session_goal)
+                if t.mode_key and t.mode_key != self.mode_key:
+                    self.mode_key = t.mode_key
+                    self.mode_var.set(get_mode_by_key(t.mode_key).label)
+                self.save_room_context()
+                self.session_canvas.refresh()
+                self.metrics_service.increment(f"metric_quick_template_{t.id}")
+                break
 
     def on_mode_selected(self, mode_label: str) -> None:
         selected = get_mode_by_label(mode_label)
@@ -1068,14 +1096,16 @@ class WebJamEnhancedApp:
             messagebox.showerror("Export Failed", f"Could not export diagnostics snapshot:\n{exc}")
 
     def _update_latency_widget(self) -> None:
-        label, color = classify_latency_ms(self.network_latency_ms)
-        self.latency_label.configure(text=label)
         try:
+            if not self.root.winfo_exists():
+                return
+            label, color = classify_latency_ms(self.network_latency_ms)
+            self.latency_label.configure(text=label)
             if CTK_AVAILABLE:
                 self.latency_label.configure(text_color=color)
             else:
                 self.latency_label.configure(fg=color)
-        except Exception:
+        except tk.TclError:
             pass
 
     def _measure_server_latency_async(self) -> None:
@@ -1098,14 +1128,20 @@ class WebJamEnhancedApp:
     def _complete_latency_probe(self, measured: float | None) -> None:
         self._latency_probe_inflight = False
         self.network_latency_ms = measured
-        self._update_latency_widget()
+        if self.root.winfo_exists():
+            self._update_latency_widget()
 
     def _refresh_readiness(self) -> None:
         participant_count = len(self.jamulus_controller.get_participants())
         readiness_text, readiness_color = readiness_state(participant_count)
         mode_label = get_mode_by_key(self.mode_key).label
 
-        self.readiness_label.configure(text=readiness_text)
+        if self.review_state in ("review", "final"):
+            self.readiness_label.configure(
+                text=f"Room: in {self.review_state} – use Session Canvas to continue or reset to draft"
+            )
+        else:
+            self.readiness_label.configure(text=readiness_text)
         self.connection_summary.configure(text=f"{connection_summary(self.jamulus_state, self.webex_state)} | Mode: {mode_label}")
         self._set_status_banner(f"{mode_label}: {self.jamulus_state} | {self.webex_state}", color=readiness_color)
 
@@ -1156,7 +1192,7 @@ class WebJamEnhancedApp:
             signed_in = self.sign_in()
             if not signed_in:
                 return
-        AdminPanel(self.root, self.repository, self.current_user).show()
+        AdminPanel(self.root, self.repository, self.current_user, self.policy).show()
 
     def show_audio_diagnostics(self):
         if not self.auth_controller.authorize(self.current_user, "view_diagnostics", require_sign_in=False):
@@ -1231,13 +1267,14 @@ class WebJamEnhancedApp:
         
         # Lower idle refresh rate to reduce background CPU.
         interval_ms = 50 if self.mixer_channels else 220
-        self.root.after(interval_ms, self.update_vu_meters)
+        self._vu_after_id = self.root.after(interval_ms, self.update_vu_meters)
     
     def add_test_participants(self):
         """Add demo participants to preview mixer controls"""
         test_names = ["You (Local)", "Guitarist", "Bassist", "Drummer", "Vocalist", "Keys"]
+        existing_ids = {p.channel_id for p in self.jamulus_controller.get_participants()}
         for i, name in enumerate(test_names):
-            if i not in self.jamulus_controller.participants:
+            if i not in existing_ids:
                 self.jamulus_controller.add_participant(name, i)
         self.jamulus_state = "Demo mode"
         self._refresh_readiness()
@@ -1348,10 +1385,10 @@ class WebJamEnhancedApp:
         if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
             return
         try:
-            self.jamulus_controller.save_mix(str(CONFIG_FILE))
+            self.jamulus_controller.save_mix(str(MIX_FILE))
             self.metrics_service.increment("metric_save_mix_success")
-            self.repository.add_audit("save_mix", self.current_user.username if self.current_user else "anonymous", str(CONFIG_FILE))
-            messagebox.showinfo("Saved", f"Mix settings saved to:\n{CONFIG_FILE}")
+            self.repository.add_audit("save_mix", self.current_user.username if self.current_user else "anonymous", str(MIX_FILE))
+            messagebox.showinfo("Saved", f"Mix settings saved to:\n{MIX_FILE}")
         except Exception as e:
             LOGGER.exception("save_mix failed: %s", e)
             self.metrics_service.increment("metric_save_mix_failed")
@@ -1368,20 +1405,23 @@ class WebJamEnhancedApp:
         self.metrics_service.increment("metric_load_mix_attempt")
         if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
             return
-        if not CONFIG_FILE.exists():
+        if not MIX_FILE.exists():
             messagebox.showwarning("No Settings", "No saved mix settings found.")
             return
         
         try:
-            self.jamulus_controller.load_mix(str(CONFIG_FILE))
-            # Update UI
-            for channel_id, channel in self.mixer_channels.items():
-                p = channel.participant
-                channel.fader.set(p.fader_level)
-                channel.pan_slider.set(p.pan)
-                channel.update_button_states()
-            
-            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{CONFIG_FILE}")
+            self.jamulus_controller.load_mix(str(MIX_FILE))
+            # Update UI for all mixer channels (participant objects updated in place by load_mix)
+            for channel_id, channel in list(self.mixer_channels.items()):
+                try:
+                    p = channel.participant
+                    channel.fader.set(p.fader_level)
+                    channel.pan_slider.set(p.pan)
+                    channel.update_button_states()
+                except (KeyError, tk.TclError):
+                    pass
+            self._refresh_readiness()
+            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}")
             self.metrics_service.increment("metric_load_mix_success")
         except Exception as e:
             LOGGER.exception("load_mix failed: %s", e)
@@ -1434,6 +1474,8 @@ class WebJamEnhancedApp:
         """Show about dialog"""
         about_text = """WebJam Enhanced
 Creative Collaboration Platform
+
+The app that knows we're making something together.
 
 Version 2.0
 
@@ -1521,6 +1563,12 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
             except (tk.TclError, ValueError):
                 pass
             self._poll_after_id = None
+        if self._vu_after_id is not None:
+            try:
+                self.root.after_cancel(self._vu_after_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._vu_after_id = None
         self.audio_monitor.stop()
         self.jamulus_controller.stop()
         self.webex_controller.stop()

@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -9,7 +13,7 @@ class AudioLevel:
     rms: float = 0.0
     peak: float = 0.0
     clipped: bool = False
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utc_now)
 
 
 @dataclass
@@ -28,7 +32,7 @@ class ParticipantState:
 @dataclass
 class MixerSnapshot:
     participants: Dict[int, ParticipantState]
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
     server_host: Optional[str] = None
     server_port: Optional[int] = None
 

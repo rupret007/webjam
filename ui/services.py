@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from datetime import datetime, UTC
 from pathlib import Path
@@ -86,5 +88,24 @@ class MetricsService:
             "usage_metrics": self.collect(),
         }
         out_path = home_dir / f"webjam_diagnostics_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
-        out_path.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
-        return out_path
+        content = json.dumps(snapshot, indent=2)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=out_path.stem + ".",
+            suffix=".tmp",
+            dir=str(home_dir),
+        )
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        temp_path = Path(temp_name)
+        try:
+            temp_path.write_text(content, encoding="utf-8")
+            temp_path.replace(out_path)
+            return out_path
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass

@@ -9,6 +9,39 @@ from pathlib import Path
 _logger = logging.getLogger(__name__)
 
 
+def _coerce_settings_data(data: dict) -> None:
+    """Coerce config values to expected types; fall back to defaults on invalid data."""
+    defaults = asdict(AppSettings())
+    # Integer fields
+    for key in ("jamulus_port", "audio_blocksize", "audio_samplerate"):
+        if key in data:
+            try:
+                data[key] = int(data[key]) if data[key] is not None else defaults[key]
+            except (TypeError, ValueError):
+                data[key] = defaults[key]
+                _logger.debug("Invalid %s in config; using default", key)
+    # Boolean fields
+    if "enable_sentry" in data:
+        v = data["enable_sentry"]
+        if isinstance(v, bool):
+            data["enable_sentry"] = v
+        else:
+            data["enable_sentry"] = str(v).strip().lower() in {"1", "true", "yes", "on"}
+    # List of strings
+    if "jamulus_candidates" in data:
+        v = data["jamulus_candidates"]
+        if isinstance(v, list) and all(isinstance(x, str) for x in v):
+            candidates = [s.strip() for s in v if s and str(s).strip()]
+        else:
+            candidates = []
+        data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
+    # String fields: ensure str
+    for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
+                "audio_latency", "sentry_dsn", "log_level", "log_file"):
+        if key in data and data[key] is not None and not isinstance(data[key], str):
+            data[key] = str(data[key])
+
+
 @dataclass
 class AppSettings:
     jamulus_server: str = "172.24.194.9"
@@ -19,6 +52,7 @@ class AppSettings:
         r"C:\Program Files (x86)\Jamulus\Jamulus.exe",
     ])
     config_file: str = str(Path.home() / ".webjam_config.json")
+    mix_file: str = str(Path.home() / ".webjam_mix.json")
     webex_config_file: str = str(Path.home() / ".webjam_webex_config.json")
     audio_blocksize: int = 0
     audio_samplerate: int = 48000
@@ -41,6 +75,9 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                 data.update(loaded)
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s – using defaults", file_path, exc)
+
+    # Coerce types to prevent TypeError when constructing AppSettings
+    _coerce_settings_data(data)
 
     env_map = {
         "WEBJAM_JAMULUS_SERVER": "jamulus_server",
@@ -84,6 +121,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         else:
             data[key] = raw
 
+    _coerce_settings_data(data)
     settings = AppSettings(**data)
 
     if not (1 <= settings.jamulus_port <= 65535):

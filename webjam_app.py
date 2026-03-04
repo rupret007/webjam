@@ -456,7 +456,9 @@ class WebJamApp:
         
         self.participants: Dict[str, Participant] = {}
         self.jamulus_process: Optional[subprocess.Popen] = None
-        
+        self._audio_monitor_stop = threading.Event()
+
+        self.root.protocol("WM_DELETE_WINDOW", self.quit_app)
         self.setup_ui()
         self.start_audio_monitoring()
     
@@ -618,24 +620,30 @@ class WebJamApp:
     def start_audio_monitoring(self):
         """Start audio level monitoring thread"""
         def monitor():
-            while True:
+            import random
+            while not self._audio_monitor_stop.wait(timeout=0.1):
                 # Simulate audio levels (in real app, read from Jamulus)
-                import random
                 for channel in self.mixer_panel.channels.values():
                     if not channel.participant.muted:
                         level = random.random() * 0.8
                         channel.update_vu_meter(level)
-                time.sleep(0.1)
         
         thread = threading.Thread(target=monitor, daemon=True)
         thread.start()
     
+    def quit_app(self) -> None:
+        """Handle window close; cleanup before quitting."""
+        self.cleanup()
+        self.root.quit()
+        self.root.destroy()
+
     def run(self):
         """Run the application"""
         self.root.mainloop()
     
     def cleanup(self):
         """Cleanup on exit"""
+        self._audio_monitor_stop.set()
         if self.jamulus_process:
             self.jamulus_process.terminate()
 
