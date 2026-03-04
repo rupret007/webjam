@@ -1,0 +1,101 @@
+---
+description: WebJam project conventions and architecture reference
+globs: "**/*.py"
+alwaysApply: true
+---
+
+# WebJam Project Rules
+
+## Language and Runtime
+
+- Python 3.11 (CI target). Code uses 3.10+ features (type union syntax `X | Y`).
+- No linter, formatter, or type checker is configured. Follow existing code style.
+
+## Entry Points
+
+- **Main app**: `python webjam_app_enhanced.py` (tkinter + optional customtkinter GUI)
+- **Legacy app**: `python webjam_app.py` (basic tkinter GUI)
+- **Installer**: `python webjam_installer.py` (Windows setup wizard)
+- **Build script**: `python build_webjam.py` (PyInstaller packaging)
+
+## Running Tests
+
+Tests use `unittest` (stdlib). Run with:
+
+```
+python -m unittest discover -s tests -v
+python -m unittest test_webjam test_modernization -v
+```
+
+All test files in `tests/` plus `test_webjam.py` and `test_modernization.py` at root.
+Shared fixtures live in `tests/conftest.py`.
+
+## Building
+
+```
+pyinstaller --onefile --windowed --name WebJam \
+  --hidden-import=customtkinter --hidden-import=numpy \
+  --hidden-import=sounddevice --hidden-import=fastapi \
+  --hidden-import=uvicorn webjam_app_enhanced.py
+```
+
+CI builds run on `windows-latest` and `macos-14` (see `.github/workflows/ci.yml`).
+
+## Architecture
+
+```
+webjam_app_enhanced.py   Main GUI (tkinter/customtkinter, ~1600 lines)
+core/
+  settings.py            AppSettings dataclass, config loading, env overrides
+  models.py              AudioLevel, ParticipantState, MixerSnapshot dataclasses
+  creative_modes.py      CreativeMode definitions and lookup helpers
+  session_templates.py   SessionTemplate presets per mode
+  jamulus_protocol.py    Low-level Jamulus UDP protocol adapter
+jamulus_controller.py    High-level Jamulus process + mixer control
+storage/
+  repository.py          SQLite persistence (users, settings, canvas, audit)
+admin/
+  policy.py              RBAC PolicyEngine (admin/operator/performer)
+  admin_panel.py         Admin UI panel
+ui/
+  auth_controller.py     Sign-in flow with lockout and password rotation
+  services.py            RetryService, MetricsService, diagnostics export
+  dialogs.py             Shared dialog helpers (bootstrap notice, password change)
+  preferences.py         Window geometry and UI preference persistence
+  theme.py               Color theme constants
+  accessibility.py       Font scaling, contrast palette, clamping
+  ux_status.py           Latency classification, readiness state
+  views/                 Setup wizard, diagnostics panel, session canvas, tooltips
+api/
+  local_bridge.py        Optional FastAPI companion API (/health, /participants, /diagnostics)
+utils/
+  installer_helpers.py   Platform helpers (is_admin, find_jamulus, vb_cable_present)
+```
+
+## Key Conventions
+
+- All `messagebox` and `simpledialog` calls must include `parent=` for proper dialog ownership.
+- Broad `except Exception` in UI code should be narrowed to `tk.TclError` (styling) or specific socket/OS errors (networking).
+- `_or_default` helper variants return the first creative mode instead of `None`.
+- Settings unknown keys are filtered before constructing `AppSettings` to avoid `TypeError`.
+- Password hashing uses `hashlib.pbkdf2_hmac` with `hmac.compare_digest` for timing-safe comparison.
+- SQLite repository sets `busy_timeout=5000` and `journal_mode=WAL`.
+
+## Dependencies
+
+All in `requirements.txt`. Optional at runtime: `customtkinter`, `sounddevice`, `numpy`, `fastapi`, `uvicorn`.
+Required: `pycasbin`, `httpx`, `sentry-sdk` (Sentry disabled by default).
+
+## Environment Variables
+
+- `WEBJAM_JAMULUS_SERVER` -- Jamulus server host
+- `WEBJAM_JAMULUS_PORT` -- Jamulus port (default 22124)
+- `WEBJAM_WEBEX_URL` -- Webex meeting URL
+- `WEBJAM_JAMULUS_CANDIDATES` -- Semicolon-separated Jamulus executable paths
+- `WEBJAM_ENABLE_SENTRY` -- Enable Sentry error reporting (1/true/yes/on)
+
+## Platform Notes
+
+- Windows: VB-Cable INFs in `VB/`, `is_admin()` and `vb_cable_present()` use Windows APIs.
+- macOS: Audio routing differs; VB-Cable not applicable.
+- Both platforms: tkinter is bundled with Python; customtkinter is pip-installable.

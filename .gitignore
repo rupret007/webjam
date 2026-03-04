@@ -19,6 +19,7 @@ env/
 build/
 dist/
 FINAL/
+*.spec
 
 # Generated results
 test_results.json
