@@ -68,7 +68,7 @@ class SessionCanvasPanel(tk.Frame):
         tk.Label(self, text="Pinned Artifacts & References", bg=bg, fg=fg, font=("Arial", 10, "bold")).pack(
             anchor="w", padx=10, pady=(8, 4)
         )
-        self.artifacts_list = tk.Listbox(self, height=8, font=("Arial", 10))
+        self.artifacts_list = tk.Listbox(self, height=8, font=("Arial", 10), bg=bg, fg=fg)
         self.artifacts_list.pack(fill=tk.X, padx=10)
 
         btn_row = tk.Frame(self, bg=bg)
@@ -80,7 +80,7 @@ class SessionCanvasPanel(tk.Frame):
         tk.Label(self, text="Live Notes", bg=bg, fg=fg, font=("Arial", 10, "bold")).pack(
             anchor="w", padx=10, pady=(2, 4)
         )
-        self.notes = tk.Text(self, height=12, wrap=tk.WORD, font=("Arial", 10))
+        self.notes = tk.Text(self, height=12, wrap=tk.WORD, font=("Arial", 10), bg=bg, fg=fg)
         self.notes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 6))
         self.notes.bind("<FocusOut>", self._save_notes)
 

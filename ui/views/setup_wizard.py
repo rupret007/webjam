@@ -59,6 +59,8 @@ class SetupWizard:
         self.window.transient(self.root)
         self.window.configure(bg=self._bg)
         self.window.protocol("WM_DELETE_WINDOW", self._close_without_complete)
+        self.window.bind("<Escape>", lambda _e: self._close_without_complete())
+        self.window.bind("<Return>", lambda _e: self._next_step())
 
         frame = tk.Frame(self.window, padx=16, pady=16, bg=self._bg)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -69,11 +71,11 @@ class SetupWizard:
         body = tk.Label(frame, textvariable=self.body_var, justify=tk.LEFT, anchor="nw", font=("Arial", 10), wraplength=640, bg=self._bg, fg=self._fg)
         body.pack(fill=tk.X, pady=(0, 12))
 
-        results_box = tk.Text(frame, height=11, width=76, state=tk.DISABLED, wrap=tk.WORD)
+        results_box = tk.Text(frame, height=11, width=76, state=tk.DISABLED, wrap=tk.WORD, bg=self._bg, fg=self._fg)
         results_box.pack(fill=tk.BOTH, expand=True)
         self.results_box = results_box
 
-        summary = tk.Label(frame, textvariable=self.summary_var, justify=tk.LEFT, anchor="w", font=("Arial", 10, "bold"))
+        summary = tk.Label(frame, textvariable=self.summary_var, justify=tk.LEFT, anchor="w", font=("Arial", 10, "bold"), bg=self._bg, fg=self._fg)
         summary.pack(fill=tk.X, pady=(10, 8))
 
         actions = tk.Frame(frame)

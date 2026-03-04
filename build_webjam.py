@@ -97,8 +97,11 @@ def create_distribution():
         shutil.rmtree(dist_dir)
     dist_dir.mkdir()
     
-    # Copy installer
-    shutil.copy("dist/WebJam_Installer.exe", dist_dir)
+    installer_path = Path("dist/WebJam_Installer.exe")
+    if not installer_path.exists():
+        print(f"❌ Missing build artifact: {installer_path}")
+        return False
+    shutil.copy(installer_path, dist_dir)
     print(f"✓ Copied WebJam_Installer.exe")
     
     # Copy VB folder

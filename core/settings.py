@@ -122,6 +122,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             data[key] = raw
 
     _coerce_settings_data(data)
+    valid_keys = {f.name for f in AppSettings.__dataclass_fields__.values()}
+    data = {k: v for k, v in data.items() if k in valid_keys}
     settings = AppSettings(**data)
 
     if not (1 <= settings.jamulus_port <= 65535):

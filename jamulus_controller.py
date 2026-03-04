@@ -288,6 +288,7 @@ class JamulusController:
             temp_path.replace(target_path)
         except OSError as exc:
             self.logger.warning("Failed to save mix file '%s': %s", filename, exc)
+            raise
         finally:
             if temp_path and temp_path.exists():
                 try:

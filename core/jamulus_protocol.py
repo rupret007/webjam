@@ -18,6 +18,10 @@ class JamulusProtocolAdapter:
     """
 
     def __init__(self, host: str, port: int, timeout: float = 1.0, enabled: bool = False):
+        if not host or not isinstance(host, str):
+            raise ValueError(f"host must be a non-empty string, got {host!r}")
+        if not isinstance(port, int) or not (1 <= port <= 65535):
+            raise ValueError(f"port must be an integer 1-65535, got {port!r}")
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -84,7 +88,8 @@ class JamulusProtocolAdapter:
         if not self._sock:
             return
         try:
-            # Minimal custom packet for extension, not strict Jamulus binary schema.
+            fader_level = max(0, min(100, fader_level))
+            pan = max(0, min(100, pan))
             payload = struct.pack("!BHHHB", 2, channel_id, fader_level, pan, int(muted))
             self._sock.sendto(payload, (self.host, self.port))
         except Exception as exc:

@@ -87,11 +87,22 @@ def get_mode_labels() -> list[str]:
     return [mode.label for mode in CREATIVE_MODES]
 
 
-def get_mode_by_key(mode_key: str) -> CreativeMode:
+def get_mode_by_key(mode_key: str) -> CreativeMode | None:
+    return _MODE_BY_KEY.get(mode_key)
+
+
+def get_mode_by_key_or_default(mode_key: str) -> CreativeMode:
     return _MODE_BY_KEY.get(mode_key, CREATIVE_MODES[0])
 
 
-def get_mode_by_label(label: str) -> CreativeMode:
+def get_mode_by_label(label: str) -> CreativeMode | None:
+    for mode in CREATIVE_MODES:
+        if mode.label == label:
+            return mode
+    return None
+
+
+def get_mode_by_label_or_default(label: str) -> CreativeMode:
     for mode in CREATIVE_MODES:
         if mode.label == label:
             return mode

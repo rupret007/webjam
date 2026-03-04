@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ctypes
+import platform
 import subprocess
 from pathlib import Path
 from typing import Iterable, Optional
@@ -11,9 +11,12 @@ def run(cmd, check: bool = False, shell: bool = False):
 
 
 def is_admin() -> bool:
+    if platform.system() != "Windows":
+        return False
     try:
+        import ctypes
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
+    except (AttributeError, OSError):
         return False
 
 
@@ -25,6 +28,8 @@ def find_jamulus(jamulus_candidates: Iterable[str]) -> Optional[str]:
 
 
 def vb_cable_present() -> bool:
+    if platform.system() != "Windows":
+        return False
     ps = r'''
     $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\SWD\MMDEVAPI"
     if (Test-Path $reg) {

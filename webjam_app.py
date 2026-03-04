@@ -408,10 +408,16 @@ class MixerPanel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
                     channel.fader.set(p.level)
                     channel.pan_slider.set(p.pan)
                     
-                    if p.muted:
-                        channel.toggle_mute()
-                    if p.solo:
-                        channel.toggle_solo()
+                    if CTK_AVAILABLE:
+                        mute_color = channel.mute_btn.active_color if p.muted else channel.mute_btn.inactive_color
+                        channel.mute_btn.configure(fg_color=mute_color)
+                        solo_color = channel.solo_btn.active_color if p.solo else channel.solo_btn.inactive_color
+                        channel.solo_btn.configure(fg_color=solo_color)
+                    else:
+                        mute_color = channel.mute_btn.active_color if p.muted else channel.mute_btn.inactive_color
+                        channel.mute_btn.configure(bg=mute_color)
+                        solo_color = channel.solo_btn.active_color if p.solo else channel.solo_btn.inactive_color
+                        channel.solo_btn.configure(bg=solo_color)
             
             messagebox.showinfo("Loaded", "Mixer settings loaded successfully!")
         except Exception as e:
@@ -646,6 +652,10 @@ class WebJamApp:
         self._audio_monitor_stop.set()
         if self.jamulus_process:
             self.jamulus_process.terminate()
+            try:
+                self.jamulus_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.jamulus_process.kill()
 
 
 def main():

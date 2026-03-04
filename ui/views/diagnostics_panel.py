@@ -36,7 +36,9 @@ def show_diagnostics_panel(
     frame = tk.Frame(panel, padx=12, pady=12, bg=bg)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    text = tk.Text(frame, wrap=tk.WORD)
+    panel.bind("<Escape>", lambda _e: panel.destroy())
+
+    text = tk.Text(frame, wrap=tk.WORD, bg=bg, fg=fg)
     text.pack(fill=tk.BOTH, expand=True)
     lines = [
         "WebJam Diagnostics",

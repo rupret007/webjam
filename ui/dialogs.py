@@ -4,8 +4,10 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from typing import Callable
 
+from ui.theme import DEFAULT_THEME
 
-def show_bootstrap_admin_notice(bootstrap_password: str) -> None:
+
+def show_bootstrap_admin_notice(bootstrap_password: str, parent: tk.Misc | None = None) -> None:
     if not bootstrap_password:
         return
     messagebox.showwarning(
@@ -14,30 +16,33 @@ def show_bootstrap_admin_notice(bootstrap_password: str) -> None:
         f"Username: admin\nPassword: {bootstrap_password}\n\n"
         "Sign in and set a new password immediately. "
         "The bootstrap password is removed after password change.",
+        parent=parent,
     )
 
 
 def prompt_password_change_dialog(
     username: str,
     update_password: Callable[[str, str], bool],
+    parent: tk.Misc | None = None,
 ) -> bool:
     messagebox.showinfo(
         "Password Change Required",
         "For security, you must set a new password before using admin features.",
+        parent=parent,
     )
-    new_pw_1 = simpledialog.askstring("Set New Password", "Enter new password (8+ chars):", show="*")
-    new_pw_2 = simpledialog.askstring("Confirm Password", "Re-enter new password:", show="*")
+    new_pw_1 = simpledialog.askstring("Set New Password", "Enter new password (8+ chars):", show="*", parent=parent)
+    new_pw_2 = simpledialog.askstring("Confirm Password", "Re-enter new password:", show="*", parent=parent)
     if not new_pw_1 or not new_pw_2:
         return False
     if new_pw_1 != new_pw_2:
-        messagebox.showerror("Password Mismatch", "Passwords do not match.")
+        messagebox.showerror("Password Mismatch", "Passwords do not match.", parent=parent)
         return False
     if len(new_pw_1) < 8:
-        messagebox.showerror("Weak Password", "Password must be at least 8 characters.")
+        messagebox.showerror("Weak Password", "Password must be at least 8 characters.", parent=parent)
         return False
     ok = update_password(username, new_pw_1)
     if not ok:
-        messagebox.showerror("Password Update Failed", "Could not update password.")
+        messagebox.showerror("Password Update Failed", "Could not update password.", parent=parent)
         return False
     return True
 
@@ -55,9 +60,14 @@ def show_usage_metrics_window(
     metrics_window.transient(root)
     metrics_window.grab_set()
 
-    container = tk.Frame(metrics_window, padx=12, pady=12)
+    bg = DEFAULT_THEME.bg_secondary
+    fg = DEFAULT_THEME.text_primary
+    metrics_window.configure(bg=bg)
+    metrics_window.bind("<Escape>", lambda _e: metrics_window.destroy())
+
+    container = tk.Frame(metrics_window, padx=12, pady=12, bg=bg)
     container.pack(fill=tk.BOTH, expand=True)
-    text = tk.Text(container, wrap=tk.WORD)
+    text = tk.Text(container, wrap=tk.WORD, bg=bg, fg=fg)
     text.pack(fill=tk.BOTH, expand=True)
 
     lines = ["WebJam Local Usage Metrics", ""]

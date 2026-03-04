@@ -140,6 +140,8 @@ class WebJamRepository:
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (username, salt, digest, "admin", 1, 0, 0),
                 )
+                # Stored as plaintext intentionally for first-run UX display.
+                # Deleted when the admin changes the password via update_password().
                 conn.execute(
                     "INSERT INTO app_settings (key, value) VALUES (?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

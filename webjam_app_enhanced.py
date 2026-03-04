@@ -39,7 +39,7 @@ from ui.views.diagnostics_panel import show_diagnostics_panel
 from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
-from core.creative_modes import CREATIVE_MODES, get_mode_by_label, get_mode_by_key
+from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default_or_default, get_mode_by_key_or_default_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
 # Try to use customtkinter for modern UI
@@ -438,7 +438,7 @@ class WebJamEnhancedApp:
         self.room_key = "default_room"
         saved_room = self.repository.get_room_context(self.room_key)
         self.mode_key = saved_room.get("mode_key", "music_jam")
-        active_mode = get_mode_by_key(self.mode_key)
+        active_mode = get_mode_by_key_or_default(self.mode_key)
         self.template_name = saved_room.get("template_name", active_mode.default_template)
         self.session_goal_text = saved_room.get("session_goal", active_mode.default_goal)
         self.review_state = saved_room.get("review_state", "draft")
@@ -563,7 +563,7 @@ class WebJamEnhancedApp:
         mode_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
         mode_frame.pack(side=tk.LEFT, padx=12)
         self._create_label(mode_frame, "Mode", font_size=9, bold=True).pack(anchor="w")
-        self.mode_var = tk.StringVar(value=get_mode_by_key(self.mode_key).label)
+        self.mode_var = tk.StringVar(value=get_mode_by_key_or_default(self.mode_key).label)
         mode_menu = tk.OptionMenu(mode_frame, self.mode_var, *[m.label for m in CREATIVE_MODES], command=self.on_mode_selected)
         mode_menu.configure(width=18)
         mode_menu.pack(anchor="w")
@@ -664,7 +664,7 @@ class WebJamEnhancedApp:
 
         self.session_canvas = SessionCanvasPanel(
             right_content,
-            get_mode=lambda: get_mode_by_key(self.mode_key),
+            get_mode=lambda: get_mode_by_key_or_default(self.mode_key),
             get_room_context=lambda: self.repository.get_room_context(self.room_key),
             on_review_state_change=self.on_review_state_change,
             list_artifacts=lambda: self.repository.list_session_artifacts(self.room_key),
@@ -770,7 +770,7 @@ class WebJamEnhancedApp:
 
     def show_setup_wizard(self, mark_complete: bool = False):
         self.metrics_service.increment("metric_setup_wizard_opened")
-        active_mode = get_mode_by_key(self.mode_key)
+        active_mode = get_mode_by_key_or_default(self.mode_key)
 
         def on_complete() -> None:
             if mark_complete:
@@ -796,14 +796,14 @@ class WebJamEnhancedApp:
                 self.session_goal_var.set(t.session_goal)
                 if t.mode_key and t.mode_key != self.mode_key:
                     self.mode_key = t.mode_key
-                    self.mode_var.set(get_mode_by_key(t.mode_key).label)
+                    self.mode_var.set(get_mode_by_key_or_default(t.mode_key).label)
                 self.save_room_context()
                 self.session_canvas.refresh()
                 self.metrics_service.increment(f"metric_quick_template_{t.id}")
                 break
 
     def on_mode_selected(self, mode_label: str) -> None:
-        selected = get_mode_by_label(mode_label)
+        selected = get_mode_by_label_or_default(mode_label)
         self.mode_key = selected.key
         if not self.template_var.get().strip():
             self.template_var.set(selected.default_template)
@@ -826,7 +826,7 @@ class WebJamEnhancedApp:
     def save_room_context(self) -> None:
         template_name = (self.template_var.get() if hasattr(self, "template_var") else self.template_name).strip()
         session_goal = (self.session_goal_var.get() if hasattr(self, "session_goal_var") else self.session_goal_text).strip()
-        active_mode = get_mode_by_key(self.mode_key)
+        active_mode = get_mode_by_key_or_default(self.mode_key)
         if not template_name:
             template_name = active_mode.default_template
             if hasattr(self, "template_var"):
@@ -1134,7 +1134,7 @@ class WebJamEnhancedApp:
     def _refresh_readiness(self) -> None:
         participant_count = len(self.jamulus_controller.get_participants())
         readiness_text, readiness_color = readiness_state(participant_count)
-        mode_label = get_mode_by_key(self.mode_key).label
+        mode_label = get_mode_by_key_or_default(self.mode_key).label
 
         if self.review_state in ("review", "final"):
             self.readiness_label.configure(

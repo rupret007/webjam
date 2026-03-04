@@ -29,7 +29,6 @@ class LocalApiBridge:
         self._thread: Optional[threading.Thread] = None
         self._server = None
         self._running = False
-        self._server: object = None
 
     def _create_app(self, FastAPI: Any, HTTPException: Any) -> Any:
         app = FastAPI(title="WebJam Local Bridge")
