@@ -46,7 +46,7 @@ class UiPreferencesService:
 
         try:
             font_scale = clamp_scale(float(stored_scale))
-        except ValueError:
+        except (TypeError, ValueError):
             font_scale = 1.0
 
         return UiPreferences(

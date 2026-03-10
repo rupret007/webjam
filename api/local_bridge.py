@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,13 +80,39 @@ class LocalApiBridge:
             self._thread = threading.Thread(target=run_server, daemon=True)
             self._thread.start()
             self._running = True
-        return True
+        # Best-effort startup verification so callers don't get false positives
+        # when bind/startup fails immediately (for example, port already in use).
+        for _ in range(20):
+            with self._state_lock:
+                thread = self._thread
+                server = self._server
+                running = self._running
+            if server is not None and hasattr(server, "started"):
+                if not running:
+                    return False
+                if thread is not None and not thread.is_alive():
+                    return False
+                if bool(getattr(server, "started", False)):
+                    return True
+            else:
+                # Compatibility fallback for test doubles that do not implement
+                # uvicorn's "started" flag.
+                if thread is not None and thread.is_alive():
+                    return True
+                if server is not None and not running:
+                    return True
+            time.sleep(0.05)
+        with self._state_lock:
+            if self._server is not None and not hasattr(self._server, "started"):
+                return True
+            return bool(self._thread and self._thread.is_alive() and self._running)
 
     def stop(self) -> None:
         with self._state_lock:
             self._running = False
             server = self._server
             thread = self._thread
+            self._thread = None
         if server is not None:
             try:
                 server.should_exit = True

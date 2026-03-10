@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import unittest
 
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
@@ -89,6 +90,15 @@ class TestClampScale(unittest.TestCase):
 
     def test_at_max_boundary(self):
         self.assertEqual(clamp_scale(1.6), 1.6)
+
+    def test_nan_returns_default(self):
+        self.assertEqual(clamp_scale(float("nan")), 1.0)
+
+    def test_infinite_returns_default(self):
+        self.assertEqual(clamp_scale(math.inf), 1.0)
+
+    def test_non_numeric_returns_default(self):
+        self.assertEqual(clamp_scale("not-a-number"), 1.0)
 
 
 class TestScaledFontSize(unittest.TestCase):

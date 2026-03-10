@@ -179,26 +179,32 @@ class JamulusController:
         """
         Solo/unsolo a channel, preserving prior mute state.
 
-        Solo semantics: Only one channel can be soloed at a time. When entering solo,
-        all others are muted and prior mute states are stored. When unsoloing, prior
-        mute states are restored. Soloing channel B while A is already soloed will
-        overwrite the stored state; unsolo order matters for correct restoration.
+        Solo semantics: only one channel can be soloed at a time.
+        Entering solo mutes all other channels. Switching solo channels keeps
+        the original pre-solo mute snapshot. Leaving solo restores the
+        snapshot and clears all solo flags.
         """
+        affected_ids: list[int] = []
         with self._participants_lock:
             if channel_id not in self.participants:
                 return
-            self.participants[channel_id].solo = solo
+            affected_ids = list(self.participants.keys())
+            currently_solo = any(p.solo for p in self.participants.values())
             if solo:
-                self._pre_solo_mute = {
-                    cid: p.muted for cid, p in self.participants.items()
-                }
+                if not currently_solo:
+                    self._pre_solo_mute = {
+                        cid: p.muted for cid, p in self.participants.items()
+                    }
                 for cid, p in self.participants.items():
+                    p.solo = cid == channel_id
                     p.muted = cid != channel_id
             else:
                 for cid, p in self.participants.items():
+                    p.solo = False
                     p.muted = self._pre_solo_mute.get(cid, False)
                 self._pre_solo_mute.clear()
-        self._apply_mixer_setting(channel_id)
+        for cid in affected_ids:
+            self._apply_mixer_setting(cid)
     
     def _apply_mixer_setting(self, channel_id: int):
         """Apply mixer settings to Jamulus via protocol adapter and audio engine."""

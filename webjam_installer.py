@@ -75,15 +75,57 @@ def print_step(step, text):
     print(f"\n[{step}/6] {text}")
     print("-" * 70)
 
+def python_command_prefix(prefer_windowed: bool = False) -> list[str] | None:
+    """
+    Resolve a Python command prefix for subprocess execution.
+
+    Returns a list prefix (for example ["python.exe"] or ["py.exe", "-3"])
+    or None when no suitable runtime is available.
+    """
+    if not getattr(sys, "frozen", False):
+        return [sys.executable]
+
+    candidates = ["pythonw.exe", "python.exe", "py.exe"] if prefer_windowed else ["python.exe", "py.exe", "pythonw.exe"]
+    for name in candidates:
+        resolved = shutil.which(name)
+        if not resolved:
+            continue
+        if Path(resolved).name.lower() == "py.exe":
+            return [resolved, "-3"]
+        return [resolved]
+    return None
+
+def shortcut_target_and_args(app_file: Path) -> tuple[str, str] | None:
+    prefix = python_command_prefix(prefer_windowed=True)
+    if not prefix:
+        return None
+    target = prefix[0]
+    prefix_args = " ".join(f'"{arg}"' for arg in prefix[1:])
+    arguments = f"{prefix_args} \"{app_file}\"".strip()
+    return target, arguments
+
+def launch_installed_app(app_file: Path) -> bool:
+    prefix = python_command_prefix(prefer_windowed=False)
+    if not prefix:
+        print("   ⚠  Python runtime not found in PATH. Cannot auto-launch WebJam.")
+        return False
+    subprocess.Popen(prefix + [str(app_file)])
+    return True
+
 def elevate_if_needed():
     """Re-launch with admin privileges if needed"""
     if not is_admin():
-        print("\n⚠️  WebJam installer requires administrator privileges.")
+        print("\n⚠  WebJam installer requires administrator privileges.")
         print("   Requesting elevation...")
         params = " ".join([f'"{a}"' for a in sys.argv[1:]])
+        relaunch_target = sys.executable
+        if getattr(sys, "frozen", False):
+            relaunch_args = params
+        else:
+            relaunch_args = f'"{Path(__file__).resolve()}" {params}'.strip()
         try:
             ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, f'"{__file__}" {params}', None, 1
+                None, "runas", relaunch_target, relaunch_args, None, 1
             )
         except Exception as e:
             print(f"   Failed to elevate: {e}")
@@ -122,7 +164,7 @@ def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
         dest.write_bytes(data)
         return True
     except Exception as e:
-        print(f"   ⚠️  Download failed from {url}: {e}")
+        print(f"   ⚠  Download failed from {url}: {e}")
         return False
 
 def fetch_latest_jamulus_installer() -> Path | None:
@@ -136,7 +178,7 @@ def fetch_latest_jamulus_installer() -> Path | None:
         with urllib.request.urlopen(req, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8", errors="replace"))
     except Exception as e:
-        print(f"   ⚠️  Could not query Jamulus releases API: {e}")
+        print(f"   ⚠  Could not query Jamulus releases API: {e}")
         return None
 
     assets = payload.get("assets", [])
@@ -167,7 +209,7 @@ def fetch_latest_jamulus_installer() -> Path | None:
                 break
 
     if not candidate_url:
-        print("   ⚠️  No Windows Jamulus installer found in latest release assets.")
+        print("   ⚠  No Windows Jamulus installer found in latest release assets.")
         return None
 
     local_name = candidate_name or "jamulus_latest_win.exe"
@@ -216,7 +258,7 @@ def install_vb_cable():
     
     vb_src_dir = HERE / "VB"
     if not vb_src_dir.exists():
-        print("   ⚠️  VB folder not found. Skipping VB-Cable installation.")
+        print("   ⚠  VB folder not found. Skipping VB-Cable installation.")
         print("   Note: VB-Cable is required for audio routing between Jamulus and Webex.")
         return False
     
@@ -241,7 +283,7 @@ def install_vb_cable():
     # Fallback to EXE installer (interactive)
     exe_candidates = list(vb_src_dir.glob("VBCABLE_Setup*.exe"))
     if not exe_candidates:
-        print("   ⚠️  VB-Cable installer not found.")
+        print("   ⚠  VB-Cable installer not found.")
         return False
     
     exe_copy = copy_resource(exe_candidates[0].relative_to(HERE), WORK)
@@ -250,7 +292,7 @@ def install_vb_cable():
     try:
         subprocess.Popen([str(exe_copy)], shell=False)
     except Exception as e:
-        print(f"   ❌ Failed to launch installer: {e}")
+        print(f"   Error: Failed to launch installer: {e}")
         return False
     
     print(f"   Waiting up to {VBC_MAX_WAIT_SECS//60} minutes for installation...")
@@ -260,7 +302,7 @@ def install_vb_cable():
         time.sleep(2)
         return True
     else:
-        print("   ⚠️  VB-Cable not detected after waiting.")
+        print("   ⚠  VB-Cable not detected after waiting.")
         print("   You may need to reboot or manually complete the installation.")
         return False
 
@@ -285,7 +327,7 @@ def install_jamulus():
             installer = copy_resource(bundled.name, WORK)
             print(f"   Using bundled Jamulus installer: {bundled.name}")
         else:
-            print("   ⚠️  No online or bundled Jamulus installer available.")
+            print("   ⚠  No online or bundled Jamulus installer available.")
             print("   You can download Jamulus from: https://jamulus.io")
             return False
 
@@ -315,7 +357,7 @@ def install_jamulus():
         print("   ✓ Jamulus installed successfully")
         return True
     
-    print("   ⚠️  Jamulus not detected after waiting.")
+    print("   ⚠  Jamulus not detected after waiting.")
     print("   Please complete the installation manually and run this installer again.")
     return False
 
@@ -334,7 +376,7 @@ def install_webex():
 
     print(f"   Downloading Webex installer from Cisco binaries...")
     if not download_file(msi_url, msi_path):
-        print("   ⚠️  Could not download Webex MSI. Skipping Webex installation.")
+        print("   ⚠  Could not download Webex MSI. Skipping Webex installation.")
         return False
 
     print("   Installing Webex silently...")
@@ -358,13 +400,13 @@ def install_webex():
         print("   ✓ Webex installer launched")
         return True
     except Exception as e:
-        print(f"   ⚠️  Failed to launch interactive Webex installer: {e}")
+        print(f"   ⚠  Failed to launch interactive Webex installer: {e}")
         return False
 
 # ====== Audio Configuration ======
 def configure_audio_devices():
     """Configure default audio devices"""
-    print("\n🎛️  Configuring Audio Devices...")
+    print("\n🎛  Configuring Audio Devices...")
     
     ps = r'''
     $ErrorActionPreference = "SilentlyContinue"
@@ -408,104 +450,115 @@ def configure_audio_devices():
 # ====== Python Dependencies ======
 def install_python_dependencies():
     """Install Python dependencies for WebJam GUI"""
-    print("\n🐍 Installing Python Dependencies...")
-    
+    print("\nInstalling Python Dependencies...")
     requirements_file = HERE / "requirements.txt"
     if not requirements_file.exists():
-        print("   ⚠️  requirements.txt not found, skipping Python dependencies")
+        print("   requirements.txt not found, skipping Python dependencies")
         return False
-    
+    prefix = python_command_prefix(prefer_windowed=False)
+    if not prefix:
+        print("   Python runtime not found in PATH; skipping dependency install.")
+        return False
     try:
-        print("   Installing customtkinter for modern UI...")
+        print("   Installing requirements.txt (this may take a few minutes)...")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "customtkinter"],
+            prefix + ["-m", "pip", "install", "-q", "-r", str(requirements_file)],
             capture_output=True,
-            text=True
+            text=True,
         )
-        
         if result.returncode == 0:
-            print("   ✓ Python dependencies installed")
+            print("   Python dependencies installed")
             return True
-        else:
-            print("   ⚠️  Could not install dependencies (not critical)")
-            return False
-    except Exception as e:
-        print(f"   ⚠️  Error installing dependencies: {e}")
+        print("   Full dependency install failed; trying minimal UI dependency...")
+        fallback = subprocess.run(
+            prefix + ["-m", "pip", "install", "-q", "customtkinter"],
+            capture_output=True,
+            text=True,
+        )
+        if fallback.returncode == 0:
+            print("   Installed customtkinter fallback")
+            return True
+        print("   Could not install Python dependencies (not critical)")
         return False
-
+    except Exception as e:
+        print(f"   Error installing dependencies: {e}")
+        return False
 # ====== Application Installation ======
 def install_webjam_app():
     """Install WebJam application files"""
-    print("\n📦 Installing WebJam Application...")
-    
-    # Copy application files
+    print("\nInstalling WebJam Application...")
     app_files = [
         "webjam_app_enhanced.py",
         "jamulus_controller.py",
+        "webex_integration.py",
         "requirements.txt",
-        "README.md"
+        "README.md",
     ]
-    
+    app_dirs = ["core", "ui", "storage", "admin", "api", "utils"]
     for filename in app_files:
         src = HERE / filename
         if src.exists():
             dst = APP_DIR / filename
             shutil.copy2(src, dst)
-            print(f"   ✓ Copied {filename}")
-    
-    print(f"   ✓ Application installed to {APP_DIR}")
+            print(f"   Copied {filename}")
+    for dirname in app_dirs:
+        src_dir = HERE / dirname
+        if src_dir.exists() and src_dir.is_dir():
+            dst_dir = APP_DIR / dirname
+            shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+            print(f"   Copied {dirname}/")
+    print(f"   Application installed to {APP_DIR}")
     return True
-
 # ====== Shortcut Creation ======
 def create_desktop_shortcut():
     """Create desktop shortcut to launch WebJam"""
-    print("\n🔗 Creating Desktop Shortcut...")
-    
+    print("\nCreating Desktop Shortcut...")
     desktop = Path(os.path.join(os.environ["USERPROFILE"], "Desktop"))
     lnk_path = desktop / "WebJam.lnk"
-    
-    # Target the installed Python app
-    target = sys.executable
     app_file = APP_DIR / "webjam_app_enhanced.py"
-    
+    launch_spec = shortcut_target_and_args(app_file)
+    if not launch_spec:
+        print("   Could not resolve Python runtime for desktop shortcut")
+        return False
+    target, args = launch_spec
     ps = f'''
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut("{lnk_path}")
     $Shortcut.TargetPath = "{target}"
-    $Shortcut.Arguments = '"{app_file}"'
+    $Shortcut.Arguments = '{args}'
     $Shortcut.WorkingDirectory = "{APP_DIR}"
     $Shortcut.IconLocation = "{target},0"
     $Shortcut.Description = "WebJam Music Collaboration Platform"
     $Shortcut.Save()
     '''
-    
     run(["powershell", "-NoP", "-NonI", "-Command", ps])
-    print(f"   ✓ Shortcut created: {lnk_path}")
-
+    print(f"   Shortcut created: {lnk_path}")
+    return True
 def create_start_menu_shortcut():
     """Create Start Menu shortcut"""
     print("   Creating Start Menu shortcut...")
-    
     start_menu = Path(os.environ.get("APPDATA")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    start_menu.mkdir(parents=True, exist_ok=True)
     lnk_path = start_menu / "WebJam.lnk"
-    
-    target = sys.executable
     app_file = APP_DIR / "webjam_app_enhanced.py"
-    
+    launch_spec = shortcut_target_and_args(app_file)
+    if not launch_spec:
+        print("   Could not resolve Python runtime for Start Menu shortcut")
+        return False
+    target, args = launch_spec
     ps = f'''
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut("{lnk_path}")
     $Shortcut.TargetPath = "{target}"
-    $Shortcut.Arguments = '"{app_file}"'
+    $Shortcut.Arguments = '{args}'
     $Shortcut.WorkingDirectory = "{APP_DIR}"
     $Shortcut.IconLocation = "{target},0"
     $Shortcut.Description = "WebJam Music Collaboration Platform"
     $Shortcut.Save()
     '''
-    
     run(["powershell", "-NoP", "-NonI", "-Command", ps])
-    print(f"   ✓ Start Menu shortcut created")
-
+    print("   Start Menu shortcut created")
+    return True
 # ====== Main Installation ======
 def main():
     """Main installation process"""
@@ -519,7 +572,7 @@ def main():
     print("  • Audio device configuration")
     print("  • Desktop shortcuts")
     
-    print("\n⚠️  Administrator privileges required for driver installation")
+    print("\n⚠  Administrator privileges required for driver installation")
     
     input("\nPress Enter to begin installation...")
     
@@ -540,7 +593,7 @@ def main():
     success = success and jamulus_ok
     
     if not jamulus_ok:
-        print("\n⚠️  Cannot continue without Jamulus. Please install it manually.")
+        print("\n⚠  Cannot continue without Jamulus. Please install it manually.")
         input("\nPress Enter to exit...")
         return
     
@@ -565,10 +618,10 @@ def main():
     if success:
         print("\n✅ WebJam has been successfully installed!")
     else:
-        print("\n⚠️  Installation completed with some warnings.")
+        print("\n⚠  Installation completed with some warnings.")
         print("   Please review the messages above.")
     
-    print("\n📝 Next Steps:")
+    print("\nNext Steps:")
     print("   1. Restart your computer (recommended if VB-Cable was just installed)")
     print("   2. Launch WebJam from your Desktop or Start Menu")
     print("   3. Click 'Launch Jamulus' to connect to the audio server")
@@ -578,7 +631,7 @@ def main():
     print(f"\n🎵 Jamulus Server: {JAMULUS_SERVER}:{JAMULUS_PORT}")
     print(f"📹 Webex Meeting: {WEBEX_URL}")
     
-    print(f"\n📁 Installation Location: {APP_DIR}")
+    print(f"\nInstallation Location: {APP_DIR}")
     
     print("\n💡 Tips:")
     print("   • Use headphones to prevent audio feedback")
@@ -594,15 +647,17 @@ def main():
         print("\n🚀 Launching WebJam...")
         app_file = APP_DIR / "webjam_app_enhanced.py"
         try:
-            subprocess.Popen([sys.executable, str(app_file)])
-            print("   ✓ WebJam launched!")
+            if launch_installed_app(app_file):
+                print("   WebJam launched!")
+            else:
+                print("   Could not auto-launch WebJam. Start it manually from the install folder.")
         except Exception as e:
-            print(f"   ❌ Failed to launch: {e}")
+            print(f"   Error: Failed to launch: {e}")
             print(f"   You can launch it manually from: {app_file}")
     
     print("\n" + "="*70)
     print("Thank you for installing WebJam!")
-    print("For support: https://github.com/yourusername/webjam")
+    print("For support: https://github.com/rupret007/webjam")
     print("="*70)
     
     input("\nPress Enter to exit installer...")
@@ -615,7 +670,7 @@ if __name__ == "__main__":
         print("\n\nInstallation cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Installation error: {e}")
+        print(f"\nError: Installation error: {e}")
         import traceback
         traceback.print_exc()
         input("\nPress Enter to exit...")

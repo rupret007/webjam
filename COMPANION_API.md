@@ -93,7 +93,7 @@ GET http://127.0.0.1:8765/diagnostics
 ## Usage
 
 1. Launch WebJam.
-2. The API starts in the background when the app initializes (after the test job passes and background services are started).
+2. The API starts in the background when the app initializes (when FastAPI/Uvicorn are available and background services start).
 3. Call the endpoints from your tool, script, or DAW integration.
 
 **Example (curl):**

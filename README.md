@@ -266,7 +266,8 @@ WebJam is being built to be **unlike any collaboration app before or after**: on
 
 ### Custom Server Settings
 
-Settings are loaded from a single config file and environment variables. To change defaults, edit the config file (see below) or set:
+Core defaults are loaded from the app config file and environment variables.
+Mixer state is stored separately (see below). To change defaults, edit the config file or set:
 
 - `WEBJAM_JAMULUS_SERVER` – Jamulus server host
 - `WEBJAM_JAMULUS_PORT` – Jamulus port (default 22124)
@@ -276,9 +277,10 @@ You can also edit `core/settings.py` to change default values used when no confi
 
 ### Saved Settings Location
 
-App and mix settings use a single config file:
+App settings and mix settings use separate files:
 
 - **Config file**: `%USERPROFILE%\.webjam_config.json` (Windows) or `~/.webjam_config.json` (macOS/Linux)
+- **Mix file**: `%USERPROFILE%\.webjam_mix.json` (Windows) or `~/.webjam_mix.json` (macOS/Linux)
 
 Optional override via environment:
 

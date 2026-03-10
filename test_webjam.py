@@ -216,6 +216,31 @@ class TestJamulusController(unittest.TestCase):
         
         self.assertTrue(self.controller.participants[0].solo)
         self.assertTrue(self.controller.participants[1].muted)
+
+    def test_switch_solo_preserves_original_mutes(self):
+        """Switching solo channels should still restore pre-solo mute snapshot."""
+        self.controller.add_participant("User 1", 0)
+        self.controller.add_participant("User 2", 1)
+        self.controller.add_participant("User 3", 2)
+        self.controller.set_mute(2, True)
+
+        self.controller.set_solo(0, True)
+        self.controller.set_solo(1, True)
+
+        self.assertFalse(self.controller.participants[0].solo)
+        self.assertTrue(self.controller.participants[1].solo)
+        self.assertTrue(self.controller.participants[0].muted)
+        self.assertFalse(self.controller.participants[1].muted)
+        self.assertTrue(self.controller.participants[2].muted)
+
+        self.controller.set_solo(1, False)
+
+        self.assertFalse(self.controller.participants[0].solo)
+        self.assertFalse(self.controller.participants[1].solo)
+        self.assertFalse(self.controller.participants[2].solo)
+        self.assertFalse(self.controller.participants[0].muted)
+        self.assertFalse(self.controller.participants[1].muted)
+        self.assertTrue(self.controller.participants[2].muted)
     
     def test_start_stop_monitoring(self):
         """Test starting and stopping monitoring thread"""

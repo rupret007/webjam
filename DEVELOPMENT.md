@@ -68,7 +68,8 @@ All dependencies are listed in `requirements.txt`. Optional runtime dependencies
 python webjam_app_enhanced.py
 ```
 
-On first launch, use **Help > Run Setup Wizard** to configure Jamulus path, server, and Webex URL.
+On first launch, use **Help > Run Setup Wizard** to validate Jamulus/Webex readiness.
+Use **Admin > Settings** to change the Jamulus server/port endpoint.
 
 ## Run Tests
 

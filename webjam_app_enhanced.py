@@ -13,6 +13,7 @@ import logging
 import os
 import time
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional, Dict
 import socket
@@ -24,7 +25,7 @@ from admin.admin_panel import AdminPanel
 from admin.policy import PolicyEngine, UserContext
 from api.local_bridge import LocalApiBridge
 from core.logging_config import configure_logging, configure_sentry
-from core.settings import load_settings
+from core.settings import AppSettings, load_settings
 from storage.repository import WebJamRepository
 from ui.theme import DEFAULT_THEME
 from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
@@ -51,16 +52,16 @@ except ImportError:
     print("Note: Install customtkinter for better UI (pip install customtkinter)")
 
 # ====== CONFIG ======
-SETTINGS = load_settings()
-LOGGER = configure_logging(SETTINGS).getChild("app")
-configure_sentry(SETTINGS)
+BASE_SETTINGS = load_settings()
+LOGGER = configure_logging(BASE_SETTINGS).getChild("app")
+configure_sentry(BASE_SETTINGS)
 THEME = DEFAULT_THEME
-JAMULUS_SERVER = SETTINGS.jamulus_server
-JAMULUS_PORT = str(SETTINGS.jamulus_port)
-WEBEX_URL = SETTINGS.webex_url
-CONFIG_FILE = Path(SETTINGS.config_file)
-MIX_FILE = Path(SETTINGS.mix_file)
-JAMULUS_CANDIDATES = SETTINGS.jamulus_candidates
+DEFAULT_JAMULUS_SERVER = BASE_SETTINGS.jamulus_server
+DEFAULT_JAMULUS_PORT = int(BASE_SETTINGS.jamulus_port)
+DEFAULT_WEBEX_URL = BASE_SETTINGS.webex_url
+CONFIG_FILE = Path(BASE_SETTINGS.config_file)
+MIX_FILE = Path(BASE_SETTINGS.mix_file)
+JAMULUS_CANDIDATES = BASE_SETTINGS.jamulus_candidates
 
 
 class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
@@ -371,12 +372,19 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
         try:
             current_font = widget.cget("font")
             if current_font:
-                f = tkfont.Font(font=current_font)
-                family = f.actual("family")
-                size = scaled_font_size(abs(int(f.actual("size") or 10)), self.font_scale)
-                weight = f.actual("weight")
+                base_font = getattr(widget, "_webjam_base_font", None)
+                if base_font is None:
+                    f = tkfont.Font(font=current_font)
+                    base_font = (
+                        f.actual("family"),
+                        abs(int(f.actual("size") or 10)),
+                        f.actual("weight"),
+                    )
+                    setattr(widget, "_webjam_base_font", base_font)
+                family, base_size, weight = base_font
+                size = scaled_font_size(base_size, self.font_scale)
                 widget.configure(font=(family, size, weight))
-        except tk.TclError:
+        except (tk.TclError, RuntimeError, ValueError):
             pass
 
         try:
@@ -412,11 +420,6 @@ class WebJamEnhancedApp:
         self.root.geometry("1600x900")
         self.root.minsize(1280, 760)
         
-        # Initialize Jamulus controller
-        self.jamulus_controller = JamulusController(JAMULUS_SERVER, int(JAMULUS_PORT))
-        self.audio_monitor = JamulusAudioMonitor(self.jamulus_controller)
-        self.webex_controller = WebexController(WEBEX_URL)
-        
         self.jamulus_process: Optional[subprocess.Popen] = None
         self.mixer_channels: Dict[int, EnhancedMixerChannel] = {}
         self.jamulus_state = "Not launched"
@@ -433,6 +436,14 @@ class WebJamEnhancedApp:
         self.auto_setup_enabled = True
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
+        self.jamulus_server = DEFAULT_JAMULUS_SERVER
+        self.jamulus_port = DEFAULT_JAMULUS_PORT
+        self.webex_url = DEFAULT_WEBEX_URL
+        self._refresh_endpoint_state()
+        # Initialize controllers after endpoint values are resolved.
+        self.jamulus_controller = JamulusController(self.jamulus_server, self.jamulus_port)
+        self.audio_monitor = JamulusAudioMonitor(self.jamulus_controller)
+        self.webex_controller = WebexController(self.webex_url)
         self.room_key = "default_room"
         saved_room = self.repository.get_room_context(self.room_key)
         self.mode_key = saved_room.get("mode_key", "music_jam")
@@ -692,7 +703,7 @@ class WebJamEnhancedApp:
         self.latency_label = self._create_label(status_bar, "Latency: n/a", font_size=9)
         self.latency_label.pack(side=tk.LEFT, padx=10, pady=5)
         
-        self.server_info = self._create_label(status_bar, f"Server: {JAMULUS_SERVER}:{JAMULUS_PORT}", font_size=9)
+        self.server_info = self._create_label(status_bar, f"Server: {self.jamulus_server}:{self.jamulus_port}", font_size=9)
         self.server_info.pack(side=tk.RIGHT, padx=10, pady=5)
 
         self._tooltips.extend(
@@ -739,6 +750,39 @@ class WebJamEnhancedApp:
                 pady=5,
             )
 
+    def _runtime_endpoint(self) -> tuple[str, int]:
+        raw_host = self.repository.get_setting("jamulus_server", DEFAULT_JAMULUS_SERVER)
+        host = str(raw_host).strip() if raw_host is not None else DEFAULT_JAMULUS_SERVER
+        if not host:
+            host = DEFAULT_JAMULUS_SERVER
+        raw_port = self.repository.get_setting("jamulus_port", str(DEFAULT_JAMULUS_PORT))
+        try:
+            port = int(raw_port) if raw_port is not None else DEFAULT_JAMULUS_PORT
+        except (TypeError, ValueError):
+            port = DEFAULT_JAMULUS_PORT
+        if not (1 <= port <= 65535):
+            port = DEFAULT_JAMULUS_PORT
+        return host, port
+
+    def _refresh_endpoint_state(self) -> None:
+        self.jamulus_server, self.jamulus_port = self._runtime_endpoint()
+        if hasattr(self, "jamulus_controller"):
+            self.jamulus_controller.host = self.jamulus_server
+            self.jamulus_controller.port = self.jamulus_port
+            self.jamulus_controller.protocol.host = self.jamulus_server
+            self.jamulus_controller.protocol.port = self.jamulus_port
+        if hasattr(self, "server_info"):
+            self.server_info.configure(text=f"Server: {self.jamulus_server}:{self.jamulus_port}")
+
+    def _settings_for_checks(self) -> AppSettings:
+        self._refresh_endpoint_state()
+        return replace(
+            BASE_SETTINGS,
+            jamulus_server=self.jamulus_server,
+            jamulus_port=self.jamulus_port,
+            webex_url=self.webex_url,
+        )
+
     def _bridge_participants(self):
         return [
             {
@@ -778,7 +822,7 @@ class WebJamEnhancedApp:
         SetupWizard(
             self.root,
             on_complete=on_complete,
-            settings=SETTINGS,
+            settings=self._settings_for_checks(),
             find_jamulus=self.find_jamulus,
             diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
             mode_label=active_mode.label,
@@ -948,12 +992,19 @@ class WebJamEnhancedApp:
         try:
             current_font = widget.cget("font")
             if current_font:
-                f = tkfont.Font(font=current_font)
-                family = f.actual("family")
-                size = scaled_font_size(abs(int(f.actual("size") or 10)), self.font_scale)
-                weight = f.actual("weight")
+                base_font = getattr(widget, "_webjam_base_font", None)
+                if base_font is None:
+                    f = tkfont.Font(font=current_font)
+                    base_font = (
+                        f.actual("family"),
+                        abs(int(f.actual("size") or 10)),
+                        f.actual("weight"),
+                    )
+                    setattr(widget, "_webjam_base_font", base_font)
+                family, base_size, weight = base_font
+                size = scaled_font_size(base_size, self.font_scale)
                 widget.configure(font=(family, size, weight))
-        except tk.TclError:
+        except (tk.TclError, RuntimeError, ValueError):
             pass
 
         try:
@@ -1083,13 +1134,14 @@ class WebJamEnhancedApp:
 
     def export_diagnostics_snapshot(self) -> None:
         try:
+            self._refresh_endpoint_state()
             out_path = self.metrics_service.export_snapshot(
                 home_dir=Path.home(),
                 jamulus_state=self.jamulus_state,
                 webex_state=self.webex_state,
                 latency_ms=self.network_latency_ms,
-                server=f"{JAMULUS_SERVER}:{JAMULUS_PORT}",
-                webex_url=WEBEX_URL,
+                server=f"{self.jamulus_server}:{self.jamulus_port}",
+                webex_url=self.webex_url,
                 audio_diagnostics=self.jamulus_controller.get_audio_diagnostics(),
             )
             messagebox.showinfo("Snapshot Exported", f"Diagnostics snapshot written to:\n{out_path}", parent=self.root)
@@ -1112,13 +1164,16 @@ class WebJamEnhancedApp:
     def _measure_server_latency_async(self) -> None:
         if self._latency_probe_inflight:
             return
+        self._refresh_endpoint_state()
+        host = self.jamulus_server
+        port = self.jamulus_port
         self._latency_probe_inflight = True
 
         def _probe() -> None:
             measured: float | None = None
             start = time.perf_counter()
             try:
-                with socket.create_connection((JAMULUS_SERVER, int(JAMULUS_PORT)), timeout=0.45):
+                with socket.create_connection((host, port), timeout=0.45):
                     measured = max(0.0, (time.perf_counter() - start) * 1000.0)
             except (socket.error, OSError, TimeoutError):
                 measured = None
@@ -1147,6 +1202,7 @@ class WebJamEnhancedApp:
         self._set_status_banner(f"{mode_label}: {self.jamulus_state} | {self.webex_state}", color=readiness_color)
 
     def _poll_connection_health(self) -> None:
+        self._refresh_endpoint_state()
         if self.jamulus_process is not None:
             if self.jamulus_process.poll() is None and "Not launched" in self.jamulus_state:
                 self.jamulus_state = "Running"
@@ -1205,17 +1261,18 @@ class WebJamEnhancedApp:
 
     def open_diagnostics_panel(self):
         self.metrics_service.increment("metric_diagnostics_panel_opened")
+        self._refresh_endpoint_state()
         diag = self.jamulus_controller.get_audio_diagnostics()
-        host_ok, host_detail = SetupWizard.check_tcp_hint(JAMULUS_SERVER, int(JAMULUS_PORT))
+        host_ok, host_detail = SetupWizard.check_tcp_hint(self.jamulus_server, self.jamulus_port)
         jamulus_path = self.find_jamulus() or "Not found"
         show_diagnostics_panel(
             root=self.root,
             jamulus_path=jamulus_path,
-            jamulus_server=JAMULUS_SERVER,
-            jamulus_port=JAMULUS_PORT,
+            jamulus_server=self.jamulus_server,
+            jamulus_port=str(self.jamulus_port),
             host_ok=host_ok,
             host_detail=host_detail,
-            webex_url=WEBEX_URL,
+            webex_url=self.webex_url,
             webex_last_error=self.webex_controller.last_error,
             audio_diagnostics=diag,
             on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
@@ -1283,6 +1340,7 @@ class WebJamEnhancedApp:
     def launch_jamulus(self):
         """Launch Jamulus client"""
         self.metrics_service.increment("metric_jamulus_launch_attempt")
+        self._refresh_endpoint_state()
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
             self.metrics_service.increment("metric_jamulus_launch_failed")
@@ -1302,7 +1360,7 @@ class WebJamEnhancedApp:
             return
 
         self._set_status_banner("Launching Jamulus...", color="#ffcc00")
-        server = f"{JAMULUS_SERVER}:{JAMULUS_PORT}"
+        server = f"{self.jamulus_server}:{self.jamulus_port}"
 
         def _do_launch() -> None:
             try:
@@ -1357,7 +1415,7 @@ class WebJamEnhancedApp:
                 self.root.after(0, self._refresh_readiness)
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Webex Opened",
-                    f"Webex meeting opened in your browser:\n\n{WEBEX_URL}\n\nJoin the meeting to see and hear other participants.",
+                    f"Webex meeting opened in your browser:\n\n{self.webex_url}\n\nJoin the meeting to see and hear other participants.",
                     parent=self.root,
                 ))
             except Exception as e:

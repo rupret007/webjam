@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import math
+
 
 def clamp_scale(scale: float, minimum: float = 0.8, maximum: float = 1.6) -> float:
-    if scale < minimum:
+    default = max(minimum, min(maximum, 1.0))
+    try:
+        value = float(scale)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    if value < minimum:
         return minimum
-    if scale > maximum:
+    if value > maximum:
         return maximum
-    return scale
+    return value
 
 
 def scaled_font_size(base_size: int, scale: float) -> int:

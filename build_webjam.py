@@ -8,14 +8,18 @@ import sys
 import shutil
 from pathlib import Path
 
+def pyinstaller_prefix() -> list[str]:
+    """Invoke PyInstaller via the active interpreter."""
+    return [sys.executable, "-m", "PyInstaller"]
+
 def check_pyinstaller():
-    """Check if PyInstaller is installed"""
+    """Check if PyInstaller is installed."""
     try:
-        import PyInstaller
-        print("✓ PyInstaller is installed")
+        import PyInstaller  # noqa: F401
+        print("PyInstaller is installed")
         return True
     except ImportError:
-        print("❌ PyInstaller not found")
+        print("PyInstaller not found")
         print("\nInstalling PyInstaller...")
         subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
         return True
@@ -26,8 +30,7 @@ def build_installer():
     print("Building WebJam Installer")
     print("="*70)
     
-    cmd = [
-        "pyinstaller",
+    cmd = pyinstaller_prefix() + [
         "--onefile",
         "--name=WebJam_Installer",
         "--icon=NONE",
@@ -61,8 +64,7 @@ def build_app():
     print("Building WebJam Application")
     print("="*70)
     
-    cmd = [
-        "pyinstaller",
+    cmd = pyinstaller_prefix() + [
         "--onefile",
         "--windowed",  # No console for the GUI app
         "--name=WebJam",
