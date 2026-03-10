@@ -814,7 +814,7 @@ class WebJamEnhancedApp:
         if not self.auto_setup_enabled:
             return
         setup_seen = self.repository.get_setting("setup_completed", "0")
-        if setup_seen == "1":
+        if str(setup_seen).strip().lower() in {"1", "true", "yes", "on"}:
             return
 
         self.show_setup_wizard(mark_complete=True)
