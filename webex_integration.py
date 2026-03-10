@@ -7,6 +7,7 @@ Currently uses browser-based approach with future extensibility.
 """
 
 import json
+import os
 import tempfile
 import threading
 import time
@@ -362,8 +363,15 @@ class WebexConfig:
             )
             temp_path = Path(temp_name)
             try:
-                with open(fd, "w", encoding="utf-8") as f:
-                    json.dump(self.config, f, indent=2)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(self.config, f, indent=2)
+                except Exception:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                    raise
                 temp_path.replace(self.config_file)
                 return True
             finally:
@@ -372,7 +380,7 @@ class WebexConfig:
                         temp_path.unlink()
                     except OSError:
                         pass
-        except (OSError, PermissionError) as exc:
+        except (OSError, PermissionError, TypeError, ValueError) as exc:
             try:
                 from core.logging_config import configure_logging
                 from core.settings import load_settings

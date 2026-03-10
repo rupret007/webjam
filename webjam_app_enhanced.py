@@ -62,6 +62,7 @@ DEFAULT_WEBEX_URL = BASE_SETTINGS.webex_url
 CONFIG_FILE = Path(BASE_SETTINGS.config_file)
 MIX_FILE = Path(BASE_SETTINGS.mix_file)
 JAMULUS_CANDIDATES = BASE_SETTINGS.jamulus_candidates
+CUSTOM_TEMPLATE_OPTION = "— Custom —"
 
 
 class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
@@ -580,8 +581,8 @@ class WebJamEnhancedApp:
         quick_frame = tk.Frame(control_bar, bg="#2b2b2b" if not CTK_AVAILABLE else None)
         quick_frame.pack(side=tk.LEFT, padx=8)
         self._create_label(quick_frame, "Quick templates", font_size=9, bold=True).pack(anchor="w")
-        template_labels = ["— Custom —"] + [t.label for t in get_templates_for_mode(self.mode_key)]
-        self.quick_template_var = tk.StringVar(value="— Custom —")
+        template_labels = [CUSTOM_TEMPLATE_OPTION] + [t.label for t in get_templates_for_mode(self.mode_key)]
+        self.quick_template_var = tk.StringVar(value=CUSTOM_TEMPLATE_OPTION)
         self.quick_template_menu = tk.OptionMenu(quick_frame, self.quick_template_var, *template_labels, command=self._on_quick_template_selected)
         self.quick_template_menu.configure(width=16)
         self.quick_template_menu.pack(anchor="w")
@@ -783,6 +784,19 @@ class WebJamEnhancedApp:
             webex_url=self.webex_url,
         )
 
+    def _refresh_quick_template_menu(self) -> None:
+        if not hasattr(self, "quick_template_menu"):
+            return
+        labels = [CUSTOM_TEMPLATE_OPTION] + [t.label for t in get_templates_for_mode(self.mode_key)]
+        menu = self.quick_template_menu["menu"]
+        menu.delete(0, tk.END)
+        for label in labels:
+            menu.add_command(
+                label=label,
+                command=tk._setit(self.quick_template_var, label, self._on_quick_template_selected),
+            )
+        self.quick_template_var.set(CUSTOM_TEMPLATE_OPTION)
+
     def _bridge_participants(self):
         return [
             {
@@ -830,7 +844,7 @@ class WebJamEnhancedApp:
         ).show()
 
     def _on_quick_template_selected(self, choice: str) -> None:
-        if choice == "— Custom —":
+        if choice == CUSTOM_TEMPLATE_OPTION:
             return
         for t in SESSION_TEMPLATES:
             if t.label == choice:
@@ -839,6 +853,7 @@ class WebJamEnhancedApp:
                 if t.mode_key and t.mode_key != self.mode_key:
                     self.mode_key = t.mode_key
                     self.mode_var.set(get_mode_by_key_or_default(t.mode_key).label)
+                    self._refresh_quick_template_menu()
                 self.save_room_context()
                 self.session_canvas.refresh()
                 self.metrics_service.increment(f"metric_quick_template_{t.id}")
@@ -847,6 +862,7 @@ class WebJamEnhancedApp:
     def on_mode_selected(self, mode_label: str) -> None:
         selected = get_mode_by_label_or_default(mode_label)
         self.mode_key = selected.key
+        self._refresh_quick_template_menu()
         if not self.template_var.get().strip():
             self.template_var.set(selected.default_template)
         if not self.session_goal_var.get().strip():

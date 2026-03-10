@@ -46,6 +46,14 @@ class TestWebexConfigEdge(unittest.TestCase):
             self.assertIn("embedded_mode", config.config)
             self.assertTrue(config.get("sync_with_jamulus"))
 
+    def test_save_config_handles_non_serializable_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            with patch("webex_integration.Path.home", return_value=home):
+                config = WebexConfig()
+            config.config["bad_value"] = {"unsupported": {1, 2, 3}}
+            self.assertFalse(config.save_config())
+
 
 class TestWebexParticipantSyncEdge(unittest.TestCase):
     def test_sync_rebuilds_map_and_removes_stale_entries(self):
