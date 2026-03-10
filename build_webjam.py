@@ -18,6 +18,25 @@ INSTALLER_PAYLOAD_FILES = [
 ]
 INSTALLER_PAYLOAD_DIRS = ["core", "ui", "storage", "admin", "api", "utils"]
 
+
+def _wait_for_enter(prompt: str) -> None:
+    try:
+        input(prompt)
+    except EOFError:
+        print("\n[WARN] Non-interactive input detected; continuing with defaults.")
+
+
+def _prompt_yes_no(prompt: str, default: bool = False) -> bool:
+    try:
+        response = input(prompt).strip().lower()
+    except EOFError:
+        print("\n[WARN] Non-interactive input detected; using default choice.")
+        return default
+    if not response:
+        return default
+    return response in {"y", "yes"}
+
+
 def pyinstaller_prefix() -> list[str]:
     """Invoke PyInstaller via the active interpreter."""
     return [sys.executable, "-m", "PyInstaller"]
@@ -229,7 +248,7 @@ def main():
     print("  2. WebJam Installer (with bundled dependencies)")
     print("  3. Distribution package")
     
-    input("\nPress Enter to start build process...")
+    _wait_for_enter("\nPress Enter to start build process...")
     
     # Check PyInstaller
     if not check_pyinstaller():
@@ -289,8 +308,7 @@ def main():
     print("  - Create a ZIP of dist_package/ for easy distribution")
     
     # Offer to create ZIP
-    create_zip = input("\nCreate ZIP file for distribution? (y/n): ")
-    if create_zip.lower() in ['y', 'yes']:
+    if _prompt_yes_no("\nCreate ZIP file for distribution? (y/n): ", default=False):
         print("\nCreating ZIP file...")
         shutil.make_archive("WebJam_Distribution", 'zip', "dist_package")
         print("[OK] Created WebJam_Distribution.zip")

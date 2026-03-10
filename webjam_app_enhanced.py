@@ -1245,10 +1245,12 @@ class WebJamEnhancedApp:
         return True
 
     def open_admin_panel(self):
-        if not self.auth_controller.authorize(self.current_user, "view_diagnostics", require_sign_in=True):
+        if self.current_user is None:
             signed_in = self.sign_in()
             if not signed_in:
                 return
+        if not self.auth_controller.authorize(self.current_user, "view_diagnostics", require_sign_in=True):
+            return
         AdminPanel(self.root, self.repository, self.current_user, self.policy).show()
 
     def show_audio_diagnostics(self):

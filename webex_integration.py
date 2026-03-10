@@ -274,13 +274,27 @@ class WebexParticipantSync:
         """
         webex_participants = self.webex.get_participants()
         jamulus_participants = self.jamulus.get_participants()
-        
-        # Simple name matching
+
+        def _normalized_name(value: str) -> str:
+            return (value or "").strip().lower()
+
+        new_map: Dict[str, str] = {}
+        matched_jamulus_ids: set[int] = set()
+
+        # Deterministic one-to-one matching; rebuild each run to avoid stale links.
         for wp in webex_participants:
+            webex_name = _normalized_name(wp.name)
+            if not webex_name:
+                continue
             for jp in jamulus_participants:
-                # Match by name (case-insensitive, partial match)
-                if wp.name.lower() in jp.name.lower() or jp.name.lower() in wp.name.lower():
-                    self.participant_map[wp.id] = str(jp.channel_id)
+                jamulus_name = _normalized_name(getattr(jp, "name", ""))
+                if not jamulus_name:
+                    continue
+                if jp.channel_id in matched_jamulus_ids:
+                    continue
+                if webex_name == jamulus_name or webex_name in jamulus_name or jamulus_name in webex_name:
+                    new_map[wp.id] = str(jp.channel_id)
+                    matched_jamulus_ids.add(jp.channel_id)
                     try:
                         from core.logging_config import configure_logging
                         from core.settings import load_settings
@@ -290,8 +304,10 @@ class WebexParticipantSync:
                     except Exception as exc:
                         import logging
                         logging.getLogger(__name__).debug("Could not log sync match: %s", exc)
-        
-        return self.participant_map
+                    break
+
+        self.participant_map = new_map
+        return dict(self.participant_map)
     
     def get_jamulus_id(self, webex_id: str) -> Optional[str]:
         """Get Jamulus channel ID for a Webex participant"""
@@ -327,7 +343,9 @@ class WebexConfig:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     loaded = json.load(f)
                 if isinstance(loaded, dict):
-                    return loaded
+                    merged = dict(default)
+                    merged.update(loaded)
+                    return merged
             except (json.JSONDecodeError, OSError):
                 pass
         return default
@@ -380,8 +398,7 @@ class WebexConfig:
 def open_webex_meeting(url: str):
     """Simple utility to open Webex meeting in browser"""
     try:
-        webbrowser.open(url)
-        return True
+        return bool(webbrowser.open(url))
     except Exception as e:
         try:
             from core.logging_config import configure_logging

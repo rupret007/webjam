@@ -26,6 +26,13 @@ class AdminPanel:
         if not self.user:
             messagebox.showwarning("Admin Panel", "Sign in as admin or operator to open admin panel.", parent=self.root)
             return
+        if not self.policy.allows(self.user, "view_diagnostics"):
+            messagebox.showwarning(
+                "Permission Denied",
+                f"Role '{self.user.role}' cannot open the admin panel.",
+                parent=self.root,
+            )
+            return
 
         bg = DEFAULT_THEME.bg_secondary
         fg = DEFAULT_THEME.text_primary
