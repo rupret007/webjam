@@ -9,6 +9,14 @@ import shutil
 from pathlib import Path
 
 GENERATED_SPEC_FILES = ("WebJam_Installer.spec", "WebJam.spec")
+INSTALLER_PAYLOAD_FILES = [
+    "webjam_app_enhanced.py",
+    "jamulus_controller.py",
+    "webex_integration.py",
+    "requirements.txt",
+    "README.md",
+]
+INSTALLER_PAYLOAD_DIRS = ["core", "ui", "storage", "admin", "api", "utils"]
 
 def pyinstaller_prefix() -> list[str]:
     """Invoke PyInstaller via the active interpreter."""
@@ -38,13 +46,27 @@ def build_installer():
         "--icon=NONE",
         "--add-data=VB;VB",
         "--add-data=jamulus_3.11.0_win.exe;.",
-        "--add-data=webjam_app_enhanced.py;.",
-        "--add-data=jamulus_controller.py;.",
-        "--add-data=requirements.txt;.",
-        "--add-data=README.md;.",
         "--console",
         "webjam_installer.py"
     ]
+    for filename in INSTALLER_PAYLOAD_FILES:
+        src = Path(filename)
+        if not src.exists():
+            print(f"[ERROR] Missing installer payload file: {filename}")
+            return False
+        cmd.append(f"--add-data={src};.")
+    for dirname in INSTALLER_PAYLOAD_DIRS:
+        src_dir = Path(dirname)
+        if not (src_dir.exists() and src_dir.is_dir()):
+            print(f"[ERROR] Missing installer payload directory: {dirname}/")
+            return False
+        cmd.append(f"--add-data={src_dir};{dirname}")
+    bundled_app_exe = Path("dist") / "WebJam.exe"
+    if bundled_app_exe.exists():
+        cmd.append(f"--add-data={bundled_app_exe};.")
+        print("Including bundled WebJam.exe in installer payload")
+    else:
+        print("WebJam.exe not found before installer build; installer will rely on Python script runtime fallback.")
     
     print("\nRunning PyInstaller...")
     print(" ".join(cmd))
@@ -107,6 +129,12 @@ def create_distribution():
         return False
     shutil.copy(installer_path, dist_dir)
     print(f"[OK] Copied WebJam_Installer.exe")
+    app_exe_path = Path("dist/WebJam.exe")
+    if not app_exe_path.exists():
+        print(f"[ERROR] Missing build artifact: {app_exe_path}")
+        return False
+    shutil.copy(app_exe_path, dist_dir)
+    print("[OK] Copied WebJam.exe")
     
     # Copy VB folder
     if Path("VB").exists():
@@ -130,14 +158,7 @@ def create_distribution():
         "requirements.txt",
         "README.md"
     ]
-    python_dirs = [
-        "core",
-        "ui",
-        "storage",
-        "admin",
-        "api",
-        "utils",
-    ]
+    python_dirs = list(INSTALLER_PAYLOAD_DIRS)
     
     for file in python_files:
         if Path(file).exists():
@@ -165,6 +186,7 @@ FOR DEVELOPERS:
 ---------------
 This package includes both:
 - Pre-built installer (WebJam_Installer.exe)
+- Pre-built app executable (WebJam.exe)
 - Source code (Python files)
 
 To run from source:
@@ -179,6 +201,7 @@ To build from source:
 WHAT'S INCLUDED:
 ----------------
 - WebJam_Installer.exe - One-click installer
+- WebJam.exe - Standalone app executable
 - VB/ - VB-Cable audio driver files
 - jamulus_3.11.0_win.exe - Jamulus audio client
 - Python source files
@@ -202,8 +225,8 @@ def main():
     print("WebJam Build System")
     print("="*70)
     print("\nThis will build:")
-    print("  1. WebJam Installer (with bundled dependencies)")
-    print("  2. WebJam Application (standalone GUI)")
+    print("  1. WebJam Application (standalone GUI)")
+    print("  2. WebJam Installer (with bundled dependencies)")
     print("  3. Distribution package")
     
     input("\nPress Enter to start build process...")
@@ -226,22 +249,22 @@ def main():
             spec_file.unlink()
             print(f"   Removed {spec_file}")
     
-    # Build installer
+    # Build application first so installer can optionally bundle WebJam.exe
     print("\n" + "="*70)
-    print("Step 1/3: Building Installer")
-    print("="*70)
-    
-    if not build_installer():
-        print("\n[ERROR] Build process failed at installer stage")
-        return
-    
-    # Build application
-    print("\n" + "="*70)
-    print("Step 2/3: Building Application")
+    print("Step 1/3: Building Application")
     print("="*70)
     
     if not build_app():
         print("\n[ERROR] Build process failed at application stage")
+        return
+    
+    # Build installer
+    print("\n" + "="*70)
+    print("Step 2/3: Building Installer")
+    print("="*70)
+    
+    if not build_installer():
+        print("\n[ERROR] Build process failed at installer stage")
         return
     
     # Create distribution

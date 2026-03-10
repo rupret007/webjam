@@ -62,6 +62,7 @@ def app_dir() -> Path:
 HERE = base_dir()
 WORK = work_dir()
 APP_DIR = app_dir()
+APP_EXE_NAME = "WebJam.exe"
 
 # ====== Helpers ======
 def print_header(text):
@@ -95,7 +96,28 @@ def python_command_prefix(prefer_windowed: bool = False) -> list[str] | None:
         return [resolved]
     return None
 
+def installed_app_executable() -> Path:
+    return APP_DIR / APP_EXE_NAME
+
+def bundled_app_executable_source() -> Path | None:
+    candidates = [
+        HERE / APP_EXE_NAME,
+        HERE / "dist" / APP_EXE_NAME,
+        Path(sys.executable).resolve().parent / APP_EXE_NAME,
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+def ps_quote(value: str) -> str:
+    escaped = value.replace("`", "``").replace('"', '`"')
+    return f'"{escaped}"'
+
 def shortcut_target_and_args(app_file: Path) -> tuple[str, str] | None:
+    app_exe = installed_app_executable()
+    if app_exe.exists():
+        return str(app_exe), ""
     prefix = python_command_prefix(prefer_windowed=True)
     if not prefix:
         return None
@@ -105,11 +127,15 @@ def shortcut_target_and_args(app_file: Path) -> tuple[str, str] | None:
     return target, arguments
 
 def launch_installed_app(app_file: Path) -> bool:
+    app_exe = installed_app_executable()
+    if app_exe.exists():
+        subprocess.Popen([str(app_exe)], cwd=str(APP_DIR))
+        return True
     prefix = python_command_prefix(prefer_windowed=False)
     if not prefix:
-        print("   ⚠  Python runtime not found in PATH. Cannot auto-launch WebJam.")
+        print("   Could not find a launch runtime (no bundled executable and no Python in PATH).")
         return False
-    subprocess.Popen(prefix + [str(app_file)])
+    subprocess.Popen(prefix + [str(app_file)], cwd=str(APP_DIR))
     return True
 
 def elevate_if_needed():
@@ -451,6 +477,9 @@ def configure_audio_devices():
 def install_python_dependencies():
     """Install Python dependencies for WebJam GUI"""
     print("\nInstalling Python Dependencies...")
+    if installed_app_executable().exists():
+        print("   Standalone WebJam executable detected; skipping Python dependency install.")
+        return True
     requirements_file = HERE / "requirements.txt"
     if not requirements_file.exists():
         print("   requirements.txt not found, skipping Python dependencies")
@@ -487,28 +516,58 @@ def install_python_dependencies():
 def install_webjam_app():
     """Install WebJam application files"""
     print("\nInstalling WebJam Application...")
-    app_files = [
+    required_files = [
         "webjam_app_enhanced.py",
         "jamulus_controller.py",
         "webex_integration.py",
         "requirements.txt",
-        "README.md",
     ]
-    app_dirs = ["core", "ui", "storage", "admin", "api", "utils"]
-    for filename in app_files:
+    optional_files = ["README.md"]
+    required_dirs = ["core", "ui", "storage", "admin", "api", "utils"]
+    success = True
+
+    for filename in required_files + optional_files:
         src = HERE / filename
-        if src.exists():
+        if not src.exists():
+            if filename in required_files:
+                print(f"   Missing required file in installer payload: {filename}")
+                success = False
+            continue
+        try:
             dst = APP_DIR / filename
             shutil.copy2(src, dst)
             print(f"   Copied {filename}")
-    for dirname in app_dirs:
+        except OSError as exc:
+            print(f"   Failed to copy {filename}: {exc}")
+            success = False
+
+    bundled_app = bundled_app_executable_source()
+    if bundled_app:
+        try:
+            dst_exe = installed_app_executable()
+            shutil.copy2(bundled_app, dst_exe)
+            print(f"   Copied {APP_EXE_NAME}")
+        except OSError as exc:
+            print(f"   Failed to copy {APP_EXE_NAME}: {exc}")
+            success = False
+    else:
+        print("   No bundled WebJam.exe found; installer will rely on Python runtime for app launch.")
+
+    for dirname in required_dirs:
         src_dir = HERE / dirname
-        if src_dir.exists() and src_dir.is_dir():
+        if not (src_dir.exists() and src_dir.is_dir()):
+            print(f"   Missing required directory in installer payload: {dirname}/")
+            success = False
+            continue
+        try:
             dst_dir = APP_DIR / dirname
             shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
             print(f"   Copied {dirname}/")
+        except OSError as exc:
+            print(f"   Failed to copy {dirname}/: {exc}")
+            success = False
     print(f"   Application installed to {APP_DIR}")
-    return True
+    return success
 # ====== Shortcut Creation ======
 def create_desktop_shortcut():
     """Create desktop shortcut to launch WebJam"""
@@ -521,17 +580,24 @@ def create_desktop_shortcut():
         print("   Could not resolve Python runtime for desktop shortcut")
         return False
     target, args = launch_spec
+    target_lit = ps_quote(target)
+    args_lit = ps_quote(args)
+    workdir_lit = ps_quote(str(APP_DIR))
+    lnk_lit = ps_quote(str(lnk_path))
     ps = f'''
     $WshShell = New-Object -ComObject WScript.Shell
-    $Shortcut = $WshShell.CreateShortcut("{lnk_path}")
-    $Shortcut.TargetPath = "{target}"
-    $Shortcut.Arguments = '{args}'
-    $Shortcut.WorkingDirectory = "{APP_DIR}"
-    $Shortcut.IconLocation = "{target},0"
+    $Shortcut = $WshShell.CreateShortcut({lnk_lit})
+    $Shortcut.TargetPath = {target_lit}
+    $Shortcut.Arguments = {args_lit}
+    $Shortcut.WorkingDirectory = {workdir_lit}
+    $Shortcut.IconLocation = {target_lit} + ",0"
     $Shortcut.Description = "WebJam Music Collaboration Platform"
     $Shortcut.Save()
     '''
-    run(["powershell", "-NoP", "-NonI", "-Command", ps])
+    result = run(["powershell", "-NoP", "-NonI", "-Command", ps])
+    if result.returncode != 0:
+        print("   Failed to create Desktop shortcut")
+        return False
     print(f"   Shortcut created: {lnk_path}")
     return True
 def create_start_menu_shortcut():
@@ -546,17 +612,24 @@ def create_start_menu_shortcut():
         print("   Could not resolve Python runtime for Start Menu shortcut")
         return False
     target, args = launch_spec
+    target_lit = ps_quote(target)
+    args_lit = ps_quote(args)
+    workdir_lit = ps_quote(str(APP_DIR))
+    lnk_lit = ps_quote(str(lnk_path))
     ps = f'''
     $WshShell = New-Object -ComObject WScript.Shell
-    $Shortcut = $WshShell.CreateShortcut("{lnk_path}")
-    $Shortcut.TargetPath = "{target}"
-    $Shortcut.Arguments = '{args}'
-    $Shortcut.WorkingDirectory = "{APP_DIR}"
-    $Shortcut.IconLocation = "{target},0"
+    $Shortcut = $WshShell.CreateShortcut({lnk_lit})
+    $Shortcut.TargetPath = {target_lit}
+    $Shortcut.Arguments = {args_lit}
+    $Shortcut.WorkingDirectory = {workdir_lit}
+    $Shortcut.IconLocation = {target_lit} + ",0"
     $Shortcut.Description = "WebJam Music Collaboration Platform"
     $Shortcut.Save()
     '''
-    run(["powershell", "-NoP", "-NonI", "-Command", ps])
+    result = run(["powershell", "-NoP", "-NonI", "-Command", ps])
+    if result.returncode != 0:
+        print("   Failed to create Start Menu shortcut")
+        return False
     print("   Start Menu shortcut created")
     return True
 # ====== Main Installation ======
@@ -605,12 +678,14 @@ def main():
     configure_audio_devices()
     
     print_step(5, "Installing WebJam Application")
-    install_webjam_app()
-    install_python_dependencies()
+    app_ok = install_webjam_app()
+    deps_ok = install_python_dependencies()
+    success = success and app_ok and deps_ok
     
     print_step(6, "Creating Shortcuts")
-    create_desktop_shortcut()
-    create_start_menu_shortcut()
+    desktop_shortcut_ok = create_desktop_shortcut()
+    start_shortcut_ok = create_start_menu_shortcut()
+    success = success and desktop_shortcut_ok and start_shortcut_ok
     
     # Completion
     print_header("Installation Complete!")
@@ -646,6 +721,7 @@ def main():
     if launch.lower() in ['y', 'yes']:
         print("\n🚀 Launching WebJam...")
         app_file = APP_DIR / "webjam_app_enhanced.py"
+        launch_target = installed_app_executable() if installed_app_executable().exists() else app_file
         try:
             if launch_installed_app(app_file):
                 print("   WebJam launched!")
@@ -653,7 +729,7 @@ def main():
                 print("   Could not auto-launch WebJam. Start it manually from the install folder.")
         except Exception as e:
             print(f"   Error: Failed to launch: {e}")
-            print(f"   You can launch it manually from: {app_file}")
+            print(f"   You can launch it manually from: {launch_target}")
     
     print("\n" + "="*70)
     print("Thank you for installing WebJam!")
