@@ -387,7 +387,13 @@ class TestJamulusController(unittest.TestCase):
             try:
                 while not stop_event.is_set():
                     _ = self.controller.get_participants()
-                    self.controller.save_mix(tempfile.NamedTemporaryFile(delete=True, suffix=".json").name)
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                    tmp_path = tmp.name
+                    tmp.close()
+                    try:
+                        self.controller.save_mix(tmp_path)
+                    finally:
+                        Path(tmp_path).unlink(missing_ok=True)
             except Exception as exc:
                 errors.append(exc)
 
