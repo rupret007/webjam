@@ -10,7 +10,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -384,7 +384,7 @@ class WebJamRepository:
             return ""
         return row[0]
 
-    def append_cohort_event(self, cohort: str, event_type: str, payload: Dict[str, str]) -> None:
+    def append_cohort_event(self, cohort: str, event_type: str, payload: Any) -> None:
         key = f"cohort_events_{cohort}"
         with self._managed_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -401,19 +401,42 @@ class WebJamRepository:
             except Exception as exc:
                 LOGGER.warning("Unexpected cohort event payload decode failure for '%s': %s", key, exc)
                 events = []
+            event_ts = int(time.time())
+            event_type_text = str(event_type)
+            event_payload = payload
+            if not isinstance(event_payload, dict):
+                event_payload = {"value": event_payload}
+
             events.append(
                 {
-                    "ts": int(time.time()),
-                    "event_type": event_type,
-                    "payload": payload,
+                    "ts": event_ts,
+                    "event_type": event_type_text,
+                    "payload": event_payload,
                 }
             )
             if len(events) > self._MAX_COHORT_EVENTS:
                 events = events[-self._MAX_COHORT_EVENTS :]
+            try:
+                serialized_events = json.dumps(events)
+            except (TypeError, ValueError):
+                LOGGER.warning(
+                    "Non-JSON cohort payload detected for '%s'; coercing payload values to strings.",
+                    key,
+                )
+                if isinstance(payload, dict):
+                    safe_payload = {str(k): str(v) for k, v in payload.items()}
+                else:
+                    safe_payload = {"value": str(payload)}
+                events[-1] = {
+                    "ts": event_ts,
+                    "event_type": event_type_text,
+                    "payload": safe_payload,
+                }
+                serialized_events = json.dumps(events)
             conn.execute(
                 "INSERT INTO app_settings (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (key, json.dumps(events)),
+                (key, serialized_events),
             )
             conn.commit()
 

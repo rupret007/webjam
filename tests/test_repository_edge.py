@@ -102,6 +102,22 @@ class TestRepositoryCohortEvents(unittest.TestCase):
         events = json.loads(raw)
         self.assertEqual(len(events), 1)
 
+    def test_cohort_event_with_non_serializable_payload_is_coerced(self):
+        self.repo.append_cohort_event("bad_payload", "click", {"bad": {"set_value"}})
+        import json
+        raw = self.repo.get_setting("cohort_events_bad_payload")
+        events = json.loads(raw)
+        self.assertEqual(len(events), 1)
+        self.assertIsInstance(events[0]["payload"]["bad"], str)
+
+    def test_cohort_event_with_non_mapping_payload_is_wrapped(self):
+        self.repo.append_cohort_event("wrapped", "click", ["a", "b"])  # type: ignore[arg-type]
+        import json
+        raw = self.repo.get_setting("cohort_events_wrapped")
+        events = json.loads(raw)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["payload"]["value"], ["a", "b"])
+
 
 class TestRepositoryArtifacts(unittest.TestCase):
     def setUp(self):
