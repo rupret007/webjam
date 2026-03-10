@@ -667,6 +667,50 @@ class TestModernizationCore(unittest.TestCase):
 
             bridge.stop()
 
+    def test_local_api_bridge_start_false_when_server_exits_without_started_signal(self):
+        class FakeHTTPException(Exception):
+            def __init__(self, status_code: int, detail: str):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
+
+        class FakeFastAPI:
+            def __init__(self, title: str):
+                self.title = title
+                self.routes = {}
+
+            def get(self, path: str):
+                def decorator(fn):
+                    self.routes[path] = fn
+                    return fn
+                return decorator
+
+        class FakeConfig:
+            def __init__(self, app, host, port, log_level):
+                self.app = app
+                self.host = host
+                self.port = port
+                self.log_level = log_level
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+
+            def run(self):
+                # Simulate immediate startup failure without ever exposing a
+                # "started" state or graceful shutdown signal.
+                return
+
+        fake_fastapi_module = types.SimpleNamespace(FastAPI=FakeFastAPI, HTTPException=FakeHTTPException)
+        fake_uvicorn_module = types.SimpleNamespace(Config=FakeConfig, Server=FakeServer)
+        bridge = LocalApiBridge(lambda: [], lambda: {})
+
+        with patch.dict(sys.modules, {"fastapi": fake_fastapi_module, "uvicorn": fake_uvicorn_module}):
+            started = bridge.start()
+            self.assertFalse(started)
+            bridge.stop()
+
     @unittest.skipUnless(FASTAPI_TESTCLIENT_AVAILABLE, "FastAPI TestClient not available")
     def test_local_api_bridge_testclient_endpoints_success(self):
         bridge = LocalApiBridge(

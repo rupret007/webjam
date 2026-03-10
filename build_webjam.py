@@ -8,6 +8,8 @@ import sys
 import shutil
 from pathlib import Path
 
+GENERATED_SPEC_FILES = ("WebJam_Installer.spec", "WebJam.spec")
+
 def pyinstaller_prefix() -> list[str]:
     """Invoke PyInstaller via the active interpreter."""
     return [sys.executable, "-m", "PyInstaller"]
@@ -121,16 +123,31 @@ def create_distribution():
     python_files = [
         "webjam_app_enhanced.py",
         "webjam_app.py",
+        "webex_integration.py",
         "jamulus_controller.py",
         "webjam_installer.py",
+        "build_webjam.py",
         "requirements.txt",
         "README.md"
+    ]
+    python_dirs = [
+        "core",
+        "ui",
+        "storage",
+        "admin",
+        "api",
+        "utils",
     ]
     
     for file in python_files:
         if Path(file).exists():
             shutil.copy(file, dist_dir)
             print(f"[OK] Copied {file}")
+    for dirname in python_dirs:
+        src_dir = Path(dirname)
+        if src_dir.exists() and src_dir.is_dir():
+            shutil.copytree(src_dir, dist_dir / dirname, dirs_exist_ok=True)
+            print(f"[OK] Copied {dirname}/")
     
     # Create README for distribution
     readme_content = """
@@ -203,9 +220,11 @@ def main():
             shutil.rmtree(dir_path)
             print(f"   Removed {dir_name}/")
     
-    for spec_file in Path(".").glob("*.spec"):
-        spec_file.unlink()
-        print(f"   Removed {spec_file}")
+    for spec_name in GENERATED_SPEC_FILES:
+        spec_file = Path(spec_name)
+        if spec_file.exists():
+            spec_file.unlink()
+            print(f"   Removed {spec_file}")
     
     # Build installer
     print("\n" + "="*70)

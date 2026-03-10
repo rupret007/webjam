@@ -366,6 +366,35 @@ class TestJamulusController(unittest.TestCase):
         finally:
             Path(temp_file).unlink(missing_ok=True)
 
+    def test_load_mix_normalizes_multiple_solo_entries(self):
+        """Mix payload with multiple solo=true entries should normalize to one solo."""
+        self.controller.add_participant("User 1", 0)
+        self.controller.add_participant("User 2", 1)
+        self.controller.add_participant("User 3", 2)
+        self.controller.set_mute(2, True)
+
+        payload = {
+            "participants": [
+                {"channel_id": 0, "solo": True, "muted": False},
+                {"channel_id": 1, "solo": True, "muted": False},
+                {"channel_id": 2, "solo": False, "muted": True},
+            ]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+            temp_file = f.name
+            json.dump(payload, f)
+
+        try:
+            self.controller.load_mix(temp_file)
+            self.assertFalse(self.controller.participants[0].solo)
+            self.assertTrue(self.controller.participants[0].muted)
+            self.assertTrue(self.controller.participants[1].solo)
+            self.assertFalse(self.controller.participants[1].muted)
+            self.assertFalse(self.controller.participants[2].solo)
+            self.assertTrue(self.controller.participants[2].muted)
+        finally:
+            Path(temp_file).unlink(missing_ok=True)
+
     def test_concurrent_participant_access_does_not_crash(self):
         """Test concurrent participant reads/writes remain stable"""
         self.controller.add_participant("User 1", 0)

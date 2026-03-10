@@ -97,14 +97,28 @@ class LocalApiBridge:
             else:
                 # Compatibility fallback for test doubles that do not implement
                 # uvicorn's "started" flag.
-                if thread is not None and thread.is_alive():
+                if thread is not None and thread.is_alive() and running:
+                    # Guard against transient startup threads that exit
+                    # immediately before truly serving.
+                    time.sleep(0.01)
+                    with self._state_lock:
+                        retry_thread = self._thread
+                        retry_running = self._running
+                    if retry_thread is not None and retry_thread.is_alive() and retry_running:
+                        return True
+                if server is not None and not running and bool(getattr(server, "should_exit", False)):
                     return True
-                if server is not None and not running:
-                    return True
+                if thread is not None and not thread.is_alive() and not running:
+                    return False
             time.sleep(0.05)
         with self._state_lock:
-            if self._server is not None and not hasattr(self._server, "started"):
-                return True
+            thread = self._thread
+            server = self._server
+            running = self._running
+            if server is not None and not hasattr(server, "started"):
+                if thread is not None and thread.is_alive() and running:
+                    return True
+                return bool(getattr(server, "should_exit", False) and not running)
             return bool(self._thread and self._thread.is_alive() and self._running)
 
     def stop(self) -> None:

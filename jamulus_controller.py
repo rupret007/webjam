@@ -329,6 +329,7 @@ class JamulusController:
             self.logger.warning("Mix file '%s' is missing a valid participants list.", filename)
             return
 
+        solo_candidates: list[int] = []
         for p_data in participants_data:
             if not isinstance(p_data, dict):
                 continue
@@ -358,8 +359,19 @@ class JamulusController:
 
                 p.muted = _coerce_bool(p_data.get("muted", p.muted), p.muted)
                 p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
+                if p.solo:
+                    solo_candidates.append(channel_id)
             # Mixer apply is best-effort; may race with protocol monitor updates.
             self._apply_mixer_setting(channel_id)
+
+        # Enforce exclusive solo semantics for mix files that contain multiple
+        # solo=true entries; choose the last soloed channel in payload order.
+        if solo_candidates:
+            self.set_solo(solo_candidates[-1], True)
+        else:
+            with self._participants_lock:
+                if not any(p.solo for p in self.participants.values()):
+                    self._pre_solo_mute.clear()
 
 class JamulusAudioMonitor:
     """
