@@ -49,6 +49,18 @@ class TestRetryServiceEdge(unittest.TestCase):
         result = RetryService.retry_action(action, attempts=1, base_delay=0.0)
         self.assertIsNone(result)
 
+    def test_zero_attempts_rejected(self):
+        action = MagicMock(return_value="ok")
+        with self.assertRaises(ValueError):
+            RetryService.retry_action(action, attempts=0, base_delay=0.0)
+        action.assert_not_called()
+
+    def test_negative_base_delay_rejected(self):
+        action = MagicMock(return_value="ok")
+        with self.assertRaises(ValueError):
+            RetryService.retry_action(action, attempts=1, base_delay=-0.1)
+        action.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

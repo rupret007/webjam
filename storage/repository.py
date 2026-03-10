@@ -126,15 +126,16 @@ class WebJamRepository:
 
     def ensure_default_admin(self) -> None:
         with self._managed_connection() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
-            if row and row[0] > 0:
-                return
-            username = "admin"
-            password = secrets.token_urlsafe(12)
-            salt = os.urandom(16)
-            digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
             conn.execute("BEGIN IMMEDIATE")
             try:
+                row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+                if row and row[0] > 0:
+                    conn.commit()
+                    return
+                username = "admin"
+                password = secrets.token_urlsafe(12)
+                salt = os.urandom(16)
+                digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
                 conn.execute(
                     "INSERT INTO users (username, salt, password_hash, role, must_change_password, failed_attempts, locked_until) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -148,6 +149,8 @@ class WebJamRepository:
                     ("admin_bootstrap_password", password),
                 )
                 conn.commit()
+            except sqlite3.IntegrityError:
+                conn.rollback()
             except Exception:
                 conn.rollback()
                 raise
@@ -221,10 +224,11 @@ class WebJamRepository:
                 "WHERE username = ?",
                 (salt, digest, username),
             ).rowcount
-            if username == "admin":
+            updated_count = int(updated or 0)
+            if username == "admin" and updated_count > 0:
                 conn.execute("DELETE FROM app_settings WHERE key = ?", ("admin_bootstrap_password",))
             conn.commit()
-        return bool(updated)
+        return updated_count > 0
 
     def set_setting(self, key: str, value: str) -> None:
         with self._managed_connection() as conn:

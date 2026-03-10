@@ -47,6 +47,15 @@ class TestRepositoryPasswordEdge(unittest.TestCase):
         self.assertIsNone(role)
         self.assertEqual(status, "invalid_credentials")
 
+    def test_failed_admin_password_update_keeps_bootstrap_secret(self):
+        bootstrap_pw = self.repo.get_bootstrap_admin_password()
+        self.assertTrue(bootstrap_pw)
+        with self.repo._managed_connection() as conn:
+            conn.execute("DELETE FROM users WHERE username = ?", ("admin",))
+            conn.commit()
+        self.assertFalse(self.repo.update_password("admin", "newpassword123"))
+        self.assertEqual(self.repo.get_bootstrap_admin_password(), bootstrap_pw)
+
 
 class TestRepositoryIncrementConcurrent(unittest.TestCase):
     def setUp(self):

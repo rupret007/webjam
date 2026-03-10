@@ -13,6 +13,10 @@ class RetryService:
     @staticmethod
     def retry_action(action: Callable[[], Any], attempts: int = 3, base_delay: float = 0.4) -> Any:
         """Retry an action on exception; callable should raise on failure."""
+        if attempts < 1:
+            raise ValueError("attempts must be >= 1")
+        if base_delay < 0:
+            raise ValueError("base_delay must be >= 0")
         last_exc: Exception | None = None
         for attempt in range(attempts):
             try:
@@ -76,6 +80,14 @@ class MetricsService:
         webex_url: str,
         audio_diagnostics: dict[str, Any],
     ) -> Path:
+        home_dir = Path(home_dir)
+        try:
+            home_dir.mkdir(parents=True, exist_ok=True)
+        except FileExistsError as exc:
+            raise NotADirectoryError(f"Snapshot output path is not a directory: {home_dir}") from exc
+        if not home_dir.is_dir():
+            raise NotADirectoryError(f"Snapshot output path is not a directory: {home_dir}")
+
         timestamp = datetime.now(UTC)
         snapshot = {
             "created_at": timestamp.isoformat().replace("+00:00", "Z"),

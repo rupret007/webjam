@@ -232,14 +232,27 @@ class SetupWizard:
         webex_ok, webex_detail = SetupWizard.check_webex_url(settings.webex_url)
         results.append(("Webex URL", webex_ok, webex_detail))
 
-        diagnostics = diagnostics_provider() or {}
-        active = diagnostics.get("active", "False").lower() == "true"
-        diag_detail = (
-            f"Audio backend: {diagnostics.get('backend', 'unknown')}, "
-            f"samplerate: {diagnostics.get('samplerate', 'unknown')}, "
-            f"active: {diagnostics.get('active', 'unknown')}, "
-            f"message: {diagnostics.get('message', 'n/a')}"
-        )
+        try:
+            raw_diagnostics = diagnostics_provider()
+        except Exception as exc:
+            active = False
+            diag_detail = f"Audio diagnostics callback failed: {exc}"
+        else:
+            if isinstance(raw_diagnostics, dict):
+                diagnostics = {str(k): str(v) for k, v in raw_diagnostics.items()}
+                active = diagnostics.get("active", "False").strip().lower() == "true"
+                diag_detail = (
+                    f"Audio backend: {diagnostics.get('backend', 'unknown')}, "
+                    f"samplerate: {diagnostics.get('samplerate', 'unknown')}, "
+                    f"active: {diagnostics.get('active', 'unknown')}, "
+                    f"message: {diagnostics.get('message', 'n/a')}"
+                )
+            else:
+                active = False
+                diag_detail = (
+                    "Audio diagnostics unavailable: expected a mapping payload "
+                    f"but got {type(raw_diagnostics).__name__}."
+                )
         results.append(("Audio diagnostics", active, diag_detail))
 
         return results
