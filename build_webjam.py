@@ -50,10 +50,10 @@ def build_installer():
     result = subprocess.run(cmd)
     
     if result.returncode == 0:
-        print("\n✅ Installer built successfully!")
+        print("\n[OK] Installer built successfully!")
         print(f"   Location: dist/WebJam_Installer.exe")
     else:
-        print("\n❌ Build failed")
+        print("\n[ERROR] Build failed")
         return False
     
     return True
@@ -80,10 +80,10 @@ def build_app():
     result = subprocess.run(cmd)
     
     if result.returncode == 0:
-        print("\n✅ Application built successfully!")
+        print("\n[OK] Application built successfully!")
         print(f"   Location: dist/WebJam.exe")
     else:
-        print("\n❌ Build failed")
+        print("\n[ERROR] Build failed")
         return False
     
     return True
@@ -101,21 +101,21 @@ def create_distribution():
     
     installer_path = Path("dist/WebJam_Installer.exe")
     if not installer_path.exists():
-        print(f"❌ Missing build artifact: {installer_path}")
+        print(f"[ERROR] Missing build artifact: {installer_path}")
         return False
     shutil.copy(installer_path, dist_dir)
-    print(f"✓ Copied WebJam_Installer.exe")
+    print(f"[OK] Copied WebJam_Installer.exe")
     
     # Copy VB folder
     if Path("VB").exists():
         shutil.copytree("VB", dist_dir / "VB")
-        print(f"✓ Copied VB directory")
+        print(f"[OK] Copied VB directory")
     
     # Copy Jamulus installer
     jamulus = Path("jamulus_3.11.0_win.exe")
     if jamulus.exists():
         shutil.copy(jamulus, dist_dir)
-        print(f"✓ Copied Jamulus installer")
+        print(f"[OK] Copied Jamulus installer")
     
     # Copy Python files for source distribution
     python_files = [
@@ -130,7 +130,7 @@ def create_distribution():
     for file in python_files:
         if Path(file).exists():
             shutil.copy(file, dist_dir)
-            print(f"✓ Copied {file}")
+            print(f"[OK] Copied {file}")
     
     # Create README for distribution
     readme_content = """
@@ -161,20 +161,20 @@ To build from source:
 
 WHAT'S INCLUDED:
 ----------------
-• WebJam_Installer.exe - One-click installer
-• VB/ - VB-Cable audio driver files
-• jamulus_3.11.0_win.exe - Jamulus audio client
-• Python source files
-• Documentation
+- WebJam_Installer.exe - One-click installer
+- VB/ - VB-Cable audio driver files
+- jamulus_3.11.0_win.exe - Jamulus audio client
+- Python source files
+- Documentation
 
 For more information, see README.md
 """
     
     with open(dist_dir / "README_DISTRIBUTION.txt", "w") as f:
         f.write(readme_content)
-    print(f"✓ Created README_DISTRIBUTION.txt")
+    print(f"[OK] Created README_DISTRIBUTION.txt")
     
-    print(f"\n✅ Distribution package created in: {dist_dir}")
+    print(f"\n[OK] Distribution package created in: {dist_dir}")
     print(f"\nYou can now distribute the entire '{dist_dir}' folder")
     
     return True
@@ -196,7 +196,7 @@ def main():
         return
     
     # Clean previous builds
-    print("\n🧹 Cleaning previous builds...")
+    print("\nCleaning previous builds...")
     for dir_name in ["build", "dist", "dist_package"]:
         dir_path = Path(dir_name)
         if dir_path.exists():
@@ -213,7 +213,7 @@ def main():
     print("="*70)
     
     if not build_installer():
-        print("\n❌ Build process failed at installer stage")
+        print("\n[ERROR] Build process failed at installer stage")
         return
     
     # Build application
@@ -222,7 +222,7 @@ def main():
     print("="*70)
     
     if not build_app():
-        print("\n❌ Build process failed at application stage")
+        print("\n[ERROR] Build process failed at application stage")
         return
     
     # Create distribution
@@ -231,7 +231,7 @@ def main():
     print("="*70)
     
     if not create_distribution():
-        print("\n❌ Build process failed at distribution stage")
+        print("\n[ERROR] Build process failed at distribution stage")
         return
     
     # Success!
@@ -239,21 +239,21 @@ def main():
     print("BUILD COMPLETE!")
     print("="*70)
     
-    print("\n✅ All builds completed successfully!")
-    print("\n📦 Distribution package is ready in: dist_package/")
+    print("\n[OK] All builds completed successfully!")
+    print("\nDistribution package is ready in: dist_package/")
     print("\nYou can now:")
-    print("  • Test the installer: dist_package/WebJam_Installer.exe")
-    print("  • Share the entire dist_package/ folder with users")
-    print("  • Create a ZIP of dist_package/ for easy distribution")
+    print("  - Test the installer: dist_package/WebJam_Installer.exe")
+    print("  - Share the entire dist_package/ folder with users")
+    print("  - Create a ZIP of dist_package/ for easy distribution")
     
     # Offer to create ZIP
     create_zip = input("\nCreate ZIP file for distribution? (y/n): ")
     if create_zip.lower() in ['y', 'yes']:
         print("\nCreating ZIP file...")
         shutil.make_archive("WebJam_Distribution", 'zip', "dist_package")
-        print("✓ Created WebJam_Distribution.zip")
+        print("[OK] Created WebJam_Distribution.zip")
     
-    print("\n🎉 Build process complete!")
+    print("\nBuild process complete!")
     print("="*70)
 
 if __name__ == "__main__":
@@ -263,7 +263,7 @@ if __name__ == "__main__":
         print("\n\nBuild cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Build error: {e}")
+        print(f"\n[ERROR] Build error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
