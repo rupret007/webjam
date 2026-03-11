@@ -47,6 +47,16 @@ class TestRepositoryPasswordEdge(unittest.TestCase):
         self.assertIsNone(role)
         self.assertEqual(status, "invalid_credentials")
 
+    def test_non_string_password_returns_invalid(self):
+        role, status = self.repo.authenticate_with_status("admin", None)  # type: ignore[arg-type]
+        self.assertIsNone(role)
+        self.assertEqual(status, "invalid_credentials")
+
+    def test_non_string_username_returns_invalid(self):
+        role, status = self.repo.authenticate_with_status(None, "password123")  # type: ignore[arg-type]
+        self.assertIsNone(role)
+        self.assertEqual(status, "invalid_credentials")
+
     def test_failed_admin_password_update_keeps_bootstrap_secret(self):
         bootstrap_pw = self.repo.get_bootstrap_admin_password()
         self.assertTrue(bootstrap_pw)

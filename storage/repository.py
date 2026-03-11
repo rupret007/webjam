@@ -165,6 +165,8 @@ class WebJamRepository:
         return None
 
     def authenticate_with_status(self, username: str, password: str) -> Tuple[Optional[str], str]:
+        if not isinstance(username, str) or not isinstance(password, str):
+            return None, "invalid_credentials"
         now = int(time.time())
         with self._managed_connection() as conn:
             # Serialize login mutation flow so failed_attempt counters remain consistent
