@@ -63,6 +63,7 @@ CONFIG_FILE = Path(BASE_SETTINGS.config_file)
 MIX_FILE = Path(BASE_SETTINGS.mix_file)
 JAMULUS_CANDIDATES = BASE_SETTINGS.jamulus_candidates
 CUSTOM_TEMPLATE_OPTION = "— Custom —"
+VALID_REVIEW_STATES = {"draft", "review", "final"}
 
 
 class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
@@ -447,11 +448,19 @@ class WebJamEnhancedApp:
         self.webex_controller = WebexController(self.webex_url)
         self.room_key = "default_room"
         saved_room = self.repository.get_room_context(self.room_key)
-        self.mode_key = saved_room.get("mode_key", "music_jam")
-        active_mode = get_mode_by_key_or_default(self.mode_key)
-        self.template_name = saved_room.get("template_name", active_mode.default_template)
-        self.session_goal_text = saved_room.get("session_goal", active_mode.default_goal)
-        self.review_state = saved_room.get("review_state", "draft")
+        raw_mode_key = saved_room.get("mode_key", "music_jam")
+        mode_key = str(raw_mode_key).strip() if raw_mode_key is not None else ""
+        active_mode = get_mode_by_key_or_default(mode_key)
+        self.mode_key = active_mode.key
+        raw_template_name = saved_room.get("template_name", active_mode.default_template)
+        self.template_name = str(raw_template_name).strip() if raw_template_name is not None else ""
+        if not self.template_name:
+            self.template_name = active_mode.default_template
+        raw_session_goal = saved_room.get("session_goal", active_mode.default_goal)
+        self.session_goal_text = str(raw_session_goal).strip() if raw_session_goal is not None else ""
+        if not self.session_goal_text:
+            self.session_goal_text = active_mode.default_goal
+        self.review_state = self._normalize_review_state(saved_room.get("review_state", "draft"))
         self.cohort_name = self.repository.get_setting("cohort_name", "mixed_discipline") or "mixed_discipline"
         self.preferences_service = UiPreferencesService(self.repository)
         self.metrics_service = MetricsService(self.repository)
@@ -877,13 +886,29 @@ class WebJamEnhancedApp:
         )
 
     def on_review_state_change(self, state: str) -> None:
-        self.review_state = state
+        self.review_state = self._normalize_review_state(state)
         self.save_room_context()
-        self.repository.append_cohort_event(self.cohort_name, "review_state_changed", {"state": state, "mode_key": self.mode_key})
+        self.repository.append_cohort_event(
+            self.cohort_name,
+            "review_state_changed",
+            {"state": self.review_state, "mode_key": self.mode_key},
+        )
+
+    @staticmethod
+    def _normalize_review_state(value: object) -> str:
+        normalized = str(value).strip().lower() if value is not None else "draft"
+        if normalized not in VALID_REVIEW_STATES:
+            return "draft"
+        return normalized
 
     def save_room_context(self) -> None:
-        template_name = (self.template_var.get() if hasattr(self, "template_var") else self.template_name).strip()
-        session_goal = (self.session_goal_var.get() if hasattr(self, "session_goal_var") else self.session_goal_text).strip()
+        active_mode = get_mode_by_key_or_default(self.mode_key)
+        self.mode_key = active_mode.key
+        self.review_state = self._normalize_review_state(self.review_state)
+        template_value = self.template_var.get() if hasattr(self, "template_var") else self.template_name
+        session_goal_value = self.session_goal_var.get() if hasattr(self, "session_goal_var") else self.session_goal_text
+        template_name = str(template_value).strip() if template_value is not None else ""
+        session_goal = str(session_goal_value).strip() if session_goal_value is not None else ""
         active_mode = get_mode_by_key_or_default(self.mode_key)
         if not template_name:
             template_name = active_mode.default_template
