@@ -58,6 +58,17 @@ class LocalApiBridge:
         with self._state_lock:
             if self._running:
                 return True
+        if not isinstance(self.host, str) or not self.host.strip():
+            _LOGGER.warning("LocalApiBridge invalid host: %r", self.host)
+            return False
+        try:
+            port = int(self.port)
+        except (TypeError, ValueError):
+            _LOGGER.warning("LocalApiBridge invalid port: %r", self.port)
+            return False
+        if not (1 <= port <= 65535):
+            _LOGGER.warning("LocalApiBridge port out of range: %r", port)
+            return False
         try:
             from fastapi import FastAPI, HTTPException  # type: ignore
             import uvicorn  # type: ignore
@@ -66,8 +77,12 @@ class LocalApiBridge:
 
         app = self._create_app(FastAPI, HTTPException)
 
-        config = uvicorn.Config(app=app, host=self.host, port=self.port, log_level="warning")
-        self._server = uvicorn.Server(config)
+        try:
+            config = uvicorn.Config(app=app, host=self.host, port=port, log_level="warning")
+            self._server = uvicorn.Server(config)
+        except Exception as exc:
+            _LOGGER.warning("LocalApiBridge server config failed: %s", exc)
+            return False
 
         def run_server() -> None:
             try:
@@ -78,7 +93,13 @@ class LocalApiBridge:
 
         with self._state_lock:
             self._thread = threading.Thread(target=run_server, daemon=True)
-            self._thread.start()
+            try:
+                self._thread.start()
+            except Exception as exc:
+                _LOGGER.warning("LocalApiBridge thread start failed: %s", exc)
+                self._thread = None
+                self._running = False
+                return False
             self._running = True
         # Best-effort startup verification so callers don't get false positives
         # when bind/startup fails immediately (for example, port already in use).
