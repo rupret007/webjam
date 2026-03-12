@@ -69,7 +69,7 @@ python webjam_app_enhanced.py
 ```
 
 On first launch, use **Help > Run Setup Wizard** to validate Jamulus/Webex readiness.
-Use **Admin > Settings** to change the Jamulus server/port endpoint.
+Use **Admin > Open Admin Panel** and then **Set Endpoint** to change the Jamulus server/port endpoint.
 
 ## Run Tests
 
@@ -83,7 +83,7 @@ python -m unittest discover -s tests -v
 python -m unittest test_webjam test_modernization -v
 ```
 
-Expected result: 291 tests passing, 1 skipped (Windows-only test on non-Windows).
+Expected result: all discovered tests pass. The exact test count can change as coverage grows.
 
 ## Build a Standalone Executable
 

@@ -74,7 +74,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if isinstance(loaded, dict):
                 data.update(loaded)
         except Exception as exc:
-            _logger.warning("Failed to parse settings file %s: %s – using defaults", file_path, exc)
+            _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
     # Coerce types to prevent TypeError when constructing AppSettings
     _coerce_settings_data(data)

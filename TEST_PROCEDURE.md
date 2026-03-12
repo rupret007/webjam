@@ -6,6 +6,26 @@
 
 ---
 
+## Current Canonical Workflow (2026)
+
+Use this workflow for current development and release validation:
+
+```bash
+# Full edge/unit suite
+python -m unittest discover -s tests -p "test_*.py"
+
+# Root-level integration/smoke suite
+python -m unittest test_webjam.py test_modernization.py
+
+# Build validation
+python build_webjam.py
+```
+
+Success criteria: all commands above complete without failures.  
+Note: historical sections below reference the older `test_webjam.py` multi-run flow and are retained for archive context.
+
+---
+
 ## Overview
 
 This document defines the standard testing procedure for WebJam that must be followed every time to ensure consistent, reliable testing. The goal is to achieve **3 consecutive test runs with 100% pass rate**.
