@@ -23,6 +23,13 @@ class TestSignInCancel(unittest.TestCase):
         result = self.ctrl.sign_in_interactive()
         self.assertIsNone(result)
 
+    @patch("ui.auth_controller.messagebox")
+    @patch("ui.auth_controller.simpledialog.askstring", side_effect=["   ", "password"])
+    def test_whitespace_username_rejected(self, _ask, _mb):
+        result = self.ctrl.sign_in_interactive()
+        self.assertIsNone(result)
+        _mb.showerror.assert_called_once()
+
 
 class TestSignInWrongPassword(unittest.TestCase):
     def setUp(self):
@@ -47,6 +54,14 @@ class TestSignInWrongPassword(unittest.TestCase):
         _mb.showerror.assert_called_once()
         self.assertIn("Locked", _mb.showerror.call_args[0][0])
 
+    @patch("ui.auth_controller.messagebox")
+    @patch("ui.auth_controller.simpledialog.askstring", side_effect=["admin", "pass"])
+    def test_repository_auth_exception_shows_error(self, _ask, _mb):
+        self.repo.authenticate_with_status.side_effect = RuntimeError("db unavailable")
+        result = self.ctrl.sign_in_interactive()
+        self.assertIsNone(result)
+        _mb.showerror.assert_called_once()
+
 
 class TestSignInSuccess(unittest.TestCase):
     def setUp(self):
@@ -62,6 +77,15 @@ class TestSignInSuccess(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.username, "admin")
         self.assertEqual(result.role, "admin")
+
+    @patch("ui.auth_controller.messagebox")
+    @patch("ui.auth_controller.prompt_password_change_dialog", side_effect=RuntimeError("dialog error"))
+    @patch("ui.auth_controller.simpledialog.askstring", side_effect=["admin", "correct"])
+    def test_password_change_dialog_exception_is_handled(self, _ask, _prompt, _mb):
+        self.repo.authenticate_with_status.return_value = ("admin", "password_change_required")
+        result = self.ctrl.sign_in_interactive()
+        self.assertIsNone(result)
+        _mb.showerror.assert_called_once()
 
 
 class TestAuthorize(unittest.TestCase):

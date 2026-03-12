@@ -13,12 +13,21 @@ class AuthController:
         self.policy = policy
 
     def sign_in_interactive(self, parent: Any = None) -> Optional[UserContext]:
-        username = simpledialog.askstring("Sign In", "Username:", parent=parent)
-        password = simpledialog.askstring("Sign In", "Password:", show="*", parent=parent)
+        username_raw = simpledialog.askstring("Sign In", "Username:", parent=parent)
+        password_raw = simpledialog.askstring("Sign In", "Password:", show="*", parent=parent)
+        if username_raw is None or password_raw is None:
+            return None
+        username = username_raw.strip()
+        password = password_raw
         if not username or not password:
+            messagebox.showerror("Sign In Failed", "Username and password are required.", parent=parent)
             return None
 
-        role, status = self.repository.authenticate_with_status(username, password)
+        try:
+            role, status = self.repository.authenticate_with_status(username, password)
+        except Exception as exc:
+            messagebox.showerror("Sign In Failed", f"Could not verify credentials: {exc}", parent=parent)
+            return None
         if status == "locked":
             messagebox.showerror(
                 "Account Locked",
@@ -31,7 +40,11 @@ class AuthController:
             return None
 
         if status == "password_change_required":
-            changed = prompt_password_change_dialog(username, self.repository.update_password, parent=parent)
+            try:
+                changed = prompt_password_change_dialog(username, self.repository.update_password, parent=parent)
+            except Exception as exc:
+                messagebox.showerror("Password Update Failed", f"Could not update password: {exc}", parent=parent)
+                return None
             if not changed:
                 messagebox.showwarning("Sign In Blocked", "Password change is required before continuing.", parent=parent)
                 return None
