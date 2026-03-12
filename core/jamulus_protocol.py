@@ -115,9 +115,12 @@ class JamulusProtocolAdapter:
                 continue
             idx, name = line.split(":", 1)
             try:
-                parsed[int(idx.strip())] = name.strip() or f"Participant {idx.strip()}"
+                channel_id = int(idx.strip())
             except ValueError:
                 continue
+            if channel_id < 0 or channel_id > 65535:
+                continue
+            parsed[channel_id] = name.strip() or f"Participant {channel_id}"
         return parsed
 
     def set_cached_participants(self, participants: Dict[int, str]) -> None:

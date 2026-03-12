@@ -191,8 +191,19 @@ class WebJamRepository:
                 failed_attempts = 0
                 locked_until = 0
 
-            actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-            if hmac.compare_digest(actual_digest, expected_digest):
+            if isinstance(salt, memoryview):
+                salt = salt.tobytes()
+            if isinstance(expected_digest, memoryview):
+                expected_digest = expected_digest.tobytes()
+            if not isinstance(salt, (bytes, bytearray)) or not isinstance(expected_digest, (bytes, bytearray)):
+                LOGGER.warning("Corrupt credential payload for user '%s'; rejecting authentication.", username)
+                return None, "invalid_credentials"
+            try:
+                actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes(salt), 120_000)
+            except Exception as exc:
+                LOGGER.warning("Credential digest computation failed for user '%s': %s", username, exc)
+                return None, "invalid_credentials"
+            if hmac.compare_digest(actual_digest, bytes(expected_digest)):
                 conn.execute(
                     "UPDATE users SET failed_attempts = 0, locked_until = 0 WHERE username = ?",
                     (username,),

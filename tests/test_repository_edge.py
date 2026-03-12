@@ -57,6 +57,28 @@ class TestRepositoryPasswordEdge(unittest.TestCase):
         self.assertIsNone(role)
         self.assertEqual(status, "invalid_credentials")
 
+    def test_corrupt_credentials_payload_returns_invalid_instead_of_crash(self):
+        with self.repo._managed_connection() as conn:
+            conn.execute(
+                "UPDATE users SET salt = ?, password_hash = ? WHERE username = ?",
+                ("oops", "oops", "admin"),
+            )
+            conn.commit()
+        role, status = self.repo.authenticate_with_status("admin", "password123")
+        self.assertIsNone(role)
+        self.assertEqual(status, "invalid_credentials")
+
+    def test_corrupt_credentials_memoryview_payload_is_handled(self):
+        with self.repo._managed_connection() as conn:
+            conn.execute(
+                "UPDATE users SET salt = ?, password_hash = ? WHERE username = ?",
+                (memoryview(b"0123456789abcdef"), memoryview(b"\x00" * 32), "admin"),
+            )
+            conn.commit()
+        role, status = self.repo.authenticate_with_status("admin", "password123")
+        self.assertIsNone(role)
+        self.assertEqual(status, "invalid_credentials")
+
     def test_failed_admin_password_update_keeps_bootstrap_secret(self):
         bootstrap_pw = self.repo.get_bootstrap_admin_password()
         self.assertTrue(bootstrap_pw)

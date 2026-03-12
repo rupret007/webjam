@@ -88,6 +88,16 @@ class TestProtocolParsePayload(unittest.TestCase):
         result = self.adapter._parse_clients_payload(data)
         self.assertEqual(result, {1: "Bob"})
 
+    def test_parse_negative_index_skipped(self):
+        data = b"-1:Ghost\n1:Bob"
+        result = self.adapter._parse_clients_payload(data)
+        self.assertEqual(result, {1: "Bob"})
+
+    def test_parse_oversized_index_skipped(self):
+        data = b"70000:Ghost\n2:Alice"
+        result = self.adapter._parse_clients_payload(data)
+        self.assertEqual(result, {2: "Alice"})
+
     def test_parse_empty_name_uses_fallback(self):
         data = b"0:"
         result = self.adapter._parse_clients_payload(data)
