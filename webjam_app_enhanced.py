@@ -1197,15 +1197,21 @@ class WebJamEnhancedApp:
                     measured = max(0.0, (time.perf_counter() - start) * 1000.0)
             except (socket.error, OSError, TimeoutError):
                 measured = None
-            self.root.after(0, lambda: self._complete_latency_probe(measured))
+            try:
+                self.root.after(0, lambda: self._complete_latency_probe(measured))
+            except (tk.TclError, RuntimeError):
+                self._complete_latency_probe(measured)
 
         threading.Thread(target=_probe, daemon=True).start()
 
     def _complete_latency_probe(self, measured: float | None) -> None:
         self._latency_probe_inflight = False
         self.network_latency_ms = measured
-        if self.root.winfo_exists():
-            self._update_latency_widget()
+        try:
+            if self.root.winfo_exists():
+                self._update_latency_widget()
+        except tk.TclError:
+            return
 
     def _refresh_readiness(self) -> None:
         participant_count = len(self.jamulus_controller.get_participants())
@@ -1222,6 +1228,11 @@ class WebJamEnhancedApp:
         self._set_status_banner(f"{mode_label}: {self.jamulus_state} | {self.webex_state}", color=readiness_color)
 
     def _poll_connection_health(self) -> None:
+        try:
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
+            return
         self._refresh_endpoint_state()
         if self.jamulus_process is not None:
             if self.jamulus_process.poll() is None and "Not launched" in self.jamulus_state:
@@ -1234,7 +1245,10 @@ class WebJamEnhancedApp:
 
         self._measure_server_latency_async()
         self._refresh_readiness()
-        self._poll_after_id = self.root.after(2500, self._poll_connection_health)
+        try:
+            self._poll_after_id = self.root.after(2500, self._poll_connection_health)
+        except tk.TclError:
+            self._poll_after_id = None
 
     def _show_actionable_error(
         self,
