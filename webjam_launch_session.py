@@ -59,13 +59,13 @@ def wait_for_vb_cable(max_wait=VBC_MAX_WAIT_SECS, interval=VBC_POLL_INTERVAL):
             return True
         time.sleep(interval)
         waited += interval
-        print(f"  Waiting for VB-CABLE… {waited}s/{max_wait}s")
+        print(f"  Waiting for VB-CABLE {waited}s/{max_wait}s")
     return False
 
 def install_vb_cable():
-    print("== VB-CABLE: checking…")
+    print("== VB-CABLE: checking")
     if vb_cable_present():
-        print("VB-CABLE already installed ✓")
+        print("VB-CABLE already installed ")
         return
 
     if not VB_DIR.exists():
@@ -84,10 +84,10 @@ def install_vb_cable():
         print(f"Installing VB-CABLE via pnputil from: {inf}")
         run(["pnputil", "/add-driver", str(inf), "/install"])
         if wait_for_vb_cable():
-            print("VB-CABLE installed ✓")
+            print("VB-CABLE installed ")
             return
         else:
-            print("pnputil did not confirm install; trying EXE…")
+            print("pnputil did not confirm install; trying EXE")
 
     # EXE fallback: launch interactive installer immediately and poll
     exe_candidates = list(VB_DIR.glob("VBCABLE_Setup*.exe"))
@@ -105,22 +105,22 @@ def install_vb_cable():
 
     print(f"Waiting up to {VBC_MAX_WAIT_SECS//60} min for VB-CABLE to be detected...")
     if wait_for_vb_cable():
-        print("VB-CABLE installed ✓")
+        print("VB-CABLE installed ")
         time.sleep(3)
     else:
         print("VB-CABLE still not detected after waiting. A reboot or manual install may be required.")
 
 def install_jamulus_if_needed():
-    print("== Jamulus: checking…")
+    print("== Jamulus: checking")
     if find_jamulus():
-        print("Jamulus already installed ✓")
+        print("Jamulus already installed ")
         return True
 
     if not JAMULUS_INSTALLER or not JAMULUS_INSTALLER.exists():
         print("Jamulus installer not found in this folder. Place jamulus_*.exe here.")
         return False
 
-    print(f"Installing Jamulus from {JAMULUS_INSTALLER.name} …")
+    print(f"Installing Jamulus from {JAMULUS_INSTALLER.name} ")
     # Try common silent switches
     for sw in ["/S", "/silent", "/verysilent"]:
         try:
@@ -129,7 +129,7 @@ def install_jamulus_if_needed():
             waited = 0
             while waited < JAMULUS_MAX_WAIT_SECS:
                 if find_jamulus():
-                    print("Jamulus installed ✓")
+                    print("Jamulus installed ")
                     return True
                 time.sleep(JAMULUS_POLL_INTERVAL)
                 waited += JAMULUS_POLL_INTERVAL
@@ -137,7 +137,7 @@ def install_jamulus_if_needed():
             pass
 
     # Fallback: interactive installer + poll for installed binary
-    print("Silent install may not be supported; launching Jamulus installer UI and waiting for install to complete…")
+    print("Silent install may not be supported; launching Jamulus installer UI and waiting for install to complete")
     try:
         subprocess.Popen([str(JAMULUS_INSTALLER)], shell=False)
     except Exception:
@@ -145,7 +145,7 @@ def install_jamulus_if_needed():
     waited = 0
     while waited < JAMULUS_MAX_WAIT_SECS:
         if find_jamulus():
-            print("Jamulus installed ✓")
+            print("Jamulus installed ")
             return True
         time.sleep(JAMULUS_POLL_INTERVAL)
         waited += JAMULUS_POLL_INTERVAL
@@ -168,7 +168,7 @@ def set_default_devices_best_effort():
     if ($play) { try { Set-DefaultAudioDevice -Playback -Name $play.Name; Set-DefaultAudioDevice -Playback -Communications -Name $play.Name } catch {} }
     if ($rec)  { try { Set-DefaultAudioDevice -Recording -Name $rec.Name; Set-DefaultAudioDevice -Recording -Communications -Name $rec.Name } catch {} }
     '''
-    print("Setting default devices to VB-CABLE (best effort)…")
+    print("Setting default devices to VB-CABLE (best effort)")
     run(["powershell","-NoP","-NonI","-ExecutionPolicy","Bypass","-Command", ps])
 
 def create_desktop_shortcut_to_self():
@@ -204,18 +204,18 @@ def launch_everything():
         print("Jamulus not found; cannot launch.")
         return
     server = f"{JAMULUS_SERVER}:{JAMULUS_PORT}"
-    print(f"Launching Jamulus → {server}")
+    print(f"Launching Jamulus  {server}")
     try:
         subprocess.Popen([jamulus, "--connect", server])
     except Exception as e:
         print(f"Failed to start Jamulus: {e}")
 
     time.sleep(3)
-    print(f"Opening Webex PMR → {WEBEX_URL}")
+    print(f"Opening Webex PMR  {WEBEX_URL}")
     webbrowser.open(WEBEX_URL)
 
 def main():
-    print("WebJam one-click starting…")
+    print("WebJam one-click starting")
     elevate_if_needed()
 
     # 1) VB-CABLE (audio bridge)
@@ -239,3 +239,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

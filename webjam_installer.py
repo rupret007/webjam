@@ -202,7 +202,7 @@ def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
         dest.write_bytes(data)
         return True
     except Exception as e:
-        print(f"   ⚠  Download failed from {url}: {e}")
+        print(f"     Download failed from {url}: {e}")
         return False
 
 def fetch_latest_jamulus_installer() -> Path | None:
@@ -216,7 +216,7 @@ def fetch_latest_jamulus_installer() -> Path | None:
         with urllib.request.urlopen(req, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8", errors="replace"))
     except Exception as e:
-        print(f"   ⚠  Could not query Jamulus releases API: {e}")
+        print(f"     Could not query Jamulus releases API: {e}")
         return None
 
     assets = payload.get("assets", [])
@@ -247,13 +247,13 @@ def fetch_latest_jamulus_installer() -> Path | None:
                 break
 
     if not candidate_url:
-        print("   ⚠  No Windows Jamulus installer found in latest release assets.")
+        print("     No Windows Jamulus installer found in latest release assets.")
         return None
 
     local_name = candidate_name or "jamulus_latest_win.exe"
     local_path = WORK / local_name
     if download_file(candidate_url, local_path):
-        print(f"   ✓ Downloaded latest Jamulus installer: {local_name}")
+        print(f"    Downloaded latest Jamulus installer: {local_name}")
         return local_path
     return None
 
@@ -288,15 +288,15 @@ def wait_until(predicate, max_secs, interval, label):
 
 def install_vb_cable():
     """Install VB-Cable virtual audio device"""
-    print("\n🔊 Checking VB-Cable (Virtual Audio Device)...")
+    print("\n Checking VB-Cable (Virtual Audio Device)...")
     
     if vb_cable_present():
-        print("   ✓ VB-Cable already installed")
+        print("    VB-Cable already installed")
         return True
     
     vb_src_dir = HERE / "VB"
     if not vb_src_dir.exists():
-        print("   ⚠  VB folder not found. Skipping VB-Cable installation.")
+        print("     VB folder not found. Skipping VB-Cable installation.")
         print("   Note: VB-Cable is required for audio routing between Jamulus and Webex.")
         return False
     
@@ -314,14 +314,14 @@ def install_vb_cable():
         run(["pnputil", "/add-driver", str(inf_copy), "/install"])
         
         if wait_until(vb_cable_present, 30, 2, "VB-Cable device"):
-            print("   ✓ VB-Cable installed successfully")
+            print("    VB-Cable installed successfully")
             return True
         print("   INF install did not complete, trying EXE installer...")
     
     # Fallback to EXE installer (interactive)
     exe_candidates = list(vb_src_dir.glob("VBCABLE_Setup*.exe"))
     if not exe_candidates:
-        print("   ⚠  VB-Cable installer not found.")
+        print("     VB-Cable installer not found.")
         return False
     
     exe_copy = copy_resource(exe_candidates[0].relative_to(HERE), WORK)
@@ -336,11 +336,11 @@ def install_vb_cable():
     print(f"   Waiting up to {VBC_MAX_WAIT_SECS//60} minutes for installation...")
     
     if wait_until(vb_cable_present, VBC_MAX_WAIT_SECS, VBC_POLL_INTERVAL, "VB-Cable"):
-        print("   ✓ VB-Cable installed successfully")
+        print("    VB-Cable installed successfully")
         time.sleep(2)
         return True
     else:
-        print("   ⚠  VB-Cable not detected after waiting.")
+        print("     VB-Cable not detected after waiting.")
         print("   You may need to reboot or manually complete the installation.")
         return False
 
@@ -352,10 +352,10 @@ def jamulus_installer_path():
 
 def install_jamulus():
     """Install Jamulus client"""
-    print("\n🎵 Checking Jamulus (Low-Latency Audio)...")
+    print("\n Checking Jamulus (Low-Latency Audio)...")
     
     if find_jamulus():
-        print("   ✓ Jamulus already installed")
+        print("    Jamulus already installed")
         return True
 
     installer = fetch_latest_jamulus_installer()
@@ -365,7 +365,7 @@ def install_jamulus():
             installer = copy_resource(bundled.name, WORK)
             print(f"   Using bundled Jamulus installer: {bundled.name}")
         else:
-            print("   ⚠  No online or bundled Jamulus installer available.")
+            print("     No online or bundled Jamulus installer available.")
             print("   You can download Jamulus from: https://jamulus.io")
             return False
 
@@ -378,7 +378,7 @@ def install_jamulus():
             subprocess.run([str(inst_copy), switch], check=False)
             
             if wait_until(lambda: find_jamulus() is not None, 60, 2, "Jamulus"):
-                print("   ✓ Jamulus installed successfully")
+                print("    Jamulus installed successfully")
                 return True
         except Exception:
             pass
@@ -392,20 +392,20 @@ def install_jamulus():
     
     if wait_until(lambda: find_jamulus() is not None, 
                   JAMULUS_MAX_WAIT_SECS, JAMULUS_POLL_INTERVAL, "Jamulus"):
-        print("   ✓ Jamulus installed successfully")
+        print("    Jamulus installed successfully")
         return True
     
-    print("   ⚠  Jamulus not detected after waiting.")
+    print("     Jamulus not detected after waiting.")
     print("   Please complete the installation manually and run this installer again.")
     return False
 
 # ====== Webex Installation ======
 def install_webex():
     """Install Webex desktop app from official Cisco MSI links."""
-    print("\n📹 Checking Webex Desktop App...")
+    print("\n Checking Webex Desktop App...")
 
     if webex_installed():
-        print("   ✓ Webex appears to be already installed")
+        print("    Webex appears to be already installed")
         return True
 
     msi_url = webex_msi_url_for_host()
@@ -414,7 +414,7 @@ def install_webex():
 
     print(f"   Downloading Webex installer from Cisco binaries...")
     if not download_file(msi_url, msi_path):
-        print("   ⚠  Could not download Webex MSI. Skipping Webex installation.")
+        print("     Could not download Webex MSI. Skipping Webex installation.")
         return False
 
     print("   Installing Webex silently...")
@@ -428,23 +428,23 @@ def install_webex():
     ]
     result = run(silent_cmd)
     if result.returncode == 0:
-        print("   ✓ Webex installed successfully")
+        print("    Webex installed successfully")
         return True
 
     print("   Silent install did not complete. Launching interactive installer...")
     interactive_cmd = ["msiexec", "/i", str(msi_path)]
     try:
         subprocess.Popen(interactive_cmd)
-        print("   ✓ Webex installer launched")
+        print("    Webex installer launched")
         return True
     except Exception as e:
-        print(f"   ⚠  Failed to launch interactive Webex installer: {e}")
+        print(f"     Failed to launch interactive Webex installer: {e}")
         return False
 
 # ====== Audio Configuration ======
 def configure_audio_devices():
     """Configure default audio devices"""
-    print("\n🎛  Configuring Audio Devices...")
+    print("\n  Configuring Audio Devices...")
     
     ps = r'''
     $ErrorActionPreference = "SilentlyContinue"
@@ -470,14 +470,14 @@ def configure_audio_devices():
     if ($play) {
       try { 
         Set-AudioDevice -ID $play.ID
-        Write-Host "   ✓ Set VB-Cable Input as default playback device"
+        Write-Host "    Set VB-Cable Input as default playback device"
       } catch {}
     }
     
     if ($rec) {
       try { 
         Set-AudioDevice -ID $rec.ID -RecordingDevice
-        Write-Host "   ✓ Set VB-Cable Output as default recording device"
+        Write-Host "    Set VB-Cable Output as default recording device"
       } catch {}
     }
     '''
@@ -648,23 +648,23 @@ def create_start_menu_shortcut():
 def main():
     """Main installation process"""
     print_header("WebJam Enhanced Installer")
-    print("\n🎵 Welcome to WebJam - Music Collaboration Platform")
+    print("\n Welcome to WebJam - Music Collaboration Platform")
     print("\nThis installer will set up:")
-    print("  • VB-Cable (Virtual Audio Device)")
-    print("  • Jamulus (Low-Latency Audio Client)")
-    print("  • Webex Desktop App (official Cisco MSI)")
-    print("  • WebJam GUI Application")
-    print("  • Audio device configuration")
-    print("  • Desktop shortcuts")
+    print("   VB-Cable (Virtual Audio Device)")
+    print("   Jamulus (Low-Latency Audio Client)")
+    print("   Webex Desktop App (official Cisco MSI)")
+    print("   WebJam GUI Application")
+    print("   Audio device configuration")
+    print("   Desktop shortcuts")
     
-    print("\n⚠  Administrator privileges required for driver installation")
+    print("\n  Administrator privileges required for driver installation")
     
     input("\nPress Enter to begin installation...")
     
     # Elevate if needed
     elevate_if_needed()
     
-    print("\n✓ Running with administrator privileges")
+    print("\n Running with administrator privileges")
     
     # Installation steps
     success = True
@@ -678,7 +678,7 @@ def main():
     success = success and jamulus_ok
     
     if not jamulus_ok:
-        print("\n⚠  Cannot continue without Jamulus. Please install it manually.")
+        print("\n  Cannot continue without Jamulus. Please install it manually.")
         input("\nPress Enter to exit...")
         return
     
@@ -703,9 +703,9 @@ def main():
     print_header("Installation Complete!")
     
     if success:
-        print("\n✅ WebJam has been successfully installed!")
+        print("\n WebJam has been successfully installed!")
     else:
-        print("\n⚠  Installation completed with some warnings.")
+        print("\n  Installation completed with some warnings.")
         print("   Please review the messages above.")
     
     print("\nNext Steps:")
@@ -715,23 +715,23 @@ def main():
     print("   4. Click 'Launch Webex' to join the video meeting")
     print("   5. Use the virtual mixer to control audio levels")
     
-    print(f"\n🎵 Jamulus Server: {JAMULUS_SERVER}:{JAMULUS_PORT}")
-    print(f"📹 Webex Meeting: {WEBEX_URL}")
+    print(f"\n Jamulus Server: {JAMULUS_SERVER}:{JAMULUS_PORT}")
+    print(f" Webex Meeting: {WEBEX_URL}")
     
     print(f"\nInstallation Location: {APP_DIR}")
     
-    print("\n💡 Tips:")
-    print("   • Use headphones to prevent audio feedback")
-    print("   • Keep video quality at 720p or lower for best performance")
-    print("   • Use wired Ethernet for lowest latency")
-    print("   • Save your mixer settings for different sessions")
+    print("\n Tips:")
+    print("    Use headphones to prevent audio feedback")
+    print("    Keep video quality at 720p or lower for best performance")
+    print("    Use wired Ethernet for lowest latency")
+    print("    Save your mixer settings for different sessions")
     
     # Offer to launch
     print("\n")
     launch = input("Would you like to launch WebJam now? (y/n): ")
     
     if launch.lower() in ['y', 'yes']:
-        print("\n🚀 Launching WebJam...")
+        print("\n Launching WebJam...")
         app_file = APP_DIR / "webjam_app_enhanced.py"
         launch_target = installed_app_executable() if installed_app_executable().exists() else app_file
         try:
@@ -763,3 +763,4 @@ if __name__ == "__main__":
         traceback.print_exc()
         input("\nPress Enter to exit...")
         sys.exit(1)
+
