@@ -36,6 +36,22 @@ class TestSetupWizardDiagnosticsEdge(unittest.TestCase):
         self.assertFalse(audio_result[1])
         self.assertIn("callback failed", audio_result[2])
 
+    @patch.object(SetupWizard, "check_tcp_hint", return_value=(True, "ok"))
+    def test_invalid_jamulus_path_type_is_handled(self, _tcp_hint):
+        results = SetupWizard.run_preflight_checks(
+            settings=self.settings,
+            find_jamulus=lambda: 123,  # type: ignore[return-value]
+            diagnostics_provider=lambda: {},
+        )
+        jamulus_result = next(item for item in results if item[0] == "Jamulus executable")
+        self.assertFalse(jamulus_result[1])
+        self.assertIn("invalid path type", jamulus_result[2])
+
+    def test_non_string_webex_url_is_rejected_without_exception(self):
+        ok, detail = SetupWizard.check_webex_url(123)  # type: ignore[arg-type]
+        self.assertFalse(ok)
+        self.assertIn("Invalid Webex URL", detail)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -207,9 +207,23 @@ class SetupWizard:
     ) -> list[tuple[str, bool, str]]:
         results: list[tuple[str, bool, str]] = []
 
-        jamulus_path = find_jamulus()
-        jamulus_ok = jamulus_path is not None and os.access(jamulus_path, os.X_OK)
-        if jamulus_path and not os.access(jamulus_path, os.X_OK):
+        jamulus_path_raw = find_jamulus()
+        jamulus_path: str | None = None
+        if isinstance(jamulus_path_raw, (str, bytes, os.PathLike)):
+            jamulus_path = os.fspath(jamulus_path_raw)
+        jamulus_ok = False
+        if jamulus_path:
+            try:
+                jamulus_ok = os.access(jamulus_path, os.X_OK)
+            except (TypeError, ValueError, OSError):
+                jamulus_ok = False
+
+        if jamulus_path_raw is not None and jamulus_path is None:
+            jamulus_detail = (
+                "Jamulus path provider returned an invalid path type "
+                f"({type(jamulus_path_raw).__name__})."
+            )
+        elif jamulus_path and not jamulus_ok:
             jamulus_detail = f"Found {jamulus_path} but it is not marked as executable."
         elif jamulus_ok:
             jamulus_detail = f"Jamulus found at: {jamulus_path}"
@@ -259,7 +273,12 @@ class SetupWizard:
 
     @staticmethod
     def check_webex_url(webex_url: str) -> tuple[bool, str]:
-        parsed = urlparse(webex_url)
+        if not isinstance(webex_url, str):
+            return False, f"Invalid Webex URL: {webex_url}"
+        candidate = webex_url.strip()
+        if not candidate:
+            return False, f"Invalid Webex URL: {webex_url}"
+        parsed = urlparse(candidate)
         if parsed.scheme != "https" or not parsed.netloc:
             return False, f"Invalid Webex URL: {webex_url}"
         return True, f"Webex URL looks valid ({parsed.netloc})."
