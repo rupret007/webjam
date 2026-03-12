@@ -93,30 +93,79 @@ class JamulusController:
     def _check_participants(self):
         """Check for participant changes via protocol adapter."""
         protocol_participants = self.protocol.request_clients()
-        if not protocol_participants:
+        if protocol_participants is None:
+            return
+        if not isinstance(protocol_participants, dict):
+            self.logger.warning(
+                "Ignoring unexpected participants payload type: %s",
+                type(protocol_participants).__name__,
+            )
             return
 
+        normalized_participants: Dict[int, str] = {}
+        for raw_channel_id, raw_name in protocol_participants.items():
+            try:
+                channel_id = int(raw_channel_id)
+            except (TypeError, ValueError):
+                continue
+            if channel_id < 0:
+                continue
+            if isinstance(raw_name, str):
+                name = raw_name.strip()
+            else:
+                name = ""
+            normalized_participants[channel_id] = name or f"Participant {channel_id}"
+
+        apply_mixer_ids: list[int] = []
+
         with self._participants_lock:
-            incoming_ids = set(protocol_participants.keys())
+            incoming_ids = set(normalized_participants.keys())
             known_ids = set(self.participants.keys())
+            active_solo_channel = next(
+                (cid for cid, participant in self.participants.items() if participant.solo),
+                None,
+            )
 
             for channel_id in incoming_ids - known_ids:
-                self.participants[channel_id] = JamulusParticipant(
+                participant = JamulusParticipant(
                     channel_id=channel_id,
-                    name=protocol_participants[channel_id],
+                    name=normalized_participants[channel_id],
                 )
+                # Keep solo invariant when channels join mid-solo.
+                if active_solo_channel is not None and channel_id != active_solo_channel:
+                    participant.muted = True
+                    self._pre_solo_mute.setdefault(channel_id, False)
+                    apply_mixer_ids.append(channel_id)
+                self.participants[channel_id] = participant
 
+            removed_solo = False
             for channel_id in known_ids - incoming_ids:
+                removed = self.participants.get(channel_id)
+                if removed and removed.solo:
+                    removed_solo = True
                 del self.participants[channel_id]
+                self._pre_solo_mute.pop(channel_id, None)
 
             for channel_id in incoming_ids & known_ids:
-                self.participants[channel_id].name = protocol_participants[channel_id]
+                self.participants[channel_id].name = normalized_participants[channel_id]
                 self.participants[channel_id].is_connected = True
 
+            if removed_solo:
+                for cid, participant in self.participants.items():
+                    participant.solo = False
+                    participant.muted = self._pre_solo_mute.get(cid, False)
+                    apply_mixer_ids.append(cid)
+                self._pre_solo_mute.clear()
+            elif not any(participant.solo for participant in self.participants.values()):
+                self._pre_solo_mute.clear()
+
+        for channel_id in sorted(set(apply_mixer_ids)):
+            self._apply_mixer_setting(channel_id, notify=False)
         self._notify_callbacks()
     
     def add_participant(self, name: str, channel_id: int = None) -> JamulusParticipant:
         """Manually add a participant (for testing or manual setup)"""
+        should_apply = False
         with self._participants_lock:
             if channel_id is None:
                 channel_id = max(self.participants.keys(), default=-1) + 1
@@ -124,9 +173,19 @@ class JamulusController:
                 channel_id=channel_id,
                 name=name
             )
+            active_solo_channel = next(
+                (cid for cid, current in self.participants.items() if current.solo),
+                None,
+            )
+            if active_solo_channel is not None and channel_id != active_solo_channel:
+                participant.muted = True
+                self._pre_solo_mute.setdefault(channel_id, False)
+                should_apply = True
             self.participants[channel_id] = participant
             cached = {cid: p.name for cid, p in self.participants.items()}
         self.protocol.set_cached_participants(cached)
+        if should_apply:
+            self._apply_mixer_setting(channel_id, notify=False)
         self._notify_callbacks()
         return participant
     
@@ -134,13 +193,26 @@ class JamulusController:
         """Remove a participant"""
         should_notify = False
         cached = None
+        apply_mixer_ids: list[int] = []
         with self._participants_lock:
             if channel_id in self.participants:
+                removed = self.participants[channel_id]
                 del self.participants[channel_id]
+                self._pre_solo_mute.pop(channel_id, None)
+                if removed.solo:
+                    for cid, participant in self.participants.items():
+                        participant.solo = False
+                        participant.muted = self._pre_solo_mute.get(cid, False)
+                        apply_mixer_ids.append(cid)
+                    self._pre_solo_mute.clear()
+                elif not any(participant.solo for participant in self.participants.values()):
+                    self._pre_solo_mute.clear()
                 cached = {cid: p.name for cid, p in self.participants.items()}
                 should_notify = True
         if cached is not None:
             self.protocol.set_cached_participants(cached)
+        for cid in sorted(set(apply_mixer_ids)):
+            self._apply_mixer_setting(cid, notify=False)
         if should_notify:
             self._notify_callbacks()
     
@@ -191,7 +263,7 @@ class JamulusController:
             affected_ids = list(self.participants.keys())
             currently_solo = any(p.solo for p in self.participants.values())
             if solo:
-                if not currently_solo:
+                if not currently_solo or not self._pre_solo_mute:
                     self._pre_solo_mute = {
                         cid: p.muted for cid, p in self.participants.items()
                     }
@@ -206,7 +278,7 @@ class JamulusController:
         for cid in affected_ids:
             self._apply_mixer_setting(cid)
     
-    def _apply_mixer_setting(self, channel_id: int):
+    def _apply_mixer_setting(self, channel_id: int, notify: bool = True):
         """Apply mixer settings to Jamulus via protocol adapter and audio engine."""
         with self._participants_lock:
             participant = self.participants.get(channel_id)
@@ -226,7 +298,8 @@ class JamulusController:
             muted=muted,
         )
         self.audio_engine.set_level_override(channel_id, effective_level)
-        self._notify_callbacks()
+        if notify:
+            self._notify_callbacks()
     
     def get_participants(self) -> List[JamulusParticipant]:
         """Get list of all participants"""
