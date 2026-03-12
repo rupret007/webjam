@@ -13,7 +13,7 @@ import logging
 import os
 import time
 import threading
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Optional, Dict
 import socket
@@ -35,6 +35,7 @@ from ui.dialogs import show_bootstrap_admin_notice, show_usage_metrics_window
 from ui.preferences import UiPreferencesService, _is_valid_geometry
 from ui.services import MetricsService, RetryService
 from ui.views.diagnostics_panel import show_diagnostics_panel
+from ui.views.ready_check_panel import show_ready_check_panel
 from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
@@ -509,8 +510,10 @@ class WebJamEnhancedApp:
         session_menu.add_command(label="Launch Jamulus", command=self.launch_jamulus)
         session_menu.add_command(label="Launch Webex", command=self.launch_webex)
         session_menu.add_separator()
+        session_menu.add_command(label="Run Ready Check", command=self.run_ready_check)
         session_menu.add_command(label="Audio Diagnostics", command=self.show_audio_diagnostics)
         session_menu.add_command(label="Open Diagnostics Panel", command=self.open_diagnostics_panel)
+        session_menu.add_command(label="Export Diagnostics Bundle", command=self.export_diagnostics_bundle)
         session_menu.add_separator()
         session_menu.add_command(label="Add Demo Participants", command=self.add_test_participants)
 
@@ -559,6 +562,7 @@ class WebJamEnhancedApp:
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="About", command=self.show_about)
         help_menu.add_command(label="Quick Start Guide", command=self.show_help)
+        help_menu.add_command(label="Run Ready Check", command=self.run_ready_check)
         help_menu.add_command(label="Run Setup Wizard", command=self.show_setup_wizard)
         help_menu.add_separator()
         help_menu.add_command(label="View Usage Metrics", command=self.show_usage_metrics)
@@ -851,6 +855,56 @@ class WebJamEnhancedApp:
             mode_label=active_mode.label,
             mode_help=active_mode.quick_help,
         ).show()
+
+    @staticmethod
+    def _summarize_ready_check(
+        check_results: list[tuple[str, bool, str]],
+        latency_ms: float | None,
+        participant_count: int,
+    ) -> dict[str, object]:
+        total = len(check_results)
+        passed = sum(1 for _name, ok, _detail in check_results if ok)
+        failed = [name for name, ok, _detail in check_results if not ok]
+        latency_label, _latency_color = classify_latency_ms(latency_ms)
+        if failed:
+            summary = (
+                f"Not ready ({passed}/{total} checks passed). "
+                f"Fix: {', '.join(failed)}."
+            )
+        else:
+            summary = f"Ready ({passed}/{total} checks passed)."
+        return {
+            "summary": summary,
+            "passed": passed,
+            "total": total,
+            "failed": failed,
+            "latency_label": latency_label,
+            "participant_count": participant_count,
+        }
+
+    def run_ready_check(self) -> None:
+        self.metrics_service.increment("metric_ready_check_run")
+        check_results = SetupWizard.run_preflight_checks(
+            settings=self._settings_for_checks(),
+            find_jamulus=self.find_jamulus,
+            diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
+        )
+        report = self._summarize_ready_check(
+            check_results=check_results,
+            latency_ms=self.network_latency_ms,
+            participant_count=len(self.jamulus_controller.get_participants()),
+        )
+        show_ready_check_panel(
+            root=self.root,
+            checks=check_results,
+            latency_label=str(report["latency_label"]),
+            participant_count=int(report["participant_count"]),
+            on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
+            on_open_diagnostics=self.open_diagnostics_panel,
+            on_export_bundle=self.export_diagnostics_bundle,
+            bg_color=THEME.bg_secondary,
+            fg_color=THEME.text_primary,
+        )
 
     def _on_quick_template_selected(self, choice: str) -> None:
         if choice == CUSTOM_TEMPLATE_OPTION:
@@ -1193,6 +1247,46 @@ class WebJamEnhancedApp:
         except Exception as exc:
             messagebox.showerror("Export Failed", f"Could not export diagnostics snapshot:\n{exc}", parent=self.root)
 
+    def export_diagnostics_bundle(self) -> None:
+        try:
+            self._refresh_endpoint_state()
+            settings_snapshot = asdict(self._settings_for_checks())
+            log_file = str(settings_snapshot.get("log_file", "") or "").strip()
+            log_candidates: list[str] = []
+            if log_file:
+                log_candidates.append(log_file)
+                for idx in range(1, 4):
+                    log_candidates.append(f"{log_file}.{idx}")
+
+            support_files = [
+                settings_snapshot.get("config_file", ""),
+                settings_snapshot.get("mix_file", ""),
+                settings_snapshot.get("webex_config_file", ""),
+                self.repository.db_path,
+            ]
+            room_context = self.repository.get_room_context(self.room_key)
+
+            out_path = self.metrics_service.export_diagnostics_bundle(
+                output_dir=Path.home(),
+                jamulus_state=self.jamulus_state,
+                webex_state=self.webex_state,
+                latency_ms=self.network_latency_ms,
+                server=f"{self.jamulus_server}:{self.jamulus_port}",
+                webex_url=self.webex_url,
+                audio_diagnostics=self.jamulus_controller.get_audio_diagnostics(),
+                settings_payload=settings_snapshot,
+                room_context=room_context,
+                webex_last_error=self.webex_controller.last_error,
+                jamulus_path=self.find_jamulus() or "",
+                log_files=log_candidates,
+                support_files=support_files,
+            )
+            self.metrics_service.increment("metric_diagnostics_bundle_exported")
+            messagebox.showinfo("Bundle Exported", f"Diagnostics bundle written to:\n{out_path}", parent=self.root)
+        except Exception as exc:
+            self.metrics_service.increment("metric_diagnostics_bundle_failed")
+            messagebox.showerror("Export Failed", f"Could not export diagnostics bundle:\n{exc}", parent=self.root)
+
     def _update_latency_widget(self) -> None:
         try:
             if not self.root.winfo_exists():
@@ -1339,6 +1433,7 @@ class WebJamEnhancedApp:
             on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
             on_open_help=lambda: self.show_help(topic="troubleshooting"),
             on_export_snapshot=self.export_diagnostics_snapshot,
+            on_export_bundle=self.export_diagnostics_bundle,
             on_reset_metrics=self.reset_usage_metrics,
             bg_color=THEME.bg_secondary,
             fg_color=THEME.text_primary,

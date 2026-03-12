@@ -141,13 +141,16 @@ Before joining a session:
 
 Before your first real rehearsal, run:
 
-1. **Help -> Run Setup Wizard**
+1. **Session -> Run Ready Check**
+   - Quick pass/fail summary with latency quality + participant count
+   - Direct actions to open diagnostics, run setup wizard, or export a support bundle
+2. **Help -> Run Setup Wizard**
    - Verifies Jamulus path and endpoint
    - Validates Webex URL format
    - Captures audio diagnostics state
-2. **Session -> Open Diagnostics Panel**
+3. **Session -> Open Diagnostics Panel**
    - Confirms current runtime state and quick recovery actions
-3. **Help -> View Usage Metrics**
+4. **Help -> View Usage Metrics**
    - View local counters to track successful launches and recurring issues
 
 ### Step 4: Use Session Canvas + Mode Defaults (Recommended)
@@ -321,15 +324,17 @@ For advanced users:
 
 Use this order for fastest recovery:
 
-1. `Session -> Open Diagnostics Panel`
-2. `Help -> Run Setup Wizard`
-3. Retry `Launch Jamulus` then `Launch Webex`
-4. If still failing, open `Help -> Quick Start Guide` (troubleshooting path)
+1. `Session -> Run Ready Check`
+2. `Session -> Open Diagnostics Panel`
+3. `Help -> Run Setup Wizard`
+4. Retry `Launch Jamulus` then `Launch Webex`
+5. If still failing, open `Help -> Quick Start Guide` (troubleshooting path)
 
 ### Diagnostics Export and Metrics Reset
 
 From either Diagnostics Panel or Usage Metrics:
 - **Export Snapshot** writes a timestamped local JSON report with states, diagnostics, and counters.
+- **Export Bundle** writes a timestamped ZIP with snapshot + settings + room context + environment + available logs/support files.
 - **Reset Metrics** clears local counters when starting a new observation window.
 
 For pilot programs, use the `Validation` menu:

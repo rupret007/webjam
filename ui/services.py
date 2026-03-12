@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import shutil
+import sys
 import tempfile
 import time
+import zipfile
 from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 
 class RetryService:
@@ -42,6 +46,9 @@ class MetricsService:
         "metric_webex_open_failed",
         "metric_diagnostics_panel_opened",
         "metric_audio_diagnostics_opened",
+        "metric_ready_check_run",
+        "metric_diagnostics_bundle_exported",
+        "metric_diagnostics_bundle_failed",
         "metric_save_mix_attempt",
         "metric_save_mix_success",
         "metric_save_mix_failed",
@@ -69,6 +76,57 @@ class MetricsService:
         for key in self.repository.list_settings().keys():
             if key.startswith(prefix):
                 self.repository.delete_setting(key)
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, dict):
+            return {str(k): MetricsService._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [MetricsService._json_safe(item) for item in value]
+        return str(value)
+
+    @staticmethod
+    def _normalize_file_candidates(candidates: Iterable[os.PathLike[str] | str]) -> list[Path]:
+        normalized: list[Path] = []
+        for raw in candidates:
+            if raw is None:
+                continue
+            try:
+                candidate = Path(raw).expanduser()
+            except (TypeError, ValueError):
+                continue
+            normalized.append(candidate)
+        return normalized
+
+    @staticmethod
+    def _copy_files(
+        sources: Iterable[Path],
+        destination: Path,
+        missing_sink: list[str],
+    ) -> list[str]:
+        copied: list[str] = []
+        name_counts: dict[str, int] = {}
+        for source in sources:
+            if not source.is_file():
+                missing_sink.append(str(source))
+                continue
+            base_name = source.name or "attachment"
+            duplicate_index = name_counts.get(base_name, 0)
+            name_counts[base_name] = duplicate_index + 1
+            if duplicate_index:
+                stem = source.stem or "attachment"
+                suffix = source.suffix
+                target_name = f"{stem}_{duplicate_index}{suffix}"
+            else:
+                target_name = base_name
+            target = destination / target_name
+            shutil.copy2(source, target)
+            copied.append(str(source))
+        return copied
 
     def export_snapshot(
         self,
@@ -100,7 +158,7 @@ class MetricsService:
             "usage_metrics": self.collect(),
         }
         out_path = home_dir / f"webjam_diagnostics_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
-        content = json.dumps(snapshot, indent=2)
+        content = json.dumps(self._json_safe(snapshot), indent=2)
         fd, temp_name = tempfile.mkstemp(
             prefix=out_path.stem + ".",
             suffix=".tmp",
@@ -121,3 +179,139 @@ class MetricsService:
                     temp_path.unlink()
                 except OSError:
                     pass
+
+    def export_diagnostics_bundle(
+        self,
+        output_dir: Path,
+        jamulus_state: str,
+        webex_state: str,
+        latency_ms: float | None,
+        server: str,
+        webex_url: str,
+        audio_diagnostics: dict[str, Any],
+        settings_payload: dict[str, Any] | None = None,
+        room_context: dict[str, Any] | None = None,
+        webex_last_error: str = "",
+        jamulus_path: str = "",
+        log_files: Iterable[os.PathLike[str] | str] = (),
+        support_files: Iterable[os.PathLike[str] | str] = (),
+    ) -> Path:
+        output_dir = Path(output_dir)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except FileExistsError as exc:
+            raise NotADirectoryError(f"Bundle output path is not a directory: {output_dir}") from exc
+        if not output_dir.is_dir():
+            raise NotADirectoryError(f"Bundle output path is not a directory: {output_dir}")
+
+        created_at = datetime.now(UTC)
+        stamp = created_at.strftime("%Y%m%d_%H%M%S")
+        bundle_path = output_dir / f"webjam_diagnostics_bundle_{stamp}.zip"
+        workspace = Path(tempfile.mkdtemp(prefix=f"{bundle_path.stem}.", dir=str(output_dir)))
+
+        try:
+            logs_dir = workspace / "logs"
+            files_dir = workspace / "files"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            files_dir.mkdir(parents=True, exist_ok=True)
+
+            snapshot_payload = {
+                "created_at": created_at.isoformat().replace("+00:00", "Z"),
+                "jamulus_state": jamulus_state,
+                "webex_state": webex_state,
+                "latency_ms": latency_ms,
+                "server": server,
+                "webex_url": webex_url,
+                "webex_last_error": webex_last_error or "none",
+                "jamulus_path": jamulus_path or "",
+                "audio_diagnostics": audio_diagnostics,
+                "usage_metrics": self.collect(),
+            }
+            (workspace / "snapshot.json").write_text(
+                json.dumps(self._json_safe(snapshot_payload), indent=2),
+                encoding="utf-8",
+            )
+
+            if settings_payload is not None:
+                (workspace / "settings.json").write_text(
+                    json.dumps(self._json_safe(settings_payload), indent=2),
+                    encoding="utf-8",
+                )
+            if room_context is not None:
+                (workspace / "room_context.json").write_text(
+                    json.dumps(self._json_safe(room_context), indent=2),
+                    encoding="utf-8",
+                )
+
+            environment_payload = {
+                "platform": platform.platform(),
+                "python": sys.version,
+                "python_executable": sys.executable,
+                "timestamp_utc": created_at.isoformat().replace("+00:00", "Z"),
+            }
+            (workspace / "environment.json").write_text(
+                json.dumps(self._json_safe(environment_payload), indent=2),
+                encoding="utf-8",
+            )
+
+            missing_files: list[str] = []
+            copied_logs = self._copy_files(
+                self._normalize_file_candidates(log_files),
+                logs_dir,
+                missing_files,
+            )
+            copied_support = self._copy_files(
+                self._normalize_file_candidates(support_files),
+                files_dir,
+                missing_files,
+            )
+
+            readme_lines = [
+                "WebJam Diagnostics Bundle",
+                "",
+                f"Created (UTC): {created_at.isoformat().replace('+00:00', 'Z')}",
+                f"Jamulus state: {jamulus_state}",
+                f"Webex state: {webex_state}",
+                f"Server: {server}",
+                "",
+                "Included files:",
+                f"- Snapshot JSON: snapshot.json",
+                f"- Environment JSON: environment.json",
+                f"- Logs copied: {len(copied_logs)}",
+                f"- Support files copied: {len(copied_support)}",
+            ]
+            if settings_payload is not None:
+                readme_lines.append("- Settings JSON: settings.json")
+            if room_context is not None:
+                readme_lines.append("- Room context JSON: room_context.json")
+            if missing_files:
+                readme_lines.append("")
+                readme_lines.append("Missing/Skipped file paths:")
+                readme_lines.extend(f"- {item}" for item in missing_files)
+            (workspace / "README.txt").write_text("\n".join(readme_lines), encoding="utf-8")
+
+            fd, temp_name = tempfile.mkstemp(
+                prefix=bundle_path.stem + ".",
+                suffix=".tmp",
+                dir=str(output_dir),
+            )
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            temp_path = Path(temp_name)
+            try:
+                with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for item in workspace.rglob("*"):
+                        if item.is_file():
+                            archive.write(item, item.relative_to(workspace).as_posix())
+                temp_path.replace(bundle_path)
+                return bundle_path
+            finally:
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)

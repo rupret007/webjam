@@ -19,6 +19,7 @@ def show_diagnostics_panel(
     on_run_setup: Callable[[], None],
     on_open_help: Callable[[], None],
     on_export_snapshot: Callable[[], None],
+    on_export_bundle: Callable[[], None] | None,
     on_reset_metrics: Callable[[], None],
     bg_color: str | None = None,
     fg_color: str | None = None,
@@ -70,5 +71,7 @@ def show_diagnostics_panel(
     tk.Button(btn_row, text="Run Setup Wizard", command=_run_setup_and_regrab, **btn_style).pack(side=tk.LEFT)
     tk.Button(btn_row, text="Open Help", command=on_open_help, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Export Snapshot", command=on_export_snapshot, **btn_style).pack(side=tk.LEFT, padx=8)
+    if on_export_bundle is not None:
+        tk.Button(btn_row, text="Export Bundle", command=on_export_bundle, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Reset Metrics", command=on_reset_metrics, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Close", command=panel.destroy, **btn_style).pack(side=tk.RIGHT)

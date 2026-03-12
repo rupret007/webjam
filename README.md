@@ -79,6 +79,7 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 1. **Start the Application**
    - Launch WebJam from your desktop
    - On first run, complete **Help -> Run Setup Wizard**
+   - Run **Session -> Run Ready Check** before going live
    - Choose your **Creative Mode**, session template, and goal from the top control bar
 
 2. **Connect Audio**
@@ -102,10 +103,14 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 
 ### In-App Help & Diagnostics
 
+- **Ready Check**: `Session -> Run Ready Check` (also available in `Help`)
+  - Shows an at-a-glance readiness summary (pass/fail checks, current latency class, participant count)
+  - Provides direct actions to run Setup Wizard, open diagnostics, and export a full diagnostics bundle
 - **Setup Wizard**: `Help -> Run Setup Wizard`
   - Runs preflight checks (Jamulus path, server reachability hint, Webex URL, audio diagnostics)
 - **Diagnostics Panel**: `Session -> Open Diagnostics Panel`
   - Shows current endpoint checks, audio backend state, and recovery hints
+  - Includes both **Export Snapshot** (JSON) and **Export Bundle** (ZIP with logs/settings/context)
 - **Troubleshooting Shortcut**: `Help -> Quick Start Guide` includes a troubleshooting mode used by actionable error dialogs
 - **Usage Metrics**: `Help -> View Usage Metrics`
   - Shows local-only counters (wizard usage, launch success/failure, diagnostics usage, save/load outcomes, mode adoption)

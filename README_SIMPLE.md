@@ -16,6 +16,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 
 1. Open `Help -> Run Setup Wizard`.
 2. Follow the checks and fix anything marked as failed.
+3. Run `Session -> Run Ready Check` before your first live room.
 
 ## 3) Start a Session
 
@@ -35,9 +36,14 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 ## 5) If Something Fails
 
 Use this order:
-1. `Session -> Open Diagnostics Panel`
-2. `Help -> Run Setup Wizard`
-3. Retry launch actions
+1. `Session -> Run Ready Check`
+2. `Session -> Open Diagnostics Panel`
+3. `Help -> Run Setup Wizard`
+4. Retry launch actions
+
+From Diagnostics Panel, use:
+- `Export Snapshot` for quick JSON state export
+- `Export Bundle` for full ZIP diagnostics package
 
 ## Validation Cohorts
 
