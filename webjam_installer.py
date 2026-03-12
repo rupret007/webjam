@@ -141,7 +141,7 @@ def launch_installed_app(app_file: Path) -> bool:
 def elevate_if_needed():
     """Re-launch with admin privileges if needed"""
     if not is_admin():
-        print("\n⚠  WebJam installer requires administrator privileges.")
+        print("\n[WARN] WebJam installer requires administrator privileges.")
         print("   Requesting elevation...")
         params = " ".join([f'"{a}"' for a in sys.argv[1:]])
         relaunch_target = sys.executable
@@ -150,13 +150,25 @@ def elevate_if_needed():
         else:
             relaunch_args = f'"{Path(__file__).resolve()}" {params}'.strip()
         try:
-            ctypes.windll.shell32.ShellExecuteW(
+            result = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", relaunch_target, relaunch_args, None, 1
             )
+            if int(result) <= 32:
+                print("   Elevation request was cancelled or denied.")
+                print("   Please run the installer as Administrator.")
+                try:
+                    input("\nPress Enter to exit...")
+                except EOFError:
+                    pass
+                sys.exit(1)
         except Exception as e:
             print(f"   Failed to elevate: {e}")
             print("   Please run the installer as Administrator.")
-            input("\nPress Enter to exit...")
+            try:
+                input("\nPress Enter to exit...")
+            except EOFError:
+                pass
+            sys.exit(1)
         sys.exit(0)
 
 def find_jamulus():
@@ -751,4 +763,3 @@ if __name__ == "__main__":
         traceback.print_exc()
         input("\nPress Enter to exit...")
         sys.exit(1)
-

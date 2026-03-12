@@ -1129,7 +1129,11 @@ class WebJamEnhancedApp:
         )
         if not cohort:
             return
-        self.cohort_name = cohort.strip().lower().replace(" ", "_")
+        normalized = cohort.strip().lower().replace(" ", "_")
+        if not normalized:
+            messagebox.showwarning("Invalid Cohort", "Cohort tag cannot be empty.", parent=self.root)
+            return
+        self.cohort_name = normalized
         self.repository.set_setting("cohort_name", self.cohort_name)
         self.metrics_service.increment(f"metric_cohort_tagged_{self.cohort_name}")
         messagebox.showinfo("Cohort Updated", f"Current validation cohort: {self.cohort_name}", parent=self.root)

@@ -39,7 +39,14 @@ def elevate_if_needed():
     if not is_admin():
         # Re-launch as admin, pass original args
         params = " ".join([f'"{a}"' for a in sys.argv[1:]])
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{__file__}" {params}', None, 1)
+        try:
+            result = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{__file__}" {params}', None, 1)
+        except Exception as exc:
+            print(f"Failed to request elevation: {exc}")
+            sys.exit(1)
+        if int(result) <= 32:
+            print("Elevation request was cancelled or denied.")
+            sys.exit(1)
         sys.exit(0)
 
 def find_jamulus():
