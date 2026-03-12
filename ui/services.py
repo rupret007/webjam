@@ -55,6 +55,8 @@ class MetricsService:
         "metric_ready_check_run",
         "metric_diagnostics_bundle_exported",
         "metric_diagnostics_bundle_failed",
+        "metric_session_brief_exported",
+        "metric_session_brief_failed",
         "metric_save_mix_attempt",
         "metric_save_mix_success",
         "metric_save_mix_failed",
@@ -179,6 +181,115 @@ class MetricsService:
             temp_path.write_text(content, encoding="utf-8")
             temp_path.replace(out_path)
             return out_path
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+
+    def export_session_brief(
+        self,
+        output_dir: Path,
+        room_context: dict[str, Any],
+        artifacts: Iterable[dict[str, Any]],
+        notes: str,
+        participants: Iterable[str],
+        mode_label: str = "",
+    ) -> Path:
+        output_dir = Path(output_dir)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except FileExistsError as exc:
+            raise NotADirectoryError(f"Session brief output path is not a directory: {output_dir}") from exc
+        if not output_dir.is_dir():
+            raise NotADirectoryError(f"Session brief output path is not a directory: {output_dir}")
+
+        created_at = datetime.now(UTC)
+        stamp = created_at.strftime("%Y%m%d_%H%M%S")
+        brief_path = output_dir / f"webjam_session_brief_{stamp}.md"
+
+        context = room_context if isinstance(room_context, dict) else {}
+        mode_key = str(context.get("mode_key", "") or "").strip() or "music_jam"
+        template_name = str(context.get("template_name", "") or "").strip() or "Untitled session"
+        session_goal = str(context.get("session_goal", "") or "").strip() or "(no goal recorded)"
+        review_state = str(context.get("review_state", "") or "").strip().lower() or "draft"
+        mode_text = mode_label.strip() if isinstance(mode_label, str) else ""
+        if not mode_text:
+            mode_text = mode_key.replace("_", " ").title()
+
+        participant_list: list[str] = []
+        for participant in participants:
+            participant_text = str(participant).strip()
+            if participant_text:
+                participant_list.append(participant_text)
+        participant_list = sorted(set(participant_list), key=str.casefold)
+
+        artifact_lines: list[str] = []
+        artifact_count = 0
+        for raw in artifacts:
+            if not isinstance(raw, dict):
+                continue
+            title = str(raw.get("title", "") or "").strip() or "Untitled"
+            artifact_type = str(raw.get("artifact_type", "") or "").strip().lower() or "note"
+            reference = str(raw.get("reference", "") or "").strip()
+            if reference:
+                artifact_lines.append(f"- [{artifact_type}] {title}: {reference}")
+            else:
+                artifact_lines.append(f"- [{artifact_type}] {title}")
+            artifact_count += 1
+
+        notes_text = str(notes or "").rstrip()
+        note_line_count = len([line for line in notes_text.splitlines() if line.strip()]) if notes_text else 0
+
+        lines = [
+            "# WebJam Session Brief",
+            "",
+            f"Created (UTC): {created_at.isoformat().replace('+00:00', 'Z')}",
+            f"Mode: {mode_text}",
+            f"Template: {template_name}",
+            f"Goal: {session_goal}",
+            f"Review state: {review_state}",
+            f"Participants: {len(participant_list)}",
+            f"Artifacts: {artifact_count}",
+            f"Note lines: {note_line_count}",
+            "",
+            "## Participants",
+        ]
+        if participant_list:
+            lines.extend(f"- {name}" for name in participant_list)
+        else:
+            lines.append("- (none)")
+
+        lines.extend(["", "## Artifacts"])
+        if artifact_lines:
+            lines.extend(artifact_lines)
+        else:
+            lines.append("- (none)")
+
+        lines.extend(["", "## Notes"])
+        if notes_text:
+            lines.append(notes_text)
+        else:
+            lines.append("(none)")
+
+        lines.extend(["", "## Diagnostics", f"- Exported with local usage metrics count: {len(self.collect())}"])
+
+        content = "\n".join(lines) + "\n"
+        fd, temp_name = tempfile.mkstemp(
+            prefix=brief_path.stem + ".",
+            suffix=".tmp",
+            dir=str(output_dir),
+        )
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        temp_path = Path(temp_name)
+        try:
+            temp_path.write_text(content, encoding="utf-8")
+            temp_path.replace(brief_path)
+            return brief_path
         finally:
             if temp_path.exists():
                 try:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
+from datetime import datetime
 from tkinter import messagebox, simpledialog
 from typing import Callable
 
@@ -84,7 +85,10 @@ class SessionCanvasPanel(tk.Frame):
         self.notes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 6))
         self.notes.bind("<FocusOut>", self._save_notes)
 
-        tk.Button(self, text="Save Notes", command=self._save_notes).pack(anchor="e", padx=10, pady=(0, 8))
+        notes_btn_row = tk.Frame(self, bg=bg)
+        notes_btn_row.pack(fill=tk.X, padx=10, pady=(0, 8))
+        tk.Button(notes_btn_row, text="Insert Timestamp", command=self.insert_timestamp_marker, padx=10).pack(side=tk.LEFT)
+        tk.Button(notes_btn_row, text="Save Notes", command=self._save_notes, padx=10).pack(side=tk.RIGHT)
 
         tk.Label(self, text="Critique Prompts", bg=bg, fg=fg, font=("Arial", 10, "bold")).pack(
             anchor="w", padx=10, pady=(0, 4)
@@ -162,6 +166,18 @@ class SessionCanvasPanel(tk.Frame):
             self.save_notes_cb(content)
         except Exception as exc:
             messagebox.showerror("Save Failed", f"Could not save notes: {exc}", parent=self)
+
+    @staticmethod
+    def format_timestamp_marker(now: datetime | None = None) -> str:
+        marker_time = now or datetime.now()
+        return f"[{marker_time.strftime('%H:%M:%S')}] "
+
+    def insert_timestamp_marker(self) -> None:
+        marker = self.format_timestamp_marker()
+        try:
+            self.notes.insert(tk.INSERT, marker)
+        except Exception:
+            self.notes.insert(tk.END, marker)
 
     def refresh(self) -> None:
         mode = self.get_mode()

@@ -528,6 +528,7 @@ class WebJamEnhancedApp:
         session_menu.add_command(label="Audio Diagnostics", command=self.show_audio_diagnostics)
         session_menu.add_command(label="Open Diagnostics Panel", command=self.open_diagnostics_panel)
         session_menu.add_command(label="Export Diagnostics Bundle", command=self.export_diagnostics_bundle)
+        session_menu.add_command(label="Export Session Brief", command=self.export_session_brief)
         session_menu.add_separator()
         session_menu.add_command(label="Add Demo Participants", command=self.add_test_participants)
 
@@ -1382,6 +1383,28 @@ class WebJamEnhancedApp:
             self.metrics_service.increment("metric_diagnostics_bundle_failed")
             messagebox.showerror("Export Failed", f"Could not export diagnostics bundle:\n{exc}", parent=self.root)
 
+    def export_session_brief(self) -> None:
+        try:
+            self.save_room_context()
+            room_context = self.repository.get_room_context(self.room_key)
+            artifacts = self.repository.list_session_artifacts(self.room_key)
+            notes = self.repository.get_session_notes(self.room_key)
+            participants = [p.name for p in self.jamulus_controller.get_participants()]
+            mode_label = get_mode_by_key_or_default(self.mode_key).label
+            out_path = self.metrics_service.export_session_brief(
+                output_dir=Path.home(),
+                room_context=room_context,
+                artifacts=artifacts,
+                notes=notes,
+                participants=participants,
+                mode_label=mode_label,
+            )
+            self.metrics_service.increment("metric_session_brief_exported")
+            messagebox.showinfo("Session Brief Exported", f"Session brief written to:\n{out_path}", parent=self.root)
+        except Exception as exc:
+            self.metrics_service.increment("metric_session_brief_failed")
+            messagebox.showerror("Export Failed", f"Could not export session brief:\n{exc}", parent=self.root)
+
     def _update_latency_widget(self) -> None:
         try:
             if not self.root.winfo_exists():
@@ -1903,6 +1926,7 @@ Set a template and session goal before launch.
 3. Collaborate in Session Canvas
    • Add links/artifacts for references
    • Capture live notes and critique prompts
+   • Use Insert Timestamp for time-linked notes
    • Track review state (draft/review/final)
 
 4. Mix Your Session
@@ -1913,6 +1937,9 @@ Set a template and session goal before launch.
 
 5. Save Your Mix
    Click 'Save Mix' to save your settings for next time.
+
+6. Export a Session Brief
+   Use Session -> Export Session Brief for handoff notes.
 
 Tips:
 • Keep all faders near 0dB for best quality

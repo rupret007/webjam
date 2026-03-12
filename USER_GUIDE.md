@@ -135,7 +135,7 @@ Before joining a session:
 5. **Use Shared Session Canvas**
    - Choose a Creative Mode, template, and session goal from the top control bar
    - Pin links/references/artifacts for the session
-   - Capture live notes and set review state (`draft`, `review`, `final`)
+   - Capture live notes, use **Insert Timestamp** for time-linked notes, and set review state (`draft`, `review`, `final`)
 
 ### Step 3: Run Preflight + Diagnostics (Recommended)
 
@@ -279,6 +279,16 @@ At the top of the mixer:
 ## Session Management
 
 Before each session, set your mode, template, and goal in the top bar. WebJam stores this context so repeated teams can keep momentum across sessions.
+
+### Export Session Brief
+
+Use `Session -> Export Session Brief` to create a markdown handoff file that includes:
+- mode, template, goal, and review state
+- participant list at export time
+- pinned artifacts/references
+- current session notes
+
+Use this brief for async updates and to kick off the next session quickly.
 
 ### Saving Your Mix
 

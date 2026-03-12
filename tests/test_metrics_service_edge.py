@@ -68,6 +68,65 @@ class TestMetricsServiceExportEdge(unittest.TestCase):
         finally:
             os.remove(temp_path)
 
+    def test_export_session_brief_creates_markdown_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir) / "briefs"
+            out_path = self.service.export_session_brief(
+                output_dir=out_dir,
+                room_context={
+                    "mode_key": "music_jam",
+                    "template_name": "Band Rehearsal",
+                    "session_goal": "Lock final chorus dynamics",
+                    "review_state": "review",
+                },
+                artifacts=[
+                    {"title": "Reference Mix", "artifact_type": "link", "reference": "https://example.com/ref"},
+                    {"title": "Cue Sheet", "artifact_type": "doc", "reference": "C:/notes/cue.docx"},
+                ],
+                notes="Tighten intro timing\nCheck bridge harmonies",
+                participants=["Alex", "Sam", "Alex"],
+                mode_label="Music Jam",
+            )
+            self.assertTrue(out_path.exists())
+            content = out_path.read_text(encoding="utf-8")
+            self.assertIn("# WebJam Session Brief", content)
+            self.assertIn("Mode: Music Jam", content)
+            self.assertIn("Template: Band Rehearsal", content)
+            self.assertIn("Participants: 2", content)
+            self.assertIn("- [link] Reference Mix: https://example.com/ref", content)
+            self.assertIn("Tighten intro timing", content)
+
+    def test_export_session_brief_rejects_file_output_path(self) -> None:
+        fd, temp_path = tempfile.mkstemp()
+        os.close(fd)
+        try:
+            with self.assertRaises(NotADirectoryError):
+                self.service.export_session_brief(
+                    output_dir=Path(temp_path),
+                    room_context={},
+                    artifacts=[],
+                    notes="",
+                    participants=[],
+                    mode_label="",
+                )
+        finally:
+            os.remove(temp_path)
+
+    def test_export_session_brief_ignores_invalid_artifact_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            out_path = self.service.export_session_brief(
+                output_dir=Path(temp_dir),
+                room_context={"mode_key": "writer_room"},
+                artifacts=[{"title": "Outline", "artifact_type": "note"}, "bad", 42],  # type: ignore[list-item]
+                notes="",
+                participants=["", "  ", "Jamie"],
+            )
+            content = out_path.read_text(encoding="utf-8")
+            self.assertIn("Mode: Writer Room", content)
+            self.assertIn("Artifacts: 1", content)
+            self.assertIn("Participants: 1", content)
+            self.assertIn("- [note] Outline", content)
+
     def test_export_diagnostics_bundle_creates_zip_with_expected_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             out_dir = Path(temp_dir) / "bundle_out"

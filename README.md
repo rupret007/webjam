@@ -93,6 +93,7 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 4. **Use Shared Session Canvas**
    - Add links/artifacts/references
    - Capture live notes for decisions and next actions
+   - Use **Insert Timestamp** in notes for time-linked callouts
    - Track review state: draft/review/final
 
 5. **Mix Your Session**
@@ -115,6 +116,9 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 - **Usage Metrics**: `Help -> View Usage Metrics`
   - Shows local-only counters (wizard usage, launch success/failure, diagnostics usage, save/load outcomes, mode adoption)
   - Includes quick actions to reset metrics and export diagnostics snapshot
+- **Session Brief Export**: `Session -> Export Session Brief`
+  - Exports a markdown brief with mode/template/goal, participant list, artifacts, and current notes
+  - Useful for handoff, async review, and next-session kickoff
 
 ### Cohort Validation
 

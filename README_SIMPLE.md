@@ -27,6 +27,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 3. Wait for participants to appear in the mixer.
 4. Adjust faders/pan/mute/solo as needed.
 5. Use the **Shared Session Canvas** to pin references, track review state, and capture notes.
+6. Use **Insert Timestamp** in notes for time-linked callouts during playback/discussion.
 
 ## 4) Save Your Mix
 
@@ -44,6 +45,11 @@ Use this order:
 From Diagnostics Panel, use:
 - `Export Snapshot` for quick JSON state export
 - `Export Bundle` for full ZIP diagnostics package
+
+## 6) Session Handoff
+
+- Use `Session -> Export Session Brief` to generate a markdown handoff with mode/template/goal, participants, artifacts, and notes.
+- Share the exported brief with your team before the next room.
 
 ## Validation Cohorts
 
