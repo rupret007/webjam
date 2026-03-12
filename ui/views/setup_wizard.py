@@ -286,6 +286,9 @@ class SetupWizard:
     @staticmethod
     def check_tcp_hint(host: str, port: int, retries: int = 3) -> tuple[bool, str]:
         """TCP connectivity hint. Jamulus uses UDP, so this only verifies DNS and basic network path."""
+        if not isinstance(host, str) or not host.strip():
+            return False, f"Invalid host: {host}"
+        retries = max(1, int(retries))
         last_exc: Exception | None = None
         note = " (Note: Jamulus uses UDP; this TCP check is a hint only.)"
         for attempt in range(retries):

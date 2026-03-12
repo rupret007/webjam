@@ -52,6 +52,18 @@ class TestSetupWizardDiagnosticsEdge(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Invalid Webex URL", detail)
 
+    def test_check_tcp_hint_invalid_host_returns_failure(self):
+        ok, detail = SetupWizard.check_tcp_hint("", 22124)
+        self.assertFalse(ok)
+        self.assertIn("Invalid host", detail)
+
+    @patch("ui.views.setup_wizard.socket.create_connection", side_effect=OSError("offline"))
+    def test_check_tcp_hint_zero_retries_coerces_to_one_attempt(self, create_connection_mock):
+        ok, detail = SetupWizard.check_tcp_hint("127.0.0.1", 22124, retries=0)
+        self.assertFalse(ok)
+        self.assertIn("after 1 attempts", detail)
+        create_connection_mock.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
