@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import subprocess
+import os
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -20,10 +21,19 @@ def is_admin() -> bool:
         return False
 
 
-def find_jamulus(jamulus_candidates: Iterable[str]) -> Optional[str]:
+def find_jamulus(jamulus_candidates: Iterable[object]) -> Optional[str]:
     for candidate in jamulus_candidates:
-        if Path(candidate).exists():
-            return candidate
+        if not isinstance(candidate, (str, bytes, os.PathLike)):
+            continue
+        try:
+            candidate_path = Path(candidate)
+        except (TypeError, ValueError):
+            continue
+        try:
+            if candidate_path.exists():
+                return str(candidate_path)
+        except OSError:
+            continue
     return None
 
 

@@ -48,6 +48,15 @@ class TestFindJamulus(unittest.TestCase):
         finally:
             Path(path).unlink(missing_ok=True)
 
+    def test_invalid_candidate_types_are_skipped(self):
+        with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
+            path = f.name
+        try:
+            result = find_jamulus([None, 123, path])  # type: ignore[list-item]
+            self.assertEqual(result, path)
+        finally:
+            Path(path).unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
