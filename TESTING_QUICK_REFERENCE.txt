@@ -2,28 +2,31 @@
                     WEBJAM TESTING - QUICK REFERENCE CARD
 ================================================================================
 
-GOAL: Achieve 3 consecutive test runs with 100% pass rate
+CURRENT WORKFLOW (2026): Run full suites + build validation
 
-STATUS: *** ACHIEVED! *** (October 8-9, 2025)
+  python -m unittest discover -s tests -p "test_*.py"
+  python -m unittest test_webjam.py test_modernization.py
+  python build_webjam.py
+
+LEGACY STATUS: *** 3-consecutive-run goal achieved (October 8-9, 2025) ***
 
 ================================================================================
                             QUICK START
 ================================================================================
 
-ONE-LINE TEST COMMAND:
-----------------------
-cd C:\Users\rupret\Desktop\WebJam && python test_webjam.py
+ONE-LINE CURRENT COMMAND:
+-------------------------
+cd C:\Users\rupret\Desktop\WebJam && python -m unittest discover -s tests -p "test_*.py"
 
 
 VERIFY SUCCESS:
 ---------------
-type test_results.json
-(Look for 3 runs with "percentage": 100.0)
+No test failures in both unittest commands, plus successful `python build_webjam.py`.
 
 
-CHECK LAST RESULT:
-------------------
-python -c "import json; r=json.load(open('test_results.json')); print(f'Last: {r[-1][\"percentage\"]:.1f}%')"
+CHECK LEGACY RESULT FILE (optional):
+------------------------------------
+python -c "import json; r=json.load(open('test_results.json')); print(f'Legacy last: {r[-1][\"percentage\"]:.1f}%')"
 
 ================================================================================
                           TEST STATISTICS

@@ -28,7 +28,8 @@ Note: historical sections below reference the older `test_webjam.py` multi-run f
 
 ## Overview
 
-This document defines the standard testing procedure for WebJam that must be followed every time to ensure consistent, reliable testing. The goal is to achieve **3 consecutive test runs with 100% pass rate**.
+This document includes a legacy testing procedure plus a current canonical workflow.  
+Use the **Current Canonical Workflow (2026)** section for active development and release validation.
 
 ---
 
