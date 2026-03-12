@@ -96,8 +96,12 @@ class SessionCanvasPanel(tk.Frame):
         self.on_review_state_change(selected)
 
     def _add_artifact(self) -> None:
-        title = simpledialog.askstring("Artifact Title", "Name this artifact:", parent=self)
+        title_raw = simpledialog.askstring("Artifact Title", "Name this artifact:", parent=self)
+        if title_raw is None:
+            return
+        title = title_raw.strip()
         if not title:
+            messagebox.showwarning("Invalid Title", "Artifact title cannot be empty.", parent=self)
             return
         artifact_type = simpledialog.askstring(
             "Artifact Type",
@@ -115,11 +119,15 @@ class SessionCanvasPanel(tk.Frame):
                 parent=self,
             )
             return
-        reference = simpledialog.askstring("Artifact Reference", "Paste URL/path/description:", parent=self)
+        reference_raw = simpledialog.askstring("Artifact Reference", "Paste URL/path/description:", parent=self)
+        if reference_raw is None:
+            return
+        reference = reference_raw.strip()
         if not reference:
+            messagebox.showwarning("Invalid Reference", "Artifact reference cannot be empty.", parent=self)
             return
         try:
-            self.add_artifact_cb(title.strip(), artifact_type, reference.strip())
+            self.add_artifact_cb(title, artifact_type, reference)
         except Exception as exc:
             messagebox.showerror("Add Failed", f"Could not add artifact: {exc}", parent=self)
             return
