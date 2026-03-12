@@ -64,6 +64,13 @@ class TestSetupWizardDiagnosticsEdge(unittest.TestCase):
         self.assertIn("after 1 attempts", detail)
         create_connection_mock.assert_called_once()
 
+    @patch("ui.views.setup_wizard.socket.create_connection", side_effect=OSError("offline"))
+    def test_check_tcp_hint_invalid_retries_type_uses_default(self, create_connection_mock):
+        ok, detail = SetupWizard.check_tcp_hint("127.0.0.1", 22124, retries="bad")  # type: ignore[arg-type]
+        self.assertFalse(ok)
+        self.assertIn("after 3 attempts", detail)
+        self.assertEqual(create_connection_mock.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
