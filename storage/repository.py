@@ -344,8 +344,9 @@ class WebJamRepository:
         }
 
     def add_session_artifact(self, room_key: str, title: str, artifact_type: str, reference: str) -> int:
-        title = (title or "")[:TITLE_MAX_LEN]
-        reference = (reference or "")[:REFERENCE_MAX_LEN]
+        title = ("" if title is None else str(title))[:TITLE_MAX_LEN]
+        reference = ("" if reference is None else str(reference))[:REFERENCE_MAX_LEN]
+        artifact_type = ("" if artifact_type is None else str(artifact_type)).strip().lower()
         if artifact_type not in VALID_ARTIFACT_TYPES:
             artifact_type = "note"
         with self._managed_connection() as conn:

@@ -165,6 +165,22 @@ class TestRepositoryArtifacts(unittest.TestCase):
         self.assertEqual(len(artifacts), 1)
         self.assertEqual(artifacts[0]["artifact_type"], "note")
 
+    def test_non_string_artifact_fields_are_coerced(self):
+        self.repo.add_session_artifact("room1", 123, "LiNk", 456)  # type: ignore[arg-type]
+        artifacts = self.repo.list_session_artifacts("room1")
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["title"], "123")
+        self.assertEqual(artifacts[0]["artifact_type"], "link")
+        self.assertEqual(artifacts[0]["reference"], "456")
+
+    def test_none_artifact_fields_do_not_crash(self):
+        self.repo.add_session_artifact("room1", None, None, None)  # type: ignore[arg-type]
+        artifacts = self.repo.list_session_artifacts("room1")
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["title"], "")
+        self.assertEqual(artifacts[0]["artifact_type"], "note")
+        self.assertEqual(artifacts[0]["reference"], "")
+
     def test_title_truncation_at_limit(self):
         long_title = "x" * (TITLE_MAX_LEN + 100)
         self.repo.add_session_artifact("room1", long_title, "note", "ref")
