@@ -64,6 +64,7 @@ Use `View` menu:
 
 Use `Startup` menu:
 - Run Setup Wizard on startup
+- Auto reconnect services
 - Reset All UI Preferences
 
 ## More Detailed Docs

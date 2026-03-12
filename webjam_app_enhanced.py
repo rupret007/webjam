@@ -65,6 +65,9 @@ MIX_FILE = Path(BASE_SETTINGS.mix_file)
 JAMULUS_CANDIDATES = BASE_SETTINGS.jamulus_candidates
 CUSTOM_TEMPLATE_OPTION = "— Custom —"
 VALID_REVIEW_STATES = {"draft", "review", "final"}
+RECONNECT_MAX_ATTEMPTS = 5
+RECONNECT_BASE_DELAY_SECONDS = 1.5
+RECONNECT_MAX_DELAY_SECONDS = 45.0
 
 
 class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
@@ -437,8 +440,19 @@ class WebJamEnhancedApp:
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
+        self.auto_reconnect_enabled = True
+        self._jamulus_launch_intended = False
+        self._webex_launch_intended = False
+        self._jamulus_reconnect_attempts = 0
+        self._webex_reconnect_attempts = 0
+        self._jamulus_next_reconnect_at = 0.0
+        self._webex_next_reconnect_at = 0.0
+        self._jamulus_reconnect_inflight = False
+        self._webex_reconnect_inflight = False
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
+        raw_auto_reconnect = self.repository.get_setting("auto_reconnect_enabled", "1")
+        self.auto_reconnect_enabled = str(raw_auto_reconnect).strip().lower() in {"1", "true", "yes", "on"}
         self.jamulus_server = DEFAULT_JAMULUS_SERVER
         self.jamulus_port = DEFAULT_JAMULUS_PORT
         self.webex_url = DEFAULT_WEBEX_URL
@@ -543,10 +557,16 @@ class WebJamEnhancedApp:
         startup_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Startup", menu=startup_menu)
         self.auto_setup_var = tk.BooleanVar(value=self.auto_setup_enabled)
+        self.auto_reconnect_var = tk.BooleanVar(value=self.auto_reconnect_enabled)
         startup_menu.add_checkbutton(
             label="Run Setup Wizard on startup",
             variable=self.auto_setup_var,
             command=self.toggle_auto_setup,
+        )
+        startup_menu.add_checkbutton(
+            label="Auto reconnect services",
+            variable=self.auto_reconnect_var,
+            command=self.toggle_auto_reconnect,
         )
         startup_menu.add_separator()
         startup_menu.add_command(label="Reset All UI Preferences", command=self.reset_all_ui_preferences)
@@ -1031,6 +1051,73 @@ class WebJamEnhancedApp:
     def _retry_action(self, action, attempts: int = 3, base_delay: float = 0.4):
         return RetryService.retry_action(action, attempts=attempts, base_delay=base_delay)
 
+    @staticmethod
+    def _reconnect_delay_seconds(attempt: int) -> float:
+        bounded_attempt = max(1, int(attempt))
+        return min(
+            RECONNECT_MAX_DELAY_SECONDS,
+            RECONNECT_BASE_DELAY_SECONDS * (2 ** (bounded_attempt - 1)),
+        )
+
+    def _attempt_auto_reconnects(self, now: float | None = None) -> None:
+        if not getattr(self, "auto_reconnect_enabled", True):
+            return
+        if now is None:
+            now = time.monotonic()
+        self._attempt_auto_reconnect_jamulus(now)
+        self._attempt_auto_reconnect_webex(now)
+
+    def _attempt_auto_reconnect_jamulus(self, now: float) -> None:
+        if not getattr(self, "_jamulus_launch_intended", False):
+            return
+        process = getattr(self, "jamulus_process", None)
+        is_running = process is not None and process.poll() is None
+        if is_running:
+            self._jamulus_reconnect_attempts = 0
+            self._jamulus_next_reconnect_at = 0.0
+            self._jamulus_reconnect_inflight = False
+            return
+        if getattr(self, "_jamulus_reconnect_inflight", False):
+            return
+        attempts = int(getattr(self, "_jamulus_reconnect_attempts", 0))
+        if attempts >= RECONNECT_MAX_ATTEMPTS:
+            return
+        if now < float(getattr(self, "_jamulus_next_reconnect_at", 0.0)):
+            return
+        attempts += 1
+        self._jamulus_reconnect_attempts = attempts
+        self._jamulus_next_reconnect_at = now + self._reconnect_delay_seconds(attempts)
+        self._jamulus_reconnect_inflight = True
+        self.metrics_service.increment("metric_jamulus_reconnect_attempt")
+        self._launch_jamulus(manual=False, reconnect=True)
+
+    def _attempt_auto_reconnect_webex(self, now: float) -> None:
+        if not getattr(self, "_webex_launch_intended", False):
+            return
+        controller = getattr(self, "webex_controller", None)
+        if controller is None:
+            return
+        if getattr(controller, "is_connected", False):
+            self._webex_reconnect_attempts = 0
+            self._webex_next_reconnect_at = 0.0
+            self._webex_reconnect_inflight = False
+            return
+        if getattr(self, "_webex_reconnect_inflight", False):
+            return
+        if self.webex_state not in {"Open failed", "Not opened"}:
+            return
+        attempts = int(getattr(self, "_webex_reconnect_attempts", 0))
+        if attempts >= RECONNECT_MAX_ATTEMPTS:
+            return
+        if now < float(getattr(self, "_webex_next_reconnect_at", 0.0)):
+            return
+        attempts += 1
+        self._webex_reconnect_attempts = attempts
+        self._webex_next_reconnect_at = now + self._reconnect_delay_seconds(attempts)
+        self._webex_reconnect_inflight = True
+        self.metrics_service.increment("metric_webex_reconnect_attempt")
+        self._launch_webex(manual=False, reconnect=True)
+
     def _bind_shortcuts(self) -> None:
         self.root.bind("<Control-s>", lambda _e: self._safe_invoke(self.save_mix))
         self.root.bind("<Control-o>", lambda _e: self._safe_invoke(self.load_mix))
@@ -1136,6 +1223,10 @@ class WebJamEnhancedApp:
         self.auto_setup_enabled = bool(self.auto_setup_var.get())
         self._save_accessibility_preferences()
 
+    def toggle_auto_reconnect(self) -> None:
+        self.auto_reconnect_enabled = bool(self.auto_reconnect_var.get())
+        self.repository.set_setting("auto_reconnect_enabled", "1" if self.auto_reconnect_enabled else "0")
+
     def _save_window_geometry(self) -> None:
         try:
             geometry = self.root.winfo_geometry()
@@ -1160,10 +1251,14 @@ class WebJamEnhancedApp:
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
+        self.auto_reconnect_enabled = True
 
         self.large_text_var.set(False)
         self.high_contrast_var.set(False)
         self.auto_setup_var.set(True)
+        if hasattr(self, "auto_reconnect_var"):
+            self.auto_reconnect_var.set(True)
+        self.repository.set_setting("auto_reconnect_enabled", "1")
 
         self.root.geometry("1600x900")
         self._apply_accessibility_mode()
@@ -1362,6 +1457,7 @@ class WebJamEnhancedApp:
         if self.webex_controller.is_connected and self.webex_state in {"Not opened", "Open failed"}:
             self.webex_state = "Opened in browser"
 
+        self._attempt_auto_reconnects()
         self._measure_server_latency_async()
         self._refresh_readiness()
         try:
@@ -1495,10 +1591,24 @@ class WebJamEnhancedApp:
     
     def launch_jamulus(self):
         """Launch Jamulus client"""
-        self.metrics_service.increment("metric_jamulus_launch_attempt")
+        self._jamulus_launch_intended = True
+        self._jamulus_reconnect_attempts = 0
+        self._jamulus_next_reconnect_at = 0.0
+        self._launch_jamulus(manual=True, reconnect=False)
+
+    def _launch_jamulus(self, manual: bool, reconnect: bool) -> None:
+        if manual:
+            self.metrics_service.increment("metric_jamulus_launch_attempt")
         self._refresh_endpoint_state()
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
+            if reconnect:
+                self._jamulus_reconnect_inflight = False
+                self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                self.jamulus_state = "Not running"
+                self.root.after(0, self._refresh_readiness)
+                LOGGER.warning("Jamulus reconnect skipped: executable not found.")
+                return
             self.metrics_service.increment("metric_jamulus_launch_failed")
             self._show_actionable_error(
                 "Jamulus Not Found",
@@ -1511,11 +1621,16 @@ class WebJamEnhancedApp:
 
         if self.jamulus_process and self.jamulus_process.poll() is None:
             self.jamulus_state = "Already running"
+            self._jamulus_reconnect_attempts = 0
+            self._jamulus_next_reconnect_at = 0.0
+            self._jamulus_reconnect_inflight = False
             self._refresh_readiness()
-            messagebox.showinfo("Jamulus", "Jamulus is already running.", parent=self.root)
+            if manual:
+                messagebox.showinfo("Jamulus", "Jamulus is already running.", parent=self.root)
             return
 
-        self._set_status_banner("Launching Jamulus...", color="#ffcc00")
+        banner_text = "Launching Jamulus..." if manual else "Auto-reconnecting Jamulus..."
+        self._set_status_banner(banner_text, color="#ffcc00")
         server = f"{self.jamulus_server}:{self.jamulus_port}"
 
         def _do_launch() -> None:
@@ -1528,34 +1643,60 @@ class WebJamEnhancedApp:
                 self.jamulus_process = proc
                 self.jamulus_state = f"Connecting ({server})"
                 self.root.after(0, self._refresh_readiness)
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Success",
-                    f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
-                    parent=self.root,
-                ))
+                if manual:
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Success",
+                            f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
+                            parent=self.root,
+                        ),
+                    )
                 self.jamulus_controller.add_participant("You (Local)", 0)
                 self.jamulus_state = "Connected"
-                self.metrics_service.increment("metric_jamulus_launch_success")
+                self._jamulus_reconnect_attempts = 0
+                self._jamulus_next_reconnect_at = 0.0
+                self._jamulus_reconnect_inflight = False
+                if reconnect:
+                    self.metrics_service.increment("metric_jamulus_reconnect_success")
+                else:
+                    self.metrics_service.increment("metric_jamulus_launch_success")
                 self.root.after(0, self._refresh_readiness)
-            except Exception as e:
-                LOGGER.exception("Failed to launch Jamulus: %s", e)
-                self.jamulus_state = "Launch failed"
+            except Exception as exc:
+                LOGGER.exception("Failed to launch Jamulus: %s", exc)
+                self.jamulus_state = "Launch failed" if manual else "Not running"
+                self._jamulus_reconnect_inflight = False
+                if reconnect:
+                    self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                    self.root.after(0, self._refresh_readiness)
+                    return
                 self.metrics_service.increment("metric_jamulus_launch_failed")
                 self.root.after(0, self._refresh_readiness)
-                self.root.after(0, lambda: self._show_actionable_error(
-                    "Jamulus Launch Failed",
-                    what_failed=f"Jamulus could not start ({e}).",
-                    likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
-                    next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
-                    retry_callback=self.launch_jamulus,
-                ))
+                self.root.after(
+                    0,
+                    lambda launch_exc=exc: self._show_actionable_error(
+                        "Jamulus Launch Failed",
+                        what_failed=f"Jamulus could not start ({launch_exc}).",
+                        likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
+                        next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
+                        retry_callback=self.launch_jamulus,
+                    ),
+                )
 
         threading.Thread(target=_do_launch, daemon=True).start()
     
     def launch_webex(self):
         """Launch Webex meeting"""
-        self.metrics_service.increment("metric_webex_open_attempt")
-        self._set_status_banner("Opening Webex...", color="#ffcc00")
+        self._webex_launch_intended = True
+        self._webex_reconnect_attempts = 0
+        self._webex_next_reconnect_at = 0.0
+        self._launch_webex(manual=True, reconnect=False)
+
+    def _launch_webex(self, manual: bool, reconnect: bool) -> None:
+        if manual:
+            self.metrics_service.increment("metric_webex_open_attempt")
+        banner_text = "Opening Webex..." if manual else "Auto-reconnecting Webex..."
+        self._set_status_banner(banner_text, color="#ffcc00")
 
         def _do_open() -> None:
             try:
@@ -1567,25 +1708,43 @@ class WebJamEnhancedApp:
 
                 self._retry_action(_open_once, attempts=3, base_delay=0.4)
                 self.webex_state = "Opened in browser"
-                self.metrics_service.increment("metric_webex_open_success")
+                self._webex_reconnect_attempts = 0
+                self._webex_next_reconnect_at = 0.0
+                self._webex_reconnect_inflight = False
+                if reconnect:
+                    self.metrics_service.increment("metric_webex_reconnect_success")
+                else:
+                    self.metrics_service.increment("metric_webex_open_success")
                 self.root.after(0, self._refresh_readiness)
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Webex Opened",
-                    f"Webex meeting opened in your browser:\n\n{self.webex_url}\n\nJoin the meeting to see and hear other participants.",
-                    parent=self.root,
-                ))
-            except Exception as e:
-                LOGGER.exception("Failed to open Webex: %s", e)
+                if manual:
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Webex Opened",
+                            f"Webex meeting opened in your browser:\n\n{self.webex_url}\n\nJoin the meeting to see and hear other participants.",
+                            parent=self.root,
+                        ),
+                    )
+            except Exception as exc:
+                LOGGER.exception("Failed to open Webex: %s", exc)
                 self.webex_state = "Open failed"
+                self._webex_reconnect_inflight = False
+                if reconnect:
+                    self.metrics_service.increment("metric_webex_reconnect_failed")
+                    self.root.after(0, self._refresh_readiness)
+                    return
                 self.metrics_service.increment("metric_webex_open_failed")
                 self.root.after(0, self._refresh_readiness)
-                self.root.after(0, lambda: self._show_actionable_error(
-                    "Webex Open Failed",
-                    what_failed=f"Webex URL could not be opened ({e}).",
-                    likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
-                    next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
-                    retry_callback=self.launch_webex,
-                ))
+                self.root.after(
+                    0,
+                    lambda open_exc=exc: self._show_actionable_error(
+                        "Webex Open Failed",
+                        what_failed=f"Webex URL could not be opened ({open_exc}).",
+                        likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
+                        next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
+                        retry_callback=self.launch_webex,
+                    ),
+                )
 
         threading.Thread(target=_do_open, daemon=True).start()
     

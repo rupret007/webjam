@@ -526,6 +526,7 @@ WebJam is built for diverse creators—musicians, artists, writers, and designer
 
 Use `Startup` menu for:
 - Run Setup Wizard automatically on launch
+- Auto reconnect services with bounded backoff retries
 - Reset all UI preferences to defaults
 - Reset window size/position to defaults
 

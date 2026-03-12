@@ -132,6 +132,7 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 ### Startup Preferences
 
 - `Startup -> Run Setup Wizard on startup` (toggle)
+- `Startup -> Auto reconnect services` (toggle with bounded backoff retries)
 - `Startup -> Reset All UI Preferences` (restores defaults and re-enables first-run guidance)
 - `Startup -> Reset Window Position`
 - Window size/position and startup preferences persist between launches
