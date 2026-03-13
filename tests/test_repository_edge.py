@@ -5,7 +5,13 @@ import threading
 import unittest
 
 from tests.conftest import make_temp_db, cleanup_temp_file
-from storage.repository import WebJamRepository, VALID_ARTIFACT_TYPES, TITLE_MAX_LEN, REFERENCE_MAX_LEN
+from storage.repository import (
+    WebJamRepository,
+    VALID_ARTIFACT_TYPES,
+    TITLE_MAX_LEN,
+    REFERENCE_MAX_LEN,
+    MIX_PROFILE_NAME_MAX_LEN,
+)
 
 
 class TestRepositoryPasswordEdge(unittest.TestCase):
@@ -233,6 +239,58 @@ class TestRepositorySettings(unittest.TestCase):
         self.repo.set_setting("a_key", "a")
         keys = list(self.repo.list_settings().keys())
         self.assertEqual(keys, sorted(keys))
+
+
+class TestRepositoryMixProfiles(unittest.TestCase):
+    def setUp(self):
+        self.db = make_temp_db()
+        self.repo = WebJamRepository(db_path=self.db)
+
+    def tearDown(self):
+        cleanup_temp_file(self.db)
+
+    def test_save_get_list_delete_mix_profile_roundtrip(self):
+        payload = {"participants": [{"channel_id": 0, "fader_level": 90}]}
+        self.repo.save_mix_profile("Focus Drums", "music_jam", payload)
+
+        listed = self.repo.list_mix_profiles()
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["profile_name"], "Focus Drums")
+        self.assertEqual(listed[0]["mode_key"], "music_jam")
+
+        profile = self.repo.get_mix_profile("Focus Drums")
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["payload"], payload)
+
+        self.assertTrue(self.repo.delete_mix_profile("Focus Drums"))
+        self.assertEqual(self.repo.list_mix_profiles(), [])
+
+    def test_save_mix_profile_rejects_empty_name(self):
+        with self.assertRaises(ValueError):
+            self.repo.save_mix_profile("   ", "music_jam", {"participants": []})
+
+    def test_save_mix_profile_rejects_non_serializable_payload(self):
+        with self.assertRaises(ValueError):
+            self.repo.save_mix_profile("Bad", "music_jam", {"bad": {1, 2}})
+
+    def test_save_mix_profile_truncates_name(self):
+        overlong_name = "x" * (MIX_PROFILE_NAME_MAX_LEN + 20)
+        self.repo.save_mix_profile(overlong_name, "music_jam", {"participants": []})
+        listed = self.repo.list_mix_profiles()
+        self.assertEqual(len(listed[0]["profile_name"]), MIX_PROFILE_NAME_MAX_LEN)
+
+    def test_get_mix_profile_returns_none_for_corrupt_payload(self):
+        self.repo.save_mix_profile("Corrupt", "music_jam", {"participants": []})
+        with self.repo._managed_connection() as conn:
+            conn.execute("UPDATE mix_profiles SET payload = ? WHERE profile_name = ?", ("{bad json", "Corrupt"))
+            conn.commit()
+        self.assertIsNone(self.repo.get_mix_profile("Corrupt"))
+
+    def test_list_mix_profiles_can_filter_by_mode(self):
+        self.repo.save_mix_profile("Music", "music_jam", {"participants": []})
+        self.repo.save_mix_profile("Writing", "writers_room", {"participants": []})
+        music_only = self.repo.list_mix_profiles("music_jam")
+        self.assertEqual([profile["profile_name"] for profile in music_only], ["Music"])
 
 
 if __name__ == "__main__":

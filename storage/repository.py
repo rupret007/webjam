@@ -18,6 +18,7 @@ LOGGER = logging.getLogger(__name__)
 VALID_ARTIFACT_TYPES = {"image", "link", "note", "doc", "board"}
 TITLE_MAX_LEN = 256
 REFERENCE_MAX_LEN = 1024
+MIX_PROFILE_NAME_MAX_LEN = 128
 
 
 class WebJamRepository:
@@ -110,6 +111,17 @@ class WebJamRepository:
                 CREATE TABLE IF NOT EXISTS collaboration_notes (
                     room_key TEXT PRIMARY KEY,
                     notes TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mix_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_name TEXT UNIQUE NOT NULL,
+                    mode_key TEXT NOT NULL DEFAULT '',
+                    payload TEXT NOT NULL,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -397,6 +409,83 @@ class WebJamRepository:
         if not row:
             return ""
         return row[0]
+
+    def save_mix_profile(self, profile_name: str, mode_key: str, payload: Any) -> None:
+        normalized_name = str(profile_name or "").strip()
+        if not normalized_name:
+            raise ValueError("profile_name cannot be empty")
+        normalized_name = normalized_name[:MIX_PROFILE_NAME_MAX_LEN]
+        normalized_mode = str(mode_key or "").strip()
+        try:
+            serialized_payload = json.dumps(payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("payload must be JSON serializable") from exc
+        with self._managed_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO mix_profiles (profile_name, mode_key, payload)
+                VALUES (?, ?, ?)
+                ON CONFLICT(profile_name) DO UPDATE SET
+                    mode_key = excluded.mode_key,
+                    payload = excluded.payload,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (normalized_name, normalized_mode, serialized_payload),
+            )
+            conn.commit()
+
+    def get_mix_profile(self, profile_name: str) -> Optional[Dict[str, Any]]:
+        normalized_name = str(profile_name or "").strip()
+        if not normalized_name:
+            return None
+        with self._managed_connection() as conn:
+            row = conn.execute(
+                "SELECT profile_name, mode_key, payload, updated_at FROM mix_profiles WHERE profile_name = ?",
+                (normalized_name,),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row[2])
+        except (TypeError, json.JSONDecodeError):
+            LOGGER.warning("Corrupt mix profile payload for '%s'; skipping.", normalized_name)
+            return None
+        return {
+            "profile_name": row[0],
+            "mode_key": row[1],
+            "payload": payload,
+            "updated_at": row[3],
+        }
+
+    def list_mix_profiles(self, mode_key: Optional[str] = None) -> List[Dict[str, str]]:
+        params: tuple[Any, ...] = ()
+        query = "SELECT profile_name, mode_key, updated_at FROM mix_profiles"
+        if mode_key is not None:
+            query += " WHERE mode_key = ?"
+            params = (str(mode_key or "").strip(),)
+        query += " ORDER BY LOWER(profile_name), id"
+        with self._managed_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "profile_name": row[0],
+                "mode_key": row[1],
+                "updated_at": row[2],
+            }
+            for row in rows
+        ]
+
+    def delete_mix_profile(self, profile_name: str) -> bool:
+        normalized_name = str(profile_name or "").strip()
+        if not normalized_name:
+            return False
+        with self._managed_connection() as conn:
+            deleted = conn.execute(
+                "DELETE FROM mix_profiles WHERE profile_name = ?",
+                (normalized_name,),
+            ).rowcount
+            conn.commit()
+        return int(deleted or 0) > 0
 
     def append_cohort_event(self, cohort: str, event_type: str, payload: Any) -> None:
         key = f"cohort_events_{cohort}"

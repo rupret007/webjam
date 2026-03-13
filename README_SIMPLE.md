@@ -34,6 +34,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 
 - Click **Save Mix** to keep your settings.
 - Use **Load Mix** later to restore them.
+- Use **File -> Save Listening Profile** to keep named presets like `Rehearsal`, `Focus on Drums`, or `Critique Balance`.
 
 ## 5) If Something Fails
 

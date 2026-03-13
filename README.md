@@ -31,6 +31,7 @@ The workspace layout now also adapts by mode (mixer-heavy for Music Jam, canvas-
 - **Mute/Solo**: Quickly mute or isolate specific musicians
 - **Pan Controls**: Position each musician in the stereo field
 - **Save/Load Mixes**: Save your preferred mix settings for different sessions
+- **Listening Profiles**: Save named local mix presets per mode and reload them from the File menu
 
 ### Dual Integration
 - **Jamulus**: Ultra-low latency audio (<50ms) for real-time musical collaboration
@@ -164,6 +165,8 @@ Each musician gets their own channel strip with:
 
 - **Save Mix**: Store current settings to disk
 - **Load Mix**: Restore previously saved settings
+- **Save Listening Profile**: Store a named mix preset tied to the current mode
+- **Load/Delete Listening Profile**: Reuse or clean up named local presets
 - **Reset All**: Return all channels to default values
 
 ### Tips for Great Mixes

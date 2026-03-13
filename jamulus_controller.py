@@ -333,12 +333,12 @@ class JamulusController:
                 callback(participants)
             except Exception as e:
                 self.logger.warning("Callback error: %s", e)
-    
-    def save_mix(self, filename: str):
-        """Save current mix to file"""
+
+    def serialize_mix(self) -> dict:
+        """Return the current mix payload in the same format used for file saves."""
         with self._participants_lock:
             participants = list(self.participants.values())
-        mix_data = {
+        return {
             'participants': [
                 {
                     'channel_id': p.channel_id,
@@ -351,32 +351,9 @@ class JamulusController:
                 for p in participants
             ]
         }
-        target_path = Path(filename)
-        temp_path = None
-        try:
-            parent = target_path.parent or Path(".")
-            parent.mkdir(parents=True, exist_ok=True)
-            fd, temp_name = tempfile.mkstemp(
-                prefix=f"{target_path.stem}.",
-                suffix=".tmp",
-                dir=str(parent),
-            )
-            temp_path = Path(temp_name)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(mix_data, f, indent=2)
-            temp_path.replace(target_path)
-        except OSError as exc:
-            self.logger.warning("Failed to save mix file '%s': %s", filename, exc)
-            raise
-        finally:
-            if temp_path and temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
-    
-    def load_mix(self, filename: str):
-        """Load mix from file"""
+
+    def apply_mix_data(self, mix_data: object):
+        """Apply a previously serialized mix payload to current participants."""
         def _coerce_bool(value: object, default: bool) -> bool:
             if isinstance(value, bool):
                 return value
@@ -390,16 +367,9 @@ class JamulusController:
                 return bool(value)
             return default
 
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                mix_data = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            self.logger.warning("Failed to load mix file '%s': %s", filename, exc)
-            return
-
         participants_data = mix_data.get("participants") if isinstance(mix_data, dict) else None
         if not isinstance(participants_data, list):
-            self.logger.warning("Mix file '%s' is missing a valid participants list.", filename)
+            self.logger.warning("Mix payload is missing a valid participants list.")
             return
 
         solo_candidates: list[int] = []
@@ -437,7 +407,7 @@ class JamulusController:
             # Mixer apply is best-effort; may race with protocol monitor updates.
             self._apply_mixer_setting(channel_id)
 
-        # Enforce exclusive solo semantics for mix files that contain multiple
+        # Enforce exclusive solo semantics for payloads that contain multiple
         # solo=true entries; choose the last soloed channel in payload order.
         if solo_candidates:
             self.set_solo(solo_candidates[-1], True)
@@ -445,6 +415,43 @@ class JamulusController:
             with self._participants_lock:
                 if not any(p.solo for p in self.participants.values()):
                     self._pre_solo_mute.clear()
+
+    def save_mix(self, filename: str):
+        """Save current mix to file"""
+        mix_data = self.serialize_mix()
+        target_path = Path(filename)
+        temp_path = None
+        try:
+            parent = target_path.parent or Path(".")
+            parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f"{target_path.stem}.",
+                suffix=".tmp",
+                dir=str(parent),
+            )
+            temp_path = Path(temp_name)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(mix_data, f, indent=2)
+            temp_path.replace(target_path)
+        except OSError as exc:
+            self.logger.warning("Failed to save mix file '%s': %s", filename, exc)
+            raise
+        finally:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+    
+    def load_mix(self, filename: str):
+        """Load mix from file"""
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                mix_data = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            self.logger.warning("Failed to load mix file '%s': %s", filename, exc)
+            return
+        self.apply_mix_data(mix_data)
 
 class JamulusAudioMonitor:
     """

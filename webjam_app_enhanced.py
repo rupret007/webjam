@@ -554,6 +554,10 @@ class WebJamEnhancedApp:
         file_menu.add_command(label="Save Mix", command=self.save_mix)
         file_menu.add_command(label="Load Mix", command=self.load_mix)
         file_menu.add_separator()
+        file_menu.add_command(label="Save Listening Profile", command=self.save_listening_profile)
+        file_menu.add_command(label="Load Listening Profile", command=self.load_listening_profile)
+        file_menu.add_command(label="Delete Listening Profile", command=self.delete_listening_profile)
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit_app)
         
         # Session menu
@@ -933,6 +937,46 @@ class WebJamEnhancedApp:
             root.after(120, self._apply_mode_layout)
         except (tk.TclError, RuntimeError, AttributeError):
             return
+
+    def _available_profile_entries(self) -> list[dict[str, str]]:
+        current_mode_profiles = self.repository.list_mix_profiles(self.mode_key)
+        seen_names = {profile["profile_name"] for profile in current_mode_profiles}
+        all_profiles = self.repository.list_mix_profiles()
+        other_profiles = [profile for profile in all_profiles if profile["profile_name"] not in seen_names]
+        return current_mode_profiles + other_profiles
+
+    def _profile_prompt_text(self, action: str, profiles: list[dict[str, str]]) -> str:
+        lines = [f"{action} listening profile", ""]
+        if not profiles:
+            lines.append("No profiles saved yet.")
+            return "\n".join(lines)
+        lines.append("Available profiles:")
+        for profile in profiles[:10]:
+            mode_label = get_mode_by_key_or_default(profile.get("mode_key", "")).label
+            lines.append(f"- {profile['profile_name']} ({mode_label})")
+        if len(profiles) > 10:
+            lines.append(f"...and {len(profiles) - 10} more")
+        lines.append("")
+        lines.append("Enter the profile name exactly as shown.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _resolve_profile_name(name: str, profiles: list[dict[str, str]]) -> str | None:
+        normalized = str(name or "").strip()
+        if not normalized:
+            return None
+        by_casefold = {profile["profile_name"].casefold(): profile["profile_name"] for profile in profiles}
+        return by_casefold.get(normalized.casefold())
+
+    def _refresh_mixer_controls_from_participants(self) -> None:
+        for channel_id, channel in list(getattr(self, "mixer_channels", {}).items()):
+            try:
+                p = channel.participant
+                channel.fader.set(p.fader_level)
+                channel.pan_slider.set(p.pan)
+                channel.update_button_states()
+            except (KeyError, tk.TclError, AttributeError):
+                continue
 
     def _bridge_participants(self):
         return [
@@ -1903,7 +1947,65 @@ class WebJamEnhancedApp:
                 next_action="Run setup wizard to verify config paths, then retry save.",
                 retry_callback=self.save_mix,
             )
-    
+
+    def save_listening_profile(self) -> None:
+        if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+            return
+        participants = self.jamulus_controller.get_participants()
+        if not participants:
+            messagebox.showwarning("No Participants", "Connect or add participants before saving a listening profile.", parent=self.root)
+            return
+
+        suggested_name = f"{get_mode_by_key_or_default(self.mode_key).label} Profile"
+        profile_name = simpledialog.askstring(
+            "Save Listening Profile",
+            "Enter a name for this listening profile:",
+            parent=self.root,
+            initialvalue=suggested_name,
+        )
+        if profile_name is None:
+            return
+        normalized_name = profile_name.strip()
+        if not normalized_name:
+            messagebox.showwarning("Invalid Name", "Profile name cannot be empty.", parent=self.root)
+            return
+
+        existing = self.repository.get_mix_profile(normalized_name)
+        if existing is not None:
+            overwrite = messagebox.askokcancel(
+                "Overwrite Listening Profile",
+                f"A listening profile named '{existing['profile_name']}' already exists.\n\nOverwrite it?",
+                parent=self.root,
+            )
+            if not overwrite:
+                return
+
+        try:
+            self.repository.save_mix_profile(
+                normalized_name,
+                self.mode_key,
+                self.jamulus_controller.serialize_mix(),
+            )
+            self.metrics_service.increment("metric_listening_profile_save_success")
+            self.repository.add_audit(
+                "save_mix_profile",
+                self.current_user.username if self.current_user else "anonymous",
+                normalized_name,
+            )
+            messagebox.showinfo(
+                "Listening Profile Saved",
+                f"Saved listening profile:\n{normalized_name}",
+                parent=self.root,
+            )
+        except Exception as exc:
+            LOGGER.exception("save_listening_profile failed: %s", exc)
+            self.metrics_service.increment("metric_listening_profile_save_failed")
+            messagebox.showerror(
+                "Save Failed",
+                f"Could not save listening profile:\n{exc}",
+                parent=self.root,
+            )
+
     def load_mix(self):
         """Load saved mix settings"""
         self.metrics_service.increment("metric_load_mix_attempt")
@@ -1915,15 +2017,7 @@ class WebJamEnhancedApp:
         
         try:
             self.jamulus_controller.load_mix(str(MIX_FILE))
-            # Update UI for all mixer channels (participant objects updated in place by load_mix)
-            for channel_id, channel in list(self.mixer_channels.items()):
-                try:
-                    p = channel.participant
-                    channel.fader.set(p.fader_level)
-                    channel.pan_slider.set(p.pan)
-                    channel.update_button_states()
-                except (KeyError, tk.TclError):
-                    pass
+            self._refresh_mixer_controls_from_participants()
             self._refresh_readiness()
             messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}", parent=self.root)
             self.metrics_service.increment("metric_load_mix_success")
@@ -1937,7 +2031,95 @@ class WebJamEnhancedApp:
                 next_action="Save a fresh mix preset after confirming participants are connected.",
                 retry_callback=self.load_mix,
             )
-    
+
+    def load_listening_profile(self) -> None:
+        if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
+            return
+        profiles = self._available_profile_entries()
+        if not profiles:
+            messagebox.showinfo("No Profiles", "No listening profiles are saved yet.", parent=self.root)
+            return
+
+        profile_name = simpledialog.askstring(
+            "Load Listening Profile",
+            self._profile_prompt_text("Load", profiles),
+            parent=self.root,
+        )
+        if profile_name is None:
+            return
+        resolved_name = self._resolve_profile_name(profile_name, profiles)
+        if resolved_name is None:
+            messagebox.showwarning("Profile Not Found", "Enter one of the saved listening profile names.", parent=self.root)
+            return
+
+        profile = self.repository.get_mix_profile(resolved_name)
+        if profile is None:
+            self.metrics_service.increment("metric_listening_profile_load_failed")
+            messagebox.showerror("Load Failed", f"Listening profile '{resolved_name}' could not be read.", parent=self.root)
+            return
+
+        try:
+            self.jamulus_controller.apply_mix_data(profile["payload"])
+            self._refresh_mixer_controls_from_participants()
+            self._refresh_readiness()
+            self.metrics_service.increment("metric_listening_profile_load_success")
+            self.repository.add_audit(
+                "load_mix_profile",
+                self.current_user.username if self.current_user else "anonymous",
+                resolved_name,
+            )
+            messagebox.showinfo(
+                "Listening Profile Loaded",
+                f"Loaded listening profile:\n{resolved_name}",
+                parent=self.root,
+            )
+        except Exception as exc:
+            LOGGER.exception("load_listening_profile failed: %s", exc)
+            self.metrics_service.increment("metric_listening_profile_load_failed")
+            messagebox.showerror("Load Failed", f"Could not load listening profile:\n{exc}", parent=self.root)
+
+    def delete_listening_profile(self) -> None:
+        if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+            return
+        profiles = self._available_profile_entries()
+        if not profiles:
+            messagebox.showinfo("No Profiles", "No listening profiles are saved yet.", parent=self.root)
+            return
+
+        profile_name = simpledialog.askstring(
+            "Delete Listening Profile",
+            self._profile_prompt_text("Delete", profiles),
+            parent=self.root,
+        )
+        if profile_name is None:
+            return
+        resolved_name = self._resolve_profile_name(profile_name, profiles)
+        if resolved_name is None:
+            messagebox.showwarning("Profile Not Found", "Enter one of the saved listening profile names.", parent=self.root)
+            return
+
+        confirmed = messagebox.askokcancel(
+            "Delete Listening Profile",
+            f"Delete listening profile '{resolved_name}'?",
+            parent=self.root,
+        )
+        if not confirmed:
+            return
+
+        deleted = self.repository.delete_mix_profile(resolved_name)
+        if not deleted:
+            self.metrics_service.increment("metric_listening_profile_delete_failed")
+            messagebox.showerror("Delete Failed", f"Listening profile '{resolved_name}' was not found.", parent=self.root)
+            return
+
+        self.metrics_service.increment("metric_listening_profile_delete_success")
+        self.repository.add_audit(
+            "delete_mix_profile",
+            self.current_user.username if self.current_user else "anonymous",
+            resolved_name,
+        )
+        messagebox.showinfo("Listening Profile Deleted", f"Deleted listening profile:\n{resolved_name}", parent=self.root)
+
     def reset_all_faders(self):
         """Reset all faders to unity (0dB)"""
         if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
@@ -2044,7 +2226,10 @@ Set a template and session goal before launch.
 5. Save Your Mix
    Click 'Save Mix' to save your settings for next time.
 
-6. Export a Session Brief
+6. Save a Listening Profile
+   Use File -> Save Listening Profile for named local presets.
+
+7. Export a Session Brief
    Use Session -> Export Session Brief for handoff notes.
 
 Tips:

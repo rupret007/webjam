@@ -56,6 +56,7 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 ✅ **Individual Mix Control** - Create your own custom mix of all musicians  
 ✅ **Video Integration** - See everyone while playing together  
 ✅ **Save Mix Presets** - Recall your perfect mix for different songs  
+✅ **Listening Profiles** - Save named local mix presets for specific workflows  
 ✅ **Professional Interface** - Intuitive mixer layout familiar to musicians  
 
 ---
@@ -324,6 +325,15 @@ For advanced users:
    - "Quiet Practice" - lower volume overall
    - "Lead Vocal Focus" - vocals up, others down
    - "Learning Drums" - drums solo, others lower
+
+### Listening Profiles
+
+WebJam also supports named local listening profiles from the `File` menu:
+- `Save Listening Profile` stores the current mix under a reusable name
+- `Load Listening Profile` reapplies a saved named profile
+- `Delete Listening Profile` removes a profile you no longer need
+
+This works well for mode-specific setups such as `Music Jam - Rehearsal`, `Writer's Room - Voice Forward`, or `Design Critique - Presenter Focus`.
 
 ---
 

@@ -133,6 +133,29 @@ class TestJamulusControllerEdge(unittest.TestCase):
         self.assertFalse(self.controller.participants[0].muted)
         self.assertTrue(self.controller.participants[1].muted)
 
+    def test_serialize_mix_returns_expected_participant_payload(self):
+        self.controller.add_participant("A", 0)
+        self.controller.set_fader_level(0, 82)
+        payload = self.controller.serialize_mix()
+        self.assertEqual(payload["participants"][0]["channel_id"], 0)
+        self.assertEqual(payload["participants"][0]["fader_level"], 82)
+
+    def test_apply_mix_data_updates_existing_participants_only(self):
+        self.controller.add_participant("A", 0)
+        self.controller.add_participant("B", 1)
+        self.controller.apply_mix_data(
+            {
+                "participants": [
+                    {"channel_id": 0, "fader_level": 10, "pan": 90, "muted": True},
+                    {"channel_id": 99, "fader_level": 5},
+                ]
+            }
+        )
+        self.assertEqual(self.controller.participants[0].fader_level, 10)
+        self.assertEqual(self.controller.participants[0].pan, 90)
+        self.assertTrue(self.controller.participants[0].muted)
+        self.assertEqual(self.controller.participants[1].fader_level, 100)
+
 
 if __name__ == "__main__":
     unittest.main()
