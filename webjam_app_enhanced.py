@@ -2016,7 +2016,26 @@ class WebJamEnhancedApp:
             return
         
         try:
-            self.jamulus_controller.load_mix(str(MIX_FILE))
+            applied_channels = self.jamulus_controller.load_mix(str(MIX_FILE))
+            if applied_channels is None:
+                self.metrics_service.increment("metric_load_mix_failed")
+                self._show_actionable_error(
+                    "Load Mix Failed",
+                    what_failed="The saved mix file could not be parsed or was missing the expected participant payload.",
+                    likely_cause="The file is corrupted, incomplete, or from an unsupported format.",
+                    next_action="Save a fresh mix preset after confirming participants are connected.",
+                    retry_callback=self.load_mix,
+                )
+                return
+            if applied_channels == 0:
+                self.metrics_service.increment("metric_load_mix_failed")
+                messagebox.showwarning(
+                    "No Matching Participants",
+                    "Saved mix was read, but none of the current participants matched the saved channels.\n\n"
+                    "Reconnect the expected participants and try again.",
+                    parent=self.root,
+                )
+                return
             self._refresh_mixer_controls_from_participants()
             self._refresh_readiness()
             messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}", parent=self.root)
@@ -2059,7 +2078,23 @@ class WebJamEnhancedApp:
             return
 
         try:
-            self.jamulus_controller.apply_mix_data(profile["payload"])
+            applied_channels = self.jamulus_controller.apply_mix_data(profile["payload"])
+            if applied_channels is None:
+                self.metrics_service.increment("metric_listening_profile_load_failed")
+                messagebox.showerror(
+                    "Load Failed",
+                    f"Listening profile '{resolved_name}' is invalid or corrupted.",
+                    parent=self.root,
+                )
+                return
+            if applied_channels == 0:
+                self.metrics_service.increment("metric_listening_profile_load_failed")
+                messagebox.showwarning(
+                    "No Matching Participants",
+                    f"Listening profile '{resolved_name}' did not match any current participants.",
+                    parent=self.root,
+                )
+                return
             self._refresh_mixer_controls_from_participants()
             self._refresh_readiness()
             self.metrics_service.increment("metric_listening_profile_load_success")

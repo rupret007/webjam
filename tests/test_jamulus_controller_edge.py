@@ -156,6 +156,49 @@ class TestJamulusControllerEdge(unittest.TestCase):
         self.assertTrue(self.controller.participants[0].muted)
         self.assertEqual(self.controller.participants[1].fader_level, 100)
 
+    def test_apply_mix_data_matches_by_name_when_channel_id_changes(self):
+        self.controller.add_participant("Alice", 7)
+        self.controller.add_participant("Bob", 8)
+        applied = self.controller.apply_mix_data(
+            {
+                "participants": [
+                    {"channel_id": 0, "name": "Alice", "fader_level": 25, "pan": 10},
+                ]
+            }
+        )
+        self.assertEqual(applied, 1)
+        self.assertEqual(self.controller.participants[7].fader_level, 25)
+        self.assertEqual(self.controller.participants[7].pan, 10)
+        self.assertEqual(self.controller.participants[8].fader_level, 100)
+
+    def test_apply_mix_data_does_not_trust_channel_id_when_name_disagrees(self):
+        self.controller.add_participant("Bob", 0)
+        self.controller.add_participant("Alice", 1)
+        applied = self.controller.apply_mix_data(
+            {
+                "participants": [
+                    {"channel_id": 0, "name": "Alice", "fader_level": 30},
+                ]
+            }
+        )
+        self.assertEqual(applied, 1)
+        self.assertEqual(self.controller.participants[0].fader_level, 100)
+        self.assertEqual(self.controller.participants[1].fader_level, 30)
+
+    def test_apply_mix_data_returns_none_for_invalid_payload(self):
+        self.assertIsNone(self.controller.apply_mix_data({"bad": []}))
+
+    def test_apply_mix_data_returns_zero_when_no_participants_match(self):
+        self.controller.add_participant("Alice", 0)
+        applied = self.controller.apply_mix_data(
+            {
+                "participants": [
+                    {"channel_id": 9, "name": "Bob", "fader_level": 20},
+                ]
+            }
+        )
+        self.assertEqual(applied, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

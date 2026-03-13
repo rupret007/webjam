@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from webjam_app_enhanced import WebJamEnhancedApp
+
+
+class _MixFileStub:
+    def __init__(self, path: str, exists: bool = True):
+        self._path = path
+        self._exists = exists
+
+    def exists(self) -> bool:
+        return self._exists
+
+    def __str__(self) -> str:
+        return self._path
 
 
 class TestListeningProfilesEdge(unittest.TestCase):
@@ -106,6 +118,48 @@ class TestListeningProfilesEdge(unittest.TestCase):
         app.jamulus_controller.apply_mix_data.assert_not_called()
 
     @patch("webjam_app_enhanced.messagebox")
+    @patch("webjam_app_enhanced.simpledialog.askstring", return_value="Focus Drums")
+    def test_load_listening_profile_corrupt_payload_fails(self, _ask, messagebox_mock):
+        app = self._app_stub()
+        app.repository.list_mix_profiles.side_effect = [
+            [{"profile_name": "Focus Drums", "mode_key": "music_jam"}],
+            [{"profile_name": "Focus Drums", "mode_key": "music_jam"}],
+        ]
+        app.repository.get_mix_profile.return_value = {
+            "profile_name": "Focus Drums",
+            "mode_key": "music_jam",
+            "payload": {"bad": []},
+        }
+        app.jamulus_controller.apply_mix_data.return_value = None
+
+        app.load_listening_profile()
+
+        app.metrics_service.increment.assert_called_once_with("metric_listening_profile_load_failed")
+        messagebox_mock.showerror.assert_called_once()
+        messagebox_mock.showinfo.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox")
+    @patch("webjam_app_enhanced.simpledialog.askstring", return_value="Focus Drums")
+    def test_load_listening_profile_no_matches_warns(self, _ask, messagebox_mock):
+        app = self._app_stub()
+        app.repository.list_mix_profiles.side_effect = [
+            [{"profile_name": "Focus Drums", "mode_key": "music_jam"}],
+            [{"profile_name": "Focus Drums", "mode_key": "music_jam"}],
+        ]
+        app.repository.get_mix_profile.return_value = {
+            "profile_name": "Focus Drums",
+            "mode_key": "music_jam",
+            "payload": {"participants": [{"channel_id": 2}]},
+        }
+        app.jamulus_controller.apply_mix_data.return_value = 0
+
+        app.load_listening_profile()
+
+        app.metrics_service.increment.assert_called_once_with("metric_listening_profile_load_failed")
+        messagebox_mock.showwarning.assert_called_once()
+        messagebox_mock.showinfo.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox")
     @patch("webjam_app_enhanced.simpledialog.askstring", return_value="focus drums")
     def test_delete_listening_profile_success(self, _ask, messagebox_mock):
         app = self._app_stub()
@@ -137,6 +191,35 @@ class TestListeningProfilesEdge(unittest.TestCase):
 
         app.metrics_service.increment.assert_called_once_with("metric_listening_profile_delete_failed")
         messagebox_mock.showerror.assert_called_once()
+
+    @patch("webjam_app_enhanced.MIX_FILE", new=_MixFileStub("C:/tmp/webjam_mix.json", exists=True))
+    @patch("webjam_app_enhanced.messagebox")
+    def test_load_mix_invalid_payload_does_not_report_success(self, messagebox_mock):
+        app = self._app_stub()
+        app.jamulus_controller.load_mix.return_value = None
+        app._show_actionable_error = MagicMock()
+
+        app.load_mix()
+
+        app.metrics_service.increment.assert_any_call("metric_load_mix_attempt")
+        app.metrics_service.increment.assert_any_call("metric_load_mix_failed")
+        app._show_actionable_error.assert_called_once()
+        messagebox_mock.showinfo.assert_not_called()
+
+    @patch("webjam_app_enhanced.MIX_FILE", new=_MixFileStub("C:/tmp/webjam_mix.json", exists=True))
+    @patch("webjam_app_enhanced.messagebox")
+    def test_load_mix_no_matches_warns_and_skips_success(self, messagebox_mock):
+        app = self._app_stub()
+        app.jamulus_controller.load_mix.return_value = 0
+        app._show_actionable_error = MagicMock()
+
+        app.load_mix()
+
+        app.metrics_service.increment.assert_any_call("metric_load_mix_attempt")
+        app.metrics_service.increment.assert_any_call("metric_load_mix_failed")
+        messagebox_mock.showwarning.assert_called_once()
+        messagebox_mock.showinfo.assert_not_called()
+        app._refresh_mixer_controls_from_participants.assert_not_called()
 
 
 if __name__ == "__main__":

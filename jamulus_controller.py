@@ -334,6 +334,12 @@ class JamulusController:
             except Exception as e:
                 self.logger.warning("Callback error: %s", e)
 
+    @staticmethod
+    def _normalize_participant_name(name: object) -> str:
+        if name is None:
+            return ""
+        return str(name).strip().casefold()
+
     def serialize_mix(self) -> dict:
         """Return the current mix payload in the same format used for file saves."""
         with self._participants_lock:
@@ -352,7 +358,7 @@ class JamulusController:
             ]
         }
 
-    def apply_mix_data(self, mix_data: object):
+    def apply_mix_data(self, mix_data: object) -> Optional[int]:
         """Apply a previously serialized mix payload to current participants."""
         def _coerce_bool(value: object, default: bool) -> bool:
             if isinstance(value, bool):
@@ -370,16 +376,40 @@ class JamulusController:
         participants_data = mix_data.get("participants") if isinstance(mix_data, dict) else None
         if not isinstance(participants_data, list):
             self.logger.warning("Mix payload is missing a valid participants list.")
-            return
+            return None
+
+        with self._participants_lock:
+            participant_name_by_id = {
+                channel_id: self._normalize_participant_name(participant.name)
+                for channel_id, participant in self.participants.items()
+            }
+        name_to_channel_ids: Dict[str, list[int]] = {}
+        for channel_id, normalized_name in participant_name_by_id.items():
+            if normalized_name:
+                name_to_channel_ids.setdefault(normalized_name, []).append(channel_id)
 
         solo_candidates: list[int] = []
+        applied_channel_ids: set[int] = set()
         for p_data in participants_data:
             if not isinstance(p_data, dict):
                 continue
 
             try:
-                channel_id = int(p_data.get("channel_id"))
+                payload_channel_id = int(p_data.get("channel_id"))
             except (TypeError, ValueError):
+                payload_channel_id = None
+
+            payload_name = self._normalize_participant_name(p_data.get("name"))
+            channel_id = None
+            if payload_channel_id is not None and payload_channel_id in participant_name_by_id:
+                current_name = participant_name_by_id[payload_channel_id]
+                if not payload_name or current_name == payload_name:
+                    channel_id = payload_channel_id
+            if channel_id is None and payload_name:
+                matching_channel_ids = name_to_channel_ids.get(payload_name, [])
+                if len(matching_channel_ids) == 1:
+                    channel_id = matching_channel_ids[0]
+            if channel_id is None:
                 continue
 
             with self._participants_lock:
@@ -406,6 +436,7 @@ class JamulusController:
                     solo_candidates.append(channel_id)
             # Mixer apply is best-effort; may race with protocol monitor updates.
             self._apply_mixer_setting(channel_id)
+            applied_channel_ids.add(channel_id)
 
         # Enforce exclusive solo semantics for payloads that contain multiple
         # solo=true entries; choose the last soloed channel in payload order.
@@ -415,6 +446,9 @@ class JamulusController:
             with self._participants_lock:
                 if not any(p.solo for p in self.participants.values()):
                     self._pre_solo_mute.clear()
+        if participants_data and not applied_channel_ids:
+            self.logger.warning("Mix payload did not match any current participants.")
+        return len(applied_channel_ids)
 
     def save_mix(self, filename: str):
         """Save current mix to file"""
@@ -443,15 +477,15 @@ class JamulusController:
                 except OSError:
                     pass
     
-    def load_mix(self, filename: str):
+    def load_mix(self, filename: str) -> Optional[int]:
         """Load mix from file"""
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 mix_data = json.load(f)
         except (OSError, json.JSONDecodeError) as exc:
             self.logger.warning("Failed to load mix file '%s': %s", filename, exc)
-            return
-        self.apply_mix_data(mix_data)
+            return None
+        return self.apply_mix_data(mix_data)
 
 class JamulusAudioMonitor:
     """

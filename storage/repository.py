@@ -410,80 +410,120 @@ class WebJamRepository:
             return ""
         return row[0]
 
+    @staticmethod
+    def _normalize_mix_profile_name(profile_name: object) -> str:
+        normalized = str(profile_name or "").strip()
+        if not normalized:
+            return ""
+        return normalized[:MIX_PROFILE_NAME_MAX_LEN]
+
+    @staticmethod
+    def _mix_profile_name_key(profile_name: object) -> str:
+        return WebJamRepository._normalize_mix_profile_name(profile_name).casefold()
+
+    def _matching_mix_profile_rows(
+        self,
+        conn: sqlite3.Connection,
+        profile_name: str,
+    ) -> List[Tuple[int, str, str, str, str]]:
+        wanted_key = self._mix_profile_name_key(profile_name)
+        if not wanted_key:
+            return []
+        rows = conn.execute(
+            "SELECT id, profile_name, mode_key, payload, updated_at FROM mix_profiles ORDER BY updated_at DESC, id DESC"
+        ).fetchall()
+        return [row for row in rows if self._mix_profile_name_key(row[1]) == wanted_key]
+
     def save_mix_profile(self, profile_name: str, mode_key: str, payload: Any) -> None:
-        normalized_name = str(profile_name or "").strip()
+        normalized_name = self._normalize_mix_profile_name(profile_name)
         if not normalized_name:
             raise ValueError("profile_name cannot be empty")
-        normalized_name = normalized_name[:MIX_PROFILE_NAME_MAX_LEN]
         normalized_mode = str(mode_key or "").strip()
         try:
             serialized_payload = json.dumps(payload)
         except (TypeError, ValueError) as exc:
             raise ValueError("payload must be JSON serializable") from exc
         with self._managed_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO mix_profiles (profile_name, mode_key, payload)
-                VALUES (?, ?, ?)
-                ON CONFLICT(profile_name) DO UPDATE SET
-                    mode_key = excluded.mode_key,
-                    payload = excluded.payload,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (normalized_name, normalized_mode, serialized_payload),
-            )
+            existing_rows = self._matching_mix_profile_rows(conn, normalized_name)
+            if existing_rows:
+                primary_id = int(existing_rows[0][0])
+                conn.execute(
+                    """
+                    UPDATE mix_profiles
+                    SET profile_name = ?, mode_key = ?, payload = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (normalized_name, normalized_mode, serialized_payload, primary_id),
+                )
+                duplicate_ids = [int(row[0]) for row in existing_rows[1:]]
+                if duplicate_ids:
+                    placeholders = ",".join("?" for _ in duplicate_ids)
+                    conn.execute(f"DELETE FROM mix_profiles WHERE id IN ({placeholders})", duplicate_ids)
+            else:
+                conn.execute(
+                    "INSERT INTO mix_profiles (profile_name, mode_key, payload) VALUES (?, ?, ?)",
+                    (normalized_name, normalized_mode, serialized_payload),
+                )
             conn.commit()
 
     def get_mix_profile(self, profile_name: str) -> Optional[Dict[str, Any]]:
-        normalized_name = str(profile_name or "").strip()
+        normalized_name = self._normalize_mix_profile_name(profile_name)
         if not normalized_name:
             return None
         with self._managed_connection() as conn:
-            row = conn.execute(
-                "SELECT profile_name, mode_key, payload, updated_at FROM mix_profiles WHERE profile_name = ?",
-                (normalized_name,),
-            ).fetchone()
-        if not row:
-            return None
-        try:
-            payload = json.loads(row[2])
-        except (TypeError, json.JSONDecodeError):
-            LOGGER.warning("Corrupt mix profile payload for '%s'; skipping.", normalized_name)
-            return None
-        return {
-            "profile_name": row[0],
-            "mode_key": row[1],
-            "payload": payload,
-            "updated_at": row[3],
-        }
+            rows = self._matching_mix_profile_rows(conn, normalized_name)
+        for row in rows:
+            try:
+                payload = json.loads(row[3])
+            except (TypeError, json.JSONDecodeError):
+                LOGGER.warning("Corrupt mix profile payload for '%s'; skipping.", normalized_name)
+                continue
+            return {
+                "profile_name": row[1],
+                "mode_key": row[2],
+                "payload": payload,
+                "updated_at": row[4],
+            }
+        return None
 
     def list_mix_profiles(self, mode_key: Optional[str] = None) -> List[Dict[str, str]]:
         params: tuple[Any, ...] = ()
-        query = "SELECT profile_name, mode_key, updated_at FROM mix_profiles"
+        query = "SELECT id, profile_name, mode_key, updated_at FROM mix_profiles"
         if mode_key is not None:
             query += " WHERE mode_key = ?"
             params = (str(mode_key or "").strip(),)
-        query += " ORDER BY LOWER(profile_name), id"
+        query += " ORDER BY updated_at DESC, id DESC"
         with self._managed_connection() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [
-            {
-                "profile_name": row[0],
-                "mode_key": row[1],
-                "updated_at": row[2],
-            }
-            for row in rows
-        ]
+        deduped: List[Dict[str, str]] = []
+        seen_keys: set[str] = set()
+        for row in rows:
+            profile_name = row[1]
+            key = self._mix_profile_name_key(profile_name)
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(
+                {
+                    "profile_name": profile_name,
+                    "mode_key": row[2],
+                    "updated_at": row[3],
+                }
+            )
+        deduped.sort(key=lambda item: item["profile_name"].casefold())
+        return deduped
 
     def delete_mix_profile(self, profile_name: str) -> bool:
-        normalized_name = str(profile_name or "").strip()
+        normalized_name = self._normalize_mix_profile_name(profile_name)
         if not normalized_name:
             return False
         with self._managed_connection() as conn:
-            deleted = conn.execute(
-                "DELETE FROM mix_profiles WHERE profile_name = ?",
-                (normalized_name,),
-            ).rowcount
+            matching_rows = self._matching_mix_profile_rows(conn, normalized_name)
+            if not matching_rows:
+                return False
+            ids = [int(row[0]) for row in matching_rows]
+            placeholders = ",".join("?" for _ in ids)
+            deleted = conn.execute(f"DELETE FROM mix_profiles WHERE id IN ({placeholders})", ids).rowcount
             conn.commit()
         return int(deleted or 0) > 0
 

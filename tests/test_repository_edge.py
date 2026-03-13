@@ -286,11 +286,60 @@ class TestRepositoryMixProfiles(unittest.TestCase):
             conn.commit()
         self.assertIsNone(self.repo.get_mix_profile("Corrupt"))
 
+    def test_get_mix_profile_falls_back_to_valid_legacy_duplicate(self):
+        with self.repo._managed_connection() as conn:
+            conn.execute(
+                "INSERT INTO mix_profiles (profile_name, mode_key, payload) VALUES (?, ?, ?)",
+                ("Focus", "music_jam", '{"participants": [{"channel_id": 0}]}'),
+            )
+            conn.execute(
+                "INSERT INTO mix_profiles (profile_name, mode_key, payload) VALUES (?, ?, ?)",
+                ("focus", "writers_room", "{bad json"),
+            )
+            conn.commit()
+        profile = self.repo.get_mix_profile("FOCUS")
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["mode_key"], "music_jam")
+
     def test_list_mix_profiles_can_filter_by_mode(self):
         self.repo.save_mix_profile("Music", "music_jam", {"participants": []})
         self.repo.save_mix_profile("Writing", "writers_room", {"participants": []})
         music_only = self.repo.list_mix_profiles("music_jam")
         self.assertEqual([profile["profile_name"] for profile in music_only], ["Music"])
+
+    def test_save_mix_profile_is_case_insensitive(self):
+        self.repo.save_mix_profile("Focus Drums", "music_jam", {"participants": [{"channel_id": 0}]})
+        self.repo.save_mix_profile("focus drums", "writers_room", {"participants": [{"channel_id": 1}]})
+        listed = self.repo.list_mix_profiles()
+        self.assertEqual(len(listed), 1)
+        profile = self.repo.get_mix_profile("FOCUS DRUMS")
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["mode_key"], "writers_room")
+        self.assertEqual(profile["payload"]["participants"][0]["channel_id"], 1)
+
+    def test_save_mix_profile_truncation_collision_updates_existing_profile(self):
+        prefix = "x" * MIX_PROFILE_NAME_MAX_LEN
+        self.repo.save_mix_profile(prefix + "A", "music_jam", {"participants": [{"channel_id": 0}]})
+        self.repo.save_mix_profile(prefix + "B", "music_jam", {"participants": [{"channel_id": 2}]})
+        listed = self.repo.list_mix_profiles()
+        self.assertEqual(len(listed), 1)
+        profile = self.repo.get_mix_profile(prefix + "C")
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile["payload"]["participants"][0]["channel_id"], 2)
+
+    def test_delete_mix_profile_removes_legacy_case_duplicates(self):
+        with self.repo._managed_connection() as conn:
+            conn.execute(
+                "INSERT INTO mix_profiles (profile_name, mode_key, payload) VALUES (?, ?, ?)",
+                ("Focus", "music_jam", '{"participants": []}'),
+            )
+            conn.execute(
+                "INSERT INTO mix_profiles (profile_name, mode_key, payload) VALUES (?, ?, ?)",
+                ("focus", "writers_room", '{"participants": []}'),
+            )
+            conn.commit()
+        self.assertTrue(self.repo.delete_mix_profile("FOCUS"))
+        self.assertEqual(self.repo.list_mix_profiles(), [])
 
 
 if __name__ == "__main__":
