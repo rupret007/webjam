@@ -58,6 +58,7 @@ class WebexController:
         self._lock = threading.Lock()
         self.monitor_thread: Optional[threading.Thread] = None
         self.running = False
+        self.browser_opened = False
         self.last_error: str = ""
     
     def start(self):
@@ -105,7 +106,9 @@ class WebexController:
             opened = webbrowser.open(self.meeting_url)
             if not opened:
                 raise RuntimeError("browser refused meeting URL")
-            self.is_connected = True
+            # Browser launch does not confirm the user joined a meeting.
+            self.browser_opened = True
+            self.is_connected = False
             self.last_error = ""
             self.logger.info("Webex meeting opened: %s", self.meeting_url)
             
@@ -114,6 +117,7 @@ class WebexController:
             
             return True
         except Exception as e:
+            self.browser_opened = False
             self.is_connected = False
             self.last_error = str(e)
             self.logger.warning("Failed to join Webex meeting: %s", e)
@@ -121,6 +125,7 @@ class WebexController:
     
     def leave_meeting(self):
         """Leave Webex meeting"""
+        self.browser_opened = False
         self.is_connected = False
         # Future: webex_sdk.leave_meeting()
         return True

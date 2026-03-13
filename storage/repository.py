@@ -19,6 +19,8 @@ VALID_ARTIFACT_TYPES = {"image", "link", "note", "doc", "board"}
 TITLE_MAX_LEN = 256
 REFERENCE_MAX_LEN = 1024
 MIX_PROFILE_NAME_MAX_LEN = 128
+SENSITIVE_SETTING_KEYS = {"admin_bootstrap_password"}
+SENSITIVE_SETTING_KEY_FRAGMENTS = ("password", "secret", "token")
 
 
 class WebJamRepository:
@@ -526,6 +528,96 @@ class WebJamRepository:
             deleted = conn.execute(f"DELETE FROM mix_profiles WHERE id IN ({placeholders})", ids).rowcount
             conn.commit()
         return int(deleted or 0) > 0
+
+    def export_support_snapshot(self, room_key: Optional[str] = None) -> Dict[str, Any]:
+        def _is_sensitive_setting_key(key: str) -> bool:
+            lowered = str(key or "").strip().casefold()
+            if lowered in SENSITIVE_SETTING_KEYS:
+                return True
+            return any(fragment in lowered for fragment in SENSITIVE_SETTING_KEY_FRAGMENTS)
+
+        def _safe_json_payload(raw_payload: str) -> Tuple[Any, str]:
+            try:
+                return json.loads(raw_payload), "ok"
+            except (TypeError, json.JSONDecodeError):
+                return None, "invalid"
+
+        with self._managed_connection() as conn:
+            app_settings_rows = conn.execute(
+                "SELECT key, value FROM app_settings ORDER BY key"
+            ).fetchall()
+            room_rows = conn.execute(
+                """
+                SELECT room_key, mode_key, template_name, session_goal, review_state, updated_at
+                FROM collaboration_rooms
+                ORDER BY room_key
+                """
+            ).fetchall()
+            profile_rows = conn.execute(
+                """
+                SELECT profile_name, mode_key, payload, updated_at
+                FROM mix_profiles
+                ORDER BY updated_at DESC, id DESC
+                """
+            ).fetchall()
+
+            artifact_count = None
+            note_length = None
+            if room_key is not None:
+                artifact_count_row = conn.execute(
+                    "SELECT COUNT(*) FROM collaboration_artifacts WHERE room_key = ?",
+                    (room_key,),
+                ).fetchone()
+                note_row = conn.execute(
+                    "SELECT LENGTH(notes), updated_at FROM collaboration_notes WHERE room_key = ?",
+                    (room_key,),
+                ).fetchone()
+                artifact_count = int(artifact_count_row[0]) if artifact_count_row else 0
+                note_length = {
+                    "chars": int(note_row[0] or 0),
+                    "updated_at": note_row[1],
+                } if note_row else {"chars": 0, "updated_at": None}
+
+        app_settings = {
+            key: value
+            for key, value in app_settings_rows
+            if not _is_sensitive_setting_key(key)
+        }
+        mix_profiles: List[Dict[str, Any]] = []
+        for profile_name, mode_key, raw_payload, updated_at in profile_rows:
+            payload, payload_state = _safe_json_payload(raw_payload)
+            mix_profiles.append(
+                {
+                    "profile_name": profile_name,
+                    "mode_key": mode_key,
+                    "payload_state": payload_state,
+                    "payload": payload,
+                    "updated_at": updated_at,
+                }
+            )
+
+        snapshot: Dict[str, Any] = {
+            "app_settings": app_settings,
+            "room_contexts": [
+                {
+                    "room_key": row[0],
+                    "mode_key": row[1],
+                    "template_name": row[2],
+                    "session_goal": row[3],
+                    "review_state": row[4],
+                    "updated_at": row[5],
+                }
+                for row in room_rows
+            ],
+            "mix_profiles": mix_profiles,
+        }
+        if room_key is not None:
+            snapshot["current_room_summary"] = {
+                "room_key": room_key,
+                "artifact_count": artifact_count,
+                "notes": note_length,
+            }
+        return snapshot
 
     def append_cohort_event(self, cohort: str, event_type: str, payload: Any) -> None:
         key = f"cohort_events_{cohort}"

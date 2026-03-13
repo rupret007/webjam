@@ -133,6 +133,25 @@ class TestJamulusControllerEdge(unittest.TestCase):
         self.assertFalse(self.controller.participants[0].muted)
         self.assertTrue(self.controller.participants[1].muted)
 
+    def test_set_mute_during_active_solo_preserves_exclusive_monitoring(self):
+        self.controller.add_participant("Lead", 0)
+        self.controller.add_participant("Rhythm", 1)
+        self.controller.add_participant("Bass", 2)
+        self.controller.set_mute(1, True)
+        self.controller.set_solo(0, True)
+
+        self.controller.set_mute(1, False)
+        self.controller.set_mute(2, True)
+
+        self.assertFalse(self.controller.participants[0].muted)
+        self.assertTrue(self.controller.participants[1].muted)
+        self.assertTrue(self.controller.participants[2].muted)
+
+        self.controller.set_solo(0, False)
+
+        self.assertFalse(self.controller.participants[1].muted)
+        self.assertTrue(self.controller.participants[2].muted)
+
     def test_serialize_mix_returns_expected_participant_payload(self):
         self.controller.add_participant("A", 0)
         self.controller.set_fader_level(0, 82)

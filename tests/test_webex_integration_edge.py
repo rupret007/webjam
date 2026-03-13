@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from webex_integration import (
     WebexConfig,
+    WebexController,
     WebexParticipant,
     WebexParticipantSync,
     open_webex_meeting,
@@ -31,6 +32,13 @@ class TestWebexUtilityEdge(unittest.TestCase):
     def test_open_webex_meeting_returns_false_on_exception(self):
         with patch("webex_integration.webbrowser.open", side_effect=RuntimeError("boom")):
             self.assertFalse(open_webex_meeting("https://example.com/meet"))
+
+    def test_join_meeting_opens_browser_without_marking_connected(self):
+        controller = WebexController("https://example.webex.com/meet/test")
+        with patch("webex_integration.webbrowser.open", return_value=True):
+            self.assertTrue(controller.join_meeting())
+        self.assertTrue(controller.browser_opened)
+        self.assertFalse(controller.is_connected)
 
 
 class TestWebexConfigEdge(unittest.TestCase):

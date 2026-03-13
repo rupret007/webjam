@@ -200,7 +200,7 @@ class MetricsService:
         room_context: dict[str, Any],
         artifacts: Iterable[dict[str, Any]],
         notes: str,
-        participants: Iterable[str],
+        participants: Iterable[Any],
         mode_label: str = "",
     ) -> Path:
         output_dir = Path(output_dir)
@@ -225,11 +225,27 @@ class MetricsService:
             mode_text = mode_key.replace("_", " ").title()
 
         participant_list: list[str] = []
+        seen_participant_ids: set[str] = set()
         for participant in participants:
-            participant_text = str(participant).strip()
+            participant_id: str | None = None
+            participant_name: object = participant
+            if isinstance(participant, dict):
+                participant_name = participant.get("name", participant)
+                raw_id = participant.get("channel_id", participant.get("id"))
+                if raw_id is not None:
+                    participant_id = str(raw_id)
+            else:
+                participant_name = getattr(participant, "name", participant)
+                raw_id = getattr(participant, "channel_id", getattr(participant, "id", None))
+                if raw_id is not None:
+                    participant_id = str(raw_id)
+            if participant_id is not None:
+                if participant_id in seen_participant_ids:
+                    continue
+                seen_participant_ids.add(participant_id)
+            participant_text = str(participant_name).strip()
             if participant_text:
                 participant_list.append(participant_text)
-        participant_list = sorted(set(participant_list), key=str.casefold)
 
         artifact_lines: list[str] = []
         artifact_count = 0
@@ -318,6 +334,7 @@ class MetricsService:
         jamulus_path: str = "",
         log_files: Iterable[os.PathLike[str] | str] = (),
         support_files: Iterable[os.PathLike[str] | str] = (),
+        extra_json_files: dict[str, Any] | None = None,
     ) -> Path:
         output_dir = Path(output_dir)
         try:
@@ -365,6 +382,15 @@ class MetricsService:
                     json.dumps(self._json_safe(room_context), indent=2),
                     encoding="utf-8",
                 )
+            if extra_json_files:
+                for raw_name, payload in extra_json_files.items():
+                    candidate_name = os.path.basename(str(raw_name or "").strip()) or "extra.json"
+                    if not candidate_name.lower().endswith(".json"):
+                        candidate_name = f"{candidate_name}.json"
+                    (workspace / candidate_name).write_text(
+                        json.dumps(self._json_safe(payload), indent=2),
+                        encoding="utf-8",
+                    )
 
             environment_payload = {
                 "platform": platform.platform(),
@@ -407,6 +433,12 @@ class MetricsService:
                 readme_lines.append("- Settings JSON: settings.json")
             if room_context is not None:
                 readme_lines.append("- Room context JSON: room_context.json")
+            if extra_json_files:
+                for raw_name in extra_json_files.keys():
+                    candidate_name = os.path.basename(str(raw_name or "").strip()) or "extra.json"
+                    if not candidate_name.lower().endswith(".json"):
+                        candidate_name = f"{candidate_name}.json"
+                    readme_lines.append(f"- Extra JSON: {candidate_name}")
             if missing_files:
                 readme_lines.append("")
                 readme_lines.append("Missing/Skipped file paths:")

@@ -30,7 +30,8 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         ]
         app.repository.get_session_notes.return_value = "Check intro groove"
         app.jamulus_controller = MagicMock()
-        app.jamulus_controller.get_participants.return_value = [SimpleNamespace(name="Alex"), SimpleNamespace(name="Sam")]
+        participants = [SimpleNamespace(channel_id=0, name="Alex"), SimpleNamespace(channel_id=1, name="Sam")]
+        app.jamulus_controller.get_participants.return_value = participants
         app.metrics_service = MagicMock()
         app.metrics_service.export_session_brief.return_value = Path("C:/tmp/webjam_session_brief.md")
 
@@ -41,7 +42,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         kwargs = app.metrics_service.export_session_brief.call_args.kwargs
         self.assertEqual(kwargs["output_dir"], Path("C:/tmp"))
         self.assertEqual(kwargs["mode_label"], "Music Jam")
-        self.assertEqual(kwargs["participants"], ["Alex", "Sam"])
+        self.assertEqual(kwargs["participants"], participants)
         app.metrics_service.increment.assert_called_once_with("metric_session_brief_exported")
         info_mock.assert_called_once()
         error_mock.assert_not_called()

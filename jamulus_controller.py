@@ -244,7 +244,24 @@ class JamulusController:
         with self._participants_lock:
             if channel_id not in self.participants:
                 return
-            self.participants[channel_id].muted = muted
+            active_solo_channel = next(
+                (cid for cid, participant in self.participants.items() if participant.solo),
+                None,
+            )
+            if active_solo_channel is None:
+                self.participants[channel_id].muted = muted
+            else:
+                if not self._pre_solo_mute:
+                    self._pre_solo_mute = {
+                        cid: participant.muted for cid, participant in self.participants.items()
+                    }
+                self._pre_solo_mute[channel_id] = muted
+                if channel_id == active_solo_channel:
+                    self.participants[channel_id].muted = muted
+                else:
+                    # Preserve the requested post-solo mute state without
+                    # breaking exclusive solo monitoring in the current mix.
+                    self.participants[channel_id].muted = True
         self._apply_mixer_setting(channel_id)
     
     def set_solo(self, channel_id: int, solo: bool):

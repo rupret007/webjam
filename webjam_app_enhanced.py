@@ -1507,9 +1507,9 @@ class WebJamEnhancedApp:
                 settings_snapshot.get("config_file", ""),
                 settings_snapshot.get("mix_file", ""),
                 settings_snapshot.get("webex_config_file", ""),
-                self.repository.db_path,
             ]
             room_context = self.repository.get_room_context(self.room_key)
+            support_snapshot = self.repository.export_support_snapshot(room_key=self.room_key)
 
             out_path = self.metrics_service.export_diagnostics_bundle(
                 output_dir=Path.home(),
@@ -1525,6 +1525,7 @@ class WebJamEnhancedApp:
                 jamulus_path=self.find_jamulus() or "",
                 log_files=log_candidates,
                 support_files=support_files,
+                extra_json_files={"support_snapshot.json": support_snapshot},
             )
             self.metrics_service.increment("metric_diagnostics_bundle_exported")
             messagebox.showinfo("Bundle Exported", f"Diagnostics bundle written to:\n{out_path}", parent=self.root)
@@ -1538,7 +1539,7 @@ class WebJamEnhancedApp:
             room_context = self.repository.get_room_context(self.room_key)
             artifacts = self.repository.list_session_artifacts(self.room_key)
             notes = self.repository.get_session_notes(self.room_key)
-            participants = [p.name for p in self.jamulus_controller.get_participants()]
+            participants = self.jamulus_controller.get_participants()
             mode_label = get_mode_by_key_or_default(self.mode_key).label
             out_path = self.metrics_service.export_session_brief(
                 output_dir=Path.home(),

@@ -84,7 +84,11 @@ class TestMetricsServiceExportEdge(unittest.TestCase):
                     {"title": "Cue Sheet", "artifact_type": "doc", "reference": "C:/notes/cue.docx"},
                 ],
                 notes="Tighten intro timing\nCheck bridge harmonies",
-                participants=["Alex", "Sam", "Alex"],
+                participants=[
+                    {"channel_id": 0, "name": "Alex"},
+                    {"channel_id": 1, "name": "Sam"},
+                    {"channel_id": 2, "name": "Alex"},
+                ],
                 mode_label="Music Jam",
             )
             self.assertTrue(out_path.exists())
@@ -92,7 +96,7 @@ class TestMetricsServiceExportEdge(unittest.TestCase):
             self.assertIn("# WebJam Session Brief", content)
             self.assertIn("Mode: Music Jam", content)
             self.assertIn("Template: Band Rehearsal", content)
-            self.assertIn("Participants: 2", content)
+            self.assertIn("Participants: 3", content)
             self.assertIn("- [link] Reference Mix: https://example.com/ref", content)
             self.assertIn("Tighten intro timing", content)
 
@@ -149,6 +153,7 @@ class TestMetricsServiceExportEdge(unittest.TestCase):
                 jamulus_path="C:/Jamulus.exe",
                 log_files=[log_file],
                 support_files=[support_file],
+                extra_json_files={"support_snapshot.json": {"safe": True}},
             )
 
             self.assertTrue(out_zip.exists())
@@ -159,12 +164,15 @@ class TestMetricsServiceExportEdge(unittest.TestCase):
                 self.assertIn("room_context.json", names)
                 self.assertIn("environment.json", names)
                 self.assertIn("README.txt", names)
+                self.assertIn("support_snapshot.json", names)
                 self.assertIn("logs/webjam.log", names)
                 self.assertIn("files/webjam.db", names)
                 snapshot = json.loads(zf.read("snapshot.json").decode("utf-8"))
+                support_snapshot = json.loads(zf.read("support_snapshot.json").decode("utf-8"))
                 self.assertEqual(snapshot["jamulus_state"], "Connected")
                 self.assertEqual(snapshot["server"], "localhost:22124")
                 self.assertIn("usage_metrics", snapshot)
+                self.assertTrue(support_snapshot["safe"])
 
     def test_export_diagnostics_bundle_rejects_file_output_path(self) -> None:
         fd, temp_path = tempfile.mkstemp()
