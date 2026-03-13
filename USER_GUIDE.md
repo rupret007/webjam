@@ -48,6 +48,7 @@ WebJam supports one unified experience with mode templates:
 - Storyboard/Film Room
 
 Modes set defaults and prompts; collaboration primitives stay shared.
+WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy workflows each get more room.
 
 ### Key Features
 

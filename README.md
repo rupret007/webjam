@@ -23,6 +23,7 @@ WebJam is a single-brand creative collaboration app with a flagship music mode. 
 - **Storyboard/Film Room**: shot planning and continuity notes
 
 Each mode configures defaults and prompts, without creating separate products.
+The workspace layout now also adapts by mode (mixer-heavy for Music Jam, canvas-heavy for critique and writing modes).
 
 ### Virtual Mixer Panel
 - **Individual Channel Faders**: Control the volume of each musician independently

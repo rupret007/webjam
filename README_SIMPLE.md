@@ -21,6 +21,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 ## 3) Start a Session
 
 0. Choose a **Creative Mode** at the top (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room).
+0. The layout auto-adjusts by mode (more mixer space for music, more canvas space for critique/writing).
 1. Set a **Template** and **Session Goal**.
 1. Click **Launch Jamulus**.
 2. Click **Launch Webex**.

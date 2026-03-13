@@ -68,6 +68,44 @@ VALID_REVIEW_STATES = {"draft", "review", "final"}
 RECONNECT_MAX_ATTEMPTS = 5
 RECONNECT_BASE_DELAY_SECONDS = 1.5
 RECONNECT_MAX_DELAY_SECONDS = 45.0
+DEFAULT_MODE_LAYOUT = {
+    "mixer_ratio": 0.68,
+    "min_mixer": 820,
+    "min_canvas": 360,
+    "canvas_width": 420,
+}
+MODE_LAYOUT_PRESETS = {
+    "music_jam": {
+        "mixer_ratio": 0.74,
+        "min_mixer": 900,
+        "min_canvas": 320,
+        "canvas_width": 360,
+    },
+    "visual_studio": {
+        "mixer_ratio": 0.60,
+        "min_mixer": 780,
+        "min_canvas": 420,
+        "canvas_width": 500,
+    },
+    "writers_room": {
+        "mixer_ratio": 0.56,
+        "min_mixer": 720,
+        "min_canvas": 460,
+        "canvas_width": 540,
+    },
+    "design_critique": {
+        "mixer_ratio": 0.60,
+        "min_mixer": 760,
+        "min_canvas": 430,
+        "canvas_width": 500,
+    },
+    "storyboard_film_room": {
+        "mixer_ratio": 0.62,
+        "min_mixer": 780,
+        "min_canvas": 420,
+        "canvas_width": 500,
+    },
+}
 
 
 class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
@@ -662,6 +700,9 @@ class WebJamEnhancedApp:
         right_content = tk.Frame(splitter, bg="#1a1a1a")
         splitter.add(left_content, minsize=820)
         splitter.add(right_content, minsize=360)
+        self.main_splitter = splitter
+        self.left_content = left_content
+        self.right_content = right_content
 
         # Mixer panel (left side)
         mixer_frame = ctk.CTkFrame(left_content) if CTK_AVAILABLE else tk.Frame(left_content, bg="#2b2b2b", relief=tk.RAISED, borderwidth=2)
@@ -756,6 +797,7 @@ class WebJamEnhancedApp:
                 Tooltip(self.latency_label, "Estimated latency quality to Jamulus endpoint"),
             ]
         )
+        self._schedule_mode_layout_refresh()
     
     def _create_label(self, parent, text, font_size=10, bold=False):
         """Create a styled label"""
@@ -830,6 +872,67 @@ class WebJamEnhancedApp:
                 command=tk._setit(self.quick_template_var, label, self._on_quick_template_selected),
             )
         self.quick_template_var.set(CUSTOM_TEMPLATE_OPTION)
+
+    @staticmethod
+    def _mode_layout_spec(mode_key: str) -> dict[str, float]:
+        spec = dict(DEFAULT_MODE_LAYOUT)
+        spec.update(MODE_LAYOUT_PRESETS.get(str(mode_key).strip(), {}))
+        return spec
+
+    @staticmethod
+    def _compute_sash_x(total_width: int, mixer_ratio: float, min_mixer: int, min_canvas: int) -> int:
+        width = max(1, int(total_width))
+        ratio = max(0.1, min(float(mixer_ratio), 0.9))
+        lower_bound = max(1, int(min_mixer))
+        upper_bound = max(lower_bound, width - max(1, int(min_canvas)))
+        desired = int(width * ratio)
+        return max(lower_bound, min(desired, upper_bound))
+
+    def _apply_mode_layout(self) -> None:
+        spec = self._mode_layout_spec(self.mode_key)
+        if hasattr(self, "session_canvas"):
+            try:
+                self.session_canvas.configure(width=int(spec["canvas_width"]))
+            except (tk.TclError, RuntimeError, ValueError):
+                pass
+
+        splitter = getattr(self, "main_splitter", None)
+        if splitter is None:
+            return
+
+        try:
+            if hasattr(self, "left_content"):
+                splitter.paneconfig(self.left_content, minsize=int(spec["min_mixer"]))
+            if hasattr(self, "right_content"):
+                splitter.paneconfig(self.right_content, minsize=int(spec["min_canvas"]))
+        except (tk.TclError, RuntimeError, ValueError):
+            pass
+
+        try:
+            total_width = int(self.root.winfo_width())
+            if total_width <= 1:
+                total_width = int(self.root.winfo_reqwidth())
+            if total_width <= 1:
+                total_width = 1600
+            sash_x = self._compute_sash_x(
+                total_width=total_width,
+                mixer_ratio=float(spec["mixer_ratio"]),
+                min_mixer=int(spec["min_mixer"]),
+                min_canvas=int(spec["min_canvas"]),
+            )
+            splitter.sash_place(0, sash_x, 1)
+        except (tk.TclError, RuntimeError, ValueError, TypeError):
+            return
+
+    def _schedule_mode_layout_refresh(self) -> None:
+        self._apply_mode_layout()
+        root = getattr(self, "root", None)
+        if root is None:
+            return
+        try:
+            root.after(120, self._apply_mode_layout)
+        except (tk.TclError, RuntimeError, AttributeError):
+            return
 
     def _bridge_participants(self):
         return [
@@ -940,6 +1043,7 @@ class WebJamEnhancedApp:
                     self._refresh_quick_template_menu()
                 self.save_room_context()
                 self.session_canvas.refresh()
+                self._schedule_mode_layout_refresh()
                 self.metrics_service.increment(f"metric_quick_template_{t.id}")
                 break
 
@@ -953,6 +1057,7 @@ class WebJamEnhancedApp:
             self.session_goal_var.set(selected.default_goal)
         self.save_room_context()
         self.session_canvas.refresh()
+        self._schedule_mode_layout_refresh()
         self.metrics_service.increment(f"metric_mode_selected_{selected.key}")
         self.repository.append_cohort_event(
             self.cohort_name,
@@ -1914,6 +2019,7 @@ Common fixes:
         help_text = """Quick Start Guide
 
 Choose your mode in the top bar (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room).
+The workspace layout adjusts by mode so music gets more mixer space and critique/writing gets more canvas space.
 Set a template and session goal before launch.
 
 1. Launch Jamulus
