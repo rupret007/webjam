@@ -77,6 +77,63 @@ class TestAppPollingEdge(unittest.TestCase):
         self.assertFalse(app._latency_probe_inflight)
         self.assertIsNone(app.network_latency_ms)
 
+    def test_selected_channel_shortcut_toggles_mute(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        channel = MagicMock()
+        app._text_input_has_focus = MagicMock(return_value=False)
+        app._selected_mixer_channel = MagicMock(return_value=channel)
+        app._refresh_readiness = MagicMock()
+
+        result = WebJamEnhancedApp._selected_channel_shortcut_handler(app, "mute")
+
+        channel.toggle_mute.assert_called_once()
+        channel.toggle_solo.assert_not_called()
+        app._refresh_readiness.assert_called_once()
+        self.assertEqual(result, "break")
+
+    def test_selected_channel_shortcut_ignores_text_input_focus(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        channel = MagicMock()
+        app._text_input_has_focus = MagicMock(return_value=True)
+        app._selected_mixer_channel = MagicMock(return_value=channel)
+        app._refresh_readiness = MagicMock()
+
+        result = WebJamEnhancedApp._selected_channel_shortcut_handler(app, "solo")
+
+        channel.toggle_mute.assert_not_called()
+        channel.toggle_solo.assert_not_called()
+        app._refresh_readiness.assert_not_called()
+        self.assertIsNone(result)
+
+    def test_bind_shortcuts_registers_documented_selected_channel_keys(self):
+        class _Root:
+            def __init__(self):
+                self.bound = {}
+
+            def bind(self, event, callback):
+                self.bound[event] = callback
+
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _Root()
+        app._safe_invoke = MagicMock()
+        app._space_key_handler = MagicMock()
+        app.save_mix = MagicMock()
+        app.load_mix = MagicMock()
+        app.quit_app = MagicMock()
+        app.show_help = MagicMock()
+        app.launch_jamulus = MagicMock()
+        app.launch_webex = MagicMock()
+        app.reset_all_faders = MagicMock()
+        app.center_all_pans = MagicMock()
+        app.increase_text_size = MagicMock()
+        app.decrease_text_size = MagicMock()
+        app.toggle_high_contrast = MagicMock()
+
+        WebJamEnhancedApp._bind_shortcuts(app)
+
+        self.assertIn("<Key-m>", app.root.bound)
+        self.assertIn("<Key-s>", app.root.bound)
+
 
 if __name__ == "__main__":
     unittest.main()

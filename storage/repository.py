@@ -128,6 +128,15 @@ class WebJamRepository:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_mix_defaults (
+                    username TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
             # Backward-compatible migrations for existing databases.
             columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
             if "must_change_password" not in columns:
@@ -420,8 +429,19 @@ class WebJamRepository:
         return normalized[:MIX_PROFILE_NAME_MAX_LEN]
 
     @staticmethod
+    def _normalize_username(username: object) -> str:
+        return str(username or "").strip()
+
+    @staticmethod
     def _mix_profile_name_key(profile_name: object) -> str:
         return WebJamRepository._normalize_mix_profile_name(profile_name).casefold()
+
+    @staticmethod
+    def _serialize_json_payload(payload: Any) -> str:
+        try:
+            return json.dumps(payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("payload must be JSON serializable") from exc
 
     def _matching_mix_profile_rows(
         self,
@@ -441,10 +461,7 @@ class WebJamRepository:
         if not normalized_name:
             raise ValueError("profile_name cannot be empty")
         normalized_mode = str(mode_key or "").strip()
-        try:
-            serialized_payload = json.dumps(payload)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("payload must be JSON serializable") from exc
+        serialized_payload = self._serialize_json_payload(payload)
         with self._managed_connection() as conn:
             existing_rows = self._matching_mix_profile_rows(conn, normalized_name)
             if existing_rows:
@@ -467,6 +484,46 @@ class WebJamRepository:
                     (normalized_name, normalized_mode, serialized_payload),
                 )
             conn.commit()
+
+    def save_user_mix_default(self, username: str, payload: Any) -> None:
+        normalized_username = self._normalize_username(username)
+        if not normalized_username:
+            raise ValueError("username cannot be empty")
+        serialized_payload = self._serialize_json_payload(payload)
+        with self._managed_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_mix_defaults (username, payload)
+                VALUES (?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    payload = excluded.payload,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (normalized_username, serialized_payload),
+            )
+            conn.commit()
+
+    def get_user_mix_default(self, username: str) -> Optional[Dict[str, Any]]:
+        normalized_username = self._normalize_username(username)
+        if not normalized_username:
+            return None
+        with self._managed_connection() as conn:
+            row = conn.execute(
+                "SELECT username, payload, updated_at FROM user_mix_defaults WHERE username = ?",
+                (normalized_username,),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row[1])
+        except (TypeError, json.JSONDecodeError):
+            LOGGER.warning("Corrupt user mix payload for '%s'; skipping.", normalized_username)
+            return None
+        return {
+            "username": row[0],
+            "payload": payload,
+            "updated_at": row[2],
+        }
 
     def get_mix_profile(self, profile_name: str) -> Optional[Dict[str, Any]]:
         normalized_name = self._normalize_mix_profile_name(profile_name)
@@ -560,6 +617,13 @@ class WebJamRepository:
                 ORDER BY updated_at DESC, id DESC
                 """
             ).fetchall()
+            user_mix_rows = conn.execute(
+                """
+                SELECT username, payload, updated_at
+                FROM user_mix_defaults
+                ORDER BY updated_at DESC, username ASC
+                """
+            ).fetchall()
 
             artifact_count = None
             note_length = None
@@ -595,6 +659,17 @@ class WebJamRepository:
                     "updated_at": updated_at,
                 }
             )
+        user_mix_defaults: List[Dict[str, Any]] = []
+        for username, raw_payload, updated_at in user_mix_rows:
+            payload, payload_state = _safe_json_payload(raw_payload)
+            user_mix_defaults.append(
+                {
+                    "username": username,
+                    "payload_state": payload_state,
+                    "payload": payload,
+                    "updated_at": updated_at,
+                }
+            )
 
         snapshot: Dict[str, Any] = {
             "app_settings": app_settings,
@@ -610,6 +685,7 @@ class WebJamRepository:
                 for row in room_rows
             ],
             "mix_profiles": mix_profiles,
+            "user_mix_defaults": user_mix_defaults,
         }
         if room_key is not None:
             snapshot["current_room_summary"] = {

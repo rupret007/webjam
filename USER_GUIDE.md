@@ -294,11 +294,12 @@ Use this brief for async updates and to kick off the next session quickly.
 
 ### Saving Your Mix
 
-Once you've created the perfect mix:
+Once you've created the mix you want:
 
-1. Click "💾 Save Mix" button
-2. Settings are saved to your profile
-3. Loads automatically next session
+1. Click `Save Mix`
+2. If you are signed in, WebJam saves the default mix to your WebJam user profile
+3. If you are not signed in, WebJam saves a local default mix on this computer
+4. That saved default mix restores automatically the next time you sign in or launch WebJam
 
 **What Gets Saved:**
 - All fader positions
@@ -307,11 +308,12 @@ Once you've created the perfect mix:
 
 ### Loading a Saved Mix
 
-Your mix loads automatically when you start WebJam, but you can also:
+Your saved default mix can restore automatically, and you can also load it manually:
 
-1. Go to **File** → **Load Mix**
-2. Select from saved presets
-3. Mix applies to matching participants
+1. Go to **File** -> **Load Mix**
+2. If you are signed in, WebJam loads your saved profile mix first
+3. Otherwise it falls back to the local saved mix file
+4. The mix applies to matching participants
 
 **Tip:** Save different mixes for different songs or configurations!
 
@@ -528,6 +530,8 @@ Position instruments to avoid "masking":
 | `Ctrl + P` | Center All Pans |
 | `M` | Mute Selected Channel |
 | `S` | Solo Selected Channel |
+
+Select a channel first by clicking its mixer strip, then use `M` or `S`.
 
 ### Session Management
 

@@ -341,6 +341,30 @@ class TestRepositoryMixProfiles(unittest.TestCase):
         self.assertTrue(self.repo.delete_mix_profile("FOCUS"))
         self.assertEqual(self.repo.list_mix_profiles(), [])
 
+    def test_save_get_user_mix_default_roundtrip(self):
+        payload = {"participants": [{"channel_id": 3, "name": "Taylor", "fader_level": 82}]}
+
+        self.repo.save_user_mix_default("  Taylor  ", payload)
+
+        saved = self.repo.get_user_mix_default("Taylor")
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["username"], "Taylor")
+        self.assertEqual(saved["payload"], payload)
+
+    def test_save_user_mix_default_rejects_empty_username(self):
+        with self.assertRaises(ValueError):
+            self.repo.save_user_mix_default("   ", {"participants": []})
+
+    def test_export_support_snapshot_includes_user_mix_defaults(self):
+        self.repo.save_user_mix_default("Alex", {"participants": [{"channel_id": 7, "name": "Alex"}]})
+
+        snapshot = self.repo.export_support_snapshot()
+
+        self.assertEqual(len(snapshot["user_mix_defaults"]), 1)
+        self.assertEqual(snapshot["user_mix_defaults"][0]["username"], "Alex")
+        self.assertEqual(snapshot["user_mix_defaults"][0]["payload_state"], "ok")
+        self.assertEqual(snapshot["user_mix_defaults"][0]["payload"]["participants"][0]["name"], "Alex")
+
     def test_export_support_snapshot_filters_sensitive_settings_and_summarizes_room(self):
         self.repo.set_setting("safe_setting", "ok")
         self.repo.set_setting("admin_bootstrap_password", "super-secret")

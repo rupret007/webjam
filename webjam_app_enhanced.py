@@ -10,12 +10,13 @@ from tkinter import messagebox, simpledialog
 import subprocess
 import webbrowser
 import logging
+import json
 import os
 import time
 import threading
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, Callable
 import socket
 
 # Import Jamulus controller
@@ -118,18 +119,28 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
         controller: JamulusController,
         font_scale: float = 1.0,
         high_contrast: bool = False,
+        on_select: Callable[[int], None] | None = None,
     ):
         super().__init__(parent)
         self.participant = participant
         self.controller = controller
         self.font_scale = font_scale
         self.high_contrast = high_contrast
+        self.on_select = on_select
         self._tooltips = []
+        self._selected = False
         
         if CTK_AVAILABLE:
-            self.configure(fg_color=THEME.bg_secondary, corner_radius=10)
+            self.configure(fg_color=THEME.bg_secondary, corner_radius=10, border_width=1, border_color=THEME.bg_secondary)
         else:
-            self.configure(bg=THEME.bg_secondary, relief=tk.RAISED, borderwidth=2)
+            self.configure(
+                bg=THEME.bg_secondary,
+                relief=tk.RAISED,
+                borderwidth=2,
+                highlightthickness=1,
+                highlightbackground=THEME.bg_secondary,
+                highlightcolor=THEME.bg_secondary,
+            )
         
         self.setup_ui()
     
@@ -296,6 +307,8 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
         self.update_button_states()
         self._attach_tooltips()
         self.apply_accessibility(self.font_scale, self.high_contrast)
+        self._bind_selection_handlers(self)
+        self.set_selected(False)
     
     def _create_label(self, text, font_size=10, bold=False):
         """Create a styled label"""
@@ -337,12 +350,14 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
     
     def toggle_mute(self):
         """Toggle mute state"""
+        self._notify_selected()
         new_state = not self.participant.muted
         self.controller.set_mute(self.participant.channel_id, new_state)
         self.update_button_states()
     
     def toggle_solo(self):
         """Toggle solo state"""
+        self._notify_selected()
         new_state = not self.participant.solo
         self.controller.set_solo(self.participant.channel_id, new_state)
         self.update_button_states()
@@ -405,12 +420,43 @@ class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
         self._tooltips.append(Tooltip(self.mute_btn, "Mute this participant in your mix"))
         self._tooltips.append(Tooltip(self.solo_btn, "Solo this participant and mute others"))
         self._tooltips.append(Tooltip(self.vu_meter, "Real-time level meter; avoid sustained PEAK"))
+        self._tooltips.append(Tooltip(self, "Click a channel to select it for keyboard mute/solo shortcuts"))
+
+    def _notify_selected(self) -> None:
+        if self.on_select is not None:
+            self.on_select(self.participant.channel_id)
+        try:
+            self.focus_set()
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _bind_selection_handlers(self, widget: tk.Misc) -> None:
+        try:
+            widget.bind("<Button-1>", lambda _e: self._notify_selected(), add="+")
+            widget.bind("<FocusIn>", lambda _e: self._notify_selected(), add="+")
+        except (tk.TclError, AttributeError):
+            return
+        for child in widget.winfo_children():
+            self._bind_selection_handlers(child)
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = bool(selected)
+        if CTK_AVAILABLE:
+            self.configure(
+                border_width=2 if self._selected else 1,
+                border_color=(THEME.accent_warning if self._selected else THEME.bg_secondary),
+            )
+            return
+        border_color = THEME.accent_warning if self._selected else THEME.bg_secondary
+        self.configure(highlightthickness=2 if self._selected else 1)
+        self.configure(highlightbackground=border_color, highlightcolor=border_color)
 
     def apply_accessibility(self, font_scale: float, high_contrast: bool) -> None:
         self.font_scale = clamp_scale(font_scale)
         self.high_contrast = high_contrast
         palette = contrast_palette(high_contrast)
         self._apply_widget_style(self, palette)
+        self.set_selected(self._selected)
 
     def _apply_widget_style(self, widget: tk.Misc, palette: dict[str, str]) -> None:
         try:
@@ -487,6 +533,8 @@ class WebJamEnhancedApp:
         self._webex_next_reconnect_at = 0.0
         self._jamulus_reconnect_inflight = False
         self._webex_reconnect_inflight = False
+        self._ready_check_inflight = False
+        self._diagnostics_panel_inflight = False
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
         raw_auto_reconnect = self.repository.get_setting("auto_reconnect_enabled", "1")
@@ -522,6 +570,9 @@ class WebJamEnhancedApp:
         self.policy = PolicyEngine()
         self.auth_controller = AuthController(self.repository, self.policy)
         self.current_user: Optional[UserContext] = None
+        self.selected_channel_id: int | None = None
+        self._pending_mix_restore_payload: dict[str, Any] | None = None
+        self._pending_mix_restore_source: str | None = None
         self.api_bridge = LocalApiBridge(
             get_participants=self._bridge_participants,
             get_diagnostics=self.jamulus_controller.get_audio_diagnostics,
@@ -541,6 +592,7 @@ class WebJamEnhancedApp:
         self._poll_connection_health()
         self._defer_service_start()
         self._show_setup_once()
+        self._restore_startup_mix_default()
 
     def setup_ui(self):
         """Setup the main application UI"""
@@ -978,6 +1030,91 @@ class WebJamEnhancedApp:
             except (KeyError, tk.TclError, AttributeError):
                 continue
 
+    def _select_mixer_channel(self, channel_id: int | None) -> None:
+        if channel_id is not None and channel_id not in self.mixer_channels:
+            channel_id = None
+        self.selected_channel_id = channel_id
+        for current_id, channel in list(getattr(self, "mixer_channels", {}).items()):
+            try:
+                channel.set_selected(current_id == channel_id)
+            except (tk.TclError, AttributeError):
+                continue
+
+    def _selected_mixer_channel(self) -> EnhancedMixerChannel | None:
+        if self.selected_channel_id is None:
+            return None
+        return self.mixer_channels.get(self.selected_channel_id)
+
+    def _default_mix_user(self) -> str | None:
+        if self.current_user is None:
+            return None
+        username = str(getattr(self.current_user, "username", "") or "").strip()
+        return username or None
+
+    def _load_mix_payload_from_file(self, mix_file: Path | None = None) -> Optional[dict[str, Any]]:
+        mix_path = mix_file or MIX_FILE
+        try:
+            with Path(mix_path).open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            LOGGER.warning("Could not read mix payload from %s: %s", mix_path, exc)
+            return None
+        if not isinstance(payload, dict):
+            LOGGER.warning("Mix payload from %s was not a JSON object.", mix_path)
+            return None
+        return payload
+
+    def _queue_mix_restore(self, payload: dict[str, Any], source_label: str) -> None:
+        self._pending_mix_restore_payload = dict(payload)
+        self._pending_mix_restore_source = str(source_label)
+        self._attempt_pending_mix_restore()
+
+    def _attempt_pending_mix_restore(self) -> None:
+        payload = getattr(self, "_pending_mix_restore_payload", None)
+        if not isinstance(payload, dict):
+            return
+        applied_channels = self.jamulus_controller.apply_mix_data(payload)
+        if applied_channels is None:
+            LOGGER.warning(
+                "Discarding invalid pending mix restore payload from %s.",
+                self._pending_mix_restore_source or "unknown source",
+            )
+            self._pending_mix_restore_payload = None
+            self._pending_mix_restore_source = None
+            return
+        if applied_channels <= 0:
+            return
+        self._pending_mix_restore_payload = None
+        restored_from = self._pending_mix_restore_source or "saved mix"
+        self._pending_mix_restore_source = None
+        self._refresh_mixer_controls_from_participants()
+        self._refresh_readiness()
+        try:
+            self._set_status_banner(f"Restored mix from {restored_from}", color="#00cc66")
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
+
+    def _restore_startup_mix_default(self) -> None:
+        if not MIX_FILE.exists():
+            return
+        payload = self._load_mix_payload_from_file()
+        if payload is None:
+            return
+        self._queue_mix_restore(payload, str(MIX_FILE))
+
+    def _restore_signed_in_mix_default(self) -> None:
+        username = self._default_mix_user()
+        if not username:
+            return
+        saved_mix = self.repository.get_user_mix_default(username)
+        if saved_mix is None:
+            return
+        payload = saved_mix.get("payload")
+        if not isinstance(payload, dict):
+            LOGGER.warning("Saved user mix for '%s' was not a mapping payload.", username)
+            return
+        self._queue_mix_restore(payload, f"{username} profile")
+
     def _bridge_participants(self):
         return [
             {
@@ -1052,26 +1189,45 @@ class WebJamEnhancedApp:
 
     def run_ready_check(self) -> None:
         self.metrics_service.increment("metric_ready_check_run")
-        check_results = SetupWizard.run_preflight_checks(
-            settings=self._settings_for_checks(),
-            find_jamulus=self.find_jamulus,
-            diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
-        )
-        report = self._summarize_ready_check(
-            check_results=check_results,
-            latency_ms=self.network_latency_ms,
-            participant_count=len(self.jamulus_controller.get_participants()),
-        )
-        show_ready_check_panel(
-            root=self.root,
-            checks=check_results,
-            latency_label=str(report["latency_label"]),
-            participant_count=int(report["participant_count"]),
-            on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
-            on_open_diagnostics=self.open_diagnostics_panel,
-            on_export_bundle=self.export_diagnostics_bundle,
-            bg_color=THEME.bg_secondary,
-            fg_color=THEME.text_primary,
+        settings = self._settings_for_checks()
+        latency_ms = self.network_latency_ms
+        participant_count = len(self.jamulus_controller.get_participants())
+
+        def _task() -> list[tuple[str, bool, str]]:
+            return SetupWizard.run_preflight_checks(
+                settings=settings,
+                find_jamulus=self.find_jamulus,
+                diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
+            )
+
+        def _show_panel(check_results: list[tuple[str, bool, str]]) -> None:
+            report = self._summarize_ready_check(
+                check_results=check_results,
+                latency_ms=latency_ms,
+                participant_count=participant_count,
+            )
+            show_ready_check_panel(
+                root=self.root,
+                checks=check_results,
+                latency_label=str(report["latency_label"]),
+                participant_count=int(report["participant_count"]),
+                on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
+                on_open_diagnostics=self.open_diagnostics_panel,
+                on_export_bundle=self.export_diagnostics_bundle,
+                bg_color=THEME.bg_secondary,
+                fg_color=THEME.text_primary,
+            )
+
+        self._run_background_task(
+            inflight_attr="_ready_check_inflight",
+            banner_text="Running ready check...",
+            task=_task,
+            on_success=_show_panel,
+            error_title="Ready Check Failed",
+            what_failed="Ready check could not complete.",
+            likely_cause="A diagnostics callback or network probe failed unexpectedly.",
+            next_action="Retry the ready check or open diagnostics for more detail.",
+            retry_callback=self.run_ready_check,
         )
 
     def _on_quick_template_selected(self, choice: str) -> None:
@@ -1198,6 +1354,81 @@ class WebJamEnhancedApp:
             LOGGER.exception("Shortcut action failed: %s", exc)
             messagebox.showwarning("Action Failed", f"Shortcut action failed:\n{exc}", parent=self.root)
 
+    def _text_input_has_focus(self) -> bool:
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, tk.Text)):
+            return True
+        try:
+            return bool(CTK_AVAILABLE and hasattr(focused, "_entry"))
+        except tk.TclError:
+            return False
+
+    def _selected_channel_shortcut_handler(self, action: str):
+        if self._text_input_has_focus():
+            return
+        channel = self._selected_mixer_channel()
+        if channel is None:
+            return "break"
+        if action == "mute":
+            channel.toggle_mute()
+        elif action == "solo":
+            channel.toggle_solo()
+        else:
+            return
+        self._refresh_readiness()
+        return "break"
+
+    def _run_background_task(
+        self,
+        *,
+        inflight_attr: str,
+        banner_text: str,
+        task: Callable[[], Any],
+        on_success: Callable[[Any], None],
+        error_title: str,
+        what_failed: str,
+        likely_cause: str,
+        next_action: str,
+        retry_callback: Callable[[], None] | None = None,
+    ) -> None:
+        if bool(getattr(self, inflight_attr, False)):
+            return
+        setattr(self, inflight_attr, True)
+        try:
+            self._set_status_banner(banner_text, color="#ffcc00")
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
+
+        def _worker() -> None:
+            result: Any = None
+            error: Exception | None = None
+            try:
+                result = task()
+            except Exception as exc:
+                error = exc
+                LOGGER.exception("%s", what_failed)
+
+            def _finish() -> None:
+                setattr(self, inflight_attr, False)
+                if error is not None:
+                    self._show_actionable_error(
+                        error_title,
+                        what_failed=f"{what_failed} ({error}).",
+                        likely_cause=likely_cause,
+                        next_action=next_action,
+                        retry_callback=retry_callback,
+                    )
+                    self._refresh_readiness()
+                    return
+                on_success(result)
+
+            try:
+                self.root.after(0, _finish)
+            except (tk.TclError, RuntimeError, AttributeError):
+                setattr(self, inflight_attr, False)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     def _retry_action(self, action, attempts: int = 3, base_delay: float = 0.4):
         return RetryService.retry_action(action, attempts=attempts, base_delay=base_delay)
 
@@ -1278,19 +1509,15 @@ class WebJamEnhancedApp:
         self.root.bind("<Control-r>", lambda _e: self._safe_invoke(self.reset_all_faders))
         self.root.bind("<Control-p>", lambda _e: self._safe_invoke(self.center_all_pans))
         self.root.bind("<space>", self._space_key_handler)
+        self.root.bind("<Key-m>", lambda _e: self._selected_channel_shortcut_handler("mute"))
+        self.root.bind("<Key-s>", lambda _e: self._selected_channel_shortcut_handler("solo"))
         self.root.bind("<Control-plus>", lambda _e: self._safe_invoke(self.increase_text_size))
         self.root.bind("<Control-minus>", lambda _e: self._safe_invoke(self.decrease_text_size))
         self.root.bind("<Control-h>", lambda _e: self._safe_invoke(self.toggle_high_contrast))
 
     def _space_key_handler(self, event) -> None:
-        focused = self.root.focus_get()
-        if isinstance(focused, (tk.Entry, tk.Text)):
+        if self._text_input_has_focus():
             return
-        try:
-            if CTK_AVAILABLE and hasattr(focused, '_entry'):
-                return
-        except tk.TclError:
-            pass
         self._safe_invoke(self.unmute_all)
         return "break"
 
@@ -1664,6 +1891,7 @@ class WebJamEnhancedApp:
         if user is None:
             return False
         self.current_user = user
+        self._restore_signed_in_mix_default()
         return True
 
     def open_admin_panel(self):
@@ -1687,25 +1915,42 @@ class WebJamEnhancedApp:
         self.metrics_service.increment("metric_diagnostics_panel_opened")
         self._refresh_endpoint_state()
         diag = self.jamulus_controller.get_audio_diagnostics()
-        host_ok, host_detail = SetupWizard.check_tcp_hint(self.jamulus_server, self.jamulus_port)
         jamulus_path = self.find_jamulus() or "Not found"
-        show_diagnostics_panel(
-            root=self.root,
-            jamulus_path=jamulus_path,
-            jamulus_server=self.jamulus_server,
-            jamulus_port=str(self.jamulus_port),
-            host_ok=host_ok,
-            host_detail=host_detail,
-            webex_url=self.webex_url,
-            webex_last_error=self.webex_controller.last_error,
-            audio_diagnostics=diag,
-            on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
-            on_open_help=lambda: self.show_help(topic="troubleshooting"),
-            on_export_snapshot=self.export_diagnostics_snapshot,
-            on_export_bundle=self.export_diagnostics_bundle,
-            on_reset_metrics=self.reset_usage_metrics,
-            bg_color=THEME.bg_secondary,
-            fg_color=THEME.text_primary,
+
+        def _task() -> tuple[bool, str]:
+            return SetupWizard.check_tcp_hint(self.jamulus_server, self.jamulus_port)
+
+        def _show_panel(host_result: tuple[bool, str]) -> None:
+            host_ok, host_detail = host_result
+            show_diagnostics_panel(
+                root=self.root,
+                jamulus_path=jamulus_path,
+                jamulus_server=self.jamulus_server,
+                jamulus_port=str(self.jamulus_port),
+                host_ok=host_ok,
+                host_detail=host_detail,
+                webex_url=self.webex_url,
+                webex_last_error=self.webex_controller.last_error,
+                audio_diagnostics=diag,
+                on_run_setup=lambda: self.show_setup_wizard(mark_complete=False),
+                on_open_help=lambda: self.show_help(topic="troubleshooting"),
+                on_export_snapshot=self.export_diagnostics_snapshot,
+                on_export_bundle=self.export_diagnostics_bundle,
+                on_reset_metrics=self.reset_usage_metrics,
+                bg_color=THEME.bg_secondary,
+                fg_color=THEME.text_primary,
+            )
+
+        self._run_background_task(
+            inflight_attr="_diagnostics_panel_inflight",
+            banner_text="Running diagnostics...",
+            task=_task,
+            on_success=_show_panel,
+            error_title="Diagnostics Failed",
+            what_failed="Diagnostics panel could not finish the endpoint probe.",
+            likely_cause="The network probe failed unexpectedly or the window was closing.",
+            next_action="Retry diagnostics or run the setup wizard to verify the endpoint.",
+            retry_callback=self.open_diagnostics_panel,
         )
     
     def on_participants_updated(self, participants):
@@ -1727,6 +1972,8 @@ class WebJamEnhancedApp:
             if channel_id in self.mixer_channels:
                 self.mixer_channels[channel_id].destroy()
                 del self.mixer_channels[channel_id]
+                if self.selected_channel_id == channel_id:
+                    self.selected_channel_id = None
 
         for participant in participants:
             if participant.channel_id not in self.mixer_channels:
@@ -1736,9 +1983,15 @@ class WebJamEnhancedApp:
                     self.jamulus_controller,
                     font_scale=self.font_scale,
                     high_contrast=self.high_contrast_enabled,
+                    on_select=self._select_mixer_channel,
                 )
                 channel.pack(side=tk.LEFT, padx=8, pady=10, fill=tk.BOTH)
                 self.mixer_channels[participant.channel_id] = channel
+        if self.selected_channel_id is None and participants:
+            self._select_mixer_channel(participants[0].channel_id)
+        else:
+            self._select_mixer_channel(self.selected_channel_id)
+        self._attempt_pending_mix_restore()
 
         self._refresh_readiness()
     
@@ -1927,6 +2180,20 @@ class WebJamEnhancedApp:
             if Path(path).exists():
                 return path
         return None
+
+    def _saved_mix_payload_for_load(self) -> tuple[dict[str, Any], str] | None:
+        username = self._default_mix_user()
+        if username:
+            saved_mix = self.repository.get_user_mix_default(username)
+            if saved_mix is not None:
+                payload = saved_mix.get("payload")
+                if isinstance(payload, dict):
+                    return payload, f"{username} profile"
+        if MIX_FILE.exists():
+            payload = self._load_mix_payload_from_file()
+            if isinstance(payload, dict):
+                return payload, str(MIX_FILE)
+        return None
     
     def save_mix(self):
         """Save current mix settings"""
@@ -1934,18 +2201,36 @@ class WebJamEnhancedApp:
         if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
             return
         try:
-            self.jamulus_controller.save_mix(str(MIX_FILE))
+            username = self._default_mix_user()
+            audit_actor = self.current_user.username if self.current_user else "anonymous"
+            if username:
+                mix_payload = self.jamulus_controller.serialize_mix()
+                self.repository.save_user_mix_default(username, mix_payload)
+                audit_detail = f"user:{username}"
+                success_message = (
+                    f"Mix settings saved to your WebJam profile for {username}.\n\n"
+                    "This default mix restores automatically when you sign in again."
+                )
+            else:
+                self.jamulus_controller.save_mix(str(MIX_FILE))
+                audit_detail = str(MIX_FILE)
+                success_message = (
+                    f"Mix settings saved locally to:\n{MIX_FILE}\n\n"
+                    "This default mix restores automatically the next time WebJam starts."
+                )
+            self._pending_mix_restore_payload = None
+            self._pending_mix_restore_source = None
             self.metrics_service.increment("metric_save_mix_success")
-            self.repository.add_audit("save_mix", self.current_user.username if self.current_user else "anonymous", str(MIX_FILE))
-            messagebox.showinfo("Saved", f"Mix settings saved to:\n{MIX_FILE}", parent=self.root)
+            self.repository.add_audit("save_mix", audit_actor, audit_detail)
+            messagebox.showinfo("Saved", success_message, parent=self.root)
         except Exception as e:
             LOGGER.exception("save_mix failed: %s", e)
             self.metrics_service.increment("metric_save_mix_failed")
             self._show_actionable_error(
                 "Save Mix Failed",
-                what_failed=f"Could not write mix file ({e}).",
-                likely_cause="Permission issue or invalid config path.",
-                next_action="Run setup wizard to verify config paths, then retry save.",
+                what_failed=f"Could not save the default mix ({e}).",
+                likely_cause="Repository write failed, the mix payload was invalid, or the local mix file path is unavailable.",
+                next_action="Verify the current profile/path in diagnostics, then retry save.",
                 retry_callback=self.save_mix,
             )
 
@@ -2012,18 +2297,30 @@ class WebJamEnhancedApp:
         self.metrics_service.increment("metric_load_mix_attempt")
         if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
             return
-        if not MIX_FILE.exists():
-            messagebox.showwarning("No Settings", "No saved mix settings found.", parent=self.root)
-            return
-        
         try:
-            applied_channels = self.jamulus_controller.load_mix(str(MIX_FILE))
+            saved_mix = self._saved_mix_payload_for_load()
+            if saved_mix is None:
+                if MIX_FILE.exists() and self._load_mix_payload_from_file() is None:
+                    self.metrics_service.increment("metric_load_mix_failed")
+                    self._show_actionable_error(
+                        "Load Mix Failed",
+                        what_failed="The saved mix file could not be parsed or was missing the expected participant payload.",
+                        likely_cause="The file is corrupted, incomplete, or from an unsupported format.",
+                        next_action="Save a fresh mix preset after confirming participants are connected.",
+                        retry_callback=self.load_mix,
+                    )
+                    return
+                messagebox.showwarning("No Settings", "No saved mix settings found.", parent=self.root)
+                return
+
+            mix_payload, mix_source = saved_mix
+            applied_channels = self.jamulus_controller.apply_mix_data(mix_payload)
             if applied_channels is None:
                 self.metrics_service.increment("metric_load_mix_failed")
                 self._show_actionable_error(
                     "Load Mix Failed",
-                    what_failed="The saved mix file could not be parsed or was missing the expected participant payload.",
-                    likely_cause="The file is corrupted, incomplete, or from an unsupported format.",
+                    what_failed="The saved mix payload could not be parsed or was missing the expected participant data.",
+                    likely_cause="The saved mix is corrupted, incomplete, or from an unsupported format.",
                     next_action="Save a fresh mix preset after confirming participants are connected.",
                     retry_callback=self.load_mix,
                 )
@@ -2037,17 +2334,19 @@ class WebJamEnhancedApp:
                     parent=self.root,
                 )
                 return
+            self._pending_mix_restore_payload = None
+            self._pending_mix_restore_source = None
             self._refresh_mixer_controls_from_participants()
             self._refresh_readiness()
-            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{MIX_FILE}", parent=self.root)
+            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{mix_source}", parent=self.root)
             self.metrics_service.increment("metric_load_mix_success")
         except Exception as e:
             LOGGER.exception("load_mix failed: %s", e)
             self.metrics_service.increment("metric_load_mix_failed")
             self._show_actionable_error(
                 "Load Mix Failed",
-                what_failed=f"Could not load mix file ({e}).",
-                likely_cause="Corrupted or incompatible JSON format.",
+                what_failed=f"Could not load the saved mix ({e}).",
+                likely_cause="Corrupted or incompatible saved mix data.",
                 next_action="Save a fresh mix preset after confirming participants are connected.",
                 retry_callback=self.load_mix,
             )

@@ -163,8 +163,8 @@ Each musician gets their own channel strip with:
 
 ### Master Controls
 
-- **Save Mix**: Store current settings to disk
-- **Load Mix**: Restore previously saved settings
+- **Save Mix**: Save the current default mix to the signed-in WebJam user or to the local fallback file when used anonymously
+- **Load Mix**: Restore the signed-in user's saved default mix first, then fall back to the local saved mix file
 - **Save Listening Profile**: Store a named mix preset tied to the current mode
 - **Load/Delete Listening Profile**: Reuse or clean up named local presets
 - **Reset All**: Return all channels to default values
@@ -294,7 +294,7 @@ You can also edit `core/settings.py` to change default values used when no confi
 App settings and mix settings use separate files:
 
 - **Config file**: `%USERPROFILE%\.webjam_config.json` (Windows) or `~/.webjam_config.json` (macOS/Linux)
-- **Mix file**: `%USERPROFILE%\.webjam_mix.json` (Windows) or `~/.webjam_mix.json` (macOS/Linux)
+- **Mix file**: `%USERPROFILE%\.webjam_mix.json` (Windows) or `~/.webjam_mix.json` (macOS/Linux) for the anonymous/local default mix fallback
 
 Optional override via environment:
 

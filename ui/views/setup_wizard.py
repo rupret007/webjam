@@ -1,4 +1,5 @@
 import os
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from typing import Callable
@@ -42,6 +43,7 @@ class SetupWizard:
             "Finish",
         ]
         self.check_results: list[tuple[str, bool, str]] = []
+        self._checks_inflight = False
         self.window: tk.Toplevel | None = None
         self.title_var = tk.StringVar(value="")
         self.body_var = tk.StringVar(value="")
@@ -145,11 +147,16 @@ class SetupWizard:
             self.summary_var.set("Action: Continue to run checks.")
         elif self.step_index == 1:
             self.title_var.set("Step 2 of 3 - Preflight Checks")
-            self.body_var.set("Review results below. If any check fails, fix it and click 'Run Checks' again.")
-            if not self.check_results:
+            if self._checks_inflight:
+                self.body_var.set("Running preflight checks now. This can take a few seconds on a slow or blocked network.")
+                self._set_results_text("Running checks...\n\nPlease wait while WebJam verifies Jamulus, Webex, and audio diagnostics.")
+                self.summary_var.set("Checks in progress...")
+            else:
+                self.body_var.set("Review results below. If any check fails, fix it and click 'Run Checks' again.")
+            if not self.check_results and not self._checks_inflight:
                 self._set_results_text("No checks run yet.")
                 self.summary_var.set("Action: Click 'Run Checks'.")
-            else:
+            elif not self._checks_inflight:
                 self._render_results()
         else:
             self.title_var.set("Step 3 of 3 - Finish")
@@ -169,16 +176,55 @@ class SetupWizard:
                 self._set_results_text("No preflight checks were run. You can run them from Step 2 at any time.")
                 self.summary_var.set("Checks passed: 0/0 (skipped). Click Finish.")
 
+        self._update_navigation_controls()
+
+    def _update_navigation_controls(self) -> None:
         if self.back_btn is not None:
-            self.back_btn.configure(state=(tk.NORMAL if self.step_index > 0 else tk.DISABLED))
+            back_state = tk.DISABLED if self._checks_inflight else (tk.NORMAL if self.step_index > 0 else tk.DISABLED)
+            self.back_btn.configure(state=back_state)
         if self.rerun_btn is not None:
-            self.rerun_btn.configure(state=(tk.NORMAL if self.step_index == 1 else tk.DISABLED))
+            rerun_state = tk.NORMAL if self.step_index == 1 and not self._checks_inflight else tk.DISABLED
+            self.rerun_btn.configure(state=rerun_state)
         if self.next_btn is not None:
-            self.next_btn.configure(text=("Finish" if self.step_index == len(self.steps) - 1 else "Next"))
+            next_label = "Finish" if self.step_index == len(self.steps) - 1 else "Next"
+            next_state = tk.DISABLED if self._checks_inflight else tk.NORMAL
+            self.next_btn.configure(text=next_label, state=next_state)
 
     def _run_checks_and_render(self) -> None:
-        self.check_results = self.run_preflight_checks(self.settings, self.find_jamulus, self.diagnostics_provider)
-        self._render_results()
+        if self._checks_inflight:
+            return
+        self._checks_inflight = True
+        self.body_var.set("Running preflight checks now. This can take a few seconds on a slow or blocked network.")
+        self.summary_var.set("Checks in progress...")
+        self._set_results_text("Running checks...\n\nPlease wait while WebJam verifies Jamulus, Webex, and audio diagnostics.")
+        self._update_navigation_controls()
+
+        def _worker() -> None:
+            try:
+                results = self.run_preflight_checks(self.settings, self.find_jamulus, self.diagnostics_provider)
+            except Exception as exc:
+                results = [("Preflight checks", False, f"Checks failed unexpectedly: {exc}")]
+
+            def _finish() -> None:
+                self._checks_inflight = False
+                self.check_results = results
+                self._render_step()
+
+            if self.window is None:
+                self._checks_inflight = False
+                self.check_results = results
+                return
+            try:
+                if not self.window.winfo_exists():
+                    self._checks_inflight = False
+                    self.check_results = results
+                    return
+                self.window.after(0, _finish)
+            except (tk.TclError, RuntimeError):
+                self._checks_inflight = False
+                self.check_results = results
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _render_results(self) -> None:
         lines: list[str] = []

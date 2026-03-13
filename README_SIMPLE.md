@@ -33,7 +33,9 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 ## 4) Save Your Mix
 
 - Click **Save Mix** to keep your settings.
-- Use **Load Mix** later to restore them.
+- If you are signed in, that default mix is saved to your WebJam profile.
+- If you are not signed in, WebJam saves a local default mix on this computer.
+- Use **Load Mix** later to restore the saved default mix manually.
 - Use **File -> Save Listening Profile** to keep named presets like `Rehearsal`, `Focus on Drums`, or `Critique Balance`.
 
 ## 5) If Something Fails

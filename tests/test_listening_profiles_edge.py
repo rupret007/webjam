@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -32,6 +35,9 @@ class TestListeningProfilesEdge(unittest.TestCase):
         app.jamulus_controller = MagicMock()
         app._refresh_mixer_controls_from_participants = MagicMock()
         app._refresh_readiness = MagicMock()
+        app._show_actionable_error = MagicMock()
+        app._pending_mix_restore_payload = {"participants": [{"channel_id": 99}]}
+        app._pending_mix_restore_source = "queued"
         return app
 
     def test_resolve_profile_name_is_case_insensitive(self):
@@ -196,8 +202,8 @@ class TestListeningProfilesEdge(unittest.TestCase):
     @patch("webjam_app_enhanced.messagebox")
     def test_load_mix_invalid_payload_does_not_report_success(self, messagebox_mock):
         app = self._app_stub()
-        app.jamulus_controller.load_mix.return_value = None
-        app._show_actionable_error = MagicMock()
+        app._load_mix_payload_from_file = MagicMock(return_value={"bad": []})
+        app.jamulus_controller.apply_mix_data.return_value = None
 
         app.load_mix()
 
@@ -210,8 +216,8 @@ class TestListeningProfilesEdge(unittest.TestCase):
     @patch("webjam_app_enhanced.messagebox")
     def test_load_mix_no_matches_warns_and_skips_success(self, messagebox_mock):
         app = self._app_stub()
-        app.jamulus_controller.load_mix.return_value = 0
-        app._show_actionable_error = MagicMock()
+        app._load_mix_payload_from_file = MagicMock(return_value={"participants": [{"channel_id": 2}]})
+        app.jamulus_controller.apply_mix_data.return_value = 0
 
         app.load_mix()
 
@@ -220,6 +226,90 @@ class TestListeningProfilesEdge(unittest.TestCase):
         messagebox_mock.showwarning.assert_called_once()
         messagebox_mock.showinfo.assert_not_called()
         app._refresh_mixer_controls_from_participants.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox")
+    def test_save_mix_signed_in_uses_repository_profile_default(self, messagebox_mock):
+        app = self._app_stub()
+        app.current_user = SimpleNamespace(username="Casey")
+        app.jamulus_controller.serialize_mix.return_value = {"participants": [{"channel_id": 1, "name": "Casey"}]}
+
+        app.save_mix()
+
+        app.repository.save_user_mix_default.assert_called_once_with(
+            "Casey",
+            {"participants": [{"channel_id": 1, "name": "Casey"}]},
+        )
+        app.jamulus_controller.save_mix.assert_not_called()
+        self.assertIsNone(app._pending_mix_restore_payload)
+        self.assertIsNone(app._pending_mix_restore_source)
+        messagebox_mock.showinfo.assert_called_once()
+        self.assertIn("WebJam profile", messagebox_mock.showinfo.call_args.args[1])
+
+    @patch("webjam_app_enhanced.MIX_FILE", new=_MixFileStub("C:/tmp/webjam_mix.json", exists=True))
+    @patch("webjam_app_enhanced.messagebox")
+    def test_save_mix_anonymous_writes_local_default_file(self, messagebox_mock):
+        app = self._app_stub()
+
+        app.save_mix()
+
+        app.jamulus_controller.save_mix.assert_called_once_with("C:/tmp/webjam_mix.json")
+        app.repository.save_user_mix_default.assert_not_called()
+        self.assertIsNone(app._pending_mix_restore_payload)
+        self.assertIsNone(app._pending_mix_restore_source)
+        self.assertIn("restores automatically", messagebox_mock.showinfo.call_args.args[1])
+
+    @patch("webjam_app_enhanced.messagebox")
+    def test_load_mix_signed_in_prefers_repository_default(self, messagebox_mock):
+        app = self._app_stub()
+        app.current_user = SimpleNamespace(username="Casey")
+        app.repository.get_user_mix_default.return_value = {
+            "username": "casey",
+            "payload": {"participants": [{"channel_id": 4, "name": "Casey"}]},
+        }
+        app.jamulus_controller.apply_mix_data.return_value = 1
+        app._load_mix_payload_from_file = MagicMock()
+
+        app.load_mix()
+
+        app.jamulus_controller.apply_mix_data.assert_called_once_with(
+            {"participants": [{"channel_id": 4, "name": "Casey"}]}
+        )
+        app._load_mix_payload_from_file.assert_not_called()
+        app._refresh_mixer_controls_from_participants.assert_called_once()
+        app._refresh_readiness.assert_called_once()
+        self.assertIsNone(app._pending_mix_restore_payload)
+        self.assertIsNone(app._pending_mix_restore_source)
+        self.assertIn("Casey profile", messagebox_mock.showinfo.call_args.args[1])
+
+    @patch("webjam_app_enhanced.messagebox")
+    def test_load_mix_falls_back_to_file_when_user_default_missing(self, messagebox_mock):
+        app = self._app_stub()
+        app.current_user = SimpleNamespace(username="Casey")
+        app.repository.get_user_mix_default.return_value = None
+        app.jamulus_controller.apply_mix_data.return_value = 1
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mix_path = Path(tmpdir) / "webjam_mix.json"
+            mix_path.write_text(json.dumps({"participants": [{"channel_id": 8, "name": "Alex"}]}), encoding="utf-8")
+            with patch("webjam_app_enhanced.MIX_FILE", mix_path):
+                app.load_mix()
+
+        app.jamulus_controller.apply_mix_data.assert_called_once_with(
+            {"participants": [{"channel_id": 8, "name": "Alex"}]}
+        )
+        self.assertIn(str(mix_path), messagebox_mock.showinfo.call_args.args[1])
+
+    @patch("webjam_app_enhanced.MIX_FILE", new=_MixFileStub("C:/tmp/webjam_mix.json", exists=True))
+    @patch("webjam_app_enhanced.messagebox")
+    def test_load_mix_invalid_file_still_reports_failure(self, messagebox_mock):
+        app = self._app_stub()
+        app._load_mix_payload_from_file = MagicMock(return_value=None)
+
+        app.load_mix()
+
+        app.metrics_service.increment.assert_any_call("metric_load_mix_failed")
+        app._show_actionable_error.assert_called_once()
+        messagebox_mock.showwarning.assert_not_called()
+        messagebox_mock.showinfo.assert_not_called()
 
 
 if __name__ == "__main__":
