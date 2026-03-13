@@ -28,6 +28,8 @@ VBC_MAX_WAIT_SECS = 7 * 60   # 7 minutes for VB-Cable
 VBC_POLL_INTERVAL = 5
 JAMULUS_MAX_WAIT_SECS = 10 * 60  # 10 minutes for Jamulus
 JAMULUS_POLL_INTERVAL = 5
+WEBEX_MAX_WAIT_SECS = 10 * 60  # 10 minutes for Webex interactive install
+WEBEX_POLL_INTERVAL = 5
 
 # Installation paths
 JAMULUS_CANDIDATES = [
@@ -358,14 +360,14 @@ def install_jamulus():
         print("    Jamulus already installed")
         return True
 
-    installer = fetch_latest_jamulus_installer()
-    if not installer:
-        bundled = jamulus_installer_path()
-        if bundled and bundled.exists():
-            installer = copy_resource(bundled.name, WORK)
-            print(f"   Using bundled Jamulus installer: {bundled.name}")
-        else:
-            print("     No online or bundled Jamulus installer available.")
+    bundled = jamulus_installer_path()
+    if bundled and bundled.exists():
+        installer = copy_resource(bundled.name, WORK)
+        print(f"   Using bundled Jamulus installer: {bundled.name}")
+    else:
+        installer = fetch_latest_jamulus_installer()
+        if not installer:
+            print("     No bundled or online Jamulus installer available.")
             print("   You can download Jamulus from: https://jamulus.io")
             return False
 
@@ -428,15 +430,22 @@ def install_webex():
     ]
     result = run(silent_cmd)
     if result.returncode == 0:
-        print("    Webex installed successfully")
-        return True
+        print("   Waiting for Webex to finish installing...")
+        if wait_until(webex_installed, 60, 2, "Webex Desktop App"):
+            print("    Webex installed successfully")
+            return True
 
     print("   Silent install did not complete. Launching interactive installer...")
     interactive_cmd = ["msiexec", "/i", str(msi_path)]
     try:
         subprocess.Popen(interactive_cmd)
-        print("    Webex installer launched")
-        return True
+        print(f"   Waiting up to {WEBEX_MAX_WAIT_SECS//60} minutes for Webex installation...")
+        if wait_until(webex_installed, WEBEX_MAX_WAIT_SECS, WEBEX_POLL_INTERVAL, "Webex Desktop App"):
+            print("    Webex installed successfully")
+            return True
+        print("     Webex was not detected after waiting.")
+        print("   Please complete the Webex installation manually and rerun this installer if needed.")
+        return False
     except Exception as e:
         print(f"     Failed to launch interactive Webex installer: {e}")
         return False
