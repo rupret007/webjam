@@ -76,6 +76,18 @@ class TestListeningProfilesEdge(unittest.TestCase):
         messagebox_mock.showwarning.assert_called_once()
 
     @patch("webjam_app_enhanced.messagebox")
+    def test_save_mix_warns_without_participants(self, messagebox_mock):
+        app = self._app_stub()
+        app.jamulus_controller.get_participants.return_value = []
+
+        app.save_mix()
+
+        app.repository.save_user_mix_default.assert_not_called()
+        app.jamulus_controller.save_mix.assert_not_called()
+        messagebox_mock.showwarning.assert_called_once()
+        messagebox_mock.showinfo.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox")
     def test_load_listening_profile_shows_info_when_empty(self, messagebox_mock):
         app = self._app_stub()
         app.repository.list_mix_profiles.return_value = []

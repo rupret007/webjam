@@ -1887,7 +1887,7 @@ class WebJamEnhancedApp:
         self.show_help(topic="troubleshooting")
 
     def sign_in(self) -> bool:
-        user = self.auth_controller.sign_in_interactive()
+        user = self.auth_controller.sign_in_interactive(parent=self.root)
         if user is None:
             return False
         self.current_user = user
@@ -2079,7 +2079,8 @@ class WebJamEnhancedApp:
                         ),
                     )
                 self.jamulus_controller.add_participant("You (Local)", 0)
-                self.jamulus_state = "Connected"
+                # A started process is not the same as a confirmed server join.
+                self.jamulus_state = "Running"
                 self._jamulus_reconnect_attempts = 0
                 self._jamulus_next_reconnect_at = 0.0
                 self._jamulus_reconnect_inflight = False
@@ -2199,6 +2200,14 @@ class WebJamEnhancedApp:
         """Save current mix settings"""
         self.metrics_service.increment("metric_save_mix_attempt")
         if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+            return
+        participants = self.jamulus_controller.get_participants()
+        if not participants:
+            messagebox.showwarning(
+                "No Participants",
+                "Connect or add participants before saving mix settings.",
+                parent=self.root,
+            )
             return
         try:
             username = self._default_mix_user()

@@ -108,6 +108,12 @@ class SetupWizard:
         messagebox.showinfo("Setup Help", help_text, parent=self.window)
 
     def _next_step(self) -> None:
+        if self.step_index == 0:
+            self.step_index = 1
+            self._render_step()
+            if not self.check_results:
+                self._run_checks_and_render()
+            return
         if self.step_index == 1 and not self.check_results:
             self._run_checks_and_render()
             return

@@ -101,6 +101,22 @@ class TestSetupWizardDiagnosticsEdge(unittest.TestCase):
         self.assertIn("after 3 attempts", detail)
         self.assertEqual(create_connection_mock.call_count, 3)
 
+    def test_next_from_welcome_advances_and_starts_checks(self):
+        wizard = SetupWizard.__new__(SetupWizard)
+        wizard.step_index = 0
+        wizard.steps = ["Welcome", "Preflight Checks", "Finish"]
+        wizard.check_results = []
+        wizard._render_step = MagicMock()
+        wizard._run_checks_and_render = MagicMock()
+        wizard.on_complete = MagicMock()
+        wizard.window = MagicMock()
+
+        SetupWizard._next_step(wizard)
+
+        self.assertEqual(wizard.step_index, 1)
+        wizard._render_step.assert_called_once()
+        wizard._run_checks_and_render.assert_called_once()
+
     @patch("ui.views.setup_wizard.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
     @patch.object(SetupWizard, "run_preflight_checks", return_value=[("Jamulus executable", True, "ok")])
     def test_run_checks_and_render_completes_via_background_worker(self, run_checks_mock, _thread_mock):

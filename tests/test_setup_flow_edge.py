@@ -55,6 +55,7 @@ class TestSetupFlowEdge(unittest.TestCase):
 
     def test_sign_in_restores_signed_in_mix_default(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = object()
         app.auth_controller = MagicMock()
         app.auth_controller.sign_in_interactive.return_value = SimpleNamespace(username="alex")
         app._restore_signed_in_mix_default = MagicMock()
@@ -63,6 +64,7 @@ class TestSetupFlowEdge(unittest.TestCase):
 
         self.assertTrue(signed_in)
         self.assertEqual(app.current_user.username, "alex")
+        app.auth_controller.sign_in_interactive.assert_called_once_with(parent=app.root)
         app._restore_signed_in_mix_default.assert_called_once()
 
     def test_attempt_pending_mix_restore_clears_pending_on_success(self):

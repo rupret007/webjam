@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from webjam_app_enhanced import WebJamEnhancedApp
+
+
+class _ImmediateThread:
+    def __init__(self, target=None, daemon=None):
+        self._target = target
+        self.daemon = daemon
+
+    def start(self):
+        if self._target is not None:
+            self._target()
+
+
+class _RootImmediate:
+    def after(self, _delay_ms, callback):
+        callback()
 
 
 class TestReconnectManagerEdge(unittest.TestCase):
@@ -114,6 +129,38 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self.assertEqual(app._webex_reconnect_attempts, 0)
         self.assertEqual(app._webex_next_reconnect_at, 0.0)
         app._launch_webex.assert_called_once_with(manual=True, reconnect=False)
+
+    @patch("webjam_app_enhanced.messagebox.showinfo")
+    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
+    @patch("webjam_app_enhanced.subprocess.Popen")
+    def test_launch_jamulus_sets_running_state_after_process_starts(self, popen_mock, _thread_mock, _info_mock):
+        fake_proc = MagicMock()
+        popen_mock.return_value = fake_proc
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootImmediate()
+        app.metrics_service = MagicMock()
+        app._refresh_endpoint_state = MagicMock()
+        app.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        app.jamulus_process = None
+        app.jamulus_server = "jam.example.com"
+        app.jamulus_port = 22124
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._retry_action = lambda action, attempts=3, base_delay=0.5: action()
+        app.jamulus_controller = MagicMock()
+        app._show_actionable_error = MagicMock()
+        app._jamulus_reconnect_attempts = 1
+        app._jamulus_next_reconnect_at = 5.0
+        app._jamulus_reconnect_inflight = True
+
+        WebJamEnhancedApp._launch_jamulus(app, manual=True, reconnect=False)
+
+        self.assertEqual(app.jamulus_state, "Running")
+        app.jamulus_controller.add_participant.assert_called_once_with("You (Local)", 0)
+        app.metrics_service.increment.assert_any_call("metric_jamulus_launch_success")
+        self.assertFalse(app._jamulus_reconnect_inflight)
+        self.assertEqual(app._jamulus_reconnect_attempts, 0)
+        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
 
 
 if __name__ == "__main__":
