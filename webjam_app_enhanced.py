@@ -1899,12 +1899,22 @@ class WebJamEnhancedApp:
             signed_in = self.sign_in()
             if not signed_in:
                 return
-        if not self.auth_controller.authorize(self.current_user, "view_diagnostics", require_sign_in=True):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "view_diagnostics",
+            require_sign_in=True,
+            parent=self.root,
+        ):
             return
         AdminPanel(self.root, self.repository, self.current_user, self.policy).show()
 
     def show_audio_diagnostics(self):
-        if not self.auth_controller.authorize(self.current_user, "view_diagnostics", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "view_diagnostics",
+            require_sign_in=False,
+            parent=self.root,
+        ):
             return
         self.metrics_service.increment("metric_audio_diagnostics_opened")
         diag = self.jamulus_controller.get_audio_diagnostics()
@@ -2199,7 +2209,13 @@ class WebJamEnhancedApp:
     def save_mix(self):
         """Save current mix settings"""
         self.metrics_service.increment("metric_save_mix_attempt")
-        if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "save_mix",
+            require_sign_in=False,
+            allow_anonymous=True,
+            parent=self.root,
+        ):
             return
         participants = self.jamulus_controller.get_participants()
         if not participants:
@@ -2244,7 +2260,13 @@ class WebJamEnhancedApp:
             )
 
     def save_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "save_mix",
+            require_sign_in=False,
+            allow_anonymous=True,
+            parent=self.root,
+        ):
             return
         participants = self.jamulus_controller.get_participants()
         if not participants:
@@ -2304,7 +2326,13 @@ class WebJamEnhancedApp:
     def load_mix(self):
         """Load saved mix settings"""
         self.metrics_service.increment("metric_load_mix_attempt")
-        if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "load_mix",
+            require_sign_in=False,
+            allow_anonymous=True,
+            parent=self.root,
+        ):
             return
         try:
             saved_mix = self._saved_mix_payload_for_load()
@@ -2361,7 +2389,13 @@ class WebJamEnhancedApp:
             )
 
     def load_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(self.current_user, "load_mix", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "load_mix",
+            require_sign_in=False,
+            allow_anonymous=True,
+            parent=self.root,
+        ):
             return
         profiles = self._available_profile_entries()
         if not profiles:
@@ -2423,7 +2457,13 @@ class WebJamEnhancedApp:
             messagebox.showerror("Load Failed", f"Could not load listening profile:\n{exc}", parent=self.root)
 
     def delete_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(self.current_user, "save_mix", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "save_mix",
+            require_sign_in=False,
+            allow_anonymous=True,
+            parent=self.root,
+        ):
             return
         profiles = self._available_profile_entries()
         if not profiles:
@@ -2466,7 +2506,12 @@ class WebJamEnhancedApp:
 
     def reset_all_faders(self):
         """Reset all faders to unity (0dB)"""
-        if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "bulk_reset",
+            require_sign_in=False,
+            parent=self.root,
+        ):
             return
         if not messagebox.askokcancel("Confirm", "Reset all faders to default?", parent=self.root):
             return
@@ -2478,7 +2523,12 @@ class WebJamEnhancedApp:
     
     def unmute_all(self):
         """Unmute all channels"""
-        if not self.auth_controller.authorize(self.current_user, "bulk_mute", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "bulk_mute",
+            require_sign_in=False,
+            parent=self.root,
+        ):
             return
         if not messagebox.askokcancel("Confirm", "Unmute all channels?", parent=self.root):
             return
@@ -2490,7 +2540,12 @@ class WebJamEnhancedApp:
     
     def center_all_pans(self):
         """Center all pan controls"""
-        if not self.auth_controller.authorize(self.current_user, "bulk_reset", require_sign_in=False):
+        if not self.auth_controller.authorize(
+            self.current_user,
+            "bulk_reset",
+            require_sign_in=False,
+            parent=self.root,
+        ):
             return
         if not messagebox.askokcancel("Confirm", "Center all pan controls?", parent=self.root):
             return
@@ -2568,7 +2623,10 @@ Set a template and session goal before launch.
    • Click SOLO to hear only that channel
 
 5. Save Your Mix
-   Click 'Save Mix' to save your settings for next time.
+   Click 'Save Mix' to save your default mix.
+   Signed-in users save to their WebJam profile.
+   Anonymous use saves a local default mix on this computer.
+   Saved defaults restore automatically on next sign-in or launch.
 
 6. Save a Listening Profile
    Use File -> Save Listening Profile for named local presets.

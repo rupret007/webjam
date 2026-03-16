@@ -31,8 +31,10 @@ def prompt_password_change_dialog(
         parent=parent,
     )
     new_pw_1 = simpledialog.askstring("Set New Password", "Enter new password (8+ chars):", show="*", parent=parent)
+    if not new_pw_1:
+        return False
     new_pw_2 = simpledialog.askstring("Confirm Password", "Re-enter new password:", show="*", parent=parent)
-    if not new_pw_1 or not new_pw_2:
+    if not new_pw_2:
         return False
     if new_pw_1 != new_pw_2:
         messagebox.showerror("Password Mismatch", "Passwords do not match.", parent=parent)

@@ -17,11 +17,13 @@ class TestSignInCancel(unittest.TestCase):
     def test_cancel_username(self, _ask):
         result = self.ctrl.sign_in_interactive()
         self.assertIsNone(result)
+        self.assertEqual(_ask.call_count, 1)
 
     @patch("ui.auth_controller.simpledialog.askstring", side_effect=["admin", None])
     def test_cancel_password(self, _ask):
         result = self.ctrl.sign_in_interactive()
         self.assertIsNone(result)
+        self.assertEqual(_ask.call_count, 2)
 
     @patch("ui.auth_controller.messagebox")
     @patch("ui.auth_controller.simpledialog.askstring", side_effect=["   ", "password"])
@@ -99,8 +101,13 @@ class TestAuthorize(unittest.TestCase):
         self.assertFalse(self.ctrl.authorize(None, "some_action", require_sign_in=True))
         _mb.showwarning.assert_called_once()
 
-    def test_no_user_no_require(self):
-        self.assertTrue(self.ctrl.authorize(None, "some_action"))
+    @patch("ui.auth_controller.messagebox")
+    def test_no_user_denied_when_anonymous_not_allowed(self, _mb):
+        self.assertFalse(self.ctrl.authorize(None, "some_action"))
+        _mb.showwarning.assert_called_once()
+
+    def test_no_user_allowed_when_anonymous_is_explicitly_allowed(self):
+        self.assertTrue(self.ctrl.authorize(None, "some_action", allow_anonymous=True))
 
     @patch("ui.auth_controller.messagebox")
     def test_denied_action(self, _mb):

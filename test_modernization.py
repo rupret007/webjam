@@ -816,7 +816,8 @@ class TestModernizationCore(unittest.TestCase):
         admin = UserContext(username="admin", role="admin")
         performer = UserContext(username="user", role="performer")
         with patch("ui.auth_controller.messagebox.showwarning"):
-            self.assertTrue(controller.authorize(None, "save_mix", require_sign_in=False))
+            self.assertFalse(controller.authorize(None, "save_mix", require_sign_in=False))
+            self.assertTrue(controller.authorize(None, "save_mix", require_sign_in=False, allow_anonymous=True))
             self.assertFalse(controller.authorize(None, "save_mix", require_sign_in=True))
             self.assertTrue(controller.authorize(admin, "bulk_reset", require_sign_in=False))
             self.assertFalse(controller.authorize(performer, "bulk_reset", require_sign_in=False))

@@ -14,8 +14,10 @@ class AuthController:
 
     def sign_in_interactive(self, parent: Any = None) -> Optional[UserContext]:
         username_raw = simpledialog.askstring("Sign In", "Username:", parent=parent)
+        if username_raw is None:
+            return None
         password_raw = simpledialog.askstring("Sign In", "Password:", show="*", parent=parent)
-        if username_raw is None or password_raw is None:
+        if password_raw is None:
             return None
         username = username_raw.strip()
         password = password_raw
@@ -55,12 +57,19 @@ class AuthController:
         messagebox.showinfo("Signed In", f"Signed in as {username} ({role}).", parent=parent)
         return user
 
-    def authorize(self, current_user: Optional[UserContext], action: str, require_sign_in: bool = False, parent: Any = None) -> bool:
+    def authorize(
+        self,
+        current_user: Optional[UserContext],
+        action: str,
+        require_sign_in: bool = False,
+        allow_anonymous: bool = False,
+        parent: Any = None,
+    ) -> bool:
         if current_user is None:
-            if require_sign_in:
-                messagebox.showwarning("Permission Required", "Sign in required.", parent=parent)
-                return False
-            return True
+            if allow_anonymous and not require_sign_in:
+                return True
+            messagebox.showwarning("Permission Required", "Sign in required.", parent=parent)
+            return False
         if not self.policy.allows(current_user, action):
             messagebox.showwarning("Permission Denied", f"Role '{current_user.role}' cannot perform '{action}'.", parent=parent)
             return False
