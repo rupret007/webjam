@@ -402,9 +402,15 @@ class WebexConfig:
         return self.config.get(key, default)
     
     def set(self, key: str, value):
-        """Set configuration value"""
-        self.config[key] = value
-        self.save_config()
+        """Set configuration value and persist it atomically."""
+        current_config = self.config
+        updated_config = dict(current_config)
+        updated_config[key] = value
+        self.config = updated_config
+        if self.save_config():
+            return True
+        self.config = current_config
+        return False
 
 
 # Utility functions

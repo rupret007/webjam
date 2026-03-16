@@ -14,8 +14,16 @@ def classify_latency_ms(latency_ms: float | None) -> tuple[str, str]:
     return (f"Latency: {latency_ms:.0f} ms (Poor)", "#ff5555")
 
 
-def readiness_state(participant_count: int) -> tuple[str, str]:
-    if participant_count > 0:
+def readiness_state(participant_count: int, placeholder_count: int = 0) -> tuple[str, str]:
+    try:
+        total = max(0, int(participant_count))
+    except (TypeError, ValueError):
+        total = 0
+    try:
+        placeholders = max(0, int(placeholder_count))
+    except (TypeError, ValueError):
+        placeholders = 0
+    if total - placeholders > 0:
         return ("Room: ready", "#00cc66")
     return ("Room: waiting for participants", "#ffcc00")
 

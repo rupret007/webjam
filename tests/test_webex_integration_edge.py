@@ -62,6 +62,26 @@ class TestWebexConfigEdge(unittest.TestCase):
             config.config["bad_value"] = {"unsupported": {1, 2, 3}}
             self.assertFalse(config.save_config())
 
+    def test_set_rolls_back_in_memory_when_save_fails(self):
+        config = WebexConfig.__new__(WebexConfig)
+        config.config = {"default_meeting_url": "https://old.example"}
+        config.save_config = lambda: False
+
+        result = WebexConfig.set(config, "default_meeting_url", "https://new.example")
+
+        self.assertFalse(result)
+        self.assertEqual(config.get("default_meeting_url"), "https://old.example")
+
+    def test_set_returns_true_when_save_succeeds(self):
+        config = WebexConfig.__new__(WebexConfig)
+        config.config = {"default_meeting_url": "https://old.example"}
+        config.save_config = lambda: True
+
+        result = WebexConfig.set(config, "default_meeting_url", "https://new.example")
+
+        self.assertTrue(result)
+        self.assertEqual(config.get("default_meeting_url"), "https://new.example")
+
 
 class TestWebexParticipantSyncEdge(unittest.TestCase):
     def test_sync_rebuilds_map_and_removes_stale_entries(self):

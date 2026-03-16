@@ -62,6 +62,10 @@ class TestReadinessState(unittest.TestCase):
         label, color = readiness_state(1)
         self.assertIn("ready", label.lower())
 
+    def test_only_local_placeholder_is_waiting(self):
+        label, _ = readiness_state(1, placeholder_count=1)
+        self.assertIn("waiting", label.lower())
+
     def test_many_participants_ready(self):
         label, _ = readiness_state(10)
         self.assertIn("ready", label.lower())

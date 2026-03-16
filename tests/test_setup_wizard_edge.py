@@ -67,6 +67,23 @@ class TestSetupWizardDiagnosticsEdge(unittest.TestCase):
         self.assertIn("callback failed", audio_result[2])
 
     @patch.object(SetupWizard, "check_tcp_hint", return_value=(True, "ok"))
+    def test_synthetic_audio_fallback_does_not_pass_live_preflight(self, _tcp_hint):
+        results = SetupWizard.run_preflight_checks(
+            settings=self.settings,
+            find_jamulus=lambda: None,
+            diagnostics_provider=lambda: {
+                "backend": "synthetic",
+                "samplerate": "48000",
+                "active": "True",
+                "message": "deterministic fallback metering active",
+            },
+        )
+
+        audio_result = next(item for item in results if item[0] == "Audio diagnostics")
+        self.assertFalse(audio_result[1])
+        self.assertIn("Synthetic fallback is active", audio_result[2])
+
+    @patch.object(SetupWizard, "check_tcp_hint", return_value=(True, "ok"))
     def test_invalid_jamulus_path_type_is_handled(self, _tcp_hint):
         results = SetupWizard.run_preflight_checks(
             settings=self.settings,

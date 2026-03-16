@@ -71,6 +71,7 @@ RECONNECT_BASE_DELAY_SECONDS = 1.5
 RECONNECT_MAX_DELAY_SECONDS = 45.0
 SERVICE_START_MAX_ATTEMPTS = 3
 SERVICE_START_RETRY_DELAY_MS = 1500
+LOCAL_PARTICIPANT_NAME = "You (Local)"
 DEFAULT_MODE_LAYOUT = {
     "mixer_ratio": 0.68,
     "min_mixer": 820,
@@ -1872,8 +1873,16 @@ class WebJamEnhancedApp:
             return
 
     def _refresh_readiness(self) -> None:
-        participant_count = len(self.jamulus_controller.get_participants())
-        readiness_text, readiness_color = readiness_state(participant_count)
+        participants = self.jamulus_controller.get_participants()
+        participant_count = len(participants)
+        placeholder_count = sum(
+            1 for participant in participants
+            if str(getattr(participant, "name", "")).strip() == LOCAL_PARTICIPANT_NAME
+        )
+        readiness_text, readiness_color = readiness_state(
+            participant_count,
+            placeholder_count=placeholder_count,
+        )
         mode_label = get_mode_by_key_or_default(self.mode_key).label
 
         if self.review_state in ("review", "final"):
@@ -2061,7 +2070,7 @@ class WebJamEnhancedApp:
     
     def add_test_participants(self):
         """Add demo participants to preview mixer controls"""
-        test_names = ["You (Local)", "Guitarist", "Bassist", "Drummer", "Vocalist", "Keys"]
+        test_names = [LOCAL_PARTICIPANT_NAME, "Guitarist", "Bassist", "Drummer", "Vocalist", "Keys"]
         existing_ids = {p.channel_id for p in self.jamulus_controller.get_participants()}
         for i, name in enumerate(test_names):
             if i not in existing_ids:
@@ -2132,7 +2141,7 @@ class WebJamEnhancedApp:
                             parent=self.root,
                         ),
                     )
-                self.jamulus_controller.add_participant("You (Local)", 0)
+                self.jamulus_controller.add_participant(LOCAL_PARTICIPANT_NAME, 0)
                 # A started process is not the same as a confirmed server join.
                 self.jamulus_state = "Running"
                 self._jamulus_reconnect_attempts = 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from webjam_app_enhanced import WebJamEnhancedApp
@@ -180,6 +181,24 @@ class TestAppPollingEdge(unittest.TestCase):
 
         self.assertIn("<Key-m>", app.root.bound)
         self.assertIn("<Key-s>", app.root.bound)
+
+    def test_refresh_readiness_ignores_local_placeholder_for_ready_state(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.jamulus_controller = MagicMock()
+        app.jamulus_controller.get_participants.return_value = [
+            SimpleNamespace(name="You (Local)", channel_id=0),
+        ]
+        app.mode_key = "music_jam"
+        app.review_state = "draft"
+        app.readiness_label = MagicMock()
+        app.connection_summary = MagicMock()
+        app._set_status_banner = MagicMock()
+        app.jamulus_state = "Running"
+        app.webex_state = "Not opened"
+
+        WebJamEnhancedApp._refresh_readiness(app)
+
+        app.readiness_label.configure.assert_called_once_with(text="Room: waiting for participants")
 
 
 if __name__ == "__main__":
