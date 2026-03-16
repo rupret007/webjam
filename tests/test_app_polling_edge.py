@@ -33,6 +33,18 @@ class _ImmediateThread:
             self._target()
 
 
+class _RootAfterRecorder:
+    def __init__(self):
+        self.calls = []
+
+    def after(self, delay, callback):
+        self.calls.append((delay, callback))
+        return "after-id"
+
+    def winfo_exists(self):
+        return True
+
+
 class TestAppPollingEdge(unittest.TestCase):
     def test_poll_connection_health_returns_when_root_closed(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -70,12 +82,47 @@ class TestAppPollingEdge(unittest.TestCase):
         app.jamulus_port = 22124
         app.network_latency_ms = 1.0
         app._refresh_endpoint_state = MagicMock()
-        app._update_latency_widget = MagicMock()
+        app._complete_latency_probe = MagicMock(side_effect=AssertionError("should not be called from worker thread"))
 
         WebJamEnhancedApp._measure_server_latency_async(app)
 
         self.assertFalse(app._latency_probe_inflight)
         self.assertIsNone(app.network_latency_ms)
+        app._complete_latency_probe.assert_not_called()
+
+    def test_start_background_services_rolls_back_partial_start_and_schedules_retry(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootAfterRecorder()
+        app.api_bridge = MagicMock()
+        app.api_bridge.start.return_value = True
+        app.jamulus_controller = MagicMock()
+        app.audio_monitor = MagicMock()
+        app.audio_monitor.start.side_effect = RuntimeError("audio start failed")
+        app.webex_controller = MagicMock()
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._kick_background_services = MagicMock()
+        app._service_bootstrapped = False
+        app._service_start_inflight = True
+        app._service_start_attempts = 0
+        app._startup_started_at = 0.0
+
+        WebJamEnhancedApp._start_background_services(app)
+
+        self.assertFalse(app._service_bootstrapped)
+        self.assertFalse(app._service_start_inflight)
+        app.jamulus_controller.start.assert_called_once()
+        app.jamulus_controller.stop.assert_called_once()
+        app.api_bridge.stop.assert_called_once()
+        app.webex_controller.start.assert_not_called()
+        self.assertEqual(app._service_start_attempts, 1)
+        self.assertEqual(app.root.calls[0][0], 0)
+
+        app.root.calls[0][1]()
+
+        app._set_status_banner.assert_called_once()
+        self.assertEqual(app.root.calls[1][0], 1500)
+        self.assertIs(app.root.calls[1][1], app._kick_background_services)
 
     def test_selected_channel_shortcut_toggles_mute(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)

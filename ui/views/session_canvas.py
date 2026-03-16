@@ -46,6 +46,7 @@ class SessionCanvasPanel(tk.Frame):
         self.load_notes_cb = load_notes
         self.save_notes_cb = save_notes
         self.artifact_index: dict[int, int] = {}
+        self._notes_dirty = False
 
         self._build()
         self.refresh()
@@ -84,6 +85,7 @@ class SessionCanvasPanel(tk.Frame):
         self.notes = tk.Text(self, height=12, wrap=tk.WORD, font=("Arial", 10), bg=bg, fg=fg)
         self.notes.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 6))
         self.notes.bind("<FocusOut>", self._save_notes)
+        self.notes.bind("<KeyRelease>", self._mark_notes_dirty)
 
         notes_btn_row = tk.Frame(self, bg=bg)
         notes_btn_row.pack(fill=tk.X, padx=10, pady=(0, 8))
@@ -113,6 +115,8 @@ class SessionCanvasPanel(tk.Frame):
             parent=self,
             initialvalue="link",
         )
+        if artifact_type is None:
+            return
         if not artifact_type:
             artifact_type = "link"
         artifact_type = artifact_type.strip().lower()
@@ -164,8 +168,12 @@ class SessionCanvasPanel(tk.Frame):
             )
         try:
             self.save_notes_cb(content)
+            self._notes_dirty = False
         except Exception as exc:
             messagebox.showerror("Save Failed", f"Could not save notes: {exc}", parent=self)
+
+    def _mark_notes_dirty(self, _event=None) -> None:
+        self._notes_dirty = True
 
     @staticmethod
     def format_timestamp_marker(now: datetime | None = None) -> str:
@@ -178,12 +186,20 @@ class SessionCanvasPanel(tk.Frame):
             self.notes.insert(tk.INSERT, marker)
         except Exception:
             self.notes.insert(tk.END, marker)
+        self._notes_dirty = True
 
     def refresh(self) -> None:
         mode = self.get_mode()
         context = self.get_room_context()
         self.mode_help.configure(text=f"Mode help: {mode.quick_help}")
         self.review_state_var.set(context.get("review_state", "draft"))
+        preserve_notes = bool(getattr(self, "_notes_dirty", False))
+        current_notes = ""
+        if preserve_notes:
+            try:
+                current_notes = self.notes.get("1.0", tk.END).rstrip("\n")
+            except Exception:
+                preserve_notes = False
 
         try:
             artifacts = self.list_artifacts_cb()
@@ -207,11 +223,15 @@ class SessionCanvasPanel(tk.Frame):
             line = f"[{artifact.get('artifact_type', '?')}] {artifact.get('title', '')} - {ref}"
             self.artifacts_list.insert(tk.END, line)
 
-        self.notes.delete("1.0", tk.END)
         try:
-            self.notes.insert("1.0", self.load_notes_cb())
+            loaded_notes = self.load_notes_cb()
         except Exception as exc:
             _logger.debug("load_notes_cb failed: %s", exc)
+            loaded_notes = ""
+        notes_to_render = current_notes if preserve_notes else str(loaded_notes or "")
+        self.notes.delete("1.0", tk.END)
+        self.notes.insert("1.0", notes_to_render)
+        self._notes_dirty = preserve_notes
 
         prompts = "\n".join(f"- {prompt}" for prompt in mode.review_prompts)
         self.prompts.configure(text=prompts)

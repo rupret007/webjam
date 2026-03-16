@@ -69,6 +69,8 @@ VALID_REVIEW_STATES = {"draft", "review", "final"}
 RECONNECT_MAX_ATTEMPTS = 5
 RECONNECT_BASE_DELAY_SECONDS = 1.5
 RECONNECT_MAX_DELAY_SECONDS = 45.0
+SERVICE_START_MAX_ATTEMPTS = 3
+SERVICE_START_RETRY_DELAY_MS = 1500
 DEFAULT_MODE_LAYOUT = {
     "mixer_ratio": 0.68,
     "min_mixer": 820,
@@ -517,6 +519,8 @@ class WebJamEnhancedApp:
         self.network_latency_ms: float | None = None
         self._latency_probe_inflight = False
         self._service_bootstrapped = False
+        self._service_start_inflight = False
+        self._service_start_attempts = 0
         self._startup_started_at = time.perf_counter()
         self._tooltips = []
         self._poll_after_id: str | None = None
@@ -1324,25 +1328,64 @@ class WebJamEnhancedApp:
         self.root.after(120, self._kick_background_services)
 
     def _kick_background_services(self) -> None:
-        if self._service_bootstrapped:
+        if self._service_bootstrapped or self._service_start_inflight:
             return
-        self._service_bootstrapped = True
+        self._service_start_inflight = True
         threading.Thread(target=self._start_background_services, daemon=True).start()
 
     def _start_background_services(self) -> None:
+        attempt = int(getattr(self, "_service_start_attempts", 0)) + 1
+        self._service_start_attempts = attempt
         bridge_started = self.api_bridge.start()
         if not bridge_started:
             LOGGER.warning("Local companion API bridge unavailable (install fastapi + uvicorn).")
-
+        jamulus_started = False
+        audio_monitor_started = False
+        webex_started = False
         try:
             self.jamulus_controller.start()
+            jamulus_started = True
             self.audio_monitor.start()
+            audio_monitor_started = True
             self.webex_controller.start()
+            webex_started = True
         except Exception as exc:
             LOGGER.exception("Service startup failed: %s", exc)
-            self.root.after(0, lambda: self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555"))
+            for stop_callback, label, started in (
+                (self.webex_controller.stop, "webex controller", webex_started),
+                (self.audio_monitor.stop, "audio monitor", audio_monitor_started),
+                (self.jamulus_controller.stop, "jamulus controller", jamulus_started),
+                (self.api_bridge.stop, "local api bridge", bridge_started),
+            ):
+                if not started:
+                    continue
+                try:
+                    stop_callback()
+                except Exception as stop_exc:
+                    LOGGER.warning("Service rollback failed for %s: %s", label, stop_exc)
+            self._service_bootstrapped = False
+            self._service_start_inflight = False
+            should_retry = attempt < SERVICE_START_MAX_ATTEMPTS
+
+            def _handle_failure() -> None:
+                if should_retry:
+                    self._set_status_banner(
+                        f"Service startup issue; retrying ({attempt}/{SERVICE_START_MAX_ATTEMPTS})",
+                        color="#ff5555",
+                    )
+                    self.root.after(SERVICE_START_RETRY_DELAY_MS, self._kick_background_services)
+                    return
+                self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
+
+            try:
+                self.root.after(0, _handle_failure)
+            except (tk.TclError, RuntimeError):
+                pass
             return
 
+        self._service_bootstrapped = True
+        self._service_start_inflight = False
+        self._service_start_attempts = 0
         startup_elapsed = time.perf_counter() - self._startup_started_at
         self.root.after(0, lambda: self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66"))
         self.root.after(0, self._refresh_readiness)
@@ -1814,7 +1857,8 @@ class WebJamEnhancedApp:
             try:
                 self.root.after(0, lambda: self._complete_latency_probe(measured))
             except (tk.TclError, RuntimeError):
-                self._complete_latency_probe(measured)
+                self._latency_probe_inflight = False
+                self.network_latency_ms = measured
 
         threading.Thread(target=_probe, daemon=True).start()
 
