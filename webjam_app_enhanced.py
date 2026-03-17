@@ -531,6 +531,7 @@ class WebJamEnhancedApp:
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
         self.auto_reconnect_enabled = True
+        self._shutdown_requested = False
         self._jamulus_launch_intended = False
         self._webex_launch_intended = False
         self._jamulus_reconnect_attempts = 0
@@ -1355,18 +1356,56 @@ class WebJamEnhancedApp:
         except (AttributeError, tk.TclError, RuntimeError):
             return False
 
+    def _shutdown_requested_active(self) -> bool:
+        return bool(getattr(self, "_shutdown_requested", False))
+
+    def _clear_launch_intent(self) -> None:
+        self._jamulus_launch_intended = False
+        self._webex_launch_intended = False
+        self._jamulus_reconnect_attempts = 0
+        self._webex_reconnect_attempts = 0
+        self._jamulus_next_reconnect_at = 0.0
+        self._webex_next_reconnect_at = 0.0
+        self._jamulus_reconnect_inflight = False
+        self._webex_reconnect_inflight = False
+
+    def _request_shutdown(self) -> None:
+        self._shutdown_requested = True
+        self._clear_launch_intent()
+
+    @staticmethod
+    def _terminate_process(process) -> None:
+        if process is None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                process.wait(timeout=1)
+            except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+                LOGGER.warning("Jamulus process did not exit cleanly after termination request.")
+        except (OSError, ProcessLookupError):
+            pass
+
     def _defer_service_start(self) -> None:
         self._set_status_banner("Initializing background services...", color="#ffcc00")
         self._service_start_after_id = self.root.after(120, self._kick_background_services)
 
     def _kick_background_services(self) -> None:
         self._service_start_after_id = None
+        if self._shutdown_requested_active():
+            return
         if self._service_bootstrapped or self._service_start_inflight:
             return
         self._service_start_inflight = True
         threading.Thread(target=self._start_background_services, daemon=True).start()
 
     def _start_background_services(self) -> None:
+        if self._shutdown_requested_active():
+            self._service_start_inflight = False
+            return
         attempt = int(getattr(self, "_service_start_attempts", 0)) + 1
         self._service_start_attempts = attempt
         bridge_started = self.api_bridge.start()
@@ -1375,16 +1414,9 @@ class WebJamEnhancedApp:
         jamulus_started = False
         audio_monitor_started = False
         webex_started = False
-        try:
-            self.jamulus_controller.start()
-            jamulus_started = True
-            self.audio_monitor.start()
-            audio_monitor_started = True
-            self.webex_controller.start()
-            webex_started = True
-        except Exception as exc:
-            LOGGER.exception("Service startup failed: %s", exc)
-            for stop_callback, label, started in (
+
+        def _rollback_started_services() -> None:
+            for stop_callback, _label, started in (
                 (self.webex_controller.stop, "webex controller", webex_started),
                 (self.audio_monitor.stop, "audio monitor", audio_monitor_started),
                 (self.jamulus_controller.stop, "jamulus controller", jamulus_started),
@@ -1394,10 +1426,30 @@ class WebJamEnhancedApp:
                     continue
                 try:
                     stop_callback()
-                except Exception as stop_exc:
-                    LOGGER.warning("Service rollback failed for %s: %s", label, stop_exc)
+                except Exception:
+                    pass
+
+        try:
+            if self._shutdown_requested_active():
+                raise RuntimeError("shutdown requested")
+            self.jamulus_controller.start()
+            jamulus_started = True
+            if self._shutdown_requested_active():
+                raise RuntimeError("shutdown requested")
+            self.audio_monitor.start()
+            audio_monitor_started = True
+            if self._shutdown_requested_active():
+                raise RuntimeError("shutdown requested")
+            self.webex_controller.start()
+            webex_started = True
+        except Exception as exc:
+            if not self._shutdown_requested_active():
+                LOGGER.exception("Service startup failed: %s", exc)
+            _rollback_started_services()
             self._service_bootstrapped = False
             self._service_start_inflight = False
+            if self._shutdown_requested_active():
+                return
             should_retry = attempt < SERVICE_START_MAX_ATTEMPTS
 
             def _handle_failure() -> None:
@@ -1414,6 +1466,12 @@ class WebJamEnhancedApp:
                 self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
 
             self._schedule_ui_callback(_handle_failure)
+            return
+
+        if self._shutdown_requested_active():
+            _rollback_started_services()
+            self._service_bootstrapped = False
+            self._service_start_inflight = False
             return
 
         self._service_bootstrapped = True
@@ -1517,6 +1575,8 @@ class WebJamEnhancedApp:
         )
 
     def _attempt_auto_reconnects(self, now: float | None = None) -> None:
+        if self._shutdown_requested_active():
+            return
         if not getattr(self, "auto_reconnect_enabled", True):
             return
         if now is None:
@@ -1932,6 +1992,8 @@ class WebJamEnhancedApp:
         self._set_status_banner(f"{mode_label}: {self.jamulus_state} | {self.webex_state}", color=readiness_color)
 
     def _poll_connection_health(self) -> None:
+        if self._shutdown_requested_active():
+            return
         try:
             if not self.root.winfo_exists():
                 return
@@ -2117,12 +2179,17 @@ class WebJamEnhancedApp:
     
     def launch_jamulus(self):
         """Launch Jamulus client"""
+        if self._shutdown_requested_active():
+            return
         self._jamulus_launch_intended = True
         self._jamulus_reconnect_attempts = 0
         self._jamulus_next_reconnect_at = 0.0
         self._launch_jamulus(manual=True, reconnect=False)
 
     def _launch_jamulus(self, manual: bool, reconnect: bool) -> None:
+        if self._shutdown_requested_active():
+            self._jamulus_reconnect_inflight = False
+            return
         if manual:
             self.metrics_service.increment("metric_jamulus_launch_attempt")
         self._refresh_endpoint_state()
@@ -2161,11 +2228,18 @@ class WebJamEnhancedApp:
 
         def _do_launch() -> None:
             try:
+                if self._shutdown_requested_active():
+                    self._jamulus_reconnect_inflight = False
+                    return
                 proc = self._retry_action(
                     lambda: subprocess.Popen([jamulus_path, "--connect", server]),
                     attempts=3,
                     base_delay=0.5,
                 )
+                if self._shutdown_requested_active():
+                    self._terminate_process(proc)
+                    self._jamulus_reconnect_inflight = False
+                    return
                 self.jamulus_process = proc
                 self.jamulus_state = f"Connecting ({server})"
                 self._schedule_ui_callback(self._refresh_readiness)
@@ -2212,12 +2286,17 @@ class WebJamEnhancedApp:
     
     def launch_webex(self):
         """Launch Webex meeting"""
+        if self._shutdown_requested_active():
+            return
         self._webex_launch_intended = True
         self._webex_reconnect_attempts = 0
         self._webex_next_reconnect_at = 0.0
         self._launch_webex(manual=True, reconnect=False)
 
     def _launch_webex(self, manual: bool, reconnect: bool) -> None:
+        if self._shutdown_requested_active():
+            self._webex_reconnect_inflight = False
+            return
         if manual:
             self.metrics_service.increment("metric_webex_open_attempt")
         banner_text = "Opening Webex..." if manual else "Auto-reconnecting Webex..."
@@ -2225,6 +2304,9 @@ class WebJamEnhancedApp:
 
         def _do_open() -> None:
             try:
+                if self._shutdown_requested_active():
+                    self._webex_reconnect_inflight = False
+                    return
                 def _open_once() -> bool:
                     opened_once = self.webex_controller.join_meeting()
                     if not opened_once:
@@ -2232,6 +2314,9 @@ class WebJamEnhancedApp:
                     return True
 
                 self._retry_action(_open_once, attempts=3, base_delay=0.4)
+                if self._shutdown_requested_active():
+                    self._webex_reconnect_inflight = False
+                    return
                 self.webex_state = "Opened in browser"
                 self._webex_reconnect_attempts = 0
                 self._webex_next_reconnect_at = 0.0
@@ -2748,12 +2833,14 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
         if messagebox.askokcancel("Quit", "Are you sure you want to quit WebJam?", parent=self.root):
             if not self._flush_live_room_state():
                 return
+            self._request_shutdown()
             self._save_window_geometry()
             self.cleanup()
             self.root.quit()
-    
+
     def cleanup(self):
         """Cleanup on exit"""
+        self._request_shutdown()
         if self._poll_after_id is not None:
             try:
                 self.root.after_cancel(self._poll_after_id)
@@ -2778,18 +2865,7 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
         self.api_bridge.stop()
         process = self.jamulus_process
         self.jamulus_process = None
-        if process:
-            try:
-                process.terminate()
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                try:
-                    process.kill()
-                    process.wait(timeout=1)
-                except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
-                    LOGGER.warning("Jamulus process did not exit cleanly during cleanup.")
-            except (OSError, ProcessLookupError):
-                pass
+        self._terminate_process(process)
     
     def run(self):
         """Run the application"""

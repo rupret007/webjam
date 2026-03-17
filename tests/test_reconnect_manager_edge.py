@@ -99,6 +99,22 @@ class TestReconnectManagerEdge(unittest.TestCase):
         app._launch_jamulus.assert_not_called()
         app._launch_webex.assert_not_called()
 
+    def test_auto_reconnect_skips_when_shutdown_requested(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app._shutdown_requested = True
+        app.auto_reconnect_enabled = True
+        app._jamulus_launch_intended = True
+        app._webex_launch_intended = True
+        app.metrics_service = MagicMock()
+        app._launch_jamulus = MagicMock()
+        app._launch_webex = MagicMock()
+
+        WebJamEnhancedApp._attempt_auto_reconnects(app, now=10.0)
+
+        app.metrics_service.increment.assert_not_called()
+        app._launch_jamulus.assert_not_called()
+        app._launch_webex.assert_not_called()
+
     def test_auto_reconnect_jamulus_resets_when_process_running(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app._jamulus_launch_intended = True
@@ -203,6 +219,43 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
     @patch("webjam_app_enhanced.messagebox.showinfo")
     @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
+    @patch("webjam_app_enhanced.subprocess.Popen")
+    def test_launch_jamulus_terminates_process_when_shutdown_requested_during_launch(self, popen_mock, _thread_mock, _info_mock):
+        fake_proc = MagicMock()
+        popen_mock.return_value = fake_proc
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootImmediate()
+        app._shutdown_requested = False
+        app.metrics_service = MagicMock()
+        app._refresh_endpoint_state = MagicMock()
+        app.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        app.jamulus_process = None
+        app.jamulus_server = "jam.example.com"
+        app.jamulus_port = 22124
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app._show_actionable_error = MagicMock()
+        app._jamulus_reconnect_inflight = True
+
+        def _retry_action(action, attempts=3, base_delay=0.5):
+            result = action()
+            app._shutdown_requested = True
+            return result
+
+        app._retry_action = _retry_action
+
+        WebJamEnhancedApp._launch_jamulus(app, manual=True, reconnect=False)
+
+        fake_proc.terminate.assert_called_once()
+        fake_proc.wait.assert_called_once_with(timeout=5)
+        self.assertIsNone(app.jamulus_process)
+        app.jamulus_controller.add_participant.assert_not_called()
+        self.assertNotIn("metric_jamulus_launch_success", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
+        self.assertFalse(app._jamulus_reconnect_inflight)
+
+    @patch("webjam_app_enhanced.messagebox.showinfo")
+    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
     def test_launch_webex_keeps_success_state_when_ui_scheduling_fails(self, _thread_mock, _info_mock):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app.root = _RootAfterFails()
@@ -223,6 +276,37 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self.assertEqual(app.webex_state, "Opened in browser")
         app.metrics_service.increment.assert_any_call("metric_webex_open_success")
         self.assertNotIn("metric_webex_open_failed", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
+        app._show_actionable_error.assert_not_called()
+        self.assertFalse(app._webex_reconnect_inflight)
+
+    @patch("webjam_app_enhanced.messagebox.showinfo")
+    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
+    def test_launch_webex_skips_success_reporting_when_shutdown_requested_during_open(self, _thread_mock, _info_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootImmediate()
+        app._shutdown_requested = False
+        app.metrics_service = MagicMock()
+        app.webex_controller = MagicMock()
+        app.webex_controller.join_meeting.return_value = True
+        app.webex_url = "https://example.webex.com/meet/test"
+        app.webex_state = "Not opened"
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._show_actionable_error = MagicMock()
+        app._webex_reconnect_inflight = True
+
+        def _retry_action(action, attempts=3, base_delay=0.5):
+            result = action()
+            app._shutdown_requested = True
+            return result
+
+        app._retry_action = _retry_action
+
+        WebJamEnhancedApp._launch_webex(app, manual=True, reconnect=False)
+
+        app.webex_controller.join_meeting.assert_called_once_with()
+        self.assertEqual(app.webex_state, "Not opened")
+        self.assertNotIn("metric_webex_open_success", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
         app._show_actionable_error.assert_not_called()
         self.assertFalse(app._webex_reconnect_inflight)
 

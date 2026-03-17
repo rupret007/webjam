@@ -73,6 +73,23 @@ class TestAppPollingEdge(unittest.TestCase):
         app._measure_server_latency_async.assert_not_called()
         app._refresh_readiness.assert_not_called()
 
+    def test_poll_connection_health_returns_when_shutdown_requested(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app._shutdown_requested = True
+        app.root = MagicMock()
+        app._refresh_endpoint_state = MagicMock()
+        app._measure_server_latency_async = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._attempt_auto_reconnects = MagicMock()
+
+        WebJamEnhancedApp._poll_connection_health(app)
+
+        app.root.winfo_exists.assert_not_called()
+        app._refresh_endpoint_state.assert_not_called()
+        app._attempt_auto_reconnects.assert_not_called()
+        app._measure_server_latency_async.assert_not_called()
+        app._refresh_readiness.assert_not_called()
+
     def test_complete_latency_probe_handles_tcl_error(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app.root = _RootRaisesTcl()
@@ -163,6 +180,35 @@ class TestAppPollingEdge(unittest.TestCase):
         app.audio_monitor.stop.assert_not_called()
         app.webex_controller.stop.assert_not_called()
 
+    def test_start_background_services_stops_when_shutdown_requested_mid_startup(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootAfterRecorder()
+        app._shutdown_requested = False
+        app.api_bridge = MagicMock()
+        app.api_bridge.start.return_value = True
+        app.jamulus_controller = MagicMock()
+        app.audio_monitor = MagicMock()
+        app.webex_controller = MagicMock()
+        app.jamulus_controller.start.side_effect = lambda: setattr(app, "_shutdown_requested", True)
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._service_bootstrapped = False
+        app._service_start_inflight = True
+        app._service_start_attempts = 0
+        app._startup_started_at = 0.0
+
+        WebJamEnhancedApp._start_background_services(app)
+
+        self.assertFalse(app._service_bootstrapped)
+        self.assertFalse(app._service_start_inflight)
+        app.jamulus_controller.start.assert_called_once()
+        app.jamulus_controller.stop.assert_called_once()
+        app.audio_monitor.start.assert_not_called()
+        app.audio_monitor.stop.assert_not_called()
+        app.webex_controller.start.assert_not_called()
+        app.webex_controller.stop.assert_not_called()
+        app.api_bridge.stop.assert_called_once()
+
     def test_cleanup_cancels_pending_service_start_timer(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app.root = _RootAfterRecorder()
@@ -179,6 +225,38 @@ class TestAppPollingEdge(unittest.TestCase):
 
         self.assertIn("service-after-id", app.root.cancelled)
         self.assertIsNone(app._service_start_after_id)
+
+    def test_cleanup_marks_shutdown_and_clears_reconnect_intent(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = MagicMock()
+        app._poll_after_id = None
+        app._vu_after_id = None
+        app._service_start_after_id = None
+        app._jamulus_launch_intended = True
+        app._webex_launch_intended = True
+        app._jamulus_reconnect_attempts = 3
+        app._webex_reconnect_attempts = 2
+        app._jamulus_next_reconnect_at = 9.0
+        app._webex_next_reconnect_at = 8.0
+        app._jamulus_reconnect_inflight = True
+        app._webex_reconnect_inflight = True
+        app.audio_monitor = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.webex_controller = MagicMock()
+        app.api_bridge = MagicMock()
+        app.jamulus_process = None
+
+        WebJamEnhancedApp.cleanup(app)
+
+        self.assertTrue(app._shutdown_requested)
+        self.assertFalse(app._jamulus_launch_intended)
+        self.assertFalse(app._webex_launch_intended)
+        self.assertEqual(app._jamulus_reconnect_attempts, 0)
+        self.assertEqual(app._webex_reconnect_attempts, 0)
+        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
+        self.assertEqual(app._webex_next_reconnect_at, 0.0)
+        self.assertFalse(app._jamulus_reconnect_inflight)
+        self.assertFalse(app._webex_reconnect_inflight)
 
     def test_selected_channel_shortcut_toggles_mute(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -325,6 +403,24 @@ class TestAppPollingEdge(unittest.TestCase):
         app.cleanup.assert_not_called()
         app.root.quit.assert_not_called()
         error_mock.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox.askokcancel", return_value=True)
+    def test_quit_app_marks_shutdown_before_cleanup(self, _confirm_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = MagicMock()
+        app._flush_live_room_state = MagicMock(return_value=True)
+        app._save_window_geometry = MagicMock()
+        app.cleanup = MagicMock()
+        app._jamulus_launch_intended = True
+        app._webex_launch_intended = True
+
+        WebJamEnhancedApp.quit_app(app)
+
+        self.assertTrue(app._shutdown_requested)
+        self.assertFalse(app._jamulus_launch_intended)
+        self.assertFalse(app._webex_launch_intended)
+        app.cleanup.assert_called_once_with()
+        app.root.quit.assert_called_once_with()
 
 
 if __name__ == "__main__":
