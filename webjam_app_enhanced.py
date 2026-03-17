@@ -526,6 +526,7 @@ class WebJamEnhancedApp:
         self._tooltips = []
         self._poll_after_id: str | None = None
         self._vu_after_id: str | None = None
+        self._service_start_after_id: str | None = None
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
@@ -1356,9 +1357,10 @@ class WebJamEnhancedApp:
 
     def _defer_service_start(self) -> None:
         self._set_status_banner("Initializing background services...", color="#ffcc00")
-        self.root.after(120, self._kick_background_services)
+        self._service_start_after_id = self.root.after(120, self._kick_background_services)
 
     def _kick_background_services(self) -> None:
+        self._service_start_after_id = None
         if self._service_bootstrapped or self._service_start_inflight:
             return
         self._service_start_inflight = True
@@ -1404,7 +1406,10 @@ class WebJamEnhancedApp:
                         f"Service startup issue; retrying ({attempt}/{SERVICE_START_MAX_ATTEMPTS})",
                         color="#ff5555",
                     )
-                    self.root.after(SERVICE_START_RETRY_DELAY_MS, self._kick_background_services)
+                    self._service_start_after_id = self.root.after(
+                        SERVICE_START_RETRY_DELAY_MS,
+                        self._kick_background_services,
+                    )
                     return
                 self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
 
@@ -2761,6 +2766,12 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
             except (tk.TclError, ValueError):
                 pass
             self._vu_after_id = None
+        if getattr(self, "_service_start_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._service_start_after_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._service_start_after_id = None
         self.audio_monitor.stop()
         self.jamulus_controller.stop()
         self.webex_controller.stop()

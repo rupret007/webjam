@@ -38,10 +38,14 @@ class _ImmediateThread:
 class _RootAfterRecorder:
     def __init__(self):
         self.calls = []
+        self.cancelled = []
 
     def after(self, delay, callback):
         self.calls.append((delay, callback))
         return "after-id"
+
+    def after_cancel(self, after_id):
+        self.cancelled.append(after_id)
 
     def winfo_exists(self):
         return True
@@ -133,6 +137,7 @@ class TestAppPollingEdge(unittest.TestCase):
         app._set_status_banner.assert_called_once()
         self.assertEqual(app.root.calls[1][0], 1500)
         self.assertIs(app.root.calls[1][1], app._kick_background_services)
+        self.assertEqual(app._service_start_after_id, "after-id")
 
     def test_start_background_services_keeps_bootstrapped_when_ui_schedule_fails_after_success(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -157,6 +162,23 @@ class TestAppPollingEdge(unittest.TestCase):
         app.jamulus_controller.stop.assert_not_called()
         app.audio_monitor.stop.assert_not_called()
         app.webex_controller.stop.assert_not_called()
+
+    def test_cleanup_cancels_pending_service_start_timer(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootAfterRecorder()
+        app._poll_after_id = None
+        app._vu_after_id = None
+        app._service_start_after_id = "service-after-id"
+        app.audio_monitor = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.webex_controller = MagicMock()
+        app.api_bridge = MagicMock()
+        app.jamulus_process = None
+
+        WebJamEnhancedApp.cleanup(app)
+
+        self.assertIn("service-after-id", app.root.cancelled)
+        self.assertIsNone(app._service_start_after_id)
 
     def test_selected_channel_shortcut_toggles_mute(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
