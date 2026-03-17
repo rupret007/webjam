@@ -2722,9 +2722,18 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
         self.jamulus_controller.stop()
         self.webex_controller.stop()
         self.api_bridge.stop()
-        if self.jamulus_process:
+        process = self.jamulus_process
+        self.jamulus_process = None
+        if process:
             try:
-                self.jamulus_process.terminate()
+                process.terminate()
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                    process.wait(timeout=1)
+                except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+                    LOGGER.warning("Jamulus process did not exit cleanly during cleanup.")
             except (OSError, ProcessLookupError):
                 pass
     

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tkinter as tk
 import unittest
 from types import SimpleNamespace
@@ -199,6 +200,46 @@ class TestAppPollingEdge(unittest.TestCase):
         WebJamEnhancedApp._refresh_readiness(app)
 
         app.readiness_label.configure.assert_called_once_with(text="Room: waiting for participants")
+
+    def test_cleanup_waits_for_spawned_jamulus_process(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = MagicMock()
+        app._poll_after_id = None
+        app._vu_after_id = None
+        app.audio_monitor = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.webex_controller = MagicMock()
+        app.api_bridge = MagicMock()
+        process = MagicMock()
+        app.jamulus_process = process
+
+        WebJamEnhancedApp.cleanup(app)
+
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=5)
+        process.kill.assert_not_called()
+        self.assertIsNone(app.jamulus_process)
+
+    def test_cleanup_kills_spawned_jamulus_when_terminate_times_out(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = MagicMock()
+        app._poll_after_id = None
+        app._vu_after_id = None
+        app.audio_monitor = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.webex_controller = MagicMock()
+        app.api_bridge = MagicMock()
+        process = MagicMock()
+        process.wait.side_effect = [subprocess.TimeoutExpired(cmd="jamulus", timeout=5), None]
+        app.jamulus_process = process
+
+        WebJamEnhancedApp.cleanup(app)
+
+        process.terminate.assert_called_once()
+        self.assertEqual(process.wait.call_args_list[0].kwargs, {"timeout": 5})
+        process.kill.assert_called_once()
+        self.assertEqual(process.wait.call_args_list[1].kwargs, {"timeout": 1})
+        self.assertIsNone(app.jamulus_process)
 
 
 if __name__ == "__main__":
