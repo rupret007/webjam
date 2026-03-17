@@ -61,14 +61,7 @@ def show_diagnostics_panel(
     btn_row = tk.Frame(frame, bg=bg)
     btn_row.pack(fill=tk.X, pady=(8, 0))
 
-    def _run_setup_and_regrab():
-        on_run_setup()
-        try:
-            panel.grab_set()
-        except tk.TclError:
-            pass
-
-    tk.Button(btn_row, text="Run Setup Wizard", command=_run_setup_and_regrab, **btn_style).pack(side=tk.LEFT)
+    tk.Button(btn_row, text="Run Setup Wizard", command=on_run_setup, **btn_style).pack(side=tk.LEFT)
     tk.Button(btn_row, text="Open Help", command=on_open_help, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Export Snapshot", command=on_export_snapshot, **btn_style).pack(side=tk.LEFT, padx=8)
     if on_export_bundle is not None:
