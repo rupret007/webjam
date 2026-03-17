@@ -369,16 +369,23 @@ class TestRepositoryMixProfiles(unittest.TestCase):
         self.repo.set_setting("safe_setting", "ok")
         self.repo.set_setting("admin_bootstrap_password", "super-secret")
         self.repo.upsert_room_context("room1", "music_jam", "Band Rehearsal", "Lock chorus", "review")
+        self.repo.upsert_room_context("room2", "design_critique", "Design Review", "Tighten spacing", "draft")
         self.repo.save_session_notes("room1", "Keep the bridge tighter")
         self.repo.add_session_artifact("room1", "Reference", "link", "https://example.com")
         self.repo.save_mix_profile("Focus", "music_jam", {"participants": [{"channel_id": 1, "name": "Alex"}]})
+        self.repo.save_mix_profile("Design Focus", "design_critique", {"participants": [{"channel_id": 2, "name": "Pat"}]})
+        self.repo.save_user_mix_default("Alex", {"participants": [{"channel_id": 1, "name": "Alex"}]})
 
         snapshot = self.repo.export_support_snapshot(room_key="room1")
 
         self.assertEqual(snapshot["app_settings"]["safe_setting"], "ok")
         self.assertNotIn("admin_bootstrap_password", snapshot["app_settings"])
+        self.assertEqual(len(snapshot["room_contexts"]), 1)
+        self.assertEqual(snapshot["room_contexts"][0]["room_key"], "room1")
         self.assertEqual(snapshot["current_room_summary"]["artifact_count"], 1)
         self.assertEqual(snapshot["current_room_summary"]["notes"]["chars"], len("Keep the bridge tighter"))
+        self.assertEqual(snapshot["user_mix_defaults"], [])
+        self.assertEqual(len(snapshot["mix_profiles"]), 1)
         self.assertEqual(snapshot["mix_profiles"][0]["payload_state"], "ok")
         self.assertEqual(snapshot["mix_profiles"][0]["payload"]["participants"][0]["channel_id"], 1)
 

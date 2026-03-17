@@ -32,7 +32,7 @@ from ui.theme import DEFAULT_THEME
 from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
 from ui.auth_controller import AuthController
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
-from ui.dialogs import show_bootstrap_admin_notice, show_usage_metrics_window
+from ui.dialogs import show_usage_metrics_window
 from ui.preferences import UiPreferencesService, _is_valid_geometry
 from ui.services import MetricsService, RetryService
 from ui.views.diagnostics_panel import show_diagnostics_panel
@@ -586,7 +586,6 @@ class WebJamEnhancedApp:
         self.save_room_context()
         self._bind_shortcuts()
         self._apply_accessibility_mode()
-        self._show_bootstrap_admin_notice()
         
         # Register callback for participant updates
         self.jamulus_controller.register_callback(self.on_participants_updated)
@@ -1142,11 +1141,6 @@ class WebJamEnhancedApp:
 
         self.show_setup_wizard(mark_complete=True)
 
-    def _show_bootstrap_admin_notice(self) -> None:
-        bootstrap_password = self.repository.get_bootstrap_admin_password()
-        if bootstrap_password:
-            show_bootstrap_admin_notice(bootstrap_password, parent=self.root)
-
     def show_setup_wizard(self, mark_complete: bool = False):
         self.metrics_service.increment("metric_setup_wizard_opened")
         active_mode = get_mode_by_key_or_default(self.mode_key)
@@ -1313,6 +1307,26 @@ class WebJamEnhancedApp:
             review_state=self.review_state,
         )
         self._refresh_readiness()
+
+    def _flush_live_room_state(self) -> bool:
+        try:
+            self.save_room_context()
+        except Exception as exc:
+            messagebox.showerror("Save Failed", f"Could not save room details:\n{exc}", parent=self.root)
+            return False
+
+        session_canvas = getattr(self, "session_canvas", None)
+        if session_canvas is None:
+            return True
+        save_notes_if_dirty = getattr(session_canvas, "save_notes_if_dirty", None)
+        if save_notes_if_dirty is None:
+            return True
+        try:
+            result = save_notes_if_dirty()
+        except Exception as exc:
+            messagebox.showerror("Save Failed", f"Could not save session notes:\n{exc}", parent=self.root)
+            return False
+        return result is not False
 
     def _set_status_banner(self, text: str, color: str = "#ffffff") -> None:
         self.status_label.configure(text=text)
@@ -1765,6 +1779,9 @@ class WebJamEnhancedApp:
 
     def export_diagnostics_bundle(self) -> None:
         try:
+            if not self._flush_live_room_state():
+                self.metrics_service.increment("metric_diagnostics_bundle_failed")
+                return
             self._refresh_endpoint_state()
             settings_snapshot = asdict(self._settings_for_checks())
             log_file = str(settings_snapshot.get("log_file", "") or "").strip()
@@ -1806,7 +1823,9 @@ class WebJamEnhancedApp:
 
     def export_session_brief(self) -> None:
         try:
-            self.save_room_context()
+            if not self._flush_live_room_state():
+                self.metrics_service.increment("metric_session_brief_failed")
+                return
             room_context = self.repository.get_room_context(self.room_key)
             artifacts = self.repository.list_session_artifacts(self.room_key)
             notes = self.repository.get_session_notes(self.room_key)
@@ -2700,6 +2719,8 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
     def quit_app(self):
         """Cleanup and quit"""
         if messagebox.askokcancel("Quit", "Are you sure you want to quit WebJam?", parent=self.root):
+            if not self._flush_live_room_state():
+                return
             self._save_window_geometry()
             self.cleanup()
             self.root.quit()

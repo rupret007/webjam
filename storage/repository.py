@@ -604,31 +604,34 @@ class WebJamRepository:
             app_settings_rows = conn.execute(
                 "SELECT key, value FROM app_settings ORDER BY key"
             ).fetchall()
-            room_rows = conn.execute(
-                """
-                SELECT room_key, mode_key, template_name, session_goal, review_state, updated_at
-                FROM collaboration_rooms
-                ORDER BY room_key
-                """
-            ).fetchall()
-            profile_rows = conn.execute(
-                """
-                SELECT profile_name, mode_key, payload, updated_at
-                FROM mix_profiles
-                ORDER BY updated_at DESC, id DESC
-                """
-            ).fetchall()
-            user_mix_rows = conn.execute(
-                """
-                SELECT username, payload, updated_at
-                FROM user_mix_defaults
-                ORDER BY updated_at DESC, username ASC
-                """
-            ).fetchall()
-
             artifact_count = None
             note_length = None
+            room_mode_key: Optional[str] = None
             if room_key is not None:
+                room_rows = conn.execute(
+                    """
+                    SELECT room_key, mode_key, template_name, session_goal, review_state, updated_at
+                    FROM collaboration_rooms
+                    WHERE room_key = ?
+                    ORDER BY room_key
+                    """,
+                    (room_key,),
+                ).fetchall()
+                if room_rows:
+                    room_mode_key = str(room_rows[0][1] or "")
+                if room_mode_key:
+                    profile_rows = conn.execute(
+                        """
+                        SELECT profile_name, mode_key, payload, updated_at
+                        FROM mix_profiles
+                        WHERE mode_key = ?
+                        ORDER BY updated_at DESC, id DESC
+                        """,
+                        (room_mode_key,),
+                    ).fetchall()
+                else:
+                    profile_rows = []
+                user_mix_rows: list[Any] = []
                 artifact_count_row = conn.execute(
                     "SELECT COUNT(*) FROM collaboration_artifacts WHERE room_key = ?",
                     (room_key,),
@@ -642,6 +645,28 @@ class WebJamRepository:
                     "chars": int(note_row[0] or 0),
                     "updated_at": note_row[1],
                 } if note_row else {"chars": 0, "updated_at": None}
+            else:
+                room_rows = conn.execute(
+                    """
+                    SELECT room_key, mode_key, template_name, session_goal, review_state, updated_at
+                    FROM collaboration_rooms
+                    ORDER BY room_key
+                    """
+                ).fetchall()
+                profile_rows = conn.execute(
+                    """
+                    SELECT profile_name, mode_key, payload, updated_at
+                    FROM mix_profiles
+                    ORDER BY updated_at DESC, id DESC
+                    """
+                ).fetchall()
+                user_mix_rows = conn.execute(
+                    """
+                    SELECT username, payload, updated_at
+                    FROM user_mix_defaults
+                    ORDER BY updated_at DESC, username ASC
+                    """
+                ).fetchall()
 
         app_settings = {
             key: value

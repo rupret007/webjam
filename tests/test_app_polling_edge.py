@@ -241,6 +241,37 @@ class TestAppPollingEdge(unittest.TestCase):
         self.assertEqual(process.wait.call_args_list[1].kwargs, {"timeout": 1})
         self.assertIsNone(app.jamulus_process)
 
+    @patch("webjam_app_enhanced.messagebox.showerror")
+    def test_flush_live_room_state_saves_room_context_and_dirty_notes(self, error_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = object()
+        app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = True
+
+        result = WebJamEnhancedApp._flush_live_room_state(app)
+
+        self.assertTrue(result)
+        app.save_room_context.assert_called_once()
+        app.session_canvas.save_notes_if_dirty.assert_called_once_with()
+        error_mock.assert_not_called()
+
+    @patch("webjam_app_enhanced.messagebox.showerror")
+    @patch("webjam_app_enhanced.messagebox.askokcancel", return_value=True)
+    def test_quit_app_aborts_when_live_state_flush_fails(self, _confirm_mock, error_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = MagicMock()
+        app._flush_live_room_state = MagicMock(return_value=False)
+        app._save_window_geometry = MagicMock()
+        app.cleanup = MagicMock()
+
+        WebJamEnhancedApp.quit_app(app)
+
+        app._save_window_geometry.assert_not_called()
+        app.cleanup.assert_not_called()
+        app.root.quit.assert_not_called()
+        error_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

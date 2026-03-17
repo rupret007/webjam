@@ -31,6 +31,9 @@ class TestDiagnosticsBundleExportEdge(unittest.TestCase):
         app.jamulus_port = 22124
         app.webex_url = "https://example.webex.com/meet/test"
         app._refresh_endpoint_state = MagicMock()
+        app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = True
         app._settings_for_checks = MagicMock(
             return_value=_SettingsStub(
                 log_file="C:/tmp/webjam.log",
@@ -54,12 +57,33 @@ class TestDiagnosticsBundleExportEdge(unittest.TestCase):
         WebJamEnhancedApp.export_diagnostics_bundle(app)
 
         kwargs = app.metrics_service.export_diagnostics_bundle.call_args.kwargs
+        app.save_room_context.assert_called_once()
+        app.session_canvas.save_notes_if_dirty.assert_called_once_with()
         self.assertNotIn(app.repository.db_path, kwargs["support_files"])
         self.assertEqual(kwargs["extra_json_files"], {"support_snapshot.json": {"safe": True}})
         app.repository.export_support_snapshot.assert_called_once_with(room_key="default_room")
         app.metrics_service.increment.assert_called_once_with("metric_diagnostics_bundle_exported")
         info_mock.assert_called_once()
         error_mock.assert_not_called()
+
+    @patch("webjam_app_enhanced.Path.home", return_value=Path("C:/tmp"))
+    @patch("webjam_app_enhanced.messagebox.showerror")
+    @patch("webjam_app_enhanced.messagebox.showinfo")
+    def test_export_diagnostics_bundle_aborts_when_live_state_flush_fails(self, info_mock, error_mock, _home_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = object()
+        app.room_key = "default_room"
+        app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = False
+        app.metrics_service = MagicMock()
+
+        WebJamEnhancedApp.export_diagnostics_bundle(app)
+
+        app.metrics_service.export_diagnostics_bundle.assert_not_called()
+        app.metrics_service.increment.assert_called_once_with("metric_diagnostics_bundle_failed")
+        error_mock.assert_not_called()
+        info_mock.assert_not_called()
 
 
 if __name__ == "__main__":

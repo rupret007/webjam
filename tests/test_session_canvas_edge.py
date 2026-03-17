@@ -115,6 +115,26 @@ class TestSessionCanvasArtifactEdge(unittest.TestCase):
         self.assertEqual(panel.notes.insert.call_args_list[1][0], ("end", "[00:00:10] "))
         self.assertTrue(panel._notes_dirty)
 
+    def test_save_notes_if_dirty_skips_clean_notes(self):
+        panel = SessionCanvasPanel.__new__(SessionCanvasPanel)
+        panel._notes_dirty = False
+        panel._save_notes = MagicMock(return_value=True)
+
+        result = panel.save_notes_if_dirty()
+
+        self.assertTrue(result)
+        panel._save_notes.assert_not_called()
+
+    def test_save_notes_if_dirty_flushes_dirty_notes(self):
+        panel = SessionCanvasPanel.__new__(SessionCanvasPanel)
+        panel._notes_dirty = True
+        panel._save_notes = MagicMock(return_value=True)
+
+        result = panel.save_notes_if_dirty()
+
+        self.assertTrue(result)
+        panel._save_notes.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

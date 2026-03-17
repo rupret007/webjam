@@ -157,7 +157,7 @@ class SessionCanvasPanel(tk.Frame):
             return
         self.refresh()
 
-    def _save_notes(self, _event=None) -> None:
+    def _save_notes(self, _event=None) -> bool:
         content = self.notes.get("1.0", tk.END).rstrip()
         if len(content) > NOTES_SOFT_LIMIT:
             messagebox.showwarning(
@@ -171,6 +171,13 @@ class SessionCanvasPanel(tk.Frame):
             self._notes_dirty = False
         except Exception as exc:
             messagebox.showerror("Save Failed", f"Could not save notes: {exc}", parent=self)
+            return False
+        return True
+
+    def save_notes_if_dirty(self) -> bool:
+        if not getattr(self, "_notes_dirty", False):
+            return True
+        return bool(self._save_notes())
 
     def _mark_notes_dirty(self, _event=None) -> None:
         self._notes_dirty = True

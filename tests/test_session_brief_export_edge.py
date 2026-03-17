@@ -18,6 +18,8 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         app.room_key = "default_room"
         app.mode_key = "music_jam"
         app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = True
         app.repository = MagicMock()
         app.repository.get_room_context.return_value = {
             "mode_key": "music_jam",
@@ -38,6 +40,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         WebJamEnhancedApp.export_session_brief(app)
 
         app.save_room_context.assert_called_once()
+        app.session_canvas.save_notes_if_dirty.assert_called_once_with()
         app.metrics_service.export_session_brief.assert_called_once()
         kwargs = app.metrics_service.export_session_brief.call_args.kwargs
         self.assertEqual(kwargs["output_dir"], Path("C:/tmp"))
@@ -56,6 +59,8 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         app.room_key = "default_room"
         app.mode_key = "music_jam"
         app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = True
         app.repository = MagicMock()
         app.repository.get_room_context.return_value = {}
         app.repository.list_session_artifacts.return_value = []
@@ -69,6 +74,28 @@ class TestSessionBriefExportEdge(unittest.TestCase):
 
         app.metrics_service.increment.assert_has_calls([call("metric_session_brief_failed")])
         error_mock.assert_called_once()
+        info_mock.assert_not_called()
+
+    @patch("webjam_app_enhanced.Path.home", return_value=Path("C:/tmp"))
+    @patch("webjam_app_enhanced.messagebox.showerror")
+    @patch("webjam_app_enhanced.messagebox.showinfo")
+    def test_export_session_brief_aborts_when_live_state_flush_fails(self, info_mock, error_mock, _home_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = object()
+        app.room_key = "default_room"
+        app.mode_key = "music_jam"
+        app.save_room_context = MagicMock()
+        app.session_canvas = MagicMock()
+        app.session_canvas.save_notes_if_dirty.return_value = False
+        app.repository = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.metrics_service = MagicMock()
+
+        WebJamEnhancedApp.export_session_brief(app)
+
+        app.metrics_service.export_session_brief.assert_not_called()
+        app.metrics_service.increment.assert_called_once_with("metric_session_brief_failed")
+        error_mock.assert_not_called()
         info_mock.assert_not_called()
 
 
