@@ -34,6 +34,17 @@ class _AudioEngineStub:
     def set_level_override(self, channel_id: int, level: float):
         self.level_overrides[channel_id] = level
 
+    def diagnostics(self):
+        class _Diag:
+            backend = "test"
+            samplerate = 48000
+            blocksize = 0
+            latency_mode = "low"
+            active = True
+            message = "ok"
+
+        return _Diag()
+
 
 class _LoggerStub:
     def warning(self, *_args, **_kwargs):
@@ -217,6 +228,15 @@ class TestJamulusControllerEdge(unittest.TestCase):
             }
         )
         self.assertEqual(applied, 0)
+
+    def test_successful_participant_poll_clears_stale_last_error(self):
+        self.controller.last_error = "temporary failure"
+        self.controller.protocol.cached_participants = {1: "Alice"}
+
+        self.controller._check_participants()
+
+        self.assertEqual(self.controller.last_error, "")
+        self.assertEqual(self.controller.get_audio_diagnostics()["last_error"], "none")
 
 
 if __name__ == "__main__":

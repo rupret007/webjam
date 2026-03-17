@@ -161,6 +161,7 @@ class JamulusController:
 
         for channel_id in sorted(set(apply_mixer_ids)):
             self._apply_mixer_setting(channel_id, notify=False)
+        self.last_error = ""
         self._notify_callbacks()
     
     def add_participant(self, name: str, channel_id: int = None) -> JamulusParticipant:
