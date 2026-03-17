@@ -1338,6 +1338,22 @@ class WebJamEnhancedApp:
         except tk.TclError:
             pass
 
+    def _schedule_ui_callback(self, callback, delay_ms: int = 0) -> bool:
+        root = getattr(self, "root", None)
+        if root is None:
+            return False
+        if hasattr(root, "winfo_exists"):
+            try:
+                if not root.winfo_exists():
+                    return False
+            except (tk.TclError, RuntimeError):
+                return False
+        try:
+            root.after(delay_ms, callback)
+            return True
+        except (AttributeError, tk.TclError, RuntimeError):
+            return False
+
     def _defer_service_start(self) -> None:
         self._set_status_banner("Initializing background services...", color="#ffcc00")
         self.root.after(120, self._kick_background_services)
@@ -1392,18 +1408,15 @@ class WebJamEnhancedApp:
                     return
                 self._set_status_banner("Service startup issue (see diagnostics)", color="#ff5555")
 
-            try:
-                self.root.after(0, _handle_failure)
-            except (tk.TclError, RuntimeError):
-                pass
+            self._schedule_ui_callback(_handle_failure)
             return
 
         self._service_bootstrapped = True
         self._service_start_inflight = False
         self._service_start_attempts = 0
         startup_elapsed = time.perf_counter() - self._startup_started_at
-        self.root.after(0, lambda: self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66"))
-        self.root.after(0, self._refresh_readiness)
+        self._schedule_ui_callback(lambda: self._set_status_banner(f"Ready ({startup_elapsed:.1f}s startup)", color="#00cc66"))
+        self._schedule_ui_callback(self._refresh_readiness)
 
     def _safe_invoke(self, callback):
         try:
@@ -2114,7 +2127,7 @@ class WebJamEnhancedApp:
                 self._jamulus_reconnect_inflight = False
                 self.metrics_service.increment("metric_jamulus_reconnect_failed")
                 self.jamulus_state = "Not running"
-                self.root.after(0, self._refresh_readiness)
+                self._schedule_ui_callback(self._refresh_readiness)
                 LOGGER.warning("Jamulus reconnect skipped: executable not found.")
                 return
             self.metrics_service.increment("metric_jamulus_launch_failed")
@@ -2150,15 +2163,14 @@ class WebJamEnhancedApp:
                 )
                 self.jamulus_process = proc
                 self.jamulus_state = f"Connecting ({server})"
-                self.root.after(0, self._refresh_readiness)
+                self._schedule_ui_callback(self._refresh_readiness)
                 if manual:
-                    self.root.after(
-                        0,
+                    self._schedule_ui_callback(
                         lambda: messagebox.showinfo(
                             "Success",
                             f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
                             parent=self.root,
-                        ),
+                        )
                     )
                 self.jamulus_controller.add_participant(LOCAL_PARTICIPANT_NAME, 0)
                 # A started process is not the same as a confirmed server join.
@@ -2170,26 +2182,25 @@ class WebJamEnhancedApp:
                     self.metrics_service.increment("metric_jamulus_reconnect_success")
                 else:
                     self.metrics_service.increment("metric_jamulus_launch_success")
-                self.root.after(0, self._refresh_readiness)
+                self._schedule_ui_callback(self._refresh_readiness)
             except Exception as exc:
                 LOGGER.exception("Failed to launch Jamulus: %s", exc)
                 self.jamulus_state = "Launch failed" if manual else "Not running"
                 self._jamulus_reconnect_inflight = False
                 if reconnect:
                     self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                    self.root.after(0, self._refresh_readiness)
+                    self._schedule_ui_callback(self._refresh_readiness)
                     return
                 self.metrics_service.increment("metric_jamulus_launch_failed")
-                self.root.after(0, self._refresh_readiness)
-                self.root.after(
-                    0,
+                self._schedule_ui_callback(self._refresh_readiness)
+                self._schedule_ui_callback(
                     lambda launch_exc=exc: self._show_actionable_error(
                         "Jamulus Launch Failed",
                         what_failed=f"Jamulus could not start ({launch_exc}).",
                         likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
                         next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
                         retry_callback=self.launch_jamulus,
-                    ),
+                    )
                 )
 
         threading.Thread(target=_do_launch, daemon=True).start()
@@ -2224,15 +2235,14 @@ class WebJamEnhancedApp:
                     self.metrics_service.increment("metric_webex_reconnect_success")
                 else:
                     self.metrics_service.increment("metric_webex_open_success")
-                self.root.after(0, self._refresh_readiness)
+                self._schedule_ui_callback(self._refresh_readiness)
                 if manual:
-                    self.root.after(
-                        0,
+                    self._schedule_ui_callback(
                         lambda: messagebox.showinfo(
                             "Webex Opened",
                             f"Webex meeting opened in your browser:\n\n{self.webex_url}\n\nJoin the meeting to see and hear other participants.",
                             parent=self.root,
-                        ),
+                        )
                     )
             except Exception as exc:
                 LOGGER.exception("Failed to open Webex: %s", exc)
@@ -2240,19 +2250,18 @@ class WebJamEnhancedApp:
                 self._webex_reconnect_inflight = False
                 if reconnect:
                     self.metrics_service.increment("metric_webex_reconnect_failed")
-                    self.root.after(0, self._refresh_readiness)
+                    self._schedule_ui_callback(self._refresh_readiness)
                     return
                 self.metrics_service.increment("metric_webex_open_failed")
-                self.root.after(0, self._refresh_readiness)
-                self.root.after(
-                    0,
+                self._schedule_ui_callback(self._refresh_readiness)
+                self._schedule_ui_callback(
                     lambda open_exc=exc: self._show_actionable_error(
                         "Webex Open Failed",
                         what_failed=f"Webex URL could not be opened ({open_exc}).",
                         likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
                         next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
                         retry_callback=self.launch_webex,
-                    ),
+                    )
                 )
 
         threading.Thread(target=_do_open, daemon=True).start()

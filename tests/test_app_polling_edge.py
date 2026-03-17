@@ -47,6 +47,14 @@ class _RootAfterRecorder:
         return True
 
 
+class _RootAfterFails:
+    def winfo_exists(self):
+        return True
+
+    def after(self, *_args, **_kwargs):
+        raise RuntimeError("root closed")
+
+
 class TestAppPollingEdge(unittest.TestCase):
     def test_poll_connection_health_returns_when_root_closed(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -125,6 +133,30 @@ class TestAppPollingEdge(unittest.TestCase):
         app._set_status_banner.assert_called_once()
         self.assertEqual(app.root.calls[1][0], 1500)
         self.assertIs(app.root.calls[1][1], app._kick_background_services)
+
+    def test_start_background_services_keeps_bootstrapped_when_ui_schedule_fails_after_success(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app.root = _RootAfterFails()
+        app.api_bridge = MagicMock()
+        app.api_bridge.start.return_value = True
+        app.jamulus_controller = MagicMock()
+        app.audio_monitor = MagicMock()
+        app.webex_controller = MagicMock()
+        app._set_status_banner = MagicMock()
+        app._refresh_readiness = MagicMock()
+        app._service_bootstrapped = False
+        app._service_start_inflight = True
+        app._service_start_attempts = 1
+        app._startup_started_at = 0.0
+
+        WebJamEnhancedApp._start_background_services(app)
+
+        self.assertTrue(app._service_bootstrapped)
+        self.assertFalse(app._service_start_inflight)
+        self.assertEqual(app._service_start_attempts, 0)
+        app.jamulus_controller.stop.assert_not_called()
+        app.audio_monitor.stop.assert_not_called()
+        app.webex_controller.stop.assert_not_called()
 
     def test_selected_channel_shortcut_toggles_mute(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
