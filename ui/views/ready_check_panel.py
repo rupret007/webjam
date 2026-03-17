@@ -47,7 +47,7 @@ def show_ready_check_panel(
         "WebJam Ready Check",
         "",
         status_line,
-        f"Latency: {latency_label}",
+        latency_label,
         f"Participant channels detected: {participant_count}",
         "",
         "Preflight results:",

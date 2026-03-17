@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from core.settings import AppSettings
+from ui.views.ready_check_panel import show_ready_check_panel
 from ui.views.setup_wizard import SetupWizard
 from webjam_app_enhanced import WebJamEnhancedApp
 
@@ -85,6 +86,41 @@ class TestBackgroundReviewEdge(unittest.TestCase):
             task = app._run_background_task.call_args.kwargs["task"]
             self.assertEqual(task(), (True, "ok"))
             tcp_hint_mock.assert_called_once_with("jam.example.com", 22124)
+
+
+class TestReadyCheckPanelEdge(unittest.TestCase):
+    @patch("ui.views.ready_check_panel.tk.Button")
+    @patch("ui.views.ready_check_panel.tk.Text")
+    @patch("ui.views.ready_check_panel.tk.Frame")
+    @patch("ui.views.ready_check_panel.tk.Toplevel")
+    def test_ready_check_panel_does_not_duplicate_latency_prefix(
+        self,
+        toplevel_cls,
+        frame_cls,
+        text_cls,
+        _button_cls,
+    ):
+        panel = MagicMock()
+        panel.destroy = MagicMock()
+        toplevel_cls.return_value = panel
+        frame = MagicMock()
+        frame_cls.return_value = frame
+        text_widget = MagicMock()
+        text_cls.return_value = text_widget
+
+        show_ready_check_panel(
+            root=object(),
+            checks=[("Jamulus executable", True, "ok")],
+            latency_label="Latency: 12 ms (Good)",
+            participant_count=2,
+            on_run_setup=lambda: None,
+            on_open_diagnostics=lambda: None,
+            on_export_bundle=lambda: None,
+        )
+
+        rendered = text_widget.insert.call_args.args[1]
+        self.assertIn("Latency: 12 ms (Good)", rendered)
+        self.assertNotIn("Latency: Latency:", rendered)
 
 
 if __name__ == "__main__":

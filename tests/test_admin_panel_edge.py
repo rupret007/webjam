@@ -16,6 +16,29 @@ class TestAdminPanelAuthorization(unittest.TestCase):
         messagebox_mock.showwarning.assert_called_once()
         top_level.assert_not_called()
 
+    def test_refresh_settings_redacts_sensitive_values(self):
+        repo = MagicMock()
+        repo.list_settings.return_value = {
+            "safe_setting": "ok",
+            "admin_bootstrap_password": "super-secret",
+            "api_token": "token-value",
+        }
+        panel = AdminPanel(
+            root=object(),
+            repository=repo,
+            user=UserContext(username="admin", role="admin"),
+            policy=PolicyEngine(),
+        )
+        listbox = MagicMock()
+
+        panel._refresh_settings(listbox)
+
+        inserted = [call.args[1] for call in listbox.insert.call_args_list]
+        self.assertIn("safe_setting = ok", inserted)
+        self.assertIn("admin_bootstrap_password = [redacted]", inserted)
+        self.assertIn("api_token = [redacted]", inserted)
+        self.assertNotIn("admin_bootstrap_password = super-secret", inserted)
+
     def test_show_denies_role_without_admin_access(self):
         panel = AdminPanel(
             root=object(),
@@ -27,6 +50,23 @@ class TestAdminPanelAuthorization(unittest.TestCase):
             panel.show()
         messagebox_mock.showwarning.assert_called_once()
         top_level.assert_not_called()
+
+    @patch("admin.admin_panel.simpledialog.askstring", side_effect=[None])
+    @patch("admin.admin_panel.messagebox")
+    def test_set_endpoint_stops_after_server_cancel(self, messagebox_mock, askstring_mock):
+        repo = MagicMock()
+        panel = AdminPanel(
+            root=object(),
+            repository=repo,
+            user=UserContext(username="admin", role="admin"),
+            policy=PolicyEngine(),
+        )
+
+        panel._set_endpoint(MagicMock(), parent=object())
+
+        self.assertEqual(askstring_mock.call_count, 1)
+        repo.set_setting.assert_not_called()
+        messagebox_mock.showinfo.assert_not_called()
 
 
 class TestAppAdminPanelFlow(unittest.TestCase):

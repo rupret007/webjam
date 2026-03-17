@@ -22,6 +22,15 @@ class AdminPanel:
         self.user = user
         self.policy = policy or PolicyEngine()
 
+    def _display_settings(self) -> list[tuple[str, str]]:
+        settings: list[tuple[str, str]] = []
+        for key, value in self.repository.list_settings().items():
+            if WebJamRepository.is_sensitive_setting_key(key):
+                settings.append((str(key), "[redacted]"))
+            else:
+                settings.append((str(key), str(value)))
+        return settings
+
     def show(self) -> None:
         if not self.user:
             messagebox.showwarning("Admin Panel", "Sign in as admin or operator to open admin panel.", parent=self.root)
@@ -53,7 +62,7 @@ class AdminPanel:
 
         listbox = tk.Listbox(settings_frame, height=8, bg=bg, fg=fg)
         listbox.pack(fill=tk.X)
-        for key, value in self.repository.list_settings().items():
+        for key, value in self._display_settings():
             listbox.insert(tk.END, f"{key} = {value}")
 
         btn_frame = tk.Frame(window, bg=bg)
@@ -80,7 +89,11 @@ class AdminPanel:
             messagebox.showwarning("Permission Denied", "Only admins can change the Jamulus endpoint.", parent=parent)
             return
         server = simpledialog.askstring("Server", "Jamulus Server Host:", parent=parent)
+        if server is None:
+            return
         port = simpledialog.askstring("Port", "Jamulus Server Port:", parent=parent)
+        if port is None:
+            return
         if not server or not port:
             return
         server = server.strip()
@@ -104,6 +117,6 @@ class AdminPanel:
 
     def _refresh_settings(self, listbox: tk.Listbox) -> None:
         listbox.delete(0, tk.END)
-        for key, value in self.repository.list_settings().items():
+        for key, value in self._display_settings():
             listbox.insert(tk.END, f"{key} = {value}")
 

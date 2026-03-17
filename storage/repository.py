@@ -422,6 +422,13 @@ class WebJamRepository:
         return row[0]
 
     @staticmethod
+    def is_sensitive_setting_key(key: object) -> bool:
+        lowered = str(key or "").strip().casefold()
+        if lowered in SENSITIVE_SETTING_KEYS:
+            return True
+        return any(fragment in lowered for fragment in SENSITIVE_SETTING_KEY_FRAGMENTS)
+
+    @staticmethod
     def _normalize_mix_profile_name(profile_name: object) -> str:
         normalized = str(profile_name or "").strip()
         if not normalized:
@@ -587,12 +594,6 @@ class WebJamRepository:
         return int(deleted or 0) > 0
 
     def export_support_snapshot(self, room_key: Optional[str] = None) -> Dict[str, Any]:
-        def _is_sensitive_setting_key(key: str) -> bool:
-            lowered = str(key or "").strip().casefold()
-            if lowered in SENSITIVE_SETTING_KEYS:
-                return True
-            return any(fragment in lowered for fragment in SENSITIVE_SETTING_KEY_FRAGMENTS)
-
         def _safe_json_payload(raw_payload: str) -> Tuple[Any, str]:
             try:
                 return json.loads(raw_payload), "ok"
@@ -645,7 +646,7 @@ class WebJamRepository:
         app_settings = {
             key: value
             for key, value in app_settings_rows
-            if not _is_sensitive_setting_key(key)
+            if not self.is_sensitive_setting_key(key)
         }
         mix_profiles: List[Dict[str, Any]] = []
         for profile_name, mode_key, raw_payload, updated_at in profile_rows:
