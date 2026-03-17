@@ -91,6 +91,11 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 4. **Launch WebJam**
    - Use the desktop shortcut, or run `WebJam.exe` (built app) or `python webjam_app_enhanced.py` (from source).
 
+5. **First Admin Sign-In**
+   - If you need admin access on a fresh install, use `Admin -> Sign In`.
+   - While bootstrap credentials are active, WebJam shows the location of a local one-time credential file.
+   - Sign in as `admin`, change the password immediately, and WebJam removes that bootstrap file automatically.
+
 ---
 
 ## First Time Setup

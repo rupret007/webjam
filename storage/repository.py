@@ -21,6 +21,7 @@ REFERENCE_MAX_LEN = 1024
 MIX_PROFILE_NAME_MAX_LEN = 128
 SENSITIVE_SETTING_KEYS = {"admin_bootstrap_password"}
 SENSITIVE_SETTING_KEY_FRAGMENTS = ("password", "secret", "token")
+BOOTSTRAP_CREDENTIALS_FILENAME_SUFFIX = "_admin_bootstrap.txt"
 
 
 class WebJamRepository:
@@ -147,39 +148,116 @@ class WebJamRepository:
                 conn.execute("ALTER TABLE users ADD COLUMN locked_until INTEGER NOT NULL DEFAULT 0")
             conn.commit()
 
+    def _bootstrap_credentials_path(self) -> Path:
+        db_path = Path(self.db_path).expanduser()
+        return db_path.with_name(f"{db_path.stem}{BOOTSTRAP_CREDENTIALS_FILENAME_SUFFIX}")
+
+    @staticmethod
+    def _format_bootstrap_credentials_text(password: str) -> str:
+        return (
+            "WebJam Bootstrap Admin Credentials\n\n"
+            "Username: admin\n"
+            f"Password: {password}\n\n"
+            "Use these credentials for the first admin sign-in only.\n"
+            "WebJam will require an immediate password change and then remove this file.\n"
+        )
+
+    @staticmethod
+    def _parse_bootstrap_credentials_text(content: object) -> Optional[str]:
+        if not isinstance(content, str):
+            return None
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if line.startswith("Password:"):
+                password = line.partition(":")[2].strip()
+                return password or None
+        return None
+
+    def _write_bootstrap_credentials_file(self, password: str) -> bool:
+        if not isinstance(password, str) or not password:
+            return False
+        path = self._bootstrap_credentials_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(self._format_bootstrap_credentials_text(password), encoding="utf-8")
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+            return True
+        except OSError as exc:
+            LOGGER.warning("Failed to write bootstrap admin credentials file '%s': %s", path, exc)
+            return False
+
+    def _remove_bootstrap_credentials_file(self) -> None:
+        path = self._bootstrap_credentials_path()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            LOGGER.warning("Failed to remove bootstrap admin credentials file '%s': %s", path, exc)
+
     def ensure_default_admin(self) -> None:
+        bootstrap_password: Optional[str] = None
         with self._managed_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
                 if row and row[0] > 0:
                     conn.commit()
-                    return
-                username = "admin"
-                password = secrets.token_urlsafe(12)
-                salt = os.urandom(16)
-                digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-                conn.execute(
-                    "INSERT INTO users (username, salt, password_hash, role, must_change_password, failed_attempts, locked_until) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (username, salt, digest, "admin", 1, 0, 0),
-                )
-                # Stored as plaintext intentionally for first-run UX display.
-                # Deleted when the admin changes the password via update_password().
-                conn.execute(
-                    "INSERT INTO app_settings (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    ("admin_bootstrap_password", password),
-                )
-                conn.commit()
+                else:
+                    username = "admin"
+                    password = secrets.token_urlsafe(12)
+                    bootstrap_password = password
+                    salt = os.urandom(16)
+                    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
+                    conn.execute(
+                        "INSERT INTO users (username, salt, password_hash, role, must_change_password, failed_attempts, locked_until) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (username, salt, digest, "admin", 1, 0, 0),
+                    )
+                    conn.commit()
             except sqlite3.IntegrityError:
                 conn.rollback()
             except Exception:
                 conn.rollback()
                 raise
 
+        if bootstrap_password:
+            if not self._write_bootstrap_credentials_file(bootstrap_password):
+                self.set_setting("admin_bootstrap_password", bootstrap_password)
+            else:
+                self.delete_setting("admin_bootstrap_password")
+        else:
+            self.get_bootstrap_admin_credentials_path()
+
+    def get_bootstrap_admin_credentials_path(self) -> Optional[str]:
+        path = self._bootstrap_credentials_path()
+        if path.exists():
+            return str(path)
+        legacy_password = self.get_setting("admin_bootstrap_password")
+        if isinstance(legacy_password, str) and legacy_password:
+            if self._write_bootstrap_credentials_file(legacy_password):
+                self.delete_setting("admin_bootstrap_password")
+                return str(path)
+        return None
+
     def get_bootstrap_admin_password(self) -> Optional[str]:
-        return self.get_setting("admin_bootstrap_password")
+        path = self.get_bootstrap_admin_credentials_path()
+        if path:
+            try:
+                content = Path(path).read_text(encoding="utf-8")
+            except OSError as exc:
+                LOGGER.warning("Failed to read bootstrap admin credentials file '%s': %s", path, exc)
+            else:
+                password = self._parse_bootstrap_credentials_text(content)
+                if password:
+                    return password
+        legacy_password = self.get_setting("admin_bootstrap_password")
+        if isinstance(legacy_password, str) and legacy_password:
+            return legacy_password
+        return None
 
     def authenticate(self, username: str, password: str) -> Optional[str]:
         role, status = self.authenticate_with_status(username, password)
@@ -264,6 +342,8 @@ class WebJamRepository:
             if username == "admin" and updated_count > 0:
                 conn.execute("DELETE FROM app_settings WHERE key = ?", ("admin_bootstrap_password",))
             conn.commit()
+        if username == "admin" and updated_count > 0:
+            self._remove_bootstrap_credentials_file()
         return updated_count > 0
 
     def set_setting(self, key: str, value: str) -> None:

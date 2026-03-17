@@ -7,19 +7,6 @@ from typing import Callable
 from ui.theme import DEFAULT_THEME
 
 
-def show_bootstrap_admin_notice(bootstrap_password: str, parent: tk.Misc | None = None) -> None:
-    if not bootstrap_password:
-        return
-    messagebox.showwarning(
-        "Admin Security Notice",
-        "A one-time bootstrap admin password is active.\n\n"
-        f"Username: admin\nPassword: {bootstrap_password}\n\n"
-        "Sign in and set a new password immediately. "
-        "The bootstrap password is removed after password change.",
-        parent=parent,
-    )
-
-
 def prompt_password_change_dialog(
     username: str,
     update_password: Callable[[str, str], bool],

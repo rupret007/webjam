@@ -21,6 +21,7 @@ class TestHelpAndPermissionsEdge(unittest.TestCase):
     @patch("webjam_app_enhanced.messagebox.showinfo")
     def test_show_help_describes_signed_in_and_local_mix_restore(self, info_mock):
         app = self._app_stub()
+        app.repository.get_bootstrap_admin_credentials_path.return_value = "C:/tmp/webjam_admin_bootstrap.txt"
 
         app.show_help()
 
@@ -28,6 +29,8 @@ class TestHelpAndPermissionsEdge(unittest.TestCase):
         self.assertIn("Signed-in users save to their WebJam profile.", help_text)
         self.assertIn("Anonymous use saves a local default mix on this computer.", help_text)
         self.assertIn("Saved defaults restore automatically", help_text)
+        self.assertIn("Bootstrap credentials are stored at", help_text)
+        self.assertIn("C:/tmp/webjam_admin_bootstrap.txt", help_text)
 
     def test_show_audio_diagnostics_passes_parent_when_authorizing(self):
         app = self._app_stub()

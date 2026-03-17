@@ -2678,11 +2678,24 @@ Common fixes:
             messagebox.showinfo("Troubleshooting", help_text, parent=self.root)
             return
 
+        bootstrap_note = ""
+        try:
+            bootstrap_path = self.repository.get_bootstrap_admin_credentials_path()
+        except Exception:
+            bootstrap_path = None
+        if isinstance(bootstrap_path, str) and bootstrap_path.strip():
+            bootstrap_note = (
+                "\nAdmin first sign-in:\n"
+                "   Use Admin -> Sign In.\n"
+                f"   Bootstrap credentials are stored at:\n   {bootstrap_path}\n"
+                "   WebJam requires an immediate password change and then removes that file.\n"
+            )
+
         help_text = """Quick Start Guide
 
 Choose your mode in the top bar (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room).
 The workspace layout adjusts by mode so music gets more mixer space and critique/writing gets more canvas space.
-Set a template and session goal before launch.
+Set a template and session goal before launch.""" + bootstrap_note + """
 
 1. Launch Jamulus
    Click 'Launch Jamulus' to connect to the audio server.

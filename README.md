@@ -146,6 +146,8 @@ WebJam is designed for inclusive creative collaboration. High contrast mode, sca
 ### Security Notes
 
 - First-time admin setup now uses a one-time bootstrap password generated locally.
+- When bootstrap credentials are active, WebJam points you to a local credential file instead of showing the secret in the main UI.
+- After the first admin sign-in, WebJam requires an immediate password change and removes the bootstrap credential file automatically.
 - Admin sign-in requires password rotation on first successful login.
 - Repeated failed sign-ins trigger temporary lockout.
 

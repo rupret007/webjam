@@ -16,9 +16,16 @@ def make_temp_db() -> str:
 
 def cleanup_temp_file(path: str) -> None:
     import time
-    for _ in range(10):
-        try:
-            os.remove(path)
-            return
-        except (PermissionError, OSError):
-            time.sleep(0.05)
+    candidates = [
+        path,
+        str(Path(path).with_name(f"{Path(path).stem}_admin_bootstrap.txt")),
+    ]
+    for candidate in candidates:
+        for _ in range(10):
+            try:
+                os.remove(candidate)
+                break
+            except FileNotFoundError:
+                break
+            except (PermissionError, OSError):
+                time.sleep(0.05)

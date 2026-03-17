@@ -11,8 +11,27 @@ class AuthController:
     def __init__(self, repository: Any, policy: PolicyEngine):
         self.repository = repository
         self.policy = policy
+        self._bootstrap_hint_shown = False
 
     def sign_in_interactive(self, parent: Any = None) -> Optional[UserContext]:
+        bootstrap_path = None
+        if not self._bootstrap_hint_shown:
+            try:
+                raw_path = self.repository.get_bootstrap_admin_credentials_path()
+            except Exception:
+                raw_path = None
+            if isinstance(raw_path, str) and raw_path.strip():
+                bootstrap_path = raw_path.strip()
+        if bootstrap_path:
+            messagebox.showinfo(
+                "Bootstrap Admin Credentials",
+                "If this is the first admin sign-in, use the bootstrap credentials stored at:\n\n"
+                f"{bootstrap_path}\n\n"
+                "Sign in as 'admin'. WebJam will require an immediate password change and then remove that file.",
+                parent=parent,
+            )
+            self._bootstrap_hint_shown = True
+
         username_raw = simpledialog.askstring("Sign In", "Username:", parent=parent)
         if username_raw is None:
             return None

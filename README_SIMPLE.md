@@ -17,6 +17,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 1. Open `Help -> Run Setup Wizard`.
 2. Follow the checks and fix anything marked as failed.
 3. Run `Session -> Run Ready Check` before your first live room.
+4. If you need first-time admin access, use `Admin -> Sign In`; WebJam will point you to the local one-time bootstrap credential file and then require a password change.
 
 ## 3) Start a Session
 
@@ -35,7 +36,8 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 - Click **Save Mix** to keep your settings.
 - If you are signed in, that default mix is saved to your WebJam profile.
 - If you are not signed in, WebJam saves a local default mix on this computer.
-- Use **Load Mix** later to restore the saved default mix manually.
+- Saved default mixes restore automatically on next sign-in or launch.
+- Use **Load Mix** if you want to reload the current default manually during a session.
 - Use **File -> Save Listening Profile** to keep named presets like `Rehearsal`, `Focus on Drums`, or `Critique Balance`.
 
 ## 5) If Something Fails

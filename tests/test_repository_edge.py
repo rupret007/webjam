@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import unittest
+from pathlib import Path
 
 from tests.conftest import make_temp_db, cleanup_temp_file
 from storage.repository import (
@@ -93,6 +94,23 @@ class TestRepositoryPasswordEdge(unittest.TestCase):
             conn.commit()
         self.assertFalse(self.repo.update_password("admin", "newpassword123"))
         self.assertEqual(self.repo.get_bootstrap_admin_password(), bootstrap_pw)
+
+    def test_default_admin_writes_bootstrap_credentials_file(self):
+        bootstrap_path = self.repo.get_bootstrap_admin_credentials_path()
+
+        self.assertIsNotNone(bootstrap_path)
+        self.assertTrue(Path(bootstrap_path).exists())
+        self.assertIsNone(self.repo.get_setting("admin_bootstrap_password"))
+
+    def test_admin_password_rotation_removes_bootstrap_credentials_file(self):
+        bootstrap_path = self.repo.get_bootstrap_admin_credentials_path()
+        self.assertIsNotNone(bootstrap_path)
+        self.assertTrue(Path(bootstrap_path).exists())
+
+        self.assertTrue(self.repo.update_password("admin", "newpassword123"))
+
+        self.assertFalse(Path(bootstrap_path).exists())
+        self.assertIsNone(self.repo.get_bootstrap_admin_password())
 
 
 class TestRepositoryIncrementConcurrent(unittest.TestCase):

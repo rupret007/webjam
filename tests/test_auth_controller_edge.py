@@ -89,6 +89,22 @@ class TestSignInSuccess(unittest.TestCase):
         self.assertIsNone(result)
         _mb.showerror.assert_called_once()
 
+    @patch("ui.auth_controller.messagebox")
+    @patch("ui.auth_controller.simpledialog.askstring", side_effect=["admin", "correct", "admin", "correct"])
+    def test_bootstrap_hint_shows_non_secret_path_once(self, _ask, _mb):
+        self.repo.get_bootstrap_admin_credentials_path.return_value = "C:/tmp/webjam_admin_bootstrap.txt"
+        self.repo.authenticate_with_status.return_value = ("admin", "ok")
+
+        first_result = self.ctrl.sign_in_interactive()
+        second_result = self.ctrl.sign_in_interactive()
+
+        self.assertIsNotNone(first_result)
+        self.assertIsNotNone(second_result)
+        self.assertEqual(_mb.showinfo.call_args_list[0].args[0], "Bootstrap Admin Credentials")
+        self.assertIn("C:/tmp/webjam_admin_bootstrap.txt", _mb.showinfo.call_args_list[0].args[1])
+        bootstrap_notices = [call for call in _mb.showinfo.call_args_list if call.args and call.args[0] == "Bootstrap Admin Credentials"]
+        self.assertEqual(len(bootstrap_notices), 1)
+
 
 class TestAuthorize(unittest.TestCase):
     def setUp(self):
