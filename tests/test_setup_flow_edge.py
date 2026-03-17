@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 import tempfile
 
@@ -66,6 +66,48 @@ class TestSetupFlowEdge(unittest.TestCase):
         self.assertEqual(app.current_user.username, "alex")
         app.auth_controller.sign_in_interactive.assert_called_once_with(parent=app.root)
         app._restore_signed_in_mix_default.assert_called_once()
+
+    @patch("webjam_app_enhanced.SetupWizard")
+    def test_show_setup_wizard_refocuses_existing_window(self, wizard_cls):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        existing = MagicMock()
+        existing.winfo_exists.return_value = True
+        app._setup_wizard_window = existing
+        app.metrics_service = MagicMock()
+
+        WebJamEnhancedApp.show_setup_wizard(app, mark_complete=False)
+
+        wizard_cls.assert_not_called()
+        app.metrics_service.increment.assert_not_called()
+        existing.deiconify.assert_called_once_with()
+        existing.lift.assert_called_once_with()
+        existing.focus_force.assert_called_once_with()
+        existing.grab_set.assert_called_once_with()
+
+    @patch("webjam_app_enhanced.SetupWizard")
+    def test_show_setup_wizard_tracks_new_window_and_clears_destroyed_reference(self, wizard_cls):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app._setup_wizard_window = None
+        app.metrics_service = MagicMock()
+        app.mode_key = "music_jam"
+        app.root = object()
+        app.repository = MagicMock()
+        app._settings_for_checks = MagicMock(return_value=object())
+        app.find_jamulus = MagicMock(return_value="Jamulus.exe")
+        app.jamulus_controller = MagicMock()
+        window = MagicMock()
+        window.winfo_exists.return_value = True
+        wizard = MagicMock()
+        wizard.show.return_value = window
+        wizard_cls.return_value = wizard
+
+        WebJamEnhancedApp.show_setup_wizard(app, mark_complete=False)
+
+        self.assertIs(app._setup_wizard_window, window)
+        bind_args = window.bind.call_args
+        self.assertEqual(bind_args.args[0], "<Destroy>")
+        bind_args.args[1]()
+        self.assertIsNone(app._setup_wizard_window)
 
     def test_attempt_pending_mix_restore_clears_pending_on_success(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)

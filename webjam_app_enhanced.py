@@ -527,6 +527,8 @@ class WebJamEnhancedApp:
         self._poll_after_id: str | None = None
         self._vu_after_id: str | None = None
         self._service_start_after_id: str | None = None
+        self._setup_wizard_window: tk.Toplevel | None = None
+        self._diagnostics_panel_window: tk.Toplevel | None = None
         self.font_scale = 1.0
         self.high_contrast_enabled = False
         self.auto_setup_enabled = True
@@ -1144,6 +1146,8 @@ class WebJamEnhancedApp:
         self.show_setup_wizard(mark_complete=True)
 
     def show_setup_wizard(self, mark_complete: bool = False):
+        if self._focus_existing_window("_setup_wizard_window"):
+            return
         self.metrics_service.increment("metric_setup_wizard_opened")
         active_mode = get_mode_by_key_or_default(self.mode_key)
 
@@ -1152,7 +1156,7 @@ class WebJamEnhancedApp:
                 self.repository.set_setting("setup_completed", "1")
             self.metrics_service.increment("metric_setup_wizard_completed")
 
-        SetupWizard(
+        wizard = SetupWizard(
             self.root,
             on_complete=on_complete,
             settings=self._settings_for_checks(),
@@ -1160,7 +1164,8 @@ class WebJamEnhancedApp:
             diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
             mode_label=active_mode.label,
             mode_help=active_mode.quick_help,
-        ).show()
+        )
+        self._track_window("_setup_wizard_window", wizard.show())
 
     @staticmethod
     def _summarize_ready_check(
@@ -1355,6 +1360,41 @@ class WebJamEnhancedApp:
             return True
         except (AttributeError, tk.TclError, RuntimeError):
             return False
+
+    def _focus_existing_window(self, attr_name: str) -> bool:
+        window = getattr(self, attr_name, None)
+        if window is None:
+            return False
+        try:
+            if not window.winfo_exists():
+                setattr(self, attr_name, None)
+                return False
+            if hasattr(window, "deiconify"):
+                window.deiconify()
+            if hasattr(window, "lift"):
+                window.lift()
+            if hasattr(window, "focus_force"):
+                window.focus_force()
+            if hasattr(window, "grab_set"):
+                window.grab_set()
+            return True
+        except (AttributeError, tk.TclError, RuntimeError):
+            setattr(self, attr_name, None)
+            return False
+
+    def _track_window(self, attr_name: str, window) -> None:
+        setattr(self, attr_name, window)
+        if window is None:
+            return
+
+        def _clear_reference(_event=None) -> None:
+            if getattr(self, attr_name, None) is window:
+                setattr(self, attr_name, None)
+
+        try:
+            window.bind("<Destroy>", _clear_reference, add="+")
+        except (AttributeError, tk.TclError, RuntimeError):
+            pass
 
     def _shutdown_requested_active(self) -> bool:
         return bool(getattr(self, "_shutdown_requested", False))
@@ -2074,6 +2114,8 @@ class WebJamEnhancedApp:
         messagebox.showinfo("Audio Diagnostics", text, parent=self.root)
 
     def open_diagnostics_panel(self):
+        if self._focus_existing_window("_diagnostics_panel_window"):
+            return
         self.metrics_service.increment("metric_diagnostics_panel_opened")
         self._refresh_endpoint_state()
         diag = self.jamulus_controller.get_audio_diagnostics()
@@ -2083,8 +2125,10 @@ class WebJamEnhancedApp:
             return SetupWizard.check_tcp_hint(self.jamulus_server, self.jamulus_port)
 
         def _show_panel(host_result: tuple[bool, str]) -> None:
+            if self._focus_existing_window("_diagnostics_panel_window"):
+                return
             host_ok, host_detail = host_result
-            show_diagnostics_panel(
+            panel = show_diagnostics_panel(
                 root=self.root,
                 jamulus_path=jamulus_path,
                 jamulus_server=self.jamulus_server,
@@ -2102,6 +2146,7 @@ class WebJamEnhancedApp:
                 bg_color=THEME.bg_secondary,
                 fg_color=THEME.text_primary,
             )
+            self._track_window("_diagnostics_panel_window", panel)
 
         self._run_background_task(
             inflight_attr="_diagnostics_panel_inflight",
@@ -2792,7 +2837,7 @@ Set a template and session goal before launch.""" + bootstrap_note + """
    Wait for other participants to connect.
 
 2. Launch Webex
-   Click 'Launch Webex' to join the video meeting.
+   Click 'Launch Webex' to open the meeting in your browser and finish joining there.
 
 3. Collaborate in Session Canvas
    • Add links/artifacts for references
@@ -2823,6 +2868,7 @@ Tips:
 • Use headphones to prevent feedback
 • Pan instruments left/right for clarity
 • Watch the VU meters to avoid clipping
+• Run Session -> Run Ready Check before your first live room
 
 For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics Panel."""
         

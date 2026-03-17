@@ -25,7 +25,7 @@ WebJam lets creators collaborate in one app for music, visual art, writing, desi
 0. The layout auto-adjusts by mode (more mixer space for music, more canvas space for critique/writing).
 1. Set a **Template** and **Session Goal**.
 1. Click **Launch Jamulus**.
-2. Click **Launch Webex**.
+2. Click **Launch Webex**. Your browser opens to the meeting.
 3. Wait for participants to appear in the mixer.
 4. Adjust faders/pan/mute/solo as needed.
 5. Use the **Shared Session Canvas** to pin references, track review state, and capture notes.

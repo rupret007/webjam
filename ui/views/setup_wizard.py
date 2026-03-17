@@ -52,7 +52,7 @@ class SetupWizard:
         self.back_btn: tk.Button | None = None
         self.rerun_btn: tk.Button | None = None
 
-    def show(self) -> None:
+    def show(self) -> tk.Toplevel:
         self.window = tk.Toplevel(self.root)
         self.window.title("WebJam Setup Wizard")
         self.window.geometry("680x430")
@@ -94,6 +94,7 @@ class SetupWizard:
         self.next_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
         self._render_step()
+        return self.window
 
     def _open_help(self) -> None:
         help_text = (

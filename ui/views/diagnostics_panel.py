@@ -23,7 +23,7 @@ def show_diagnostics_panel(
     on_reset_metrics: Callable[[], None],
     bg_color: str | None = None,
     fg_color: str | None = None,
-) -> None:
+) -> tk.Toplevel:
     bg = bg_color or DEFAULT_THEME.bg_secondary
     fg = fg_color or DEFAULT_THEME.text_primary
     panel = tk.Toplevel(root)
@@ -68,3 +68,4 @@ def show_diagnostics_panel(
         tk.Button(btn_row, text="Export Bundle", command=on_export_bundle, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Reset Metrics", command=on_reset_metrics, **btn_style).pack(side=tk.LEFT, padx=8)
     tk.Button(btn_row, text="Close", command=panel.destroy, **btn_style).pack(side=tk.RIGHT)
+    return panel

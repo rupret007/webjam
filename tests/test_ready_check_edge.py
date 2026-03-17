@@ -87,6 +87,58 @@ class TestBackgroundReviewEdge(unittest.TestCase):
             self.assertEqual(task(), (True, "ok"))
             tcp_hint_mock.assert_called_once_with("jam.example.com", 22124)
 
+    def test_open_diagnostics_panel_refocuses_existing_window(self):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        existing = MagicMock()
+        existing.winfo_exists.return_value = True
+        app._diagnostics_panel_window = existing
+        app.metrics_service = MagicMock()
+        app._run_background_task = MagicMock()
+
+        app.open_diagnostics_panel()
+
+        app.metrics_service.increment.assert_not_called()
+        app._run_background_task.assert_not_called()
+        existing.deiconify.assert_called_once_with()
+        existing.lift.assert_called_once_with()
+        existing.focus_force.assert_called_once_with()
+        existing.grab_set.assert_called_once_with()
+
+    @patch("webjam_app_enhanced.show_diagnostics_panel")
+    def test_open_diagnostics_panel_tracks_new_window_reference(self, panel_mock):
+        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
+        app._diagnostics_panel_window = None
+        app.metrics_service = MagicMock()
+        app._refresh_endpoint_state = MagicMock()
+        app.jamulus_controller = MagicMock()
+        app.jamulus_controller.get_audio_diagnostics.return_value = {"backend": "test"}
+        app.find_jamulus = MagicMock(return_value="Jamulus.exe")
+        app.webex_url = "https://webex.example.com/meet/test"
+        app.webex_controller = MagicMock()
+        app._run_background_task = MagicMock()
+        app.export_diagnostics_snapshot = MagicMock()
+        app.export_diagnostics_bundle = MagicMock()
+        app.reset_usage_metrics = MagicMock()
+        app.show_setup_wizard = MagicMock()
+        app.show_help = MagicMock()
+        app.root = object()
+        app.jamulus_server = "jam.example.com"
+        app.jamulus_port = 22124
+        panel = MagicMock()
+        panel.winfo_exists.return_value = True
+        panel_mock.return_value = panel
+
+        app.open_diagnostics_panel()
+
+        on_success = app._run_background_task.call_args.kwargs["on_success"]
+        on_success((True, "ok"))
+
+        self.assertIs(app._diagnostics_panel_window, panel)
+        bind_args = panel.bind.call_args
+        self.assertEqual(bind_args.args[0], "<Destroy>")
+        bind_args.args[1]()
+        self.assertIsNone(app._diagnostics_panel_window)
+
 
 class TestReadyCheckPanelEdge(unittest.TestCase):
     @patch("ui.views.ready_check_panel.tk.Button")
