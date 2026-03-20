@@ -40,6 +40,9 @@ from ui.views.ready_check_panel import show_ready_check_panel
 from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
+from ui.mixer_channel import EnhancedMixerChannel
+from ui.mode_controller import ModeController
+from ui.mixer_service import MixerService
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
@@ -110,392 +113,6 @@ MODE_LAYOUT_PRESETS = {
         "canvas_width": 500,
     },
 }
-
-
-class EnhancedMixerChannel(ctk.CTkFrame if CTK_AVAILABLE else tk.Frame):
-    """Enhanced mixer channel with real Jamulus integration"""
-    
-    def __init__(
-        self,
-        parent,
-        participant: JamulusParticipant,
-        controller: JamulusController,
-        font_scale: float = 1.0,
-        high_contrast: bool = False,
-        on_select: Callable[[int], None] | None = None,
-    ):
-        super().__init__(parent)
-        self.participant = participant
-        self.controller = controller
-        self.font_scale = font_scale
-        self.high_contrast = high_contrast
-        self.on_select = on_select
-        self._tooltips = []
-        self._selected = False
-        
-        if CTK_AVAILABLE:
-            self.configure(fg_color=THEME.bg_secondary, corner_radius=10, border_width=1, border_color=THEME.bg_secondary)
-        else:
-            self.configure(
-                bg=THEME.bg_secondary,
-                relief=tk.RAISED,
-                borderwidth=2,
-                highlightthickness=1,
-                highlightbackground=THEME.bg_secondary,
-                highlightcolor=THEME.bg_secondary,
-            )
-        
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """Create enhanced channel strip UI"""
-        padding = 5
-        
-        # Channel number indicator
-        ch_num = self._create_label(f"CH {self.participant.channel_id + 1}", font_size=9)
-        ch_num.pack(pady=(padding, 0))
-        
-        # Participant name
-        name_label = self._create_label(self.participant.name, font_size=11, bold=True)
-        name_label.pack(pady=2)
-        
-        # Connection status indicator
-        status = "●" if self.participant.is_connected else "○"
-        color = "#00ff00" if self.participant.is_connected else "#666666"
-        self.status_label = self._create_label(status, font_size=16)
-        if not CTK_AVAILABLE:
-            self.status_label.configure(fg=color)
-        self.status_label.pack()
-        
-        # VU Meter with peak hold
-        vu_frame = ctk.CTkFrame(self) if CTK_AVAILABLE else tk.Frame(self, bg=THEME.bg_secondary)
-        vu_frame.pack(pady=padding, padx=padding, fill=tk.X)
-        
-        if CTK_AVAILABLE:
-            self.vu_meter = ctk.CTkProgressBar(vu_frame, height=15)
-            self.vu_meter.set(0)
-        else:
-            self.vu_meter = tk.Canvas(vu_frame, height=15, bg=THEME.bg_primary, highlightthickness=0)
-            self.vu_meter_level = 0
-        self.vu_meter.pack(fill=tk.X)
-        
-        # Peak indicator
-        self.peak_label = self._create_label("", font_size=8)
-        self.peak_label.pack()
-        
-        # Vertical fader with dB scale
-        fader_container = ctk.CTkFrame(self) if CTK_AVAILABLE else tk.Frame(self, bg=THEME.bg_secondary)
-        fader_container.pack(pady=padding, fill=tk.BOTH, expand=True)
-        
-        # dB markers
-        db_markers = ["+0", "-6", "-12", "-20", "-∞"]
-        markers_frame = tk.Frame(fader_container, bg=THEME.bg_secondary)
-        markers_frame.pack(side=tk.LEFT, fill=tk.Y)
-        
-        for marker in db_markers:
-            lbl = self._create_label(marker, font_size=7)
-            lbl.pack(side=tk.TOP, pady=8)
-        
-        # Fader
-        if CTK_AVAILABLE:
-            self.fader = ctk.CTkSlider(
-                fader_container,
-                from_=0,
-                to=100,
-                orientation="vertical",
-                command=self.on_fader_change,
-                height=180
-            )
-        else:
-            self.fader = tk.Scale(
-                fader_container,
-                from_=100,
-                to=0,
-                resolution=1,
-                orient=tk.VERTICAL,
-                command=self.on_fader_change,
-                bg=THEME.bg_secondary,
-                fg=THEME.text_primary,
-                highlightthickness=0,
-                length=180,
-                width=30
-            )
-        self.fader.set(self.participant.fader_level)
-        self.fader.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-        
-        # Exact dB value
-        self.db_label = self._create_label("0.0 dB", font_size=9)
-        self.db_label.pack()
-        
-        # Pan control with L-C-R indicator
-        pan_frame = ctk.CTkFrame(self) if CTK_AVAILABLE else tk.Frame(self, bg=THEME.bg_secondary)
-        pan_frame.pack(pady=padding, padx=padding, fill=tk.X)
-        
-        pan_label = self._create_label("Pan", font_size=8)
-        pan_label.pack()
-        
-        if CTK_AVAILABLE:
-            self.pan_slider = ctk.CTkSlider(
-                pan_frame,
-                from_=0,
-                to=100,
-                orientation="horizontal",
-                command=self.on_pan_change
-            )
-        else:
-            self.pan_slider = tk.Scale(
-                pan_frame,
-                from_=0,
-                to=100,
-                resolution=1,
-                orient=tk.HORIZONTAL,
-                command=self.on_pan_change,
-                bg=THEME.bg_secondary,
-                fg=THEME.text_primary,
-                highlightthickness=0
-            )
-        self.pan_slider.set(self.participant.pan)
-        self.pan_slider.pack(fill=tk.X)
-        
-        self.pan_label = self._create_label("C", font_size=8)
-        self.pan_label.pack()
-        
-        # Mute and Solo buttons
-        button_frame = ctk.CTkFrame(self) if CTK_AVAILABLE else tk.Frame(self, bg=THEME.bg_secondary)
-        button_frame.pack(pady=padding, fill=tk.X, padx=5)
-        
-        if CTK_AVAILABLE:
-            self.mute_btn = ctk.CTkButton(
-                button_frame,
-                text="MUTE",
-                command=self.toggle_mute,
-                width=60,
-                height=28,
-                fg_color=THEME.button_default,
-                font=(THEME.font_family, scaled_font_size(10, self.font_scale), "bold")
-            )
-            self.solo_btn = ctk.CTkButton(
-                button_frame,
-                text="SOLO",
-                command=self.toggle_solo,
-                width=60,
-                height=28,
-                fg_color=THEME.button_default,
-                font=(THEME.font_family, scaled_font_size(10, self.font_scale), "bold")
-            )
-        else:
-            self.mute_btn = tk.Button(
-                button_frame,
-                text="MUTE",
-                command=self.toggle_mute,
-                bg=THEME.button_default,
-                fg=THEME.text_primary,
-                font=("Arial", scaled_font_size(9, self.font_scale), "bold"),
-                width=6
-            )
-            self.solo_btn = tk.Button(
-                button_frame,
-                text="SOLO",
-                command=self.toggle_solo,
-                bg=THEME.button_default,
-                fg=THEME.text_primary,
-                font=("Arial", scaled_font_size(9, self.font_scale), "bold"),
-                width=6
-            )
-        
-        self.mute_btn.pack(pady=2, fill=tk.X)
-        self.solo_btn.pack(pady=2, fill=tk.X)
-        
-        # Update button states
-        self.update_button_states()
-        self._attach_tooltips()
-        self.apply_accessibility(self.font_scale, self.high_contrast)
-        self._bind_selection_handlers(self)
-        self.set_selected(False)
-    
-    def _create_label(self, text, font_size=10, bold=False):
-        """Create a styled label"""
-        actual_size = scaled_font_size(font_size, self.font_scale)
-        if CTK_AVAILABLE:
-            weight = "bold" if bold else "normal"
-            return ctk.CTkLabel(self, text=text, font=(THEME.font_family, actual_size, weight))
-        else:
-            font = (THEME.font_family, actual_size, "bold" if bold else "normal")
-            return tk.Label(self, text=text, font=font, bg=THEME.bg_secondary, fg=THEME.text_primary)
-    
-    def on_fader_change(self, value):
-        """Handle fader movement"""
-        value = int(float(value))
-        self.controller.set_fader_level(self.participant.channel_id, value)
-        
-        # Convert to dB
-        if value > 0:
-            db = 20 * ((value / 100) - 1)
-        else:
-            db = -float('inf')
-        
-        db_str = f"{db:.1f} dB" if db != -float('inf') else "-∞ dB"
-        self.db_label.configure(text=db_str)
-    
-    def on_pan_change(self, value):
-        """Handle pan control change"""
-        value = int(float(value))
-        self.controller.set_pan(self.participant.channel_id, value)
-        
-        # Update pan indicator
-        if value < 40:
-            pan_text = "L"
-        elif value > 60:
-            pan_text = "R"
-        else:
-            pan_text = "C"
-        self.pan_label.configure(text=pan_text)
-    
-    def toggle_mute(self):
-        """Toggle mute state"""
-        self._notify_selected()
-        new_state = not self.participant.muted
-        self.controller.set_mute(self.participant.channel_id, new_state)
-        self.update_button_states()
-    
-    def toggle_solo(self):
-        """Toggle solo state"""
-        self._notify_selected()
-        new_state = not self.participant.solo
-        self.controller.set_solo(self.participant.channel_id, new_state)
-        self.update_button_states()
-    
-    def update_button_states(self):
-        """Update button colors based on state"""
-        mute_color = THEME.accent_danger if self.participant.muted else THEME.button_default
-        solo_color = THEME.accent_success if self.participant.solo else THEME.button_default
-        
-        if CTK_AVAILABLE:
-            self.mute_btn.configure(fg_color=mute_color)
-            self.solo_btn.configure(fg_color=solo_color)
-        else:
-            self.mute_btn.configure(bg=mute_color)
-            self.solo_btn.configure(bg=solo_color)
-    
-    def update_vu_meter(self, level: float):
-        """Update VU meter with audio level"""
-        if CTK_AVAILABLE:
-            self.vu_meter.set(level)
-        else:
-            # Draw custom VU meter
-            width = self.vu_meter.winfo_width()
-            height = self.vu_meter.winfo_height()
-            
-            # Skip if not rendered yet (winfo returns 1 before render)
-            if width <= 1 or height <= 1:
-                return
-            
-            self.vu_meter.delete("all")
-            
-            # Background
-            self.vu_meter.create_rectangle(0, 0, width, height, fill=THEME.bg_primary, outline="")
-            
-            # Level bar
-            bar_width = int(width * level)
-            
-            # Color gradient: green -> yellow -> red
-            if level < 0.7:
-                color = "#00ff00"
-            elif level < 0.9:
-                color = "#ffff00"
-            else:
-                color = "#ff0000"
-            
-            if bar_width > 0:
-                self.vu_meter.create_rectangle(0, 0, bar_width, height, fill=color, outline="")
-        
-        # Update peak indicator
-        if level > 0.95:
-            self.peak_label.configure(text="PEAK!")
-            if not CTK_AVAILABLE:
-                self.peak_label.configure(fg="#ff0000")
-        else:
-            self.peak_label.configure(text="")
-
-    def _attach_tooltips(self):
-        self._tooltips.append(Tooltip(self.fader, "Adjust participant volume"))
-        self._tooltips.append(Tooltip(self.pan_slider, "Position in stereo field (L/C/R)"))
-        self._tooltips.append(Tooltip(self.mute_btn, "Mute this participant in your mix"))
-        self._tooltips.append(Tooltip(self.solo_btn, "Solo this participant and mute others"))
-        self._tooltips.append(Tooltip(self.vu_meter, "Real-time level meter; avoid sustained PEAK"))
-        self._tooltips.append(Tooltip(self, "Click a channel to select it for keyboard mute/solo shortcuts"))
-
-    def _notify_selected(self) -> None:
-        if self.on_select is not None:
-            self.on_select(self.participant.channel_id)
-        try:
-            self.focus_set()
-        except (tk.TclError, AttributeError):
-            pass
-
-    def _bind_selection_handlers(self, widget: tk.Misc) -> None:
-        try:
-            widget.bind("<Button-1>", lambda _e: self._notify_selected(), add="+")
-            widget.bind("<FocusIn>", lambda _e: self._notify_selected(), add="+")
-        except (tk.TclError, AttributeError):
-            return
-        for child in widget.winfo_children():
-            self._bind_selection_handlers(child)
-
-    def set_selected(self, selected: bool) -> None:
-        self._selected = bool(selected)
-        if CTK_AVAILABLE:
-            self.configure(
-                border_width=2 if self._selected else 1,
-                border_color=(THEME.accent_warning if self._selected else THEME.bg_secondary),
-            )
-            return
-        border_color = THEME.accent_warning if self._selected else THEME.bg_secondary
-        self.configure(highlightthickness=2 if self._selected else 1)
-        self.configure(highlightbackground=border_color, highlightcolor=border_color)
-
-    def apply_accessibility(self, font_scale: float, high_contrast: bool) -> None:
-        self.font_scale = clamp_scale(font_scale)
-        self.high_contrast = high_contrast
-        palette = contrast_palette(high_contrast)
-        self._apply_widget_style(self, palette)
-        self.set_selected(self._selected)
-
-    def _apply_widget_style(self, widget: tk.Misc, palette: dict[str, str]) -> None:
-        try:
-            current_font = widget.cget("font")
-            if current_font:
-                base_font = getattr(widget, "_webjam_base_font", None)
-                if base_font is None:
-                    f = tkfont.Font(font=current_font)
-                    base_font = (
-                        f.actual("family"),
-                        abs(int(f.actual("size") or 10)),
-                        f.actual("weight"),
-                    )
-                    setattr(widget, "_webjam_base_font", base_font)
-                family, base_size, weight = base_font
-                size = scaled_font_size(base_size, self.font_scale)
-                widget.configure(font=(family, size, weight))
-        except (tk.TclError, RuntimeError, ValueError):
-            pass
-
-        try:
-            if CTK_AVAILABLE:
-                if "text_color" in widget.configure():
-                    widget.configure(text_color=palette["fg"])
-                if "fg_color" in widget.configure() and self.high_contrast:
-                    widget.configure(fg_color=palette["bg"])
-            else:
-                if "fg" in widget.configure():
-                    widget.configure(fg=palette["fg"])
-                if "bg" in widget.configure():
-                    widget.configure(bg=palette["bg"])
-        except tk.TclError:
-            pass
-
-        for child in widget.winfo_children():
-            self._apply_widget_style(child, palette)
 
 
 class WebJamEnhancedApp:
@@ -580,8 +197,20 @@ class WebJamEnhancedApp:
         self.auth_controller = AuthController(self.repository, self.policy)
         self.current_user: Optional[UserContext] = None
         self.selected_channel_id: int | None = None
-        self._pending_mix_restore_payload: dict[str, Any] | None = None
-        self._pending_mix_restore_source: str | None = None
+        self.mode_controller = ModeController(self)
+        self.mixer_service = MixerService(
+            app_root=self.root,
+            repository=self.repository,
+            auth_controller=self.auth_controller,
+            jamulus_controller=self.jamulus_controller,
+            metrics_service=self.metrics_service,
+            get_current_user=lambda: self.current_user,
+            get_mode_key=lambda: self.mode_key,
+            refresh_readiness=self._refresh_readiness,
+            set_status_banner=self._set_status_banner,
+            mixer_channels=self.mixer_channels,
+            app_root_exists_check=lambda: self.root.winfo_exists(),
+        )
         self.api_bridge = LocalApiBridge(
             get_participants=self._bridge_participants,
             get_diagnostics=self.jamulus_controller.get_audio_diagnostics,
@@ -600,7 +229,7 @@ class WebJamEnhancedApp:
         self._poll_connection_health()
         self._defer_service_start()
         self._show_setup_once()
-        self._restore_startup_mix_default()
+        self.mixer_service._restore_startup_mix_default()
 
     def setup_ui(self):
         """Setup the main application UI"""
@@ -611,12 +240,12 @@ class WebJamEnhancedApp:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Save Mix", command=self.save_mix)
-        file_menu.add_command(label="Load Mix", command=self.load_mix)
+        file_menu.add_command(label="Save Mix", command=self.mixer_service.save_mix)
+        file_menu.add_command(label="Load Mix", command=self.mixer_service.load_mix)
         file_menu.add_separator()
-        file_menu.add_command(label="Save Listening Profile", command=self.save_listening_profile)
-        file_menu.add_command(label="Load Listening Profile", command=self.load_listening_profile)
-        file_menu.add_command(label="Delete Listening Profile", command=self.delete_listening_profile)
+        file_menu.add_command(label="Save Listening Profile", command=self.mixer_service.save_listening_profile)
+        file_menu.add_command(label="Load Listening Profile", command=self.mixer_service.load_listening_profile)
+        file_menu.add_command(label="Delete Listening Profile", command=self.mixer_service.delete_listening_profile)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit_app)
         
@@ -747,7 +376,7 @@ class WebJamEnhancedApp:
         self.launch_jamulus_btn.pack(side=tk.LEFT, padx=5)
         self.launch_webex_btn = self._create_button(btn_frame, "📹 Launch Webex", self.launch_webex)
         self.launch_webex_btn.pack(side=tk.LEFT, padx=5)
-        self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.save_mix)
+        self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.mixer_service.save_mix)
         self.save_mix_btn.pack(side=tk.LEFT, padx=5)
 
         hint_text = "Tip: pick mode + goal first. Launch is deferred for faster startup. We're making something together."
@@ -780,11 +409,11 @@ class WebJamEnhancedApp:
         master_controls = ctk.CTkFrame(mixer_frame) if CTK_AVAILABLE else tk.Frame(mixer_frame, bg="#2b2b2b")
         master_controls.pack(fill=tk.X, padx=10, pady=5)
         
-        self.reset_all_btn = self._create_button(master_controls, "Reset All Faders", self.reset_all_faders)
+        self.reset_all_btn = self._create_button(master_controls, "Reset All Faders", self.mixer_service.reset_all_faders)
         self.reset_all_btn.pack(side=tk.LEFT, padx=5)
-        self.unmute_all_btn = self._create_button(master_controls, "Unmute All", self.unmute_all)
+        self.unmute_all_btn = self._create_button(master_controls, "Unmute All", self.mixer_service.unmute_all)
         self.unmute_all_btn.pack(side=tk.LEFT, padx=5)
-        self.center_pans_btn = self._create_button(master_controls, "Center All Pans", self.center_all_pans)
+        self.center_pans_btn = self._create_button(master_controls, "Center All Pans", self.mixer_service.center_all_pans)
         self.center_pans_btn.pack(side=tk.LEFT, padx=5)
         
         # Scrollable mixer channels
@@ -937,191 +566,15 @@ class WebJamEnhancedApp:
             )
         self.quick_template_var.set(CUSTOM_TEMPLATE_OPTION)
 
-    @staticmethod
-    def _mode_layout_spec(mode_key: str) -> dict[str, float]:
-        spec = dict(DEFAULT_MODE_LAYOUT)
-        spec.update(MODE_LAYOUT_PRESETS.get(str(mode_key).strip(), {}))
-        return spec
 
-    @staticmethod
-    def _compute_sash_x(total_width: int, mixer_ratio: float, min_mixer: int, min_canvas: int) -> int:
-        width = max(1, int(total_width))
-        ratio = max(0.1, min(float(mixer_ratio), 0.9))
-        lower_bound = max(1, int(min_mixer))
-        upper_bound = max(lower_bound, width - max(1, int(min_canvas)))
-        desired = int(width * ratio)
-        return max(lower_bound, min(desired, upper_bound))
 
     def _apply_mode_layout(self) -> None:
-        spec = self._mode_layout_spec(self.mode_key)
-        if hasattr(self, "session_canvas"):
-            try:
-                self.session_canvas.configure(width=int(spec["canvas_width"]))
-            except (tk.TclError, RuntimeError, ValueError):
-                pass
-
-        splitter = getattr(self, "main_splitter", None)
-        if splitter is None:
-            return
-
-        try:
-            if hasattr(self, "left_content"):
-                splitter.paneconfig(self.left_content, minsize=int(spec["min_mixer"]))
-            if hasattr(self, "right_content"):
-                splitter.paneconfig(self.right_content, minsize=int(spec["min_canvas"]))
-        except (tk.TclError, RuntimeError, ValueError):
-            pass
-
-        try:
-            total_width = int(self.root.winfo_width())
-            if total_width <= 1:
-                total_width = int(self.root.winfo_reqwidth())
-            if total_width <= 1:
-                total_width = 1600
-            sash_x = self._compute_sash_x(
-                total_width=total_width,
-                mixer_ratio=float(spec["mixer_ratio"]),
-                min_mixer=int(spec["min_mixer"]),
-                min_canvas=int(spec["min_canvas"]),
-            )
-            splitter.sash_place(0, sash_x, 1)
-        except (tk.TclError, RuntimeError, ValueError, TypeError):
-            return
+        self.mode_controller.apply_layout(self.mode_key)
 
     def _schedule_mode_layout_refresh(self) -> None:
-        self._apply_mode_layout()
-        root = getattr(self, "root", None)
-        if root is None:
-            return
-        try:
-            root.after(120, self._apply_mode_layout)
-        except (tk.TclError, RuntimeError, AttributeError):
-            return
+        self.mode_controller.schedule_refresh(self.mode_key)
 
-    def _available_profile_entries(self) -> list[dict[str, str]]:
-        current_mode_profiles = self.repository.list_mix_profiles(self.mode_key)
-        seen_names = {profile["profile_name"] for profile in current_mode_profiles}
-        all_profiles = self.repository.list_mix_profiles()
-        other_profiles = [profile for profile in all_profiles if profile["profile_name"] not in seen_names]
-        return current_mode_profiles + other_profiles
 
-    def _profile_prompt_text(self, action: str, profiles: list[dict[str, str]]) -> str:
-        lines = [f"{action} listening profile", ""]
-        if not profiles:
-            lines.append("No profiles saved yet.")
-            return "\n".join(lines)
-        lines.append("Available profiles:")
-        for profile in profiles[:10]:
-            mode_label = get_mode_by_key_or_default(profile.get("mode_key", "")).label
-            lines.append(f"- {profile['profile_name']} ({mode_label})")
-        if len(profiles) > 10:
-            lines.append(f"...and {len(profiles) - 10} more")
-        lines.append("")
-        lines.append("Enter the profile name exactly as shown.")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _resolve_profile_name(name: str, profiles: list[dict[str, str]]) -> str | None:
-        normalized = str(name or "").strip()
-        if not normalized:
-            return None
-        by_casefold = {profile["profile_name"].casefold(): profile["profile_name"] for profile in profiles}
-        return by_casefold.get(normalized.casefold())
-
-    def _refresh_mixer_controls_from_participants(self) -> None:
-        for channel_id, channel in list(getattr(self, "mixer_channels", {}).items()):
-            try:
-                p = channel.participant
-                channel.fader.set(p.fader_level)
-                channel.pan_slider.set(p.pan)
-                channel.update_button_states()
-            except (KeyError, tk.TclError, AttributeError):
-                continue
-
-    def _select_mixer_channel(self, channel_id: int | None) -> None:
-        if channel_id is not None and channel_id not in self.mixer_channels:
-            channel_id = None
-        self.selected_channel_id = channel_id
-        for current_id, channel in list(getattr(self, "mixer_channels", {}).items()):
-            try:
-                channel.set_selected(current_id == channel_id)
-            except (tk.TclError, AttributeError):
-                continue
-
-    def _selected_mixer_channel(self) -> EnhancedMixerChannel | None:
-        if self.selected_channel_id is None:
-            return None
-        return self.mixer_channels.get(self.selected_channel_id)
-
-    def _default_mix_user(self) -> str | None:
-        if self.current_user is None:
-            return None
-        username = str(getattr(self.current_user, "username", "") or "").strip()
-        return username or None
-
-    def _load_mix_payload_from_file(self, mix_file: Path | None = None) -> Optional[dict[str, Any]]:
-        mix_path = mix_file or MIX_FILE
-        try:
-            with Path(mix_path).open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            LOGGER.warning("Could not read mix payload from %s: %s", mix_path, exc)
-            return None
-        if not isinstance(payload, dict):
-            LOGGER.warning("Mix payload from %s was not a JSON object.", mix_path)
-            return None
-        return payload
-
-    def _queue_mix_restore(self, payload: dict[str, Any], source_label: str) -> None:
-        self._pending_mix_restore_payload = dict(payload)
-        self._pending_mix_restore_source = str(source_label)
-        self._attempt_pending_mix_restore()
-
-    def _attempt_pending_mix_restore(self) -> None:
-        payload = getattr(self, "_pending_mix_restore_payload", None)
-        if not isinstance(payload, dict):
-            return
-        applied_channels = self.jamulus_controller.apply_mix_data(payload)
-        if applied_channels is None:
-            LOGGER.warning(
-                "Discarding invalid pending mix restore payload from %s.",
-                self._pending_mix_restore_source or "unknown source",
-            )
-            self._pending_mix_restore_payload = None
-            self._pending_mix_restore_source = None
-            return
-        if applied_channels <= 0:
-            return
-        self._pending_mix_restore_payload = None
-        restored_from = self._pending_mix_restore_source or "saved mix"
-        self._pending_mix_restore_source = None
-        self._refresh_mixer_controls_from_participants()
-        self._refresh_readiness()
-        try:
-            self._set_status_banner(f"Restored mix from {restored_from}", color="#00cc66")
-        except (tk.TclError, RuntimeError, AttributeError):
-            pass
-
-    def _restore_startup_mix_default(self) -> None:
-        if not MIX_FILE.exists():
-            return
-        payload = self._load_mix_payload_from_file()
-        if payload is None:
-            return
-        self._queue_mix_restore(payload, str(MIX_FILE))
-
-    def _restore_signed_in_mix_default(self) -> None:
-        username = self._default_mix_user()
-        if not username:
-            return
-        saved_mix = self.repository.get_user_mix_default(username)
-        if saved_mix is None:
-            return
-        payload = saved_mix.get("payload")
-        if not isinstance(payload, dict):
-            LOGGER.warning("Saved user mix for '%s' was not a mapping payload.", username)
-            return
-        self._queue_mix_restore(payload, f"{username} profile")
 
     def _bridge_participants(self):
         return [
@@ -2083,7 +1536,7 @@ class WebJamEnhancedApp:
         if user is None:
             return False
         self.current_user = user
-        self._restore_signed_in_mix_default()
+        self.mixer_service._restore_signed_in_mix_default()
         return True
 
     def open_admin_panel(self):
@@ -2422,354 +1875,9 @@ class WebJamEnhancedApp:
                 return payload, str(MIX_FILE)
         return None
     
-    def save_mix(self):
-        """Save current mix settings"""
-        self.metrics_service.increment("metric_save_mix_attempt")
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "save_mix",
-            require_sign_in=False,
-            allow_anonymous=True,
-            parent=self.root,
-        ):
-            return
-        participants = self.jamulus_controller.get_participants()
-        if not participants:
-            messagebox.showwarning(
-                "No Participants",
-                "Connect or add participants before saving mix settings.",
-                parent=self.root,
-            )
-            return
-        try:
-            username = self._default_mix_user()
-            audit_actor = self.current_user.username if self.current_user else "anonymous"
-            if username:
-                mix_payload = self.jamulus_controller.serialize_mix()
-                self.repository.save_user_mix_default(username, mix_payload)
-                audit_detail = f"user:{username}"
-                success_message = (
-                    f"Mix settings saved to your WebJam profile for {username}.\n\n"
-                    "This default mix restores automatically when you sign in again."
-                )
-            else:
-                self.jamulus_controller.save_mix(str(MIX_FILE))
-                audit_detail = str(MIX_FILE)
-                success_message = (
-                    f"Mix settings saved locally to:\n{MIX_FILE}\n\n"
-                    "This default mix restores automatically the next time WebJam starts."
-                )
-            self._pending_mix_restore_payload = None
-            self._pending_mix_restore_source = None
-            self.metrics_service.increment("metric_save_mix_success")
-            self.repository.add_audit("save_mix", audit_actor, audit_detail)
-            messagebox.showinfo("Saved", success_message, parent=self.root)
-        except Exception as e:
-            LOGGER.exception("save_mix failed: %s", e)
-            self.metrics_service.increment("metric_save_mix_failed")
-            self._show_actionable_error(
-                "Save Mix Failed",
-                what_failed=f"Could not save the default mix ({e}).",
-                likely_cause="Repository write failed, the mix payload was invalid, or the local mix file path is unavailable.",
-                next_action="Verify the current profile/path in diagnostics, then retry save.",
-                retry_callback=self.save_mix,
-            )
 
-    def save_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "save_mix",
-            require_sign_in=False,
-            allow_anonymous=True,
-            parent=self.root,
-        ):
-            return
-        participants = self.jamulus_controller.get_participants()
-        if not participants:
-            messagebox.showwarning("No Participants", "Connect or add participants before saving a listening profile.", parent=self.root)
-            return
 
-        suggested_name = f"{get_mode_by_key_or_default(self.mode_key).label} Profile"
-        profile_name = simpledialog.askstring(
-            "Save Listening Profile",
-            "Enter a name for this listening profile:",
-            parent=self.root,
-            initialvalue=suggested_name,
-        )
-        if profile_name is None:
-            return
-        normalized_name = profile_name.strip()
-        if not normalized_name:
-            messagebox.showwarning("Invalid Name", "Profile name cannot be empty.", parent=self.root)
-            return
 
-        existing = self.repository.get_mix_profile(normalized_name)
-        if existing is not None:
-            overwrite = messagebox.askokcancel(
-                "Overwrite Listening Profile",
-                f"A listening profile named '{existing['profile_name']}' already exists.\n\nOverwrite it?",
-                parent=self.root,
-            )
-            if not overwrite:
-                return
-
-        try:
-            self.repository.save_mix_profile(
-                normalized_name,
-                self.mode_key,
-                self.jamulus_controller.serialize_mix(),
-            )
-            self.metrics_service.increment("metric_listening_profile_save_success")
-            self.repository.add_audit(
-                "save_mix_profile",
-                self.current_user.username if self.current_user else "anonymous",
-                normalized_name,
-            )
-            messagebox.showinfo(
-                "Listening Profile Saved",
-                f"Saved listening profile:\n{normalized_name}",
-                parent=self.root,
-            )
-        except Exception as exc:
-            LOGGER.exception("save_listening_profile failed: %s", exc)
-            self.metrics_service.increment("metric_listening_profile_save_failed")
-            messagebox.showerror(
-                "Save Failed",
-                f"Could not save listening profile:\n{exc}",
-                parent=self.root,
-            )
-
-    def load_mix(self):
-        """Load saved mix settings"""
-        self.metrics_service.increment("metric_load_mix_attempt")
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "load_mix",
-            require_sign_in=False,
-            allow_anonymous=True,
-            parent=self.root,
-        ):
-            return
-        try:
-            saved_mix = self._saved_mix_payload_for_load()
-            if saved_mix is None:
-                if MIX_FILE.exists() and self._load_mix_payload_from_file() is None:
-                    self.metrics_service.increment("metric_load_mix_failed")
-                    self._show_actionable_error(
-                        "Load Mix Failed",
-                        what_failed="The saved mix file could not be parsed or was missing the expected participant payload.",
-                        likely_cause="The file is corrupted, incomplete, or from an unsupported format.",
-                        next_action="Save a fresh mix preset after confirming participants are connected.",
-                        retry_callback=self.load_mix,
-                    )
-                    return
-                messagebox.showwarning("No Settings", "No saved mix settings found.", parent=self.root)
-                return
-
-            mix_payload, mix_source = saved_mix
-            applied_channels = self.jamulus_controller.apply_mix_data(mix_payload)
-            if applied_channels is None:
-                self.metrics_service.increment("metric_load_mix_failed")
-                self._show_actionable_error(
-                    "Load Mix Failed",
-                    what_failed="The saved mix payload could not be parsed or was missing the expected participant data.",
-                    likely_cause="The saved mix is corrupted, incomplete, or from an unsupported format.",
-                    next_action="Save a fresh mix preset after confirming participants are connected.",
-                    retry_callback=self.load_mix,
-                )
-                return
-            if applied_channels == 0:
-                self.metrics_service.increment("metric_load_mix_failed")
-                messagebox.showwarning(
-                    "No Matching Participants",
-                    "Saved mix was read, but none of the current participants matched the saved channels.\n\n"
-                    "Reconnect the expected participants and try again.",
-                    parent=self.root,
-                )
-                return
-            self._pending_mix_restore_payload = None
-            self._pending_mix_restore_source = None
-            self._refresh_mixer_controls_from_participants()
-            self._refresh_readiness()
-            messagebox.showinfo("Loaded", f"Mix settings loaded from:\n{mix_source}", parent=self.root)
-            self.metrics_service.increment("metric_load_mix_success")
-        except Exception as e:
-            LOGGER.exception("load_mix failed: %s", e)
-            self.metrics_service.increment("metric_load_mix_failed")
-            self._show_actionable_error(
-                "Load Mix Failed",
-                what_failed=f"Could not load the saved mix ({e}).",
-                likely_cause="Corrupted or incompatible saved mix data.",
-                next_action="Save a fresh mix preset after confirming participants are connected.",
-                retry_callback=self.load_mix,
-            )
-
-    def load_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "load_mix",
-            require_sign_in=False,
-            allow_anonymous=True,
-            parent=self.root,
-        ):
-            return
-        profiles = self._available_profile_entries()
-        if not profiles:
-            messagebox.showinfo("No Profiles", "No listening profiles are saved yet.", parent=self.root)
-            return
-
-        profile_name = simpledialog.askstring(
-            "Load Listening Profile",
-            self._profile_prompt_text("Load", profiles),
-            parent=self.root,
-        )
-        if profile_name is None:
-            return
-        resolved_name = self._resolve_profile_name(profile_name, profiles)
-        if resolved_name is None:
-            messagebox.showwarning("Profile Not Found", "Enter one of the saved listening profile names.", parent=self.root)
-            return
-
-        profile = self.repository.get_mix_profile(resolved_name)
-        if profile is None:
-            self.metrics_service.increment("metric_listening_profile_load_failed")
-            messagebox.showerror("Load Failed", f"Listening profile '{resolved_name}' could not be read.", parent=self.root)
-            return
-
-        try:
-            applied_channels = self.jamulus_controller.apply_mix_data(profile["payload"])
-            if applied_channels is None:
-                self.metrics_service.increment("metric_listening_profile_load_failed")
-                messagebox.showerror(
-                    "Load Failed",
-                    f"Listening profile '{resolved_name}' is invalid or corrupted.",
-                    parent=self.root,
-                )
-                return
-            if applied_channels == 0:
-                self.metrics_service.increment("metric_listening_profile_load_failed")
-                messagebox.showwarning(
-                    "No Matching Participants",
-                    f"Listening profile '{resolved_name}' did not match any current participants.",
-                    parent=self.root,
-                )
-                return
-            self._refresh_mixer_controls_from_participants()
-            self._refresh_readiness()
-            self.metrics_service.increment("metric_listening_profile_load_success")
-            self.repository.add_audit(
-                "load_mix_profile",
-                self.current_user.username if self.current_user else "anonymous",
-                resolved_name,
-            )
-            messagebox.showinfo(
-                "Listening Profile Loaded",
-                f"Loaded listening profile:\n{resolved_name}",
-                parent=self.root,
-            )
-        except Exception as exc:
-            LOGGER.exception("load_listening_profile failed: %s", exc)
-            self.metrics_service.increment("metric_listening_profile_load_failed")
-            messagebox.showerror("Load Failed", f"Could not load listening profile:\n{exc}", parent=self.root)
-
-    def delete_listening_profile(self) -> None:
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "save_mix",
-            require_sign_in=False,
-            allow_anonymous=True,
-            parent=self.root,
-        ):
-            return
-        profiles = self._available_profile_entries()
-        if not profiles:
-            messagebox.showinfo("No Profiles", "No listening profiles are saved yet.", parent=self.root)
-            return
-
-        profile_name = simpledialog.askstring(
-            "Delete Listening Profile",
-            self._profile_prompt_text("Delete", profiles),
-            parent=self.root,
-        )
-        if profile_name is None:
-            return
-        resolved_name = self._resolve_profile_name(profile_name, profiles)
-        if resolved_name is None:
-            messagebox.showwarning("Profile Not Found", "Enter one of the saved listening profile names.", parent=self.root)
-            return
-
-        confirmed = messagebox.askokcancel(
-            "Delete Listening Profile",
-            f"Delete listening profile '{resolved_name}'?",
-            parent=self.root,
-        )
-        if not confirmed:
-            return
-
-        deleted = self.repository.delete_mix_profile(resolved_name)
-        if not deleted:
-            self.metrics_service.increment("metric_listening_profile_delete_failed")
-            messagebox.showerror("Delete Failed", f"Listening profile '{resolved_name}' was not found.", parent=self.root)
-            return
-
-        self.metrics_service.increment("metric_listening_profile_delete_success")
-        self.repository.add_audit(
-            "delete_mix_profile",
-            self.current_user.username if self.current_user else "anonymous",
-            resolved_name,
-        )
-        messagebox.showinfo("Listening Profile Deleted", f"Deleted listening profile:\n{resolved_name}", parent=self.root)
-
-    def reset_all_faders(self):
-        """Reset all faders to unity (0dB)"""
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "bulk_reset",
-            require_sign_in=False,
-            parent=self.root,
-        ):
-            return
-        if not messagebox.askokcancel("Confirm", "Reset all faders to default?", parent=self.root):
-            return
-        for participant in self.jamulus_controller.get_participants():
-            self.jamulus_controller.set_fader_level(participant.channel_id, 100)
-            if participant.channel_id in self.mixer_channels:
-                self.mixer_channels[participant.channel_id].fader.set(100)
-        self.repository.add_audit("bulk_reset", self.current_user.username if self.current_user else "anonymous", "reset_all_faders")
-    
-    def unmute_all(self):
-        """Unmute all channels"""
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "bulk_mute",
-            require_sign_in=False,
-            parent=self.root,
-        ):
-            return
-        if not messagebox.askokcancel("Confirm", "Unmute all channels?", parent=self.root):
-            return
-        for participant in self.jamulus_controller.get_participants():
-            self.jamulus_controller.set_mute(participant.channel_id, False)
-            if participant.channel_id in self.mixer_channels:
-                self.mixer_channels[participant.channel_id].update_button_states()
-        self.repository.add_audit("bulk_mute", self.current_user.username if self.current_user else "anonymous", "unmute_all")
-    
-    def center_all_pans(self):
-        """Center all pan controls"""
-        if not self.auth_controller.authorize(
-            self.current_user,
-            "bulk_reset",
-            require_sign_in=False,
-            parent=self.root,
-        ):
-            return
-        if not messagebox.askokcancel("Confirm", "Center all pan controls?", parent=self.root):
-            return
-        for participant in self.jamulus_controller.get_participants():
-            self.jamulus_controller.set_pan(participant.channel_id, 50)
-            if participant.channel_id in self.mixer_channels:
-                self.mixer_channels[participant.channel_id].pan_slider.set(50)
-        self.repository.add_audit("bulk_reset", self.current_user.username if self.current_user else "anonymous", "center_all_pans")
     
     def show_about(self):
         """Show about dialog"""
