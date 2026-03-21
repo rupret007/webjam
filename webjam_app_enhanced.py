@@ -41,6 +41,7 @@ from ui.views.session_canvas import SessionCanvasPanel
 from ui.views.setup_wizard import SetupWizard
 from ui.views.tooltip import Tooltip
 from ui.mixer_channel import EnhancedMixerChannel
+from ui.mixer_panel import MixerPanel
 from ui.mode_controller import ModeController
 from ui.mixer_service import MixerService
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
@@ -398,47 +399,14 @@ class WebJamEnhancedApp:
         self.right_content = right_content
 
         # Mixer panel (left side)
-        mixer_frame = ctk.CTkFrame(left_content) if CTK_AVAILABLE else tk.Frame(left_content, bg="#2b2b2b", relief=tk.RAISED, borderwidth=2)
-        mixer_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Mixer title
-        mixer_title = self._create_label(mixer_frame, "Virtual Mixing Console", font_size=16, bold=True)
-        mixer_title.pack(pady=10)
-        
-        # Master controls
-        master_controls = ctk.CTkFrame(mixer_frame) if CTK_AVAILABLE else tk.Frame(mixer_frame, bg="#2b2b2b")
-        master_controls.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.reset_all_btn = self._create_button(master_controls, "Reset All Faders", self.mixer_service.reset_all_faders)
-        self.reset_all_btn.pack(side=tk.LEFT, padx=5)
-        self.unmute_all_btn = self._create_button(master_controls, "Unmute All", self.mixer_service.unmute_all)
-        self.unmute_all_btn.pack(side=tk.LEFT, padx=5)
-        self.center_pans_btn = self._create_button(master_controls, "Center All Pans", self.mixer_service.center_all_pans)
-        self.center_pans_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Scrollable mixer channels
-        if CTK_AVAILABLE:
-            self.channels_container = ctk.CTkScrollableFrame(mixer_frame, height=600, orientation="horizontal")
-        else:
-            canvas_frame = tk.Frame(mixer_frame, bg="#2b2b2b")
-            canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            canvas = tk.Canvas(canvas_frame, bg="#2b2b2b", highlightthickness=0)
-            h_scrollbar = tk.Scrollbar(canvas_frame, orient="horizontal", command=canvas.xview)
-            self.channels_container = tk.Frame(canvas, bg="#2b2b2b")
-            
-            self.channels_container.bind(
-                "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-            )
-            
-            canvas.create_window((0, 0), window=self.channels_container, anchor="nw")
-            canvas.configure(xscrollcommand=h_scrollbar.set)
-            
-            canvas.pack(side="top", fill="both", expand=True)
-            h_scrollbar.pack(side="bottom", fill="x")
-        
-        self.channels_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.mixer_panel = MixerPanel(
+            parent=left_content,
+            ctk_available=CTK_AVAILABLE,
+            font_scale=self.font_scale,
+            mixer_service=self.mixer_service,
+            mixer_channels=self.mixer_channels
+        )
+        self.channels_container = self.mixer_panel.channels_container
 
         self.session_canvas = SessionCanvasPanel(
             right_content,
@@ -481,9 +449,9 @@ class WebJamEnhancedApp:
                 Tooltip(self.launch_jamulus_btn, "Start Jamulus and connect to configured server"),
                 Tooltip(self.launch_webex_btn, "Open the Webex meeting URL in your browser"),
                 Tooltip(self.save_mix_btn, "Save current channel faders/pan/mute state"),
-                Tooltip(self.reset_all_btn, "Set all faders to unity gain"),
-                Tooltip(self.unmute_all_btn, "Clear mute state on all channels"),
-                Tooltip(self.center_pans_btn, "Center all pan controls"),
+                Tooltip(self.mixer_panel.reset_all_btn, "Set all faders to unity gain"),
+                Tooltip(self.mixer_panel.unmute_all_btn, "Clear mute state on all channels"),
+                Tooltip(self.mixer_panel.center_pans_btn, "Center all pan controls"),
                 Tooltip(self.status_label, "Overall session state and readiness"),
                 Tooltip(self.connection_summary, "Current Jamulus and Webex connection states"),
                 Tooltip(self.readiness_label, "Mixer readiness based on participant availability"),
