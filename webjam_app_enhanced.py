@@ -766,14 +766,11 @@ class WebJamEnhancedApp:
             messagebox.showerror("Save Failed", f"Could not save room details:\n{exc}", parent=self.root)
             return False
 
-        session_canvas = getattr(self, "session_canvas", None)
-        if session_canvas is None:
+        if not hasattr(self, "session_canvas") or self.session_canvas is None:
             return True
-        save_notes_if_dirty = getattr(session_canvas, "save_notes_if_dirty", None)
-        if save_notes_if_dirty is None:
-            return True
+        
         try:
-            result = save_notes_if_dirty()
+            result = self.session_canvas._save_notes()
         except Exception as exc:
             messagebox.showerror("Save Failed", f"Could not save session notes:\n{exc}", parent=self.root)
             return False
