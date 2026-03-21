@@ -566,6 +566,29 @@ class WebJamEnhancedApp:
             )
         self.quick_template_var.set(CUSTOM_TEMPLATE_OPTION)
 
+    def _select_mixer_channel(self, channel_id: int | None) -> None:
+        self.selected_channel_id = channel_id
+        for cid, channel in list(self.mixer_channels.items()):
+            try:
+                if hasattr(channel, "set_selected") and channel.winfo_exists():
+                    channel.set_selected(cid == channel_id)
+            except (tk.TclError, RuntimeError):
+                continue
+
+    def _selected_mixer_channel(self) -> Optional[EnhancedMixerChannel]:
+        if self.selected_channel_id is None:
+            return None
+        channel = self.mixer_channels.get(self.selected_channel_id)
+        try:
+            if channel and channel.winfo_exists():
+                return channel
+        except (tk.TclError, RuntimeError):
+            pass
+        return None
+
+    def _attempt_pending_mix_restore(self) -> None:
+        self.mixer_service._attempt_pending_mix_restore()
+
 
 
     def _apply_mode_layout(self) -> None:
@@ -1197,15 +1220,19 @@ class WebJamEnhancedApp:
 
         try:
             if CTK_AVAILABLE:
-                if "text_color" in widget.configure():
-                    widget.configure(text_color=palette["fg"])
-                if "fg_color" in widget.configure() and self.high_contrast_enabled:
-                    widget.configure(fg_color=palette["bg"])
+                config = widget.configure()
+                if config is not None:
+                    if "text_color" in config:
+                        widget.configure(text_color=palette["fg"])
+                    if "fg_color" in config and self.high_contrast_enabled:
+                        widget.configure(fg_color=palette["bg"])
             else:
-                if "fg" in widget.configure():
-                    widget.configure(fg=palette["fg"])
-                if "bg" in widget.configure():
-                    widget.configure(bg=palette["bg"])
+                config = widget.configure()
+                if config is not None:
+                    if "fg" in config:
+                        widget.configure(fg=palette["fg"])
+                    if "bg" in config:
+                        widget.configure(bg=palette["bg"])
         except tk.TclError:
             pass
 
