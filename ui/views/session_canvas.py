@@ -157,6 +157,14 @@ class SessionCanvasPanel(tk.Frame):
             return
         self.refresh()
 
+    def get_notes(self) -> str:
+        """Return the current notes content as a string"""
+        return self.notes.get("1.0", tk.END).rstrip()
+
+    def save_notes(self) -> bool:
+        """Public method to save current notes"""
+        return self._save_notes()
+
     def _save_notes(self, _event=None) -> bool:
         content = self.notes.get("1.0", tk.END).rstrip()
         if len(content) > NOTES_SOFT_LIMIT:

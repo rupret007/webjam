@@ -30,6 +30,7 @@ from core.settings import AppSettings, load_settings
 from storage.repository import WebJamRepository
 from ui.theme import DEFAULT_THEME
 from ui.accessibility import clamp_scale, scaled_font_size, contrast_palette
+from ui.theme_manager import ThemeManager
 from ui.auth_controller import AuthController
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
 from ui.dialogs import show_usage_metrics_window
@@ -199,6 +200,8 @@ class WebJamEnhancedApp:
         self.root.geometry(self.preferences_service.get_window_geometry())
         self.policy = PolicyEngine()
         self.auth_controller = AuthController(self.repository, self.policy)
+        self.theme_manager = ThemeManager("High Contrast" if self.high_contrast_enabled else "Classic")
+        self.theme_manager.register_callback(self._on_theme_changed)
         self.current_user: Optional[UserContext] = None
         self.selected_channel_id: int | None = None
         
@@ -446,6 +449,8 @@ class WebJamEnhancedApp:
         )
         self.session_canvas.configure(width=420)
         self.session_canvas.pack(fill=tk.BOTH, expand=True)
+        self.session_controller.mark_clean()
+        self.session_controller.mark_clean()
         
         # Bottom status bar
         status_bar = ctk.CTkFrame(self.root) if CTK_AVAILABLE else tk.Frame(self.root, bg="#2b2b2b", relief=tk.SUNKEN, borderwidth=1)
@@ -536,6 +541,7 @@ class WebJamEnhancedApp:
             self.server_info.configure(text=f"Server: {self.jamulus_server}:{self.jamulus_port}")
 
     def _settings_for_checks(self) -> AppSettings:
+        """Get current settings for connectivity checks"""
         self._refresh_endpoint_state()
         return replace(
             BASE_SETTINGS,
@@ -545,6 +551,7 @@ class WebJamEnhancedApp:
         )
 
     def _refresh_quick_template_menu(self) -> None:
+        """Refresh template options based on mode"""
         if not hasattr(self, "quick_template_menu"):
             return
         labels = [CUSTOM_TEMPLATE_OPTION] + [t.label for t in get_templates_for_mode(self.mode_key)]
@@ -604,29 +611,25 @@ class WebJamEnhancedApp:
         ]
 
     def _show_setup_once(self):
+        """Show setup wizard if not seen yet"""
         if not self.auto_setup_enabled:
             return
         setup_seen = self.repository.get_setting("setup_completed", "0")
         if str(setup_seen).strip().lower() in {"1", "true", "yes", "on"}:
             return
-
         self.show_setup_wizard(mark_complete=True)
 
     def show_setup_wizard(self, mark_complete: bool = False):
+        """Show the setup wizard window"""
         if self._focus_existing_window("_setup_wizard_window"):
             return
         self.metrics_service.increment("metric_setup_wizard_opened")
         active_mode = get_mode_by_key_or_default(self.mode_key)
-
-        def on_complete() -> None:
-            if mark_complete:
-                self.repository.set_setting("setup_completed", "1")
-            self.metrics_service.increment("metric_setup_wizard_completed")
-
+        on_complete = lambda: self.repository.set_setting("setup_completed", "1") if mark_complete else None
         wizard = SetupWizard(
             self.root,
             on_complete=on_complete,
-            settings=self._settings_for_checks(),
+            settings=load_settings(),
             find_jamulus=self.find_jamulus,
             diagnostics_provider=self.jamulus_controller.get_audio_diagnostics,
             mode_label=active_mode.label,
@@ -1861,6 +1864,8 @@ For troubleshooting, use Help -> Run Setup Wizard or Session -> Open Diagnostics
     
     def quit_app(self):
         """Cleanup and quit"""
+        if not self.session_controller.check_dirty_state():
+            return
         if messagebox.askokcancel("Quit", "Are you sure you want to quit WebJam?", parent=self.root):
             if not self._flush_live_room_state():
                 return

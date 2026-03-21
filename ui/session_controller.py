@@ -9,6 +9,7 @@ This module handles:
 
 import logging
 from typing import Dict, Any, Optional, Callable, List
+from tkinter import messagebox
 from core.creative_modes import get_mode_by_key_or_default, get_mode_by_label_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
@@ -22,7 +23,40 @@ class SessionController:
         self.app = app
         self.repository = app.repository
         self.room_key = app.room_key
+        self._initial_notes = ""
         
+    def check_dirty_state(self) -> bool:
+        """
+        Check if the session canvas has unsaved changes.
+        Returns True if it's safe to proceed (no changes or user confirmed), 
+        False if the user cancelled.
+        """
+        if not self.session_canvas:
+            return True
+            
+        current_notes = self.session_canvas.get_notes()
+        if current_notes != self._initial_notes:
+            confirm = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "You have unsaved changes in your session canvas.\n\n"
+                "Do you want to save them before exiting?",
+                icon='warning'
+            )
+            
+            if confirm is True: # Save
+                self.session_canvas.save_notes()
+                return True
+            elif confirm is False: # Don't Save
+                return True
+            else: # Cancel
+                return False
+        return True
+
+    def mark_clean(self):
+        """Mark the current state as the clean baseline"""
+        if self.session_canvas:
+            self._initial_notes = self.session_canvas.get_notes()
+
     @property
     def mode_key(self) -> str:
         return getattr(self.app, 'mode_key', 'music_jam')
