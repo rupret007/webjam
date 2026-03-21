@@ -46,6 +46,7 @@ from ui.mode_controller import ModeController
 from ui.session_controller import SessionController
 from ui.status_bar import StatusBar
 from ui.mixer_service import MixerService
+from services.bridge_service import BridgeService
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
@@ -200,6 +201,24 @@ class WebJamEnhancedApp:
         self.auth_controller = AuthController(self.repository, self.policy)
         self.current_user: Optional[UserContext] = None
         self.selected_channel_id: int | None = None
+        
+        # Bridge Service replaces manual Jamulus/Webex launch/reconnect logic
+        self.bridge_service = BridgeService(
+            jamulus_controller=self.jamulus_controller,
+            webex_controller=self.webex_controller,
+            metrics_service=self.metrics_service,
+            repository=self.repository,
+            settings=BASE_SETTINGS,
+            ui_callbacks={
+                "set_status_banner": self._set_status_banner,
+                "refresh_readiness": self._refresh_readiness,
+                "show_actionable_error": self._show_actionable_error,
+                "show_message": lambda t, m: messagebox.showinfo(t, m, parent=self.root),
+                "shutdown_requested": self._shutdown_requested_active,
+                "schedule_ui_callback": self._schedule_ui_callback,
+            }
+        )
+        
         self.mode_controller = ModeController(self)
         self.mixer_service = MixerService(
             app_root=self.root,
@@ -1059,66 +1078,8 @@ class WebJamEnhancedApp:
             RECONNECT_BASE_DELAY_SECONDS * (2 ** (bounded_attempt - 1)),
         )
 
-    def _attempt_auto_reconnects(self, now: float | None = None) -> None:
-        if self._shutdown_requested_active():
-            return
-        if not getattr(self, "auto_reconnect_enabled", True):
-            return
-        if now is None:
-            now = time.monotonic()
-        self._attempt_auto_reconnect_jamulus(now)
-        self._attempt_auto_reconnect_webex(now)
-
-    def _attempt_auto_reconnect_jamulus(self, now: float) -> None:
-        if not getattr(self, "_jamulus_launch_intended", False):
-            return
-        process = getattr(self, "jamulus_process", None)
-        is_running = process is not None and process.poll() is None
-        if is_running:
-            self._jamulus_reconnect_attempts = 0
-            self._jamulus_next_reconnect_at = 0.0
-            self._jamulus_reconnect_inflight = False
-            return
-        if getattr(self, "_jamulus_reconnect_inflight", False):
-            return
-        attempts = int(getattr(self, "_jamulus_reconnect_attempts", 0))
-        if attempts >= RECONNECT_MAX_ATTEMPTS:
-            return
-        if now < float(getattr(self, "_jamulus_next_reconnect_at", 0.0)):
-            return
-        attempts += 1
-        self._jamulus_reconnect_attempts = attempts
-        self._jamulus_next_reconnect_at = now + self._reconnect_delay_seconds(attempts)
-        self._jamulus_reconnect_inflight = True
-        self.metrics_service.increment("metric_jamulus_reconnect_attempt")
-        self._launch_jamulus(manual=False, reconnect=True)
-
-    def _attempt_auto_reconnect_webex(self, now: float) -> None:
-        if not getattr(self, "_webex_launch_intended", False):
-            return
-        controller = getattr(self, "webex_controller", None)
-        if controller is None:
-            return
-        if getattr(controller, "is_connected", False):
-            self._webex_reconnect_attempts = 0
-            self._webex_next_reconnect_at = 0.0
-            self._webex_reconnect_inflight = False
-            return
-        if getattr(self, "_webex_reconnect_inflight", False):
-            return
-        if self.webex_state not in {"Open failed", "Not opened"}:
-            return
-        attempts = int(getattr(self, "_webex_reconnect_attempts", 0))
-        if attempts >= RECONNECT_MAX_ATTEMPTS:
-            return
-        if now < float(getattr(self, "_webex_next_reconnect_at", 0.0)):
-            return
-        attempts += 1
-        self._webex_reconnect_attempts = attempts
-        self._webex_next_reconnect_at = now + self._reconnect_delay_seconds(attempts)
-        self._webex_reconnect_inflight = True
-        self.metrics_service.increment("metric_webex_reconnect_attempt")
-        self._launch_webex(manual=False, reconnect=True)
+    def _reconnect_delay_seconds(self, attempts: int) -> float:
+        return self.bridge_service._reconnect_delay_seconds(attempts)
 
     def _bind_shortcuts(self) -> None:
         self.root.bind("<Control-s>", lambda _e: self._safe_invoke(self.save_mix))
@@ -1489,16 +1450,11 @@ class WebJamEnhancedApp:
         except tk.TclError:
             return
         self._refresh_endpoint_state()
-        if self.jamulus_process is not None:
-            if self.jamulus_process.poll() is None and "Not launched" in self.jamulus_state:
-                self.jamulus_state = "Running"
-            elif self.jamulus_process.poll() is not None and self.jamulus_state in {"Connected", "Running"}:
-                self.jamulus_state = "Not running"
+        
+        # Update states and handle auto-reconnects via bridge service
+        self.bridge_service.update_states()
+        self.bridge_service.attempt_auto_reconnects()
 
-        if self.webex_controller.is_connected and self.webex_state in {"Not opened", "Open failed"}:
-            self.webex_state = "Opened in browser"
-
-        self._attempt_auto_reconnects()
         self._measure_server_latency_async()
         self._refresh_readiness()
         try:
@@ -1715,191 +1671,72 @@ class WebJamEnhancedApp:
         # Refresh readiness state
         self._refresh_readiness()
     
+    @property
+    def jamulus_process(self): return self.bridge_service.jamulus_process
+    @jamulus_process.setter 
+    def jamulus_process(self, val): self.bridge_service.jamulus_process = val
+    
+    @property
+    def jamulus_state(self): return self.bridge_service.jamulus_state
+    @jamulus_state.setter
+    def jamulus_state(self, val): self.bridge_service.jamulus_state = val
+
+    @property
+    def webex_state(self): return self.bridge_service.webex_state
+    @webex_state.setter
+    def webex_state(self, val): self.bridge_service.webex_state = val
+
+    @property
+    def _jamulus_launch_intended(self): return self.bridge_service.jamulus_launch_intended
+    @_jamulus_launch_intended.setter
+    def _jamulus_launch_intended(self, val): self.bridge_service.jamulus_launch_intended = val
+
+    @property
+    def _webex_launch_intended(self): return self.bridge_service.webex_launch_intended
+    @_webex_launch_intended.setter
+    def _webex_launch_intended(self, val): self.bridge_service.webex_launch_intended = val
+
+    @property
+    def _jamulus_reconnect_attempts(self): return self.bridge_service.jamulus_reconnect_attempts
+    @_jamulus_reconnect_attempts.setter
+    def _jamulus_reconnect_attempts(self, val): self.bridge_service.jamulus_reconnect_attempts = val
+
+    @property
+    def _webex_reconnect_attempts(self): return self.bridge_service.webex_reconnect_attempts
+    @_webex_reconnect_attempts.setter
+    def _webex_reconnect_attempts(self, val): self.bridge_service.webex_reconnect_attempts = val
+
+    @property
+    def _jamulus_next_reconnect_at(self): return self.bridge_service.jamulus_next_reconnect_at
+    @_jamulus_next_reconnect_at.setter
+    def _jamulus_next_reconnect_at(self, val): self.bridge_service.jamulus_next_reconnect_at = val
+
+    @property
+    def _webex_next_reconnect_at(self): return self.bridge_service.webex_next_reconnect_at
+    @_webex_next_reconnect_at.setter
+    def _webex_next_reconnect_at(self, val): self.bridge_service.webex_next_reconnect_at = val
+
+    @property
+    def _jamulus_reconnect_inflight(self): return self.bridge_service.jamulus_reconnect_inflight
+    @_jamulus_reconnect_inflight.setter
+    def _jamulus_reconnect_inflight(self, val): self.bridge_service.jamulus_reconnect_inflight = val
+
+    @property
+    def _webex_reconnect_inflight(self): return self.bridge_service.webex_reconnect_inflight(self, val)
+    @_webex_reconnect_inflight.setter
+    def _webex_reconnect_inflight(self, val): self.bridge_service.webex_reconnect_inflight = val
+
     def launch_jamulus(self):
         """Launch Jamulus client"""
-        if self._shutdown_requested_active():
-            return
-        self._jamulus_launch_intended = True
-        self._jamulus_reconnect_attempts = 0
-        self._jamulus_next_reconnect_at = 0.0
-        self._launch_jamulus(manual=True, reconnect=False)
+        self.bridge_service.launch_jamulus(manual=True)
 
-    def _launch_jamulus(self, manual: bool, reconnect: bool) -> None:
-        if self._shutdown_requested_active():
-            self._jamulus_reconnect_inflight = False
-            return
-        if manual:
-            self.metrics_service.increment("metric_jamulus_launch_attempt")
-        self._refresh_endpoint_state()
-        jamulus_path = self.find_jamulus()
-        if not jamulus_path:
-            if reconnect:
-                self._jamulus_reconnect_inflight = False
-                self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                self.jamulus_state = "Not running"
-                self._schedule_ui_callback(self._refresh_readiness)
-                LOGGER.warning("Jamulus reconnect skipped: executable not found.")
-                return
-            self.metrics_service.increment("metric_jamulus_launch_failed")
-            self._show_actionable_error(
-                "Jamulus Not Found",
-                what_failed="WebJam could not locate Jamulus.exe.",
-                likely_cause="Jamulus is not installed in a default location.",
-                next_action="Run setup wizard and install Jamulus, then retry launch.",
-                retry_callback=lambda: self.show_setup_wizard(mark_complete=False),
-            )
-            return
-
-        if self.jamulus_process and self.jamulus_process.poll() is None:
-            self.jamulus_state = "Already running"
-            self._jamulus_reconnect_attempts = 0
-            self._jamulus_next_reconnect_at = 0.0
-            self._jamulus_reconnect_inflight = False
-            self._refresh_readiness()
-            if manual:
-                messagebox.showinfo("Jamulus", "Jamulus is already running.", parent=self.root)
-            return
-
-        banner_text = "Launching Jamulus..." if manual else "Auto-reconnecting Jamulus..."
-        self._set_status_banner(banner_text, color="#ffcc00")
-        server = f"{self.jamulus_server}:{self.jamulus_port}"
-
-        def _do_launch() -> None:
-            try:
-                if self._shutdown_requested_active():
-                    self._jamulus_reconnect_inflight = False
-                    return
-                proc = self._retry_action(
-                    lambda: subprocess.Popen([jamulus_path, "--connect", server]),
-                    attempts=3,
-                    base_delay=0.5,
-                )
-                if self._shutdown_requested_active():
-                    self._terminate_process(proc)
-                    self._jamulus_reconnect_inflight = False
-                    return
-                self.jamulus_process = proc
-                self.jamulus_state = f"Connecting ({server})"
-                self._schedule_ui_callback(self._refresh_readiness)
-                if manual:
-                    self._schedule_ui_callback(
-                        lambda: messagebox.showinfo(
-                            "Success",
-                            f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer.",
-                            parent=self.root,
-                        )
-                    )
-                self.jamulus_controller.add_participant(LOCAL_PARTICIPANT_NAME, 0)
-                # A started process is not the same as a confirmed server join.
-                self.jamulus_state = "Running"
-                self._jamulus_reconnect_attempts = 0
-                self._jamulus_next_reconnect_at = 0.0
-                self._jamulus_reconnect_inflight = False
-                if reconnect:
-                    self.metrics_service.increment("metric_jamulus_reconnect_success")
-                else:
-                    self.metrics_service.increment("metric_jamulus_launch_success")
-                self._schedule_ui_callback(self._refresh_readiness)
-            except Exception as exc:
-                LOGGER.exception("Failed to launch Jamulus: %s", exc)
-                self.jamulus_state = "Launch failed" if manual else "Not running"
-                self._jamulus_reconnect_inflight = False
-                if reconnect:
-                    self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                    self._schedule_ui_callback(self._refresh_readiness)
-                    return
-                self.metrics_service.increment("metric_jamulus_launch_failed")
-                self._schedule_ui_callback(self._refresh_readiness)
-                self._schedule_ui_callback(
-                    lambda launch_exc=exc: self._show_actionable_error(
-                        "Jamulus Launch Failed",
-                        what_failed=f"Jamulus could not start ({launch_exc}).",
-                        likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
-                        next_action="Open diagnostics, verify path/server, then retry (launch uses automatic backoff retries).",
-                        retry_callback=self.launch_jamulus,
-                    )
-                )
-
-        threading.Thread(target=_do_launch, daemon=True).start()
-    
     def launch_webex(self):
         """Launch Webex meeting"""
-        if self._shutdown_requested_active():
-            return
-        self._webex_launch_intended = True
-        self._webex_reconnect_attempts = 0
-        self._webex_next_reconnect_at = 0.0
-        self._launch_webex(manual=True, reconnect=False)
+        self.bridge_service.launch_webex(manual=True)
 
-    def _launch_webex(self, manual: bool, reconnect: bool) -> None:
-        if self._shutdown_requested_active():
-            self._webex_reconnect_inflight = False
-            return
-        if manual:
-            self.metrics_service.increment("metric_webex_open_attempt")
-        banner_text = "Opening Webex..." if manual else "Auto-reconnecting Webex..."
-        self._set_status_banner(banner_text, color="#ffcc00")
-
-        def _do_open() -> None:
-            try:
-                if self._shutdown_requested_active():
-                    self._webex_reconnect_inflight = False
-                    return
-                def _open_once() -> bool:
-                    opened_once = self.webex_controller.join_meeting()
-                    if not opened_once:
-                        raise RuntimeError(getattr(self.webex_controller, "last_error", "Unknown browser launch failure"))
-                    return True
-
-                self._retry_action(_open_once, attempts=3, base_delay=0.4)
-                if self._shutdown_requested_active():
-                    self._webex_reconnect_inflight = False
-                    return
-                self.webex_state = "Opened in browser"
-                self._webex_reconnect_attempts = 0
-                self._webex_next_reconnect_at = 0.0
-                self._webex_reconnect_inflight = False
-                if reconnect:
-                    self.metrics_service.increment("metric_webex_reconnect_success")
-                else:
-                    self.metrics_service.increment("metric_webex_open_success")
-                self._schedule_ui_callback(self._refresh_readiness)
-                if manual:
-                    self._schedule_ui_callback(
-                        lambda: messagebox.showinfo(
-                            "Webex Opened",
-                            f"Webex meeting opened in your browser:\n\n{self.webex_url}\n\nJoin the meeting to see and hear other participants.",
-                            parent=self.root,
-                        )
-                    )
-            except Exception as exc:
-                LOGGER.exception("Failed to open Webex: %s", exc)
-                self.webex_state = "Open failed"
-                self._webex_reconnect_inflight = False
-                if reconnect:
-                    self.metrics_service.increment("metric_webex_reconnect_failed")
-                    self._schedule_ui_callback(self._refresh_readiness)
-                    return
-                self.metrics_service.increment("metric_webex_open_failed")
-                self._schedule_ui_callback(self._refresh_readiness)
-                self._schedule_ui_callback(
-                    lambda open_exc=exc: self._show_actionable_error(
-                        "Webex Open Failed",
-                        what_failed=f"Webex URL could not be opened ({open_exc}).",
-                        likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
-                        next_action="Verify URL in diagnostics/setup wizard and retry (open uses automatic retries).",
-                        retry_callback=self.launch_webex,
-                    )
-                )
-
-        threading.Thread(target=_do_open, daemon=True).start()
-    
     def find_jamulus(self):
         """Find Jamulus installation"""
-        for path in JAMULUS_CANDIDATES:
-            if Path(path).exists():
-                return path
-        return None
+        return self.bridge_service.find_jamulus()
 
     def _saved_mix_payload_for_load(self) -> tuple[dict[str, Any], str] | None:
         username = self._default_mix_user()
