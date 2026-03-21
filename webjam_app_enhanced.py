@@ -43,6 +43,8 @@ from ui.views.tooltip import Tooltip
 from ui.mixer_channel import EnhancedMixerChannel
 from ui.mixer_panel import MixerPanel
 from ui.mode_controller import ModeController
+from ui.session_controller import SessionController
+from ui.status_bar import StatusBar
 from ui.mixer_service import MixerService
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
 from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
@@ -375,6 +377,8 @@ class WebJamEnhancedApp:
         
         self.launch_jamulus_btn = self._create_button(btn_frame, "🎵 Launch Jamulus", self.launch_jamulus)
         self.launch_jamulus_btn.pack(side=tk.LEFT, padx=5)
+        self.connect_jamulus_btn = self._create_button(btn_frame, "🔗 Connect Jamulus", self.connect_jamulus_protocol)
+        self.connect_jamulus_btn.pack(side=tk.LEFT, padx=5)
         self.launch_webex_btn = self._create_button(btn_frame, "📹 Launch Webex", self.launch_webex)
         self.launch_webex_btn.pack(side=tk.LEFT, padx=5)
         self.save_mix_btn = self._create_button(btn_frame, "💾 Save Mix", self.mixer_service.save_mix)
@@ -1665,6 +1669,50 @@ class WebJamEnhancedApp:
             if i not in existing_ids:
                 self.jamulus_controller.add_participant(name, i)
         self.jamulus_state = "Demo mode"
+        self._refresh_readiness()
+
+    def connect_jamulus_protocol(self) -> None:
+        """
+        Connect to Jamulus protocol for real-time participant sync.
+        
+        Enables the JamulusProtocolAdapter and checks for synthetic audio fallback.
+        Shows a warning banner if audio engine is running in demo mode.
+        """
+        if self._shutdown_requested_active():
+            return
+            
+        # Enable the protocol
+        self.jamulus_controller.protocol.enabled = True
+        self.jamulus_controller.protocol.connect()
+        
+        LOGGER.info("Jamulus protocol enabled: %s", self.jamulus_controller.protocol.enabled)
+        
+        # Check for synthetic audio and show warning if needed
+        audio_diag = self.jamulus_controller.get_audio_diagnostics()
+        if audio_diag.get("backend") == "synthetic":
+            self._set_status_banner(
+                "⚠️ Audio engine running in demo mode — no actual audio input detected",
+                color="#ff5555"
+            )
+            messagebox.showwarning(
+                "Demo Mode Active",
+                "The audio engine is running in demo mode (synthetic). "
+                "No actual audio input will be detected.\n\n"
+                "To use real audio:\n"
+                "1. Ensure VB-Cable is installed\n"
+                "2. Select the correct input device in system settings\n"
+                "3. Run the Setup Wizard for configuration",
+                parent=self.root
+            )
+        else:
+            self._set_status_banner("Jamulus protocol connected", color="#00cc66")
+            messagebox.showinfo(
+                "Protocol Connected",
+                "Jamulus protocol is now enabled for real-time sync.",
+                parent=self.root
+            )
+        
+        # Refresh readiness state
         self._refresh_readiness()
     
     def launch_jamulus(self):
