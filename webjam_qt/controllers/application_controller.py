@@ -21,7 +21,7 @@ import logging
 import random
 from typing import List, Optional
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, Qt
 from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
@@ -140,7 +140,10 @@ class ApplicationController(QObject):
         strip.session_title_changed.connect(self._on_title_changed)
         strip.launch_audio_requested.connect(self._on_launch_audio)
         strip.join_video_requested.connect(self._on_join_video)
-        self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
+        # Fallback button opens Webex in the system browser when embed unavailable
+        self.window.webex_embed.fallback_button().clicked.connect(
+            lambda: self.bridge.launch_webex(manual=True)
+        )
         self.window.close_requested.connect(self.shutdown)
 
     def _connect_card_signals(self, card) -> None:
@@ -277,9 +280,49 @@ class ApplicationController(QObject):
         self.bridge.launch_jamulus(manual=True)
 
     def _on_join_video(self) -> None:
-        self.window.set_status_video("Opening…")
-        self.window.session_strip.set_video_state("Opening…", enabled=False)
-        self.bridge.launch_webex(manual=True)
+        url = self.settings.webex_url
+        if not url:
+            self._show_actionable_error(
+                "No Meeting URL",
+                what_failed="No Webex meeting URL is configured.",
+                likely_cause="The webex_url setting is empty.",
+                next_action="Set webex_url in ~/.webjam_config.json and restart.",
+            )
+            return
+
+        self.window.set_status_video("Joining…")
+        self.window.session_strip.set_video_state("Joining…", enabled=False)
+        self.window.webex_embed.meeting_state_changed.connect(
+            self._on_webex_state, Qt.ConnectionType.UniqueConnection
+        )
+
+        issuer_id = self.settings.webex_guest_issuer_id
+        secret    = self.settings.webex_guest_issuer_secret
+        if issuer_id and secret:
+            self.window.webex_embed.load_meeting_with_guest_token(
+                url,
+                issuer_id=issuer_id,
+                secret_b64=secret,
+                display_name=self.settings.webex_display_name or "WebJam Guest",
+            )
+        else:
+            self.window.webex_embed.load_meeting(url)
+
+    def _on_webex_state(self, state: str) -> None:
+        state_map = {
+            "joining":  ("Joining…",     False),
+            "ACTIVE":   ("In Meeting",   True),
+            "lobby":    ("Lobby",        True),
+            "ENDED":    ("Meeting ended", True),
+            "left":     ("Left meeting", True),
+            "error":    ("Webex error",  True),
+        }
+        label, enabled = state_map.get(state, (state.title(), True))
+        self.window.set_status_video(label)
+        self.window.session_strip.set_video_state(
+            label if enabled else "Joining…", enabled=enabled
+        )
+        self.bridge.webex_state = label
 
     # ------------------------------------------------------------------
     # Mixer card handlers → JamulusController

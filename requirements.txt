@@ -3,6 +3,9 @@
 
 # Primary UI framework (Qt) — new Conductor UI
 PySide6>=6.6.0
+# Qt WebEngine — required for embedded Webex pane (Phase 3)
+# Included with the PySide6 macOS/Windows wheels; Linux may need a separate install
+PySide6-WebEngine>=6.6.0
 
 # Legacy UI (retained until Qt port reaches parity)
 customtkinter>=5.2.0

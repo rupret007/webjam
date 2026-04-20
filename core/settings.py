@@ -37,7 +37,8 @@ def _coerce_settings_data(data: dict) -> None:
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
-                "audio_latency", "sentry_dsn", "log_level", "log_file"):
+                "audio_latency", "sentry_dsn", "log_level", "log_file",
+                "webex_guest_issuer_id", "webex_guest_issuer_secret", "webex_display_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
             data[key] = str(data[key])
 
@@ -62,6 +63,10 @@ class AppSettings:
     sentry_dsn: str = ""
     log_level: str = "INFO"
     log_file: str = str(Path.home() / ".webjam.log")
+    # Webex Guest Issuer (optional — from developer.webex.com)
+    webex_guest_issuer_id: str = ""
+    webex_guest_issuer_secret: str = ""
+    webex_display_name: str = "WebJam Guest"
 
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
