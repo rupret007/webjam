@@ -13,7 +13,7 @@ Being honest about where this app is **right now** (2026-04-20):
 | Area | Status |
 |---|---|
 | **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 74 unit tests pass. |
-| **UI shell** (Tkinter) | ✅ Renders. Session canvas, mixer layout, mode switcher, setup wizard. |
+| **UI shell** (Tkinter — legacy) | ✅ Renders. Session canvas, mixer layout, mode switcher, setup wizard. Note: the new Qt Conductor UI (`webjam_qt_main.py`) is the recommended version going forward. |
 | **Jamulus integration** | ⚠️ **Launch-only.** WebJam shells out `jamulus.exe`; the UDP protocol adapter is disabled. Mixer faders in WebJam do **not** drive the running Jamulus server. |
 | **Webex integration** | ⚠️ **Launch-only.** `webbrowser.open(url)` — WebJam has no view of the meeting, participants, or audio state. |
 | **Audio routing** | ⚠️ **Manual.** Users must configure VB-CABLE / BlackHole themselves. |
@@ -47,7 +47,7 @@ See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Nea
 git clone https://github.com/rupret007/webjam.git
 cd webjam
 pip install -r requirements.txt
-python webjam_app_enhanced.py
+python webjam_qt_main.py  # First-run: a setup wizard will guide you through configuration
 ```
 
 System requirements:
@@ -72,7 +72,7 @@ Environment overrides:
 
 ---
 
-## In-App Menus (current Tkinter UI)
+## In-App Menus (new Qt Conductor UI)
 
 - **Session → Run Ready Check** — pass/fail readiness summary
 - **Session → Open Diagnostics Panel** — endpoint checks, audio backend state, recovery hints

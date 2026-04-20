@@ -82,8 +82,8 @@ class _WelcomePage(QWizardPage):
         super().__init__()
         self.setTitle("Welcome to WebJam")
         self.setSubTitle(
-            "WebJam blends Jamulus (low-latency audio) and Webex (video) "
-            "into a single musician-friendly interface."
+            "WebJam combines Jamulus (for band audio) and Webex (video) "
+            "in one place — no switching apps."
         )
 
         layout = QVBoxLayout(self)
@@ -93,7 +93,7 @@ class _WelcomePage(QWizardPage):
             "This short wizard will configure:\n\n"
             "  \u2022  Your Jamulus server connection\n"
             "  \u2022  Your Webex meeting link\n"
-            "  \u2022  Virtual audio routing (VB-CABLE or BlackHole)\n\n"
+            "  \u2022  Audio connection so your band is heard in the video call\n\n"
             "You can change any setting later from the Settings panel."
         ))
         layout.addStretch(1)
@@ -107,7 +107,7 @@ class _JamulusPage(QWizardPage):
         super().__init__()
         self.setTitle("Jamulus Server")
         self.setSubTitle(
-            "Enter the address and port of the Jamulus server your band uses."
+            "Enter your band's Jamulus server details. Ask your band admin if you're not sure."
         )
 
         layout = QVBoxLayout(self)
@@ -126,7 +126,7 @@ class _JamulusPage(QWizardPage):
         self._port.setAccessibleName("Jamulus server port number")
         layout.addWidget(self._port)
 
-        layout.addWidget(_section_label("JSON-RPC port"))
+        layout.addWidget(_section_label("Server control port"))
         self._rpc_port = QSpinBox()
         self._rpc_port.setRange(1, 65535)
         self._rpc_port.setValue(settings.jamulus_rpc_port)
@@ -134,9 +134,8 @@ class _JamulusPage(QWizardPage):
         layout.addWidget(self._rpc_port)
 
         layout.addWidget(_body_label(
-            "The JSON-RPC port lets WebJam query participant names and control "
-            "fader levels.  Jamulus 3.9+ supports it; leave the default (22222) "
-            "unless your admin configured a different port."
+            "Leave this as 22222 unless your band admin says otherwise. "
+            "This lets WebJam read participant names and control the mixer."
         ))
         layout.addStretch(1)
 
@@ -203,7 +202,7 @@ class _WebexPage(QWizardPage):
         self._issuer_id.setAccessibleName("Webex Guest Issuer ID")
         guest_layout.addWidget(self._issuer_id)
 
-        guest_layout.addWidget(QLabel("Guest Issuer Secret (base-64)"))
+        guest_layout.addWidget(QLabel("Webex Secret Key"))
         self._secret = QLineEdit(settings.webex_guest_issuer_secret)
         self._secret.setEchoMode(QLineEdit.EchoMode.Password)
         self._secret.setPlaceholderText("base-64 encoded secret")
@@ -257,19 +256,19 @@ class _RoutingPage(QWizardPage):
         super().__init__()
         self.setTitle("Audio Routing")
         self.setSubTitle(
-            "A virtual loopback cable lets Jamulus audio reach Webex "
-            "so video participants hear the band."
+            "This connects your band's audio into the video call, "
+            "so Webex participants can hear everyone play."
         )
         self._complete = False
-        self._status_label = _body_label("Scanning for audio devices…")
+        self._status_label = _body_label("Checking your audio setup…")
 
-        install_btn = QPushButton("Open installation guide")
+        install_btn = QPushButton("Show me how to set this up")
         install_btn.setObjectName("GhostButton")
         install_btn.clicked.connect(self._open_install_url)
         install_btn.setVisible(False)
         self._install_btn = install_btn
 
-        skip_chk = QCheckBox("Skip for now (I'll set this up later)")
+        skip_chk = QCheckBox("Skip for now — I'll set this up later")
         skip_chk.stateChanged.connect(self._on_skip_changed)
         self._skip_chk = skip_chk
 
@@ -311,13 +310,13 @@ class _RoutingPage(QWizardPage):
             self._status_label.setText(
                 f"\u2705  Virtual audio device detected:\n\n"
                 f"    {status.device_name}\n\n"
-                "WebJam will route metering through this device automatically."
+                "WebJam will use this for audio automatically."
             )
             self._install_btn.setVisible(False)
             self._complete = True
         else:
             self._status_label.setText(
-                "\u26a0\ufe0f  No virtual audio device found.\n\n"
+                "\u26a0\ufe0f  No audio routing device found.\n\n"
                 f"{status.install_hint}.\n\n"
                 "After installing, restart WebJam to activate audio routing.\n"
                 "You can skip this step and configure it later."

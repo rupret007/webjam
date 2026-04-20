@@ -311,19 +311,19 @@ class WebexEmbed(QFrame):
         frame = QWidget(self)
         frame.setObjectName("WebexPlaceholder")
 
-        title = QLabel("Video conferencing")
+        title = QLabel("Your band's video call")
         title.setObjectName("WebexEmbedTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         subtitle = QLabel(
-            "Click \u201cJoin Video\u201d in the session strip\n"
-            "to embed the Webex meeting here."
+            "Click \u201cJoin Video\u201d above\n"
+            "to start the video call with your band."
         )
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setWordWrap(True)
         subtitle.setObjectName("BodyLabel")
 
-        self._fallback_btn = QPushButton("Open Webex in browser")
+        self._fallback_btn = QPushButton("Open video call in browser")
         self._fallback_btn.setObjectName("GhostButton")
 
         layout = QVBoxLayout(frame)

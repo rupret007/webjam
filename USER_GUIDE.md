@@ -89,7 +89,8 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
    - Required if VB-Cable was just installed.
 
 4. **Launch WebJam**
-   - Use the desktop shortcut, or run `WebJam.exe` (built app) or `python webjam_app_enhanced.py` (from source).
+   - Use the desktop shortcut, or run `WebJam.exe` (built app) or `python webjam_qt_main.py` (from source).
+   - The first time you run WebJam, a Setup Wizard will walk you through configuration.
 
 5. **First Admin Sign-In**
    - If you need admin access on a fresh install, use `Admin -> Sign In`.
@@ -100,7 +101,27 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 
 ## First Time Setup
 
+### First Launch: Setup Wizard
+
+The first time you run WebJam, a Setup Wizard will open automatically. It has 5 steps:
+
+1. **Welcome** — Overview of what WebJam does
+2. **Jamulus Server** — Enter your band's server address (ask your admin for this)
+3. **Webex Meeting** — Enter your Webex meeting link
+4. **Audio Setup** — WebJam checks if your computer has the audio routing software installed
+5. **Done** — Click Finish to save your settings
+
+If the audio check fails, click "Show me how to set this up" for instructions on installing the audio routing software (VB-CABLE on Windows, BlackHole on macOS).
+
+You can re-run the wizard any time by clicking the Settings button in the app.
+
 ### Step 1: Test Your Audio
+
+**Why audio routing?** When you play together using Jamulus, the music needs to also reach the Webex video call so everyone on video can hear you. WebJam handles this automatically using virtual audio software — you just need to have it installed.
+- **Windows**: Install VB-CABLE (free from vb-audio.com)
+- **macOS**: Install BlackHole (free from existential.audio)
+
+The Setup Wizard will check if this is installed and show you how to get it if not.
 
 Before joining a session:
 

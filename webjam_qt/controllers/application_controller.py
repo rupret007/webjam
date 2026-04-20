@@ -172,10 +172,10 @@ class ApplicationController(QObject):
             self.window.session_strip.current_mode_key() or "music_jam"
         )
         self._apply_mode(mode)
-        self.window.set_status_audio("Not launched")
-        self.window.set_status_video("Not joined")
+        self.window.set_status_audio("Ready to launch")
+        self.window.set_status_video("Ready to join")
         self.window.set_status_latency("—")
-        self.window.set_status_routing("scanning…")
+        self.window.set_status_routing("checking…")
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
 
@@ -291,8 +291,8 @@ class ApplicationController(QObject):
             self._show_actionable_error(
                 "No Meeting URL",
                 what_failed="No Webex meeting URL is configured.",
-                likely_cause="The webex_url setting is empty.",
-                next_action="Set webex_url in ~/.webjam_config.json and restart.",
+                likely_cause="A meeting link hasn't been entered yet.",
+                next_action="Go to Settings and enter your Webex meeting link.",
             )
             return
 
@@ -404,7 +404,7 @@ class ApplicationController(QObject):
             # Reload settings and apply live-changeable values
             from core.settings import load_settings
             self.settings = load_settings()
-            self.window.flash_message("Settings saved — restart for full effect.")
+            self.window.flash_message("Settings saved. Restart WebJam to apply all changes.")
 
     def _on_rail_view_changed(self, key: str) -> None:
         if key == "settings":
@@ -427,7 +427,7 @@ class ApplicationController(QObject):
             label = f"{status.device_name} \u2713"
             self.window.set_status_routing(label)
         else:
-            self.window.set_status_routing("No loopback")
+            self.window.set_status_routing("No audio device")
             self.window.flash_message(
                 f"No virtual audio device found. {status.install_hint}",
                 ms=8000,

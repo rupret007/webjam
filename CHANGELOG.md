@@ -4,6 +4,49 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased]
+
+### Added — Phase 6: Onboarding, Shortcuts & Build
+- **Setup Wizard** (`webjam_qt/windows/setup_wizard.py`): 5-page first-run wizard (Welcome, Jamulus server, Webex URL, audio routing, Done). Saves to `~/.webjam_config.json`. Auto-shown on first run.
+- **Keyboard shortcuts**: Ctrl+L (focus session title), F11 (fullscreen), Escape (leave fullscreen), Ctrl+, (open settings)
+- **Accessibility**: `setAccessibleName()` on all major panels, focus rings in QSS, screen-reader-compatible labels
+- **PyInstaller spec** (`webjam.spec`): Production macOS/Windows bundle with QSS + HTML assets, Info.plist camera/mic usage strings
+
+### Added — Phase 5: Audio Device Auto-Detection
+- **`core/audio_routing.py`**: `scan_loopback_devices()` auto-detects VB-CABLE, BlackHole, Loopback Audio, JACK, Soundflower
+- **`AudioRoutingStatus`** / **`LoopbackDevice`** dataclasses with device metadata (name, index, channel counts)
+- **Setup wizard routing page**: shows detected device name or install instructions with link
+- **`RealAudioEngine._resolve_device()`**: uses loopback scan to prefer virtual cable over system mic
+
+### Added — Phase 3: Embedded Webex Meeting Pane
+- **`webjam_qt/widgets/webex_embed.py`**: `QWebEngineView` embedded meeting pane (lazy-init, Chromium only started on first join)
+- **`webjam_qt/webex_widget.html`**: Local HTML template loading Webex Meetings Widget from CDN; dark theme; loading spinner
+- **`_WebexBridge(QObject)`**: QWebChannel bridge for bidirectional JS↔Qt communication (`on_page_ready`, `on_state`)
+- **Guest-widget mode**: generates HS256 JWT, exchanges for access token, loads widget in embedded view
+- **Direct-URL mode**: fallback — loads meeting URL directly using Chrome user-agent + persistent `webjam_webex` profile
+- **Auto-grants** camera, mic, screen capture, notification permissions
+- **`core/webex_guest_token.py`**: `generate_guest_jwt()` (stdlib HMAC-SHA256) + `exchange_guest_jwt()` (httpx POST)
+
+### Added — Phase 2: Jamulus Protocol Integration
+- **`core/jamulus_rpc_client.py`**: HTTP JSON-RPC 2.0 client with polling loop + SSE stream; `set_channel_gain()`, `set_channel_mute()`; non-blocking `stop()` via `httpx.Client.close()`
+- **`core/jamulus_protocol.py`**: Full binary UDP adapter — CRC-16-CCITT (poly=0x1021), CONN_CLIENTS_LIST parser, CHANNEL_GAIN/CHANNEL_PAN commands, CLT_CHANNEL_LEVEL_LIST
+- **JSON-RPC launch flag**: `services/bridge_service.py` adds `--jsonrpcport 22222` to Jamulus startup command
+- **`services/bridge_service.py`**: `threading.Lock` guards reconnect-in-flight flags; exponential backoff for Jamulus/Webex reconnection
+- **Real fader dB math**: `20*log10(level/100)` for 1..100; `(level-100)/27*6` for 101..127; `−∞ dB` for 0
+- **Gain wire range fixed**: UDP gain mapped correctly as `int(fader_level / 127.0 * 32767)` (was /100 causing scale error)
+
+### Fixed
+- `@Slot()` missing on `_RoutingPage._apply_routing` — wizard routing scan result was silently dropped
+- `QWebEnginePage` parented to profile (not widget) — eliminates "profile requested but page not deleted" warning
+- SSE stream `stop()` now calls `httpx.Client.close()` to immediately unblock the reader thread
+- `QSS`: added `QLabel#BodyLabel`, `QWidget#WebexPlaceholder`, `:focus` and `:disabled` states for all interactive widgets
+
+### Changed
+- `RealAudioEngine.stop()` thread join timeout: 1.5s → 3.0s for cleaner shutdown
+- `WebexEmbed.load_meeting_with_guest_token()`: stays on placeholder until token arrives (was racing to show page before token fetch)
+
+---
+
 ## Unreleased - Reliability and Hardening Rollup
 
 ### Security and Data Integrity
@@ -295,28 +338,20 @@ Vote for features you want to see:
 
 ### Current Limitations
 
-#### Jamulus Integration (v2.0)
-- **Participant detection** is currently manual (add test participants)
-- **Audio levels** are simulated (not reading actual Jamulus data)
-- **Mixer commands** don't yet control actual Jamulus mixer
-- **Reason**: Full Jamulus protocol implementation in progress
+#### Jamulus Integration
+- ~~**Participant detection** is currently manual~~ — **Resolved** (Phase 2): Full Jamulus UDP protocol + JSON-RPC client auto-detects participants via CONN_CLIENTS_LIST
+- ~~**Audio levels** are simulated~~ — **Resolved** (Phase 2): Real fader dB math and UDP gain wiring implemented in `core/jamulus_protocol.py`
+- ~~**Mixer commands** don't yet control actual Jamulus mixer~~ — **Resolved** (Phase 2): `set_channel_gain()` and `set_channel_mute()` wired to live Jamulus JSON-RPC endpoint
 
-**Workaround**: Use Jamulus native mixer for actual control, WebJam mixer for practice/visualization
-
-#### Webex Integration (v2.0)
-- **Browser-based** video (not embedded in app)
-- **Participant sync** is name-based matching only
-- **No video controls** from within WebJam
-- **Reason**: Waiting for Webex Embedded SDK support
-
-**Workaround**: Control video via Webex browser window
+#### Webex Integration
+- ~~**Browser-based** video (not embedded in app)~~ — **Resolved** (Phase 3): `QWebEngineView` embedded meeting pane with `webex_widget.html` template
+- ~~**Participant sync** is name-based matching only~~ — **Resolved** (Phase 3): Bidirectional JS↔Qt bridge via `_WebexBridge(QObject)` + QWebChannel
+- **No video controls** from within WebJam — still managed via the embedded Webex widget UI
 
 #### Audio Routing
-- **VB-Cable required**: No built-in virtual audio device
-- **Single audio stream**: Can't separate audio and video audio
-- **Manual device setup**: May need manual configuration
-
-**Workaround**: Follow troubleshooting guide in user manual
+- ~~**VB-Cable required**: No built-in virtual audio device~~ — **Resolved** (Phase 5): `scan_loopback_devices()` auto-detects VB-CABLE, BlackHole, Loopback Audio, JACK, and Soundflower
+- ~~**Manual device setup**: May need manual configuration~~ — **Resolved** (Phase 5/6): Setup wizard routing page auto-detects and configures the preferred virtual device
+- **Single audio stream**: Can't separate audio and video audio — still a system-level constraint
 
 ### Bug Reports
 

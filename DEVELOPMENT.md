@@ -57,15 +57,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-All dependencies are listed in `requirements.txt`. Optional runtime dependencies (the app gracefully degrades without them):
-- `customtkinter` -- modern themed UI widgets
+All dependencies are listed in `requirements.txt`. Key dependencies:
+- `PySide6>=6.6.0` -- Qt framework for the Conductor UI
+- `httpx` -- async HTTP client for API calls
+- `customtkinter` -- modern themed UI widgets (legacy Tkinter UI)
 - `sounddevice` / `numpy` -- audio level monitoring
 - `fastapi` / `uvicorn` -- companion localhost API
 
 ## Run the Application
 
 ```bash
-python webjam_app_enhanced.py
+python webjam_qt_main.py          # Qt Conductor UI (current)
+python webjam_app_enhanced.py     # Legacy Tkinter UI (fallback)
 ```
 
 On first launch, use **Help > Run Setup Wizard** to validate Jamulus/Webex readiness.
@@ -90,25 +93,8 @@ Expected result: all discovered tests pass. The exact test count can change as c
 ```bash
 pip install pyinstaller
 
-pyinstaller --onefile --windowed --name WebJam ^
-  --hidden-import=customtkinter ^
-  --hidden-import=numpy ^
-  --hidden-import=sounddevice ^
-  --hidden-import=fastapi ^
-  --hidden-import=uvicorn ^
-  webjam_app_enhanced.py
-```
-
-The executable appears in `dist/WebJam.exe` (Windows) or `dist/WebJam.app` (macOS).
-
-On macOS, omit `--onefile` and use `ditto` to create a zip:
-
-```bash
-pyinstaller --windowed --name WebJam \
-  --hidden-import=customtkinter --hidden-import=numpy \
-  --hidden-import=sounddevice --hidden-import=fastapi \
-  --hidden-import=uvicorn webjam_app_enhanced.py
-ditto -c -k --sequesterRsrc --keepParent dist/WebJam.app WebJam-macos.zip
+pyinstaller webjam.spec
+# Produces dist/WebJam/WebJam.exe (Windows) or dist/WebJam.app (macOS)
 ```
 
 ## Environment Variables
@@ -127,7 +113,9 @@ Override defaults without editing code:
 ## Project Structure
 
 ```
-webjam_app_enhanced.py     Main GUI application (tkinter/customtkinter)
+webjam_qt_main.py          Primary entry point — Qt Conductor UI
+webjam_qt/                 Qt application (windows, widgets, controllers)
+webjam_app_enhanced.py     Legacy Tkinter/customtkinter UI (fallback)
 webjam_app.py              Legacy basic GUI
 core/                      Settings, models, creative modes, templates, protocol
 storage/                   SQLite repository for users, settings, canvas, audit
