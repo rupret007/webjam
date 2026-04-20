@@ -61,47 +61,76 @@ class TestProtocolAdapterDisabled(unittest.TestCase):
         self.adapter.close()
 
 
-class TestProtocolParsePayload(unittest.TestCase):
-    def setUp(self):
-        self.adapter = JamulusProtocolAdapter("127.0.0.1", 22124)
+class TestProtocolBinaryParsing(unittest.TestCase):
+    """Tests for the real Jamulus binary protocol parsers."""
 
-    def test_parse_valid_payload(self):
-        data = b"0:Alice\n1:Bob"
-        result = self.adapter._parse_clients_payload(data)
+    def _make_conn_clients_entry(self, channel_id: int, name: str) -> bytes:
+        """Build a minimal CONN_CLIENTS_LIST entry (country=0, instrument=0, skill=0)."""
+        import struct
+        name_bytes = name.encode("utf-8")
+        city_bytes = b""
+        return (
+            struct.pack("<H", channel_id)   # channel_id
+            + struct.pack("<H", 0)          # country
+            + struct.pack("<I", 0)          # instrument
+            + struct.pack("<B", 0)          # skill_level
+            + struct.pack("<H", len(name_bytes)) + name_bytes  # name string
+            + struct.pack("<H", len(city_bytes)) + city_bytes  # city string
+        )
+
+    def test_parse_conn_clients_list_single(self):
+        from core.jamulus_protocol import _parse_conn_clients_list
+        data = self._make_conn_clients_entry(0, "Alice")
+        result = _parse_conn_clients_list(data)
+        self.assertEqual(result, {0: "Alice"})
+
+    def test_parse_conn_clients_list_multiple(self):
+        from core.jamulus_protocol import _parse_conn_clients_list
+        data = self._make_conn_clients_entry(0, "Alice") + self._make_conn_clients_entry(1, "Bob")
+        result = _parse_conn_clients_list(data)
         self.assertEqual(result, {0: "Alice", 1: "Bob"})
 
-    def test_parse_empty_bytes(self):
-        result = self.adapter._parse_clients_payload(b"")
+    def test_parse_conn_clients_list_empty_name_fallback(self):
+        from core.jamulus_protocol import _parse_conn_clients_list
+        data = self._make_conn_clients_entry(3, "")
+        result = _parse_conn_clients_list(data)
+        self.assertEqual(result, {3: "Participant 3"})
+
+    def test_parse_conn_clients_list_empty_data(self):
+        from core.jamulus_protocol import _parse_conn_clients_list
+        result = _parse_conn_clients_list(b"")
         self.assertEqual(result, {})
 
-    def test_parse_non_utf8_binary(self):
-        result = self.adapter._parse_clients_payload(b"\xff\xfe\xfd")
+    def test_parse_level_list_values(self):
+        from core.jamulus_protocol import _parse_level_list
+        import struct
+        # Two channels: 0 (silence) and 32767 (max)
+        data = struct.pack("<HH", 0, 32767)
+        result = _parse_level_list(data)
+        self.assertAlmostEqual(result[0], 0.0, places=3)
+        self.assertAlmostEqual(result[1], 1.0, places=3)
+
+    def test_parse_level_list_empty(self):
+        from core.jamulus_protocol import _parse_level_list
+        result = _parse_level_list(b"")
         self.assertEqual(result, {})
 
-    def test_parse_lines_without_colon_skipped(self):
-        data = b"0:Alice\nno_colon_here\n2:Charlie"
-        result = self.adapter._parse_clients_payload(data)
-        self.assertEqual(result, {0: "Alice", 2: "Charlie"})
+    def test_build_and_parse_roundtrip(self):
+        from core.jamulus_protocol import _build_packet, _parse_packet
+        payload = b"\x01\x02\x03\x04"
+        raw = _build_packet(msg_id=3, count=1, data=payload)
+        parsed = _parse_packet(raw)
+        self.assertIsNotNone(parsed)
+        msg_id, count, data = parsed
+        self.assertEqual(msg_id, 3)
+        self.assertEqual(count, 1)
+        self.assertEqual(data, payload)
 
-    def test_parse_non_numeric_index_skipped(self):
-        data = b"abc:Alice\n1:Bob"
-        result = self.adapter._parse_clients_payload(data)
-        self.assertEqual(result, {1: "Bob"})
-
-    def test_parse_negative_index_skipped(self):
-        data = b"-1:Ghost\n1:Bob"
-        result = self.adapter._parse_clients_payload(data)
-        self.assertEqual(result, {1: "Bob"})
-
-    def test_parse_oversized_index_skipped(self):
-        data = b"70000:Ghost\n2:Alice"
-        result = self.adapter._parse_clients_payload(data)
-        self.assertEqual(result, {2: "Alice"})
-
-    def test_parse_empty_name_uses_fallback(self):
-        data = b"0:"
-        result = self.adapter._parse_clients_payload(data)
-        self.assertEqual(result, {0: "Participant 0"})
+    def test_parse_packet_crc_mismatch_returns_none(self):
+        from core.jamulus_protocol import _build_packet, _parse_packet
+        raw = bytearray(_build_packet(msg_id=3, count=1, data=b"\x01"))
+        raw[-1] ^= 0xFF  # corrupt CRC
+        self.assertIsNone(_parse_packet(bytes(raw)))
 
 
 class TestProtocolCachedParticipants(unittest.TestCase):

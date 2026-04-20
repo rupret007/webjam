@@ -1,20 +1,25 @@
 """
 ApplicationController — the brain.
 
-Replaces the Tkinter god-class. Owns session state, wires ConductorWindow
-signals to the service layer (BridgeService, JamulusController, WebexController),
-and publishes state back to widgets.
+Owns session state and wires ConductorWindow signals to the service layer.
 
-Phase 1: demo participants populate the grid with a live-feeling meter animation
-so the UI has presence before real Jamulus/Webex integrations land. Remove the
-``DemoAudioSimulator`` in Phase 2 once the UDP protocol pushes real levels.
+Participant lifecycle:
+  1. On startup: show 5 demo cards (named placeholders) with animated levels
+     so the UI feels alive before Jamulus connects.
+  2. When ``JamulusController`` fires a participants callback (real data from
+     JSON-RPC or UDP), real names replace demo names; mixer state is preserved.
+  3. Level meters switch from the demo jitter to real audio engine values
+     polled via ``_level_poll_timer`` every 100 ms.
+
+Mixer signals (fader/mute/solo) route directly to ``JamulusController`` which
+sends them to Jamulus via JSON-RPC (preferred) or UDP protocol (fallback).
 """
 
 from __future__ import annotations
 
 import logging
 import random
-from typing import Optional
+from typing import List, Optional
 
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QMessageBox
@@ -31,44 +36,21 @@ from webjam_qt.windows.conductor_window import ConductorWindow
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
-
-class DemoAudioSimulator(QObject):
-    """Jitter audio levels for demo participants so the meters feel alive.
-
-    Replaced in Phase 2 by levels driven off the real Jamulus UDP stream.
-    """
-
-    TICK_MS = 120
-
-    def __init__(self, controller: "ApplicationController") -> None:
-        super().__init__(controller)
-        self._controller = controller
-        self._timer = QTimer(self)
-        self._timer.setInterval(self.TICK_MS)
-        self._timer.timeout.connect(self._tick)
-
-    def start(self) -> None:
-        self._timer.start()
-
-    def stop(self) -> None:
-        self._timer.stop()
-
-    def _tick(self) -> None:
-        for participant in self._controller.participants.values():
-            if participant.muted or not participant.is_connected:
-                level = 0.0
-            else:
-                # Target level ~= fader setting * activity coefficient
-                fader_ratio = participant.fader_level / 127.0
-                activity = random.uniform(0.08, 0.65)
-                level = min(1.0, fader_ratio * activity)
-            self._controller.window.participant_grid.update_level(
-                participant.channel_id, level
-            )
+# Demo participants shown before Jamulus connects
+_DEMO_PARTICIPANTS = [
+    ParticipantPresentation(channel_id=0, name="You",    role="You · Drums",     fader_level=100, is_local=True),
+    ParticipantPresentation(channel_id=1, name="Dylan",  role="Guitar",          fader_level=96),
+    ParticipantPresentation(channel_id=2, name="Andrea", role="Bass",            fader_level=104),
+    ParticipantPresentation(channel_id=3, name="Brian",  role="Vocals",          fader_level=110),
+    ParticipantPresentation(channel_id=4, name="Jesse",  role="Keys",            fader_level=88),
+]
 
 
 class ApplicationController(QObject):
     """Glue layer between ConductorWindow and the service layer."""
+
+    _LEVEL_POLL_MS = 100   # how often to push meter updates to the grid
+    _DEMO_TICK_MS  = 120   # demo level jitter interval
 
     def __init__(
         self,
@@ -81,18 +63,16 @@ class ApplicationController(QObject):
 
         self._ui_invoker = UiThreadInvoker(self)
 
-        # Repository + metrics (real, writes to ~/.webjam_app.db)
         self.repository = WebJamRepository()
         self.metrics = MetricsService(self.repository)
 
-        # Domain controllers (lazy imports — they import legacy logging config
-        # and we want to keep import-time side effects contained)
         from jamulus_controller import JamulusController
         from webex_integration import WebexController
 
         self.jamulus = JamulusController(
             host=self.settings.jamulus_server,
             port=self.settings.jamulus_port,
+            rpc_port=self.settings.jamulus_rpc_port,
         )
         self.webex = WebexController(meeting_url=self.settings.webex_url)
 
@@ -105,18 +85,32 @@ class ApplicationController(QObject):
             repository=self.repository,
             settings=self.settings,
             ui_callbacks={
-                "set_status_banner": self._set_status_banner,
-                "refresh_readiness": self._refresh_readiness,
+                "set_status_banner":    self._set_status_banner,
+                "refresh_readiness":    self._refresh_readiness,
                 "show_actionable_error": self._show_actionable_error,
-                "show_message": self._show_message,
-                "shutdown_requested": lambda: self._shutdown,
+                "show_message":         self._show_message,
+                "shutdown_requested":   lambda: self._shutdown,
                 "schedule_ui_callback": self._ui_invoker.invoke,
             },
         )
 
-        # Demo data — replaced in Phase 2 with real participant reconciliation
+        # Participant map — keyed by channel_id
         self.participants: dict[int, ParticipantPresentation] = {}
-        self._demo_simulator = DemoAudioSimulator(self)
+
+        # True once JamulusController has pushed at least one real update
+        self._jamulus_connected = False
+
+        # Timers
+        self._demo_timer = QTimer(self)
+        self._demo_timer.setInterval(self._DEMO_TICK_MS)
+        self._demo_timer.timeout.connect(self._demo_tick)
+
+        self._level_timer = QTimer(self)
+        self._level_timer.setInterval(self._LEVEL_POLL_MS)
+        self._level_timer.timeout.connect(self._poll_levels)
+
+        # Register real participant callback
+        self.jamulus.register_callback(self._on_jamulus_participants)
 
         self._wire_signals()
         self._bootstrap_ui()
@@ -126,7 +120,8 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     def shutdown(self) -> None:
         self._shutdown = True
-        self._demo_simulator.stop()
+        self._demo_timer.stop()
+        self._level_timer.stop()
         try:
             self.jamulus.stop()
         except Exception:  # noqa: BLE001
@@ -137,7 +132,7 @@ class ApplicationController(QObject):
             LOGGER.exception("Webex stop failed")
 
     # ------------------------------------------------------------------
-    # Wiring
+    # Initial wiring
     # ------------------------------------------------------------------
     def _wire_signals(self) -> None:
         strip = self.window.session_strip
@@ -145,12 +140,8 @@ class ApplicationController(QObject):
         strip.session_title_changed.connect(self._on_title_changed)
         strip.launch_audio_requested.connect(self._on_launch_audio)
         strip.join_video_requested.connect(self._on_join_video)
-
         self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
         self.window.close_requested.connect(self.shutdown)
-
-        for card in self.window.participant_grid.cards():
-            self._connect_card_signals(card)
 
     def _connect_card_signals(self, card) -> None:
         card.fader_changed.connect(self._on_fader_changed)
@@ -158,44 +149,113 @@ class ApplicationController(QObject):
         card.solo_toggled.connect(self._on_solo_toggled)
 
     def _bootstrap_ui(self) -> None:
-        # Demo participants — named placeholders so the first impression isn't empty
-        demo = [
-            ParticipantPresentation(
-                channel_id=0, name="You", role="You · Drums",
-                fader_level=100, is_local=True, video_connected=False,
-            ),
-            ParticipantPresentation(
-                channel_id=1, name="Dylan", role="Guitar · Audio only",
-                fader_level=96, video_connected=False,
-            ),
-            ParticipantPresentation(
-                channel_id=2, name="Andrea", role="Bass · Video",
-                fader_level=104, video_connected=True,
-            ),
-            ParticipantPresentation(
-                channel_id=3, name="Brian", role="Vocals · Video",
-                fader_level=110, video_connected=True,
-            ),
-            ParticipantPresentation(
-                channel_id=4, name="Jesse", role="Keys · Audio only",
-                fader_level=88, video_connected=False,
-            ),
-        ]
-        for p in demo:
-            self.participants[p.channel_id] = p
+        for p in _DEMO_PARTICIPANTS:
+            # Copy so we don't mutate the module-level default
+            self.participants[p.channel_id] = ParticipantPresentation(
+                channel_id=p.channel_id,
+                name=p.name,
+                role=p.role,
+                fader_level=p.fader_level,
+                is_local=p.is_local,
+            )
+        self._push_participants_to_grid()
+
+        mode = get_mode_by_key_or_default(
+            self.window.session_strip.current_mode_key() or "music_jam"
+        )
+        self._apply_mode(mode)
+        self.window.set_status_audio("Not launched")
+        self.window.set_status_video("Not joined")
+        self.window.set_status_latency("—")
+        self.window.session_strip.start_session_clock()
+        self._demo_timer.start()
+
+    def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
         for card in self.window.participant_grid.cards():
             self._connect_card_signals(card)
 
-        mode = get_mode_by_key_or_default(self.window.session_strip.current_mode_key() or "music_jam")
-        self._apply_mode(mode)
+    # ------------------------------------------------------------------
+    # Real Jamulus participant callback (called from background thread)
+    # ------------------------------------------------------------------
+    def _on_jamulus_participants(self, jamulus_participants: list) -> None:
+        """Receive live participant list from JamulusController — runs on a worker thread."""
+        self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
 
-        self.window.set_status_audio("Not launched")
-        self.window.set_status_video("Not joined")
-        self.window.set_status_latency("—")
+    def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
+        """Update the participant grid on the UI thread from real Jamulus data."""
+        if not jamulus_participants:
+            return
 
-        self.window.session_strip.start_session_clock()
-        self._demo_simulator.start()
+        if not self._jamulus_connected:
+            self._jamulus_connected = True
+            self._demo_timer.stop()
+            # Clear demo data; real participants take over
+            self.participants.clear()
+            # Start polling real audio engine levels
+            self._level_timer.start()
+
+        incoming_ids = {p.channel_id for p in jamulus_participants}
+
+        # Remove participants that left
+        for cid in list(self.participants.keys()):
+            if cid not in incoming_ids:
+                del self.participants[cid]
+
+        # Upsert — preserve existing mixer state (fader/mute/solo)
+        for jp in jamulus_participants:
+            existing = self.participants.get(jp.channel_id)
+            if existing is None:
+                self.participants[jp.channel_id] = ParticipantPresentation(
+                    channel_id=jp.channel_id,
+                    name=jp.name,
+                    role=self._role_label(jp),
+                    fader_level=jp.fader_level,
+                    muted=jp.muted,
+                    solo=jp.solo,
+                    is_connected=jp.is_connected,
+                    is_local=(jp.channel_id == 0),
+                )
+            else:
+                # Preserve fader/mute/solo the user set in WebJam
+                existing.name = jp.name
+                existing.is_connected = jp.is_connected
+
+        self._push_participants_to_grid()
+
+    @staticmethod
+    def _role_label(jp) -> str:
+        bits: list[str] = []
+        if getattr(jp, "channel_id", -1) == 0:
+            bits.append("You")
+        instrument = getattr(jp, "instrument", "") or ""
+        if instrument:
+            bits.append(instrument.title())
+        if not bits:
+            bits.append("Musician")
+        return " · ".join(bits)
+
+    # ------------------------------------------------------------------
+    # Level polling — real audio engine values
+    # ------------------------------------------------------------------
+    def _poll_levels(self) -> None:
+        """Called every 100 ms; pushes audio engine levels to participant grid."""
+        for channel_id in self.participants:
+            level = self.jamulus.audio_engine.get_level(channel_id)
+            self.window.participant_grid.update_level(channel_id, level)
+
+    # ------------------------------------------------------------------
+    # Demo level animation (shown before Jamulus connects)
+    # ------------------------------------------------------------------
+    def _demo_tick(self) -> None:
+        for participant in self.participants.values():
+            if participant.muted or not participant.is_connected:
+                level = 0.0
+            else:
+                fader_ratio = participant.fader_level / 127.0
+                activity = random.uniform(0.05, 0.60)
+                level = min(1.0, fader_ratio * activity)
+            self.window.participant_grid.update_level(participant.channel_id, level)
 
     # ------------------------------------------------------------------
     # Session strip handlers
@@ -209,8 +269,6 @@ class ApplicationController(QObject):
         LOGGER.info("Session title set: %s", title)
 
     def _apply_mode(self, mode) -> None:
-        # In Phase 2 this will reshape the stage/canvas; for now we just
-        # surface the quick help in the status bar.
         self.window.flash_message(mode.quick_help, ms=6000)
 
     def _on_launch_audio(self) -> None:
@@ -224,28 +282,31 @@ class ApplicationController(QObject):
         self.bridge.launch_webex(manual=True)
 
     # ------------------------------------------------------------------
-    # Participant card handlers (wiring lands in Phase 2 — Jamulus protocol)
+    # Mixer card handlers → JamulusController
     # ------------------------------------------------------------------
     def _on_fader_changed(self, channel_id: int, level: int) -> None:
-        participant = self.participants.get(channel_id)
-        if participant is not None:
-            participant.fader_level = level
-        # Phase 2: self.jamulus.set_fader(channel_id, level_to_jamulus(level))
+        p = self.participants.get(channel_id)
+        if p is not None:
+            p.fader_level = level
+        if self._jamulus_connected:
+            self.jamulus.set_fader_level(channel_id, level)
 
     def _on_mute_toggled(self, channel_id: int, muted: bool) -> None:
-        participant = self.participants.get(channel_id)
-        if participant is not None:
-            participant.muted = muted
-        # Phase 2: self.jamulus.set_mute(channel_id, muted)
+        p = self.participants.get(channel_id)
+        if p is not None:
+            p.muted = muted
+        if self._jamulus_connected:
+            self.jamulus.set_mute(channel_id, muted)
 
     def _on_solo_toggled(self, channel_id: int, solo: bool) -> None:
-        participant = self.participants.get(channel_id)
-        if participant is not None:
-            participant.solo = solo
-        # Phase 2: self.jamulus.set_solo(channel_id, solo) + update other channels
+        p = self.participants.get(channel_id)
+        if p is not None:
+            p.solo = solo
+        if self._jamulus_connected:
+            self.jamulus.set_solo(channel_id, solo)
 
     # ------------------------------------------------------------------
-    # BridgeService UI callbacks (called on UI thread via invoker)
+    # BridgeService callbacks (already on UI thread via invoker)
     # ------------------------------------------------------------------
     def _set_status_banner(self, text: str, color: str | None = None) -> None:
         self.window.flash_message(text)
@@ -253,27 +314,18 @@ class ApplicationController(QObject):
     def _refresh_readiness(self) -> None:
         self.window.set_status_audio(self.bridge.jamulus_state)
         self.window.set_status_video(self.bridge.webex_state)
-
-        jamulus_running = self.bridge.jamulus_state in ("Running", "Already running")
+        jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
         self.window.session_strip.set_audio_state(
-            "Audio Running" if jamulus_running else "Launch Audio",
-            enabled=True,
+            "Audio Running" if jamulus_up else "Launch Audio", enabled=True
         )
-        webex_open = self.bridge.webex_state in ("Opened in browser",)
+        webex_open = self.bridge.webex_state == "Opened in browser"
         self.window.session_strip.set_video_state(
-            "Video Opened" if webex_open else "Join Video",
-            enabled=True,
+            "Video Opened" if webex_open else "Join Video", enabled=True
         )
 
-    def _show_actionable_error(
-        self,
-        title: str,
-        *,
-        what_failed: str,
-        likely_cause: str,
-        next_action: str,
-        retry_callback=None,
-    ) -> None:
+    def _show_actionable_error(self, title: str, *, what_failed: str,
+                                likely_cause: str, next_action: str,
+                                retry_callback=None) -> None:
         body = f"{what_failed}\n\nLikely cause: {likely_cause}\n\nNext action: {next_action}"
         box = QMessageBox(self.window)
         box.setWindowTitle(title)
@@ -294,7 +346,7 @@ class ApplicationController(QObject):
         QMessageBox.information(self.window, title, message)
 
     # ------------------------------------------------------------------
-    # Static helpers
+    # Helpers
     # ------------------------------------------------------------------
     @staticmethod
     def mode_entries() -> list[tuple[str, str]]:

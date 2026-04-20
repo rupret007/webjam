@@ -115,11 +115,16 @@ class BridgeService:
                     self.jamulus_reconnect_inflight = False
                     return
                 
-                # Simple retry logic integrated
+                # Launch Jamulus with JSON-RPC port so WebJam can query it
+                cmd = [
+                    jamulus_path,
+                    "--connect", server,
+                    "--jsonrpcport", str(self.settings.jamulus_rpc_port),
+                ]
                 proc = None
                 for i in range(3):
                     try:
-                        proc = subprocess.Popen([jamulus_path, "--connect", server])
+                        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         break
                     except Exception:
                         if i == 2: raise
@@ -129,28 +134,36 @@ class BridgeService:
                     if proc: proc.terminate()
                     self.jamulus_reconnect_inflight = False
                     return
-                    
+
                 self.jamulus_process = proc
                 self.jamulus_state = "Running"
                 self.jamulus_reconnect_attempts = 0
                 self.jamulus_next_reconnect_at = 0.0
                 self.jamulus_reconnect_inflight = False
-                
+
                 if reconnect:
                     self.metrics_service.increment("metric_jamulus_reconnect_success")
                 else:
                     self.metrics_service.increment("metric_jamulus_launch_success")
-                
+
+                # Start monitoring (JSON-RPC + audio engine) after brief startup delay
+                def _start_monitoring():
+                    time.sleep(2.0)  # give Jamulus time to bind its RPC port
+                    try:
+                        self.jamulus_controller.start()
+                    except Exception as exc:
+                        LOGGER.warning("JamulusController.start() failed: %s", exc)
+
+                threading.Thread(target=_start_monitoring, daemon=True).start()
+
                 self.schedule_ui_callback(self.refresh_readiness)
                 if manual:
                     self.schedule_ui_callback(
                         lambda: self.show_message(
                             "Success",
-                            f"Jamulus launched!\n\nConnecting to: {server}\n\nWait a moment for participants to appear in the mixer."
+                            f"Jamulus launched!\n\nConnecting to: {server}\n\nParticipants will appear in the mixer as they join."
                         )
                     )
-                # Local participant placeholder
-                self.jamulus_controller.add_participant("You (Local)", 0)
                 
             except Exception as exc:
                 LOGGER.exception("Failed to launch Jamulus: %s", exc)
