@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -124,6 +124,37 @@ class ConductorWindow(QMainWindow):
         self._status_bar.addPermanentWidget(self._status_latency)
         self._status_bar.addPermanentWidget(self._status_routing)
         self._status_bar.showMessage("Ready")
+
+        # --- Accessibility names
+        self.session_strip.setAccessibleName("Session controls strip")
+        self.side_rail.setAccessibleName("Navigation rail")
+        self.participant_grid.setAccessibleName("Participant mixer grid")
+        self.webex_embed.setAccessibleName("Webex video conference pane")
+        self.session_canvas.setAccessibleName("Session notes canvas")
+
+        # --- Keyboard shortcuts
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self) -> None:
+        # Cmd/Ctrl+L — focus session title
+        QShortcut(QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title())
+        # Cmd/Ctrl+M — toggle mute all (handled by controller via strip signal)
+        # F11 — fullscreen toggle
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self, self._toggle_fullscreen)
+        # Escape — exit fullscreen
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._exit_fullscreen)
+        # Cmd/Ctrl+, — open settings wizard (signal consumed by controller)
+        self._settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def _exit_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
 
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController

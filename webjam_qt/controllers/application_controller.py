@@ -147,6 +147,9 @@ class ApplicationController(QObject):
             lambda: self.bridge.launch_webex(manual=True)
         )
         self.window.close_requested.connect(self.shutdown)
+        # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
+        self.window._settings_shortcut.activated.connect(self._open_settings_wizard)
+        self.window.side_rail.view_changed.connect(self._on_rail_view_changed)
 
     def _connect_card_signals(self, card) -> None:
         card.fader_changed.connect(self._on_fader_changed)
@@ -390,6 +393,22 @@ class ApplicationController(QObject):
 
     def _show_message(self, title: str, message: str) -> None:
         QMessageBox.information(self.window, title, message)
+
+    # ------------------------------------------------------------------
+    # Settings wizard (Phase 6)
+    # ------------------------------------------------------------------
+    def _open_settings_wizard(self) -> None:
+        from webjam_qt.windows.setup_wizard import SetupWizard
+        wizard = SetupWizard(self.settings, parent=self.window)
+        if wizard.exec() == SetupWizard.DialogCode.Accepted:
+            # Reload settings and apply live-changeable values
+            from core.settings import load_settings
+            self.settings = load_settings()
+            self.window.flash_message("Settings saved — restart for full effect.")
+
+    def _on_rail_view_changed(self, key: str) -> None:
+        if key == "settings":
+            self._open_settings_wizard()
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)

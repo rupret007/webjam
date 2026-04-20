@@ -152,6 +152,11 @@ class SessionStrip(QFrame):
     def current_title(self) -> str:
         return self._title_input.text().strip()
 
+    def focus_title(self) -> None:
+        """Focus and select the session title field (keyboard shortcut target)."""
+        self._title_input.setFocus()
+        self._title_input.selectAll()
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

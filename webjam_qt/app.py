@@ -14,6 +14,7 @@ from core.settings import load_settings
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.windows.conductor_window import ConductorWindow
+from webjam_qt.windows.setup_wizard import SetupWizard
 
 
 def _configure_qt_attributes() -> None:
@@ -24,9 +25,6 @@ def _configure_qt_attributes() -> None:
 
 def _configure_default_font(app: QApplication) -> None:
     font = QFont("Inter")
-    # Fall back to the platform default font family if Inter isn't installed;
-    # Qt will quietly substitute, so we set a reasonable pixel size instead
-    # of relying on families that may not be present.
     font.setPixelSize(13)
     app.setFont(font)
 
@@ -45,6 +43,14 @@ def run() -> int:
 
     _configure_default_font(app)
     app.setStyleSheet(load_stylesheet())
+
+    # Show setup wizard on first run (no config file yet)
+    if SetupWizard.should_show_on_startup(settings):
+        wizard = SetupWizard(settings)
+        if wizard.exec() == SetupWizard.DialogCode.Rejected:
+            return 0  # User cancelled — exit cleanly
+        # Reload settings that the wizard just saved
+        settings = load_settings()
 
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
