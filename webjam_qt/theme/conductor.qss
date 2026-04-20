@@ -1,0 +1,411 @@
+/*
+ * Conductor stylesheet.
+ *
+ * Tokens are substituted at load time by qss_loader.py.
+ * Reference: ${COLOR_BG_BASE}, ${SPACE_MD}, ${RADIUS_MD}, etc.
+ */
+
+/* ============================================================
+ * Global
+ * ============================================================ */
+QWidget {
+    background-color: ${COLOR_BG_BASE};
+    color: ${COLOR_TEXT_PRIMARY};
+    font-family: ${FONT_FAMILY_SANS};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+QMainWindow, QDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+/* ============================================================
+ * Session Strip (top bar)
+ * ============================================================ */
+#SessionStrip {
+    background-color: ${COLOR_BG_PANEL};
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#SessionStripLogo {
+    color: ${COLOR_ACCENT_VIDEO};
+    font-size: ${FONT_SIZE_LG}px;
+    font-weight: 700;
+    padding: 0 ${SPACE_SM}px;
+}
+
+#SessionStripTitle {
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 600;
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+#SessionStripSubtitle {
+    font-size: ${FONT_SIZE_SM}px;
+    color: ${COLOR_TEXT_SECONDARY};
+}
+
+#SessionTimer {
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_LG}px;
+    font-weight: 500;
+    color: ${COLOR_TEXT_PRIMARY};
+    padding: 0 ${SPACE_MD}px;
+}
+
+#RecordDot {
+    color: ${COLOR_ACCENT_RECORD};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 700;
+}
+
+/* ============================================================
+ * Side Rail (left)
+ * ============================================================ */
+#SideRail {
+    background-color: ${COLOR_BG_PANEL};
+    border-right: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+QToolButton#SideRailButton {
+    background-color: transparent;
+    color: ${COLOR_TEXT_SECONDARY};
+    border: none;
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+QToolButton#SideRailButton:hover {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QToolButton#SideRailButton:checked {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_ACCENT_VIDEO};
+    border-left: 2px solid ${COLOR_ACCENT_VIDEO};
+}
+
+/* ============================================================
+ * Participant Grid / Stage
+ * ============================================================ */
+#Stage {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#StageHeader {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
+}
+
+/* ============================================================
+ * Participant Card
+ * ============================================================ */
+#ParticipantCard {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_LG}px;
+}
+
+#ParticipantCard[connected="false"] {
+    border: 1px dashed ${COLOR_BORDER_STRONG};
+}
+
+#ParticipantCard[speaking="true"] {
+    border: 1px solid ${COLOR_ACCENT_AUDIO};
+}
+
+#VideoTile {
+    background-color: #000;
+    border-top-left-radius: ${RADIUS_LG}px;
+    border-top-right-radius: ${RADIUS_LG}px;
+}
+
+#VideoPlaceholder {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#ParticipantName {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 600;
+}
+
+#ParticipantRole {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#FaderValue {
+    font-family: ${FONT_FAMILY_MONO};
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* ============================================================
+ * Mute / Solo pills
+ * ============================================================ */
+QPushButton#PillButton {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_PILL}px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    font-weight: 600;
+    font-size: ${FONT_SIZE_SM}px;
+    min-height: 22px;
+}
+
+QPushButton#PillButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#PillButton[state="active-mute"] {
+    background-color: ${COLOR_ACCENT_DANGER};
+    color: ${COLOR_TEXT_INVERSE};
+    border: 1px solid ${COLOR_ACCENT_DANGER};
+}
+
+QPushButton#PillButton[state="active-solo"] {
+    background-color: ${COLOR_ACCENT_AUDIO};
+    color: ${COLOR_TEXT_INVERSE};
+    border: 1px solid ${COLOR_ACCENT_AUDIO};
+}
+
+/* ============================================================
+ * Primary buttons (Launch Jamulus / Join Webex)
+ * ============================================================ */
+QPushButton#PrimaryButton {
+    background-color: ${COLOR_ACCENT_VIDEO};
+    color: ${COLOR_TEXT_INVERSE};
+    border: none;
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    font-weight: 600;
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #5EE5E5;
+}
+
+QPushButton#PrimaryButton:pressed {
+    background-color: #2DB5B5;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_MUTED};
+}
+
+QPushButton#AudioButton {
+    background-color: ${COLOR_ACCENT_AUDIO};
+    color: ${COLOR_TEXT_INVERSE};
+}
+
+QPushButton#AudioButton:hover {
+    background-color: #F7BD62;
+}
+
+QPushButton#GhostButton {
+    background-color: transparent;
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    font-weight: 500;
+}
+
+QPushButton#GhostButton:hover {
+    background-color: ${COLOR_BG_CARD};
+    border-color: ${COLOR_ACCENT_VIDEO};
+}
+
+/* ============================================================
+ * Status Bar
+ * ============================================================ */
+QStatusBar {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_SECONDARY};
+    border-top: 1px solid ${COLOR_BORDER_SUBTLE};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+/* ============================================================
+ * Faders (QSlider)
+ * ============================================================ */
+QSlider::groove:horizontal {
+    border: none;
+    height: 6px;
+    background: ${COLOR_BG_INPUT};
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: ${COLOR_ACCENT_AUDIO};
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+    border: 2px solid ${COLOR_BG_CARD};
+}
+
+QSlider::handle:horizontal:hover {
+    background: #F7BD62;
+}
+
+QSlider::sub-page:horizontal {
+    background: ${COLOR_ACCENT_AUDIO};
+    border-radius: 3px;
+}
+
+/* ============================================================
+ * Session Canvas (right-side notes panel)
+ * ============================================================ */
+#SessionCanvas {
+    background-color: ${COLOR_BG_PANEL};
+    border-left: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#CanvasHeader {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
+}
+
+#CanvasNotes {
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    color: ${COLOR_TEXT_PRIMARY};
+    font-family: ${FONT_FAMILY_SANS};
+    font-size: ${FONT_SIZE_BASE}px;
+    selection-background-color: ${COLOR_ACCENT_VIDEO};
+    selection-color: ${COLOR_TEXT_INVERSE};
+}
+
+#CanvasNotes:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+/* ============================================================
+ * Webex placeholder pane (Phase 3 will replace with QWebEngineView)
+ * ============================================================ */
+#WebexEmbed {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px dashed ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_LG}px;
+    color: ${COLOR_TEXT_SECONDARY};
+}
+
+#WebexEmbedTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 600;
+}
+
+/* ============================================================
+ * Misc — ComboBox, LineEdit
+ * ============================================================ */
+QComboBox {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    min-height: 24px;
+}
+
+QComboBox:hover {
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    selection-background-color: ${COLOR_ACCENT_VIDEO};
+    selection-color: ${COLOR_TEXT_INVERSE};
+    padding: ${SPACE_XS}px;
+}
+
+QLineEdit {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+}
+
+QLineEdit:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+/* ============================================================
+ * Scrollbars — subtle, dark
+ * ============================================================ */
+QScrollBar:vertical {
+    background-color: transparent;
+    width: 10px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background-color: ${COLOR_BORDER_STRONG};
+    border-radius: 5px;
+    min-height: 30px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: ${COLOR_TEXT_MUTED};
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    background-color: transparent;
+    height: 10px;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: ${COLOR_BORDER_STRONG};
+    border-radius: 5px;
+    min-width: 30px;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
+    width: 0;
+}

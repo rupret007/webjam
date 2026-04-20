@@ -1,7 +1,10 @@
 # WebJam - Music Collaboration Platform
 # Python dependencies
 
-# Modern UI framework (optional but recommended)
+# Primary UI framework (Qt) — new Conductor UI
+PySide6>=6.6.0
+
+# Legacy UI (retained until Qt port reaches parity)
 customtkinter>=5.2.0
 
 # For building executables
