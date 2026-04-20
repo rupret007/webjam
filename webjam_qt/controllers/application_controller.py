@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 from typing import List, Optional
 
 from PySide6.QtCore import QObject, QTimer, Qt
@@ -114,6 +115,7 @@ class ApplicationController(QObject):
 
         self._wire_signals()
         self._bootstrap_ui()
+        self._start_routing_scan()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -170,6 +172,7 @@ class ApplicationController(QObject):
         self.window.set_status_audio("Not launched")
         self.window.set_status_video("Not joined")
         self.window.set_status_latency("—")
+        self.window.set_status_routing("scanning…")
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
 
@@ -387,6 +390,29 @@ class ApplicationController(QObject):
 
     def _show_message(self, title: str, message: str) -> None:
         QMessageBox.information(self.window, title, message)
+
+    # ------------------------------------------------------------------
+    # Audio routing detection (Phase 5)
+    # ------------------------------------------------------------------
+    def _start_routing_scan(self) -> None:
+        """Scan for VB-CABLE / BlackHole in a background thread."""
+        def _scan() -> None:
+            from core.audio_routing import scan_loopback_devices
+            status = scan_loopback_devices()
+            self._ui_invoker.invoke(lambda: self._apply_routing_status(status))
+
+        threading.Thread(target=_scan, daemon=True, name="routing-scan").start()
+
+    def _apply_routing_status(self, status) -> None:
+        if status.ok:
+            label = f"{status.device_name} \u2713"
+            self.window.set_status_routing(label)
+        else:
+            self.window.set_status_routing("No loopback")
+            self.window.flash_message(
+                f"No virtual audio device found. {status.install_hint}",
+                ms=8000,
+            )
 
     # ------------------------------------------------------------------
     # Helpers
