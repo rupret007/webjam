@@ -52,6 +52,7 @@ class BridgeService:
         
         self.jamulus_reconnect_inflight = False
         self.webex_reconnect_inflight = False
+        self._reconnect_lock = threading.Lock()
 
     def find_jamulus(self):
         """Find Jamulus installation based on candidate paths in settings."""
@@ -112,9 +113,10 @@ class BridgeService:
         def _do_launch() -> None:
             try:
                 if self.shutdown_requested():
-                    self.jamulus_reconnect_inflight = False
+                    with self._reconnect_lock:
+                        self.jamulus_reconnect_inflight = False
                     return
-                
+
                 # Launch Jamulus with JSON-RPC port so WebJam can query it
                 cmd = [
                     jamulus_path,
@@ -132,14 +134,16 @@ class BridgeService:
 
                 if self.shutdown_requested():
                     if proc: proc.terminate()
-                    self.jamulus_reconnect_inflight = False
+                    with self._reconnect_lock:
+                        self.jamulus_reconnect_inflight = False
                     return
 
                 self.jamulus_process = proc
                 self.jamulus_state = "Running"
                 self.jamulus_reconnect_attempts = 0
                 self.jamulus_next_reconnect_at = 0.0
-                self.jamulus_reconnect_inflight = False
+                with self._reconnect_lock:
+                    self.jamulus_reconnect_inflight = False
 
                 if reconnect:
                     self.metrics_service.increment("metric_jamulus_reconnect_success")
@@ -164,11 +168,12 @@ class BridgeService:
                             f"Jamulus launched!\n\nConnecting to: {server}\n\nParticipants will appear in the mixer as they join."
                         )
                     )
-                
+
             except Exception as exc:
                 LOGGER.exception("Failed to launch Jamulus: %s", exc)
                 self.jamulus_state = "Launch failed" if not reconnect else "Not running"
-                self.jamulus_reconnect_inflight = False
+                with self._reconnect_lock:
+                    self.jamulus_reconnect_inflight = False
                 
                 if reconnect:
                     self.metrics_service.increment("metric_jamulus_reconnect_failed")
@@ -207,9 +212,10 @@ class BridgeService:
         def _do_open() -> None:
             try:
                 if self.shutdown_requested():
-                    self.webex_reconnect_inflight = False
+                    with self._reconnect_lock:
+                        self.webex_reconnect_inflight = False
                     return
-                
+
                 # Retry logic
                 success = False
                 last_err = "Unknown"
@@ -221,18 +227,20 @@ class BridgeService:
                     except Exception as e:
                         last_err = str(e)
                     time.sleep(0.4)
-                
+
                 if not success:
                     raise RuntimeError(last_err)
 
                 if self.shutdown_requested():
-                    self.webex_reconnect_inflight = False
+                    with self._reconnect_lock:
+                        self.webex_reconnect_inflight = False
                     return
-                    
+
                 self.webex_state = "Opened in browser"
                 self.webex_reconnect_attempts = 0
                 self.webex_next_reconnect_at = 0.0
-                self.webex_reconnect_inflight = False
+                with self._reconnect_lock:
+                    self.webex_reconnect_inflight = False
                 
                 if reconnect:
                     self.metrics_service.increment("metric_webex_reconnect_success")
@@ -251,7 +259,8 @@ class BridgeService:
             except Exception as exc:
                 LOGGER.exception("Failed to open Webex: %s", exc)
                 self.webex_state = "Open failed"
-                self.webex_reconnect_inflight = False
+                with self._reconnect_lock:
+                    self.webex_reconnect_inflight = False
                 
                 if reconnect:
                     self.metrics_service.increment("metric_webex_reconnect_failed")
@@ -298,62 +307,64 @@ class BridgeService:
         self._attempt_auto_reconnect_webex(now)
 
     def _attempt_auto_reconnect_jamulus(self, now: float):
-        if not self.jamulus_launch_intended:
-            return
-            
-        is_running = self.jamulus_process is not None and self.jamulus_process.poll() is None
-        if is_running:
-            self.jamulus_reconnect_attempts = 0
-            self.jamulus_next_reconnect_at = 0.0
-            self.jamulus_reconnect_inflight = False
-            return
-            
-        if self.jamulus_reconnect_inflight:
-            return
-            
-        # Max attempts constant from main app
-        RECONNECT_MAX_ATTEMPTS = 5
-        
-        if self.jamulus_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
-            return
-            
-        if now < self.jamulus_next_reconnect_at:
-            return
-            
-        self.jamulus_reconnect_attempts += 1
-        self.jamulus_next_reconnect_at = now + self._reconnect_delay_seconds(self.jamulus_reconnect_attempts)
-        self.jamulus_reconnect_inflight = True
+        with self._reconnect_lock:
+            if not self.jamulus_launch_intended:
+                return
+
+            is_running = self.jamulus_process is not None and self.jamulus_process.poll() is None
+            if is_running:
+                self.jamulus_reconnect_attempts = 0
+                self.jamulus_next_reconnect_at = 0.0
+                self.jamulus_reconnect_inflight = False
+                return
+
+            if self.jamulus_reconnect_inflight:
+                return
+
+            # Max attempts constant from main app
+            RECONNECT_MAX_ATTEMPTS = 5
+
+            if self.jamulus_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
+                return
+
+            if now < self.jamulus_next_reconnect_at:
+                return
+
+            self.jamulus_reconnect_attempts += 1
+            self.jamulus_next_reconnect_at = now + self._reconnect_delay_seconds(self.jamulus_reconnect_attempts)
+            self.jamulus_reconnect_inflight = True
         self.metrics_service.increment("metric_jamulus_reconnect_attempt")
         self.launch_jamulus(manual=False, reconnect=True)
 
     def _attempt_auto_reconnect_webex(self, now: float):
-        if not self.webex_launch_intended:
-            return
-            
-        if self.webex_controller.is_connected:
-            self.webex_reconnect_attempts = 0
-            self.webex_next_reconnect_at = 0.0
-            self.webex_reconnect_inflight = False
-            return
-            
-        if self.webex_reconnect_inflight:
-            return
-            
-        if self.webex_state not in ("Open failed", "Not opened"):
-            # If it's already "Opened in browser", we usually don't auto-reconnect 
-            # unless we have a way to detect the browser tab was closed.
-            return
-            
-        RECONNECT_MAX_ATTEMPTS = 5
-        
-        if self.webex_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
-            return
-            
-        if now < self.webex_next_reconnect_at:
-            return
-            
-        self.webex_reconnect_attempts += 1
-        self.webex_next_reconnect_at = now + self._reconnect_delay_seconds(self.webex_reconnect_attempts)
-        self.webex_reconnect_inflight = True
+        with self._reconnect_lock:
+            if not self.webex_launch_intended:
+                return
+
+            if self.webex_controller.is_connected:
+                self.webex_reconnect_attempts = 0
+                self.webex_next_reconnect_at = 0.0
+                self.webex_reconnect_inflight = False
+                return
+
+            if self.webex_reconnect_inflight:
+                return
+
+            if self.webex_state not in ("Open failed", "Not opened"):
+                # If it's already "Opened in browser", we usually don't auto-reconnect
+                # unless we have a way to detect the browser tab was closed.
+                return
+
+            RECONNECT_MAX_ATTEMPTS = 5
+
+            if self.webex_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
+                return
+
+            if now < self.webex_next_reconnect_at:
+                return
+
+            self.webex_reconnect_attempts += 1
+            self.webex_next_reconnect_at = now + self._reconnect_delay_seconds(self.webex_reconnect_attempts)
+            self.webex_reconnect_inflight = True
         self.metrics_service.increment("metric_webex_reconnect_attempt")
         self.launch_webex(manual=False, reconnect=True)

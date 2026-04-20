@@ -62,6 +62,7 @@ class SessionStrip(QFrame):
 
         self._title_input = QLineEdit(initial_title)
         self._title_input.setObjectName("SessionStripTitle")
+        self._title_input.setAccessibleName("Session title")
         self._title_input.setFrame(False)
         self._title_input.setMinimumWidth(180)
         self._title_input.editingFinished.connect(
@@ -73,12 +74,15 @@ class SessionStrip(QFrame):
 
         self._record_dot = QLabel("●")
         self._record_dot.setObjectName("RecordDot")
+        self._record_dot.setAccessibleName("Recording indicator")
         self._record_dot.setVisible(False)
 
         self._timer_label = QLabel("00:00:00")
         self._timer_label.setObjectName("SessionTimer")
+        self._timer_label.setAccessibleName("Session elapsed time")
 
         self._mode_picker = QComboBox()
+        self._mode_picker.setAccessibleName("Session mode")
         for key, label in self._mode_entries:
             self._mode_picker.addItem(label, key)
         if initial_mode_key:
@@ -89,15 +93,15 @@ class SessionStrip(QFrame):
         self._sync_subtitle()
 
         self._audio_button = QPushButton("Launch Audio")
-        self._audio_button.setObjectName("AudioButton")
+        self._audio_button.setObjectName("PrimaryButton")
         self._audio_button.setProperty("class", "PrimaryButton")
-        # Mirror PrimaryButton shape via explicit objectName fallback
-        self._audio_button.setObjectName("PrimaryButton")  # reuse primary styling
         self._audio_button.setStyleSheet("")  # rely on QSS cascade
+        self._audio_button.setAccessibleName("Launch or stop Jamulus audio")
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 
         self._video_button = QPushButton("Join Video")
         self._video_button.setObjectName("PrimaryButton")
+        self._video_button.setAccessibleName("Join or leave Webex video")
         self._video_button.clicked.connect(self.join_video_requested.emit)
 
         # --- Layout

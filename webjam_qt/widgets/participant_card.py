@@ -13,6 +13,7 @@ Jamulus mix state via the UDP protocol.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -78,25 +79,30 @@ class ParticipantCard(QFrame):
         self._video_tile = self._build_video_tile()
         self._name_label = QLabel(presentation.name)
         self._name_label.setObjectName("ParticipantName")
+        self._name_label.setAccessibleName("Participant name")
         self._role_label = QLabel(presentation.role or self._default_role_label())
         self._role_label.setObjectName("ParticipantRole")
+        self._role_label.setAccessibleName("Participant role")
         self._fader_value = QLabel(self._format_fader(presentation.fader_level))
         self._fader_value.setObjectName("FaderValue")
         self._fader_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self._level_meter = LevelMeter(self, height=4)
         self._level_meter.set_level(presentation.audio_level)
+        self._level_meter.setAccessibleName("Audio level meter")
 
         self._fader = QSlider(Qt.Orientation.Horizontal)
         self._fader.setRange(0, 127)
         self._fader.setValue(presentation.fader_level)
         self._fader.setTracking(True)
+        self._fader.setAccessibleName("Volume fader")
         self._fader.valueChanged.connect(self._on_fader_value_changed)
 
         self._mute_button = QPushButton("MUTE")
         self._mute_button.setObjectName("PillButton")
         self._mute_button.setCheckable(True)
         self._mute_button.setChecked(presentation.muted)
+        self._mute_button.setAccessibleName("Mute")
         self._mute_button.clicked.connect(self._on_mute_clicked)
         self._apply_mute_state(presentation.muted)
 
@@ -104,6 +110,7 @@ class ParticipantCard(QFrame):
         self._solo_button.setObjectName("PillButton")
         self._solo_button.setCheckable(True)
         self._solo_button.setChecked(presentation.solo)
+        self._solo_button.setAccessibleName("Solo")
         self._solo_button.clicked.connect(self._on_solo_clicked)
         self._apply_solo_state(presentation.solo)
 
@@ -248,12 +255,14 @@ class ParticipantCard(QFrame):
 
     @staticmethod
     def _format_fader(level: int) -> str:
-        # Rough dB mapping: 100 = 0dB, 0 = -inf, 127 = +6dB
+        # dB mapping: 0 = -inf, 100 = 0 dB, 127 = +6 dB
         if level <= 0:
-            return "-∞ dB"
-        db = round(20.0 * (level / 100.0 - 1.0) * 3, 1)
-        sign = "+" if db > 0 else ""
-        return f"{sign}{db:.1f} dB"
+            return "-\u221e dB"
+        if level <= 100:
+            db = 20.0 * math.log10(level / 100.0)
+            return f"{db:.1f} dB"
+        db = (level - 100) / 27.0 * 6.0
+        return f"+{db:.1f} dB"
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:

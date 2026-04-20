@@ -278,9 +278,9 @@ class JamulusProtocolAdapter:
         """Send CHANNEL_GAIN + CHANNEL_PAN to the server."""
         if not self.enabled or not self._sock:
             return
-        effective_level = 0 if muted else max(0, min(100, fader_level))
-        # Convert 0..100 → 0..32767
-        gain = int(effective_level / 100.0 * 32767)
+        effective_level = 0 if muted else max(0, min(127, fader_level))
+        # Convert 0..127 → 0..32767
+        gain = int(effective_level / 127.0 * 32767)
         pan_val = max(0, min(100, pan))
         try:
             self._send(_MsgId.CHANNEL_GAIN, struct.pack("<HH", channel_id, gain))

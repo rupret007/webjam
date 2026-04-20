@@ -217,12 +217,6 @@ class WebexEmbed(QFrame):
         Falls back to direct-URL mode if the token exchange fails.
         Safe to call from the UI thread.
         """
-        # Show loading HTML immediately while token is fetched
-        self._ensure_webengine()
-        self._stack.setCurrentIndex(1)
-        if _HTML_TEMPLATE.exists():
-            self._view.load(QUrl.fromLocalFile(str(_HTML_TEMPLATE.resolve())))
-
         def _worker() -> None:
             from core.webex_guest_token import generate_guest_jwt, exchange_guest_jwt
             token: Optional[str] = None
@@ -233,6 +227,9 @@ class WebexEmbed(QFrame):
                 LOGGER.warning("Guest token failed: %s — using direct-URL mode", exc)
             self._load_ready.emit(token or "", meeting_url)
 
+        # Stay on placeholder while token is fetched; load_meeting() will
+        # switch to the webview once the token arrives via _on_load_ready.
+        self._stack.setCurrentIndex(0)
         threading.Thread(target=_worker, daemon=True, name="webex-token").start()
 
     def leave_meeting(self) -> None:

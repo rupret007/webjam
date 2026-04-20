@@ -75,6 +75,7 @@ class JamulusRpcClient:
         self._sse_thread: Optional[threading.Thread] = None
         self._request_counter = 0
         self._lock = threading.Lock()
+        self._http_client: Optional[httpx.Client] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -94,6 +95,11 @@ class JamulusRpcClient:
 
     def stop(self) -> None:
         self._running = False
+        if self._http_client is not None:
+            try:
+                self._http_client.close()
+            except Exception:
+                pass
 
     @property
     def available(self) -> bool:
@@ -129,13 +135,17 @@ class JamulusRpcClient:
     # Polling
     # ------------------------------------------------------------------
     def _poll_loop(self) -> None:
+        self._http_client = httpx.Client()
         while self._running:
             try:
                 clients = self.get_channel_clients()
                 if clients is not None:
                     self._available = True
                     if self._on_participants_changed:
-                        self._on_participants_changed(clients)
+                        try:
+                            self._on_participants_changed(clients)
+                        except Exception as exc:  # noqa: BLE001
+                            _logger.debug("callback error: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("RPC poll error: %s", exc)
                 self._available = False
@@ -189,10 +199,12 @@ class JamulusRpcClient:
           channelDisconnected   → trigger participant refresh
           channelLevelListReceived → parse per-channel levels, call on_levels
         """
+        if self._http_client is None:
+            self._http_client = httpx.Client()
         retry_wait = 2.0
         while self._running:
             try:
-                with httpx.stream(
+                with self._http_client.stream(
                     "GET",
                     f"{self._base_url}/events",
                     timeout=httpx.Timeout(connect=1.0, read=30.0, write=5.0, pool=5.0),
@@ -252,7 +264,10 @@ class JamulusRpcClient:
                 except (TypeError, ValueError):
                     pass
             if levels and self._on_levels:
-                self._on_levels(levels)
+                try:
+                    self._on_levels(levels)
+                except Exception as exc:  # noqa: BLE001
+                    _logger.debug("callback error: %s", exc)
 
     # ------------------------------------------------------------------
     # HTTP helper

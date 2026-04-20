@@ -20,8 +20,9 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -221,7 +222,8 @@ class _WebexPage(QWizardPage):
 
     def validatePage(self) -> bool:
         url = self._url.text().strip()
-        if not url.startswith("http"):
+        parsed = urlparse(url)
+        if not parsed.scheme in ("http", "https") or not parsed.netloc:
             self._url.setFocus()
             return False
         return True
@@ -279,6 +281,9 @@ class _RoutingPage(QWizardPage):
         layout.addWidget(skip_chk)
 
     def initializePage(self) -> None:
+        if getattr(self, '_scan_done', False):
+            return  # Already scanned
+
         from core.audio_routing import scan_loopback_devices
         import threading
 
@@ -292,9 +297,13 @@ class _RoutingPage(QWizardPage):
             self._routing_status = status
 
         self._routing_status = None
-        threading.Thread(target=_scan, daemon=True).start()
+        self._scan_thread = threading.Thread(target=_scan, daemon=True)
+        self._scan_thread.start()
 
+    @Slot()
     def _apply_routing(self) -> None:  # noqa: N802 (called via invokeMethod)
+        if not self.isVisible():
+            return
         status = getattr(self, "_routing_status", None)
         if status is None:
             return
@@ -316,6 +325,7 @@ class _RoutingPage(QWizardPage):
             self._install_btn.setVisible(True)
             self._install_url = status.install_url
             self._complete = False
+        self._scan_done = True
         self.completeChanged.emit()
 
     def _open_install_url(self) -> None:

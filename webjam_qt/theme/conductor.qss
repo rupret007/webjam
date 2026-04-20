@@ -89,6 +89,13 @@ QToolButton#SideRailButton:checked {
     border-left: 2px solid ${COLOR_ACCENT_VIDEO};
 }
 
+QToolButton#SideRailButton:focus {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
 /* ============================================================
  * Participant Grid / Stage
  * ============================================================ */
@@ -150,6 +157,11 @@ QToolButton#SideRailButton:checked {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+QLabel#BodyLabel {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
 /* ============================================================
  * Mute / Solo pills
  * ============================================================ */
@@ -181,6 +193,29 @@ QPushButton#PillButton[state="active-solo"] {
     border: 1px solid ${COLOR_ACCENT_AUDIO};
 }
 
+QPushButton#PillButton:focus {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
+QPushButton#PillButton[state="active-mute"]:focus {
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
+QPushButton#PillButton[state="active-solo"]:focus {
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
+QPushButton#PillButton:disabled {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_MUTED};
+    border: 1px solid transparent;
+}
+
 /* ============================================================
  * Primary buttons (Launch Jamulus / Join Webex)
  * ============================================================ */
@@ -198,6 +233,11 @@ QPushButton#PrimaryButton:hover {
     background-color: #5EE5E5;
 }
 
+QPushButton#PrimaryButton:focus {
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
 QPushButton#PrimaryButton:pressed {
     background-color: #2DB5B5;
 }
@@ -205,6 +245,7 @@ QPushButton#PrimaryButton:pressed {
 QPushButton#PrimaryButton:disabled {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_MUTED};
+    border: 1px solid transparent;
 }
 
 QPushButton#AudioButton {
@@ -228,6 +269,18 @@ QPushButton#GhostButton {
 QPushButton#GhostButton:hover {
     background-color: ${COLOR_BG_CARD};
     border-color: ${COLOR_ACCENT_VIDEO};
+}
+
+QPushButton#GhostButton:focus {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    outline: none;
+}
+
+QPushButton#GhostButton:disabled {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_MUTED};
+    border: 1px solid transparent;
 }
 
 /* ============================================================
@@ -265,6 +318,10 @@ QSlider::handle:horizontal {
 
 QSlider::handle:horizontal:hover {
     background: #F7BD62;
+}
+
+QSlider::handle:horizontal:focus {
+    border: 2px solid ${COLOR_ACCENT_AUDIO};
 }
 
 QSlider::sub-page:horizontal {
@@ -308,6 +365,10 @@ QSlider::sub-page:horizontal {
 /* ============================================================
  * Webex placeholder pane (Phase 3 will replace with QWebEngineView)
  * ============================================================ */
+QWidget#WebexPlaceholder {
+    background: transparent;
+}
+
 #WebexEmbed {
     background-color: ${COLOR_BG_CARD};
     border: 1px dashed ${COLOR_BORDER_STRONG};

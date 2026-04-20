@@ -29,6 +29,8 @@ class LevelMeter(QWidget):
         self._peak = 0.0
         self.setFixedHeight(height)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+        self.setAccessibleName("Audio level meter")
+        self.setAccessibleDescription("Shows real-time audio level from 0 to 100 percent")
 
         self._decay_timer = QTimer(self)
         self._decay_timer.timeout.connect(self._decay)
