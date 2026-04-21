@@ -20,6 +20,7 @@ build/
 dist/
 FINAL/
 *.spec
+!webjam.spec
 
 # Generated results
 test_results.json
