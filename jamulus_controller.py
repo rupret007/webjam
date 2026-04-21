@@ -15,6 +15,7 @@ from pathlib import Path
 
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
+from core.jamulus_rpc_client import JamulusRpcClient, ChannelInfo
 from core.logging_config import configure_logging
 from core.settings import load_settings
 
@@ -43,11 +44,12 @@ class JamulusController:
     Future enhancement: Implement full Jamulus protocol for real-time control
     """
     
-    def __init__(self, host: str = "127.0.0.1", port: int = 22124):
+    def __init__(self, host: str = "127.0.0.1", port: int = 22124, rpc_port: int = 22222):
         self.settings = load_settings()
         self.logger = configure_logging(self.settings).getChild("jamulus_controller")
         self.host = host
         self.port = port
+        self.rpc_port = rpc_port
         self.participants: Dict[int, JamulusParticipant] = {}
         self.callbacks: List[Callable] = []
         self._lock = threading.Lock()
@@ -55,28 +57,116 @@ class JamulusController:
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
         self._participants_lock = threading.RLock()
-        self.protocol = JamulusProtocolAdapter(self.host, self.port, enabled=False)
+
+        # Primary integration: JSON-RPC (Jamulus 3.9+)
+        self.rpc_client = JamulusRpcClient(
+            port=rpc_port,
+            on_participants_changed=self._on_rpc_participants,
+            on_levels=self._on_rpc_levels,
+        )
+
+        # Secondary integration: UDP protocol (all versions)
+        self.protocol = JamulusProtocolAdapter(
+            self.host,
+            self.port,
+            enabled=True,  # enabled — proper packet format is now implemented
+            on_participants_changed=self._on_udp_participants,
+            on_levels=self._on_udp_levels,
+        )
+
         self.audio_engine = RealAudioEngine(self.settings, logger=self.logger.getChild("audio_engine"))
         self.last_error: str = ""
         
     def start(self):
-        """Start monitoring Jamulus"""
+        """Start monitoring Jamulus via JSON-RPC (primary) and UDP (fallback)."""
         if self.running:
             return
-        
-        self.protocol.connect()
+
         self.audio_engine.start()
+        self.rpc_client.start()
+        self.protocol.start_receiving()
         self.running = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        
+
     def stop(self):
-        """Stop monitoring"""
+        """Stop all monitoring."""
         self.running = False
+        self.rpc_client.stop()
+        self.protocol.stop_receiving()
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2)
         self.audio_engine.stop()
-        self.protocol.close()
+
+    # ------------------------------------------------------------------
+    # RPC / UDP participant callbacks (called from background threads)
+    # ------------------------------------------------------------------
+    def _on_rpc_participants(self, channel_infos: list) -> None:
+        """Receive participant list from JSON-RPC (authoritative when available)."""
+        normalized: Dict[int, str] = {}
+        for info in channel_infos:
+            if hasattr(info, "channel_id"):
+                normalized[info.channel_id] = info.name or f"Participant {info.channel_id}"
+            elif isinstance(info, dict):
+                cid = info.get("channel_id", -1)
+                if cid >= 0:
+                    normalized[cid] = info.get("name") or f"Participant {cid}"
+        if normalized:
+            self._sync_participants_from_protocol(normalized)
+
+    def _on_rpc_levels(self, levels: Dict[int, float]) -> None:
+        """Receive audio levels from JSON-RPC SSE events."""
+        for channel_id, level in levels.items():
+            self.audio_engine.set_level_override(channel_id, level)
+
+    def _on_udp_participants(self, clients: Dict[int, str]) -> None:
+        """Receive participant list from UDP protocol (used if RPC unavailable)."""
+        if self.rpc_client.available:
+            return  # RPC is authoritative; ignore UDP participant updates
+        if clients:
+            self._sync_participants_from_protocol(clients)
+
+    def _on_udp_levels(self, levels: Dict[int, float]) -> None:
+        """Receive audio levels from UDP protocol."""
+        if self.rpc_client.available:
+            return  # RPC levels (via SSE) take precedence
+        for channel_id, level in levels.items():
+            self.audio_engine.set_level_override(channel_id, level)
+
+    def _sync_participants_from_protocol(self, incoming: Dict[int, str]) -> None:
+        """Merge incoming participant map into internal state, then notify callbacks."""
+        apply_ids: list[int] = []
+        with self._participants_lock:
+            known_ids = set(self.participants.keys())
+            incoming_ids = set(incoming.keys())
+            active_solo = next(
+                (cid for cid, p in self.participants.items() if p.solo), None
+            )
+            for cid in incoming_ids - known_ids:
+                p = JamulusParticipant(channel_id=cid, name=incoming[cid])
+                if active_solo is not None and cid != active_solo:
+                    p.muted = True
+                    self._pre_solo_mute.setdefault(cid, False)
+                    apply_ids.append(cid)
+                self.participants[cid] = p
+            removed_solo = False
+            for cid in known_ids - incoming_ids:
+                removed = self.participants.pop(cid, None)
+                if removed and removed.solo:
+                    removed_solo = True
+                self._pre_solo_mute.pop(cid, None)
+            for cid in incoming_ids & known_ids:
+                self.participants[cid].name = incoming[cid]
+                self.participants[cid].is_connected = True
+            if removed_solo:
+                for cid, p in self.participants.items():
+                    p.solo = False
+                    p.muted = self._pre_solo_mute.get(cid, False)
+                    apply_ids.append(cid)
+                self._pre_solo_mute.clear()
+        for cid in sorted(set(apply_ids)):
+            self._apply_mixer_setting(cid, notify=False)
+        self._notify_callbacks()
     
     def _monitor_loop(self):
         """Main monitoring loop"""
@@ -218,17 +308,15 @@ class JamulusController:
             self._notify_callbacks()
     
     def set_fader_level(self, channel_id: int, level: int):
-        """
-        Set fader level for a channel (0-100)
-        
-        In a full implementation, this would send a command to Jamulus.
-        For now, we just update our internal state.
-        """
+        """Set fader level for a channel (0-127). Sends to Jamulus via RPC or UDP."""
         with self._participants_lock:
             if channel_id in self.participants:
-                self.participants[channel_id].fader_level = max(0, min(100, level))
+                self.participants[channel_id].fader_level = max(0, min(127, level))
             else:
                 return
+        # Send to Jamulus (RPC preferred, UDP fallback in _apply_mixer_setting)
+        if self.rpc_client.available:
+            self.rpc_client.set_channel_gain(channel_id, level)
         self._apply_mixer_setting(channel_id)
     
     def set_pan(self, channel_id: int, pan: int):

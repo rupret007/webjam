@@ -36,13 +36,30 @@ class RealAudioEngine:
     """
     Real-time metering engine with deterministic fallback.
 
-    - Uses sounddevice + numpy when available.
-    - Falls back to synthetic low-amplitude sine pulses without randomness.
+    On ``start()``:
+      1. Scans for a virtual loopback device (VB-CABLE / BlackHole) and opens
+         it as the input stream if found.  Loopback metering gives accurate
+         per-mix levels reflecting the Jamulus output.
+      2. Falls back to the system default input device if no loopback is found.
+      3. Falls back to deterministic synthetic pulses if sounddevice / numpy
+         are unavailable or the stream fails to open.
+
+    Per-channel level overrides (from JSON-RPC or UDP) are stored via
+    ``set_level_override()`` and returned by ``get_level()`` for any channel
+    that has a known RPC value.  Channel -1 is the global mix (from the
+    hardware stream).
     """
 
-    def __init__(self, settings: AppSettings, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        settings: AppSettings,
+        logger: Optional[logging.Logger] = None,
+        *,
+        device_index: Optional[int] = None,
+    ):
         self.settings = settings
         self.logger = logger or logging.getLogger("webjam.audio")
+        self._preferred_device_index = device_index  # explicit override
         self.running = False
         self._thread: Optional[threading.Thread] = None
         self._stream = None
@@ -54,15 +71,23 @@ class RealAudioEngine:
             blocksize=settings.audio_blocksize,
             latency_mode=settings.audio_latency,
         )
+        # Populated once start() resolves a loopback device
+        from core.audio_routing import AudioRoutingStatus
+        self._routing: AudioRoutingStatus = AudioRoutingStatus()
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     def start(self) -> None:
         if self.running:
             return
         self.running = True
 
         if sd is not None and np is not None:
+            device_idx = self._resolve_device()
             try:
                 self._stream = sd.InputStream(
+                    device=device_idx,
                     callback=self._audio_callback,
                     channels=1,
                     samplerate=self.settings.audio_samplerate,
@@ -70,10 +95,11 @@ class RealAudioEngine:
                     latency=self.settings.audio_latency,
                 )
                 self._stream.start()
+                dev_name = self._diagnostics.input_device
                 self._diagnostics.backend = "sounddevice"
                 self._diagnostics.active = True
-                self._diagnostics.message = "live metering active"
-                self.logger.info("Audio engine started with sounddevice backend")
+                self._diagnostics.message = f"live metering: {dev_name}"
+                self.logger.info("Audio engine started — device: %s", dev_name)
                 return
             except Exception as exc:  # pragma: no cover - hardware-dependent
                 self.logger.warning("Falling back to synthetic metering: %s", exc)
@@ -91,7 +117,58 @@ class RealAudioEngine:
                 pass
             self._stream = None
         if self._thread:
-            self._thread.join(timeout=1.5)
+            self._thread.join(timeout=3.0)
+
+    def get_level(self, channel_id: int) -> float:
+        with self._lock:
+            if channel_id in self._levels:
+                return self._levels[channel_id].rms
+            return self._levels.get(-1, AudioLevel(channel_id=-1)).rms
+
+    def set_level_override(self, channel_id: int, value: float) -> None:
+        with self._lock:
+            value = max(0.0, min(1.0, float(value)))
+            self._levels[channel_id] = AudioLevel(
+                channel_id=channel_id,
+                rms=value,
+                peak=min(1.0, value + 0.12),
+                clipped=value > 0.9,
+            )
+
+    def diagnostics(self) -> AudioDiagnostics:
+        return self._diagnostics
+
+    @property
+    def routing_status(self):
+        """Return the :class:`~core.audio_routing.AudioRoutingStatus` from startup."""
+        return self._routing
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+    def _resolve_device(self) -> Optional[int]:
+        """Pick the best input device index, updating diagnostics in-place."""
+        from core.audio_routing import scan_loopback_devices
+
+        # Explicit override from settings or constructor wins
+        if self._preferred_device_index is not None:
+            try:
+                dev = sd.query_devices(self._preferred_device_index)
+                self._diagnostics.input_device = dev["name"]
+                return self._preferred_device_index
+            except Exception:
+                pass
+
+        # Auto-detect loopback device
+        self._routing = scan_loopback_devices()
+        if self._routing.ok and self._routing.loopback_device.has_input:
+            dev = self._routing.loopback_device
+            self._diagnostics.input_device = dev.name
+            return dev.index
+
+        # Fall back to system default
+        self._diagnostics.input_device = "system default"
+        return None
 
     def _audio_callback(self, indata, frames, time_info, status) -> None:  # pragma: no cover
         if np is None:
@@ -113,25 +190,7 @@ class RealAudioEngine:
             rms = max(0.0, min(1.0, synthetic * 0.35))
             peak = max(0.0, min(1.0, rms + 0.1))
             with self._lock:
-                self._levels[-1] = AudioLevel(channel_id=-1, rms=rms, peak=peak, clipped=peak > 0.95)
+                self._levels[-1] = AudioLevel(
+                    channel_id=-1, rms=rms, peak=peak, clipped=peak > 0.95
+                )
             time.sleep(0.05)
-
-    def get_level(self, channel_id: int) -> float:
-        with self._lock:
-            if channel_id in self._levels:
-                return self._levels[channel_id].rms
-            return self._levels.get(-1, AudioLevel(channel_id=-1)).rms
-
-    def set_level_override(self, channel_id: int, value: float) -> None:
-        with self._lock:
-            value = max(0.0, min(1.0, float(value)))
-            self._levels[channel_id] = AudioLevel(
-                channel_id=channel_id,
-                rms=value,
-                peak=min(1.0, value + 0.12),
-                clipped=value > 0.9,
-            )
-
-    def diagnostics(self) -> AudioDiagnostics:
-        return self._diagnostics
-

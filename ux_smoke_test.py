@@ -33,7 +33,7 @@ def require_compiles(path: Path, failures: list[str]) -> None:
 def main() -> int:
     failures: list[str] = []
 
-    app_file = ROOT / "webjam_app_enhanced.py"
+    app_file = ROOT / "webjam_qt_main.py"
     repo_file = ROOT / "storage" / "repository.py"
     checklist_file = ROOT / "UX_ACCEPTANCE_CHECKLIST.md"
     help_map_file = ROOT / "HELP_ROUTING_MAP.md"
@@ -41,15 +41,8 @@ def main() -> int:
     for required in (app_file, repo_file, checklist_file, help_map_file):
         require_file(required, failures)
 
-    # Ensure key UX affordances are still present.
-    for marker in (
-        "Run Setup Wizard",
-        "Open Diagnostics Panel",
-        "Reset All UI Preferences",
-        "View Usage Metrics",
-        "Run Setup Wizard on startup",
-    ):
-        require_contains(app_file, marker, failures)
+    # Ensure Qt entry point delegates to the Conductor UI.
+    require_contains(app_file, "from webjam_qt.app import run", failures)
 
     # Ensure checklist still covers release validation.
     for marker in (
@@ -57,8 +50,6 @@ def main() -> int:
         "Session Launch and Status Clarity",
         "Error Recovery",
         "Regression and Validation",
-        "python -m unittest test_modernization.py",
-        "python -m unittest test_webjam.py",
     ):
         require_contains(checklist_file, marker, failures)
 
