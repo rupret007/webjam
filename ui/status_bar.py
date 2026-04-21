@@ -11,7 +11,7 @@ This module handles:
 import logging
 import time
 import threading
-from typing import Optional, Tuple, Callable
+from typing import Any, Optional, Tuple, Callable
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
