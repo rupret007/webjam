@@ -4,6 +4,29 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.4] — 2026-04-24
+
+### Fixed — Session-control completeness
+
+#### Toggle launch/stop and join/leave
+- **Stop Audio button** (`services/bridge_service.py::stop_jamulus`, `webjam_qt/controllers/application_controller.py::_on_launch_audio`): The "Launch Audio" button now toggles. After Jamulus is running, clicking it prompts to stop; Yes terminates the subprocess (graceful terminate, force-kill at 2s) and stops the RPC/UDP monitoring threads. The auto-reconnect intent is cleared so the next reconnect tick doesn't immediately relaunch. Without this the conductor had to kill the app to end a session.
+- **Leave Video button** (`services/bridge_service.py::leave_webex`, `application_controller.py::_on_join_video`): Same toggle treatment for the video button. `WebexEmbed.leave_meeting()` already existed but was never called from the UI; now it is. Bridge state is reset to "Not opened" and reconnect intent cleared.
+- **Button labels reflect state**: `_refresh_readiness` now shows "Stop Audio" / "Leave Video" when active, and `_on_webex_state` shows the action-oriented "Leave Video" on the button while keeping the descriptive label ("In Meeting", "Lobby") in the status bar.
+- **5 new tests** in `tests/test_reconnect_manager_edge.py` cover the new stop/leave paths: graceful termination, force-kill on timeout, clearing reconnect intent, monitoring stopped, leave_webex state reset.
+
+#### Crash recovery is now visible
+- **Reconnect banner** (`application_controller.py::_on_reconnect_tick`): When `jamulus_process.poll() is not None` is detected mid-session (Jamulus crashed), a flash message appears: "Jamulus disconnected — auto-reconnecting (attempt N/5)…". When the connection recovers, "Jamulus reconnected." flashes once. Previously the auto-reconnect machinery was completely silent.
+
+#### App-close cleanup
+- **Jamulus subprocess no longer survives app close** (`application_controller.py::shutdown`): The previous shutdown only stopped `JamulusController` monitoring threads — the Jamulus subprocess kept running and the user had to manually quit it. Shutdown now calls `bridge.stop_jamulus()` which terminates the subprocess too.
+
+#### Discoverability
+- **Tooltips on Launch Audio / Join Video** (`webjam_qt/widgets/session_strip.py`): Each button now hovers with a one-sentence explanation including the toggle behavior and how to access settings.
+- **Log file path in error dialogs** (`application_controller.py::_show_actionable_error`): The actionable-error dialog now appends `For details, see the log file: ~/.webjam.log` so users know where to look when something goes wrong.
+- **jamulus.io link in "Jamulus Not Found"** (`bridge_service.py::launch_jamulus`): The next-action text now points new users directly at https://jamulus.io to download Jamulus before falling back to the custom-location instructions.
+
+---
+
 ## [0.4.3] — 2026-04-24
 
 ### Fixed — Critical mixer reliability + 4 UX improvements

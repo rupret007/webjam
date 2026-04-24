@@ -135,10 +135,12 @@ class ApplicationController(QObject):
         self._level_timer.stop()
         self._reconnect_timer.stop()
         self._save_notes()
+        # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
+        # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
         try:
-            self.jamulus.stop()
+            self.bridge.stop_jamulus()
         except Exception:  # noqa: BLE001
-            LOGGER.exception("Jamulus stop failed")
+            LOGGER.exception("Jamulus shutdown failed")
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
