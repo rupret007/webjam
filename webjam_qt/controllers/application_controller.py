@@ -101,6 +101,9 @@ class ApplicationController(QObject):
         # True once JamulusController has pushed at least one real update
         self._jamulus_connected = False
 
+        # Latch so the "Jamulus disconnected" flash only fires once per crash
+        self._reconnect_banner_shown = False
+
         # Timers
         self._demo_timer = QTimer(self)
         self._demo_timer.setInterval(self._DEMO_TICK_MS)
@@ -307,11 +310,44 @@ class ApplicationController(QObject):
         self.window.flash_message(mode.quick_help, ms=6000)
 
     def _on_launch_audio(self) -> None:
-        self.window.set_status_audio("Launching…")
-        self.window.session_strip.set_audio_state("Launching…", enabled=False)
-        self.bridge.launch_jamulus(manual=True)
+        """Toggle handler — launches Jamulus if stopped, stops it if running."""
+        if self._is_jamulus_running():
+            self._stop_audio()
+        else:
+            self.window.set_status_audio("Launching…")
+            self.window.session_strip.set_audio_state("Launching…", enabled=False)
+            self.bridge.launch_jamulus(manual=True)
+
+    def _stop_audio(self) -> None:
+        """Confirm with the user, then stop Jamulus and reset UI state."""
+        reply = QMessageBox.question(
+            self.window, "Stop Audio?",
+            "Stop the Jamulus audio session?\n\nYou can restart it any time with the audio button.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.window.set_status_audio("Stopping…")
+        self.window.session_strip.set_audio_state("Stopping…", enabled=False)
+        # Stop in a worker thread; bridge will refresh readiness when done
+        threading.Thread(
+            target=self.bridge.stop_jamulus, daemon=True, name="jamulus-stop",
+        ).start()
+        # Reset internal flag so demos don't restart, but keep participants
+        # visible until Jamulus actually disconnects.
+        self._jamulus_connected = False
+        self._level_timer.stop()
+
+    def _is_jamulus_running(self) -> bool:
+        return self.bridge.jamulus_state in ("Running", "Already running")
 
     def _on_join_video(self) -> None:
+        """Toggle handler — joins the meeting if not joined, leaves if active."""
+        if self._is_video_active():
+            self._leave_video()
+            return
+
         url = self.settings.webex_url
         if not url:
             self._show_actionable_error(
@@ -340,21 +376,38 @@ class ApplicationController(QObject):
         else:
             self.window.webex_embed.load_meeting(url)
 
-    def _on_webex_state(self, state: str) -> None:
-        state_map = {
-            "joining":  ("Joining…",      False),
-            "ACTIVE":   ("In Meeting",    True),
-            "lobby":    ("Lobby",         True),
-            "ENDED":    ("Meeting ended", True),
-            "left":     ("Left meeting",  True),
-            "error":    ("Webex error",   True),
-        }
-        label, enabled = state_map.get(state, (state.title(), True))
-        self.window.set_status_video(label)
-        self.window.session_strip.set_video_state(
-            label if enabled else "Joining…", enabled=enabled
+    def _is_video_active(self) -> bool:
+        return self.bridge.webex_state in (
+            "Opened in browser", "In Meeting", "Joining…",
+            "Video Active", "Lobby", "joining",
         )
-        self.bridge.webex_state = label
+
+    def _leave_video(self) -> None:
+        """Leave the embedded Webex meeting and reset the UI."""
+        self.window.webex_embed.leave_meeting()
+        self.bridge.leave_webex()
+        self.window.flash_message("Left video meeting.")
+
+    def _on_webex_state(self, state: str) -> None:
+        # status_label shown in the bar (descriptive); button_label shown on the
+        # primary button (action-oriented — "Leave Video" when joined, etc.)
+        # state_map entries: (status_label, button_label, enabled, joined)
+        state_map = {
+            "joining":  ("Joining…",      "Joining…",    False, True),
+            "ACTIVE":   ("In Meeting",    "Leave Video", True,  True),
+            "lobby":    ("Lobby",         "Leave Video", True,  True),
+            "ENDED":    ("Meeting ended", "Join Video",  True,  False),
+            "left":     ("Not opened",    "Join Video",  True,  False),
+            "error":    ("Webex error",   "Join Video",  True,  False),
+        }
+        status_label, button_label, enabled, joined = state_map.get(
+            state, (state.title(), "Leave Video", True, True)
+        )
+        self.window.set_status_video(status_label)
+        self.window.session_strip.set_video_state(button_label, enabled=enabled)
+        # Sync bridge.webex_state to a value that _is_video_active() recognises,
+        # so the toggle button does the right thing if the user clicks it again.
+        self.bridge.webex_state = status_label if joined else "Not opened"
 
         # In direct-URL mode the widget never sends a post-join state
         # transition (no JS bridge); re-enable the button after 6 s so
@@ -362,7 +415,7 @@ class ApplicationController(QObject):
         if state == "joining":
             QTimer.singleShot(
                 6_000,
-                lambda: self.window.session_strip.set_video_state("Video Active", enabled=True),
+                lambda: self.window.session_strip.set_video_state("Leave Video", enabled=True),
             )
 
     # ------------------------------------------------------------------
@@ -399,23 +452,18 @@ class ApplicationController(QObject):
         # Append server address when Jamulus is running so musicians can confirm
         # they're on the right server at a glance.
         audio_state = self.bridge.jamulus_state
-        if audio_state in ("Running", "Already running"):
+        jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
+        if jamulus_up:
             server = f"{self.settings.jamulus_server}:{self.settings.jamulus_port}"
             audio_state = f"{audio_state} ({server})"
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
-        jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
         self.window.session_strip.set_audio_state(
-            "Audio Running" if jamulus_up else "Launch Audio", enabled=True
+            "Stop Audio" if jamulus_up else "Launch Audio", enabled=True
         )
-        # Recognize all "Webex is active" states: browser-opened AND embedded-join states
-        _WEBEX_ACTIVE_STATES = frozenset({
-            "Opened in browser", "In Meeting", "Joining…",
-            "Video Active", "Lobby", "joining",
-        })
-        webex_open = self.bridge.webex_state in _WEBEX_ACTIVE_STATES
+        webex_open = self._is_video_active()
         self.window.session_strip.set_video_state(
-            "Video Active" if webex_open else "Join Video", enabled=True
+            "Leave Video" if webex_open else "Join Video", enabled=True
         )
 
     def _show_actionable_error(self, title: str, *, what_failed: str,
@@ -444,7 +492,35 @@ class ApplicationController(QObject):
     # Auto-reconnect
     # ------------------------------------------------------------------
     def _on_reconnect_tick(self) -> None:
-        """Called every 3 s; lets BridgeService retry dropped services."""
+        """Called every 3 s; lets BridgeService retry dropped services.
+
+        Also detects Jamulus crashes mid-session and shows a banner so the
+        conductor knows something is happening (auto-reconnect is otherwise
+        invisible).
+        """
+        # Detect Jamulus dying: launch was intended, process exists but exited.
+        proc = self.bridge.jamulus_process
+        if (
+            self.bridge.jamulus_launch_intended
+            and proc is not None
+            and proc.poll() is not None
+            and not self._reconnect_banner_shown
+        ):
+            attempts = self.bridge.jamulus_reconnect_attempts + 1
+            self.window.flash_message(
+                f"Jamulus disconnected — auto-reconnecting (attempt {attempts}/5)…",
+                ms=5000,
+            )
+            self.window.set_status_audio("Reconnecting…")
+            self._reconnect_banner_shown = True
+        elif (
+            self.bridge.jamulus_state in ("Running", "Already running")
+            and self._reconnect_banner_shown
+        ):
+            # Reconnect succeeded — clear the flag so we'd flash again on next crash.
+            self._reconnect_banner_shown = False
+            self.window.flash_message("Jamulus reconnected.", ms=3000)
+
         self.bridge.attempt_auto_reconnects()
 
     # ------------------------------------------------------------------

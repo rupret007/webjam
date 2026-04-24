@@ -211,6 +211,68 @@ class BridgeService:
 
         threading.Thread(target=_do_launch, daemon=True).start()
 
+    def stop_jamulus(self) -> bool:
+        """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
+
+        Returns True if a process was actually terminated, False if Jamulus
+        was not running.  After calling this, ``jamulus_state`` becomes
+        ``"Stopped"`` and the auto-reconnect logic is disabled (because
+        ``jamulus_launch_intended`` is set to False).
+        """
+        # Disable any pending reconnect attempts — user explicitly asked to stop
+        self.jamulus_launch_intended = False
+        self.jamulus_reconnect_attempts = 0
+        self.jamulus_next_reconnect_at = 0.0
+        with self._reconnect_lock:
+            self.jamulus_reconnect_inflight = False
+
+        # Stop monitoring (RPC + UDP) so we don't keep polling a dead process
+        try:
+            self.jamulus_controller.stop()
+        except Exception as exc:
+            LOGGER.warning("JamulusController.stop() failed: %s", exc)
+
+        terminated = False
+        proc = self.jamulus_process
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                # Give Jamulus 2 seconds to exit gracefully, then force-kill
+                try:
+                    proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                terminated = True
+            except Exception as exc:
+                LOGGER.warning("Failed to terminate Jamulus: %s", exc)
+
+        self.jamulus_process = None
+        self.jamulus_state = "Stopped"
+        self.metrics_service.increment("metric_jamulus_stop")
+        self.schedule_ui_callback(self.refresh_readiness)
+        return terminated
+
+    def leave_webex(self) -> None:
+        """Disable Webex auto-reconnect and reset state to 'Not opened'.
+
+        For the embedded path this is paired with ``WebexEmbed.leave_meeting()``
+        which is called by the controller; for the browser-fallback path the
+        user must close the browser tab themselves (we have no handle on it).
+        """
+        self.webex_launch_intended = False
+        self.webex_reconnect_attempts = 0
+        self.webex_next_reconnect_at = 0.0
+        with self._reconnect_lock:
+            self.webex_reconnect_inflight = False
+        self.webex_state = "Not opened"
+        try:
+            # Best-effort: if the WebexController has a leave_meeting hook, use it
+            self.webex_controller.leave_meeting()
+        except Exception as exc:
+            LOGGER.debug("webex_controller.leave_meeting failed: %s", exc)
+        self.metrics_service.increment("metric_webex_leave")
+        self.schedule_ui_callback(self.refresh_readiness)
+
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
         """Open the Webex meeting URL in the default browser."""
         if self.shutdown_requested():

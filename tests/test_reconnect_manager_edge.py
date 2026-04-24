@@ -7,7 +7,6 @@ property shims.
 from __future__ import annotations
 
 import subprocess
-import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -312,6 +311,77 @@ class TestReconnectManagerEdge(unittest.TestCase):
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
         )
         self.assertFalse(bridge.webex_reconnect_inflight)
+
+
+class TestStopJamulus(unittest.TestCase):
+    """Tests for the new stop_jamulus method (v0.4.4 — toggle UX)."""
+
+    def test_stop_jamulus_terminates_running_process_and_clears_intent(self):
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None  # alive
+        bridge.jamulus_process = proc
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_state = "Running"
+
+        result = bridge.stop_jamulus()
+
+        self.assertTrue(result)
+        proc.terminate.assert_called_once()
+        self.assertFalse(bridge.jamulus_launch_intended)
+        self.assertEqual(bridge.jamulus_state, "Stopped")
+        self.assertIsNone(bridge.jamulus_process)
+        # Auto-reconnect must be disabled so the next tick doesn't immediately relaunch
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+
+    def test_stop_jamulus_returns_false_when_not_running(self):
+        bridge = _make_bridge()
+        bridge.jamulus_process = None
+        bridge.jamulus_launch_intended = False
+
+        result = bridge.stop_jamulus()
+
+        self.assertFalse(result)
+        self.assertEqual(bridge.jamulus_state, "Stopped")
+
+    def test_stop_jamulus_force_kills_when_terminate_times_out(self):
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.wait.side_effect = subprocess.TimeoutExpired(cmd="jamulus", timeout=2.0)
+        bridge.jamulus_process = proc
+
+        bridge.stop_jamulus()
+
+        proc.terminate.assert_called_once()
+        proc.kill.assert_called_once()
+
+    def test_stop_jamulus_calls_controller_stop_to_halt_monitoring(self):
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        bridge.jamulus_process = proc
+
+        bridge.stop_jamulus()
+
+        bridge.jamulus_controller.stop.assert_called_once()
+
+
+class TestLeaveWebex(unittest.TestCase):
+    """Tests for leave_webex (v0.4.4)."""
+
+    def test_leave_webex_clears_state_and_disables_reconnect(self):
+        bridge = _make_bridge()
+        bridge.webex_launch_intended = True
+        bridge.webex_state = "Opened in browser"
+        bridge.webex_reconnect_attempts = 2
+
+        bridge.leave_webex()
+
+        self.assertFalse(bridge.webex_launch_intended)
+        self.assertEqual(bridge.webex_state, "Not opened")
+        self.assertEqual(bridge.webex_reconnect_attempts, 0)
+        bridge.webex_controller.leave_meeting.assert_called_once()
 
 
 if __name__ == "__main__":
