@@ -26,10 +26,11 @@ class JamulusParticipant:
     name: str
     ip_address: str = ""
     is_connected: bool = True
-    fader_level: int = 100  # 0-100
+    fader_level: int = 100  # 0-127 (Jamulus mixer range; 100 = 0 dB, 127 = +6 dB)
     pan: int = 50  # 0=left, 50=center, 100=right
     muted: bool = False
     solo: bool = False
+    instrument: str = ""   # as reported by Jamulus JSON-RPC
     
 
 class JamulusController:
@@ -103,15 +104,24 @@ class JamulusController:
     def _on_rpc_participants(self, channel_infos: list) -> None:
         """Receive participant list from JSON-RPC (authoritative when available)."""
         normalized: Dict[int, str] = {}
+        instrument_map: Dict[int, str] = {}
         for info in channel_infos:
             if hasattr(info, "channel_id"):
-                normalized[info.channel_id] = info.name or f"Participant {info.channel_id}"
+                cid = info.channel_id
+                normalized[cid] = info.name or f"Participant {cid}"
+                instrument_map[cid] = getattr(info, "instrument", "") or ""
             elif isinstance(info, dict):
                 cid = info.get("channel_id", -1)
                 if cid >= 0:
                     normalized[cid] = info.get("name") or f"Participant {cid}"
+                    instrument_map[cid] = info.get("instrument", "") or ""
         if normalized:
             self._sync_participants_from_protocol(normalized)
+            # Propagate instrument metadata after sync (sync only handles names)
+            with self._participants_lock:
+                for cid, instrument in instrument_map.items():
+                    if cid in self.participants:
+                        self.participants[cid].instrument = instrument
 
     def _on_rpc_levels(self, levels: Dict[int, float]) -> None:
         """Receive audio levels from JSON-RPC SSE events."""

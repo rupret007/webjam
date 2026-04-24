@@ -54,6 +54,9 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **`NameError` in BridgeService error dialogs fixed**: lambdas capturing `exc` from `except` blocks (Python 3 deletes `exc` after the block) caused a `NameError` when the actionable-error dialog was shown after a Jamulus or Webex launch failure. Fixed with `lambda m=str(exc): ...` captures.
 - **Video button re-enable**: in direct-URL Webex mode the `meeting_state_changed` signal emits `"joining"` and then nothing (no JS bridge). The "Join Video" button was permanently disabled. A 6-second `QTimer.singleShot` now re-enables it as "Video Active".
 
+#### Participant metadata
+- **Instrument pass-through**: `_on_rpc_participants` now builds an `instrument_map` from `ChannelInfo` objects and writes each participant's `instrument` field after `_sync_participants_from_protocol`. Role labels in `ParticipantCard` automatically show the instrument (e.g., "Guitar", "Piano") instead of the generic "Musician" fallback.
+
 #### Code quality
 - Removed unused `webbrowser`, `Callable`, `Any` imports from `bridge_service.py`; split two single-line compound statements that ruff flagged as E701.
 
