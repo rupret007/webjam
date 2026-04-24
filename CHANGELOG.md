@@ -24,6 +24,18 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **Tooltips on Launch Audio / Join Video** (`webjam_qt/widgets/session_strip.py`): Each button now hovers with a one-sentence explanation including the toggle behavior and how to access settings.
 - **Log file path in error dialogs** (`application_controller.py::_show_actionable_error`): The actionable-error dialog now appends `For details, see the log file: ~/.webjam.log` so users know where to look when something goes wrong.
 - **jamulus.io link in "Jamulus Not Found"** (`bridge_service.py::launch_jamulus`): The next-action text now points new users directly at https://jamulus.io to download Jamulus before falling back to the custom-location instructions.
+- **F1 in-app help dialog** (`webjam_qt/windows/conductor_window.py`): F1 now opens a small dialog listing every keyboard shortcut, the colour-coded launch-button semantics, and a 4-step getting-started flow. Useful when users forget shortcuts mid-rehearsal without leaving the app to consult the README.
+
+#### Mid-session settings changes are now context-aware
+- **Targeted "leave/relaunch to apply" hints** (`application_controller.py::_open_settings_wizard`): The wizard used to flash a generic "take effect on next Launch Audio / Join Video" message after every save. It now snapshots `webex_url` + `jamulus_server` before the wizard, compares after, and shows specific actions if needed: "Leave Video and re-join to apply the new Webex URL" and/or "Stop Audio and re-launch to connect to the new Jamulus server".
+
+#### Audit-found bugfixes
+- **Reconnect-banner latch** (`application_controller.py::_stop_audio`): The `_reconnect_banner_shown` flag was set True on Jamulus crash and reset only when state went back to "Running". If the user clicked "Stop Audio" during reconnect attempts, the latch stayed True and future crash banners were silent. Cleared in `_stop_audio` so subsequent crashes flash again.
+
+#### Tests
+- **`tests/test_application_controller_toggle.py`** — 12 new tests for `_is_jamulus_running`, `_is_video_active` predicates, button-label transitions, and server:port appearing in the status bar.
+- **`tests/test_reconnect_manager_edge.py`** — 8 new tests for `stop_jamulus` (terminate, force-kill, idempotency, dead-process), `leave_webex` (state reset, swallow controller errors).
+- Suite total: **513 pass, 12 skipped**.
 
 ---
 
