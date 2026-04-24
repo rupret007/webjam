@@ -50,8 +50,15 @@ class AppSettings:
     jamulus_rpc_port: int = 22222   # JSON-RPC server port (--jsonrpcport flag)
     webex_url: str = "https://webjam-sbx.webex.com/meet/webjam01"
     jamulus_candidates: list[str] = field(default_factory=lambda: [
+        # macOS (bundle binary)
+        "/Applications/Jamulus.app/Contents/MacOS/Jamulus",
+        # Windows
         r"C:\Program Files\Jamulus\Jamulus.exe",
         r"C:\Program Files (x86)\Jamulus\Jamulus.exe",
+        # Linux / Homebrew / manual install
+        "/usr/bin/Jamulus",
+        "/usr/local/bin/Jamulus",
+        "/opt/homebrew/bin/Jamulus",
     ])
     config_file: str = str(Path.home() / ".webjam_config.json")
     mix_file: str = str(Path.home() / ".webjam_mix.json")

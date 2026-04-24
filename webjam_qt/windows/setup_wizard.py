@@ -26,7 +26,9 @@ from PySide6.QtCore import QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFileDialog,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -136,11 +138,56 @@ class _JamulusPage(QWizardPage):
             "Leave this as 22222 unless your band admin says otherwise. "
             "This lets WebJam read participant names and control the mixer."
         ))
+
+        layout.addWidget(_section_label("Jamulus executable"))
+        # Pre-populate with first existing candidate path
+        detected_path = ""
+        for candidate in settings.jamulus_candidates:
+            if Path(candidate).exists():
+                detected_path = candidate
+                break
+        self._jamulus_path = QLineEdit(detected_path)
+        self._jamulus_path.setPlaceholderText(
+            "Leave blank to auto-detect  –or–  enter full path to Jamulus"
+        )
+        self._jamulus_path.setAccessibleName("Path to Jamulus executable")
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setObjectName("GhostButton")
+        browse_btn.clicked.connect(self._browse_jamulus)
+        path_row = QHBoxLayout()
+        path_row.setSpacing(Space.SM)
+        path_row.addWidget(self._jamulus_path, stretch=1)
+        path_row.addWidget(browse_btn)
+        layout.addLayout(path_row)
+        layout.addWidget(_body_label(
+            "macOS: /Applications/Jamulus.app/Contents/MacOS/Jamulus\n"
+            "Windows: C:\\Program Files\\Jamulus\\Jamulus.exe\n"
+            "Required — WebJam launches Jamulus for you (free at jamulus.io)."
+        ))
         layout.addStretch(1)
 
         self.registerField("jamulus_server*", self._host)
         self.registerField("jamulus_port",    self._port, "value")
         self.registerField("jamulus_rpc_port", self._rpc_port, "value")
+
+    def _browse_jamulus(self) -> None:
+        start_dir = ""
+        import sys
+        if sys.platform == "darwin":
+            start_dir = "/Applications"
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Find Jamulus", start_dir,
+            "Jamulus (Jamulus Jamulus.exe);;All files (*)"
+        )
+        if not path:
+            return
+        # On macOS the user might pick the .app bundle itself
+        p = Path(path)
+        if p.suffix == ".app":
+            binary = p / "Contents" / "MacOS" / "Jamulus"
+            if binary.exists():
+                path = str(binary)
+        self._jamulus_path.setText(path)
 
     def validatePage(self) -> bool:
         host = self._host.text().strip()
@@ -160,6 +207,10 @@ class _JamulusPage(QWizardPage):
     @property
     def rpc_port(self) -> int:
         return self._rpc_port.value()
+
+    @property
+    def jamulus_path(self) -> str:
+        return self._jamulus_path.text().strip()
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +460,14 @@ class SetupWizard(QWizard):
         cfg["webex_guest_issuer_id"]      = self._webex.guest_issuer_id
         cfg["webex_guest_issuer_secret"]  = self._webex.guest_issuer_secret
         cfg["webex_display_name"]         = self._webex.display_name
+
+        # Insert user-specified Jamulus path at the front of candidates
+        jamulus_path = self._jamulus.jamulus_path
+        if jamulus_path:
+            existing = list(cfg.get("jamulus_candidates") or [])
+            # Remove duplicates, put user choice first
+            deduped = [jamulus_path] + [c for c in existing if c != jamulus_path]
+            cfg["jamulus_candidates"] = deduped
 
         path = Path(self._settings.config_file)
         try:

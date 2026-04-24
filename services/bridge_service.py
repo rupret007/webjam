@@ -2,9 +2,8 @@ import logging
 import subprocess
 import threading
 import time
-import webbrowser
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
@@ -129,11 +128,13 @@ class BridgeService:
                         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         break
                     except Exception:
-                        if i == 2: raise
+                        if i == 2:
+                            raise
                         time.sleep(0.5)
 
                 if self.shutdown_requested():
-                    if proc: proc.terminate()
+                    if proc:
+                        proc.terminate()
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
                     return
@@ -182,10 +183,11 @@ class BridgeService:
                     
                 self.metrics_service.increment("metric_jamulus_launch_failed")
                 self.schedule_ui_callback(self.refresh_readiness)
+                exc_msg = str(exc)
                 self.schedule_ui_callback(
-                    lambda: self.show_actionable_error(
+                    lambda m=exc_msg: self.show_actionable_error(
                         "Jamulus Launch Failed",
-                        what_failed=f"Jamulus could not start ({exc}).",
+                        what_failed=f"Jamulus could not start ({m}).",
                         likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
                         next_action="Open diagnostics, verify path/server, then retry.",
                         retry_callback=lambda: self.launch_jamulus(manual=True)
@@ -269,10 +271,11 @@ class BridgeService:
                     
                 self.metrics_service.increment("metric_webex_open_failed")
                 self.schedule_ui_callback(self.refresh_readiness)
+                exc_msg = str(exc)
                 self.schedule_ui_callback(
-                    lambda: self.show_actionable_error(
+                    lambda m=exc_msg: self.show_actionable_error(
                         "Webex Open Failed",
-                        what_failed=f"Webex URL could not be opened ({exc}).",
+                        what_failed=f"Webex URL could not be opened ({m}).",
                         likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
                         next_action="Verify URL in diagnostics/setup wizard and retry.",
                         retry_callback=lambda: self.launch_webex(manual=True)
