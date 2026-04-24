@@ -13,17 +13,17 @@ Being honest about where this app is **right now** (2026-04-24):
 | Area | Status |
 |---|---|
 | **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 493 tests pass. |
-| **Qt Conductor UI** | ✅ **Shipped in v0.3.0.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
+| **Qt Conductor UI** | ✅ **Shipped in v0.3.0, fully usable as of v0.4.1.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Retained as fallback (`webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
-| **Jamulus integration** | ⚠️ **Launch + partial RPC.** v0.4 added JSON-RPC mute/solo control on background threads. Fader changes also reach Jamulus via RPC. Level meters in the Qt UI run on demo data — real audio-level feed from Jamulus not yet wired. **Jamulus must be installed separately.** |
-| **Webex integration** | ⚠️ **Launch-only.** Opens your Webex meeting URL in a browser. Embedded `QWebEngineView` is built (`webex_embed.py`) but not yet wired to the main launch button. |
+| **Jamulus integration** | ✅ **Full RPC + UDP.** Fader, mute, and solo all reach Jamulus via JSON-RPC (background threads, non-blocking). Real audio-level meters wired — polls `RealAudioEngine` every 100 ms once Jamulus connects. Participant instruments shown in role labels. Auto-reconnect retries dropped sessions. **Jamulus must be installed separately.** |
+| **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
 | **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
 | **Builds** | ✅ Windows x64, macOS ARM64, macOS x64 — all three zips at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Local Companion API** | ✅ Localhost bridge for external tools. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today: WebJam is a **launcher + local note-taking UI** wrapped around two separate apps (Jamulus window, Webex browser). Users alt-tab between windows.
+In practice today (v0.4.1): WebJam is a **unified Qt Conductor** — one window that launches Jamulus, embeds Webex, and gives you a live mixer for every participant. The Jamulus window still appears separately (it must be installed independently), but fader/mute/solo controls in WebJam drive it in real time.
 
-The redesign in progress replaces this with a unified conductor-style window (Qt/PySide6), real Jamulus protocol control, and embedded Webex via the Web SDK.
+Future phases: full embedded Webex video tiles per-participant, macOS code signing, and listening profiles in the Qt UI.
 
 ---
 
@@ -72,15 +72,18 @@ Environment overrides:
 
 ---
 
-## In-App Menus (new Qt Conductor UI)
+## Qt Conductor Keyboard Shortcuts
 
-- **Session → Run Ready Check** — pass/fail readiness summary
-- **Session → Open Diagnostics Panel** — endpoint checks, audio backend state, recovery hints
-- **Session → Export Session Brief** — markdown handoff document
-- **Help → Run Setup Wizard** — preflight checks for Jamulus path, server, Webex URL, audio
-- **Help → View Usage Metrics** — local-only counters
-- **View → High Contrast / Large Text / Text Size** — accessibility
-- **Startup → Auto reconnect services / Reset UI** — startup preferences
+| Shortcut | Action |
+|---|---|
+| **Ctrl+L** | Focus / edit the session title |
+| **Ctrl+S** | Save current mixer state to `~/.webjam_mix.json` |
+| **Ctrl+O** | Load and apply saved mix from `~/.webjam_mix.json` |
+| **Ctrl+,** | Open Settings wizard |
+| **F11** | Toggle fullscreen |
+| **Escape** | Exit fullscreen |
+
+The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The Settings panel is in the side rail. Saved mixes are auto-restored when Jamulus first connects.
 
 ---
 
