@@ -116,7 +116,7 @@ class _JamulusPage(QWizardPage):
 
         layout.addWidget(_section_label("Server host"))
         self._host = QLineEdit(settings.jamulus_server)
-        self._host.setPlaceholderText("e.g. 172.24.194.9 or myband.example.com")
+        self._host.setPlaceholderText("e.g. 192.168.1.100 or myband.example.com")
         self._host.setAccessibleName("Jamulus server hostname or IP address")
         layout.addWidget(self._host)
 
