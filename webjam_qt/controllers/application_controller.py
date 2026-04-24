@@ -340,6 +340,10 @@ class ApplicationController(QObject):
         # visible until Jamulus actually disconnects.
         self._jamulus_connected = False
         self._level_timer.stop()
+        # Clear the crash-banner latch so a future crash flashes again.
+        # Without this, manually stopping during a reconnect would lock the
+        # latch True and the next crash would be silent.
+        self._reconnect_banner_shown = False
 
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
@@ -603,6 +607,9 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     def _open_settings_wizard(self) -> None:
         from webjam_qt.windows.setup_wizard import SetupWizard
+        # Snapshot relevant fields before the wizard so we can detect changes.
+        old_webex_url = self.settings.webex_url
+        old_jamulus_server = (self.settings.jamulus_server, self.settings.jamulus_port)
         wizard = SetupWizard(self.settings, parent=self.window)
         if wizard.exec() == SetupWizard.DialogCode.Accepted:
             from core.settings import load_settings
@@ -610,7 +617,30 @@ class ApplicationController(QObject):
             # Push new settings to services immediately so the next Launch Audio
             # or Join Video uses the updated server / Jamulus path / Webex URL.
             self.bridge.settings = self.settings
-            self.window.flash_message("Settings saved — take effect on next Launch Audio / Join Video.")
+
+            # Build a context-aware confirmation message so the user knows
+            # whether they need to take any action for the change to apply.
+            warnings: list[str] = []
+            if (
+                self.settings.webex_url != old_webex_url
+                and self._is_video_active()
+            ):
+                warnings.append("Leave Video and re-join to apply the new Webex URL.")
+            if (
+                (self.settings.jamulus_server, self.settings.jamulus_port) != old_jamulus_server
+                and self._is_jamulus_running()
+            ):
+                warnings.append("Stop Audio and re-launch to connect to the new Jamulus server.")
+
+            if warnings:
+                self.window.flash_message(
+                    "Settings saved. " + " ".join(warnings),
+                    ms=8000,
+                )
+            else:
+                self.window.flash_message(
+                    "Settings saved — take effect on next Launch Audio / Join Video."
+                )
 
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter
