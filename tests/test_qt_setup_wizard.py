@@ -181,6 +181,13 @@ class TestSetupWizardSmoke(unittest.TestCase):
         # currentId() is -1 until exec()/show(); use startId() to verify page order.
         self.assertEqual(wizard.startId(), _PageId.WELCOME)
 
+    def test_skip_welcome_starts_on_jamulus_page(self):
+        """v0.4.4: in-session reopens skip the welcome page."""
+        from webjam_qt.windows.setup_wizard import SetupWizard, _PageId
+        wizard = SetupWizard(settings=AppSettings(), skip_welcome=True)
+        self.assertEqual(wizard.startId(), _PageId.JAMULUS)
+        self.assertEqual(wizard.windowTitle(), "WebJam Settings")
+
     def test_save_settings_writes_valid_json(self):
         from webjam_qt.windows.setup_wizard import SetupWizard
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:

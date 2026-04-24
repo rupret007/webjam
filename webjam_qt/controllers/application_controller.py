@@ -672,7 +672,9 @@ class ApplicationController(QObject):
         # Snapshot relevant fields before the wizard so we can detect changes.
         old_webex_url = self.settings.webex_url
         old_jamulus_server = (self.settings.jamulus_server, self.settings.jamulus_port)
-        wizard = SetupWizard(self.settings, parent=self.window)
+        # In-session reopen — skip the welcome page since the user already
+        # knows what WebJam is and is here to change a specific setting.
+        wizard = SetupWizard(self.settings, parent=self.window, skip_welcome=True)
         if wizard.exec() == SetupWizard.DialogCode.Accepted:
             from core.settings import load_settings
             self.settings = load_settings()

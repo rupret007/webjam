@@ -441,11 +441,18 @@ class SetupWizard(QWizard):
         self,
         settings: Optional[AppSettings] = None,
         parent: Optional[QWidget] = None,
+        *,
+        skip_welcome: bool = False,
     ) -> None:
         super().__init__(parent)
         self._settings = settings or load_settings()
 
         self.setWindowTitle("WebJam Setup")
+        if skip_welcome:
+            # Reopened from inside an active session — skip Welcome and Routing
+            # since the user already knows what WebJam is and routing was set
+            # at first launch.
+            self.setWindowTitle("WebJam Settings")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setMinimumSize(560, 520)
         self.setOption(QWizard.WizardOption.NoBackButtonOnLastPage, True)
@@ -462,6 +469,10 @@ class SetupWizard(QWizard):
         self.setPage(_PageId.WEBEX,   self._webex)
         self.setPage(_PageId.ROUTING, self._routing)
         self.setPage(_PageId.DONE,    self._done)
+
+        if skip_welcome:
+            # Start at Jamulus; users in-session don't need the welcome page.
+            self.setStartId(_PageId.JAMULUS)
 
         self.accepted.connect(self._save_settings)
 
