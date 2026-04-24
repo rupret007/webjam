@@ -332,19 +332,35 @@ class ApplicationController(QObject):
         if reply != QMessageBox.StandardButton.Yes:
             return
         self.window.set_status_audio("Stopping…")
+        self.window.set_status_latency("Not connected")
         self.window.session_strip.set_audio_state("Stopping…", enabled=False)
         # Stop in a worker thread; bridge will refresh readiness when done
         threading.Thread(
             target=self.bridge.stop_jamulus, daemon=True, name="jamulus-stop",
         ).start()
-        # Reset internal flag so demos don't restart, but keep participants
-        # visible until Jamulus actually disconnects.
+        # Reset state and restore the demo grid so the user sees a clear
+        # visual signal that audio is off (instead of frozen real participants).
         self._jamulus_connected = False
         self._level_timer.stop()
+        self._reset_to_demo_state()
         # Clear the crash-banner latch so a future crash flashes again.
         # Without this, manually stopping during a reconnect would lock the
         # latch True and the next crash would be silent.
         self._reconnect_banner_shown = False
+
+    def _reset_to_demo_state(self) -> None:
+        """Replace current participants with demo placeholders + restart demo timer."""
+        self.participants.clear()
+        for p in _DEMO_PARTICIPANTS:
+            self.participants[p.channel_id] = ParticipantPresentation(
+                channel_id=p.channel_id,
+                name=p.name,
+                role=p.role,
+                fader_level=p.fader_level,
+                is_local=p.is_local,
+            )
+        self._push_participants_to_grid()
+        self._demo_timer.start()
 
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")

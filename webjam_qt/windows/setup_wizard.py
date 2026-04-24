@@ -231,6 +231,11 @@ class _WebexPage(QWizardPage):
         self._url = QLineEdit(settings.webex_url)
         self._url.setPlaceholderText("https://myorg.webex.com/meet/bandroom")
         self._url.setAccessibleName("Webex meeting URL")
+        self._url.setToolTip(
+            "Enter your Webex meeting URL. If you forget the https:// prefix, "
+            "we'll add it for you.\n\n"
+            "Example: https://myorg.webex.com/meet/bandroom"
+        )
         layout.addWidget(self._url)
 
         # Optional: guest issuer
@@ -271,9 +276,21 @@ class _WebexPage(QWizardPage):
 
     def validatePage(self) -> bool:
         url = self._url.text().strip()
+        # Be forgiving: if user typed "myorg.webex.com/meet/foo" without scheme,
+        # auto-prepend https:// rather than silently refusing to advance.
+        # Require a dot in the input so bare words like "not-a-url" still fail.
+        if url and "://" not in url and "." in url.split("/", 1)[0]:
+            url = "https://" + url
+            self._url.setText(url)
         parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        # Also require a dot in netloc — rejects scheme-prefixed bare words.
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.netloc
+            or "." not in parsed.netloc
+        ):
             self._url.setFocus()
+            self._url.selectAll()
             return False
         return True
 

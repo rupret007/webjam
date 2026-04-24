@@ -119,6 +119,22 @@ class TestWebexPage(unittest.TestCase):
         page._url.setText("not-a-url")
         self.assertFalse(page.validatePage())
 
+    def test_missing_scheme_with_dot_auto_prepends_https(self):
+        """v0.4.4: typing 'org.webex.com/meet/x' should auto-prepend https://."""
+        from webjam_qt.windows.setup_wizard import _WebexPage
+        page = _WebexPage(AppSettings(webex_url=""))
+        page._url.setText("org.webex.com/meet/bandroom")
+        self.assertTrue(page.validatePage())
+        # The text should now be the auto-prepended URL.
+        self.assertEqual(page._url.text(), "https://org.webex.com/meet/bandroom")
+
+    def test_scheme_prefixed_bare_word_still_fails(self):
+        """A URL like 'https://localhost' has no dot in netloc — reject."""
+        from webjam_qt.windows.setup_wizard import _WebexPage
+        page = _WebexPage(AppSettings(webex_url=""))
+        page._url.setText("https://localhost")
+        self.assertFalse(page.validatePage())
+
     def test_empty_url_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage
         page = _WebexPage(AppSettings(webex_url=""))
