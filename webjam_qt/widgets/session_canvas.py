@@ -130,8 +130,11 @@ class SessionCanvas(QFrame):
         if path:
             try:
                 Path(path).write_text(text, encoding="utf-8")
-            except OSError:
-                pass  # Silently skip — caller can't easily show an error here
+            except OSError as exc:
+                QMessageBox.warning(
+                    self, "Export Failed",
+                    f"Could not write notes to:\n{path}\n\n{exc}",
+                )
 
     # ------------------------------------------------------------------
     # Internals

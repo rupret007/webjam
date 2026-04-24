@@ -76,6 +76,9 @@ class JamulusRpcClient:
         self._request_counter = 0
         self._lock = threading.Lock()
         self._http_client: Optional[httpx.Client] = None
+        # Cache the local channel ID so we don't make a second HTTP call on
+        # every poll cycle (getChannelClients already costs one request).
+        self._local_channel_id: int = -1
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -95,6 +98,8 @@ class JamulusRpcClient:
 
     def stop(self) -> None:
         self._running = False
+        self._local_channel_id = -1  # reset so next session re-queries
+        self._available = False
         if self._http_client is not None:
             try:
                 self._http_client.close()
@@ -179,12 +184,23 @@ class JamulusRpcClient:
         return clients
 
     def _get_local_channel_id(self) -> int:
+        """Return the local (self) channel ID, querying RPC only on first call.
+
+        The local channel ID is stable for the lifetime of the Jamulus session,
+        so we cache the result after the first successful lookup to avoid a
+        second HTTP request on every 5-second poll cycle.
+        """
+        if self._local_channel_id >= 0:
+            return self._local_channel_id
         raw = self._call("jamulus/getClientInfo", {})
         if raw is None:
             return -1
         result = raw.get("result")
         if isinstance(result, dict):
-            return int(result.get("channelId", -1))
+            cid = int(result.get("channelId", -1))
+            if cid >= 0:
+                self._local_channel_id = cid
+            return cid
         return -1
 
     # ------------------------------------------------------------------
