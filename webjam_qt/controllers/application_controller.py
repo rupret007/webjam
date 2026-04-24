@@ -396,7 +396,13 @@ class ApplicationController(QObject):
         self.window.flash_message(text)
 
     def _refresh_readiness(self) -> None:
-        self.window.set_status_audio(self.bridge.jamulus_state)
+        # Append server address when Jamulus is running so musicians can confirm
+        # they're on the right server at a glance.
+        audio_state = self.bridge.jamulus_state
+        if audio_state in ("Running", "Already running"):
+            server = f"{self.settings.jamulus_server}:{self.settings.jamulus_port}"
+            audio_state = f"{audio_state} ({server})"
+        self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
         jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
         self.window.session_strip.set_audio_state(
