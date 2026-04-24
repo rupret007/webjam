@@ -155,6 +155,39 @@ class ConductorWindow(QMainWindow):
         )
         # Cmd/Ctrl+M — mute / unmute all (consumed by controller)
         self._mute_all_shortcut = QShortcut(QKeySequence("Ctrl+M"), self)
+        # F1 — show help dialog
+        QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
+
+    def _show_help(self) -> None:
+        """Display a keyboard-shortcut and getting-started reference."""
+        from PySide6.QtWidgets import QMessageBox
+        body = (
+            "<b>WebJam — Conductor UI</b><br>"
+            "<i>One window for band audio (Jamulus) + video (Webex).</i><br><br>"
+            "<b>Keyboard shortcuts:</b><br>"
+            "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
+            "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state<br>"
+            "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state<br>"
+            "&nbsp;&nbsp;<b>Ctrl+M</b> — Mute / unmute all<br>"
+            "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
+            "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
+            "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"
+            "&nbsp;&nbsp;<b>Esc</b> — Exit fullscreen<br>"
+            "&nbsp;&nbsp;<b>F1</b> — Show this help<br>"
+            "&nbsp;&nbsp;<b>Double-click fader</b> — Reset to 0 dB<br><br>"
+            "<b>Getting started:</b><br>"
+            "1. Click <b>Launch Audio</b> (gold button) to start Jamulus.<br>"
+            "2. Click <b>Join Video</b> (teal button) to open Webex.<br>"
+            "3. Adjust faders as your band joins.<br>"
+            "4. Click the same buttons again to stop / leave.<br><br>"
+            "<a href='https://github.com/rupret007/webjam'>github.com/rupret007/webjam</a>"
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle("WebJam Help")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(body)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.exec()
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

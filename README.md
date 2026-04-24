@@ -84,6 +84,7 @@ Environment overrides:
 | **Ctrl+,** | Open Settings wizard |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
+| **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
 The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The left rail switches between Stage/Mixer view, Canvas view, and Settings. Session notes are saved to `~/.webjam_notes.md` on exit and restored automatically on next launch. Saved mixes are auto-restored when Jamulus first connects.
