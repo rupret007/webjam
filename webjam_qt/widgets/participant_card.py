@@ -116,6 +116,7 @@ class ParticipantCard(QFrame):
 
         self._compose_layout()
         self._apply_connection_state()
+        self._apply_local_state(presentation.is_local)
 
     # ------------------------------------------------------------------
     # Public API — called by ApplicationController to push state down
@@ -138,6 +139,7 @@ class ParticipantCard(QFrame):
         self._apply_solo_state(presentation.solo)
         self._level_meter.set_level(presentation.audio_level)
         self._apply_connection_state()
+        self._apply_local_state(presentation.is_local)
 
     def set_audio_level(self, level: float) -> None:
         """Push instantaneous meter level without rebuilding the whole card."""
@@ -234,6 +236,10 @@ class ParticipantCard(QFrame):
 
     def _apply_connection_state(self) -> None:
         self.setProperty("connected", "true" if self._presentation.is_connected else "false")
+        self._repolish(self)
+
+    def _apply_local_state(self, is_local: bool) -> None:
+        self.setProperty("local", "true" if is_local else "false")
         self._repolish(self)
 
     def _refresh_speaking_state(self, level: float) -> None:

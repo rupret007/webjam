@@ -125,8 +125,16 @@ QToolButton#SideRailButton:focus {
     border: 1px dashed ${COLOR_BORDER_STRONG};
 }
 
+#ParticipantCard[local="true"] {
+    border: 1px solid ${COLOR_ACCENT_AUDIO};  /* gold highlight — this is you */
+}
+
 #ParticipantCard[speaking="true"] {
-    border: 1px solid ${COLOR_ACCENT_AUDIO};
+    border: 2px solid ${COLOR_ACCENT_AUDIO};
+}
+
+#ParticipantCard[local="true"][speaking="true"] {
+    border: 2px solid ${COLOR_ACCENT_AUDIO};
 }
 
 #VideoTile {

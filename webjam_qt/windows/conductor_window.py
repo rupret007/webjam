@@ -117,7 +117,7 @@ class ConductorWindow(QMainWindow):
 
         self._status_audio   = QLabel("Audio: —")
         self._status_video   = QLabel("Video: —")
-        self._status_latency = QLabel("Latency: —")
+        self._status_latency = QLabel("Session: —")
         self._status_routing = QLabel("Routing: checking…")
         self._status_bar.addPermanentWidget(self._status_audio)
         self._status_bar.addPermanentWidget(self._status_video)
@@ -174,7 +174,7 @@ class ConductorWindow(QMainWindow):
         self._status_video.setText(f"Video: {text}")
 
     def set_status_latency(self, text: str) -> None:
-        self._status_latency.setText(f"Latency: {text}")
+        self._status_latency.setText(f"Session: {text}")
 
     def set_status_routing(self, text: str) -> None:
         self._status_routing.setText(f"Routing: {text}")

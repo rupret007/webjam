@@ -258,7 +258,8 @@ class ApplicationController(QObject):
     @staticmethod
     def _role_label(jp) -> str:
         bits: list[str] = []
-        if getattr(jp, "channel_id", -1) == 0:
+        # Use the RPC-resolved is_local flag; fall back to channel 0 heuristic
+        if getattr(jp, "is_local", False) or getattr(jp, "channel_id", -1) == 0:
             bits.append("You")
         instrument = getattr(jp, "instrument", "") or ""
         if instrument:
