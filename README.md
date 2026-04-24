@@ -13,13 +13,13 @@ Being honest about where this app is **right now** (2026-04-20):
 | Area | Status |
 |---|---|
 | **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 74 unit tests pass. |
-| **UI shell** (Tkinter — legacy) | ✅ Renders. Session canvas, mixer layout, mode switcher, setup wizard. Note: the new Qt Conductor UI (`webjam_qt_main.py`) is the recommended version going forward. |
-| **Jamulus integration** | ⚠️ **Launch-only.** WebJam shells out `jamulus.exe`; the UDP protocol adapter is disabled. Mixer faders in WebJam do **not** drive the running Jamulus server. |
-| **Webex integration** | ⚠️ **Launch-only.** `webbrowser.open(url)` — WebJam has no view of the meeting, participants, or audio state. |
-| **Audio routing** | ⚠️ **Manual.** Users must configure VB-CABLE / BlackHole themselves. |
-| **Installer** | ✅ Python installer works on Windows. Unsigned. |
+| **Qt Conductor UI** | ✅ **Shipped in v0.3.0.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
+| **Legacy Tkinter UI** | ⚠️ Retained as fallback (`webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
+| **Jamulus integration** | ⚠️ **Launch-only.** WebJam launches Jamulus as a separate process. Mixer faders in WebJam do **not** yet drive the running Jamulus server — full JSON-RPC control is planned for v0.4. **Jamulus must be installed separately.** |
+| **Webex integration** | ⚠️ **Launch-only.** Opens your Webex meeting URL in a browser. Embedded view (Web SDK inside Qt) planned for v0.4. |
+| **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
+| **Builds** | ✅ Windows x64, macOS ARM64, macOS x64 — all three zips at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Local Companion API** | ✅ Localhost bridge for external tools. See [COMPANION_API.md](COMPANION_API.md). |
-| **God-file refactor** | 🔄 In progress. `webjam_app_enhanced.py` is still ~1,900 lines. |
 
 In practice today: WebJam is a **launcher + local note-taking UI** wrapped around two separate apps (Jamulus window, Webex browser). Users alt-tab between windows.
 

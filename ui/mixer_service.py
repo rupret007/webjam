@@ -19,11 +19,13 @@ from ui.auth_controller import AuthController, UserContext
 from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
 # NOTE: tk_messagebox.showerror was moved from webjam_app_enhanced.py
 from core.creative_modes import get_mode_by_key_or_default
+from core.settings import AppSettings
 
 LOGGER = logging.getLogger(__name__)
 
-# Constants related to mixer and profiles
-MIX_FILE = Path("./data/default_mix.json") # This should align with BASE_SETTINGS.mix_file
+# Fallback mix file path — superseded by AppSettings.mix_file when MixerService
+# is constructed with a settings object.
+_DEFAULT_MIX_FILE = Path.home() / ".webjam_mix.json"
 LOCAL_PARTICIPANT_NAME = "You (Local)"
 RECONNECT_MAX_ATTEMPTS = 5 # These might be app-level, but are tightly coupled here
 RECONNECT_BASE_DELAY_SECONDS = 1.5
@@ -43,6 +45,7 @@ class MixerService:
         set_status_banner: Callable[[str, str], None],
         mixer_channels: Dict[int, Any], # EnhancedMixerChannel type
         app_root_exists_check: Callable[[], bool],
+        settings: Optional[AppSettings] = None,
     ):
         self.app_root = app_root
         self.repository = repository
@@ -56,6 +59,12 @@ class MixerService:
         self.mixer_channels = mixer_channels
         self.app_root_exists_check = app_root_exists_check
 
+        # Resolve mix file path from settings (preferred) or fall back to default.
+        if settings is not None:
+            self._mix_file = Path(settings.mix_file)
+        else:
+            self._mix_file = _DEFAULT_MIX_FILE
+
         self._pending_mix_restore_payload: Optional[Dict[str, Any]] = None
         self._pending_mix_restore_source: Optional[str] = None
         
@@ -66,7 +75,7 @@ class MixerService:
         username = str(getattr(user, "username", "") or "").strip()
         return username or None
 
-    def _load_mix_payload_from_file(self, mix_file: Path = MIX_FILE) -> Optional[Dict[str, Any]]:
+    def _load_mix_payload_from_file(self, mix_file: Path = _DEFAULT_MIX_FILE) -> Optional[Dict[str, Any]]:
         try:
             with Path(mix_file).open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
@@ -109,13 +118,12 @@ class MixerService:
             pass
 
     def _restore_startup_mix_default(self) -> None:
-        # TODO: MIX_FILE should come from AppSettings
-        if not MIX_FILE.exists():
+        if not self._mix_file.exists():
             return
-        payload = self._load_mix_payload_from_file()
+        payload = self._load_mix_payload_from_file(self._mix_file)
         if payload is None:
             return
-        self._queue_mix_restore(payload, str(MIX_FILE))
+        self._queue_mix_restore(payload, str(self._mix_file))
 
     def _restore_signed_in_mix_default(self) -> None:
         username = self._default_mix_user()
@@ -226,10 +234,10 @@ class MixerService:
                     "This default mix restores automatically when you sign in again."
                 )
             else:
-                self.jamulus_controller.save_mix(str(MIX_FILE))
-                audit_detail = str(MIX_FILE)
+                self.jamulus_controller.save_mix(str(self._mix_file))
+                audit_detail = str(self._mix_file)
                 success_message = (
-                    f"Mix settings saved locally to:\n{MIX_FILE}\n\n"
+                    f"Mix settings saved locally to:\n{self._mix_file}\n\n"
                     "This default mix restores automatically the next time WebJam starts."
                 )
             self._pending_mix_restore_payload = None
@@ -326,8 +334,7 @@ class MixerService:
         try:
             saved_mix = self._saved_mix_payload_for_load()
             if saved_mix is None:
-                # TODO: MIX_FILE should come from AppSettings
-                if MIX_FILE.exists() and self._load_mix_payload_from_file() is None:
+                if self._mix_file.exists() and self._load_mix_payload_from_file(self._mix_file) is None:
                     self.metrics_service.increment("metric_load_mix_failed")
                     tk_messagebox.showerror(
                         self.app_root,

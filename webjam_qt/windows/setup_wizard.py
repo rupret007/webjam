@@ -352,9 +352,12 @@ class _DonePage(QWizardPage):
         layout.addWidget(_body_label(
             "Click Finish to launch the Conductor.\n\n"
             "Quick-start:\n"
-            "  1.  Click \u201cLaunch Audio\u201d to start Jamulus\n"
-            "  2.  Click \u201cJoin Video\u201d to open Webex\n"
-            "  3.  Adjust faders as musicians join\n\n"
+            "  1.  Make sure Jamulus is installed and running on your machine\n"
+            "  2.  Click \u201cLaunch Audio\u201d — WebJam will connect to your Jamulus server\n"
+            "  3.  Click \u201cJoin Video\u201d to open your Webex meeting\n"
+            "  4.  Adjust faders as musicians join the session\n\n"
+            "\u2139\ufe0f  Jamulus must be installed separately (free at jamulus.io). "
+            "WebJam launches and manages it for you, but does not include it.\n\n"
             "You can reopen this wizard any time from the Settings panel."
         ))
         layout.addStretch(1)
