@@ -548,7 +548,7 @@ class JamulusController:
                     fader_level = int(p_data.get("fader_level", p.fader_level))
                 except (TypeError, ValueError):
                     fader_level = p.fader_level
-                p.fader_level = max(0, min(100, fader_level))
+                p.fader_level = max(0, min(127, fader_level))
 
                 try:
                     pan = int(p_data.get("pan", p.pan))
