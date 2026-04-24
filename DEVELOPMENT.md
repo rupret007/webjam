@@ -71,8 +71,7 @@ python webjam_qt_main.py          # Qt Conductor UI (current)
 python webjam_app_enhanced.py     # Legacy Tkinter UI (fallback)
 ```
 
-On first launch, use **Help > Run Setup Wizard** to validate Jamulus/Webex readiness.
-Use **Admin > Open Admin Panel** and then **Set Endpoint** to change the Jamulus server/port endpoint.
+On first launch a setup wizard runs automatically to configure your Jamulus server, Webex URL, and audio routing. You can reopen it any time with **Ctrl+,** or the ⚙ Settings button in the left rail.
 
 ## Run Tests
 
@@ -107,7 +106,7 @@ Override defaults without editing code:
 | `WEBJAM_JAMULUS_SERVER` | `172.24.194.9` | Jamulus server hostname or IP |
 | `WEBJAM_JAMULUS_PORT` | `22124` | Jamulus server port |
 | `WEBJAM_WEBEX_URL` | `https://webjam-sbx.webex.com/meet/webjam01` | Webex meeting URL |
-| `WEBJAM_JAMULUS_CANDIDATES` | (Windows default paths) | Semicolon-separated Jamulus executable paths |
+| `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
 | `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
 | `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |
 
