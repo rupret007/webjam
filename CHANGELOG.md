@@ -32,6 +32,25 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.2] — 2026-04-24
+
+### Fixed / Added — Qt Conductor usability pass 2
+
+#### Navigation
+- **SideRail buttons wired**: clicking "Stage" or "Mixer" expands the participant grid; clicking "Canvas" expands the session notes panel; "Chat" and "Roles" flash a friendly "coming in a future update" message. Previously all four buttons did nothing. `ConductorWindow.center_splitter` is now a named attribute; both panels set collapsible so `setSizes` can resize them.
+
+#### Participant metadata
+- **`is_local` from Jamulus RPC**: `JamulusParticipant.is_local` field added and propagated from `ChannelInfo.is_local` (which is resolved via `getClientInfo` RPC). `ApplicationController._apply_jamulus_participants` uses the real flag instead of the `channel_id == 0` heuristic. Existing participants also get `is_local` refreshed on every RPC poll.
+- **Role label refreshes for existing participants**: when an existing participant's instrument changes (e.g. mid-session Jamulus settings update), the role label is now updated in `self.participants` before the grid refresh, so the card reflects the new instrument.
+
+#### Notes persistence
+- **Session notes saved on exit**: `_load_notes` runs on startup, reading `~/.webjam_notes.md` into the canvas; `_save_notes` runs in `shutdown()` to write the canvas text back. Notes survive app restarts within a session.
+
+#### Status bar
+- **Participant count replaces "—"**: the Latency status label now shows the live participant count ("3 participants") once Jamulus connects, rather than the static "—". Shows "Not connected" before first Jamulus update.
+
+---
+
 ## [0.4.1] — 2026-04-24
 
 ### Fixed — Qt Conductor runtime gaps (weekend-usability sprint)

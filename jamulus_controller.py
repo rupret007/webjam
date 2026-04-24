@@ -31,6 +31,7 @@ class JamulusParticipant:
     muted: bool = False
     solo: bool = False
     instrument: str = ""   # as reported by Jamulus JSON-RPC
+    is_local: bool = False  # True for the local Jamulus client (from RPC getClientInfo)
     
 
 class JamulusController:
@@ -105,23 +106,29 @@ class JamulusController:
         """Receive participant list from JSON-RPC (authoritative when available)."""
         normalized: Dict[int, str] = {}
         instrument_map: Dict[int, str] = {}
+        is_local_map: Dict[int, bool] = {}
         for info in channel_infos:
             if hasattr(info, "channel_id"):
                 cid = info.channel_id
                 normalized[cid] = info.name or f"Participant {cid}"
                 instrument_map[cid] = getattr(info, "instrument", "") or ""
+                is_local_map[cid] = bool(getattr(info, "is_local", False))
             elif isinstance(info, dict):
                 cid = info.get("channel_id", -1)
                 if cid >= 0:
                     normalized[cid] = info.get("name") or f"Participant {cid}"
                     instrument_map[cid] = info.get("instrument", "") or ""
+                    is_local_map[cid] = bool(info.get("is_local", False))
         if normalized:
             self._sync_participants_from_protocol(normalized)
-            # Propagate instrument metadata after sync (sync only handles names)
+            # Propagate RPC metadata after sync (sync only handles names)
             with self._participants_lock:
                 for cid, instrument in instrument_map.items():
                     if cid in self.participants:
                         self.participants[cid].instrument = instrument
+                for cid, is_local in is_local_map.items():
+                    if cid in self.participants:
+                        self.participants[cid].is_local = is_local
 
     def _on_rpc_levels(self, levels: Dict[int, float]) -> None:
         """Receive audio levels from JSON-RPC SSE events."""

@@ -131,6 +131,7 @@ class ApplicationController(QObject):
         self._demo_timer.stop()
         self._level_timer.stop()
         self._reconnect_timer.stop()
+        self._save_notes()
         try:
             self.jamulus.stop()
         except Exception:  # noqa: BLE001
@@ -186,10 +187,11 @@ class ApplicationController(QObject):
         self._apply_mode(mode)
         self.window.set_status_audio("Ready to launch")
         self.window.set_status_video("Ready to join")
-        self.window.set_status_latency("—")
+        self.window.set_status_latency("Not connected")
         self.window.set_status_routing("scanning…")
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
+        self._load_notes()
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
@@ -216,6 +218,10 @@ class ApplicationController(QObject):
             # Restore saved mix (best-effort — silently skipped if no file)
             self._restore_saved_mix()
 
+        # Update participant count in status bar
+        n = len(jamulus_participants)
+        self.window.set_status_latency(f"{n} participant{'s' if n != 1 else ''}")
+
         incoming_ids = {p.channel_id for p in jamulus_participants}
 
         # Remove participants that left
@@ -235,12 +241,17 @@ class ApplicationController(QObject):
                     muted=jp.muted,
                     solo=jp.solo,
                     is_connected=jp.is_connected,
-                    is_local=(jp.channel_id == 0),
+                    is_local=getattr(jp, "is_local", jp.channel_id == 0),
                 )
             else:
                 # Preserve fader/mute/solo the user set in WebJam
                 existing.name = jp.name
                 existing.is_connected = jp.is_connected
+                existing.is_local = getattr(jp, "is_local", jp.channel_id == 0)
+                # Refresh role if instrument changed (e.g. mid-session update)
+                new_role = self._role_label(jp)
+                if new_role != existing.role:
+                    existing.role = new_role
 
         self._push_participants_to_grid()
 
@@ -484,8 +495,44 @@ class ApplicationController(QObject):
             self.window.flash_message("Settings saved. Restart WebJam to apply all changes.")
 
     def _on_rail_view_changed(self, key: str) -> None:
+        splitter = self.window.center_splitter
+        total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
         if key == "settings":
             self._open_settings_wizard()
+        elif key in ("stage", "mixer"):
+            # Stage/Mixer: participant grid takes most of the space
+            splitter.setSizes([int(total * 0.72), int(total * 0.28)])
+        elif key == "canvas":
+            # Canvas: expand the notes panel
+            splitter.setSizes([int(total * 0.28), int(total * 0.72)])
+        elif key == "chat":
+            self.window.flash_message("Chat — coming in a future update", ms=3000)
+        elif key == "roles":
+            self.window.flash_message("Role management — coming in a future update", ms=3000)
+
+    # ------------------------------------------------------------------
+    # Session notes persistence
+    # ------------------------------------------------------------------
+    def _load_notes(self) -> None:
+        """Restore session notes from disk (best-effort)."""
+        from pathlib import Path
+        notes_path = Path.home() / ".webjam_notes.md"
+        if notes_path.exists():
+            try:
+                text = notes_path.read_text(encoding="utf-8")
+                self.window.session_canvas.set_notes(text)
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("Could not load session notes", exc_info=True)
+
+    def _save_notes(self) -> None:
+        """Persist current session notes to disk (best-effort)."""
+        from pathlib import Path
+        try:
+            text = self.window.session_canvas.current_notes()
+            if text.strip():
+                (Path.home() / ".webjam_notes.md").write_text(text, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not save session notes", exc_info=True)
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)
