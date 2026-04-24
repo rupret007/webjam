@@ -180,11 +180,9 @@ class BridgeService:
 
                 self.schedule_ui_callback(self.refresh_readiness)
                 if manual:
+                    msg = f"Jamulus launched — connecting to {server}. Participants will appear shortly."
                     self.schedule_ui_callback(
-                        lambda: self.show_message(
-                            "Success",
-                            f"Jamulus launched!\n\nConnecting to: {server}\n\nParticipants will appear in the mixer as they join."
-                        )
+                        lambda m=msg: self.set_status_banner(m)
                     )
 
             except Exception as exc:
@@ -268,12 +266,8 @@ class BridgeService:
                     
                 self.schedule_ui_callback(self.refresh_readiness)
                 if manual:
-                    url = self.settings.webex_url
                     self.schedule_ui_callback(
-                        lambda: self.show_message(
-                            "Webex Opened",
-                            f"Webex meeting opened in your browser:\n\n{url}\n\nJoin the meeting to see and hear other participants."
-                        )
+                        lambda: self.set_status_banner("Webex opened in your browser — join the meeting there to connect with your band.")
                     )
             except Exception as exc:
                 LOGGER.exception("Failed to open Webex: %s", exc)
