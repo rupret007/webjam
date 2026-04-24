@@ -402,9 +402,14 @@ class ApplicationController(QObject):
         self.window.session_strip.set_audio_state(
             "Audio Running" if jamulus_up else "Launch Audio", enabled=True
         )
-        webex_open = self.bridge.webex_state == "Opened in browser"
+        # Recognize all "Webex is active" states: browser-opened AND embedded-join states
+        _WEBEX_ACTIVE_STATES = frozenset({
+            "Opened in browser", "In Meeting", "Joining…",
+            "Video Active", "Lobby", "joining",
+        })
+        webex_open = self.bridge.webex_state in _WEBEX_ACTIVE_STATES
         self.window.session_strip.set_video_state(
-            "Video Opened" if webex_open else "Join Video", enabled=True
+            "Video Active" if webex_open else "Join Video", enabled=True
         )
 
     def _show_actionable_error(self, title: str, *, what_failed: str,
@@ -522,17 +527,31 @@ class ApplicationController(QObject):
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter
         total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
+
+        # Keys that represent actual view changes (persist selection)
+        _CONTENT_KEYS = frozenset({"stage", "mixer", "canvas"})
+
         if key == "settings":
+            # Restore rail to the previous content view before opening wizard
+            prev = getattr(self, "_last_content_key", "stage")
+            self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
-        elif key in ("stage", "mixer"):
-            # Stage/Mixer: participant grid takes most of the space
-            splitter.setSizes([int(total * 0.72), int(total * 0.28)])
-        elif key == "canvas":
-            # Canvas: expand the notes panel
-            splitter.setSizes([int(total * 0.28), int(total * 0.72)])
+        elif key in _CONTENT_KEYS:
+            self._last_content_key = key
+            if key in ("stage", "mixer"):
+                # Stage/Mixer: participant grid takes most of the space
+                splitter.setSizes([int(total * 0.72), int(total * 0.28)])
+            elif key == "canvas":
+                # Canvas: expand the notes panel
+                splitter.setSizes([int(total * 0.28), int(total * 0.72)])
         elif key == "chat":
+            # Flash message and restore the previous content selection
+            prev = getattr(self, "_last_content_key", "stage")
+            self.window.side_rail.set_active_key(prev)
             self.window.flash_message("Chat — coming in a future update", ms=3000)
         elif key == "roles":
+            prev = getattr(self, "_last_content_key", "stage")
+            self.window.side_rail.set_active_key(prev)
             self.window.flash_message("Role management — coming in a future update", ms=3000)
 
     # ------------------------------------------------------------------

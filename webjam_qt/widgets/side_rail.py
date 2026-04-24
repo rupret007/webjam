@@ -84,6 +84,20 @@ class SideRail(QFrame):
 
         layout.addStretch(1)
 
+    def current_key(self) -> str:
+        """Return the key of the currently checked button, or empty string."""
+        for btn in self._group.buttons():
+            if btn.isChecked():
+                return str(btn.property("railKey") or "")
+        return ""
+
+    def set_active_key(self, key: str) -> None:
+        """Programmatically select the button matching ``key``."""
+        for btn in self._group.buttons():
+            if btn.property("railKey") == key:
+                btn.setChecked(True)
+                return
+
     def _on_clicked(self) -> None:
         sender = self.sender()
         if sender is None:

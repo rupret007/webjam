@@ -93,9 +93,7 @@ class SessionStrip(QFrame):
         self._sync_subtitle()
 
         self._audio_button = QPushButton("Launch Audio")
-        self._audio_button.setObjectName("PrimaryButton")
-        self._audio_button.setProperty("class", "PrimaryButton")
-        self._audio_button.setStyleSheet("")  # rely on QSS cascade
+        self._audio_button.setObjectName("AudioButton")
         self._audio_button.setAccessibleName("Launch or stop Jamulus audio")
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 

@@ -197,7 +197,17 @@ class JamulusController:
                 time.sleep(5)
     
     def _check_participants(self):
-        """Check for participant changes via protocol adapter."""
+        """Check for participant changes via UDP protocol adapter.
+
+        When JSON-RPC is available it is the authoritative source —
+        ``_on_rpc_participants`` already keeps ``self.participants`` up-to-date.
+        Running this method on top of RPC would erase participants every
+        second (UDP cache is empty when UDP is disabled) and silently drop
+        any fader/mute/solo changes between RPC poll cycles.
+        """
+        if self.rpc_client.available:
+            return  # RPC is authoritative; UDP participant management not needed
+
         protocol_participants = self.protocol.request_clients()
         if protocol_participants is None:
             return

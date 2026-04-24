@@ -259,10 +259,30 @@ QPushButton#PrimaryButton:disabled {
 QPushButton#AudioButton {
     background-color: ${COLOR_ACCENT_AUDIO};
     color: ${COLOR_TEXT_INVERSE};
+    border: none;
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    font-weight: 600;
+    font-size: ${FONT_SIZE_BASE}px;
 }
 
 QPushButton#AudioButton:hover {
     background-color: #F7BD62;
+}
+
+QPushButton#AudioButton:focus {
+    border: 1px solid ${COLOR_ACCENT_AUDIO};
+    outline: none;
+}
+
+QPushButton#AudioButton:pressed {
+    background-color: #C8800A;
+}
+
+QPushButton#AudioButton:disabled {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_MUTED};
+    border: 1px solid transparent;
 }
 
 QPushButton#GhostButton {

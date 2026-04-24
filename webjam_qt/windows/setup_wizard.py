@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QUrl, Slot
+from PySide6.QtCore import QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -302,8 +302,12 @@ class _WebexPage(QWizardPage):
 # Page 3 — Audio routing
 # ---------------------------------------------------------------------------
 class _RoutingPage(QWizardPage):
+    # Emitted from background scan thread; Qt auto-queues it to the UI thread
+    _scan_complete = Signal()
+
     def __init__(self) -> None:
         super().__init__()
+        self._scan_complete.connect(self._apply_routing)
         self.setTitle("Audio Routing")
         self.setSubTitle(
             "This connects your band's audio into the video call, "
@@ -338,12 +342,9 @@ class _RoutingPage(QWizardPage):
 
         def _scan():
             status = scan_loopback_devices()
-            # Must update UI on main thread — use QMetaObject
-            from PySide6.QtCore import QMetaObject, Qt as _Qt
-            QMetaObject.invokeMethod(
-                self, "_apply_routing", _Qt.ConnectionType.QueuedConnection,
-            )
             self._routing_status = status
+            # Signal emission is thread-safe; Qt will queue it to the UI thread
+            self._scan_complete.emit()
 
         self._routing_status = None
         self._scan_thread = threading.Thread(target=_scan, daemon=True)
