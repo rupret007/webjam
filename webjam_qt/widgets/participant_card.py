@@ -96,7 +96,10 @@ class ParticipantCard(QFrame):
         self._fader.setValue(presentation.fader_level)
         self._fader.setTracking(True)
         self._fader.setAccessibleName("Volume fader")
+        self._fader.setToolTip("Volume fader — double-click to reset to 0 dB")
         self._fader.valueChanged.connect(self._on_fader_value_changed)
+        # Double-click resets fader to 0 dB (level 100 = unity gain)
+        self._fader.mouseDoubleClickEvent = lambda _: self._reset_fader()
 
         self._mute_button = QPushButton("MUTE")
         self._mute_button.setObjectName("PillButton")
@@ -206,6 +209,10 @@ class ParticipantCard(QFrame):
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
+    def _reset_fader(self) -> None:
+        """Double-click handler — reset fader to unity gain (0 dB = level 100)."""
+        self._fader.setValue(100)
+
     def _on_fader_value_changed(self, value: int) -> None:
         self._presentation.fader_level = value
         self._fader_value.setText(self._format_fader(value))
