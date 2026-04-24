@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, Optional
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QLayout,
     QScrollArea,
@@ -120,6 +120,11 @@ class ParticipantGrid(QScrollArea):
     re-emitted here so the controller can connect to one place.
     """
 
+    # Re-emitted from child ParticipantCards so the controller wires up once
+    fader_changed = Signal(int, int)    # channel_id, level
+    mute_toggled  = Signal(int, bool)   # channel_id, muted
+    solo_toggled  = Signal(int, bool)   # channel_id, solo
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -172,6 +177,10 @@ class ParticipantGrid(QScrollArea):
     # ------------------------------------------------------------------
     def _add_card(self, presentation: ParticipantPresentation) -> None:
         card = ParticipantCard(presentation)
+        # Re-emit card signals at the grid level so the controller connects once
+        card.fader_changed.connect(self.fader_changed)
+        card.mute_toggled.connect(self.mute_toggled)
+        card.solo_toggled.connect(self.solo_toggled)
         self._flow.addWidget(card)
         self._cards[presentation.channel_id] = card
 

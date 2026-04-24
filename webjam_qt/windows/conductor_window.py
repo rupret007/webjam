@@ -145,6 +145,9 @@ class ConductorWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._exit_fullscreen)
         # Cmd/Ctrl+, — open settings wizard (signal consumed by controller)
         self._settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+        # Cmd/Ctrl+S — save mix; Cmd/Ctrl+O — load mix (consumed by controller)
+        self._save_mix_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self._load_mix_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

@@ -110,6 +110,12 @@ class ApplicationController(QObject):
         self._level_timer.setInterval(self._LEVEL_POLL_MS)
         self._level_timer.timeout.connect(self._poll_levels)
 
+        # Auto-reconnect: poll BridgeService every 3 s to retry dropped services
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setInterval(3_000)
+        self._reconnect_timer.timeout.connect(self._on_reconnect_tick)
+        self._reconnect_timer.start()
+
         # Register real participant callback
         self.jamulus.register_callback(self._on_jamulus_participants)
 
@@ -124,6 +130,7 @@ class ApplicationController(QObject):
         self._shutdown = True
         self._demo_timer.stop()
         self._level_timer.stop()
+        self._reconnect_timer.stop()
         try:
             self.jamulus.stop()
         except Exception:  # noqa: BLE001
@@ -151,10 +158,15 @@ class ApplicationController(QObject):
         self.window._settings_shortcut.activated.connect(self._open_settings_wizard)
         self.window.side_rail.view_changed.connect(self._on_rail_view_changed)
 
-    def _connect_card_signals(self, card) -> None:
-        card.fader_changed.connect(self._on_fader_changed)
-        card.mute_toggled.connect(self._on_mute_toggled)
-        card.solo_toggled.connect(self._on_solo_toggled)
+        # Participant grid re-emits card signals — connect once here
+        grid = self.window.participant_grid
+        grid.fader_changed.connect(self._on_fader_changed)
+        grid.mute_toggled.connect(self._on_mute_toggled)
+        grid.solo_toggled.connect(self._on_solo_toggled)
+
+        # Save/Load mix shortcuts
+        self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
+        self.window._load_mix_shortcut.activated.connect(self._on_load_mix)
 
     def _bootstrap_ui(self) -> None:
         for p in _DEMO_PARTICIPANTS:
@@ -181,8 +193,6 @@ class ApplicationController(QObject):
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
-        for card in self.window.participant_grid.cards():
-            self._connect_card_signals(card)
 
     # ------------------------------------------------------------------
     # Real Jamulus participant callback (called from background thread)
@@ -203,6 +213,8 @@ class ApplicationController(QObject):
             self.participants.clear()
             # Start polling real audio engine levels
             self._level_timer.start()
+            # Restore saved mix (best-effort — silently skipped if no file)
+            self._restore_saved_mix()
 
         incoming_ids = {p.channel_id for p in jamulus_participants}
 
@@ -393,6 +405,62 @@ class ApplicationController(QObject):
 
     def _show_message(self, title: str, message: str) -> None:
         QMessageBox.information(self.window, title, message)
+
+    # ------------------------------------------------------------------
+    # Auto-reconnect
+    # ------------------------------------------------------------------
+    def _on_reconnect_tick(self) -> None:
+        """Called every 3 s; lets BridgeService retry dropped services."""
+        self.bridge.attempt_auto_reconnects()
+
+    # ------------------------------------------------------------------
+    # Save / Load mix (Ctrl+S / Ctrl+O)
+    # ------------------------------------------------------------------
+    def _on_save_mix(self) -> None:
+        """Serialize current mixer state to ~/.webjam_mix.json."""
+        import json
+        from pathlib import Path
+        try:
+            payload = self.jamulus.serialize_mix()
+            mix_path = Path.home() / ".webjam_mix.json"
+            mix_path.write_text(json.dumps(payload, indent=2))
+            LOGGER.info("Mix saved to %s", mix_path)
+            self.window.flash_message("Mix saved  ·  Ctrl+O to restore")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to save mix")
+            self.window.flash_message("Save failed — see logs")
+
+    def _on_load_mix(self) -> None:
+        """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
+        import json
+        from pathlib import Path
+        mix_path = Path.home() / ".webjam_mix.json"
+        if not mix_path.exists():
+            self.window.flash_message("No saved mix found  ·  Ctrl+S to save one")
+            return
+        try:
+            payload = json.loads(mix_path.read_text())
+            self.jamulus.apply_mix_data(payload)
+            LOGGER.info("Mix loaded from %s", mix_path)
+            self.window.flash_message("Mix loaded")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to load mix")
+            self.window.flash_message("Load failed — see logs")
+
+    def _restore_saved_mix(self) -> None:
+        """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
+        import json
+        from pathlib import Path
+        mix_path = Path.home() / ".webjam_mix.json"
+        if not mix_path.exists():
+            return
+        try:
+            payload = json.loads(mix_path.read_text())
+            self.jamulus.apply_mix_data(payload)
+            LOGGER.info("Restored saved mix from %s", mix_path)
+            self.window.flash_message("Mix restored from saved state")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to restore saved mix from %s", mix_path)
 
     # ------------------------------------------------------------------
     # Settings wizard (Phase 6)
