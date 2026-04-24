@@ -37,6 +37,7 @@ class SessionStrip(QFrame):
     session_title_changed = Signal(str)
     launch_audio_requested = Signal()
     join_video_requested = Signal()
+    mute_self_requested = Signal()      # toggle local-user mute
 
     STRIP_HEIGHT = 72
 
@@ -101,6 +102,16 @@ class SessionStrip(QFrame):
         )
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 
+        self._mute_self_button = QPushButton("Mute Me")
+        self._mute_self_button.setObjectName("GhostButton")
+        self._mute_self_button.setCheckable(True)
+        self._mute_self_button.setAccessibleName("Mute or unmute yourself")
+        self._mute_self_button.setToolTip(
+            "Toggle mute on your own channel.\n"
+            "Quickly silence yourself when answering a phone or talking off-mic."
+        )
+        self._mute_self_button.clicked.connect(self.mute_self_requested.emit)
+
         self._video_button = QPushButton("Join Video")
         self._video_button.setObjectName("PrimaryButton")
         self._video_button.setAccessibleName("Join or leave Webex video")
@@ -126,6 +137,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._record_dot)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
+        layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
         layout.addWidget(self._video_button)
 
@@ -155,6 +167,14 @@ class SessionStrip(QFrame):
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
         self._video_button.setText(label)
         self._video_button.setEnabled(enabled)
+
+    def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
+        """Update the 'Mute Me' button state without emitting signals."""
+        self._mute_self_button.blockSignals(True)
+        self._mute_self_button.setChecked(muted)
+        self._mute_self_button.setText("Unmute Me" if muted else "Mute Me")
+        self._mute_self_button.setEnabled(enabled)
+        self._mute_self_button.blockSignals(False)
 
     def current_mode_key(self) -> str:
         return self._mode_picker.currentData() or ""

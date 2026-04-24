@@ -155,6 +155,8 @@ class ConductorWindow(QMainWindow):
         )
         # Cmd/Ctrl+M — mute / unmute all (consumed by controller)
         self._mute_all_shortcut = QShortcut(QKeySequence("Ctrl+M"), self)
+        # Cmd/Ctrl+Shift+M — toggle mute on the local user's channel
+        self._mute_self_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
         # F1 — show help dialog
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
 
@@ -169,6 +171,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state<br>"
             "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state<br>"
             "&nbsp;&nbsp;<b>Ctrl+M</b> — Mute / unmute all<br>"
+            "&nbsp;&nbsp;<b>Ctrl+Shift+M</b> — Mute / unmute yourself<br>"
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
             "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
             "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"

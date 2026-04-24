@@ -109,5 +109,60 @@ class TestToggleButtonState(unittest.TestCase):
         self.assertIn(str(self.controller.settings.jamulus_port), text)
 
 
+class TestMuteSelf(unittest.TestCase):
+    """Test the SessionStrip 'Mute Me' button behaviour."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.window = ConductorWindow(
+            mode_entries=ApplicationController.mode_entries(),
+            initial_mode_key="music_jam",
+            initial_title="Test",
+        )
+        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.controller.shutdown()
+
+    def setUp(self):
+        # Reset demo participants before each test so state is consistent
+        self.controller._reset_to_demo_state()
+
+    def test_mute_self_with_local_user_toggles_mute(self):
+        # Demo participants include a local user at channel_id 0
+        local = self.controller.participants[0]
+        self.assertTrue(local.is_local)
+        self.assertFalse(local.muted)
+
+        self.controller._on_mute_self()
+
+        self.assertTrue(self.controller.participants[0].muted)
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Unmute Me"
+        )
+        self.assertTrue(self.window.session_strip._mute_self_button.isChecked())
+
+    def test_mute_self_unmutes_when_already_muted(self):
+        # First mute, then unmute
+        self.controller._on_mute_self()
+        self.controller._on_mute_self()
+
+        self.assertFalse(self.controller.participants[0].muted)
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Mute Me"
+        )
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+    def test_sync_self_mute_button_reflects_local_user_mute_state(self):
+        self.controller.participants[0].muted = True
+        self.controller._sync_self_mute_button()
+        self.assertTrue(self.window.session_strip._mute_self_button.isChecked())
+
+        self.controller.participants[0].muted = False
+        self.controller._sync_self_mute_button()
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+
 if __name__ == "__main__":
     unittest.main()

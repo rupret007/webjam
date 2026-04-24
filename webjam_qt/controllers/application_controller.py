@@ -156,6 +156,7 @@ class ApplicationController(QObject):
         strip.session_title_changed.connect(self._on_title_changed)
         strip.launch_audio_requested.connect(self._on_launch_audio)
         strip.join_video_requested.connect(self._on_join_video)
+        strip.mute_self_requested.connect(self._on_mute_self)
         # Fallback button opens Webex in the system browser when embed unavailable
         self.window.webex_embed.fallback_button().clicked.connect(
             lambda: self.bridge.launch_webex(manual=True)
@@ -176,6 +177,8 @@ class ApplicationController(QObject):
         self.window._load_mix_shortcut.activated.connect(self._on_load_mix)
         # Mute all shortcut
         self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
+        # Mute-self shortcut
+        self.window._mute_self_shortcut.activated.connect(self._on_mute_self)
 
     def _bootstrap_ui(self) -> None:
         for p in _DEMO_PARTICIPANTS:
@@ -203,6 +206,14 @@ class ApplicationController(QObject):
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
+        self._sync_self_mute_button()
+
+    def _sync_self_mute_button(self) -> None:
+        """Update the SessionStrip 'Mute Me' button to match local-user mute state."""
+        for p in self.participants.values():
+            if p.is_local:
+                self.window.session_strip.set_self_muted(p.muted)
+                return
 
     # ------------------------------------------------------------------
     # Real Jamulus participant callback (called from background thread)
@@ -455,6 +466,9 @@ class ApplicationController(QObject):
         p = self.participants.get(channel_id)
         if p is not None:
             p.muted = muted
+            # Keep the strip's "Mute Me" button in sync if this was the local user.
+            if p.is_local:
+                self.window.session_strip.set_self_muted(muted)
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
 
@@ -553,6 +567,37 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Save / Load mix (Ctrl+S / Ctrl+O)
     # ------------------------------------------------------------------
+    def _on_mute_self(self) -> None:
+        """Toggle mute on the local user's channel.
+
+        Quick way for the conductor to silence themselves during a session
+        (e.g. answering a phone, talking off-mic) without finding their card
+        in the participant grid.
+        """
+        local_channel_id: Optional[int] = None
+        for cid, p in self.participants.items():
+            if p.is_local:
+                local_channel_id = cid
+                break
+        if local_channel_id is None:
+            self.window.flash_message(
+                "Connect to Jamulus first — your channel isn't available yet.",
+                ms=4000,
+            )
+            # Reset the button to unchecked since we didn't actually mute
+            self.window.session_strip.set_self_muted(False)
+            return
+        p = self.participants[local_channel_id]
+        new_muted = not p.muted
+        p.muted = new_muted
+        if self._jamulus_connected:
+            self.jamulus.set_mute(local_channel_id, new_muted)
+        self._push_participants_to_grid()
+        self.window.session_strip.set_self_muted(new_muted)
+        self.window.flash_message(
+            "You are muted." if new_muted else "You are unmuted.", ms=2500,
+        )
+
     def _on_mute_all(self) -> None:
         """Ctrl+M — toggle mute state for every participant.
 
