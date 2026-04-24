@@ -469,7 +469,11 @@ class ApplicationController(QObject):
     def _show_actionable_error(self, title: str, *, what_failed: str,
                                 likely_cause: str, next_action: str,
                                 retry_callback=None) -> None:
-        body = f"{what_failed}\n\nLikely cause: {likely_cause}\n\nNext action: {next_action}"
+        body = (
+            f"{what_failed}\n\nLikely cause: {likely_cause}\n\n"
+            f"Next action: {next_action}\n\n"
+            f"For details, see the log file:\n  {self.settings.log_file}"
+        )
         box = QMessageBox(self.window)
         box.setWindowTitle(title)
         box.setText(body)

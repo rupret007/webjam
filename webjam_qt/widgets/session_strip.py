@@ -95,11 +95,19 @@ class SessionStrip(QFrame):
         self._audio_button = QPushButton("Launch Audio")
         self._audio_button.setObjectName("AudioButton")
         self._audio_button.setAccessibleName("Launch or stop Jamulus audio")
+        self._audio_button.setToolTip(
+            "Launch Jamulus and connect to the band's server.\n"
+            "Click again to stop. Audio settings live in Settings (Ctrl+,)."
+        )
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 
         self._video_button = QPushButton("Join Video")
         self._video_button.setObjectName("PrimaryButton")
         self._video_button.setAccessibleName("Join or leave Webex video")
+        self._video_button.setToolTip(
+            "Open the band's Webex meeting in the embedded video pane.\n"
+            "Click again to leave the meeting."
+        )
         self._video_button.clicked.connect(self.join_video_requested.emit)
 
         # --- Layout
