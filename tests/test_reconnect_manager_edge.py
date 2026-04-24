@@ -383,6 +383,49 @@ class TestLeaveWebex(unittest.TestCase):
         self.assertEqual(bridge.webex_reconnect_attempts, 0)
         bridge.webex_controller.leave_meeting.assert_called_once()
 
+    def test_leave_webex_swallows_controller_errors(self):
+        """If webex_controller.leave_meeting raises, state is still reset."""
+        bridge = _make_bridge()
+        bridge.webex_state = "In Meeting"
+        bridge.webex_controller.leave_meeting.side_effect = RuntimeError("boom")
+
+        # Should not raise
+        bridge.leave_webex()
+
+        self.assertEqual(bridge.webex_state, "Not opened")
+
+
+class TestShutdownKillsJamulus(unittest.TestCase):
+    """Regression test: app close must terminate Jamulus subprocess."""
+
+    def test_stop_jamulus_works_after_user_clicked_stop(self):
+        """Calling stop_jamulus twice in a row is safe (idempotent)."""
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        bridge.jamulus_process = proc
+
+        bridge.stop_jamulus()
+        bridge.stop_jamulus()  # second call — no process to terminate
+
+        # First call terminated; second no-ops
+        proc.terminate.assert_called_once()
+        self.assertEqual(bridge.jamulus_state, "Stopped")
+
+    def test_stop_jamulus_when_process_already_exited(self):
+        """If proc.poll() returns non-None (already dead), no terminate call."""
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = 0  # already exited
+        bridge.jamulus_process = proc
+
+        result = bridge.stop_jamulus()
+
+        self.assertFalse(result)
+        proc.terminate.assert_not_called()
+        self.assertIsNone(bridge.jamulus_process)
+        self.assertEqual(bridge.jamulus_state, "Stopped")
+
 
 if __name__ == "__main__":
     unittest.main()
