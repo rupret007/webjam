@@ -33,9 +33,15 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **Reconnect-banner latch** (`application_controller.py::_stop_audio`): The `_reconnect_banner_shown` flag was set True on Jamulus crash and reset only when state went back to "Running". If the user clicked "Stop Audio" during reconnect attempts, the latch stayed True and future crash banners were silent. Cleared in `_stop_audio` so subsequent crashes flash again.
 
 #### Tests
-- **`tests/test_application_controller_toggle.py`** — 12 new tests for `_is_jamulus_running`, `_is_video_active` predicates, button-label transitions, and server:port appearing in the status bar.
+- **`tests/test_application_controller_toggle.py`** — 15 tests for `_is_jamulus_running`, `_is_video_active` predicates, button-label transitions, server:port in status bar, and self-mute behaviour.
 - **`tests/test_reconnect_manager_edge.py`** — 8 new tests for `stop_jamulus` (terminate, force-kill, idempotency, dead-process), `leave_webex` (state reset, swallow controller errors).
-- Suite total: **513 pass, 12 skipped**.
+- **`tests/test_qt_setup_wizard.py`** — 2 new tests for forgiving Webex URL validation (auto-prepend, scheme-prefixed bare-word rejection).
+- Suite total: **518 pass, 12 skipped**.
+
+#### More live-session quality-of-life
+- **'Mute Me' button + Ctrl+Shift+M** (`webjam_qt/widgets/session_strip.py`, `application_controller.py::_on_mute_self`): A new ghost button between the mode picker and audio button toggles mute on the local user's channel, with a Ctrl+Shift+M keyboard shortcut. Useful when the conductor needs to silence themselves quickly (answering a phone, talking off-mic) without finding their card in the grid. The button syncs in both directions with the local-user card's MUTE button.
+- **Restore demos after Stop Audio** (`application_controller.py::_reset_to_demo_state`): When the user clicks Stop Audio, the (now-stale) real-participant cards are replaced with the demo placeholders and the demo-level animation restarts. The status-bar latency label resets to "Not connected". Gives a clear visual signal that audio is off.
+- **Forgiving Webex URL validation** (`webjam_qt/windows/setup_wizard.py::_WebexPage.validatePage`): If the user types `org.webex.com/meet/foo` without a scheme, the wizard auto-prepends `https://` rather than silently refusing to advance. Bare words like "not-a-url" still fail (the auto-prepend only triggers on inputs containing a dot before any slash, and a final netloc-dot check rejects scheme-prefixed bare words too).
 
 ---
 
