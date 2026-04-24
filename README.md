@@ -79,11 +79,12 @@ Environment overrides:
 | **Ctrl+L** | Focus / edit the session title |
 | **Ctrl+S** | Save current mixer state to `~/.webjam_mix.json` |
 | **Ctrl+O** | Load and apply saved mix from `~/.webjam_mix.json` |
+| **Ctrl+T** | Insert timestamp heading into Session Canvas |
 | **Ctrl+,** | Open Settings wizard |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
 
-The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The Settings panel is in the side rail. Saved mixes are auto-restored when Jamulus first connects.
+The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The left rail switches between Stage/Mixer view, Canvas view, and Settings. Session notes are saved to `~/.webjam_notes.md` on exit and restored automatically on next launch. Saved mixes are auto-restored when Jamulus first connects.
 
 ---
 

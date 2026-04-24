@@ -43,8 +43,11 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **`is_local` from Jamulus RPC**: `JamulusParticipant.is_local` field added and propagated from `ChannelInfo.is_local` (which is resolved via `getClientInfo` RPC). `ApplicationController._apply_jamulus_participants` uses the real flag instead of the `channel_id == 0` heuristic. Existing participants also get `is_local` refreshed on every RPC poll.
 - **Role label refreshes for existing participants**: when an existing participant's instrument changes (e.g. mid-session Jamulus settings update), the role label is now updated in `self.participants` before the grid refresh, so the card reflects the new instrument.
 
-#### Notes persistence
-- **Session notes saved on exit**: `_load_notes` runs on startup, reading `~/.webjam_notes.md` into the canvas; `_save_notes` runs in `shutdown()` to write the canvas text back. Notes survive app restarts within a session.
+#### Session canvas
+- **Notes persist across launches**: `_load_notes` runs on startup, reading `~/.webjam_notes.md` into the canvas; `_save_notes` runs in `shutdown()` to write it back. Notes survive app restarts.
+- **Timestamp button + Ctrl+T**: inserts the current time as a Markdown heading (`## HH:MM:SS`) at the cursor — useful for logging key moments during a session.
+- **Export… button**: opens a Save-file dialog so you can write the session notes as a dated `.md` file (e.g. `webjam_session_2026-04-24.md`).
+- **Clear button**: clears all notes after a confirmation prompt.
 
 #### Status bar
 - **Participant count replaces "—"**: the Latency status label now shows the live participant count ("3 participants") once Jamulus connects, rather than the static "—". Shows "Not connected" before first Jamulus update.

@@ -148,6 +148,11 @@ class ConductorWindow(QMainWindow):
         # Cmd/Ctrl+S — save mix; Cmd/Ctrl+O — load mix (consumed by controller)
         self._save_mix_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         self._load_mix_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        # Cmd/Ctrl+T — insert timestamp into session canvas
+        QShortcut(
+            QKeySequence("Ctrl+T"), self,
+            lambda: self.session_canvas.insert_timestamp(),
+        )
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

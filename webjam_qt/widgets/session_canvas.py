@@ -7,12 +7,18 @@ Phase 1 lands a simple notes field; artifacts/timeline arrive later.
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QSizePolicy,
     QTextEdit,
     QVBoxLayout,
@@ -26,7 +32,7 @@ class SessionCanvas(QFrame):
     """
     Right-rail notes surface.
 
-    Phase 1: free-form notes saved to the application controller.
+    Phase 1: free-form notes with timestamp / export / clear actions.
     Phase 2+: time-linked notes, pinned references, review state, export brief.
     """
 
@@ -43,11 +49,36 @@ class SessionCanvas(QFrame):
         header = QLabel("Session Canvas")
         header.setObjectName("CanvasHeader")
 
+        # Action buttons in a compact row
+        ts_btn = QPushButton("+ Time")
+        ts_btn.setObjectName("GhostButton")
+        ts_btn.setToolTip("Insert current timestamp as a heading (Ctrl+T)")
+        ts_btn.clicked.connect(self.insert_timestamp)
+
+        export_btn = QPushButton("Export…")
+        export_btn.setObjectName("GhostButton")
+        export_btn.setToolTip("Save notes to a file")
+        export_btn.clicked.connect(self.export_notes)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setObjectName("GhostButton")
+        clear_btn.setToolTip("Clear all notes")
+        clear_btn.clicked.connect(self._on_clear)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(Space.XS)
+        btn_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
+        btn_row.addWidget(ts_btn)
+        btn_row.addWidget(export_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(clear_btn)
+
         self._notes = QTextEdit()
         self._notes.setObjectName("CanvasNotes")
         self._notes.setPlaceholderText(
             "Capture what matters:\n"
             "  · decisions made\n"
+            "  · chord progressions / lyrics\n"
             "  · links and references\n"
             "  · next session's starting point"
         )
@@ -57,6 +88,7 @@ class SessionCanvas(QFrame):
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
         layout.addWidget(header)
+        layout.addLayout(btn_row)
         layout.addWidget(self._notes, stretch=1)
 
     # ------------------------------------------------------------------
@@ -72,8 +104,49 @@ class SessionCanvas(QFrame):
     def current_notes(self) -> str:
         return self._notes.toPlainText()
 
+    def insert_timestamp(self) -> None:
+        """Insert the current time as a Markdown heading at the cursor."""
+        ts = datetime.now().strftime("## %H:%M:%S")
+        cursor = self._notes.textCursor()
+        # If not at start of a line, prepend a newline
+        text_before = self._notes.toPlainText()[: cursor.position()]
+        if text_before and not text_before.endswith("\n"):
+            ts = f"\n{ts}"
+        cursor.insertText(f"{ts}\n")
+        self._notes.setTextCursor(cursor)
+        self._notes.setFocus()
+
+    def export_notes(self) -> None:
+        """Prompt the user to save current notes to a file."""
+        text = self.current_notes().strip()
+        if not text:
+            return
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        default_name = f"webjam_session_{date_str}.md"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Session Notes", default_name,
+            "Markdown (*.md);;Text files (*.txt);;All files (*)"
+        )
+        if path:
+            try:
+                Path(path).write_text(text, encoding="utf-8")
+            except OSError:
+                pass  # Silently skip — caller can't easily show an error here
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _on_clear(self) -> None:
+        if not self._notes.toPlainText().strip():
+            return
+        reply = QMessageBox.question(
+            self, "Clear notes?",
+            "Clear all session notes?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._notes.clear()
+
     def _on_text_changed(self) -> None:
         self.notes_changed.emit(self._notes.toPlainText())
