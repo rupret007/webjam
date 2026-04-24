@@ -83,12 +83,14 @@ class BridgeService:
                 return
                 
             self.metrics_service.increment("metric_jamulus_launch_failed")
+            self.jamulus_state = "Not found"
+            self.schedule_ui_callback(self.refresh_readiness)
             self.show_actionable_error(
                 "Jamulus Not Found",
-                what_failed="WebJam could not locate Jamulus.exe.",
-                likely_cause="Jamulus is not installed in a default location.",
-                next_action="Run setup wizard and install Jamulus, then retry launch.",
-                retry_callback=None, # Caller should handle wizard trigger
+                what_failed="WebJam could not locate the Jamulus executable.",
+                likely_cause="Jamulus is not installed or is in a non-default location.",
+                next_action="Open Settings (Ctrl+,), set the Jamulus executable path, then retry.",
+                retry_callback=None,
             )
             return
 
