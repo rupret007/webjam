@@ -37,13 +37,14 @@ from webjam_qt.windows.conductor_window import ConductorWindow
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
-# Demo participants shown before Jamulus connects
+# Demo participants shown before Jamulus connects.  Names are deliberately
+# labelled "Preview" so users don't mistake them for saved band-member data.
 _DEMO_PARTICIPANTS = [
-    ParticipantPresentation(channel_id=0, name="You",    role="You · Drums",     fader_level=100, is_local=True),
-    ParticipantPresentation(channel_id=1, name="Dylan",  role="Guitar",          fader_level=96),
-    ParticipantPresentation(channel_id=2, name="Andrea", role="Bass",            fader_level=104),
-    ParticipantPresentation(channel_id=3, name="Brian",  role="Vocals",          fader_level=110),
-    ParticipantPresentation(channel_id=4, name="Jesse",  role="Keys",            fader_level=88),
+    ParticipantPresentation(channel_id=0, name="You",         role="Preview · You",     fader_level=100, is_local=True),
+    ParticipantPresentation(channel_id=1, name="Sample 1",    role="Preview · Guitar",  fader_level=96),
+    ParticipantPresentation(channel_id=2, name="Sample 2",    role="Preview · Bass",    fader_level=104),
+    ParticipantPresentation(channel_id=3, name="Sample 3",    role="Preview · Vocals",  fader_level=110),
+    ParticipantPresentation(channel_id=4, name="Sample 4",    role="Preview · Keys",    fader_level=88),
 ]
 
 
