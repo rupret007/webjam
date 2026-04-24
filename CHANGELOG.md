@@ -4,6 +4,21 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.3] — 2026-04-24
+
+### Fixed — Critical mixer reliability + 4 UX improvements
+
+#### Critical: mixer commands no longer silently dropped
+- **`_check_participants` bypassed when RPC is active** (`jamulus_controller.py`): The UDP monitor loop ran every second and used the protocol adapter's cached participant list, which is always empty when UDP is disabled. This wiped `JamulusController.participants` each second, causing fader/mute/solo commands to hit an empty dict and be silently dropped between 5-second RPC poll cycles. Added an early-return guard matching the existing guard in `_on_udp_participants`.
+
+#### UX
+- **Audio button is now gold, video button is teal** (`session_strip.py`, `conductor.qss`): Both action buttons previously used the same teal "PrimaryButton" style. The audio button now uses the `AudioButton` objectName, rendering gold — visually distinguishing "Launch Audio" from "Join Video" at a glance. The `AudioButton` QSS rule is extended with a full set of states (border, padding, focus, pressed, disabled) since QSS has no inheritance within selectors.
+- **Embedded Webex join keeps "Video Active" label** (`application_controller.py`): `_refresh_readiness` checked for the bridge-state string `"Opened in browser"` only. After an embedded `QWebEngineView` join, the bridge state becomes `"In Meeting"`, `"Joining…"`, etc. The reconnect timer would then reset the video button to `"Join Video"`. The check now uses a frozen set of all active states.
+- **SideRail selection restored after modal actions** (`side_rail.py`, `application_controller.py`): Clicking "Chat", "Roles", or "Settings" in the side rail used to leave that item checked even though the view didn't change, making the nav rail misleading. The controller now tracks the last active content key and restores the rail selection after any modal/placeholder action. `SideRail` gains `current_key()` and `set_active_key(key)` helpers.
+- **Setup wizard routing scan uses Signal, not `QMetaObject.invokeMethod`** (`setup_wizard.py`): The background routing scan used `QMetaObject.invokeMethod(self, "_apply_routing", QueuedConnection)` to marshal back to the UI thread, which can silently fail in PySide6 for Python-defined slots. Replaced with a class-level `_scan_complete = Signal()` connected to `_apply_routing` — signal emission across threads is always safe.
+
+---
+
 ## [0.4.0] — 2026-04-24
 
 ### Fixed — Jamulus mixer RPC signal chain
