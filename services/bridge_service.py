@@ -104,7 +104,11 @@ class BridgeService:
                 "Jamulus Not Found",
                 what_failed="WebJam could not locate the Jamulus executable.",
                 likely_cause="Jamulus is not installed or is in a non-default location.",
-                next_action="Open Settings (Ctrl+,), set the Jamulus executable path, then retry.",
+                next_action=(
+                    "Download Jamulus (free) from https://jamulus.io and install it. "
+                    "If it's already installed in a custom location, open Settings (Ctrl+,) "
+                    "and set the Jamulus executable path."
+                ),
                 retry_callback=None,
             )
             return
