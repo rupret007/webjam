@@ -168,6 +168,8 @@ class ApplicationController(QObject):
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
         self.window._load_mix_shortcut.activated.connect(self._on_load_mix)
+        # Mute all shortcut
+        self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
 
     def _bootstrap_ui(self) -> None:
         for p in _DEMO_PARTICIPANTS:
@@ -437,6 +439,26 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Save / Load mix (Ctrl+S / Ctrl+O)
     # ------------------------------------------------------------------
+    def _on_mute_all(self) -> None:
+        """Ctrl+M — toggle mute state for every participant.
+
+        If any channel is unmuted, mute all. If all are already muted, unmute all.
+        Skips participants that are currently soloed (solo mutes others implicitly).
+        """
+        if not self.participants:
+            return
+        any_unmuted = any(not p.muted for p in self.participants.values())
+        target_muted = any_unmuted  # mute all if anything is playing; unmute if all silent
+        for channel_id, p in self.participants.items():
+            if p.muted != target_muted:
+                p.muted = target_muted
+                if self._jamulus_connected:
+                    self.jamulus.set_mute(channel_id, target_muted)
+        # Push updated state to grid so buttons reflect the change
+        self._push_participants_to_grid()
+        verb = "Muted" if target_muted else "Unmuted"
+        self.window.flash_message(f"{verb} all participants  ·  Ctrl+M to toggle")
+
     def _on_save_mix(self) -> None:
         """Serialize current mixer state to ~/.webjam_mix.json."""
         import json
@@ -490,10 +512,12 @@ class ApplicationController(QObject):
         from webjam_qt.windows.setup_wizard import SetupWizard
         wizard = SetupWizard(self.settings, parent=self.window)
         if wizard.exec() == SetupWizard.DialogCode.Accepted:
-            # Reload settings and apply live-changeable values
             from core.settings import load_settings
             self.settings = load_settings()
-            self.window.flash_message("Settings saved. Restart WebJam to apply all changes.")
+            # Push new settings to services immediately so the next Launch Audio
+            # or Join Video uses the updated server / Jamulus path / Webex URL.
+            self.bridge.settings = self.settings
+            self.window.flash_message("Settings saved — take effect on next Launch Audio / Join Video.")
 
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter

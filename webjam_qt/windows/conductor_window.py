@@ -153,6 +153,8 @@ class ConductorWindow(QMainWindow):
             QKeySequence("Ctrl+T"), self,
             lambda: self.session_canvas.insert_timestamp(),
         )
+        # Cmd/Ctrl+M — mute / unmute all (consumed by controller)
+        self._mute_all_shortcut = QShortcut(QKeySequence("Ctrl+M"), self)
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

@@ -79,6 +79,7 @@ Environment overrides:
 | **Ctrl+L** | Focus / edit the session title |
 | **Ctrl+S** | Save current mixer state to `~/.webjam_mix.json` |
 | **Ctrl+O** | Load and apply saved mix from `~/.webjam_mix.json` |
+| **Ctrl+M** | Mute all / Unmute all (toggles) |
 | **Ctrl+T** | Insert timestamp heading into Session Canvas |
 | **Ctrl+,** | Open Settings wizard |
 | **F11** | Toggle fullscreen |
