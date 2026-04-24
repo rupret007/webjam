@@ -54,10 +54,25 @@ class BridgeService:
         self._reconnect_lock = threading.Lock()
 
     def find_jamulus(self):
-        """Find Jamulus installation based on candidate paths in settings."""
+        """Find Jamulus installation.
+
+        Checks user-configured candidates first, then falls back to the
+        AppSettings default candidates so that a config file written before
+        macOS/Linux paths were added still works.
+        """
+        from core.settings import AppSettings
+        checked: set[str] = set()
         for path in self.settings.jamulus_candidates:
-            if Path(path).exists():
-                return path
+            if path not in checked:
+                checked.add(path)
+                if Path(path).exists():
+                    return path
+        # Fallback: check any default candidate not already tried
+        for path in AppSettings().jamulus_candidates:
+            if path not in checked:
+                checked.add(path)
+                if Path(path).exists():
+                    return path
         return None
 
     def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
