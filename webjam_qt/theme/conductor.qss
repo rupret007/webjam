@@ -137,10 +137,18 @@ QToolButton#SideRailButton:focus {
     border: 2px solid ${COLOR_ACCENT_AUDIO};
 }
 
+/* Thin accent bar at the top of each participant card.
+ * Per-channel video isn't implemented yet; the bar is purely visual.
+ * When per-channel video lands, the tile will grow back into a video
+ * surface and the rounded corners can be enlarged again. */
 #VideoTile {
-    background-color: #000;
+    background-color: ${COLOR_ACCENT_VIDEO};
     border-top-left-radius: ${RADIUS_LG}px;
     border-top-right-radius: ${RADIUS_LG}px;
+}
+
+#ParticipantCard[local="true"] #VideoTile {
+    background-color: ${COLOR_ACCENT_AUDIO};  /* gold accent for the local user */
 }
 
 #VideoPlaceholder {

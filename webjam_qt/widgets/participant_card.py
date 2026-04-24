@@ -62,7 +62,7 @@ class ParticipantCard(QFrame):
     solo_toggled = Signal(int, bool)    # channel_id, solo
 
     CARD_MIN_WIDTH = 260
-    CARD_MIN_HEIGHT = 220
+    CARD_MIN_HEIGHT = 150  # was 220 — video tile is now a thin accent bar
 
     def __init__(
         self,
@@ -154,19 +154,18 @@ class ParticipantCard(QFrame):
     # Construction helpers
     # ------------------------------------------------------------------
     def _build_video_tile(self) -> QWidget:
+        """Thin accent bar at the top of the card.
+
+        Per-channel video isn't implemented yet (Webex video shows in the
+        embedded view below the stage, not per-card), so this is just a
+        visual accent that distinguishes the card top.  When per-channel
+        video lands in a future phase, this will grow into a real video
+        rendering surface.
+        """
         tile = QFrame()
         tile.setObjectName("VideoTile")
-        tile.setMinimumHeight(120)
-        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        placeholder = QLabel("Video arrives when Webex is connected", tile)
-        placeholder.setObjectName("VideoPlaceholder")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setWordWrap(True)
-
-        layout = QVBoxLayout(tile)
-        layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
-        layout.addWidget(placeholder)
+        tile.setFixedHeight(6)  # accent bar, not a video surface
+        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return tile
 
     def _compose_layout(self) -> None:
@@ -174,7 +173,8 @@ class ParticipantCard(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        outer.addWidget(self._video_tile, stretch=1)
+        # Thin accent bar at top — fixed height, no stretch
+        outer.addWidget(self._video_tile)
 
         body = QWidget(self)
         body_layout = QVBoxLayout(body)
