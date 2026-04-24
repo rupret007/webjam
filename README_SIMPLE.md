@@ -1,4 +1,6 @@
-# WebJam — Quick Start
+# WebJam — Quick Start (Tkinter UI)
+
+> **Note:** The primary WebJam UI is the **Qt Conductor** (`python webjam_qt_main.py`). This guide covers the legacy Tkinter UI (`python webjam_app_enhanced.py`), which remains available as a fallback. The keyboard shortcuts and mix-save workflow described below apply to the Tkinter UI.
 
 WebJam combines Jamulus (live audio) and Webex (video meeting) in a single launcher so your creative sessions start in seconds.
 

@@ -2,21 +2,21 @@
 
 A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio) and **Webex** (video) into a single session, with a shared canvas for notes and artifacts.
 
-> **Status:** under active redesign. See [Current State](#current-state) for what actually works today vs. [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the destination.
+> See [Current State](#current-state) for what works today and [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for what's planned next.
 
 ---
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-04-20):
+Being honest about where this app is **right now** (2026-04-24):
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 74 unit tests pass. |
+| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 493 tests pass. |
 | **Qt Conductor UI** | ✅ **Shipped in v0.3.0.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Retained as fallback (`webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
-| **Jamulus integration** | ⚠️ **Launch-only.** WebJam launches Jamulus as a separate process. Mixer faders in WebJam do **not** yet drive the running Jamulus server — full JSON-RPC control is planned for v0.4. **Jamulus must be installed separately.** |
-| **Webex integration** | ⚠️ **Launch-only.** Opens your Webex meeting URL in a browser. Embedded view (Web SDK inside Qt) planned for v0.4. |
+| **Jamulus integration** | ⚠️ **Launch + partial RPC.** v0.4 added JSON-RPC mute/solo control on background threads. Fader changes also reach Jamulus via RPC. Level meters in the Qt UI run on demo data — real audio-level feed from Jamulus not yet wired. **Jamulus must be installed separately.** |
+| **Webex integration** | ⚠️ **Launch-only.** Opens your Webex meeting URL in a browser. Embedded `QWebEngineView` is built (`webex_embed.py`) but not yet wired to the main launch button. |
 | **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
 | **Builds** | ✅ Windows x64, macOS ARM64, macOS x64 — all three zips at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Local Companion API** | ✅ Localhost bridge for external tools. See [COMPANION_API.md](COMPANION_API.md). |
@@ -88,14 +88,18 @@ Environment overrides:
 
 ```
 webjam/
-├── webjam_app_enhanced.py   # Main app (being refactored)
-├── core/                    # Domain: audio, modes, protocol, models, settings
-├── ui/                      # Modular Qt UI components (being migrated)
-├── services/                # BridgeService (Jamulus/Webex lifecycle)
-├── api/                     # Local Companion API bridge
-├── storage/                 # Settings, mix, user repositories
-├── tests/                   # Unit tests (74 passing)
-├── webjam_installer.py      # Windows/macOS installer
+├── webjam_qt_main.py        # Primary entry point — Qt Conductor UI
+├── webjam_qt/               # Qt application (windows, widgets, controllers)
+├── webjam_app_enhanced.py   # Legacy Tkinter UI (fallback, not actively developed)
+├── jamulus_controller.py    # Mixer state + RPC/UDP integration
+├── core/                    # Settings, modes, templates, protocol, metrics
+├── ui/                      # Service layer shared with legacy UI (MixerService etc.)
+├── services/                # BridgeService (Jamulus/Webex process lifecycle)
+├── storage/                 # SQLite repository (users, mixes, room context, canvas)
+├── admin/                   # RBAC policy engine and admin panel
+├── api/                     # Optional FastAPI companion API
+├── tests/                   # 493 passing tests
+├── webjam_installer.py      # Windows/macOS installer script
 └── VB/                      # VB-Cable installer payload (Windows)
 ```
 

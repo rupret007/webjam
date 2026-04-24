@@ -6,7 +6,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Python | 3.11+ | Download from https://www.python.org/downloads/ |
+| Python | 3.10+ | Download from https://www.python.org/downloads/ |
 | Git | Latest | https://git-scm.com/downloads |
 | VB-Cable | Latest | Optional, Windows only -- for audio routing between Jamulus and Webex |
 
@@ -76,17 +76,18 @@ Use **Admin > Open Admin Panel** and then **Set Endpoint** to change the Jamulus
 
 ## Run Tests
 
-The project uses Python's built-in `unittest` framework. Run the full suite:
+The project uses `pytest`. Run the full suite:
 
 ```bash
-# Tests in tests/ directory (unit + edge cases)
-python -m unittest discover -s tests -v
-
-# Root-level integration/smoke tests
-python -m unittest test_webjam test_modernization -v
+python -m pytest tests/ -v
 ```
 
-Expected result: all discovered tests pass. The exact test count can change as coverage grows.
+Expected result: all tests pass (493 pass, 12 skip as of v0.4). The skips are Windows-only elevation tests that auto-skip on macOS/Linux.
+
+Quick check (less output):
+```bash
+python -m pytest tests/ -q
+```
 
 ## Build a Standalone Executable
 

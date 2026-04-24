@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
@@ -18,9 +17,10 @@ from webjam_qt.windows.setup_wizard import SetupWizard
 
 
 def _configure_qt_attributes() -> None:
-    # Qt attributes must be set before QApplication is constructed.
-    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
-    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+    # Qt 6 enables high-DPI scaling by default; the old AA_EnableHighDpiScaling /
+    # AA_UseHighDpiPixmaps attributes are deprecated no-ops since Qt 6.0 and
+    # generate DeprecationWarnings in PySide6 6.x — nothing to set here.
+    pass
 
 
 def _configure_default_font(app: QApplication) -> None:

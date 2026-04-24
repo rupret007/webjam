@@ -65,11 +65,11 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 
 ### System Requirements
 
-- **Operating System**: Windows 10/11 (64-bit)
-- **Processor**: Intel Core i5 or equivalent
+- **Operating System**: Windows 10/11 (64-bit) or macOS 12+
+- **Processor**: Intel Core i5 / Apple M1 or equivalent
 - **RAM**: 8GB minimum, 16GB recommended
 - **Internet**: Broadband with <30ms latency (test at speedtest.net)
-- **Audio**: Any audio interface (ASIO-compatible recommended)
+- **Audio**: Any audio interface (ASIO-compatible recommended on Windows)
 
 ### Installation Steps
 
@@ -446,7 +446,7 @@ Video lag is okay! Remember:
 #### ❌ "Participants Not Showing Up"
 
 **Troubleshooting:**
-1. Click **Session** → **Add Test Participants** to verify mixer works
+1. Click **Session** → **Add Demo Participants** to verify mixer works
 2. Ensure you're connected to Jamulus server
 3. Wait 30 seconds - participants appear gradually
 4. Check Jamulus window to see if they're connected there
@@ -686,5 +686,5 @@ If behind a firewall:
 
 **Welcome to the future of music collaboration! 🎵**
 
-For the latest updates and tips, visit: **[webjam.io](https://webjam.io)**
+For the latest releases: **[github.com/rupret007/webjam/releases](https://github.com/rupret007/webjam/releases)**
 
