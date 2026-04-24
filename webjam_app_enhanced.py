@@ -135,10 +135,8 @@ class WebJamEnhancedApp:
         self.root.geometry("1600x900")
         self.root.minsize(1280, 760)
         
-        self.jamulus_process: Optional[subprocess.Popen] = None
+        # Non-property attributes set early (safe before bridge_service exists).
         self.mixer_channels: Dict[int, EnhancedMixerChannel] = {}
-        self.jamulus_state = "Not launched"
-        self.webex_state = "Not opened"
         self.network_latency_ms: float | None = None
         self._latency_probe_inflight = False
         self._service_bootstrapped = False
@@ -156,16 +154,12 @@ class WebJamEnhancedApp:
         self.auto_setup_enabled = True
         self.auto_reconnect_enabled = True
         self._shutdown_requested = False
-        self._jamulus_launch_intended = False
-        self._webex_launch_intended = False
-        self._jamulus_reconnect_attempts = 0
-        self._webex_reconnect_attempts = 0
-        self._jamulus_next_reconnect_at = 0.0
-        self._webex_next_reconnect_at = 0.0
-        self._jamulus_reconnect_inflight = False
-        self._webex_reconnect_inflight = False
         self._ready_check_inflight = False
         self._diagnostics_panel_inflight = False
+        # NOTE: jamulus_process, jamulus_state, webex_state, and all reconnect-
+        # state attributes are PROPERTIES that delegate to bridge_service.  They
+        # are initialised by BridgeService.__init__ and must NOT be assigned here
+        # (bridge_service doesn't exist yet at this point in __init__).
         self.repository = WebJamRepository()
         self.repository.ensure_default_admin()
         raw_auto_reconnect = self.repository.get_setting("auto_reconnect_enabled", "1")
@@ -222,6 +216,7 @@ class WebJamEnhancedApp:
             }
         )
         
+        self.session_controller = SessionController(self)
         self.mode_controller = ModeController(self)
         self.mixer_service = MixerService(
             app_root=self.root,
@@ -1123,6 +1118,11 @@ class WebJamEnhancedApp:
     def decrease_text_size(self) -> None:
         self.font_scale = clamp_scale(self.font_scale - 0.1)
         self.large_text_var.set(self.font_scale > 1.05)
+        self._apply_accessibility_mode()
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """Callback invoked by ThemeManager when the active theme changes."""
+        self.high_contrast_enabled = (theme_name == "High Contrast")
         self._apply_accessibility_mode()
 
     def _apply_accessibility_mode(self) -> None:

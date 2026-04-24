@@ -19,7 +19,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         app.mode_key = "music_jam"
         app.save_room_context = MagicMock()
         app.session_canvas = MagicMock()
-        app.session_canvas.save_notes_if_dirty.return_value = True
+        app.session_canvas._save_notes.return_value = True
         app.repository = MagicMock()
         app.repository.get_room_context.return_value = {
             "mode_key": "music_jam",
@@ -40,7 +40,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         WebJamEnhancedApp.export_session_brief(app)
 
         app.save_room_context.assert_called_once()
-        app.session_canvas.save_notes_if_dirty.assert_called_once_with()
+        app.session_canvas._save_notes.assert_called_once_with()
         app.metrics_service.export_session_brief.assert_called_once()
         kwargs = app.metrics_service.export_session_brief.call_args.kwargs
         self.assertEqual(kwargs["output_dir"], Path("C:/tmp"))
@@ -60,7 +60,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         app.mode_key = "music_jam"
         app.save_room_context = MagicMock()
         app.session_canvas = MagicMock()
-        app.session_canvas.save_notes_if_dirty.return_value = True
+        app.session_canvas._save_notes.return_value = True
         app.repository = MagicMock()
         app.repository.get_room_context.return_value = {}
         app.repository.list_session_artifacts.return_value = []
@@ -86,7 +86,7 @@ class TestSessionBriefExportEdge(unittest.TestCase):
         app.mode_key = "music_jam"
         app.save_room_context = MagicMock()
         app.session_canvas = MagicMock()
-        app.session_canvas.save_notes_if_dirty.return_value = False
+        app.session_canvas._save_notes.return_value = False
         app.repository = MagicMock()
         app.jamulus_controller = MagicMock()
         app.metrics_service = MagicMock()

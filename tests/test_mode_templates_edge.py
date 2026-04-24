@@ -31,6 +31,7 @@ class TestModeTemplateFlowEdge(unittest.TestCase):
         app.session_canvas = MagicMock()
         app.save_room_context = MagicMock()
         app._refresh_quick_template_menu = MagicMock()
+        app.mode_controller = MagicMock()
         return app
 
     def test_on_mode_selected_refreshes_quick_templates(self):

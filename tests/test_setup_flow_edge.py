@@ -7,6 +7,24 @@ from pathlib import Path
 import tempfile
 
 from webjam_app_enhanced import WebJamEnhancedApp
+from ui.mixer_service import MixerService
+
+
+def _make_mixer_service() -> MixerService:
+    """Build a MixerService stub with all external dependencies mocked."""
+    return MixerService(
+        app_root=MagicMock(),
+        repository=MagicMock(),
+        auth_controller=MagicMock(authorize=MagicMock(return_value=True)),
+        jamulus_controller=MagicMock(),
+        metrics_service=MagicMock(),
+        get_current_user=lambda: None,
+        get_mode_key=lambda: "music_jam",
+        refresh_readiness=MagicMock(),
+        set_status_banner=MagicMock(),
+        mixer_channels={},
+        app_root_exists_check=lambda: True,
+    )
 
 
 class TestSetupFlowEdge(unittest.TestCase):
@@ -40,32 +58,35 @@ class TestSetupFlowEdge(unittest.TestCase):
         app.show_setup_wizard.assert_called_once_with(mark_complete=True)
 
     def test_restore_startup_mix_default_queues_existing_file_payload(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app._load_mix_payload_from_file = MagicMock(return_value={"participants": [{"channel_id": 1}]})
-        app._queue_mix_restore = MagicMock()
+        """_restore_startup_mix_default now lives on MixerService."""
+        svc = _make_mixer_service()
+        svc._load_mix_payload_from_file = MagicMock(return_value={"participants": [{"channel_id": 1}]})
+        svc._queue_mix_restore = MagicMock()
         with tempfile.TemporaryDirectory() as tmpdir:
             mix_path = Path(tmpdir) / "mix.json"
             mix_path.write_text("{}", encoding="utf-8")
-            from unittest.mock import patch
+            svc._mix_file = mix_path
 
-            with patch("webjam_app_enhanced.MIX_FILE", mix_path):
-                WebJamEnhancedApp._restore_startup_mix_default(app)
+            svc._restore_startup_mix_default()
 
-        app._queue_mix_restore.assert_called_once_with({"participants": [{"channel_id": 1}]}, str(mix_path))
+        svc._queue_mix_restore.assert_called_once_with(
+            {"participants": [{"channel_id": 1}]}, str(mix_path)
+        )
 
     def test_sign_in_restores_signed_in_mix_default(self):
+        """sign_in() now delegates mix restore to mixer_service."""
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app.root = object()
         app.auth_controller = MagicMock()
         app.auth_controller.sign_in_interactive.return_value = SimpleNamespace(username="alex")
-        app._restore_signed_in_mix_default = MagicMock()
+        app.mixer_service = MagicMock()
 
         signed_in = WebJamEnhancedApp.sign_in(app)
 
         self.assertTrue(signed_in)
         self.assertEqual(app.current_user.username, "alex")
         app.auth_controller.sign_in_interactive.assert_called_once_with(parent=app.root)
-        app._restore_signed_in_mix_default.assert_called_once()
+        app.mixer_service._restore_signed_in_mix_default.assert_called_once()
 
     @patch("webjam_app_enhanced.SetupWizard")
     def test_show_setup_wizard_refocuses_existing_window(self, wizard_cls):
@@ -110,22 +131,18 @@ class TestSetupFlowEdge(unittest.TestCase):
         self.assertIsNone(app._setup_wizard_window)
 
     def test_attempt_pending_mix_restore_clears_pending_on_success(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app._pending_mix_restore_payload = {"participants": [{"channel_id": 2}]}
-        app._pending_mix_restore_source = "saved mix"
-        app.jamulus_controller = MagicMock()
-        app.jamulus_controller.apply_mix_data.return_value = 1
-        app._refresh_mixer_controls_from_participants = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app._set_status_banner = MagicMock()
+        """_attempt_pending_mix_restore now lives on MixerService."""
+        svc = _make_mixer_service()
+        svc._pending_mix_restore_payload = {"participants": [{"channel_id": 2}]}
+        svc._pending_mix_restore_source = "saved mix"
+        svc.jamulus_controller.apply_mix_data.return_value = 1
 
-        WebJamEnhancedApp._attempt_pending_mix_restore(app)
+        svc._attempt_pending_mix_restore()
 
-        self.assertIsNone(app._pending_mix_restore_payload)
-        self.assertIsNone(app._pending_mix_restore_source)
-        app._refresh_mixer_controls_from_participants.assert_called_once()
-        app._refresh_readiness.assert_called_once()
-        app._set_status_banner.assert_called_once()
+        self.assertIsNone(svc._pending_mix_restore_payload)
+        self.assertIsNone(svc._pending_mix_restore_source)
+        svc.refresh_readiness.assert_called_once()
+        svc.set_status_banner.assert_called_once()
 
 
 if __name__ == "__main__":

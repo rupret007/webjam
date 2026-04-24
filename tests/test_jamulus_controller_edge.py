@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import unittest
+from unittest.mock import MagicMock
 
 from jamulus_controller import JamulusController
 
@@ -72,6 +73,9 @@ def _build_controller() -> JamulusController:
     controller.protocol = _ProtocolStub()
     controller.audio_engine = _AudioEngineStub()
     controller.logger = _LoggerStub()
+    # Stub RPC client — available=False so _send_rpc_gain is a no-op in tests.
+    controller.rpc_client = MagicMock()
+    controller.rpc_client.available = False
     return controller
 
 

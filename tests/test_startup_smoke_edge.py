@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from webjam_app_enhanced import WebJamEnhancedApp
+from ui.mixer_service import MixerService
 
 
 class _RunRootStub:
@@ -88,7 +89,7 @@ class TestStartupSmokeEdge(unittest.TestCase):
             ) as defer_services_mock, patch.object(
                 WebJamEnhancedApp, "_show_setup_once", autospec=True
             ) as show_setup_mock, patch.object(
-                WebJamEnhancedApp, "_restore_startup_mix_default", autospec=True
+                MixerService, "_restore_startup_mix_default"
             ) as restore_mix_mock:
                 app = WebJamEnhancedApp()
 
@@ -102,7 +103,7 @@ class TestStartupSmokeEdge(unittest.TestCase):
             poll_health_mock.assert_called_once_with(app)
             defer_services_mock.assert_called_once_with(app)
             show_setup_mock.assert_called_once_with(app)
-            restore_mix_mock.assert_called_once_with(app)
+            self.assertEqual(restore_mix_mock.call_count, 1)
             self.assertIs(app.root, hidden_root)
             self.assertEqual(app.mode_key, "music_jam")
         finally:

@@ -4,6 +4,34 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.0] — 2026-04-24
+
+### Fixed — Jamulus mixer RPC signal chain
+- **Mute and solo now reach Jamulus via JSON-RPC** (`jamulus_controller.py`): `set_mute()` and `set_solo()` previously only sent UDP; mute/solo state was silently lost when the JSON-RPC server was the primary interface. Both now call a new `_send_rpc_gain()` helper that translates mute/solo state to an effective gain level and forwards it over RPC.
+- **All RPC calls moved off the UI thread**: `_send_rpc_gain()` spawns a daemon thread for every `set_channel_gain` call. A slow or unreachable RPC server no longer freezes the UI.
+
+### Fixed — Production bugfixes
+- **`WebJamEnhancedApp` constructor ordering**: Property-delegated attributes (`jamulus_state`, `webex_state`, `jamulus_process`, etc.) were assigned before `bridge_service` was created, causing `AttributeError` on startup. Removed the redundant early assignments; `BridgeService.__init__` already sets matching defaults.
+- **`_on_theme_changed` callback**: `ThemeManager` registered this callback on `WebJamEnhancedApp` but the method was missing. Added implementation that updates `high_contrast_enabled` and calls `_apply_accessibility_mode()`.
+- **`session_controller` initialization**: `SessionController` was referenced (e.g. in `quit_app`) but never instantiated in `__init__`. Added `self.session_controller = SessionController(self)` after `bridge_service` creation.
+- **`MixerService._saved_mix_payload_for_load`**: `load_mix()` called this helper but it was not defined. Added implementation that checks signed-in user profile first, then falls back to local mix file.
+
+### Added — Test suite (Part 2 of v0.4 sprint)
+- **All 11 previously-ignored edge test files now pass** in CI. Methods that migrated to `MixerService`, `BridgeService`, or `ModeController` during the v0.3 refactor were re-tested against their new homes:
+  - `test_listening_profiles_edge.py` → `MixerService` (17 tests)
+  - `test_reconnect_manager_edge.py` → `BridgeService` (12 tests)
+  - `test_help_and_permissions_edge.py` → `MixerService` + `WebJamEnhancedApp` (4 tests)
+  - `test_startup_smoke_edge.py` → `MixerService._restore_startup_mix_default` (2 tests)
+  - `test_app_polling_edge.py` → updated stubs for `bridge_service` / `session_controller` delegation (14 tests)
+  - `test_jamulus_controller_edge.py` → added `rpc_client` stub (11 tests)
+  - `test_mode_layout_edge.py` → rewritten against `ModeController` (8 tests)
+  - `test_mode_templates_edge.py`, `test_diagnostics_bundle_export_edge.py`, `test_session_brief_export_edge.py`, `test_docs_parity_edge.py` → updated for `_save_notes` rename and new stubs
+  - `test_setup_flow_edge.py` → 3 tests migrated to `MixerService`
+- **`README_SIMPLE.md`** added — quick-start guide referenced by `test_docs_parity_edge.py`
+- **CI `--ignore` flags removed** from `.github/workflows/ci.yml` — full test suite now runs with no exclusions (493 pass, 12 skip on macOS)
+
+---
+
 ## [Unreleased]
 
 ### Added — Post-v0.3.0 gap fixes

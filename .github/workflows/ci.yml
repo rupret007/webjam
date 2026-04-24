@@ -53,26 +53,11 @@ jobs:
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
 
-      # The 11 *_edge.py files below test methods that were refactored out of
-      # webjam_app_enhanced.py into MixerService / ApplicationController.
-      # They need rewriting against the service layer — tracked for v0.4.
       # test_elevation_edge.py uses @skipUnless(win32) so runs safely on Linux
       # (skips all tests) — no --ignore needed for it.
       - name: Run test suite
         run: |
-          pytest tests/ -v \
-            --ignore=tests/test_app_polling_edge.py \
-            --ignore=tests/test_diagnostics_bundle_export_edge.py \
-            --ignore=tests/test_docs_parity_edge.py \
-            --ignore=tests/test_help_and_permissions_edge.py \
-            --ignore=tests/test_jamulus_controller_edge.py \
-            --ignore=tests/test_listening_profiles_edge.py \
-            --ignore=tests/test_mode_layout_edge.py \
-            --ignore=tests/test_mode_templates_edge.py \
-            --ignore=tests/test_reconnect_manager_edge.py \
-            --ignore=tests/test_session_brief_export_edge.py \
-            --ignore=tests/test_setup_flow_edge.py \
-            --ignore=tests/test_startup_smoke_edge.py
+          pytest tests/ -v
 
   # ------------------------------------------------------------------
   # Job 2: Build desktop artifacts

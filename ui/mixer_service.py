@@ -313,6 +313,22 @@ class MixerService:
                 parent=self.app_root,
             )
 
+    def _saved_mix_payload_for_load(self):
+        """Return (payload, source_label) for load_mix, or None if nothing is saved."""
+        username = self._default_mix_user()
+        if username:
+            saved = self.repository.get_user_mix_default(username)
+            if saved is not None:
+                payload = saved.get("payload")
+                if isinstance(payload, dict):
+                    return (payload, f"{username} profile")
+        # Fall back to local mix file
+        if self._mix_file.exists():
+            payload = self._load_mix_payload_from_file(self._mix_file)
+            if payload is not None:
+                return (payload, str(self._mix_file))
+        return None
+
     def load_mix(self) -> None:
         self.metrics_service.increment("metric_load_mix_attempt")
         if not self.auth_controller.authorize(

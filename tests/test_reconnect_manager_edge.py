@@ -1,12 +1,68 @@
+"""Edge tests for reconnect / launch logic — rewritten against BridgeService.
+
+BridgeService owns all reconnect state and launch orchestration; these tests
+verify it directly rather than going through the now-legacy WebJamEnhancedApp
+property shims.
+"""
 from __future__ import annotations
 
+import subprocess
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
-from webjam_app_enhanced import WebJamEnhancedApp
+
+def _make_settings(
+    jamulus_server: str = "jam.example.com",
+    jamulus_port: int = 22124,
+    jamulus_rpc_port: int = 22222,
+    jamulus_candidates: tuple = ("C:/Jamulus.exe",),
+    webex_url: str = "https://example.webex.com/meet/test",
+) -> MagicMock:
+    s = MagicMock()
+    s.jamulus_server = jamulus_server
+    s.jamulus_port = jamulus_port
+    s.jamulus_rpc_port = jamulus_rpc_port
+    s.jamulus_candidates = list(jamulus_candidates)
+    s.webex_url = webex_url
+    return s
+
+
+def _make_bridge(
+    shutdown_requested: bool = False,
+    **overrides,
+):
+    from services.bridge_service import BridgeService
+
+    settings = _make_settings()
+    repository = MagicMock()
+    repository.get_setting.return_value = "1"  # auto_reconnect_enabled
+
+    ui_callbacks = {
+        "set_status_banner": MagicMock(),
+        "refresh_readiness": MagicMock(),
+        "show_actionable_error": MagicMock(),
+        "show_message": MagicMock(),
+        "shutdown_requested": lambda: shutdown_requested,
+        "schedule_ui_callback": lambda f: f(),
+    }
+
+    bridge = BridgeService(
+        jamulus_controller=MagicMock(),
+        webex_controller=MagicMock(),
+        metrics_service=MagicMock(),
+        repository=repository,
+        settings=settings,
+        ui_callbacks=ui_callbacks,
+    )
+    for attr, val in overrides.items():
+        setattr(bridge, attr, val)
+    return bridge
 
 
 class _ImmediateThread:
+    """Runs target synchronously instead of spawning a real thread."""
+
     def __init__(self, target=None, daemon=None):
         self._target = target
         self.daemon = daemon
@@ -16,299 +72,246 @@ class _ImmediateThread:
             self._target()
 
 
-class _RootImmediate:
-    def after(self, _delay_ms, callback):
-        callback()
-
-
-class _RootAfterFails:
-    def winfo_exists(self):
-        return True
-
-    def after(self, *_args, **_kwargs):
-        raise RuntimeError("root closed")
-
-
 class TestReconnectManagerEdge(unittest.TestCase):
+    # ------------------------------------------------------------------
+    # Delay calculation
+    # ------------------------------------------------------------------
     def test_reconnect_delay_is_exponential_and_capped(self):
-        self.assertEqual(WebJamEnhancedApp._reconnect_delay_seconds(1), 1.5)
-        self.assertEqual(WebJamEnhancedApp._reconnect_delay_seconds(2), 3.0)
-        self.assertEqual(WebJamEnhancedApp._reconnect_delay_seconds(3), 6.0)
-        self.assertEqual(WebJamEnhancedApp._reconnect_delay_seconds(10), 45.0)
+        bridge = _make_bridge()
+        self.assertAlmostEqual(bridge._reconnect_delay_seconds(1), 1.5)
+        self.assertAlmostEqual(bridge._reconnect_delay_seconds(2), 3.0)
+        self.assertAlmostEqual(bridge._reconnect_delay_seconds(3), 6.0)
+        self.assertAlmostEqual(bridge._reconnect_delay_seconds(10), 45.0)
 
-    def test_auto_reconnect_jamulus_triggers_when_intended_and_process_down(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.auto_reconnect_enabled = True
-        app._jamulus_launch_intended = True
-        app._webex_launch_intended = False
-        app._jamulus_reconnect_attempts = 0
-        app._jamulus_next_reconnect_at = 0.0
-        app._jamulus_reconnect_inflight = False
-        app.jamulus_process = MagicMock()
-        app.jamulus_process.poll.return_value = 1
-        app.metrics_service = MagicMock()
-        app._launch_jamulus = MagicMock()
-        app.webex_controller = MagicMock()
-        app.webex_state = "Not opened"
-
-        WebJamEnhancedApp._attempt_auto_reconnects(app, now=100.0)
-
-        app.metrics_service.increment.assert_any_call("metric_jamulus_reconnect_attempt")
-        app._launch_jamulus.assert_called_once_with(manual=False, reconnect=True)
-        self.assertEqual(app._jamulus_reconnect_attempts, 1)
-        self.assertGreater(app._jamulus_next_reconnect_at, 100.0)
-        self.assertTrue(app._jamulus_reconnect_inflight)
-
-    def test_auto_reconnect_webex_triggers_on_open_failed_state(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.auto_reconnect_enabled = True
-        app._jamulus_launch_intended = False
-        app._webex_launch_intended = True
-        app._webex_reconnect_attempts = 0
-        app._webex_next_reconnect_at = 0.0
-        app._webex_reconnect_inflight = False
-        app.webex_controller = MagicMock()
-        app.webex_controller.is_connected = False
-        app.webex_state = "Open failed"
-        app.metrics_service = MagicMock()
-        app._launch_webex = MagicMock()
-
-        WebJamEnhancedApp._attempt_auto_reconnects(app, now=50.0)
-
-        app.metrics_service.increment.assert_any_call("metric_webex_reconnect_attempt")
-        app._launch_webex.assert_called_once_with(manual=False, reconnect=True)
-        self.assertEqual(app._webex_reconnect_attempts, 1)
-        self.assertGreater(app._webex_next_reconnect_at, 50.0)
-        self.assertTrue(app._webex_reconnect_inflight)
-
+    # ------------------------------------------------------------------
+    # attempt_auto_reconnects — top-level guard
+    # ------------------------------------------------------------------
     def test_auto_reconnect_disabled_skips_retries(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.auto_reconnect_enabled = False
-        app._jamulus_launch_intended = True
-        app.jamulus_process = MagicMock()
-        app.jamulus_process.poll.return_value = 1
-        app.metrics_service = MagicMock()
-        app._launch_jamulus = MagicMock()
-        app._launch_webex = MagicMock()
-        app.webex_controller = MagicMock()
-        app.webex_state = "Open failed"
+        bridge = _make_bridge()
+        bridge.repository.get_setting.return_value = "0"  # disabled
+        bridge.jamulus_launch_intended = True
+        bridge.webex_launch_intended = True
+        launch_j = MagicMock()
+        launch_w = MagicMock()
+        bridge.launch_jamulus = launch_j
+        bridge.launch_webex = launch_w
 
-        WebJamEnhancedApp._attempt_auto_reconnects(app, now=10.0)
+        bridge.attempt_auto_reconnects()
 
-        app.metrics_service.increment.assert_not_called()
-        app._launch_jamulus.assert_not_called()
-        app._launch_webex.assert_not_called()
+        bridge.metrics_service.increment.assert_not_called()
+        launch_j.assert_not_called()
+        launch_w.assert_not_called()
 
     def test_auto_reconnect_skips_when_shutdown_requested(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app._shutdown_requested = True
-        app.auto_reconnect_enabled = True
-        app._jamulus_launch_intended = True
-        app._webex_launch_intended = True
-        app.metrics_service = MagicMock()
-        app._launch_jamulus = MagicMock()
-        app._launch_webex = MagicMock()
+        bridge = _make_bridge(shutdown_requested=True)
+        bridge.jamulus_launch_intended = True
+        bridge.webex_launch_intended = True
+        launch_j = MagicMock()
+        launch_w = MagicMock()
+        bridge.launch_jamulus = launch_j
+        bridge.launch_webex = launch_w
 
-        WebJamEnhancedApp._attempt_auto_reconnects(app, now=10.0)
+        bridge.attempt_auto_reconnects()
 
-        app.metrics_service.increment.assert_not_called()
-        app._launch_jamulus.assert_not_called()
-        app._launch_webex.assert_not_called()
+        bridge.metrics_service.increment.assert_not_called()
+        launch_j.assert_not_called()
+        launch_w.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # Jamulus reconnect logic
+    # ------------------------------------------------------------------
+    def test_auto_reconnect_jamulus_triggers_when_intended_and_process_down(self):
+        bridge = _make_bridge()
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process.poll.return_value = 1  # process exited
+        bridge.jamulus_reconnect_attempts = 0
+        bridge.jamulus_next_reconnect_at = 0.0
+        bridge.jamulus_reconnect_inflight = False
+        launch_j = MagicMock()
+        bridge.launch_jamulus = launch_j
+
+        bridge._attempt_auto_reconnect_jamulus(now=100.0)
+
+        bridge.metrics_service.increment.assert_any_call("metric_jamulus_reconnect_attempt")
+        launch_j.assert_called_once_with(manual=False, reconnect=True)
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 1)
+        self.assertGreater(bridge.jamulus_next_reconnect_at, 100.0)
+        self.assertTrue(bridge.jamulus_reconnect_inflight)
 
     def test_auto_reconnect_jamulus_resets_when_process_running(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app._jamulus_launch_intended = True
-        app._jamulus_reconnect_attempts = 3
-        app._jamulus_next_reconnect_at = 999.0
-        app._jamulus_reconnect_inflight = True
-        app.jamulus_process = MagicMock()
-        app.jamulus_process.poll.return_value = None
+        bridge = _make_bridge()
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process.poll.return_value = None  # process still alive
+        bridge.jamulus_reconnect_attempts = 3
+        bridge.jamulus_next_reconnect_at = 999.0
+        bridge.jamulus_reconnect_inflight = True
 
-        WebJamEnhancedApp._attempt_auto_reconnect_jamulus(app, now=5.0)
+        bridge._attempt_auto_reconnect_jamulus(now=5.0)
 
-        self.assertEqual(app._jamulus_reconnect_attempts, 0)
-        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
-        self.assertFalse(app._jamulus_reconnect_inflight)
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+        self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
 
-    def test_manual_launch_calls_reset_reconnect_state(self):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app._jamulus_launch_intended = False
-        app._jamulus_reconnect_attempts = 4
-        app._jamulus_next_reconnect_at = 12.0
-        app._webex_launch_intended = False
-        app._webex_reconnect_attempts = 2
-        app._webex_next_reconnect_at = 14.0
-        app._launch_jamulus = MagicMock()
-        app._launch_webex = MagicMock()
+    # ------------------------------------------------------------------
+    # Webex reconnect logic
+    # ------------------------------------------------------------------
+    def test_auto_reconnect_webex_triggers_on_open_failed_state(self):
+        bridge = _make_bridge()
+        bridge.webex_launch_intended = True
+        bridge.webex_controller.is_connected = False
+        bridge.webex_state = "Open failed"
+        bridge.webex_reconnect_attempts = 0
+        bridge.webex_next_reconnect_at = 0.0
+        bridge.webex_reconnect_inflight = False
+        launch_w = MagicMock()
+        bridge.launch_webex = launch_w
 
-        WebJamEnhancedApp.launch_jamulus(app)
-        WebJamEnhancedApp.launch_webex(app)
+        bridge._attempt_auto_reconnect_webex(now=50.0)
 
-        self.assertTrue(app._jamulus_launch_intended)
-        self.assertEqual(app._jamulus_reconnect_attempts, 0)
-        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
-        app._launch_jamulus.assert_called_once_with(manual=True, reconnect=False)
+        bridge.metrics_service.increment.assert_any_call("metric_webex_reconnect_attempt")
+        launch_w.assert_called_once_with(manual=False, reconnect=True)
+        self.assertEqual(bridge.webex_reconnect_attempts, 1)
+        self.assertGreater(bridge.webex_next_reconnect_at, 50.0)
+        self.assertTrue(bridge.webex_reconnect_inflight)
 
-        self.assertTrue(app._webex_launch_intended)
-        self.assertEqual(app._webex_reconnect_attempts, 0)
-        self.assertEqual(app._webex_next_reconnect_at, 0.0)
-        app._launch_webex.assert_called_once_with(manual=True, reconnect=False)
+    # ------------------------------------------------------------------
+    # launch_jamulus / launch_webex public helpers
+    # ------------------------------------------------------------------
+    def test_manual_launch_resets_reconnect_state(self):
+        bridge = _make_bridge()
+        bridge.jamulus_launch_intended = False
+        bridge.jamulus_reconnect_attempts = 4
+        bridge.jamulus_next_reconnect_at = 12.0
+        bridge.webex_launch_intended = False
+        bridge.webex_reconnect_attempts = 2
+        bridge.webex_next_reconnect_at = 14.0
 
-    @patch("webjam_app_enhanced.messagebox.showinfo")
-    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
-    @patch("webjam_app_enhanced.subprocess.Popen")
-    def test_launch_jamulus_sets_running_state_after_process_starts(self, popen_mock, _thread_mock, _info_mock):
+        # Patch the internal thread to verify state before thread body runs.
+        with patch("services.bridge_service.threading.Thread") as thread_cls:
+            thread_cls.return_value = MagicMock()
+            bridge.launch_jamulus(manual=True, reconnect=False)
+
+        self.assertTrue(bridge.jamulus_launch_intended)
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+        self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
+        bridge.metrics_service.increment.assert_any_call("metric_jamulus_launch_attempt")
+
+        with patch("services.bridge_service.threading.Thread") as thread_cls:
+            thread_cls.return_value = MagicMock()
+            bridge.launch_webex(manual=True, reconnect=False)
+
+        self.assertTrue(bridge.webex_launch_intended)
+        self.assertEqual(bridge.webex_reconnect_attempts, 0)
+        self.assertEqual(bridge.webex_next_reconnect_at, 0.0)
+        bridge.metrics_service.increment.assert_any_call("metric_webex_open_attempt")
+
+    @patch("services.bridge_service.subprocess.Popen")
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_launch_jamulus_sets_running_state_after_process_starts(
+        self, _thread_mock, popen_mock
+    ):
         fake_proc = MagicMock()
         popen_mock.return_value = fake_proc
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.root = _RootImmediate()
-        app.metrics_service = MagicMock()
-        app._refresh_endpoint_state = MagicMock()
-        app.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
-        app.jamulus_process = None
-        app.jamulus_server = "jam.example.com"
-        app.jamulus_port = 22124
-        app._set_status_banner = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app._retry_action = lambda action, attempts=3, base_delay=0.5: action()
-        app.jamulus_controller = MagicMock()
-        app._show_actionable_error = MagicMock()
-        app._jamulus_reconnect_attempts = 1
-        app._jamulus_next_reconnect_at = 5.0
-        app._jamulus_reconnect_inflight = True
+        bridge = _make_bridge()
+        bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
+        bridge.jamulus_process = None
+        bridge.jamulus_reconnect_attempts = 1
+        bridge.jamulus_next_reconnect_at = 5.0
+        bridge.jamulus_reconnect_inflight = True
 
-        WebJamEnhancedApp._launch_jamulus(app, manual=True, reconnect=False)
+        with patch("pathlib.Path.exists", return_value=True):
+            bridge.launch_jamulus(manual=True, reconnect=False)
 
-        self.assertEqual(app.jamulus_state, "Running")
-        app.jamulus_controller.add_participant.assert_called_once_with("You (Local)", 0)
-        app.metrics_service.increment.assert_any_call("metric_jamulus_launch_success")
-        self.assertFalse(app._jamulus_reconnect_inflight)
-        self.assertEqual(app._jamulus_reconnect_attempts, 0)
-        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
+        self.assertEqual(bridge.jamulus_state, "Running")
+        bridge.metrics_service.increment.assert_any_call("metric_jamulus_launch_success")
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+        self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
 
-    @patch("webjam_app_enhanced.messagebox.showinfo")
-    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
-    @patch("webjam_app_enhanced.subprocess.Popen")
-    def test_launch_jamulus_keeps_success_state_when_ui_scheduling_fails(self, popen_mock, _thread_mock, _info_mock):
+    @patch("services.bridge_service.subprocess.Popen")
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_launch_jamulus_terminates_process_when_shutdown_requested_during_launch(
+        self, _thread_mock, popen_mock
+    ):
         fake_proc = MagicMock()
         popen_mock.return_value = fake_proc
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.root = _RootAfterFails()
-        app.metrics_service = MagicMock()
-        app._refresh_endpoint_state = MagicMock()
-        app.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
-        app.jamulus_process = None
-        app.jamulus_server = "jam.example.com"
-        app.jamulus_port = 22124
-        app._set_status_banner = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app._retry_action = lambda action, attempts=3, base_delay=0.5: action()
-        app.jamulus_controller = MagicMock()
-        app._show_actionable_error = MagicMock()
-        app._jamulus_reconnect_attempts = 1
-        app._jamulus_next_reconnect_at = 5.0
-        app._jamulus_reconnect_inflight = True
 
-        WebJamEnhancedApp._launch_jamulus(app, manual=True, reconnect=False)
+        # Signal shutdown immediately after Popen starts
+        shutdown_flag = {"value": False}
+        bridge = _make_bridge()
+        bridge.shutdown_requested = lambda: shutdown_flag["value"]
+        bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
+        bridge.jamulus_process = None
+        bridge.jamulus_reconnect_inflight = True
 
-        self.assertEqual(app.jamulus_state, "Running")
-        app.metrics_service.increment.assert_any_call("metric_jamulus_launch_success")
-        self.assertNotIn("metric_jamulus_launch_failed", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
-        app._show_actionable_error.assert_not_called()
-        self.assertFalse(app._jamulus_reconnect_inflight)
+        original_popen = popen_mock.side_effect
 
-    @patch("webjam_app_enhanced.messagebox.showinfo")
-    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
-    @patch("webjam_app_enhanced.subprocess.Popen")
-    def test_launch_jamulus_terminates_process_when_shutdown_requested_during_launch(self, popen_mock, _thread_mock, _info_mock):
-        fake_proc = MagicMock()
-        popen_mock.return_value = fake_proc
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.root = _RootImmediate()
-        app._shutdown_requested = False
-        app.metrics_service = MagicMock()
-        app._refresh_endpoint_state = MagicMock()
-        app.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
-        app.jamulus_process = None
-        app.jamulus_server = "jam.example.com"
-        app.jamulus_port = 22124
-        app._set_status_banner = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app.jamulus_controller = MagicMock()
-        app._show_actionable_error = MagicMock()
-        app._jamulus_reconnect_inflight = True
+        def _popen_and_flag(*args, **kwargs):
+            shutdown_flag["value"] = True
+            return fake_proc
 
-        def _retry_action(action, attempts=3, base_delay=0.5):
-            result = action()
-            app._shutdown_requested = True
-            return result
+        popen_mock.side_effect = _popen_and_flag
 
-        app._retry_action = _retry_action
-
-        WebJamEnhancedApp._launch_jamulus(app, manual=True, reconnect=False)
+        with patch("pathlib.Path.exists", return_value=True):
+            bridge.launch_jamulus(manual=True, reconnect=False)
 
         fake_proc.terminate.assert_called_once()
-        fake_proc.wait.assert_called_once_with(timeout=5)
-        self.assertIsNone(app.jamulus_process)
-        app.jamulus_controller.add_participant.assert_not_called()
-        self.assertNotIn("metric_jamulus_launch_success", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
-        self.assertFalse(app._jamulus_reconnect_inflight)
+        self.assertIsNone(bridge.jamulus_process)
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        self.assertNotIn(
+            "metric_jamulus_launch_success",
+            [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
+        )
 
-    @patch("webjam_app_enhanced.messagebox.showinfo")
-    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
-    def test_launch_webex_keeps_success_state_when_ui_scheduling_fails(self, _thread_mock, _info_mock):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.root = _RootAfterFails()
-        app.metrics_service = MagicMock()
-        app.webex_controller = MagicMock()
-        app.webex_controller.join_meeting.return_value = True
-        app.webex_url = "https://example.webex.com/meet/test"
-        app._set_status_banner = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app._retry_action = lambda action, attempts=3, base_delay=0.5: action()
-        app._show_actionable_error = MagicMock()
-        app._webex_reconnect_attempts = 2
-        app._webex_next_reconnect_at = 7.0
-        app._webex_reconnect_inflight = True
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_launch_webex_sets_opened_state_after_success(self, _thread_mock):
+        bridge = _make_bridge()
+        bridge.webex_controller.join_meeting.return_value = True
+        bridge.webex_reconnect_attempts = 2
+        bridge.webex_next_reconnect_at = 7.0
+        bridge.webex_reconnect_inflight = True
 
-        WebJamEnhancedApp._launch_webex(app, manual=True, reconnect=False)
+        bridge.launch_webex(manual=True, reconnect=False)
 
-        self.assertEqual(app.webex_state, "Opened in browser")
-        app.metrics_service.increment.assert_any_call("metric_webex_open_success")
-        self.assertNotIn("metric_webex_open_failed", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
-        app._show_actionable_error.assert_not_called()
-        self.assertFalse(app._webex_reconnect_inflight)
+        self.assertEqual(bridge.webex_state, "Opened in browser")
+        bridge.metrics_service.increment.assert_any_call("metric_webex_open_success")
+        self.assertFalse(bridge.webex_reconnect_inflight)
+        self.assertNotIn(
+            "metric_webex_open_failed",
+            [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
+        )
 
-    @patch("webjam_app_enhanced.messagebox.showinfo")
-    @patch("webjam_app_enhanced.threading.Thread", side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs))
-    def test_launch_webex_skips_success_reporting_when_shutdown_requested_during_open(self, _thread_mock, _info_mock):
-        app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
-        app.root = _RootImmediate()
-        app._shutdown_requested = False
-        app.metrics_service = MagicMock()
-        app.webex_controller = MagicMock()
-        app.webex_controller.join_meeting.return_value = True
-        app.webex_url = "https://example.webex.com/meet/test"
-        app.webex_state = "Not opened"
-        app._set_status_banner = MagicMock()
-        app._refresh_readiness = MagicMock()
-        app._show_actionable_error = MagicMock()
-        app._webex_reconnect_inflight = True
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_launch_webex_skips_success_reporting_when_shutdown_requested_during_open(
+        self, _thread_mock
+    ):
+        shutdown_flag = {"value": False}
+        bridge = _make_bridge()
+        bridge.shutdown_requested = lambda: shutdown_flag["value"]
+        bridge.webex_state = "Not opened"
+        bridge.webex_reconnect_inflight = True
 
-        def _retry_action(action, attempts=3, base_delay=0.5):
-            result = action()
-            app._shutdown_requested = True
-            return result
+        def _join_and_shutdown():
+            shutdown_flag["value"] = True
+            return True
 
-        app._retry_action = _retry_action
+        bridge.webex_controller.join_meeting.side_effect = _join_and_shutdown
 
-        WebJamEnhancedApp._launch_webex(app, manual=True, reconnect=False)
+        bridge.launch_webex(manual=True, reconnect=False)
 
-        app.webex_controller.join_meeting.assert_called_once_with()
-        self.assertEqual(app.webex_state, "Not opened")
-        self.assertNotIn("metric_webex_open_success", [args[0] for args, _kwargs in app.metrics_service.increment.call_args_list])
-        app._show_actionable_error.assert_not_called()
-        self.assertFalse(app._webex_reconnect_inflight)
+        bridge.webex_controller.join_meeting.assert_called()
+        self.assertEqual(bridge.webex_state, "Not opened")
+        self.assertNotIn(
+            "metric_webex_open_success",
+            [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
+        )
+        self.assertFalse(bridge.webex_reconnect_inflight)
 
 
 if __name__ == "__main__":

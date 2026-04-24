@@ -219,44 +219,37 @@ class TestAppPollingEdge(unittest.TestCase):
         app.jamulus_controller = MagicMock()
         app.webex_controller = MagicMock()
         app.api_bridge = MagicMock()
-        app.jamulus_process = None
+        # jamulus_process is a property that delegates to bridge_service
+        app.bridge_service = MagicMock()
+        app.bridge_service.jamulus_process = None
 
         WebJamEnhancedApp.cleanup(app)
 
         self.assertIn("service-after-id", app.root.cancelled)
         self.assertIsNone(app._service_start_after_id)
 
-    def test_cleanup_marks_shutdown_and_clears_reconnect_intent(self):
+    def test_cleanup_marks_shutdown_and_stops_services(self):
+        """cleanup() marks _shutdown_requested and stops all services."""
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
         app.root = MagicMock()
         app._poll_after_id = None
         app._vu_after_id = None
         app._service_start_after_id = None
-        app._jamulus_launch_intended = True
-        app._webex_launch_intended = True
-        app._jamulus_reconnect_attempts = 3
-        app._webex_reconnect_attempts = 2
-        app._jamulus_next_reconnect_at = 9.0
-        app._webex_next_reconnect_at = 8.0
-        app._jamulus_reconnect_inflight = True
-        app._webex_reconnect_inflight = True
         app.audio_monitor = MagicMock()
         app.jamulus_controller = MagicMock()
         app.webex_controller = MagicMock()
         app.api_bridge = MagicMock()
-        app.jamulus_process = None
+        # jamulus_process is a property delegating to bridge_service
+        app.bridge_service = MagicMock()
+        app.bridge_service.jamulus_process = None
 
         WebJamEnhancedApp.cleanup(app)
 
         self.assertTrue(app._shutdown_requested)
-        self.assertFalse(app._jamulus_launch_intended)
-        self.assertFalse(app._webex_launch_intended)
-        self.assertEqual(app._jamulus_reconnect_attempts, 0)
-        self.assertEqual(app._webex_reconnect_attempts, 0)
-        self.assertEqual(app._jamulus_next_reconnect_at, 0.0)
-        self.assertEqual(app._webex_next_reconnect_at, 0.0)
-        self.assertFalse(app._jamulus_reconnect_inflight)
-        self.assertFalse(app._webex_reconnect_inflight)
+        app.audio_monitor.stop.assert_called_once()
+        app.jamulus_controller.stop.assert_called_once()
+        app.webex_controller.stop.assert_called_once()
+        app.api_bridge.stop.assert_called_once()
 
     def test_selected_channel_shortcut_toggles_mute(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -326,8 +319,10 @@ class TestAppPollingEdge(unittest.TestCase):
         app.readiness_label = MagicMock()
         app.connection_summary = MagicMock()
         app._set_status_banner = MagicMock()
-        app.jamulus_state = "Running"
-        app.webex_state = "Not opened"
+        # jamulus_state and webex_state are properties delegating to bridge_service
+        app.bridge_service = MagicMock()
+        app.bridge_service.jamulus_state = "Running"
+        app.bridge_service.webex_state = "Not opened"
 
         WebJamEnhancedApp._refresh_readiness(app)
 
@@ -343,14 +338,16 @@ class TestAppPollingEdge(unittest.TestCase):
         app.webex_controller = MagicMock()
         app.api_bridge = MagicMock()
         process = MagicMock()
-        app.jamulus_process = process
+        # jamulus_process is a property — set via bridge_service directly
+        app.bridge_service = MagicMock()
+        app.bridge_service.jamulus_process = process
 
         WebJamEnhancedApp.cleanup(app)
 
         process.terminate.assert_called_once()
         process.wait.assert_called_once_with(timeout=5)
         process.kill.assert_not_called()
-        self.assertIsNone(app.jamulus_process)
+        self.assertIsNone(app.bridge_service.jamulus_process)
 
     def test_cleanup_kills_spawned_jamulus_when_terminate_times_out(self):
         app = WebJamEnhancedApp.__new__(WebJamEnhancedApp)
@@ -363,7 +360,9 @@ class TestAppPollingEdge(unittest.TestCase):
         app.api_bridge = MagicMock()
         process = MagicMock()
         process.wait.side_effect = [subprocess.TimeoutExpired(cmd="jamulus", timeout=5), None]
-        app.jamulus_process = process
+        # jamulus_process is a property — set via bridge_service directly
+        app.bridge_service = MagicMock()
+        app.bridge_service.jamulus_process = process
 
         WebJamEnhancedApp.cleanup(app)
 
@@ -371,7 +370,7 @@ class TestAppPollingEdge(unittest.TestCase):
         self.assertEqual(process.wait.call_args_list[0].kwargs, {"timeout": 5})
         process.kill.assert_called_once()
         self.assertEqual(process.wait.call_args_list[1].kwargs, {"timeout": 1})
-        self.assertIsNone(app.jamulus_process)
+        self.assertIsNone(app.bridge_service.jamulus_process)
 
     @patch("webjam_app_enhanced.messagebox.showerror")
     def test_flush_live_room_state_saves_room_context_and_dirty_notes(self, error_mock):
@@ -379,13 +378,14 @@ class TestAppPollingEdge(unittest.TestCase):
         app.root = object()
         app.save_room_context = MagicMock()
         app.session_canvas = MagicMock()
-        app.session_canvas.save_notes_if_dirty.return_value = True
+        # _flush_live_room_state now calls session_canvas._save_notes()
+        app.session_canvas._save_notes.return_value = True
 
         result = WebJamEnhancedApp._flush_live_room_state(app)
 
         self.assertTrue(result)
         app.save_room_context.assert_called_once()
-        app.session_canvas.save_notes_if_dirty.assert_called_once_with()
+        app.session_canvas._save_notes.assert_called_once_with()
         error_mock.assert_not_called()
 
     @patch("webjam_app_enhanced.messagebox.showerror")
@@ -396,6 +396,9 @@ class TestAppPollingEdge(unittest.TestCase):
         app._flush_live_room_state = MagicMock(return_value=False)
         app._save_window_geometry = MagicMock()
         app.cleanup = MagicMock()
+        # quit_app calls session_controller.check_dirty_state() first
+        app.session_controller = MagicMock()
+        app.session_controller.check_dirty_state.return_value = True
 
         WebJamEnhancedApp.quit_app(app)
 
@@ -411,14 +414,15 @@ class TestAppPollingEdge(unittest.TestCase):
         app._flush_live_room_state = MagicMock(return_value=True)
         app._save_window_geometry = MagicMock()
         app.cleanup = MagicMock()
-        app._jamulus_launch_intended = True
-        app._webex_launch_intended = True
+        # quit_app calls session_controller.check_dirty_state() first
+        app.session_controller = MagicMock()
+        app.session_controller.check_dirty_state.return_value = True
+        # _request_shutdown accesses bridge_service via properties
+        app.bridge_service = MagicMock()
 
         WebJamEnhancedApp.quit_app(app)
 
         self.assertTrue(app._shutdown_requested)
-        self.assertFalse(app._jamulus_launch_intended)
-        self.assertFalse(app._webex_launch_intended)
         app.cleanup.assert_called_once_with()
         app.root.quit.assert_called_once_with()
 

@@ -307,6 +307,19 @@ class JamulusController:
         if should_notify:
             self._notify_callbacks()
     
+    def _send_rpc_gain(self, channel_id: int, level: int) -> None:
+        """Fire-and-forget RPC gain command — always runs on a background thread."""
+        if not self.rpc_client.available:
+            return
+
+        def _go() -> None:
+            try:
+                self.rpc_client.set_channel_gain(channel_id, level)
+            except Exception:
+                pass
+
+        threading.Thread(target=_go, daemon=True).start()
+
     def set_fader_level(self, channel_id: int, level: int):
         """Set fader level for a channel (0-127). Sends to Jamulus via RPC or UDP."""
         with self._participants_lock:
@@ -314,9 +327,8 @@ class JamulusController:
                 self.participants[channel_id].fader_level = max(0, min(127, level))
             else:
                 return
-        # Send to Jamulus (RPC preferred, UDP fallback in _apply_mixer_setting)
-        if self.rpc_client.available:
-            self.rpc_client.set_channel_gain(channel_id, level)
+        # Send to Jamulus via RPC (background thread) + UDP fallback in _apply_mixer_setting
+        self._send_rpc_gain(channel_id, level)
         self._apply_mixer_setting(channel_id)
     
     def set_pan(self, channel_id: int, pan: int):
@@ -351,6 +363,9 @@ class JamulusController:
                     # Preserve the requested post-solo mute state without
                     # breaking exclusive solo monitoring in the current mix.
                     self.participants[channel_id].muted = True
+            effective_level = 0 if self.participants[channel_id].muted else self.participants[channel_id].fader_level
+        # Propagate mute state to Jamulus via RPC (gain=0 means muted).
+        self._send_rpc_gain(channel_id, effective_level)
         self._apply_mixer_setting(channel_id)
     
     def set_solo(self, channel_id: int, solo: bool):
@@ -382,6 +397,11 @@ class JamulusController:
                     p.muted = self._pre_solo_mute.get(cid, False)
                 self._pre_solo_mute.clear()
         for cid in affected_ids:
+            with self._participants_lock:
+                participant = self.participants.get(cid)
+            if participant is not None:
+                effective_level = 0 if participant.muted else participant.fader_level
+                self._send_rpc_gain(cid, effective_level)
             self._apply_mixer_setting(cid)
     
     def _apply_mixer_setting(self, channel_id: int, notify: bool = True):
