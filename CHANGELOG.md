@@ -35,13 +35,18 @@ All notable improvements and features for the WebJam music collaboration platfor
 #### Tests
 - **`tests/test_application_controller_toggle.py`** — 15 tests for `_is_jamulus_running`, `_is_video_active` predicates, button-label transitions, server:port in status bar, and self-mute behaviour.
 - **`tests/test_reconnect_manager_edge.py`** — 8 new tests for `stop_jamulus` (terminate, force-kill, idempotency, dead-process), `leave_webex` (state reset, swallow controller errors).
-- **`tests/test_qt_setup_wizard.py`** — 2 new tests for forgiving Webex URL validation (auto-prepend, scheme-prefixed bare-word rejection).
-- Suite total: **518 pass, 12 skipped**.
+- **`tests/test_qt_setup_wizard.py`** — 3 new tests for forgiving Webex URL validation (auto-prepend, scheme-prefixed bare-word rejection) and skip_welcome.
+- Suite total: **519 pass, 12 skipped**.
 
 #### More live-session quality-of-life
 - **'Mute Me' button + Ctrl+Shift+M** (`webjam_qt/widgets/session_strip.py`, `application_controller.py::_on_mute_self`): A new ghost button between the mode picker and audio button toggles mute on the local user's channel, with a Ctrl+Shift+M keyboard shortcut. Useful when the conductor needs to silence themselves quickly (answering a phone, talking off-mic) without finding their card in the grid. The button syncs in both directions with the local-user card's MUTE button.
 - **Restore demos after Stop Audio** (`application_controller.py::_reset_to_demo_state`): When the user clicks Stop Audio, the (now-stale) real-participant cards are replaced with the demo placeholders and the demo-level animation restarts. The status-bar latency label resets to "Not connected". Gives a clear visual signal that audio is off.
 - **Forgiving Webex URL validation** (`webjam_qt/windows/setup_wizard.py::_WebexPage.validatePage`): If the user types `org.webex.com/meet/foo` without a scheme, the wizard auto-prepends `https://` rather than silently refusing to advance. Bare words like "not-a-url" still fail (the auto-prepend only triggers on inputs containing a dot before any slash, and a final netloc-dot check rejects scheme-prefixed bare words too).
+
+#### Layout density + session persistence
+- **Per-card video tile shrunk to 6px accent bar** (`participant_card.py`, `conductor.qss`): The 'Video arrives when Webex is connected' placeholder used to occupy 120px+ of vertical space on every card, even though per-channel video isn't implemented (Webex video shows in the embedded view at the bottom of the stage). The tile is now a fixed-height 6px accent bar in brand colours (teal for remote, gold for local user). Card minimum height drops from 220px to 150px, fitting roughly 40% more participants on screen.
+- **In-session Settings skips Welcome page** (`webjam_qt/windows/setup_wizard.py`): `SetupWizard` accepts a new `skip_welcome=True` keyword arg. When the user reopens Settings via Ctrl+, mid-session, the wizard now starts at the Jamulus page (skipping the welcome) and the title becomes 'WebJam Settings'. First-run flow is unchanged.
+- **Session title persists across launches** (`application_controller.py::_load_session_title` / `_save_session_title`): The session title (e.g. 'Tuesday Practice') was lost on every close and reset to 'Band Rehearsal' on next launch. Now persisted to `~/.webjam_session.json` on title change and on shutdown; restored on startup.
 
 ---
 
