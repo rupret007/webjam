@@ -136,6 +136,7 @@ class ApplicationController(QObject):
         self._level_timer.stop()
         self._reconnect_timer.stop()
         self._save_notes()
+        self._save_session_title()
         # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
         # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
         try:
@@ -203,6 +204,7 @@ class ApplicationController(QObject):
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
         self._load_notes()
+        self._load_session_title()
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
@@ -319,6 +321,8 @@ class ApplicationController(QObject):
 
     def _on_title_changed(self, title: str) -> None:
         LOGGER.info("Session title set: %s", title)
+        # Persist immediately so a crash before clean shutdown doesn't lose it
+        self._save_session_title()
 
     def _apply_mode(self, mode) -> None:
         self.window.flash_message(mode.quick_help, ms=6000)
@@ -759,6 +763,44 @@ class ApplicationController(QObject):
                 (Path.home() / ".webjam_notes.md").write_text(text, encoding="utf-8")
         except Exception:  # noqa: BLE001
             LOGGER.debug("Could not save session notes", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Session title persistence (~/.webjam_session.json)
+    # ------------------------------------------------------------------
+    _SESSION_FILE = ".webjam_session.json"
+
+    def _load_session_title(self) -> None:
+        """Restore the session title from the previous launch (best-effort)."""
+        import json
+        from pathlib import Path
+        path = Path.home() / self._SESSION_FILE
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            title = (data or {}).get("title")
+            if isinstance(title, str) and title.strip():
+                # Use the SessionStrip's QLineEdit directly to avoid emitting
+                # an editingFinished signal that would just round-trip the
+                # value through _on_title_changed.
+                self.window.session_strip._title_input.setText(title)
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not load session title", exc_info=True)
+
+    def _save_session_title(self) -> None:
+        """Persist the current session title to disk (best-effort)."""
+        import json
+        from pathlib import Path
+        try:
+            title = self.window.session_strip.current_title()
+            if not title:
+                return
+            (Path.home() / self._SESSION_FILE).write_text(
+                json.dumps({"title": title}, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not save session title", exc_info=True)
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)
