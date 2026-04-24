@@ -22,11 +22,10 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PySide6.QtCore import Qt, QUrl, Slot
+from PySide6.QtCore import QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
-    QFrame,
     QGroupBox,
     QLabel,
     QLineEdit,
@@ -39,7 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.settings import AppSettings, load_settings
-from webjam_qt.theme.tokens import Color, Font, Space
+from webjam_qt.theme.tokens import Font, Space
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
 
@@ -222,7 +221,7 @@ class _WebexPage(QWizardPage):
     def validatePage(self) -> bool:
         url = self._url.text().strip()
         parsed = urlparse(url)
-        if not parsed.scheme in ("http", "https") or not parsed.netloc:
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
             self._url.setFocus()
             return False
         return True

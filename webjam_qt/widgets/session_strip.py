@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QTime, QTimer, Qt, Signal
+from PySide6.QtCore import QTime, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,

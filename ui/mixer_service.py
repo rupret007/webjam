@@ -1,22 +1,14 @@
 import tkinter as tk
 import json
 import logging
-import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable, List
 
-import tkinter as tk
 from tkinter import messagebox as tk_messagebox
-import json
-import logging
-import time
-from pathlib import Path
-from typing import Optional, Dict, Any, List
 
-from jamulus_controller import JamulusController, JamulusParticipant
+from jamulus_controller import JamulusController
 from storage.repository import WebJamRepository
 from ui.auth_controller import AuthController, UserContext
-from ui.ux_status import classify_latency_ms, readiness_state, connection_summary
 # NOTE: tk_messagebox.showerror was moved from webjam_app_enhanced.py
 from core.creative_modes import get_mode_by_key_or_default
 from core.settings import AppSettings

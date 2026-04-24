@@ -71,21 +71,43 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ---
 
-## Phases
+## Delivery Status
 
-### Phase 1 – Foundation (near term)
+### ✅ Shipped — v0.3.0 (2026-04-21)
 
-- One-click session templates (extend current templates + goals).
-- Review states drive next session (suggest "Continue from In review" on reopen).
-- Companion API: document and stabilize local bridge; add versioning and a small API doc.
-- Accessibility: consolidate and document; make it a stated differentiator in README/positioning.
-- Messaging: add "making something together" to README and in-app copy.
+Everything below is live in the downloadable builds at [Releases](https://github.com/rupret007/webjam/releases/tag/v0.3.0).
+
+- **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; `webjam_app_enhanced.py` retained as fallback
+- **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done with Jamulus install note)
+- **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
+- **Webex embed** — `QWebEngineView` pane with guest-token generation; direct-URL fallback
+- **Audio routing detect** — `core/audio_routing.py` auto-detects VB-CABLE / BlackHole / JACK / Loopback
+- **Session canvas** — shared notes, artifact types, review states (Draft→In review→Approved)
+- **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
+- **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration
+- **Three downloadable builds** — Windows x64, macOS ARM64, macOS Intel x64
+- **CI/CD** — full pytest suite (375+ tests), ruff linting gate, PyInstaller builds on tag push
+- **Accessibility** — `setAccessibleName` on all major panels, keyboard shortcuts, focus rings in QSS
+
+### 🔜 Next — v0.4 (planned)
+
+**Jamulus real mixer control** (highest priority):
+- Wire `JamulusController` fader/mute/solo signals to `JamulusRpcClient` in `ApplicationController`
+- Real-time participant reconciliation from JSON-RPC polling
+- Fallback to UDP binary if RPC unavailable
+
+**Webex full embed** (second priority):
+- Replace browser-open fallback with fully embedded Web SDK inside `QWebEngineView`
+- Participant video streams in `ParticipantCard` video tiles
+
+**macOS code signing**:
+- Apple Developer ID certificate ($99/yr) for Gatekeeper-clean installs
+- `ditto` + `codesign` + `xcrun notarytool` in CI
 
 ### Phase 2 – Differentiation (mid term)
 
-- Mode-specific layouts (UI changes per mode).
+- Mode-specific layouts (UI changes per mode — Music Jam vs Writer's Room vs Design Critique).
 - Per-participant room sound; shared click/metronome + visual pulse.
-- Listening profiles (save/name/share mixes).
 - In-session rituals (sound check, first run, feedback round, save and close).
 - Time-linked notes and references; exportable session brief (PDF/doc).
 - Offline-first session notes (local-first sync).

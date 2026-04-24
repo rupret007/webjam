@@ -6,6 +6,20 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
+### Added — Post-v0.3.0 gap fixes
+- **Qt widget test suite** (`tests/test_qt_widgets.py`): 45 headless smoke tests covering `LevelMeter`, `ParticipantCard`, `SessionStrip`, `ParticipantGrid`, `SideRail`, and `ConductorWindow`
+- **Qt setup wizard tests** (`tests/test_qt_setup_wizard.py`): 18 tests covering `should_show_on_startup`, Jamulus/Webex page validation, settings save/round-trip
+- **Ruff linting gate** added to CI (lint step runs before tests; 8 auto-fixed unused imports)
+- **`python3-tk` added to CI** apt-get — unblocks 11 previously-ignored Tkinter edge test files; only `test_elevation_edge.py` remains ignored (Windows ctypes.windll)
+- **`test_elevation_edge.py`**: Windows-only skip guard — deferred imports prevent `ImportError` on macOS/Linux
+- **`ui/mixer_service.py`**: `MIX_FILE` TODO resolved — path now sourced from `AppSettings.mix_file` via `settings=` constructor param; default is `~/.webjam_mix.json`
+- **Setup wizard Done page**: explicit "Jamulus must be installed separately" note with link to jamulus.io
+- **README status table**: updated to reflect v0.3.0 shipped Qt UI, correct limitation descriptions, and links to Releases page
+
+---
+
+## [0.3.0] — 2026-04-21
+
 ### Added — Phase 6: Onboarding, Shortcuts & Build
 - **Setup Wizard** (`webjam_qt/windows/setup_wizard.py`): 5-page first-run wizard (Welcome, Jamulus server, Webex URL, audio routing, Done). Saves to `~/.webjam_config.json`. Auto-shown on first run.
 - **Keyboard shortcuts**: Ctrl+L (focus session title), F11 (fullscreen), Escape (leave fullscreen), Ctrl+, (open settings)

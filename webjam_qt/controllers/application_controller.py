@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import random
 import threading
-from typing import List, Optional
+from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer, Qt
 from PySide6.QtWidgets import QMessageBox
