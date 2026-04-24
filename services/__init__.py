@@ -1,1 +1,1 @@
-from .bridge_service import BridgeService
+from .bridge_service import BridgeService as BridgeService

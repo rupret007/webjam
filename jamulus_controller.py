@@ -3,7 +3,6 @@ Jamulus Controller - Interface for communicating with Jamulus client
 Provides real-time participant detection and mixer control
 """
 
-import logging
 import os
 import threading
 import time
@@ -15,7 +14,7 @@ from pathlib import Path
 
 from core.audio_engine import RealAudioEngine
 from core.jamulus_protocol import JamulusProtocolAdapter
-from core.jamulus_rpc_client import JamulusRpcClient, ChannelInfo
+from core.jamulus_rpc_client import JamulusRpcClient
 from core.logging_config import configure_logging
 from core.settings import load_settings
 

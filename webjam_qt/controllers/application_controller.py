@@ -187,7 +187,7 @@ class ApplicationController(QObject):
         self.window.set_status_audio("Ready to launch")
         self.window.set_status_video("Ready to join")
         self.window.set_status_latency("—")
-        self.window.set_status_routing("checking…")
+        self.window.set_status_routing("scanning…")
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
 
