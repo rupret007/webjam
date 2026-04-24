@@ -32,6 +32,33 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.1] — 2026-04-24
+
+### Fixed — Qt Conductor runtime gaps (weekend-usability sprint)
+
+#### Signal wiring
+- **Duplicate signal connections eliminated**: `ParticipantGrid` now declares `fader_changed / mute_toggled / solo_toggled` re-emit signals and wires them once per card in `_add_card`. `ApplicationController._wire_signals` connects to the grid once; the per-card loop in `_push_participants_to_grid` is removed. Previously, every participant update stacked new connections → N× callbacks per fader move.
+
+#### Auto-reconnect
+- **Auto-reconnect timer wired**: `ApplicationController` now starts a 3-second `QTimer` that calls `BridgeService.attempt_auto_reconnects()` on every tick. Previously, `attempt_auto_reconnects()` existed but was never called — dropped Jamulus processes were never retried.
+
+#### Mix save / restore
+- **Saved mix auto-restored on Jamulus connect**: when `JamulusController` fires its first real participant update (`_jamulus_connected` flips `True`), `_restore_saved_mix()` loads `~/.webjam_mix.json` and applies it. Fader layout comes back without manual action.
+- **Ctrl+S / Ctrl+O (Save/Load Mix)**: new shortcuts in `ConductorWindow`; `ApplicationController` handlers call `JamulusController.serialize_mix` / `apply_mix_data` and flash a status-bar confirmation.
+
+#### Jamulus path detection
+- **macOS + Linux default candidates added** to `AppSettings.jamulus_candidates`: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, `/usr/bin/Jamulus`, `/usr/local/bin/Jamulus`, `/opt/homebrew/bin/Jamulus` — alongside the existing Windows paths. `find_jamulus()` now resolves on first run on common macOS/Linux installs.
+- **Jamulus executable field in setup wizard**: the Jamulus page gains a path text field (pre-populated from first existing candidate) and a Browse button that resolves `.app` bundles to the binary. The chosen path is persisted at the front of `jamulus_candidates` in `~/.webjam_config.json`.
+
+#### Error handling
+- **`NameError` in BridgeService error dialogs fixed**: lambdas capturing `exc` from `except` blocks (Python 3 deletes `exc` after the block) caused a `NameError` when the actionable-error dialog was shown after a Jamulus or Webex launch failure. Fixed with `lambda m=str(exc): ...` captures.
+- **Video button re-enable**: in direct-URL Webex mode the `meeting_state_changed` signal emits `"joining"` and then nothing (no JS bridge). The "Join Video" button was permanently disabled. A 6-second `QTimer.singleShot` now re-enables it as "Video Active".
+
+#### Code quality
+- Removed unused `webbrowser`, `Callable`, `Any` imports from `bridge_service.py`; split two single-line compound statements that ruff flagged as E701.
+
+---
+
 ## [Unreleased]
 
 ### Added — Post-v0.3.0 gap fixes

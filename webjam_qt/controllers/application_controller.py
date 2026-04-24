@@ -328,12 +328,12 @@ class ApplicationController(QObject):
 
     def _on_webex_state(self, state: str) -> None:
         state_map = {
-            "joining":  ("Joining…",     False),
-            "ACTIVE":   ("In Meeting",   True),
-            "lobby":    ("Lobby",        True),
+            "joining":  ("Joining…",      False),
+            "ACTIVE":   ("In Meeting",    True),
+            "lobby":    ("Lobby",         True),
             "ENDED":    ("Meeting ended", True),
-            "left":     ("Left meeting", True),
-            "error":    ("Webex error",  True),
+            "left":     ("Left meeting",  True),
+            "error":    ("Webex error",   True),
         }
         label, enabled = state_map.get(state, (state.title(), True))
         self.window.set_status_video(label)
@@ -341,6 +341,15 @@ class ApplicationController(QObject):
             label if enabled else "Joining…", enabled=enabled
         )
         self.bridge.webex_state = label
+
+        # In direct-URL mode the widget never sends a post-join state
+        # transition (no JS bridge); re-enable the button after 6 s so
+        # the user can leave or rejoin without restarting the app.
+        if state == "joining":
+            QTimer.singleShot(
+                6_000,
+                lambda: self.window.session_strip.set_video_state("Video Active", enabled=True),
+            )
 
     # ------------------------------------------------------------------
     # Mixer card handlers → JamulusController
