@@ -36,7 +36,8 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **`tests/test_application_controller_toggle.py`** — 15 tests for `_is_jamulus_running`, `_is_video_active` predicates, button-label transitions, server:port in status bar, and self-mute behaviour.
 - **`tests/test_reconnect_manager_edge.py`** — 8 new tests for `stop_jamulus` (terminate, force-kill, idempotency, dead-process), `leave_webex` (state reset, swallow controller errors).
 - **`tests/test_qt_setup_wizard.py`** — 3 new tests for forgiving Webex URL validation (auto-prepend, scheme-prefixed bare-word rejection) and skip_welcome.
-- Suite total: **519 pass, 12 skipped**.
+- **`tests/test_application_controller_toggle.py`** also covers: alone-on-server status, multi-participant counting, muted-card Qt property, session metadata round-trip.
+- Suite total: **523 pass, 12 skipped**.
 
 #### More live-session quality-of-life
 - **'Mute Me' button + Ctrl+Shift+M** (`webjam_qt/widgets/session_strip.py`, `application_controller.py::_on_mute_self`): A new ghost button between the mode picker and audio button toggles mute on the local user's channel, with a Ctrl+Shift+M keyboard shortcut. Useful when the conductor needs to silence themselves quickly (answering a phone, talking off-mic) without finding their card in the grid. The button syncs in both directions with the local-user card's MUTE button.
@@ -55,6 +56,19 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 #### Webex embed resilience
 - **Auto-restore placeholder when Webex URL fails to load** (`webjam_qt/widgets/webex_embed.py::_on_view_load_finished`, `application_controller.py::_on_webex_state`): When `QWebEngineView.loadFinished(ok=False)` fires (404, DNS, blocked, network), the embed emits a new "error" state. The controller restores the placeholder, resets the button to "Join Video", and flashes a hint pointing at the 'Open video call in browser' fallback button. Skips false positives from about:blank/data: navigations.
+
+#### Troubleshooting infrastructure
+- **Jamulus stdout/stderr captured to `~/.webjam_jamulus.log`** (`services/bridge_service.py::launch_jamulus`): Used to be discarded via `subprocess.DEVNULL`. Now line-buffered, overwritten per launch, closed on `stop_jamulus`. Falls back to DEVNULL if the file can't be opened.
+- **Both log paths surfaced in error dialogs** (`application_controller.py::_show_actionable_error`): Lists `~/.webjam.log` (always) and `~/.webjam_jamulus.log` (only when it exists, to avoid confusion in 'Not Found' errors).
+- **F1 help dialog mentions log paths** so users can find them without triggering an error first.
+
+#### Versioning + onboarding
+- **Bumped `__version__` 0.1.0 → 0.4.4** in `webjam_qt/__init__.py` (was stale across 4 minor releases).
+- **Version surfaced in window title** (`WebJam — Conductor (v0.4.4)`) and **F1 help dialog header** (`WebJam — Conductor UI v0.4.4`).
+- **Wizard now hints at directory.jamulus.io** for users who don't yet have a Jamulus server.
+- **Friendly Python version error** in `webjam_qt_main.py` instead of cryptic `SyntaxError` on Python 3.9.
+- **Red 'Unmute Me' button** when self is muted — `QPushButton#GhostButton:checked` paints in danger red (was visually identical to unmuted state).
+- **Session mode persists** alongside title in `~/.webjam_session.json`. Bands using the same mode no longer need to re-select it on every launch.
 
 ---
 
