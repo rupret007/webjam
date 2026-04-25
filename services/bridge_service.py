@@ -53,6 +53,11 @@ class BridgeService:
         self.webex_reconnect_inflight = False
         self._reconnect_lock = threading.Lock()
 
+        # File handle for capturing Jamulus stdout+stderr — closed in stop_jamulus.
+        # Captures to ~/.webjam_jamulus.log, overwritten on each launch so the
+        # user can inspect the CURRENT session's Jamulus output when troubleshooting.
+        self._jamulus_log_file: Optional[object] = None
+
     def find_jamulus(self):
         """Find Jamulus installation.
 
@@ -146,10 +151,33 @@ class BridgeService:
                     "--connect", server,
                     "--jsonrpcport", str(self.settings.jamulus_rpc_port),
                 ]
+                # Capture Jamulus stdout+stderr to ~/.webjam_jamulus.log for
+                # post-hoc troubleshooting. Best-effort — fall back to DEVNULL
+                # if we can't open the file (e.g. read-only home directory).
+                log_file = None
+                stdout_dest = subprocess.DEVNULL
+                try:
+                    log_path = Path.home() / ".webjam_jamulus.log"
+                    log_file = open(log_path, "w", buffering=1)
+                    # Close any previous log file before reassigning
+                    if self._jamulus_log_file is not None:
+                        try:
+                            self._jamulus_log_file.close()
+                        except Exception:
+                            pass
+                    self._jamulus_log_file = log_file
+                    stdout_dest = log_file
+                except OSError as exc:
+                    LOGGER.debug("Could not open Jamulus log file: %s", exc)
+
                 proc = None
                 for i in range(3):
                     try:
-                        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        proc = subprocess.Popen(
+                            cmd,
+                            stdout=stdout_dest,
+                            stderr=subprocess.STDOUT if log_file else subprocess.DEVNULL,
+                        )
                         break
                     except Exception:
                         if i == 2:
@@ -255,6 +283,16 @@ class BridgeService:
 
         self.jamulus_process = None
         self.jamulus_state = "Stopped"
+
+        # Close the Jamulus log file if we opened one.  The contents are
+        # preserved on disk for post-hoc inspection.
+        if self._jamulus_log_file is not None:
+            try:
+                self._jamulus_log_file.close()
+            except Exception:
+                pass
+            self._jamulus_log_file = None
+
         self.metrics_service.increment("metric_jamulus_stop")
         self.schedule_ui_callback(self.refresh_readiness)
         return terminated
