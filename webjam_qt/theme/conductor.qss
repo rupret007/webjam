@@ -125,6 +125,15 @@ QToolButton#SideRailButton:focus {
     border: 1px dashed ${COLOR_BORDER_STRONG};
 }
 
+#ParticipantCard[muted="true"] {
+    background-color: ${COLOR_BG_INPUT};   /* slightly darker than card bg → visually fades */
+}
+
+#ParticipantCard[muted="true"] #ParticipantName,
+#ParticipantCard[muted="true"] #ParticipantRole {
+    color: ${COLOR_TEXT_MUTED};
+}
+
 #ParticipantCard[local="true"] {
     border: 1px solid ${COLOR_ACCENT_AUDIO};  /* gold highlight — this is you */
 }

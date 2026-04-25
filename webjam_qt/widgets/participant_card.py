@@ -236,6 +236,9 @@ class ParticipantCard(QFrame):
     def _apply_mute_state(self, muted: bool) -> None:
         self._mute_button.setProperty("state", "active-mute" if muted else "")
         self._repolish(self._mute_button)
+        # Reflect mute on the card itself so QSS can fade the muted card.
+        self.setProperty("muted", "true" if muted else "false")
+        self._repolish(self)
 
     def _apply_solo_state(self, solo: bool) -> None:
         self._solo_button.setProperty("state", "active-solo" if solo else "")
