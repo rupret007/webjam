@@ -320,6 +320,9 @@ class ApplicationController(QObject):
     # Session strip handlers
     # ------------------------------------------------------------------
     def _on_mode_changed(self, mode_key: str) -> None:
+        # Persist the mode change immediately so a crash before clean
+        # shutdown still saves the user's preference.
+        self._save_session_title()
         mode = get_mode_by_key_or_default(mode_key)
         self._apply_mode(mode)
         self.window.flash_message(f"Switched to {mode.label}")
@@ -789,12 +792,14 @@ class ApplicationController(QObject):
             LOGGER.debug("Could not save session notes", exc_info=True)
 
     # ------------------------------------------------------------------
-    # Session title persistence (~/.webjam_session.json)
+    # Session metadata persistence (~/.webjam_session.json)
+    # Stores the session title and the last-used mode so they survive
+    # app restarts.  Best-effort — file errors are logged at debug only.
     # ------------------------------------------------------------------
     _SESSION_FILE = ".webjam_session.json"
 
     def _load_session_title(self) -> None:
-        """Restore the session title from the previous launch (best-effort)."""
+        """Restore the session title and last-used mode from disk."""
         import json
         from pathlib import Path
         path = Path.home() / self._SESSION_FILE
@@ -802,29 +807,45 @@ class ApplicationController(QObject):
             return
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            title = (data or {}).get("title")
+            if not isinstance(data, dict):
+                return
+            title = data.get("title")
             if isinstance(title, str) and title.strip():
                 # Use the SessionStrip's QLineEdit directly to avoid emitting
                 # an editingFinished signal that would just round-trip the
                 # value through _on_title_changed.
                 self.window.session_strip._title_input.setText(title)
+            mode_key = data.get("mode")
+            if isinstance(mode_key, str) and mode_key:
+                # Programmatically select the mode in the picker (does not emit
+                # currentIndexChanged unless the index actually changes).
+                picker = self.window.session_strip._mode_picker
+                idx = picker.findData(mode_key)
+                if idx >= 0:
+                    picker.setCurrentIndex(idx)
         except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not load session title", exc_info=True)
+            LOGGER.debug("Could not load session metadata", exc_info=True)
 
     def _save_session_title(self) -> None:
-        """Persist the current session title to disk (best-effort)."""
+        """Persist the current session title and mode to disk."""
         import json
         from pathlib import Path
         try:
             title = self.window.session_strip.current_title()
-            if not title:
+            mode_key = self.window.session_strip.current_mode_key()
+            payload: dict = {}
+            if title:
+                payload["title"] = title
+            if mode_key:
+                payload["mode"] = mode_key
+            if not payload:
                 return
             (Path.home() / self._SESSION_FILE).write_text(
-                json.dumps({"title": title}, indent=2),
+                json.dumps(payload, indent=2),
                 encoding="utf-8",
             )
         except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not save session title", exc_info=True)
+            LOGGER.debug("Could not save session metadata", exc_info=True)
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)

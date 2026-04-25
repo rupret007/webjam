@@ -228,5 +228,54 @@ class TestMutedCardDimming(unittest.TestCase):
         self.assertEqual(c.property("muted"), "false")
 
 
+class TestSessionMetadataPersistence(unittest.TestCase):
+    """v0.4.4: title and mode persist via ~/.webjam_session.json."""
+
+    def test_save_and_load_round_trips_title_and_mode(self):
+        import json
+        import os
+        import tempfile
+
+        # Redirect HOME to a temp dir so we don't clobber the user's file
+        old_home = os.environ.get("HOME", "")
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["HOME"] = tmp
+
+            window = ConductorWindow(
+                mode_entries=ApplicationController.mode_entries(),
+                initial_mode_key="music_jam",
+                initial_title="Original",
+            )
+            controller = ApplicationController(window, settings=AppSettings())
+            try:
+                # Change title and mode, save
+                window.session_strip._title_input.setText("Saved Session")
+                # Pick a mode that's NOT music_jam
+                modes = ApplicationController.mode_entries()
+                non_default = next((k for k, _ in modes if k != "music_jam"), None)
+                if non_default:
+                    picker = window.session_strip._mode_picker
+                    idx = picker.findData(non_default)
+                    if idx >= 0:
+                        picker.setCurrentIndex(idx)
+
+                controller._save_session_title()
+
+                # Verify on-disk JSON
+                path = f"{tmp}/.webjam_session.json"
+                self.assertTrue(os.path.exists(path))
+                data = json.loads(open(path).read())
+                self.assertEqual(data["title"], "Saved Session")
+                if non_default:
+                    self.assertEqual(data["mode"], non_default)
+            finally:
+                controller.shutdown()
+                # Restore HOME for subsequent tests
+                if old_home:
+                    os.environ["HOME"] = old_home
+                else:
+                    os.environ.pop("HOME", None)
+
+
 if __name__ == "__main__":
     unittest.main()
