@@ -239,9 +239,14 @@ class ApplicationController(QObject):
             # Restore saved mix (best-effort — silently skipped if no file)
             self._restore_saved_mix()
 
-        # Update participant count in status bar
+        # Update participant count in status bar.  When the user is alone on
+        # the server (only their own channel), say so explicitly — "1
+        # participant" is technically correct but doesn't convey "waiting".
         n = len(jamulus_participants)
-        self.window.set_status_latency(f"{n} participant{'s' if n != 1 else ''}")
+        if n == 1:
+            self.window.set_status_latency("1 participant · waiting for others")
+        else:
+            self.window.set_status_latency(f"{n} participants")
 
         incoming_ids = {p.channel_id for p in jamulus_participants}
 
