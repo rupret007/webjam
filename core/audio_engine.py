@@ -21,6 +21,13 @@ except Exception:  # pragma: no cover - optional dependency
     sd = None
 
 
+# Cap on per-channel level cache — Jamulus tops out around 100 channels in
+# practice, so 1024 is generous.  Without this cap, a long-running session
+# that sees many participants join+leave could grow the dict to thousands
+# of stale entries.  Module-level so tests can import it.
+_MAX_LEVEL_ENTRIES = 1024
+
+
 @dataclass
 class AudioDiagnostics:
     backend: str = "synthetic"
@@ -134,6 +141,17 @@ class RealAudioEngine:
                 peak=min(1.0, value + 0.12),
                 clipped=value > 0.9,
             )
+            # Cheap LRU-style trim: when we exceed the cap, drop the
+            # oldest insertion (Python dicts preserve insertion order).
+            if len(self._levels) > _MAX_LEVEL_ENTRIES:
+                drop_keys = list(self._levels)[: -_MAX_LEVEL_ENTRIES]
+                for k in drop_keys:
+                    self._levels.pop(k, None)
+
+    def clear_level_overrides(self) -> None:
+        """Drop all per-channel level overrides (e.g. on Jamulus disconnect)."""
+        with self._lock:
+            self._levels.clear()
 
     def diagnostics(self) -> AudioDiagnostics:
         return self._diagnostics

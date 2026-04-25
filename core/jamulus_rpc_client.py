@@ -79,6 +79,11 @@ class JamulusRpcClient:
         # Cache the local channel ID so we don't make a second HTTP call on
         # every poll cycle (getChannelClients already costs one request).
         self._local_channel_id: int = -1
+        # Heartbeat: monotonic time of the last successful RPC interaction
+        # (poll or SSE event).  Stays at 0.0 until the first success.  Used
+        # by ``last_activity_age()`` so callers can detect a hung Jamulus
+        # (process alive but RPC silent).
+        self._last_activity_at: float = 0.0
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -146,6 +151,7 @@ class JamulusRpcClient:
                 clients = self.get_channel_clients()
                 if clients is not None:
                     self._available = True
+                    self._last_activity_at = time.monotonic()
                     if self._on_participants_changed:
                         try:
                             self._on_participants_changed(clients)
@@ -155,6 +161,18 @@ class JamulusRpcClient:
                 _logger.debug("RPC poll error: %s", exc)
                 self._available = False
             time.sleep(self.POLL_INTERVAL_S)
+
+    def last_activity_age(self) -> float:
+        """Seconds since the most recent successful RPC interaction.
+
+        Returns ``float('inf')`` if no successful interaction has happened
+        since ``start()`` was called.  Callers (e.g. the controller's
+        reconnect tick) can use this to detect a hung Jamulus — process
+        still alive, but RPC and SSE both silent for too long.
+        """
+        if self._last_activity_at <= 0.0:
+            return float("inf")
+        return time.monotonic() - self._last_activity_at
 
     def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
         raw = self._call("jamulus/getChannelClients", {})
@@ -254,6 +272,9 @@ class JamulusRpcClient:
 
     def _handle_sse_event(self, event_type: str, data: str) -> None:
         import json
+        # Any SSE event (even ones we don't act on) proves Jamulus is alive
+        # and responsive — refresh the heartbeat.
+        self._last_activity_at = time.monotonic()
         try:
             payload = json.loads(data) if data.strip() else {}
         except json.JSONDecodeError:

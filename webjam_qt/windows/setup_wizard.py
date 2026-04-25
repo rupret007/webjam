@@ -510,7 +510,9 @@ class SetupWizard(QWizard):
 
         path = Path(self._settings.config_file)
         try:
-            path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            from core.file_io import atomic_write_text
+            # Mode 0o600 because the config can contain webex_guest_issuer_secret.
+            atomic_write_text(path, json.dumps(cfg, indent=2), mode=0o600)
             LOGGER.info("Settings saved to %s", path)
         except Exception as exc:
             LOGGER.error("Failed to save settings: %s", exc)

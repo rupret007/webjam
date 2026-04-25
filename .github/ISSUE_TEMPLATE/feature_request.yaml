@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest something WebJam should do.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the rehearsal scenario where current WebJam falls short.
+      placeholder: "When I'm conducting and want to silence everyone except the lead vocalist, I have to mute each card individually..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How would it work?
+      description: Sketch the UX or behaviour you imagine.
+      placeholder: "A 'Solo Group' button that mutes everyone NOT in a checked set..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered?
+      description: Other ways to solve this, or current workarounds.

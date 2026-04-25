@@ -4,6 +4,71 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.5] — 2026-04-25
+
+### Deep-dive pass — data integrity, accessibility, performance, robustness
+
+Synthesised from 17 parallel investigative + implementation agents across
+two rounds covering architecture, performance, tests, real-world failures,
+accessibility, integrations, persistence, docs, state machines, network
+protocol robustness, cross-platform pitfalls, and error UX.
+
+#### Data integrity
+- **Atomic writes** for all persistent JSON/text via new `core/file_io.py::atomic_write_text` (temp file + fsync + `os.replace`).  Five call sites converted: setup wizard config, mix file, session notes, session metadata, canvas notes export.  8 new tests in `tests/test_file_io.py`.
+- **Config file mode `0o600`** for `~/.webjam_config.json` (which can hold the `webex_guest_issuer_secret`).  Was world-readable.
+
+#### Reliability + leak fixes
+- **Subprocess log file leak fixed** in `bridge_service.launch_jamulus` — new `_close_jamulus_log_file()` helper called on shutdown-mid-launch and exception paths; idempotent.
+- **State-machine bug**: `jamulus_reconnect_inflight` now cleared on the manual-launch failure paths (Not Found, Port In Use), so subsequent reconnect ticks aren't stuck on a stale True flag.
+- **Bounded `_levels` dict** in `RealAudioEngine` (cap 1024 entries via LRU-trim); new `clear_level_overrides()` called from `JamulusController.stop()` so stale per-channel meter data doesn't leak between sessions.
+- **RPC heartbeat** detects hung Jamulus (process alive but RPC silent for >15s).  Surfaces "Jamulus stopped responding" banner; auto-clears when activity resumes.
+
+#### Real-world failure handling
+- **Port conflict detection** before launching Jamulus.  Bind-tests `127.0.0.1:RPC_PORT`; if in use, shows actionable error pointing at `WEBJAM_JAMULUS_RPC_PORT` env var instead of silently leaving an uncontrollable Jamulus running.
+- **Mix save/load specificity**: distinguishes OSError ("Permission denied. Check folder permissions and disk space"), JSONDecodeError ("Mix file is corrupted. Save a fresh one with Ctrl+S"), and generic exceptions.  All three flash for 6s and log full traceback.
+
+#### UDP protocol hardening
+- **`_parse_level_list`** capped at 500 entries (was unbounded — a hostile/malformed `CLT_CHANNEL_LEVEL_LIST` could allocate tens of thousands of dict entries).
+- **Unknown msg_id logs deduped** — each unknown msg_id is logged once per session, preventing log floods from packet storms.
+
+#### Cross-platform fixes
+- **Windows `CREATE_NO_WINDOW`** in `subprocess.Popen` so the launched Jamulus doesn't pop up a spurious console alongside its GUI.
+- **macOS Cmd+M conflict resolved** — Ctrl+M / Ctrl+Shift+M now bind to literal Control on macOS (via `Qt.MetaModifier`) so they don't collide with Cmd+M = system minimize.  Other platforms unchanged.  F1 help and shortcut labels reflect this.
+- **Font fallback chain reordered** — Inter is not bundled, so `-apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, Inter, sans-serif` resolves correctly per platform.
+
+#### Accessibility
+- **`TEXT_MUTED` `#5F6B85 → #7A8AA0`** (was 2.93:1 contrast on BG_CARD — WCAG AA fail).  `TEXT_SECONDARY` bumped for safety margin.
+- **Fader keyboard step**: `setSingleStep(5)` / `setPageStep(15)` (was default 1, made keyboard nav unusable).
+- **Participant-context accessible names**: "Volume fader for Alice (decibels)", "Mute Alice", "Solo Alice".  Fader's accessible description includes the current dB value and updates on each change.
+- **Side-rail focus border** 1px → 2px for visible keyboard navigation.
+
+#### Performance
+- **Single global LevelMeter timer** (was N per-card).  20 participants: 500 events/sec → 25/sec (-95%).  `level_meter.py::external_tick` flag, `participant_grid.tick_all_meters()`, driven by ApplicationController's `_meter_tick_timer`.
+
+#### Webex integration
+- **Token refresh on TTL approach** — 5-min safety margin before 1-hour expiry, polled every 60s.  Long rehearsals no longer silently lose Webex auth.
+- **`mute_webex_self()` JS bridge** — Mute Me / Ctrl+Shift+M now silences the user in BOTH Jamulus AND Webex (was Jamulus-only).
+- **Auto-restore placeholder** when Webex URL fails to load (404/DNS/blocked) — emits `error` state, restores placeholder, shows hint pointing at "Open video call in browser" fallback.
+
+#### Architecture refactor
+- **`SessionPersistence` extracted** from `ApplicationController` — `webjam_qt/controllers/session_persistence.py` (111 lines) owns notes + title + mode I/O.  Public methods on ApplicationController retained as thin delegates so existing tests pass unchanged.
+
+#### Developer experience
+- **`DEVELOPMENT.md`** +191 lines: 3 contributor tutorials (add a `ParticipantPresentation` field, add a Jamulus JSON-RPC method, wire a new keyboard shortcut) + sections on running tests / ruff / smoke-gate locally.
+- **`.github/ISSUE_TEMPLATE/`** — `bug_report.yaml` + `feature_request.yaml` + `config.yml` with structured fields for OS/version/log excerpts.
+- **Public docstrings** on `JamulusController.set_fader_level / set_mute`, `BridgeService.launch_jamulus / attempt_auto_reconnects`.
+- **Friendly Python version error** in `webjam_qt_main.py` instead of cryptic `SyntaxError` on Python 3.9.
+- **Wizard hints at `directory.jamulus.io`** for users without a server.
+
+#### Tests
+- **30 new tests** across these new files: `test_file_io`, `test_jamulus_rpc_fallback`, `test_jamulus_concurrent_mixer`, `test_webex_embed_lifecycle`, `test_bridge_reconnect_max_attempts`, `test_repository_mix_migration`, `test_application_controller_demo_to_real_transition`, `test_application_controller_signal_wiring`, `test_settings_corruption_recovery`, `test_audio_engine_levels_bound`, `test_session_persistence`, `test_level_meter_external_tick`, `test_webex_token_refresh`, `test_rpc_heartbeat`.
+- **Suite total: 565 pass, 12 skipped** (was 523 at v0.4.4 release; +42 net).
+
+#### Versioning
+- **`__version__` → 0.4.5**, surfaced in title bar and F1 help.
+
+---
+
 ## [0.4.4] — 2026-04-24
 
 ### Fixed — Session-control completeness

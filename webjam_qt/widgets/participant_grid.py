@@ -169,6 +169,16 @@ class ParticipantGrid(QScrollArea):
         if card is not None:
             card.set_audio_level(level)
 
+    def tick_all_meters(self) -> None:
+        """Drive one decay step on every card's level meter.
+
+        Invoked by a single application-wide QTimer in ApplicationController
+        instead of each LevelMeter owning its own timer.  With N cards this
+        cuts timer events from N to 1 per tick.
+        """
+        for card in self._cards.values():
+            card.tick_meter()
+
     def cards(self) -> list[ParticipantCard]:
         return list(self._cards.values())
 

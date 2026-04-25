@@ -1,0 +1,98 @@
+name: Bug report
+description: Something broke during a session, on launch, or during setup.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this!  WebJam is built around band rehearsal use,
+        and the more concrete you can be about what you saw, the faster we can fix it.
+
+        **Tip:** Press `F1` inside WebJam — the Help dialog lists the two log
+        files you'll attach below.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: One or two sentences describing what went wrong.
+      placeholder: "Clicked Launch Audio, Jamulus opened but my band's faders never appeared in WebJam."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "Faders for each band member to appear within a few seconds of clicking Launch Audio."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list of what you clicked / typed.
+      placeholder: |
+        1. Open WebJam
+        2. Click Launch Audio
+        3. Wait 30 seconds
+        4. Observe — no participants
+    validations:
+      required: true
+
+  - type: input
+    id: webjam_version
+    attributes:
+      label: WebJam version
+      description: Title bar shows the version, e.g. "WebJam — Conductor (v0.4.4)".
+      placeholder: "v0.4.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 10
+        - Windows 11
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: jamulus_version
+    attributes:
+      label: Jamulus version
+      description: From Jamulus → About menu, e.g. "3.9.1".
+      placeholder: "3.9.1"
+
+  - type: textarea
+    id: webjam_log
+    attributes:
+      label: ~/.webjam.log (last 50 lines)
+      description: |
+        Paste the tail of `~/.webjam.log`.  This is WebJam's own diagnostics.
+        On macOS: `tail -50 ~/.webjam.log` in Terminal.
+      render: shell
+
+  - type: textarea
+    id: jamulus_log
+    attributes:
+      label: ~/.webjam_jamulus.log (last 50 lines)
+      description: |
+        Paste the tail of `~/.webjam_jamulus.log`.  This is what Jamulus
+        printed to stdout/stderr during the failing session.
+        On macOS: `tail -50 ~/.webjam_jamulus.log` in Terminal.
+      render: shell
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: Screenshots, network setup quirks, audio interface details, etc.

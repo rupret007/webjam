@@ -91,12 +91,19 @@ class JamulusController:
         self.monitor_thread.start()
 
     def stop(self):
-        """Stop all monitoring."""
+        """Stop all monitoring and release per-channel level cache."""
         self.running = False
         self.rpc_client.stop()
         self.protocol.stop_receiving()
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2)
+        # Drop any per-channel RPC level overrides — the next session may
+        # have completely different channel IDs, and stale entries shouldn't
+        # leak between sessions.
+        try:
+            self.audio_engine.clear_level_overrides()
+        except AttributeError:
+            pass  # older audio engine without the method
         self.audio_engine.stop()
 
     # ------------------------------------------------------------------
@@ -347,7 +354,18 @@ class JamulusController:
         threading.Thread(target=_go, daemon=True).start()
 
     def set_fader_level(self, channel_id: int, level: int):
-        """Set fader level for a channel (0-127). Sends to Jamulus via RPC or UDP."""
+        """Set the local mix fader for a Jamulus channel.
+
+        Args:
+            channel_id: Jamulus channel ID (>= 0).  Silently no-ops if the
+                channel isn't currently in the participant list.
+            level: 0..127 (Jamulus convention).  100 = unity gain (0 dB),
+                127 = ~+6 dB. Out-of-range values are clamped.
+
+        Sends the change to Jamulus via JSON-RPC (background thread, non-
+        blocking) when available; UDP `apply_mixer` is also called as a
+        fallback so the change still propagates if the RPC server isn't up.
+        """
         with self._participants_lock:
             if channel_id in self.participants:
                 self.participants[channel_id].fader_level = max(0, min(127, level))
@@ -367,7 +385,21 @@ class JamulusController:
         self._apply_mixer_setting(channel_id)
     
     def set_mute(self, channel_id: int, muted: bool):
-        """Mute/unmute a channel"""
+        """Mute/unmute a Jamulus channel in the local mix.
+
+        Args:
+            channel_id: Jamulus channel ID (>= 0).  Silently no-ops if the
+                channel isn't in the participant list.
+            muted: True to mute, False to unmute.
+
+        Solo interaction: if any channel currently has solo=True, muting a
+        non-soloed channel records the requested state in `_pre_solo_mute`
+        for restoration when solo is released, but the actual gain stays at
+        0 (the channel remains audibly muted by the solo).
+
+        Sent to Jamulus via JSON-RPC (background thread) using gain=0 for
+        muted, otherwise the channel's current fader_level.
+        """
         with self._participants_lock:
             if channel_id not in self.participants:
                 return

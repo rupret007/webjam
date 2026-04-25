@@ -87,7 +87,9 @@ class ParticipantCard(QFrame):
         self._fader_value.setObjectName("FaderValue")
         self._fader_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self._level_meter = LevelMeter(self, height=4)
+        # external_tick=True: ApplicationController drives decay globally
+        # (one QTimer instead of one per card — see LevelMeter docstring).
+        self._level_meter = LevelMeter(self, height=4, external_tick=True)
         self._level_meter.set_level(presentation.audio_level)
         self._level_meter.setAccessibleName("Audio level meter")
 
@@ -95,7 +97,15 @@ class ParticipantCard(QFrame):
         self._fader.setRange(0, 127)
         self._fader.setValue(presentation.fader_level)
         self._fader.setTracking(True)
-        self._fader.setAccessibleName("Volume fader")
+        # Useful keyboard step sizes — default of 1 is too fine for a 128-level
+        # fader (would take 20+ arrow presses to make a meaningful change).
+        self._fader.setSingleStep(5)   # arrow-key step
+        self._fader.setPageStep(15)    # PageUp/PageDown step
+        self._fader.setAccessibleName(f"Volume fader for {presentation.name} (decibels)")
+        self._fader.setAccessibleDescription(
+            f"Volume for {presentation.name}, currently {self._format_fader(presentation.fader_level)}. "
+            f"Use left/right arrows to adjust, Page Up/Down for larger steps, double-click to reset to 0 dB."
+        )
         self._fader.setToolTip("Volume fader — double-click to reset to 0 dB")
         self._fader.valueChanged.connect(self._on_fader_value_changed)
         # Double-click resets fader to 0 dB (level 100 = unity gain)
@@ -105,7 +115,7 @@ class ParticipantCard(QFrame):
         self._mute_button.setObjectName("PillButton")
         self._mute_button.setCheckable(True)
         self._mute_button.setChecked(presentation.muted)
-        self._mute_button.setAccessibleName("Mute")
+        self._mute_button.setAccessibleName(f"Mute {presentation.name}")
         self._mute_button.clicked.connect(self._on_mute_clicked)
         self._apply_mute_state(presentation.muted)
 
@@ -113,7 +123,7 @@ class ParticipantCard(QFrame):
         self._solo_button.setObjectName("PillButton")
         self._solo_button.setCheckable(True)
         self._solo_button.setChecked(presentation.solo)
-        self._solo_button.setAccessibleName("Solo")
+        self._solo_button.setAccessibleName(f"Solo {presentation.name}")
         self._solo_button.clicked.connect(self._on_solo_clicked)
         self._apply_solo_state(presentation.solo)
 
@@ -143,12 +153,24 @@ class ParticipantCard(QFrame):
         self._level_meter.set_level(presentation.audio_level)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
+        # Refresh accessible names to track the (possibly renamed) participant
+        self._fader.setAccessibleName(f"Volume fader for {presentation.name} (decibels)")
+        self._mute_button.setAccessibleName(f"Mute {presentation.name}")
+        self._solo_button.setAccessibleName(f"Solo {presentation.name}")
 
     def set_audio_level(self, level: float) -> None:
         """Push instantaneous meter level without rebuilding the whole card."""
         self._presentation.audio_level = level
         self._level_meter.set_level(level)
         self._refresh_speaking_state(level)
+
+    def tick_meter(self) -> None:
+        """Drive one decay step on this card's level meter.
+
+        Called by ParticipantGrid.tick_all_meters from the global meter
+        tick timer in ApplicationController.
+        """
+        self._level_meter.tick_decay()
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -216,6 +238,12 @@ class ParticipantCard(QFrame):
     def _on_fader_value_changed(self, value: int) -> None:
         self._presentation.fader_level = value
         self._fader_value.setText(self._format_fader(value))
+        # Refresh the accessible description so screen readers announce the
+        # new dB value when the user changes the fader by keyboard.
+        self._fader.setAccessibleDescription(
+            f"Volume for {self._presentation.name}, currently {self._format_fader(value)}. "
+            f"Use left/right arrows to adjust, Page Up/Down for larger steps, double-click to reset to 0 dB."
+        )
         self.fader_changed.emit(self._presentation.channel_id, value)
 
     def _on_mute_clicked(self) -> None:
