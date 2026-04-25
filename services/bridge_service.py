@@ -2,15 +2,49 @@ import logging
 import subprocess
 import threading
 import time
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
+
+class JamulusState(str, Enum):
+    """Canonical Jamulus subprocess lifecycle states.
+
+    Inherits from `str` so that legacy `if state == "Running":` style
+    comparisons keep working transparently — the enum members compare
+    equal to their `.value` strings.
+    """
+    NOT_LAUNCHED   = "Not launched"
+    NOT_RUNNING    = "Not running"
+    NOT_FOUND      = "Not found"
+    ALREADY        = "Already running"
+    PORT_IN_USE    = "Port in use"
+    RUNNING        = "Running"
+    LAUNCH_FAILED  = "Launch failed"
+    STOPPED        = "Stopped"
+
+
 class BridgeService:
     """
     Service layer for managing external integrations: Jamulus and Webex.
     Handles launching, monitoring, and reconnection logic.
+
+    # Lock invariants
+    # ----------------
+    # `_reconnect_lock` serialises *writes* to:
+    #   - `self.jamulus_state`   (via `_set_jamulus_state`)
+    #   - `self.jamulus_process` (assigned alongside the state in `_do_launch`)
+    #   - `self.jamulus_reconnect_inflight` / `webex_reconnect_inflight`
+    #
+    # Reads are intentionally *not* under the lock. On CPython, attribute
+    # reads of a single pointer-typed value (a `str` subclass like
+    # `JamulusState`, or `None`/a `Popen` reference) are atomic by virtue
+    # of the GIL — adding a lock around every read site (e.g. in
+    # `refresh_readiness`) would be pure overhead with no correctness
+    # benefit. Code that needs a *consistent* multi-attribute snapshot
+    # (e.g. `_attempt_auto_reconnect_jamulus`) takes the lock explicitly.
     """
     
     def __init__(
@@ -38,7 +72,7 @@ class BridgeService:
 
         # State
         self.jamulus_process: Optional[subprocess.Popen] = None
-        self.jamulus_state = "Not launched"
+        self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
         self.webex_state = "Not opened"
         
         self.jamulus_launch_intended = False
@@ -57,6 +91,19 @@ class BridgeService:
         # Captures to ~/.webjam_jamulus.log, overwritten on each launch so the
         # user can inspect the CURRENT session's Jamulus output when troubleshooting.
         self._jamulus_log_file: Optional[object] = None
+
+    def _set_jamulus_state(self, state: "JamulusState | str") -> None:
+        """Atomically update `jamulus_state` under `_reconnect_lock`.
+
+        Accepts either a `JamulusState` enum member or a raw string for
+        backwards compatibility with any external caller. Always stores
+        the underlying `.value` string so existing equality checks
+        against string literals (`if jamulus_state == "Running":`)
+        continue to work.
+        """
+        value = state.value if isinstance(state, JamulusState) else state
+        with self._reconnect_lock:
+            self.jamulus_state = value
 
     def _is_rpc_port_in_use(self) -> bool:
         """Return True if the configured Jamulus JSON-RPC port is already bound.
@@ -144,7 +191,7 @@ class BridgeService:
             if reconnect:
                 self.jamulus_reconnect_inflight = False
                 self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                self.jamulus_state = "Not running"
+                self._set_jamulus_state(JamulusState.NOT_RUNNING)
                 self.schedule_ui_callback(self.refresh_readiness)
                 LOGGER.warning("Jamulus reconnect skipped: executable not found.")
                 return
@@ -156,7 +203,7 @@ class BridgeService:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             self.metrics_service.increment("metric_jamulus_launch_failed")
-            self.jamulus_state = "Not found"
+            self._set_jamulus_state(JamulusState.NOT_FOUND)
             self.schedule_ui_callback(self.refresh_readiness)
             self.show_actionable_error(
                 "Jamulus Not Found",
@@ -172,7 +219,7 @@ class BridgeService:
             return
 
         if self.jamulus_process and self.jamulus_process.poll() is None:
-            self.jamulus_state = "Already running"
+            self._set_jamulus_state(JamulusState.ALREADY)
             self.jamulus_reconnect_attempts = 0
             self.jamulus_next_reconnect_at = 0.0
             self.jamulus_reconnect_inflight = False
@@ -192,7 +239,7 @@ class BridgeService:
         if manual and self._is_rpc_port_in_use():
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
-            self.jamulus_state = "Port in use"
+            self._set_jamulus_state(JamulusState.PORT_IN_USE)
             self.metrics_service.increment("metric_jamulus_port_conflict")
             self.schedule_ui_callback(self.refresh_readiness)
             port = self.settings.jamulus_rpc_port
@@ -282,12 +329,20 @@ class BridgeService:
                         self.jamulus_reconnect_inflight = False
                     return
 
-                self.jamulus_process = proc
-                self.jamulus_state = "Running"
+                # Atomically publish: process handle, state, and inflight flag.
+                # The audit found that `jamulus_process` was being written
+                # from this worker thread while the QTimer reconnect tick
+                # could read it on the UI thread without coordination — fold
+                # all three writes into a single locked section so that any
+                # observer either sees pre-launch state (process=None,
+                # state="Not launched"/etc.) or post-launch state
+                # (process=proc, state="Running"), never an inconsistent mix.
+                with self._reconnect_lock:
+                    self.jamulus_process = proc
+                    self.jamulus_state = JamulusState.RUNNING.value
+                    self.jamulus_reconnect_inflight = False
                 self.jamulus_reconnect_attempts = 0
                 self.jamulus_next_reconnect_at = 0.0
-                with self._reconnect_lock:
-                    self.jamulus_reconnect_inflight = False
 
                 if reconnect:
                     self.metrics_service.increment("metric_jamulus_reconnect_success")
@@ -316,7 +371,9 @@ class BridgeService:
                 # Close the log file we opened before Popen — Jamulus never
                 # started, nothing's writing to it.
                 self._close_jamulus_log_file()
-                self.jamulus_state = "Launch failed" if not reconnect else "Not running"
+                self._set_jamulus_state(
+                    JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
+                )
                 with self._reconnect_lock:
                     self.jamulus_reconnect_inflight = False
                 
@@ -384,8 +441,11 @@ class BridgeService:
             except Exception as exc:
                 LOGGER.warning("Failed to terminate Jamulus: %s", exc)
 
-        self.jamulus_process = None
-        self.jamulus_state = "Stopped"
+        # Pair the `jamulus_process` clear with the state write under the
+        # lock — same invariant as `_do_launch`'s success path.
+        with self._reconnect_lock:
+            self.jamulus_process = None
+            self.jamulus_state = JamulusState.STOPPED.value
 
         # Close the Jamulus log file if we opened one.  The contents are
         # preserved on disk for post-hoc inspection.

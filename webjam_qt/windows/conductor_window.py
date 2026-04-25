@@ -190,6 +190,30 @@ class ConductorWindow(QMainWindow):
             )
         else:
             self._mute_self_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
+        # Cmd/Ctrl+Shift+D — copy diagnostics summary to clipboard
+        if on_mac:
+            self._diagnostics_shortcut = QShortcut(
+                QKeySequence(
+                    Qt.KeyboardModifier.MetaModifier.value
+                    | Qt.KeyboardModifier.ShiftModifier.value
+                    | Qt.Key.Key_D.value
+                ),
+                self,
+            )
+        else:
+            self._diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        # Cmd/Ctrl+Shift+R — reset all faders to 0 dB (with confirmation)
+        if on_mac:
+            self._reset_faders_shortcut = QShortcut(
+                QKeySequence(
+                    Qt.KeyboardModifier.MetaModifier.value
+                    | Qt.KeyboardModifier.ShiftModifier.value
+                    | Qt.Key.Key_R.value
+                ),
+                self,
+            )
+        else:
+            self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
         # F1 — show help dialog
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
 
@@ -214,6 +238,8 @@ class ConductorWindow(QMainWindow):
             f"&nbsp;&nbsp;<b>{mute_all_label}</b> — Mute / unmute all<br>"
             f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Mute / unmute yourself<br>"
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
+            "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
+            "&nbsp;&nbsp;<b>Ctrl+Shift+D</b> — Copy diagnostics to clipboard<br>"
             "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
             "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"
             "&nbsp;&nbsp;<b>Esc</b> — Exit fullscreen<br>"

@@ -120,6 +120,13 @@ class _JamulusPage(QWizardPage):
         self._host.setAccessibleName("Jamulus server hostname or IP address")
         layout.addWidget(self._host)
 
+        # Live-validation hint — hidden unless the user types something dodgy.
+        self._host_hint = _body_label("")
+        self._host_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self._host_hint.setVisible(False)
+        layout.addWidget(self._host_hint)
+        self._host.textChanged.connect(self._validate_host_live)
+
         # Helpful hint for users who don't yet have a server
         _hint = _body_label(
             "Don't have a server? Browse free public ones at "
@@ -199,6 +206,22 @@ class _JamulusPage(QWizardPage):
                 path = str(binary)
         self._jamulus_path.setText(path)
 
+    @Slot(str)
+    def _validate_host_live(self, text: str) -> None:
+        """Show a typing-time hint about obvious host-input mistakes."""
+        stripped = text.strip()
+        if not stripped:
+            # Empty — placeholder text is enough; stay silent.
+            self._host_hint.setVisible(False)
+            return
+        if " " in stripped:
+            self._host_hint.setText(
+                "Host shouldn't contain spaces \u2014 use myband.example.com"
+            )
+            self._host_hint.setVisible(True)
+            return
+        self._host_hint.setVisible(False)
+
     def validatePage(self) -> bool:
         host = self._host.text().strip()
         if not host:
@@ -248,6 +271,13 @@ class _WebexPage(QWizardPage):
         )
         layout.addWidget(self._url)
 
+        # Live-validation hint — hidden unless the user types something dodgy.
+        self._url_hint = _body_label("")
+        self._url_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self._url_hint.setVisible(False)
+        layout.addWidget(self._url_hint)
+        self._url.textChanged.connect(self._validate_url_live)
+
         # Optional: guest issuer
         self._guest_group = QGroupBox("Guest Issuer (optional — developer.webex.com)")
         self._guest_group.setCheckable(True)
@@ -283,6 +313,36 @@ class _WebexPage(QWizardPage):
         layout.addStretch(1)
 
         self.registerField("webex_url*", self._url)
+
+    @Slot(str)
+    def _validate_url_live(self, text: str) -> None:
+        """Show a typing-time hint about obvious URL-input mistakes."""
+        stripped = text.strip()
+        if not stripped:
+            self._url_hint.setVisible(False)
+            return
+        if " " in stripped or ".." in stripped:
+            self._url_hint.setText("URL shouldn't contain spaces or '..'")
+            self._url_hint.setVisible(True)
+            return
+        if "://" in stripped:
+            # Has a scheme — flag missing-domain (e.g. "https://localhost").
+            parsed = urlparse(stripped)
+            if parsed.netloc and "." not in parsed.netloc:
+                self._url_hint.setText(
+                    "URL needs a domain (e.g. myorg.webex.com), not just localhost"
+                )
+                self._url_hint.setVisible(True)
+                return
+            self._url_hint.setVisible(False)
+            return
+        # No scheme yet — informational nudge if it looks domain-shaped.
+        first_segment = stripped.split("/", 1)[0]
+        if "." in first_segment:
+            self._url_hint.setText("\u2713 Will auto-prepend https://")
+            self._url_hint.setVisible(True)
+            return
+        self._url_hint.setVisible(False)
 
     def validatePage(self) -> bool:
         url = self._url.text().strip()

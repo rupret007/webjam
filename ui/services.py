@@ -69,6 +69,12 @@ class MetricsService:
         "metric_load_mix_attempt",
         "metric_load_mix_success",
         "metric_load_mix_failed",
+        # v0.4.5 — incremented in code but were missing from this list,
+        # so they didn't appear in usage-metrics dialogs / exports.
+        "metric_jamulus_stop",
+        "metric_jamulus_port_conflict",
+        "metric_webex_leave",
+        "metric_session_completed",
     ]
 
     def __init__(self, repository: Any):

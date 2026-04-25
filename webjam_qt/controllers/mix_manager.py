@@ -1,0 +1,124 @@
+"""Mix save/load/restore — persists per-channel fader, mute, solo, and pan.
+
+Owns the bit of mixer state that survives an app restart:
+
+* ``~/.webjam_mix.json`` — serialized participant mix (fader/mute/solo/pan)
+
+Two interactive paths (``save`` / ``load``) flash user-facing messages on
+success and on each failure mode (missing file, corrupted JSON, OS error,
+generic).  A third best-effort path (``auto_restore``) is used when Jamulus
+first connects: silent on missing file, debug-logged on any error, no flash.
+
+Atomic writes (via ``core.file_io.atomic_write_text``) prevent half-written
+files from corrupting state on crash.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Callable, Optional
+
+from core.file_io import atomic_write_text
+
+_MIX_FILE = ".webjam_mix.json"
+
+
+class MixManager:
+    """Loads and saves the per-channel mix for a single window.
+
+    ``flash_callback`` matches the signature of ``ConductorWindow.flash_message``
+    — ``(text: str, ms: int)``.  The two interactive entry points always pass
+    an explicit duration so the callback contract is uniform; ``auto_restore``
+    never flashes.
+    """
+
+    def __init__(
+        self,
+        jamulus_controller,
+        flash_callback: Callable[[str, int], None],
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        self._jamulus = jamulus_controller
+        self._flash = flash_callback
+        self._log = logger or logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def save(self) -> None:
+        """Serialize current mixer state to ~/.webjam_mix.json."""
+        mix_path = Path.home() / _MIX_FILE
+        try:
+            payload = self._jamulus.serialize_mix()
+            atomic_write_text(mix_path, json.dumps(payload, indent=2))
+            self._log.info("Mix saved to %s", mix_path)
+            self._flash("Mix saved  \u00b7  Ctrl+O to restore", 4000)
+        except OSError as exc:
+            self._log.exception("Failed to save mix to %s", mix_path)
+            self._flash(
+                f"Couldn't save mix: {exc.strerror or exc}. "
+                f"Check folder permissions and disk space.",
+                6000,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._log.exception("Failed to save mix")
+            self._flash(
+                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
+                6000,
+            )
+
+    def load(self) -> bool:
+        """Load mixer state from ~/.webjam_mix.json and apply to Jamulus.
+
+        Returns True if mix was loaded, False if the file was missing or
+        an error occurred.  Always flashes a status message either way.
+        """
+        mix_path = Path.home() / _MIX_FILE
+        if not mix_path.exists():
+            self._flash("No saved mix found  \u00b7  Ctrl+S to save one", 4000)
+            return False
+        try:
+            payload = json.loads(mix_path.read_text())
+            self._jamulus.apply_mix_data(payload)
+            self._log.info("Mix loaded from %s", mix_path)
+            self._flash("Mix loaded", 4000)
+            return True
+        except json.JSONDecodeError as exc:
+            self._log.exception("Mix file is corrupted")
+            self._flash(
+                f"Mix file is corrupted ({exc.msg}). Save a fresh one with Ctrl+S.",
+                6000,
+            )
+            return False
+        except OSError as exc:
+            self._log.exception("Could not read mix file")
+            self._flash(
+                f"Couldn't read mix file: {exc.strerror or exc}.",
+                6000,
+            )
+            return False
+        except Exception as exc:  # noqa: BLE001
+            self._log.exception("Failed to load mix")
+            self._flash(
+                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
+                6000,
+            )
+            return False
+
+    def auto_restore(self) -> None:
+        """Auto-apply ~/.webjam_mix.json when Jamulus first connects.
+
+        Best-effort and silent: returns early if no file exists, debug-logged
+        on any error, and never flashes a user-facing message — the caller
+        decides whether to surface that "your mix is back" hint.
+        """
+        mix_path = Path.home() / _MIX_FILE
+        if not mix_path.exists():
+            return
+        try:
+            payload = json.loads(mix_path.read_text())
+            self._jamulus.apply_mix_data(payload)
+            self._log.info("Restored saved mix from %s", mix_path)
+        except Exception:  # noqa: BLE001
+            self._log.debug("Failed to restore saved mix from %s", mix_path, exc_info=True)

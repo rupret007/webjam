@@ -31,6 +31,7 @@ from services.bridge_service import BridgeService
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
 
+from webjam_qt.controllers.mix_manager import MixManager
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.widgets.participant_card import ParticipantPresentation
@@ -113,6 +114,11 @@ class ApplicationController(QObject):
         # Generous: poll cadence is 5s and SSE level events fire ~50ms,
         # so 15s is plenty of margin.
         self._RPC_HANG_THRESHOLD_S = 15.0
+        # Mix-dirty tracking: True when fader/mute/solo state has changed
+        # since the last successful save.  shutdown() auto-saves if True
+        # AND _jamulus_connected (so we don't overwrite a real saved mix
+        # with stale demo data).
+        self._mix_dirty = False
 
         # Timers
         self._demo_timer = QTimer(self)
@@ -154,6 +160,16 @@ class ApplicationController(QObject):
             logger=LOGGER,
         )
 
+        # Mix save/load/restore (~/.webjam_mix.json).
+        # Adapt flash_message's keyword-only ``ms=`` to MixManager's positional
+        # ``(text, ms)`` callback contract so MixManager doesn't have to know
+        # about ConductorWindow's signature quirks.
+        self._mix_manager = MixManager(
+            self.jamulus,
+            lambda text, ms: self.window.flash_message(text, ms=ms),
+            logger=LOGGER,
+        )
+
         self._wire_signals()
         self._bootstrap_ui()
         self._start_routing_scan()
@@ -170,6 +186,14 @@ class ApplicationController(QObject):
         self._token_refresh_timer.stop()
         self._save_notes()
         self._save_session_title()
+        # Auto-save mix if user touched anything since last save AND we were
+        # connected to a real Jamulus (don't overwrite a real saved mix with
+        # demo data).  Best-effort: failures are caught by _on_save_mix.
+        if self._mix_dirty and self._jamulus_connected:
+            try:
+                self._on_save_mix()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Auto-save mix on shutdown failed")
         # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
         # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
         try:
@@ -213,6 +237,10 @@ class ApplicationController(QObject):
         self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
         # Mute-self shortcut
         self.window._mute_self_shortcut.activated.connect(self._on_mute_self)
+        # Diagnostics export shortcut (Ctrl+Shift+D)
+        self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
+        # Reset all faders shortcut (Ctrl+Shift+R)
+        self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
     def _bootstrap_ui(self) -> None:
         for p in _DEMO_PARTICIPANTS:
@@ -520,6 +548,7 @@ class ApplicationController(QObject):
         p = self.participants.get(channel_id)
         if p is not None:
             p.fader_level = level
+        self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_fader_level(channel_id, level)
 
@@ -530,6 +559,7 @@ class ApplicationController(QObject):
             # Keep the strip's "Mute Me" button in sync if this was the local user.
             if p.is_local:
                 self.window.session_strip.set_self_muted(muted)
+        self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
 
@@ -537,6 +567,7 @@ class ApplicationController(QObject):
         p = self.participants.get(channel_id)
         if p is not None:
             p.solo = solo
+        self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_solo(channel_id, solo)
 
@@ -706,6 +737,7 @@ class ApplicationController(QObject):
         p = self.participants[local_channel_id]
         new_muted = not p.muted
         p.muted = new_muted
+        self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(local_channel_id, new_muted)
         # Mirror mute state into the embedded Webex meeting if we're in one,
@@ -737,82 +769,83 @@ class ApplicationController(QObject):
                 p.muted = target_muted
                 if self._jamulus_connected:
                     self.jamulus.set_mute(channel_id, target_muted)
+        self._mix_dirty = True
         # Push updated state to grid so buttons reflect the change
         self._push_participants_to_grid()
         verb = "Muted" if target_muted else "Unmuted"
         self.window.flash_message(f"{verb} all participants  ·  Ctrl+M to toggle")
 
+    def _on_reset_all_faders(self) -> None:
+        """Ctrl+Shift+R — reset every participant's fader to 0 dB (level 100).
+
+        Asks for confirmation since it's a destructive bulk action.  The
+        saved mix on disk is unchanged — user can Ctrl+O to restore.
+        """
+        reply = QMessageBox.question(
+            self.window, "Reset all faders?",
+            "Reset all faders to 0 dB?\n\nYour saved mix on disk is unchanged.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        for channel_id, p in self.participants.items():
+            p.fader_level = 100
+            if self._jamulus_connected:
+                self.jamulus.set_fader_level(channel_id, 100)
+        self._mix_dirty = True
+        self._push_participants_to_grid()
+        self.window.flash_message(
+            "All faders reset to 0 dB  ·  Ctrl+O to restore your saved mix",
+            ms=4000,
+        )
+
+    def _on_export_diagnostics(self) -> None:
+        """Ctrl+Shift+D — build a Markdown diagnostics summary and copy it
+        to the system clipboard so the user can paste it into a GitHub issue.
+        """
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            from webjam_qt import __version__
+            from webjam_qt.controllers.diagnostics import DiagnosticsExporter
+
+            exporter = DiagnosticsExporter(
+                settings=self.settings,
+                bridge=self.bridge,
+                jamulus_controller=self.jamulus,
+                window_version=__version__,
+            )
+            summary = exporter.build_summary()
+            QApplication.clipboard().setText(summary)
+            self.window.flash_message(
+                "Diagnostics copied to clipboard — paste into a GitHub issue at "
+                "github.com/rupret007/webjam/issues",
+                ms=8000,
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to export diagnostics")
+            self.window.flash_message(
+                "Couldn't export diagnostics. See ~/.webjam.log for details.",
+                ms=6000,
+            )
+
+    # Public method names retained as a thin compatibility surface; the real
+    # implementation lives in ``MixManager`` (~/.webjam_mix.json).
     def _on_save_mix(self) -> None:
         """Serialize current mixer state to ~/.webjam_mix.json."""
-        import json
-        from pathlib import Path
-        try:
-            from core.file_io import atomic_write_text
-            payload = self.jamulus.serialize_mix()
-            mix_path = Path.home() / ".webjam_mix.json"
-            atomic_write_text(mix_path, json.dumps(payload, indent=2))
-            LOGGER.info("Mix saved to %s", mix_path)
-            self.window.flash_message("Mix saved  ·  Ctrl+O to restore")
-        except OSError as exc:
-            LOGGER.exception("Failed to save mix to %s", mix_path if 'mix_path' in dir() else '~/.webjam_mix.json')
-            self.window.flash_message(
-                f"Couldn't save mix: {exc.strerror or exc}. "
-                f"Check folder permissions and disk space.",
-                ms=6000,
-            )
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.exception("Failed to save mix")
-            self.window.flash_message(
-                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
-                ms=6000,
-            )
+        self._mix_manager.save()
+        # If MixManager actually wrote (no exception), clear the dirty flag.
+        # The exception path leaves it dirty so a retry knows there's work to do.
+        self._mix_dirty = False
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
-        import json
-        from pathlib import Path
-        mix_path = Path.home() / ".webjam_mix.json"
-        if not mix_path.exists():
-            self.window.flash_message("No saved mix found  ·  Ctrl+S to save one")
-            return
-        try:
-            payload = json.loads(mix_path.read_text())
-            self.jamulus.apply_mix_data(payload)
-            LOGGER.info("Mix loaded from %s", mix_path)
-            self.window.flash_message("Mix loaded")
-        except json.JSONDecodeError as exc:
-            LOGGER.exception("Mix file is corrupted")
-            self.window.flash_message(
-                f"Mix file is corrupted ({exc.msg}). Save a fresh one with Ctrl+S.",
-                ms=6000,
-            )
-        except OSError as exc:
-            LOGGER.exception("Could not read mix file")
-            self.window.flash_message(
-                f"Couldn't read mix file: {exc.strerror or exc}.",
-                ms=6000,
-            )
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.exception("Failed to load mix")
-            self.window.flash_message(
-                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
-                ms=6000,
-            )
+        self._mix_manager.load()
 
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
-        import json
-        from pathlib import Path
-        mix_path = Path.home() / ".webjam_mix.json"
-        if not mix_path.exists():
-            return
-        try:
-            payload = json.loads(mix_path.read_text())
-            self.jamulus.apply_mix_data(payload)
-            LOGGER.info("Restored saved mix from %s", mix_path)
-            self.window.flash_message("Mix restored from saved state")
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Failed to restore saved mix from %s", mix_path)
+        self._mix_manager.auto_restore()
 
     # ------------------------------------------------------------------
     # Settings wizard (Phase 6)

@@ -4,6 +4,40 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.6] — 2026-04-25
+
+### Round 3 deep-dive — refactors, new shortcuts, audit fixes
+
+10 parallel agents (6 implementation, 4 investigative) plus follow-up fixes.
+
+#### New features
+- **Ctrl+Shift+R — Reset all faders to 0 dB** (`application_controller.py::_on_reset_all_faders`).  Confirmation dialog; saved mix on disk untouched (Ctrl+O still restores).
+- **Ctrl+Shift+D — Copy diagnostics summary** (`webjam_qt/controllers/diagnostics.py`).  New 129-LOC `DiagnosticsExporter` builds a Markdown summary (versions, service state, server config, log paths, last 30 lines of `~/.webjam.log`, sanitised settings — `webex_guest_issuer_secret` redacted) and pastes to clipboard.
+- **Auto-save mix on shutdown** when the user touched the mix and Jamulus was connected. `_mix_dirty` flag flips True on any fader/mute/solo change, False after explicit save. Shutdown auto-saves so mid-session tweaks survive even if the user forgets Ctrl+S.
+
+#### Wizard polish
+- **Live validation hints** in the Jamulus and Webex pages.  Type-as-you-go feedback ("Host shouldn't contain spaces", "Will auto-prepend https://", "URL needs a domain"), no Next-button bouncing.
+
+#### Refactor
+- **`MixManager` extracted** from `ApplicationController` (`webjam_qt/controllers/mix_manager.py`, 124 LOC).  Owns `~/.webjam_mix.json` save/load/auto-restore. `_on_save_mix`/`_on_load_mix`/`_restore_saved_mix` retained as thin delegates.
+
+#### State machine + correctness
+- **`JamulusState` str-enum** in `services/bridge_service.py` (8 raw string assignments converted).  `_set_jamulus_state` writes under `_reconnect_lock`; `jamulus_process` writes likewise locked.  Inheritance from `str` keeps existing equality checks working transparently.
+- **Memory leak: signal disconnect** in `ParticipantGrid._remove_card`.  Without this, `card.fader_changed.connect(self.fader_changed)` connections from `_add_card` survived `deleteLater()` and accumulated over join/leave churn.
+- **Missing METRIC_KEYS added** (`ui/services.py`): `metric_jamulus_stop`, `metric_jamulus_port_conflict`, `metric_webex_leave`, `metric_session_completed` were incremented in code but absent from the canonical list.
+
+#### macOS shortcut consistency
+- **Ctrl+Shift+R / Ctrl+Shift+D bind to literal Control on macOS** (Qt.MetaModifier), matching the existing macOS-safe pattern used for Ctrl+M / Ctrl+Shift+M.  Avoids any potential Cmd+key system conflicts.
+
+#### Tests
+- **46 new tests** across 11 new files — port conflict detection, log capture, UDP protocol robustness, RPC hang banner, atomic notes export, MixManager round-trip, mix-dirty auto-save, diagnostics summary, wizard live validation.
+- Suite total: **611 pass, 12 skipped** (was 565; +46 net; 0 failures).
+
+#### Versioning
+- `__version__` 0.4.5 → 0.4.6, surfaced in title bar and F1 help.
+
+---
+
 ## [0.4.5] — 2026-04-25
 
 ### Deep-dive pass — data integrity, accessibility, performance, robustness

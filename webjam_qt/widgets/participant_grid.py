@@ -198,6 +198,16 @@ class ParticipantGrid(QScrollArea):
         card = self._cards.pop(channel_id, None)
         if card is None:
             return
+        # Explicitly disconnect the signal forwards we wired in _add_card.
+        # Without this, the connection survives the deleteLater() and Qt
+        # accumulates dangling slots over a long session of join/leave churn.
+        try:
+            card.fader_changed.disconnect(self.fader_changed)
+            card.mute_toggled.disconnect(self.mute_toggled)
+            card.solo_toggled.disconnect(self.solo_toggled)
+        except (TypeError, RuntimeError):
+            # Already disconnected (Qt raises) — safe to ignore.
+            pass
         self._flow.removeWidget(card)
         card.setParent(None)
         card.deleteLater()
