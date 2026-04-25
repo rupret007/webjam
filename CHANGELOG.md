@@ -48,6 +48,14 @@ All notable improvements and features for the WebJam music collaboration platfor
 - **In-session Settings skips Welcome page** (`webjam_qt/windows/setup_wizard.py`): `SetupWizard` accepts a new `skip_welcome=True` keyword arg. When the user reopens Settings via Ctrl+, mid-session, the wizard now starts at the Jamulus page (skipping the welcome) and the title becomes 'WebJam Settings'. First-run flow is unchanged.
 - **Session title persists across launches** (`application_controller.py::_load_session_title` / `_save_session_title`): The session title (e.g. 'Tuesday Practice') was lost on every close and reset to 'Band Rehearsal' on next launch. Now persisted to `~/.webjam_session.json` on title change and on shutdown; restored on startup.
 
+#### At-a-glance state visualization
+- **Muted participant cards fade visually** (`participant_card.py`, `conductor.qss`): Previously only the MUTE button changed colour when a channel was muted. The card itself now sets a `muted="true"` Qt property when muted, and QSS dims the background to BG_INPUT and the name/role text to TEXT_MUTED — making it easy to scan a busy stage and see who's silent.
+- **Friendlier 'alone on server' status** (`application_controller.py::_apply_jamulus_participants`): When the user is the only channel on the server, the Session label now shows "1 participant · waiting for others" instead of the cold "1 participant". 2+ participants show "{N} participants" as before.
+- **Last blocking 'Already running' dialog removed** (`services/bridge_service.py::launch_jamulus`): Re-clicking Launch Audio while Jamulus is already running used to throw a modal QMessageBox.information; now flashes a non-blocking status banner.
+
+#### Webex embed resilience
+- **Auto-restore placeholder when Webex URL fails to load** (`webjam_qt/widgets/webex_embed.py::_on_view_load_finished`, `application_controller.py::_on_webex_state`): When `QWebEngineView.loadFinished(ok=False)` fires (404, DNS, blocked, network), the embed emits a new "error" state. The controller restores the placeholder, resets the button to "Join Video", and flashes a hint pointing at the 'Open video call in browser' fallback button. Skips false positives from about:blank/data: navigations.
+
 ---
 
 ## [0.4.3] — 2026-04-24
