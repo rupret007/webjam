@@ -106,6 +106,13 @@ class ApplicationController(QObject):
 
         # Latch so the "Jamulus disconnected" flash only fires once per crash
         self._reconnect_banner_shown = False
+        # Latch for the "RPC hung" banner — fires once when activity stalls,
+        # cleared when activity resumes.
+        self._rpc_hang_banner_shown = False
+        # If RPC is silent for this many seconds, we consider it hung.
+        # Generous: poll cadence is 5s and SSE level events fire ~50ms,
+        # so 15s is plenty of margin.
+        self._RPC_HANG_THRESHOLD_S = 15.0
 
         # Timers
         self._demo_timer = QTimer(self)
@@ -402,6 +409,7 @@ class ApplicationController(QObject):
         # Without this, manually stopping during a reconnect would lock the
         # latch True and the next crash would be silent.
         self._reconnect_banner_shown = False
+        self._rpc_hang_banner_shown = False
 
     def _reset_to_demo_state(self) -> None:
         """Replace current participants with demo placeholders + restart demo timer."""
@@ -624,6 +632,31 @@ class ApplicationController(QObject):
             # Reconnect succeeded — clear the flag so we'd flash again on next crash.
             self._reconnect_banner_shown = False
             self.window.flash_message("Jamulus reconnected.", ms=3000)
+
+        # Detect RPC hang: process is alive AND was previously responsive
+        # (we got past _jamulus_connected=True) AND the RPC heartbeat hasn't
+        # fired in a while.  Distinct from a crash (proc.poll != None) — here
+        # the process is still alive but unresponsive.
+        if (
+            self._jamulus_connected
+            and proc is not None
+            and proc.poll() is None
+        ):
+            try:
+                age = self.jamulus.rpc_client.last_activity_age()
+            except AttributeError:
+                age = 0.0
+            if age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
+                self.window.flash_message(
+                    f"Jamulus stopped responding ({int(age)}s of silence). "
+                    f"Try Stop Audio + Launch Audio if it persists.",
+                    ms=8000,
+                )
+                self.window.set_status_audio("Not responding")
+                self._rpc_hang_banner_shown = True
+            elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
+                self._rpc_hang_banner_shown = False
+                self.window.flash_message("Jamulus is responding again.", ms=3000)
 
         self.bridge.attempt_auto_reconnects()
 

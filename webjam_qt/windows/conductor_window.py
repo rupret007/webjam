@@ -137,9 +137,30 @@ class ConductorWindow(QMainWindow):
         self._setup_shortcuts()
 
     def _setup_shortcuts(self) -> None:
+        # On macOS, "Ctrl" in QKeySequence parses to Cmd (Qt.ControlModifier).
+        # Cmd+M is the system "Minimize Window" shortcut, which causes
+        # WebJam's Ctrl+M (mute-all) to BOTH minimize the window AND fire
+        # the shortcut.  To avoid this on macOS only, we map our mute
+        # shortcuts to literal Control (Qt.MetaModifier on macOS).  On
+        # Windows/Linux, Ctrl+M means Ctrl+M as expected.
+        import sys
+        on_mac = sys.platform == "darwin"
+
+        def _ctrl(key_str: str) -> QKeySequence:
+            """Build a QKeySequence that uses literal Control on macOS."""
+            if on_mac:
+                # Qt.MetaModifier == Control key on macOS.  In PySide6 the
+                # int(modifier) | int(key) idiom doesn't work; multiply Qt
+                # enums via int(.value) or use the QKeyCombination overload.
+                key_enum = getattr(Qt.Key, f"Key_{key_str}", None)
+                if key_enum is not None:
+                    return QKeySequence(
+                        Qt.KeyboardModifier.MetaModifier.value | key_enum.value
+                    )
+            return QKeySequence(f"Ctrl+{key_str}")
+
         # Cmd/Ctrl+L — focus session title
         QShortcut(QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title())
-        # Cmd/Ctrl+M — toggle mute all (handled by controller via strip signal)
         # F11 — fullscreen toggle
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self._toggle_fullscreen)
         # Escape — exit fullscreen
@@ -154,10 +175,21 @@ class ConductorWindow(QMainWindow):
             QKeySequence("Ctrl+T"), self,
             lambda: self.session_canvas.insert_timestamp(),
         )
-        # Cmd/Ctrl+M — mute / unmute all (consumed by controller)
-        self._mute_all_shortcut = QShortcut(QKeySequence("Ctrl+M"), self)
-        # Cmd/Ctrl+Shift+M — toggle mute on the local user's channel
-        self._mute_self_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
+        # Mute-all and mute-self use the macOS-safe binder so they don't
+        # collide with system minimize (Cmd+M).
+        self._mute_all_shortcut = QShortcut(_ctrl("M"), self)
+        if on_mac:
+            # Ctrl+Shift+M with literal Control key on macOS
+            self._mute_self_shortcut = QShortcut(
+                QKeySequence(
+                    Qt.KeyboardModifier.MetaModifier.value
+                    | Qt.KeyboardModifier.ShiftModifier.value
+                    | Qt.Key.Key_M.value
+                ),
+                self,
+            )
+        else:
+            self._mute_self_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
         # F1 — show help dialog
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
 
@@ -165,6 +197,13 @@ class ConductorWindow(QMainWindow):
         """Display a keyboard-shortcut and getting-started reference."""
         from PySide6.QtWidgets import QMessageBox
         from webjam_qt import __version__
+        import sys
+        # On macOS, our mute shortcuts use the literal Control key (not Cmd)
+        # to avoid clashing with Cmd+M = system minimize.  Other platforms
+        # use the standard Ctrl+M / Ctrl+Shift+M bindings.
+        on_mac = sys.platform == "darwin"
+        mute_all_label = "⌃M (literal Control, not Cmd)" if on_mac else "Ctrl+M"
+        mute_self_label = "⌃⇧M (literal Control)" if on_mac else "Ctrl+Shift+M"
         body = (
             f"<b>WebJam — Conductor UI</b> &nbsp;<i>v{__version__}</i><br>"
             "<i>One window for band audio (Jamulus) + video (Webex).</i><br><br>"
@@ -172,8 +211,8 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
             "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state<br>"
             "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state<br>"
-            "&nbsp;&nbsp;<b>Ctrl+M</b> — Mute / unmute all<br>"
-            "&nbsp;&nbsp;<b>Ctrl+Shift+M</b> — Mute / unmute yourself<br>"
+            f"&nbsp;&nbsp;<b>{mute_all_label}</b> — Mute / unmute all<br>"
+            f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Mute / unmute yourself<br>"
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
             "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
             "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"

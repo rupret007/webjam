@@ -13,7 +13,7 @@ Being honest about where this app is **right now** (2026-04-24):
 | Area | Status |
 |---|---|
 | **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 493 tests pass. |
-| **Qt Conductor UI** | ✅ **Shipped in v0.3.0, fully usable as of v0.4.4.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
+| **Qt Conductor UI** | ✅ **Shipped in v0.3.0, fully usable as of v0.4.5.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Retained as fallback (`webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
 | **Jamulus integration** | ✅ **Full RPC + UDP.** Fader, mute, and solo all reach Jamulus via JSON-RPC (background threads, non-blocking). Real audio-level meters wired — polls `RealAudioEngine` every 100 ms once Jamulus connects. Participant instruments shown in role labels. Auto-reconnect retries dropped sessions. **Jamulus must be installed separately.** |
 | **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
@@ -21,7 +21,7 @@ Being honest about where this app is **right now** (2026-04-24):
 | **Builds** | ✅ Windows x64, macOS ARM64, macOS x64 — all three zips at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Local Companion API** | ✅ Localhost bridge for external tools. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today (v0.4.4): WebJam is a **unified Qt Conductor** — one window that launches Jamulus, embeds Webex, and gives you a live mixer for every participant. The Jamulus window still appears separately (it must be installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold, the video button is teal; the status bar shows the connected server address once Jamulus is running. Click the audio button again to stop, the video button again to leave; the conductor's session title persists across launches.
+In practice today (v0.4.5): WebJam is a **unified Qt Conductor** — one window that launches Jamulus, embeds Webex, and gives you a live mixer for every participant. The Jamulus window still appears separately (it must be installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold, the video button is teal; the status bar shows the connected server address once Jamulus is running. Click the audio button again to stop, the video button again to leave; the conductor's session title persists across launches.
 
 Future phases: full embedded Webex video tiles per-participant, macOS code signing, and listening profiles in the Qt UI.
 
