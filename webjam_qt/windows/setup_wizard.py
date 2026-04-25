@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QUrl, Signal, Slot
+from PySide6.QtCore import Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -119,6 +119,16 @@ class _JamulusPage(QWizardPage):
         self._host.setPlaceholderText("e.g. 192.168.1.100 or myband.example.com")
         self._host.setAccessibleName("Jamulus server hostname or IP address")
         layout.addWidget(self._host)
+
+        # Helpful hint for users who don't yet have a server
+        _hint = _body_label(
+            "Don't have a server? Browse free public ones at "
+            "<a href='https://directory.jamulus.io'>directory.jamulus.io</a> "
+            "or run your own locally (jamulus.io)."
+        )
+        _hint.setOpenExternalLinks(True)
+        _hint.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(_hint)
 
         layout.addWidget(_section_label("Port"))
         self._port = QSpinBox()
