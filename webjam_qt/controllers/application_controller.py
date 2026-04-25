@@ -31,6 +31,7 @@ from services.bridge_service import BridgeService
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
 
+from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
@@ -53,6 +54,7 @@ class ApplicationController(QObject):
 
     _LEVEL_POLL_MS = 100   # how often to push meter updates to the grid
     _DEMO_TICK_MS  = 120   # demo level jitter interval
+    _METER_TICK_MS = 40    # global LevelMeter decay tick (was per-meter)
 
     def __init__(
         self,
@@ -120,8 +122,30 @@ class ApplicationController(QObject):
         self._reconnect_timer.timeout.connect(self._on_reconnect_tick)
         self._reconnect_timer.start()
 
+        # Single global LevelMeter decay tick — replaces N per-card timers.
+        # See LevelMeter docstring; started in _bootstrap_ui, stopped in shutdown.
+        self._meter_tick_timer = QTimer(self)
+        self._meter_tick_timer.setInterval(self._METER_TICK_MS)
+        self._meter_tick_timer.timeout.connect(
+            self.window.participant_grid.tick_all_meters
+        )
+
+        # Webex guest-token refresh: 1-minute poll. The embed widget's TTL
+        # is 1 hour, so checking every minute gives us plenty of margin to
+        # spot the 5-minute "near expiry" window without spamming.
+        self._token_refresh_timer = QTimer(self)
+        self._token_refresh_timer.setInterval(60_000)
+        self._token_refresh_timer.timeout.connect(self._on_token_refresh_tick)
+
         # Register real participant callback
         self.jamulus.register_callback(self._on_jamulus_participants)
+
+        # Session metadata persistence (notes + title + mode)
+        self._persistence = SessionPersistence(
+            window.session_strip,
+            window.session_canvas,
+            logger=LOGGER,
+        )
 
         self._wire_signals()
         self._bootstrap_ui()
@@ -135,6 +159,8 @@ class ApplicationController(QObject):
         self._demo_timer.stop()
         self._level_timer.stop()
         self._reconnect_timer.stop()
+        self._meter_tick_timer.stop()
+        self._token_refresh_timer.stop()
         self._save_notes()
         self._save_session_title()
         # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
@@ -203,6 +229,12 @@ class ApplicationController(QObject):
         self.window.set_status_routing("scanning…")
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
+        # Start the global meter decay tick (continuous; one timer for the
+        # whole grid instead of one per LevelMeter).
+        self._meter_tick_timer.start()
+        # Start the Webex guest-token refresh poll — no-op if no guest
+        # credentials configured (direct-URL mode).
+        self._token_refresh_timer.start()
         self._load_notes()
         self._load_session_title()
 
@@ -595,6 +627,26 @@ class ApplicationController(QObject):
 
         self.bridge.attempt_auto_reconnects()
 
+    def _on_token_refresh_tick(self) -> None:
+        """Called every 60 s; ask the embedded Webex pane to refresh its
+        guest token if the existing one is approaching its 1-hour TTL.
+
+        No-op when guest-issuer credentials aren't configured (direct-URL
+        mode), or when no meeting has been joined yet.
+        """
+        issuer_id = self.settings.webex_guest_issuer_id
+        secret = self.settings.webex_guest_issuer_secret
+        if not issuer_id or not secret:
+            return
+        try:
+            self.window.webex_embed.maybe_refresh_token(
+                issuer_id=issuer_id,
+                secret_b64=secret,
+                display_name=self.settings.webex_display_name or "WebJam Guest",
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Token refresh tick failed", exc_info=True)
+
     # ------------------------------------------------------------------
     # Save / Load mix (Ctrl+S / Ctrl+O)
     # ------------------------------------------------------------------
@@ -623,6 +675,14 @@ class ApplicationController(QObject):
         p.muted = new_muted
         if self._jamulus_connected:
             self.jamulus.set_mute(local_channel_id, new_muted)
+        # Mirror mute state into the embedded Webex meeting if we're in one,
+        # so the conductor only has to hit one button to silence themselves
+        # in both audio and video.  No-op if Webex hasn't joined.
+        if self._jamulus_connected and self._is_video_active():
+            try:
+                self.window.webex_embed.mute_webex_self(new_muted)
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("Webex mute sync failed", exc_info=True)
         self._push_participants_to_grid()
         self.window.session_strip.set_self_muted(new_muted)
         self.window.flash_message(
@@ -654,14 +714,25 @@ class ApplicationController(QObject):
         import json
         from pathlib import Path
         try:
+            from core.file_io import atomic_write_text
             payload = self.jamulus.serialize_mix()
             mix_path = Path.home() / ".webjam_mix.json"
-            mix_path.write_text(json.dumps(payload, indent=2))
+            atomic_write_text(mix_path, json.dumps(payload, indent=2))
             LOGGER.info("Mix saved to %s", mix_path)
             self.window.flash_message("Mix saved  ·  Ctrl+O to restore")
-        except Exception:  # noqa: BLE001
+        except OSError as exc:
+            LOGGER.exception("Failed to save mix to %s", mix_path if 'mix_path' in dir() else '~/.webjam_mix.json')
+            self.window.flash_message(
+                f"Couldn't save mix: {exc.strerror or exc}. "
+                f"Check folder permissions and disk space.",
+                ms=6000,
+            )
+        except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Failed to save mix")
-            self.window.flash_message("Save failed — see logs")
+            self.window.flash_message(
+                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
+                ms=6000,
+            )
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
@@ -676,9 +747,24 @@ class ApplicationController(QObject):
             self.jamulus.apply_mix_data(payload)
             LOGGER.info("Mix loaded from %s", mix_path)
             self.window.flash_message("Mix loaded")
-        except Exception:  # noqa: BLE001
+        except json.JSONDecodeError as exc:
+            LOGGER.exception("Mix file is corrupted")
+            self.window.flash_message(
+                f"Mix file is corrupted ({exc.msg}). Save a fresh one with Ctrl+S.",
+                ms=6000,
+            )
+        except OSError as exc:
+            LOGGER.exception("Could not read mix file")
+            self.window.flash_message(
+                f"Couldn't read mix file: {exc.strerror or exc}.",
+                ms=6000,
+            )
+        except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Failed to load mix")
-            self.window.flash_message("Load failed — see logs")
+            self.window.flash_message(
+                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
+                ms=6000,
+            )
 
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
@@ -770,82 +856,25 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Session notes persistence
     # ------------------------------------------------------------------
+    # Session notes / metadata persistence
+    # Public method names retained as a thin compatibility surface; the real
+    # implementation lives in ``SessionPersistence`` (~/.webjam_notes.md and
+    # ~/.webjam_session.json).
     def _load_notes(self) -> None:
         """Restore session notes from disk (best-effort)."""
-        from pathlib import Path
-        notes_path = Path.home() / ".webjam_notes.md"
-        if notes_path.exists():
-            try:
-                text = notes_path.read_text(encoding="utf-8")
-                self.window.session_canvas.set_notes(text)
-            except Exception:  # noqa: BLE001
-                LOGGER.debug("Could not load session notes", exc_info=True)
+        self._persistence._load_notes_only()
 
     def _save_notes(self) -> None:
         """Persist current session notes to disk (best-effort)."""
-        from pathlib import Path
-        try:
-            text = self.window.session_canvas.current_notes()
-            if text.strip():
-                (Path.home() / ".webjam_notes.md").write_text(text, encoding="utf-8")
-        except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not save session notes", exc_info=True)
-
-    # ------------------------------------------------------------------
-    # Session metadata persistence (~/.webjam_session.json)
-    # Stores the session title and the last-used mode so they survive
-    # app restarts.  Best-effort — file errors are logged at debug only.
-    # ------------------------------------------------------------------
-    _SESSION_FILE = ".webjam_session.json"
+        self._persistence._save_notes_only()
 
     def _load_session_title(self) -> None:
         """Restore the session title and last-used mode from disk."""
-        import json
-        from pathlib import Path
-        path = Path.home() / self._SESSION_FILE
-        if not path.exists():
-            return
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return
-            title = data.get("title")
-            if isinstance(title, str) and title.strip():
-                # Use the SessionStrip's QLineEdit directly to avoid emitting
-                # an editingFinished signal that would just round-trip the
-                # value through _on_title_changed.
-                self.window.session_strip._title_input.setText(title)
-            mode_key = data.get("mode")
-            if isinstance(mode_key, str) and mode_key:
-                # Programmatically select the mode in the picker (does not emit
-                # currentIndexChanged unless the index actually changes).
-                picker = self.window.session_strip._mode_picker
-                idx = picker.findData(mode_key)
-                if idx >= 0:
-                    picker.setCurrentIndex(idx)
-        except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not load session metadata", exc_info=True)
+        self._persistence._load_session_metadata()
 
     def _save_session_title(self) -> None:
         """Persist the current session title and mode to disk."""
-        import json
-        from pathlib import Path
-        try:
-            title = self.window.session_strip.current_title()
-            mode_key = self.window.session_strip.current_mode_key()
-            payload: dict = {}
-            if title:
-                payload["title"] = title
-            if mode_key:
-                payload["mode"] = mode_key
-            if not payload:
-                return
-            (Path.home() / self._SESSION_FILE).write_text(
-                json.dumps(payload, indent=2),
-                encoding="utf-8",
-            )
-        except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not save session metadata", exc_info=True)
+        self._persistence._save_session_metadata()
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)

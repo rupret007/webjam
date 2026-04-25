@@ -27,6 +27,24 @@ _logger = logging.getLogger("webjam.webex_guest_token")
 
 _GUEST_LOGIN_URL = "https://webexapis.com/v1/jwt/login"
 _TOKEN_EXPIRY_S  = 3600  # 1 hour
+# Backwards-compatible alias used by refresh helpers below
+_TOKEN_TTL_S = _TOKEN_EXPIRY_S
+# Refresh the token this many seconds before it would expire. 5 minutes gives
+# the background fetch + JS reload plenty of headroom on flaky links.
+_TOKEN_REFRESH_SAFETY_MARGIN_S = 300
+
+
+def should_refresh_token(token_acquired_at_unix: float) -> bool:
+    """Return True if a token acquired at ``token_acquired_at_unix`` is close
+    enough to its TTL that a refresh should be triggered now.
+
+    A value of ``0.0`` (the sentinel for "no token yet") returns False so that
+    pre-load polls don't spuriously refresh.
+    """
+    if token_acquired_at_unix <= 0.0:
+        return False
+    age = time.time() - token_acquired_at_unix
+    return age >= (_TOKEN_TTL_S - _TOKEN_REFRESH_SAFETY_MARGIN_S)
 
 
 # ---------------------------------------------------------------------------

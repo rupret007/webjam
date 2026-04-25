@@ -58,6 +58,30 @@ class BridgeService:
         # user can inspect the CURRENT session's Jamulus output when troubleshooting.
         self._jamulus_log_file: Optional[object] = None
 
+    def _is_rpc_port_in_use(self) -> bool:
+        """Return True if the configured Jamulus JSON-RPC port is already bound.
+
+        Detects the common 'second WebJam instance' case where a previous
+        Jamulus is still running and holding the port.  Without this check,
+        Popen would succeed but Jamulus would silently fail to bind RPC,
+        leaving the user with a running subprocess that can't be controlled.
+        """
+        import socket
+        port = self.settings.jamulus_rpc_port
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            # Bind-test: if we can bind, the port is free.  Use SO_REUSEADDR=False
+            # to mirror Jamulus's binding intent.
+            sock.bind(("127.0.0.1", port))
+            return False
+        except OSError:
+            return True
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
     def find_jamulus(self):
         """Find Jamulus installation.
 
@@ -81,7 +105,30 @@ class BridgeService:
         return None
 
     def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
-        """Launch Jamulus client and connect to the configured server."""
+        """Launch the Jamulus client subprocess and connect to the band's server.
+
+        Args:
+            manual: True when triggered by the user clicking 'Launch Audio'.
+                Sets `jamulus_launch_intended=True` so the auto-reconnect
+                tick will retry on crash.  False when called from
+                `attempt_auto_reconnects` itself (avoids resetting state).
+            reconnect: True when this is an auto-reconnect attempt.  Skips
+                the actionable-error dialog on failure (would be too noisy)
+                and emits reconnect-specific metrics.
+
+        Side effects:
+            - Resolves the Jamulus binary via `find_jamulus()` and shows
+              the 'Jamulus Not Found' actionable error if missing.
+            - Tests if the JSON-RPC port is already bound (port-conflict
+              detection) and shows an actionable error if so.
+            - Spawns a daemon thread that runs `subprocess.Popen` (with
+              up to 3 retries) and starts `JamulusController.start()`
+              after a 2s settle delay.
+            - Captures Jamulus stdout+stderr to `~/.webjam_jamulus.log`.
+            - Updates `self.jamulus_state` ('Running' / 'Launch failed'
+              / 'Not found' / 'Port in use') and calls `refresh_readiness`
+              to update the UI.
+        """
         if self.shutdown_requested():
             self.jamulus_reconnect_inflight = False
             return
@@ -101,7 +148,13 @@ class BridgeService:
                 self.schedule_ui_callback(self.refresh_readiness)
                 LOGGER.warning("Jamulus reconnect skipped: executable not found.")
                 return
-                
+
+            # Audit-found bug: previously this manual-launch failure path didn't
+            # clear `jamulus_reconnect_inflight`, leaving a stale True flag from
+            # any earlier reconnect attempt. The QTimer-driven reconnect tick
+            # would then skip the retry indefinitely.
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
             self.metrics_service.increment("metric_jamulus_launch_failed")
             self.jamulus_state = "Not found"
             self.schedule_ui_callback(self.refresh_readiness)
@@ -129,6 +182,34 @@ class BridgeService:
                 self.schedule_ui_callback(
                     lambda: self.set_status_banner("Jamulus is already running.")
                 )
+            return
+
+        # Detect port conflict before launching Jamulus.  If the JSON-RPC port
+        # is already in use (typically: another WebJam instance, or a previous
+        # Jamulus process that didn't shut down cleanly), Popen would succeed
+        # but Jamulus would silently fail to bind — leaving a running
+        # subprocess we can't control via RPC.
+        if manual and self._is_rpc_port_in_use():
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            self.jamulus_state = "Port in use"
+            self.metrics_service.increment("metric_jamulus_port_conflict")
+            self.schedule_ui_callback(self.refresh_readiness)
+            port = self.settings.jamulus_rpc_port
+            self.show_actionable_error(
+                "Jamulus Port In Use",
+                what_failed=f"Port {port} (Jamulus JSON-RPC) is already in use on this machine.",
+                likely_cause=(
+                    "Another WebJam instance is already running, or a previous "
+                    "Jamulus process didn't shut down cleanly."
+                ),
+                next_action=(
+                    "Close any other WebJam instances and quit any running Jamulus, "
+                    "then retry. To use a different port, set the "
+                    "WEBJAM_JAMULUS_RPC_PORT environment variable."
+                ),
+                retry_callback=lambda: self.launch_jamulus(manual=True),
+            )
             return
 
         banner_text = "Launching Jamulus..." if not reconnect else "Auto-reconnecting Jamulus..."
@@ -170,14 +251,23 @@ class BridgeService:
                 except OSError as exc:
                     LOGGER.debug("Could not open Jamulus log file: %s", exc)
 
+                # Windows: hide the spurious console window that subprocess.Popen
+                # would otherwise pop up alongside the Jamulus GUI.
+                # POSIX: no-op (CREATE_NO_WINDOW doesn't exist there).
+                popen_kwargs: dict = {
+                    "stdout": stdout_dest,
+                    "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
+                }
+                import sys
+                if sys.platform == "win32":
+                    popen_kwargs["creationflags"] = (
+                        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    )
+
                 proc = None
                 for i in range(3):
                     try:
-                        proc = subprocess.Popen(
-                            cmd,
-                            stdout=stdout_dest,
-                            stderr=subprocess.STDOUT if log_file else subprocess.DEVNULL,
-                        )
+                        proc = subprocess.Popen(cmd, **popen_kwargs)
                         break
                     except Exception:
                         if i == 2:
@@ -187,6 +277,7 @@ class BridgeService:
                 if self.shutdown_requested():
                     if proc:
                         proc.terminate()
+                    self._close_jamulus_log_file()
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
                     return
@@ -222,6 +313,9 @@ class BridgeService:
 
             except Exception as exc:
                 LOGGER.exception("Failed to launch Jamulus: %s", exc)
+                # Close the log file we opened before Popen — Jamulus never
+                # started, nothing's writing to it.
+                self._close_jamulus_log_file()
                 self.jamulus_state = "Launch failed" if not reconnect else "Not running"
                 with self._reconnect_lock:
                     self.jamulus_reconnect_inflight = False
@@ -245,6 +339,15 @@ class BridgeService:
                 )
 
         threading.Thread(target=_do_launch, daemon=True).start()
+
+    def _close_jamulus_log_file(self) -> None:
+        """Close the Jamulus stdout/stderr log file if it's open. Idempotent."""
+        if self._jamulus_log_file is not None:
+            try:
+                self._jamulus_log_file.close()
+            except Exception:
+                pass
+            self._jamulus_log_file = None
 
     def stop_jamulus(self) -> bool:
         """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
@@ -286,12 +389,7 @@ class BridgeService:
 
         # Close the Jamulus log file if we opened one.  The contents are
         # preserved on disk for post-hoc inspection.
-        if self._jamulus_log_file is not None:
-            try:
-                self._jamulus_log_file.close()
-            except Exception:
-                pass
-            self._jamulus_log_file = None
+        self._close_jamulus_log_file()
 
         self.metrics_service.increment("metric_jamulus_stop")
         self.schedule_ui_callback(self.refresh_readiness)
@@ -412,7 +510,22 @@ class BridgeService:
         return min(delay, RECONNECT_MAX_DELAY_SECONDS)
 
     def attempt_auto_reconnects(self):
-        """Run the auto-reconnection logic for both Jamulus and Webex."""
+        """Auto-reconnect tick — retries dropped Jamulus and Webex sessions.
+
+        Called every ~3 seconds from `ApplicationController._on_reconnect_tick`.
+        Per service:
+
+        - **Jamulus**: if `jamulus_launch_intended=True` (user clicked Launch
+          Audio at some point and didn't click Stop), and the subprocess has
+          died (`poll() is not None`), schedules a relaunch with exponential
+          backoff (cap 5 attempts, 45s max delay).
+        - **Webex**: if `webex_launch_intended=True` and `webex_state` is
+          'Open failed' or 'Not opened', schedules a relaunch (same backoff).
+
+        Reads the `auto_reconnect_enabled` repository setting; returns
+        immediately if disabled.  Both retries set `*_inflight=True` to
+        prevent double-fire while a relaunch worker thread is in flight.
+        """
         if self.shutdown_requested():
             return
         

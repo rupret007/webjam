@@ -92,7 +92,7 @@ QToolButton#SideRailButton:checked {
 QToolButton#SideRailButton:focus {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
+    border: 2px solid ${COLOR_ACCENT_VIDEO};   /* was 1px — too subtle for keyboard nav */
     outline: none;
 }
 

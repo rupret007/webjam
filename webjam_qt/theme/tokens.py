@@ -23,8 +23,8 @@ class Color:
 
     # Text
     TEXT_PRIMARY = "#E8ECF4"
-    TEXT_SECONDARY = "#9AA4B8"
-    TEXT_MUTED = "#5F6B85"
+    TEXT_SECONDARY = "#A0AEC6"   # bumped from #9AA4B8 for AA contrast safety margin on BG_CARD
+    TEXT_MUTED = "#7A8AA0"       # bumped from #5F6B85 — was 2.93:1 on BG_CARD (AA fail)
     TEXT_INVERSE = "#0B0E14"
 
     # Accents
@@ -67,8 +67,11 @@ class Radius:
 
 
 class Font:
-    FAMILY_SANS = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-    FAMILY_MONO = "'SF Mono', 'JetBrains Mono', 'Consolas', monospace"
+    # System-font fallback chain — Inter is NOT bundled, so it's listed last
+    # as an aspirational option.  Real defaults: Segoe UI on Windows,
+    # -apple-system on macOS, sans-serif elsewhere.
+    FAMILY_SANS = "-apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, Inter, sans-serif"
+    FAMILY_MONO = "'SF Mono', 'JetBrains Mono', 'Consolas', 'Courier New', monospace"
 
     SIZE_XS = 10
     SIZE_SM = 11

@@ -8,7 +8,6 @@ Phase 1 lands a simple notes field; artifacts/timeline arrive later.
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Signal
@@ -129,7 +128,8 @@ class SessionCanvas(QFrame):
         )
         if path:
             try:
-                Path(path).write_text(text, encoding="utf-8")
+                from core.file_io import atomic_write_text
+                atomic_write_text(path, text)
             except OSError as exc:
                 QMessageBox.warning(
                     self, "Export Failed",

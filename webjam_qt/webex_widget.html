@@ -50,6 +50,10 @@
 
     var _bridge = null;
     var _meetingStarted = false;
+    // Reference to the active Webex Meetings Widget instance, set in
+    // startWebexMeeting and used by window.mute_self for Jamulus<->Webex
+    // mute synchronisation.
+    var _widgetInstance = null;
 
     function _setBridge(b) {
       _bridge = b;
@@ -79,7 +83,7 @@
         container.classList.add('visible');
         document.getElementById('status-overlay').classList.add('hidden');
 
-        WebexWidgets.WebexMeetingWidget({
+        _widgetInstance = WebexWidgets.WebexMeetingWidget({
           container: container,
           accessToken: accessToken,
           meetingDestination: meetingDestination,
@@ -94,6 +98,31 @@
         _notifyState('joining');
       } catch(e) {
         showError(String(e));
+      }
+    };
+
+    // Called by Qt (via runJavaScript) to mute / unmute the local user
+    // inside the embedded Webex meeting. Used to keep Jamulus and Webex
+    // mute state in sync — when the conductor hits the WebJam "Mute Me"
+    // button we also silence them in the video pane.
+    //
+    // Webex Meetings Widget exposes muteAudio() / unmuteAudio() on the
+    // widget instance; we wrap in try/catch since the audio service may
+    // not be ready in every meeting state (lobby, joining, ended).
+    window.mute_self = function(muted) {
+      try {
+        if (!_widgetInstance) return;
+        if (muted && typeof _widgetInstance.muteAudio === 'function') {
+          _widgetInstance.muteAudio();
+        } else if (!muted && typeof _widgetInstance.unmuteAudio === 'function') {
+          _widgetInstance.unmuteAudio();
+        }
+      } catch (e) {
+        // Best-effort — log but don't propagate; Jamulus mute is the
+        // source of truth and will retry on the next toggle.
+        if (typeof console !== 'undefined') {
+          console.warn('mute_self failed:', e);
+        }
       }
     };
 

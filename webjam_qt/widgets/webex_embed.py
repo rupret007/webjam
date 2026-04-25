@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -157,6 +158,14 @@ class WebexEmbed(QFrame):
         self._pending_token: Optional[str] = None
         self._pending_url:   str = ""
 
+        # Unix timestamp of the most recent successful token acquisition.
+        # Used by ``maybe_refresh_token`` to decide whether the embedded
+        # widget's auth is approaching its 1-hour TTL.  0.0 = no token yet.
+        self._token_acquired_at: float = 0.0
+        # True while a background refresh thread is in flight, so a 1-Hz
+        # poll from the controller doesn't spawn a stampede.
+        self._refresh_in_flight: bool = False
+
         # Placeholder page (shown before joining)
         self._placeholder = self._build_placeholder()
 
@@ -196,12 +205,20 @@ class WebexEmbed(QFrame):
             LOGGER.info("WebexEmbed: guest-widget mode")
             self._pending_token = access_token
             self._pending_url   = meeting_url
+            # If _on_load_ready hasn't already stamped this (i.e. caller
+            # passed a token directly), record acquisition time now so the
+            # refresh timer has a baseline.
+            if self._token_acquired_at <= 0.0:
+                self._token_acquired_at = time.time()
             local_url = QUrl.fromLocalFile(str(_HTML_TEMPLATE.resolve()))
             self._view.load(local_url)
         else:
             LOGGER.info("WebexEmbed: direct-URL mode → %s", meeting_url)
             self._pending_token = None
             self._pending_url   = meeting_url
+            # Direct-URL mode doesn't use a guest token — clear the stamp
+            # so refresh polls correctly no-op.
+            self._token_acquired_at = 0.0
             self._view.load(QUrl(meeting_url))
             self.meeting_state_changed.emit("joining")
 
@@ -238,6 +255,7 @@ class WebexEmbed(QFrame):
             self._view.load(QUrl("about:blank"))
         self._pending_token = None
         self._pending_url   = ""
+        self._token_acquired_at = 0.0
         self._stack.setCurrentIndex(0)
         self.meeting_state_changed.emit("left")
 
@@ -291,7 +309,75 @@ class WebexEmbed(QFrame):
     @Slot(str, str)
     def _on_load_ready(self, token: str, url: str) -> None:
         """Runs on main thread after background token fetch completes."""
+        if token:
+            self._token_acquired_at = time.time()
+        # Refresh complete (success or fail) — release the in-flight latch
+        self._refresh_in_flight = False
         self.load_meeting(url, access_token=token or None)
+
+    def maybe_refresh_token(
+        self,
+        issuer_id: str,
+        secret_b64: str,
+        display_name: str,
+    ) -> None:
+        """Refresh the embedded Webex auth token if it's near its TTL.
+
+        Safe to call repeatedly (e.g. from a 1 Hz QTimer):
+        * No-op if no token has been issued yet (direct-URL mode, or pre-join).
+        * No-op if the existing token is still fresh.
+        * No-op if guest credentials are missing.
+        * No-op if a refresh is already in flight.
+
+        On refresh, fetches a new token in a background thread and reloads
+        the embedded widget with the new token via ``_on_load_ready``.
+        """
+        # No credentials → nothing we can do
+        if not issuer_id or not secret_b64:
+            return
+        # No prior token → nothing to refresh; the initial join will set it.
+        if self._token_acquired_at <= 0.0:
+            return
+        if self._refresh_in_flight:
+            return
+        # No active meeting URL → nothing to reload into
+        if not self._pending_url:
+            return
+
+        from core.webex_guest_token import should_refresh_token
+        if not should_refresh_token(self._token_acquired_at):
+            return
+
+        meeting_url = self._pending_url
+        self._refresh_in_flight = True
+        LOGGER.info("WebexEmbed: refreshing guest token (TTL approaching)")
+
+        def _worker() -> None:
+            from core.webex_guest_token import generate_guest_jwt, exchange_guest_jwt
+            token: Optional[str] = None
+            try:
+                jwt   = generate_guest_jwt(issuer_id, secret_b64, display_name)
+                token = exchange_guest_jwt(jwt)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Guest token refresh failed: %s", exc)
+            self._load_ready.emit(token or "", meeting_url)
+
+        threading.Thread(target=_worker, daemon=True, name="webex-token-refresh").start()
+
+    def mute_webex_self(self, muted: bool) -> None:
+        """Mute or unmute the local user inside the embedded Webex widget.
+
+        Calls into ``window.mute_self(muted)`` in webex_widget.html, which
+        wraps the Webex Meetings Widget audio-mute API.  Fails gracefully
+        if the page hasn't loaded yet (e.g. before joining) or the widget
+        isn't ready — the JS side has its own try/catch.
+        """
+        if self._page is None:
+            return
+        js_bool = "true" if muted else "false"
+        self._page.runJavaScript(
+            f"if (typeof window.mute_self === 'function') {{ window.mute_self({js_bool}); }}"
+        )
 
     @Slot(bool)
     def _on_view_load_finished(self, ok: bool) -> None:

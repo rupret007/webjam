@@ -158,15 +158,25 @@ def _parse_conn_clients_list(data: bytes) -> Dict[int, str]:
     return clients
 
 
+# Hard cap on how many channels we'll parse from a single CLT_CHANNEL_LEVEL_LIST
+# payload.  Real Jamulus servers max out around 100 channels; an attacker (or
+# buggy server) sending a 100KB level-list packet would otherwise allocate
+# 50,000 dict entries.
+_MAX_LEVEL_LIST_ENTRIES = 500
+
+
 def _parse_level_list(data: bytes) -> Dict[int, float]:
     """
     Parse CLT_CHANNEL_LEVEL_LIST payload.
 
     Each entry is a uint16_t; the number of entries = total connected channels.
     Values are 0..32767 mapped to 0..1.
+
+    Bounded to ``_MAX_LEVEL_LIST_ENTRIES`` to prevent memory exhaustion from
+    malformed/hostile packets.
     """
     levels: Dict[int, float] = {}
-    count = len(data) // 2
+    count = min(len(data) // 2, _MAX_LEVEL_LIST_ENTRIES)
     for i in range(count):
         raw = struct.unpack_from("<H", data, i * 2)[0]
         levels[i] = min(1.0, raw / 32767.0)
@@ -221,6 +231,9 @@ class JamulusProtocolAdapter:
         self._running = False
         self._rx_thread: Optional[threading.Thread] = None
         self._tx_count = 1
+        # Track which unknown msg_ids we've already logged so a malformed-packet
+        # storm can't fill the debug log at receive-loop speed.
+        self._unknown_msg_ids_seen: set[int] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -412,4 +425,11 @@ class JamulusProtocolAdapter:
             self._send(_MsgId.NETW_TRANSPORT_PROPS, props)
 
         else:
-            _logger.debug("Unhandled Jamulus msg_id=%d len=%d", msg_id, len(data))
+            # Log each unknown msg_id only once per session — prevents log
+            # flooding from malformed/hostile packet storms.
+            if msg_id not in self._unknown_msg_ids_seen:
+                self._unknown_msg_ids_seen.add(msg_id)
+                _logger.debug(
+                    "Unhandled Jamulus msg_id=%d len=%d (subsequent occurrences silenced)",
+                    msg_id, len(data),
+                )
