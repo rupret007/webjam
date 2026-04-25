@@ -339,7 +339,10 @@ class TestConductorWindow(unittest.TestCase):
 
     def test_window_title(self):
         w = self._window()
-        self.assertEqual(w.windowTitle(), "WebJam — Conductor")
+        # Title now includes the WebJam version string (v0.4.4 etc.)
+        self.assertTrue(w.windowTitle().startswith("WebJam — Conductor"))
+        from webjam_qt import __version__
+        self.assertIn(__version__, w.windowTitle())
 
     def test_minimum_size(self):
         w = self._window()

@@ -58,7 +58,8 @@ class ConductorWindow(QMainWindow):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("WebJam — Conductor")
+        from webjam_qt import __version__
+        self.setWindowTitle(f"WebJam — Conductor (v{__version__})")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
         self.setMinimumSize(1100, 720)
 
@@ -163,8 +164,9 @@ class ConductorWindow(QMainWindow):
     def _show_help(self) -> None:
         """Display a keyboard-shortcut and getting-started reference."""
         from PySide6.QtWidgets import QMessageBox
+        from webjam_qt import __version__
         body = (
-            "<b>WebJam — Conductor UI</b><br>"
+            f"<b>WebJam — Conductor UI</b> &nbsp;<i>v{__version__}</i><br>"
             "<i>One window for band audio (Jamulus) + video (Webex).</i><br><br>"
             "<b>Keyboard shortcuts:</b><br>"
             "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
