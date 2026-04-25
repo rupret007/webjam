@@ -183,6 +183,9 @@ class ConductorWindow(QMainWindow):
             "2. Click <b>Join Video</b> (teal button) to open Webex.<br>"
             "3. Adjust faders as your band joins.<br>"
             "4. Click the same buttons again to stop / leave.<br><br>"
+            "<b>Troubleshooting — log files:</b><br>"
+            "&nbsp;&nbsp;~/.webjam.log — WebJam diagnostics<br>"
+            "&nbsp;&nbsp;~/.webjam_jamulus.log — Jamulus stdout/stderr<br><br>"
             "<a href='https://github.com/rupret007/webjam'>github.com/rupret007/webjam</a>"
         )
         box = QMessageBox(self)
