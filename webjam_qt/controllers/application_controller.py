@@ -524,10 +524,20 @@ class ApplicationController(QObject):
     def _show_actionable_error(self, title: str, *, what_failed: str,
                                 likely_cause: str, next_action: str,
                                 retry_callback=None) -> None:
+        from pathlib import Path
+        # Mention both log files: WebJam's own log + Jamulus's stdout/stderr.
+        # Including the Jamulus log only if it exists (avoids confusion when
+        # Jamulus never launched, e.g. "Not Found" errors).
+        log_lines = [f"  {self.settings.log_file}  (WebJam)"]
+        jamulus_log = Path.home() / ".webjam_jamulus.log"
+        if jamulus_log.exists():
+            log_lines.append(f"  {jamulus_log}  (Jamulus output)")
         body = (
             f"{what_failed}\n\nLikely cause: {likely_cause}\n\n"
             f"Next action: {next_action}\n\n"
-            f"For details, see the log file:\n  {self.settings.log_file}"
+            f"For details, see the log file"
+            f"{'s' if len(log_lines) > 1 else ''}:\n"
+            + "\n".join(log_lines)
         )
         box = QMessageBox(self.window)
         box.setWindowTitle(title)
