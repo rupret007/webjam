@@ -164,5 +164,69 @@ class TestMuteSelf(unittest.TestCase):
         self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
 
 
+class TestAloneOnServerStatus(unittest.TestCase):
+    """When the user is alone on the Jamulus server, show a friendly hint."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.window = ConductorWindow(
+            mode_entries=ApplicationController.mode_entries(),
+            initial_mode_key="music_jam",
+            initial_title="Test",
+        )
+        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.controller.shutdown()
+
+    def test_single_participant_shows_waiting_message(self):
+        """v0.4.4: solo participant triggers 'waiting for others' hint."""
+        from jamulus_controller import JamulusParticipant
+        p = JamulusParticipant(channel_id=0, name="You", is_local=True)
+        self.controller._apply_jamulus_participants([p])
+        text = self.window._status_latency.text()
+        self.assertIn("1 participant", text)
+        self.assertIn("waiting for others", text)
+
+    def test_multiple_participants_show_plain_count(self):
+        """Two or more participants show '{N} participants' without hint."""
+        from jamulus_controller import JamulusParticipant
+        participants = [
+            JamulusParticipant(channel_id=0, name="You", is_local=True),
+            JamulusParticipant(channel_id=1, name="Bandmate"),
+        ]
+        self.controller._apply_jamulus_participants(participants)
+        text = self.window._status_latency.text()
+        self.assertIn("2 participants", text)
+        self.assertNotIn("waiting", text)
+
+
+class TestMutedCardDimming(unittest.TestCase):
+    """Muted participant cards set a 'muted' Qt property for QSS to dim them."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.window = ConductorWindow(
+            mode_entries=ApplicationController.mode_entries(),
+            initial_mode_key="music_jam",
+            initial_title="Test",
+        )
+        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.controller.shutdown()
+
+    def test_muting_card_sets_muted_property(self):
+        cards = list(self.window.participant_grid._cards.values())
+        self.assertTrue(cards, "expected demo cards to exist")
+        c = cards[0]
+        c._apply_mute_state(True)
+        self.assertEqual(c.property("muted"), "true")
+        c._apply_mute_state(False)
+        self.assertEqual(c.property("muted"), "false")
+
+
 if __name__ == "__main__":
     unittest.main()
