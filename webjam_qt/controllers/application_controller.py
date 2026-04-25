@@ -452,6 +452,15 @@ class ApplicationController(QObject):
         # so the toggle button does the right thing if the user clicks it again.
         self.bridge.webex_state = status_label if joined else "Not opened"
 
+        # On error, restore the placeholder so the user can fall back to the
+        # browser without first clicking "Leave Video".
+        if state == "error":
+            self.window.webex_embed.leave_meeting()
+            self.window.flash_message(
+                "Webex couldn't load — try the 'Open video call in browser' button.",
+                ms=6000,
+            )
+
         # In direct-URL mode the widget never sends a post-join state
         # transition (no JS bridge); re-enable the button after 6 s so
         # the user can leave or rejoin without restarting the app.

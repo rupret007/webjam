@@ -280,6 +280,9 @@ class WebexEmbed(QFrame):
         self._view = QWebEngineView(self)
         self._view.setPage(self._page)
         self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Detect load failures so the controller can show an error state and
+        # the user can fall back to opening Webex in the browser.
+        self._view.loadFinished.connect(self._on_view_load_finished)
         self._stack.addWidget(self._view)  # index 1
 
     # ------------------------------------------------------------------
@@ -289,6 +292,27 @@ class WebexEmbed(QFrame):
     def _on_load_ready(self, token: str, url: str) -> None:
         """Runs on main thread after background token fetch completes."""
         self.load_meeting(url, access_token=token or None)
+
+    @Slot(bool)
+    def _on_view_load_finished(self, ok: bool) -> None:
+        """QWebEngineView reports load completion — surface failures.
+
+        When the Webex meeting URL fails to load (404, DNS error, network
+        offline, blocked by Webex), the embedded view shows a Chromium
+        error page.  Without this, the user has no easy way back to a
+        functional state.  We emit an 'error' state so the controller can
+        restore the placeholder and reset the button to 'Join Video' —
+        the user can then click the 'Open video call in browser' fallback.
+        """
+        if ok:
+            return
+        # Non-fatal cases: about:blank loads, transient redirects.  Skip
+        # those so we don't fire 'error' on every navigation glitch.
+        url = self._view.url().toString() if self._view else ""
+        if url in ("", "about:blank") or url.startswith("data:"):
+            return
+        LOGGER.warning("WebexEmbed load failed for %s", url)
+        self.meeting_state_changed.emit("error")
 
     @Slot()
     def _on_page_ready(self) -> None:
