@@ -120,7 +120,10 @@ class BridgeService:
             self.jamulus_reconnect_inflight = False
             self.schedule_ui_callback(self.refresh_readiness)
             if manual:
-                self.show_message("Jamulus", "Jamulus is already running.")
+                # Non-blocking flash instead of a modal dialog
+                self.schedule_ui_callback(
+                    lambda: self.set_status_banner("Jamulus is already running.")
+                )
             return
 
         banner_text = "Launching Jamulus..." if not reconnect else "Auto-reconnecting Jamulus..."
