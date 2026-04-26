@@ -38,10 +38,12 @@ class MixManager:
         jamulus_controller,
         flash_callback: Callable[[str, int], None],
         logger: Optional[logging.Logger] = None,
+        metrics=None,  # Optional MetricsService — increments mix_corruption_recovered
     ) -> None:
         self._jamulus = jamulus_controller
         self._flash = flash_callback
         self._log = logger or logging.getLogger(__name__)
+        self._metrics = metrics
 
     # ------------------------------------------------------------------
     # Public API
@@ -90,6 +92,11 @@ class MixManager:
                 f"Mix file is corrupted ({exc.msg}). Save a fresh one with Ctrl+S.",
                 6000,
             )
+            if self._metrics is not None:
+                try:
+                    self._metrics.increment("metric_mix_corruption_recovered")
+                except Exception:  # noqa: BLE001
+                    self._log.debug("metric increment failed", exc_info=True)
             return False
         except OSError as exc:
             self._log.exception("Could not read mix file")
@@ -100,6 +107,75 @@ class MixManager:
             return False
         except Exception as exc:  # noqa: BLE001
             self._log.exception("Failed to load mix")
+            self._flash(
+                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
+                6000,
+            )
+            return False
+
+    def save_to(self, path: Path) -> None:
+        """Serialize current mixer state to ``path`` (atomic, indented JSON).
+
+        Like :meth:`save` but writes to an explicit path instead of the
+        default ``~/.webjam_mix.json`` slot — used by the "Save Mix As..."
+        dialog so users can keep multiple named mixes (one per song,
+        one per band-mate setup, etc.).
+        """
+        try:
+            payload = self._jamulus.serialize_mix()
+            atomic_write_text(path, json.dumps(payload, indent=2))
+            self._log.info("Mix saved to %s", path)
+            self._flash(f"Mix saved to {path.name}", 4000)
+        except OSError as exc:
+            self._log.exception("Failed to save mix to %s", path)
+            self._flash(
+                f"Couldn't save mix: {exc.strerror or exc}. "
+                f"Check folder permissions and disk space.",
+                6000,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._log.exception("Failed to save mix to %s", path)
+            self._flash(
+                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
+                6000,
+            )
+
+    def load_from(self, path: Path) -> bool:
+        """Load mixer state from ``path`` and apply to Jamulus.
+
+        Like :meth:`load` but reads from an explicit path instead of the
+        default ``~/.webjam_mix.json``.  Returns True if the mix was
+        applied, False if the file was missing or an error occurred.
+        Always flashes a status message either way.
+        """
+        if not path.exists():
+            self._flash(
+                f"No saved mix found at {path.name}  \u00b7  Ctrl+Shift+S to save one",
+                4000,
+            )
+            return False
+        try:
+            payload = json.loads(path.read_text())
+            self._jamulus.apply_mix_data(payload)
+            self._log.info("Mix loaded from %s", path)
+            self._flash(f"Mix loaded from {path.name}", 4000)
+            return True
+        except json.JSONDecodeError as exc:
+            self._log.exception("Mix file is corrupted: %s", path)
+            self._flash(
+                f"Mix file is corrupted ({exc.msg}). Pick another file or save a fresh one.",
+                6000,
+            )
+            return False
+        except OSError as exc:
+            self._log.exception("Could not read mix file %s", path)
+            self._flash(
+                f"Couldn't read mix file: {exc.strerror or exc}.",
+                6000,
+            )
+            return False
+        except Exception as exc:  # noqa: BLE001
+            self._log.exception("Failed to load mix from %s", path)
             self._flash(
                 f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
                 6000,

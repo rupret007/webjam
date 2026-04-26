@@ -4,6 +4,40 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.7] — 2026-04-24
+
+### Round 4 deep-dive — controller refactor, telemetry expansion, multi-mix, audio device picker
+
+6 parallel implementation agents in isolated worktrees, plus follow-up wiring and a user-journey audit.
+
+#### Refactor
+- **`ParticipantStateManager` extracted** from `JamulusController` (new `jamulus_state_manager.py`, 349 LOC).  Owns `participants`, `_pre_solo_mute`, and `_participants_lock` plus all mutator helpers (`set_fader_level`, `set_mute`, `set_solo`, `serialize_mix`, `apply_mix_data`, `sync_from_protocol`).  `JamulusController` shrinks 803 → 545 LOC and now delegates; backward-compat properties on the controller keep older test fixtures working.
+- **`unregister_callback()`** added to `JamulusController`; `stop()` warns if monitor thread didn't exit, then clears the callbacks list to drop dangling references.
+
+#### New features
+- **Multi-mix save/load** — `Ctrl+Shift+S` ("Save Mix As…") and `Ctrl+Shift+O` ("Load Mix From…") open `QFileDialog`s so users can keep one mix per song / per band-mate.  New `MixManager.save_to(path)` / `load_from(path)` paired methods.
+- **Audio input device picker** in the wizard's Routing page (`AppSettings.audio_input_device_index`).  `core/audio_engine.py::_resolve_device` now prefers an explicit setting over auto-detect, so users with multiple interfaces can pin the right one.
+
+#### Telemetry expansion (7 new metrics)
+- `metric_jamulus_hang_detected` — incremented when the RPC heartbeat first crosses the >15s silence threshold.
+- `metric_webex_token_refresh_attempt` / `_success` — wired through `WebexEmbed.on_refresh_metric` callback.
+- `metric_audio_device_blackhole_found` / `_audio_device_missing` — emitted from the routing-status apply path so we know how often the bundled BlackHole route succeeds.
+- `metric_mix_corruption_recovered` — incremented on `JSONDecodeError` in `MixManager.load`.
+- `metric_session_started` — first-time-this-session participant arrival, paired with a "Connected to {server}. Waiting for band members…" flash.
+
+#### Memory + concurrency hardening
+- **`_unknown_msg_ids_seen` capped** at 256 entries in `core/jamulus_protocol.py` so unknown-message logging can't grow without bound on a misconfigured server.
+- **`_request_counter` reset** in `JamulusRpcClient.stop()` — prevents wraparound state leaking across reconnects.
+- **47 new tests** across 7 files covering the state-manager extraction, multi-mix round-trip, telemetry expansion, audio device picker validation, and concurrency stress (RPC client + JamulusController under daemon-thread Barrier/Event harness).
+
+#### User-journey polish
+- **Jamulus install warning relocated** from the Done page (page 4) to the Welcome page (page 1) of the setup wizard, with an amber notice box — users now discover the prerequisite before configuring anything.
+
+#### Versioning
+- `__version__` 0.4.6 → 0.4.7.  Suite total: **647 pass, 12 skipped** (was 611; +36 net; 0 failures).
+
+---
+
 ## [0.4.6] — 2026-04-25
 
 ### Round 3 deep-dive — refactors, new shortcuts, audit fixes

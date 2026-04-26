@@ -1,13 +1,19 @@
 """
 Jamulus Controller - Interface for communicating with Jamulus client
-Provides real-time participant detection and mixer control
+Provides real-time participant detection and mixer control.
+
+Participant-state ownership (the ``participants`` dict, ``_pre_solo_mute``
+snapshot, and the lock that protects them) lives in
+:mod:`jamulus_state_manager`.  This module focuses on transport — RPC, UDP,
+audio engine — and forwards state operations to a ``ParticipantStateManager``
+instance.  ``JamulusParticipant`` is re-exported here so existing callers
+(``from jamulus_controller import JamulusParticipant``) continue to work.
 """
 
 import os
 import threading
 import time
 from typing import List, Callable, Optional, Dict
-from dataclasses import dataclass
 import json
 import tempfile
 from pathlib import Path
@@ -17,22 +23,16 @@ from core.jamulus_protocol import JamulusProtocolAdapter
 from core.jamulus_rpc_client import JamulusRpcClient
 from core.logging_config import configure_logging
 from core.settings import load_settings
+from jamulus_state_manager import JamulusParticipant, ParticipantStateManager
 
+__all__ = [
+    "JamulusParticipant",
+    "JamulusController",
+    "JamulusAudioMonitor",
+    "JamulusMessageType",
+    "create_jamulus_controller",
+]
 
-@dataclass
-class JamulusParticipant:
-    """Represents a participant in the Jamulus session"""
-    channel_id: int
-    name: str
-    ip_address: str = ""
-    is_connected: bool = True
-    fader_level: int = 100  # 0-127 (Jamulus mixer range; 100 = 0 dB, 127 = +6 dB)
-    pan: int = 50  # 0=left, 50=center, 100=right
-    muted: bool = False
-    solo: bool = False
-    instrument: str = ""   # as reported by Jamulus JSON-RPC
-    is_local: bool = False  # True for the local Jamulus client (from RPC getClientInfo)
-    
 
 class JamulusController:
     """
@@ -51,13 +51,14 @@ class JamulusController:
         self.host = host
         self.port = port
         self.rpc_port = rpc_port
-        self.participants: Dict[int, JamulusParticipant] = {}
         self.callbacks: List[Callable] = []
         self._lock = threading.Lock()
-        self._pre_solo_mute: Dict[int, bool] = {}
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
-        self._participants_lock = threading.RLock()
+
+        # State manager owns participants/_pre_solo_mute/_participants_lock.
+        # Property setters/getters on this controller proxy through to it.
+        self._build_state_manager()
 
         # Primary integration: JSON-RPC (Jamulus 3.9+)
         self.rpc_client = JamulusRpcClient(
@@ -77,6 +78,63 @@ class JamulusController:
 
         self.audio_engine = RealAudioEngine(self.settings, logger=self.logger.getChild("audio_engine"))
         self.last_error: str = ""
+
+    # ------------------------------------------------------------------
+    # Participant state — delegated to ``ParticipantStateManager``.
+    # The next four properties exist so test fixtures that bypass __init__
+    # (``JamulusController.__new__(...); controller.participants = {}; ...``)
+    # still route through the state manager transparently.
+    # ------------------------------------------------------------------
+    def _build_state_manager(self) -> ParticipantStateManager:
+        manager = ParticipantStateManager(
+            apply_mixer_setting=self._apply_mixer_setting,
+            set_cached_participants=self._cache_protocol_participants,
+            send_rpc_gain=self._send_rpc_gain,
+            notify_callbacks=self._notify_callbacks,
+            logger=getattr(self, "logger", None),
+        )
+        self.__dict__["_state"] = manager
+        return manager
+
+    @property
+    def _state(self) -> ParticipantStateManager:
+        existing = self.__dict__.get("_state")
+        if existing is None:
+            existing = self._build_state_manager()
+        return existing
+
+    @property
+    def participants(self) -> Dict[int, JamulusParticipant]:
+        return self._state.participants
+
+    @participants.setter
+    def participants(self, value: Dict[int, JamulusParticipant]) -> None:
+        self._state.participants = value
+
+    @property
+    def _pre_solo_mute(self) -> Dict[int, bool]:
+        return self._state._pre_solo_mute
+
+    @_pre_solo_mute.setter
+    def _pre_solo_mute(self, value: Dict[int, bool]) -> None:
+        self._state._pre_solo_mute = value
+
+    @property
+    def _participants_lock(self) -> "threading.RLock":
+        return self._state._participants_lock
+
+    @_participants_lock.setter
+    def _participants_lock(self, value: "threading.RLock") -> None:
+        self._state._participants_lock = value
+
+    def _cache_protocol_participants(self, cached: Dict[int, str]) -> None:
+        """State-manager callback — push the latest participant name map
+        back into the UDP protocol adapter's cache.  Resilient to fixtures
+        whose protocol stub doesn't implement ``set_cached_participants``."""
+        protocol = getattr(self, "protocol", None)
+        setter = getattr(protocol, "set_cached_participants", None)
+        if setter is not None:
+            setter(cached)
         
     def start(self):
         """Start monitoring Jamulus via JSON-RPC (primary) and UDP (fallback)."""
@@ -97,6 +155,10 @@ class JamulusController:
         self.protocol.stop_receiving()
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2)
+            if self.monitor_thread.is_alive():
+                self.logger.warning(
+                    "Jamulus monitor thread did not exit within 2s — may leak resources",
+                )
         # Drop any per-channel RPC level overrides — the next session may
         # have completely different channel IDs, and stale entries shouldn't
         # leak between sessions.
@@ -105,6 +167,10 @@ class JamulusController:
         except AttributeError:
             pass  # older audio engine without the method
         self.audio_engine.stop()
+        # Clear callback list so the next session starts fresh and we don't
+        # hold references to dead listeners.
+        with self._lock:
+            self.callbacks.clear()
 
     # ------------------------------------------------------------------
     # RPC / UDP participant callbacks (called from background threads)
@@ -157,39 +223,9 @@ class JamulusController:
             self.audio_engine.set_level_override(channel_id, level)
 
     def _sync_participants_from_protocol(self, incoming: Dict[int, str]) -> None:
-        """Merge incoming participant map into internal state, then notify callbacks."""
-        apply_ids: list[int] = []
-        with self._participants_lock:
-            known_ids = set(self.participants.keys())
-            incoming_ids = set(incoming.keys())
-            active_solo = next(
-                (cid for cid, p in self.participants.items() if p.solo), None
-            )
-            for cid in incoming_ids - known_ids:
-                p = JamulusParticipant(channel_id=cid, name=incoming[cid])
-                if active_solo is not None and cid != active_solo:
-                    p.muted = True
-                    self._pre_solo_mute.setdefault(cid, False)
-                    apply_ids.append(cid)
-                self.participants[cid] = p
-            removed_solo = False
-            for cid in known_ids - incoming_ids:
-                removed = self.participants.pop(cid, None)
-                if removed and removed.solo:
-                    removed_solo = True
-                self._pre_solo_mute.pop(cid, None)
-            for cid in incoming_ids & known_ids:
-                self.participants[cid].name = incoming[cid]
-                self.participants[cid].is_connected = True
-            if removed_solo:
-                for cid, p in self.participants.items():
-                    p.solo = False
-                    p.muted = self._pre_solo_mute.get(cid, False)
-                    apply_ids.append(cid)
-                self._pre_solo_mute.clear()
-        for cid in sorted(set(apply_ids)):
-            self._apply_mixer_setting(cid, notify=False)
-        self._notify_callbacks()
+        """Merge incoming participant map into internal state, then notify
+        callbacks.  Backed by ``ParticipantStateManager.sync_from_protocol``."""
+        self._state.sync_from_protocol(incoming)
     
     def _monitor_loop(self):
         """Main monitoring loop"""
@@ -204,16 +240,11 @@ class JamulusController:
                 time.sleep(5)
     
     def _check_participants(self):
-        """Check for participant changes via UDP protocol adapter.
-
-        When JSON-RPC is available it is the authoritative source —
-        ``_on_rpc_participants`` already keeps ``self.participants`` up-to-date.
-        Running this method on top of RPC would erase participants every
-        second (UDP cache is empty when UDP is disabled) and silently drop
-        any fader/mute/solo changes between RPC poll cycles.
-        """
+        """UDP-fallback participant poll.  When JSON-RPC is available it's
+        authoritative and this is a no-op — running both would erase
+        participants between RPC cycles and silently drop fader changes."""
         if self.rpc_client.available:
-            return  # RPC is authoritative; UDP participant management not needed
+            return
 
         protocol_participants = self.protocol.request_clients()
         if protocol_participants is None:
@@ -225,7 +256,7 @@ class JamulusController:
             )
             return
 
-        normalized_participants: Dict[int, str] = {}
+        normalized: Dict[int, str] = {}
         for raw_channel_id, raw_name in protocol_participants.items():
             try:
                 channel_id = int(raw_channel_id)
@@ -233,112 +264,19 @@ class JamulusController:
                 continue
             if channel_id < 0:
                 continue
-            if isinstance(raw_name, str):
-                name = raw_name.strip()
-            else:
-                name = ""
-            normalized_participants[channel_id] = name or f"Participant {channel_id}"
+            name = raw_name.strip() if isinstance(raw_name, str) else ""
+            normalized[channel_id] = name or f"Participant {channel_id}"
 
-        apply_mixer_ids: list[int] = []
-
-        with self._participants_lock:
-            incoming_ids = set(normalized_participants.keys())
-            known_ids = set(self.participants.keys())
-            active_solo_channel = next(
-                (cid for cid, participant in self.participants.items() if participant.solo),
-                None,
-            )
-
-            for channel_id in incoming_ids - known_ids:
-                participant = JamulusParticipant(
-                    channel_id=channel_id,
-                    name=normalized_participants[channel_id],
-                )
-                # Keep solo invariant when channels join mid-solo.
-                if active_solo_channel is not None and channel_id != active_solo_channel:
-                    participant.muted = True
-                    self._pre_solo_mute.setdefault(channel_id, False)
-                    apply_mixer_ids.append(channel_id)
-                self.participants[channel_id] = participant
-
-            removed_solo = False
-            for channel_id in known_ids - incoming_ids:
-                removed = self.participants.get(channel_id)
-                if removed and removed.solo:
-                    removed_solo = True
-                del self.participants[channel_id]
-                self._pre_solo_mute.pop(channel_id, None)
-
-            for channel_id in incoming_ids & known_ids:
-                self.participants[channel_id].name = normalized_participants[channel_id]
-                self.participants[channel_id].is_connected = True
-
-            if removed_solo:
-                for cid, participant in self.participants.items():
-                    participant.solo = False
-                    participant.muted = self._pre_solo_mute.get(cid, False)
-                    apply_mixer_ids.append(cid)
-                self._pre_solo_mute.clear()
-            elif not any(participant.solo for participant in self.participants.values()):
-                self._pre_solo_mute.clear()
-
-        for channel_id in sorted(set(apply_mixer_ids)):
-            self._apply_mixer_setting(channel_id, notify=False)
+        self._state.apply_udp_clients_payload(normalized)
         self.last_error = ""
-        self._notify_callbacks()
     
     def add_participant(self, name: str, channel_id: int = None) -> JamulusParticipant:
-        """Manually add a participant (for testing or manual setup)"""
-        should_apply = False
-        with self._participants_lock:
-            if channel_id is None:
-                channel_id = max(self.participants.keys(), default=-1) + 1
-            participant = JamulusParticipant(
-                channel_id=channel_id,
-                name=name
-            )
-            active_solo_channel = next(
-                (cid for cid, current in self.participants.items() if current.solo),
-                None,
-            )
-            if active_solo_channel is not None and channel_id != active_solo_channel:
-                participant.muted = True
-                self._pre_solo_mute.setdefault(channel_id, False)
-                should_apply = True
-            self.participants[channel_id] = participant
-            cached = {cid: p.name for cid, p in self.participants.items()}
-        self.protocol.set_cached_participants(cached)
-        if should_apply:
-            self._apply_mixer_setting(channel_id, notify=False)
-        self._notify_callbacks()
-        return participant
-    
+        """Manually add a participant (for testing or manual setup)."""
+        return self._state.add_participant(name, channel_id)
+
     def remove_participant(self, channel_id: int):
-        """Remove a participant"""
-        should_notify = False
-        cached = None
-        apply_mixer_ids: list[int] = []
-        with self._participants_lock:
-            if channel_id in self.participants:
-                removed = self.participants[channel_id]
-                del self.participants[channel_id]
-                self._pre_solo_mute.pop(channel_id, None)
-                if removed.solo:
-                    for cid, participant in self.participants.items():
-                        participant.solo = False
-                        participant.muted = self._pre_solo_mute.get(cid, False)
-                        apply_mixer_ids.append(cid)
-                    self._pre_solo_mute.clear()
-                elif not any(participant.solo for participant in self.participants.values()):
-                    self._pre_solo_mute.clear()
-                cached = {cid: p.name for cid, p in self.participants.items()}
-                should_notify = True
-        if cached is not None:
-            self.protocol.set_cached_participants(cached)
-        for cid in sorted(set(apply_mixer_ids)):
-            self._apply_mixer_setting(cid, notify=False)
-        if should_notify:
-            self._notify_callbacks()
+        """Remove a participant."""
+        self._state.remove_participant(channel_id)
     
     def _send_rpc_gain(self, channel_id: int, level: int) -> None:
         """Fire-and-forget RPC gain command — always runs on a background thread."""
@@ -356,111 +294,28 @@ class JamulusController:
     def set_fader_level(self, channel_id: int, level: int):
         """Set the local mix fader for a Jamulus channel.
 
-        Args:
-            channel_id: Jamulus channel ID (>= 0).  Silently no-ops if the
-                channel isn't currently in the participant list.
-            level: 0..127 (Jamulus convention).  100 = unity gain (0 dB),
-                127 = ~+6 dB. Out-of-range values are clamped.
-
-        Sends the change to Jamulus via JSON-RPC (background thread, non-
-        blocking) when available; UDP `apply_mixer` is also called as a
-        fallback so the change still propagates if the RPC server isn't up.
+        ``level`` is 0..127 (Jamulus convention; 100 = unity, 127 = ~+6 dB);
+        out-of-range values are clamped.  No-op if the channel isn't in the
+        participant list.  Propagates to Jamulus via JSON-RPC (when
+        available) and via UDP ``apply_mixer`` as a fallback.
         """
-        with self._participants_lock:
-            if channel_id in self.participants:
-                self.participants[channel_id].fader_level = max(0, min(127, level))
-            else:
-                return
-        # Send to Jamulus via RPC (background thread) + UDP fallback in _apply_mixer_setting
-        self._send_rpc_gain(channel_id, level)
-        self._apply_mixer_setting(channel_id)
-    
+        self._state.set_fader_level(channel_id, level)
+
     def set_pan(self, channel_id: int, pan: int):
-        """Set pan position (0=left, 50=center, 100=right)"""
-        with self._participants_lock:
-            if channel_id in self.participants:
-                self.participants[channel_id].pan = max(0, min(100, pan))
-            else:
-                return
-        self._apply_mixer_setting(channel_id)
-    
+        """Set pan position (0=left, 50=center, 100=right)."""
+        self._state.set_pan(channel_id, pan)
+
     def set_mute(self, channel_id: int, muted: bool):
-        """Mute/unmute a Jamulus channel in the local mix.
+        """Mute/unmute a Jamulus channel.  Solo interaction: if any channel
+        is currently soloed, muting a non-soloed channel records the
+        requested state in the pre-solo snapshot for later restoration but
+        the channel stays audibly muted by the solo invariant."""
+        self._state.set_mute(channel_id, muted)
 
-        Args:
-            channel_id: Jamulus channel ID (>= 0).  Silently no-ops if the
-                channel isn't in the participant list.
-            muted: True to mute, False to unmute.
-
-        Solo interaction: if any channel currently has solo=True, muting a
-        non-soloed channel records the requested state in `_pre_solo_mute`
-        for restoration when solo is released, but the actual gain stays at
-        0 (the channel remains audibly muted by the solo).
-
-        Sent to Jamulus via JSON-RPC (background thread) using gain=0 for
-        muted, otherwise the channel's current fader_level.
-        """
-        with self._participants_lock:
-            if channel_id not in self.participants:
-                return
-            active_solo_channel = next(
-                (cid for cid, participant in self.participants.items() if participant.solo),
-                None,
-            )
-            if active_solo_channel is None:
-                self.participants[channel_id].muted = muted
-            else:
-                if not self._pre_solo_mute:
-                    self._pre_solo_mute = {
-                        cid: participant.muted for cid, participant in self.participants.items()
-                    }
-                self._pre_solo_mute[channel_id] = muted
-                if channel_id == active_solo_channel:
-                    self.participants[channel_id].muted = muted
-                else:
-                    # Preserve the requested post-solo mute state without
-                    # breaking exclusive solo monitoring in the current mix.
-                    self.participants[channel_id].muted = True
-            effective_level = 0 if self.participants[channel_id].muted else self.participants[channel_id].fader_level
-        # Propagate mute state to Jamulus via RPC (gain=0 means muted).
-        self._send_rpc_gain(channel_id, effective_level)
-        self._apply_mixer_setting(channel_id)
-    
     def set_solo(self, channel_id: int, solo: bool):
-        """
-        Solo/unsolo a channel, preserving prior mute state.
-
-        Solo semantics: only one channel can be soloed at a time.
-        Entering solo mutes all other channels. Switching solo channels keeps
-        the original pre-solo mute snapshot. Leaving solo restores the
-        snapshot and clears all solo flags.
-        """
-        affected_ids: list[int] = []
-        with self._participants_lock:
-            if channel_id not in self.participants:
-                return
-            affected_ids = list(self.participants.keys())
-            currently_solo = any(p.solo for p in self.participants.values())
-            if solo:
-                if not currently_solo or not self._pre_solo_mute:
-                    self._pre_solo_mute = {
-                        cid: p.muted for cid, p in self.participants.items()
-                    }
-                for cid, p in self.participants.items():
-                    p.solo = cid == channel_id
-                    p.muted = cid != channel_id
-            else:
-                for cid, p in self.participants.items():
-                    p.solo = False
-                    p.muted = self._pre_solo_mute.get(cid, False)
-                self._pre_solo_mute.clear()
-        for cid in affected_ids:
-            with self._participants_lock:
-                participant = self.participants.get(cid)
-            if participant is not None:
-                effective_level = 0 if participant.muted else participant.fader_level
-                self._send_rpc_gain(cid, effective_level)
-            self._apply_mixer_setting(cid)
+        """Solo/unsolo a channel, preserving prior mute state.  Exclusive
+        solo: switching keeps the snapshot; leaving solo restores it."""
+        self._state.set_solo(channel_id, solo)
     
     def _apply_mixer_setting(self, channel_id: int, notify: bool = True):
         """Apply mixer settings to Jamulus via protocol adapter and audio engine."""
@@ -486,9 +341,8 @@ class JamulusController:
             self._notify_callbacks()
     
     def get_participants(self) -> List[JamulusParticipant]:
-        """Get list of all participants"""
-        with self._participants_lock:
-            return list(self.participants.values())
+        """Get list of all participants."""
+        return self._state.get_participants()
 
     def get_audio_diagnostics(self) -> Dict[str, str]:
         diag = self.audio_engine.diagnostics()
@@ -506,6 +360,14 @@ class JamulusController:
         """Register a callback for participant updates"""
         with self._lock:
             self.callbacks.append(callback)
+
+    def unregister_callback(self, callback: Callable) -> None:
+        """Remove a previously-registered callback. Silent on missing."""
+        with self._lock:
+            try:
+                self.callbacks.remove(callback)
+            except ValueError:
+                pass
     
     def _notify_callbacks(self):
         """Notify all registered callbacks of changes"""
@@ -520,119 +382,16 @@ class JamulusController:
 
     @staticmethod
     def _normalize_participant_name(name: object) -> str:
-        if name is None:
-            return ""
-        return str(name).strip().casefold()
+        # Kept for any external callers that imported it from the controller.
+        return ParticipantStateManager._normalize_participant_name(name)
 
     def serialize_mix(self) -> dict:
         """Return the current mix payload in the same format used for file saves."""
-        with self._participants_lock:
-            participants = list(self.participants.values())
-        return {
-            'participants': [
-                {
-                    'channel_id': p.channel_id,
-                    'name': p.name,
-                    'fader_level': p.fader_level,
-                    'pan': p.pan,
-                    'muted': p.muted,
-                    'solo': p.solo
-                }
-                for p in participants
-            ]
-        }
+        return self._state.serialize_mix()
 
     def apply_mix_data(self, mix_data: object) -> Optional[int]:
         """Apply a previously serialized mix payload to current participants."""
-        def _coerce_bool(value: object, default: bool) -> bool:
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, str):
-                lowered = value.strip().lower()
-                if lowered in {"1", "true", "yes", "on"}:
-                    return True
-                if lowered in {"0", "false", "no", "off"}:
-                    return False
-            if isinstance(value, (int, float)):
-                return bool(value)
-            return default
-
-        participants_data = mix_data.get("participants") if isinstance(mix_data, dict) else None
-        if not isinstance(participants_data, list):
-            self.logger.warning("Mix payload is missing a valid participants list.")
-            return None
-
-        with self._participants_lock:
-            participant_name_by_id = {
-                channel_id: self._normalize_participant_name(participant.name)
-                for channel_id, participant in self.participants.items()
-            }
-        name_to_channel_ids: Dict[str, list[int]] = {}
-        for channel_id, normalized_name in participant_name_by_id.items():
-            if normalized_name:
-                name_to_channel_ids.setdefault(normalized_name, []).append(channel_id)
-
-        solo_candidates: list[int] = []
-        applied_channel_ids: set[int] = set()
-        for p_data in participants_data:
-            if not isinstance(p_data, dict):
-                continue
-
-            try:
-                payload_channel_id = int(p_data.get("channel_id"))
-            except (TypeError, ValueError):
-                payload_channel_id = None
-
-            payload_name = self._normalize_participant_name(p_data.get("name"))
-            channel_id = None
-            if payload_channel_id is not None and payload_channel_id in participant_name_by_id:
-                current_name = participant_name_by_id[payload_channel_id]
-                if not payload_name or current_name == payload_name:
-                    channel_id = payload_channel_id
-            if channel_id is None and payload_name:
-                matching_channel_ids = name_to_channel_ids.get(payload_name, [])
-                if len(matching_channel_ids) == 1:
-                    channel_id = matching_channel_ids[0]
-            if channel_id is None:
-                continue
-
-            with self._participants_lock:
-                if channel_id not in self.participants:
-                    continue
-
-                p = self.participants[channel_id]
-
-                try:
-                    fader_level = int(p_data.get("fader_level", p.fader_level))
-                except (TypeError, ValueError):
-                    fader_level = p.fader_level
-                p.fader_level = max(0, min(127, fader_level))
-
-                try:
-                    pan = int(p_data.get("pan", p.pan))
-                except (TypeError, ValueError):
-                    pan = p.pan
-                p.pan = max(0, min(100, pan))
-
-                p.muted = _coerce_bool(p_data.get("muted", p.muted), p.muted)
-                p.solo = _coerce_bool(p_data.get("solo", p.solo), p.solo)
-                if p.solo:
-                    solo_candidates.append(channel_id)
-            # Mixer apply is best-effort; may race with protocol monitor updates.
-            self._apply_mixer_setting(channel_id)
-            applied_channel_ids.add(channel_id)
-
-        # Enforce exclusive solo semantics for payloads that contain multiple
-        # solo=true entries; choose the last soloed channel in payload order.
-        if solo_candidates:
-            self.set_solo(solo_candidates[-1], True)
-        else:
-            with self._participants_lock:
-                if not any(p.solo for p in self.participants.values()):
-                    self._pre_solo_mute.clear()
-        if participants_data and not applied_channel_ids:
-            self.logger.warning("Mix payload did not match any current participants.")
-        return len(applied_channel_ids)
+        return self._state.apply_mix_data(mix_data)
 
     def save_mix(self, filename: str):
         """Save current mix to file"""

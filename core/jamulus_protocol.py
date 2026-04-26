@@ -164,6 +164,11 @@ def _parse_conn_clients_list(data: bytes) -> Dict[int, str]:
 # 50,000 dict entries.
 _MAX_LEVEL_LIST_ENTRIES = 500
 
+# Hard cap on how many distinct unknown msg_ids we'll remember per session.
+# Bounds the ``_unknown_msg_ids_seen`` set so a hostile peer can't grow it
+# unboundedly by sending packets with random msg_ids.
+_MAX_UNKNOWN_MSG_IDS_REMEMBERED = 256
+
 
 def _parse_level_list(data: bytes) -> Dict[int, float]:
     """
@@ -428,7 +433,8 @@ class JamulusProtocolAdapter:
             # Log each unknown msg_id only once per session — prevents log
             # flooding from malformed/hostile packet storms.
             if msg_id not in self._unknown_msg_ids_seen:
-                self._unknown_msg_ids_seen.add(msg_id)
+                if len(self._unknown_msg_ids_seen) < _MAX_UNKNOWN_MSG_IDS_REMEMBERED:
+                    self._unknown_msg_ids_seen.add(msg_id)
                 _logger.debug(
                     "Unhandled Jamulus msg_id=%d len=%d (subsequent occurrences silenced)",
                     msg_id, len(data),

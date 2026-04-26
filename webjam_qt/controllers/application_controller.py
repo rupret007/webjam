@@ -168,7 +168,15 @@ class ApplicationController(QObject):
             self.jamulus,
             lambda text, ms: self.window.flash_message(text, ms=ms),
             logger=LOGGER,
+            metrics=self.metrics,
         )
+
+        # Wire Webex token-refresh metrics into the embed widget so we can
+        # measure how often long sessions actually need a refresh.
+        try:
+            self.window.webex_embed.on_refresh_metric = lambda key: self.metrics.increment(key)
+        except AttributeError:
+            pass  # older embed without the hook
 
         self._wire_signals()
         self._bootstrap_ui()
@@ -233,6 +241,9 @@ class ApplicationController(QObject):
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
         self.window._load_mix_shortcut.activated.connect(self._on_load_mix)
+        # Save Mix As... / Load Mix... shortcuts (multi-slot named mixes)
+        self.window._save_mix_as_shortcut.activated.connect(self._on_save_mix_as)
+        self.window._load_mix_from_shortcut.activated.connect(self._on_load_mix_from)
         # Mute all shortcut
         self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
         # Mute-self shortcut
@@ -305,6 +316,16 @@ class ApplicationController(QObject):
             self._level_timer.start()
             # Restore saved mix (best-effort — silently skipped if no file)
             self._restore_saved_mix()
+            # Telemetry: count sessions where we actually got real participants
+            try:
+                self.metrics.increment("metric_session_started")
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("metric_session_started increment failed", exc_info=True)
+            # Celebrate the moment — first connection deserves a flash
+            self.window.flash_message(
+                f"Connected to {self.settings.jamulus_server}. Waiting for band members…",
+                ms=4000,
+            )
 
         # Update participant count in status bar.  When the user is alone on
         # the server (only their own channel), say so explicitly — "1
@@ -685,6 +706,10 @@ class ApplicationController(QObject):
                 )
                 self.window.set_status_audio("Not responding")
                 self._rpc_hang_banner_shown = True
+                try:
+                    self.metrics.increment("metric_jamulus_hang_detected")
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug("hang metric failed", exc_info=True)
             elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
                 self._rpc_hang_banner_shown = False
                 self.window.flash_message("Jamulus is responding again.", ms=3000)
@@ -843,6 +868,41 @@ class ApplicationController(QObject):
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
         self._mix_manager.load()
 
+    def _on_save_mix_as(self) -> None:
+        """Ctrl+Shift+S — open a Save dialog and write the mix to a chosen path.
+
+        Lets users keep multiple named mixes (one per song, per band-mate
+        setup, etc.) instead of overwriting the single default slot.
+        """
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self.window,
+            "Save Mix As...",
+            str(Path.home()),
+            "Mix files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        self._mix_manager.save_to(Path(path))
+        # Treat an explicit "Save As" as a successful checkpoint of the
+        # current state, the same way Ctrl+S does.
+        self._mix_dirty = False
+
+    def _on_load_mix_from(self) -> None:
+        """Ctrl+Shift+O — open a Load dialog and apply the chosen mix file."""
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self.window,
+            "Load Mix...",
+            str(Path.home()),
+            "Mix files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        self._mix_manager.load_from(Path(path))
+
     def _restore_saved_mix(self) -> None:
         """Auto-apply ~/.webjam_mix.json when Jamulus first connects (best-effort)."""
         self._mix_manager.auto_restore()
@@ -958,12 +1018,20 @@ class ApplicationController(QObject):
         if status.ok:
             label = f"{status.device_name} \u2713"
             self.window.set_status_routing(label)
+            try:
+                self.metrics.increment("metric_audio_device_blackhole_found")
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("audio device metric failed", exc_info=True)
         else:
             self.window.set_status_routing("No audio device")
             self.window.flash_message(
                 f"No virtual audio device found. {status.install_hint}",
                 ms=8000,
             )
+            try:
+                self.metrics.increment("metric_audio_device_missing")
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("audio device metric failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Helpers

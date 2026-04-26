@@ -13,7 +13,8 @@ def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
     defaults = asdict(AppSettings())
     # Integer fields
-    for key in ("jamulus_port", "jamulus_rpc_port", "audio_blocksize", "audio_samplerate"):
+    for key in ("jamulus_port", "jamulus_rpc_port", "audio_blocksize", "audio_samplerate",
+                "audio_input_device_index"):
         if key in data:
             try:
                 data[key] = int(data[key]) if data[key] is not None else defaults[key]
@@ -66,6 +67,7 @@ class AppSettings:
     audio_blocksize: int = 0
     audio_samplerate: int = 48000
     audio_latency: str = "low"
+    audio_input_device_index: int = -1  # -1 means "system default / auto-detect"
     enable_sentry: bool = False
     sentry_dsn: str = ""
     log_level: str = "INFO"
@@ -101,6 +103,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
         "WEBJAM_AUDIO_SAMPLERATE": "audio_samplerate",
         "WEBJAM_AUDIO_LATENCY": "audio_latency",
+        "WEBJAM_AUDIO_INPUT_DEVICE_INDEX": "audio_input_device_index",
         "WEBJAM_ENABLE_SENTRY": "enable_sentry",
         "WEBJAM_SENTRY_DSN": "sentry_dsn",
         "WEBJAM_LOG_LEVEL": "log_level",
@@ -118,7 +121,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if 1 <= parsed <= 65535:
                 data[key] = parsed
             continue
-        if key in {"audio_blocksize", "audio_samplerate"}:
+        if key in {"audio_blocksize", "audio_samplerate", "audio_input_device_index"}:
             try:
                 parsed = int(raw)
             except ValueError:

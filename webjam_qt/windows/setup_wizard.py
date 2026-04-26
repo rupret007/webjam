@@ -26,6 +26,7 @@ from PySide6.QtCore import Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -97,6 +98,23 @@ class _WelcomePage(QWizardPage):
             "  \u2022  Audio connection so your band is heard in the video call\n\n"
             "You can change any setting later from the Settings panel."
         ))
+
+        # Prominent Jamulus prerequisite notice — appears on first page so users
+        # discover the dependency before they hit a launch failure later.
+        notice = _body_label(
+            "\u26a0\ufe0f  Heads up: Jamulus must be installed separately before you continue. "
+            "WebJam launches and manages it for you, but does not bundle it. "
+            "Get it free at <a href='https://jamulus.io'>jamulus.io</a>."
+        )
+        notice.setOpenExternalLinks(True)
+        notice.setTextFormat(Qt.TextFormat.RichText)
+        notice.setWordWrap(True)
+        notice.setStyleSheet(
+            "QLabel { background: rgba(255, 200, 0, 0.10); "
+            "border: 1px solid rgba(255, 200, 0, 0.35); "
+            "border-radius: 6px; padding: 10px; }"
+        )
+        layout.addWidget(notice)
         layout.addStretch(1)
 
 
@@ -392,7 +410,7 @@ class _RoutingPage(QWizardPage):
     # Emitted from background scan thread; Qt auto-queues it to the UI thread
     _scan_complete = Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Optional[AppSettings] = None) -> None:
         super().__init__()
         self._scan_complete.connect(self._apply_routing)
         self.setTitle("Audio Routing")
@@ -401,6 +419,7 @@ class _RoutingPage(QWizardPage):
             "so Webex participants can hear everyone play."
         )
         self._complete = False
+        self._saved_device_index = settings.audio_input_device_index if settings else -1
         self._status_label = _body_label("Checking your audio setup…")
 
         install_btn = QPushButton("Show me how to set this up")
@@ -408,6 +427,14 @@ class _RoutingPage(QWizardPage):
         install_btn.clicked.connect(self._open_install_url)
         install_btn.setVisible(False)
         self._install_btn = install_btn
+
+        # Device picker — always present, populated after scan completes.
+        # Defaults to "System default" so the wizard remains usable when
+        # sounddevice is missing or no devices are detected.
+        self._device_label = _section_label("Audio input device")
+        self._device_picker = QComboBox()
+        self._device_picker.setAccessibleName("Audio input device")
+        self._device_picker.addItem("System default", -1)
 
         skip_chk = QCheckBox("Skip for now — I'll set this up later")
         skip_chk.stateChanged.connect(self._on_skip_changed)
@@ -417,6 +444,8 @@ class _RoutingPage(QWizardPage):
         layout.setSpacing(Space.MD)
         layout.addWidget(self._status_label)
         layout.addWidget(install_btn)
+        layout.addWidget(self._device_label)
+        layout.addWidget(self._device_picker)
         layout.addStretch(1)
         layout.addWidget(skip_chk)
 
@@ -462,8 +491,44 @@ class _RoutingPage(QWizardPage):
             self._install_btn.setVisible(True)
             self._install_url = status.install_url
             self._complete = False
+        self._populate_device_picker()
         self._scan_done = True
         self.completeChanged.emit()
+
+    def _populate_device_picker(self) -> None:
+        """Fill the device combo with all input-capable devices.
+
+        First entry is always "System default" (data = -1).  The remaining
+        entries come from :func:`core.audio_routing.list_input_devices`,
+        which returns [] when sounddevice is unavailable, so the picker
+        stays usable in that case.
+        """
+        from core.audio_routing import list_input_devices
+
+        # On the first populate, fall back to the saved settings index;
+        # on subsequent re-scans, preserve whatever the user had picked.
+        if getattr(self, "_picker_populated", False):
+            target = self._device_picker.currentData()
+            if target is None:
+                target = -1
+        else:
+            target = self._saved_device_index
+
+        self._device_picker.blockSignals(True)
+        try:
+            self._device_picker.clear()
+            self._device_picker.addItem("System default", -1)
+            for dev in list_input_devices():
+                label = f"{dev['name']} ({dev['channels']} ch)"
+                self._device_picker.addItem(label, dev["index"])
+
+            for i in range(self._device_picker.count()):
+                if self._device_picker.itemData(i) == target:
+                    self._device_picker.setCurrentIndex(i)
+                    break
+        finally:
+            self._device_picker.blockSignals(False)
+        self._picker_populated = True
 
     def _open_install_url(self) -> None:
         url = getattr(self, "_install_url", "https://existential.audio/blackhole/")
@@ -475,6 +540,17 @@ class _RoutingPage(QWizardPage):
 
     def isComplete(self) -> bool:
         return self._complete
+
+    @property
+    def device_index(self) -> int:
+        """Return the user's selected input device index, or -1 for default."""
+        data = self._device_picker.currentData()
+        if data is None:
+            return -1
+        try:
+            return int(data)
+        except (TypeError, ValueError):
+            return -1
 
 
 # ---------------------------------------------------------------------------
@@ -494,8 +570,6 @@ class _DonePage(QWizardPage):
             "  2.  Click \u201cLaunch Audio\u201d — WebJam will connect to your Jamulus server\n"
             "  3.  Click \u201cJoin Video\u201d to open your Webex meeting\n"
             "  4.  Adjust faders as musicians join the session\n\n"
-            "\u2139\ufe0f  Jamulus must be installed separately (free at jamulus.io). "
-            "WebJam launches and manages it for you, but does not include it.\n\n"
             "You can reopen this wizard any time from the Settings panel."
         ))
         layout.addStretch(1)
@@ -531,7 +605,7 @@ class SetupWizard(QWizard):
         self._welcome = _WelcomePage()
         self._jamulus = _JamulusPage(self._settings)
         self._webex   = _WebexPage(self._settings)
-        self._routing = _RoutingPage()
+        self._routing = _RoutingPage(self._settings)
         self._done    = _DonePage()
 
         self.setPage(_PageId.WELCOME, self._welcome)
@@ -559,6 +633,7 @@ class SetupWizard(QWizard):
         cfg["webex_guest_issuer_id"]      = self._webex.guest_issuer_id
         cfg["webex_guest_issuer_secret"]  = self._webex.guest_issuer_secret
         cfg["webex_display_name"]         = self._webex.display_name
+        cfg["audio_input_device_index"]   = self._routing.device_index
 
         # Insert user-specified Jamulus path at the front of candidates
         jamulus_path = self._jamulus.jamulus_path

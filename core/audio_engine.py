@@ -168,7 +168,7 @@ class RealAudioEngine:
         """Pick the best input device index, updating diagnostics in-place."""
         from core.audio_routing import scan_loopback_devices
 
-        # Explicit override from settings or constructor wins
+        # Explicit override from constructor wins
         if self._preferred_device_index is not None:
             try:
                 dev = sd.query_devices(self._preferred_device_index)
@@ -176,6 +176,20 @@ class RealAudioEngine:
                 return self._preferred_device_index
             except Exception:
                 pass
+
+        # User-chosen device from settings (set via the setup wizard) wins
+        # over auto-detection.  -1 means "auto / system default".
+        configured = getattr(self.settings, "audio_input_device_index", -1)
+        if configured is not None and configured >= 0:
+            try:
+                dev = sd.query_devices(configured)
+                self._diagnostics.input_device = dev["name"]
+                return configured
+            except Exception:
+                self.logger.warning(
+                    "Configured audio_input_device_index=%d not available; "
+                    "falling back to auto-detect", configured
+                )
 
         # Auto-detect loopback device
         self._routing = scan_loopback_devices()

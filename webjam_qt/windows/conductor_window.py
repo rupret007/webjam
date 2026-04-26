@@ -170,6 +170,30 @@ class ConductorWindow(QMainWindow):
         # Cmd/Ctrl+S — save mix; Cmd/Ctrl+O — load mix (consumed by controller)
         self._save_mix_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         self._load_mix_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        # Cmd/Ctrl+Shift+S — "Save Mix As..."; Cmd/Ctrl+Shift+O — "Load Mix..."
+        # Multi-slot mix support: pick an arbitrary file path so users can
+        # keep one mix per song / per band-mate setup.  Uses the macOS-safe
+        # binder so Cmd+Shift+S doesn't collide with system shortcuts.
+        if on_mac:
+            self._save_mix_as_shortcut = QShortcut(
+                QKeySequence(
+                    Qt.KeyboardModifier.MetaModifier.value
+                    | Qt.KeyboardModifier.ShiftModifier.value
+                    | Qt.Key.Key_S.value
+                ),
+                self,
+            )
+            self._load_mix_from_shortcut = QShortcut(
+                QKeySequence(
+                    Qt.KeyboardModifier.MetaModifier.value
+                    | Qt.KeyboardModifier.ShiftModifier.value
+                    | Qt.Key.Key_O.value
+                ),
+                self,
+            )
+        else:
+            self._save_mix_as_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
+            self._load_mix_from_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
         # Cmd/Ctrl+T — insert timestamp into session canvas
         QShortcut(
             QKeySequence("Ctrl+T"), self,
@@ -233,8 +257,10 @@ class ConductorWindow(QMainWindow):
             "<i>One window for band audio (Jamulus) + video (Webex).</i><br><br>"
             "<b>Keyboard shortcuts:</b><br>"
             "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
-            "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state<br>"
-            "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state<br>"
+            "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state (default slot)<br>"
+            "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state (default slot)<br>"
+            "&nbsp;&nbsp;<b>Ctrl+Shift+S</b> — Save Mix As... (named file)<br>"
+            "&nbsp;&nbsp;<b>Ctrl+Shift+O</b> — Load Mix... (pick a file)<br>"
             f"&nbsp;&nbsp;<b>{mute_all_label}</b> — Mute / unmute all<br>"
             f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Mute / unmute yourself<br>"
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"

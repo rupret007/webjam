@@ -32,7 +32,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import QObject, QUrl, Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -146,6 +146,12 @@ class WebexEmbed(QFrame):
         self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+        # Optional telemetry hook: called with a metric key string when the
+        # widget spawns a token-refresh worker (ATTEMPT) or the worker
+        # returns a non-empty token (SUCCESS).  Wired by the controller
+        # to MetricsService.increment.
+        self.on_refresh_metric: Optional[Callable[[str], None]] = None
+
         self._load_ready.connect(self._on_load_ready, Qt.ConnectionType.QueuedConnection)
 
         # Lazy WebEngine objects (None until first load_meeting call)
@@ -253,6 +259,12 @@ class WebexEmbed(QFrame):
         """Navigate away from the meeting and restore the placeholder."""
         if self._view is not None:
             self._view.load(QUrl("about:blank"))
+        if self._profile is not None:
+            try:
+                self._profile.cookieStore().deleteAllCookies()
+                self._profile.clearHttpCache()
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("WebEngine profile cleanup failed", exc_info=True)
         self._pending_token = None
         self._pending_url   = ""
         self._token_acquired_at = 0.0
@@ -311,6 +323,11 @@ class WebexEmbed(QFrame):
         """Runs on main thread after background token fetch completes."""
         if token:
             self._token_acquired_at = time.time()
+            if self.on_refresh_metric is not None:
+                try:
+                    self.on_refresh_metric("metric_webex_token_refresh_success")
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug("on_refresh_metric SUCCESS hook failed", exc_info=True)
         # Refresh complete (success or fail) — release the in-flight latch
         self._refresh_in_flight = False
         self.load_meeting(url, access_token=token or None)
@@ -362,6 +379,12 @@ class WebexEmbed(QFrame):
                 LOGGER.warning("Guest token refresh failed: %s", exc)
             self._load_ready.emit(token or "", meeting_url)
 
+        # Telemetry: count every refresh worker we spawn.
+        if self.on_refresh_metric is not None:
+            try:
+                self.on_refresh_metric("metric_webex_token_refresh_attempt")
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("on_refresh_metric ATTEMPT hook failed", exc_info=True)
         threading.Thread(target=_worker, daemon=True, name="webex-token-refresh").start()
 
     def mute_webex_self(self, muted: bool) -> None:

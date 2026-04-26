@@ -105,6 +105,7 @@ class JamulusRpcClient:
         self._running = False
         self._local_channel_id = -1  # reset so next session re-queries
         self._available = False
+        self._request_counter = 0  # next session starts request IDs at 1
         if self._http_client is not None:
             try:
                 self._http_client.close()
