@@ -14,7 +14,7 @@ def _coerce_settings_data(data: dict) -> None:
     defaults = asdict(AppSettings())
     # Integer fields
     for key in ("jamulus_port", "jamulus_rpc_port", "audio_blocksize", "audio_samplerate",
-                "audio_input_device_index"):
+                "audio_input_device_index", "companion_api_port"):
         if key in data:
             try:
                 data[key] = int(data[key]) if data[key] is not None else defaults[key]
@@ -22,12 +22,13 @@ def _coerce_settings_data(data: dict) -> None:
                 data[key] = defaults[key]
                 _logger.debug("Invalid %s in config; using default", key)
     # Boolean fields
-    if "enable_sentry" in data:
-        v = data["enable_sentry"]
-        if isinstance(v, bool):
-            data["enable_sentry"] = v
-        else:
-            data["enable_sentry"] = str(v).strip().lower() in {"1", "true", "yes", "on"}
+    for key in ("enable_sentry", "companion_api_enabled"):
+        if key in data:
+            v = data[key]
+            if isinstance(v, bool):
+                data[key] = v
+            else:
+                data[key] = str(v).strip().lower() in {"1", "true", "yes", "on"}
     # List of strings
     if "jamulus_candidates" in data:
         v = data["jamulus_candidates"]
@@ -76,6 +77,10 @@ class AppSettings:
     webex_guest_issuer_id: str = ""
     webex_guest_issuer_secret: str = ""
     webex_display_name: str = "WebJam Guest"
+    # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
+    # Starts automatically on launch when fastapi/uvicorn are installed.
+    companion_api_enabled: bool = True
+    companion_api_port: int = 8765
 
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
@@ -108,6 +113,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_SENTRY_DSN": "sentry_dsn",
         "WEBJAM_LOG_LEVEL": "log_level",
         "WEBJAM_LOG_FILE": "log_file",
+        "WEBJAM_COMPANION_API": "companion_api_enabled",
+        "WEBJAM_COMPANION_API_PORT": "companion_api_port",
     }
     for env_name, key in env_map.items():
         raw = os.getenv(env_name)
@@ -121,7 +128,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if 1 <= parsed <= 65535:
                 data[key] = parsed
             continue
-        if key in {"audio_blocksize", "audio_samplerate", "audio_input_device_index"}:
+        if key in {"audio_blocksize", "audio_samplerate", "audio_input_device_index",
+                   "companion_api_port"}:
             try:
                 parsed = int(raw)
             except ValueError:
@@ -130,8 +138,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                 continue
             if key == "audio_samplerate" and parsed <= 0:
                 continue
+            if key == "companion_api_port" and not (1 <= parsed <= 65535):
+                continue
             data[key] = parsed
-        elif key == "enable_sentry":
+        elif key in {"enable_sentry", "companion_api_enabled"}:
             data[key] = raw.strip().lower() in {"1", "true", "yes", "on"}
         elif key == "jamulus_candidates":
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
@@ -152,6 +162,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
     if settings.audio_samplerate <= 0:
         _logger.warning("audio_samplerate %d invalid; resetting to 48000", settings.audio_samplerate)
         settings = AppSettings(**{**asdict(settings), "audio_samplerate": 48000})
+    if not (1 <= settings.companion_api_port <= 65535):
+        _logger.warning("companion_api_port %d out of range; resetting to 8765",
+                        settings.companion_api_port)
+        settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
     return settings
 

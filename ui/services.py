@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import zipfile
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -174,7 +174,7 @@ class MetricsService:
         if not home_dir.is_dir():
             raise NotADirectoryError(f"Snapshot output path is not a directory: {home_dir}")
 
-        timestamp = datetime.now(UTC)
+        timestamp = datetime.now(timezone.utc)
         snapshot = {
             "created_at": timestamp.isoformat().replace("+00:00", "Z"),
             "jamulus_state": jamulus_state,
@@ -225,7 +225,7 @@ class MetricsService:
         if not output_dir.is_dir():
             raise NotADirectoryError(f"Session brief output path is not a directory: {output_dir}")
 
-        created_at = datetime.now(UTC)
+        created_at = datetime.now(timezone.utc)
         stamp = created_at.strftime("%Y%m%d_%H%M%S")
         brief_path = output_dir / f"webjam_session_brief_{stamp}.md"
 
@@ -358,7 +358,7 @@ class MetricsService:
         if not output_dir.is_dir():
             raise NotADirectoryError(f"Bundle output path is not a directory: {output_dir}")
 
-        created_at = datetime.now(UTC)
+        created_at = datetime.now(timezone.utc)
         stamp = created_at.strftime("%Y%m%d_%H%M%S")
         bundle_path = output_dir / f"webjam_diagnostics_bundle_{stamp}.zip"
         workspace = Path(tempfile.mkdtemp(prefix=f"{bundle_path.stem}.", dir=str(output_dir)))
@@ -438,8 +438,8 @@ class MetricsService:
                 f"Server: {server}",
                 "",
                 "Included files:",
-                f"- Snapshot JSON: snapshot.json",
-                f"- Environment JSON: environment.json",
+                "- Snapshot JSON: snapshot.json",
+                "- Environment JSON: environment.json",
                 f"- Logs copied: {len(copied_logs)}",
                 f"- Support files copied: {len(copied_support)}",
             ]

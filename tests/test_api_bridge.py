@@ -56,7 +56,8 @@ class TestLocalApiBridgeEndpoints(unittest.TestCase):
         )
         from fastapi import FastAPI, HTTPException
         self.app = self.bridge._create_app(FastAPI, HTTPException)
-        self.client = TestClient(self.app)
+        # base_url sets the Host header to a loopback name the bridge accepts.
+        self.client = TestClient(self.app, base_url="http://127.0.0.1")
 
     def test_health(self):
         resp = self.client.get("/health")
@@ -78,13 +79,37 @@ class TestLocalApiBridgeEndpoints(unittest.TestCase):
         self.assertIn("diagnostics", data)
         self.assertEqual(data["diagnostics"]["backend"], "test")
 
+    def test_rejects_non_loopback_host(self):
+        """A DNS-rebinding origin (non-loopback Host) must be refused."""
+        evil = TestClient(self.app, base_url="http://evil.example.com")
+        for path in ("/health", "/participants", "/diagnostics"):
+            resp = evil.get(path)
+            self.assertEqual(resp.status_code, 403, f"{path} should reject foreign Host")
+
+    def test_accepts_loopback_variants(self):
+        # ([::1] is exercised by test_host_allowed_helper; the test client
+        # can't construct a bracketed-IPv6 base_url.)
+        for base in ("http://localhost", "http://127.0.0.1:8765"):
+            c = TestClient(self.app, base_url=base)
+            self.assertEqual(c.get("/health").status_code, 200, base)
+
+    def test_host_allowed_helper(self):
+        ok = LocalApiBridge._host_allowed
+        self.assertTrue(ok("127.0.0.1"))
+        self.assertTrue(ok("localhost:8765"))
+        self.assertTrue(ok("[::1]:8765"))
+        self.assertFalse(ok("evil.com"))
+        self.assertFalse(ok(""))
+        self.assertFalse(ok(None))
+        self.assertFalse(ok("127.0.0.1.evil.com"))
+
     def test_participants_callback_error_returns_500(self):
         def failing_cb():
             raise RuntimeError("boom")
         bridge = LocalApiBridge(get_participants=failing_cb, get_diagnostics=lambda: {})
         from fastapi import FastAPI, HTTPException
         app = bridge._create_app(FastAPI, HTTPException)
-        client = TestClient(app, raise_server_exceptions=False)
+        client = TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1")
         resp = client.get("/participants")
         self.assertEqual(resp.status_code, 500)
 
@@ -94,7 +119,7 @@ class TestLocalApiBridgeEndpoints(unittest.TestCase):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=failing_cb)
         from fastapi import FastAPI, HTTPException
         app = bridge._create_app(FastAPI, HTTPException)
-        client = TestClient(app, raise_server_exceptions=False)
+        client = TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1")
         resp = client.get("/diagnostics")
         self.assertEqual(resp.status_code, 500)
 

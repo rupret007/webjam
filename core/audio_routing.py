@@ -116,6 +116,14 @@ def scan_loopback_devices() -> AudioRoutingStatus:
     except ImportError:
         _logger.debug("sounddevice not available — audio routing scan skipped")
         return AudioRoutingStatus(scan_error="sounddevice not installed")
+    except Exception as exc:  # noqa: BLE001
+        # sounddevice is installed but its native backend failed to load —
+        # e.g. "PortAudio library not found" (OSError) on a box without the
+        # PortAudio system lib.  The docstring promises this never raises, so
+        # capture it as a scan error instead of letting it kill the caller's
+        # background thread.
+        _logger.warning("sounddevice import failed: %s", exc)
+        return AudioRoutingStatus(scan_error=f"audio backend unavailable: {exc}")
 
     try:
         raw_devices = sd.query_devices()

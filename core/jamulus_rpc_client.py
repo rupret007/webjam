@@ -92,6 +92,13 @@ class JamulusRpcClient:
         if self._running:
             return
         self._running = True
+        # Reset heartbeat so a reused client (the controller keeps one instance
+        # across stop()/start() cycles) doesn't carry a stale activity timestamp
+        # from the previous session.  Without this, last_activity_age() returns
+        # a finite, growing age instead of inf right after a relaunch, which can
+        # trip a false "Jamulus stopped responding" banner on a healthy server.
+        self._last_activity_at = 0.0
+        self._available = False
         self._poll_thread = threading.Thread(
             target=self._poll_loop, daemon=True, name="jamulus-rpc-poll"
         )
@@ -105,7 +112,8 @@ class JamulusRpcClient:
         self._running = False
         self._local_channel_id = -1  # reset so next session re-queries
         self._available = False
-        self._request_counter = 0  # next session starts request IDs at 1
+        with self._lock:  # _next_id() reads/writes this under the same lock
+            self._request_counter = 0  # next session starts request IDs at 1
         if self._http_client is not None:
             try:
                 self._http_client.close()
@@ -216,7 +224,12 @@ class JamulusRpcClient:
             return -1
         result = raw.get("result")
         if isinstance(result, dict):
-            cid = int(result.get("channelId", -1))
+            try:
+                cid = int(result.get("channelId", -1))
+            except (TypeError, ValueError):
+                # Malformed/hostile getClientInfo response — don't let a bad
+                # channelId raise out of every participant-refresh poll.
+                return -1
             if cid >= 0:
                 self._local_channel_id = cid
             return cid

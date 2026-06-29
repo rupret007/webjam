@@ -1725,7 +1725,7 @@ class WebJamEnhancedApp:
     def _jamulus_reconnect_inflight(self, val): self.bridge_service.jamulus_reconnect_inflight = val
 
     @property
-    def _webex_reconnect_inflight(self): return self.bridge_service.webex_reconnect_inflight(self, val)
+    def _webex_reconnect_inflight(self): return self.bridge_service.webex_reconnect_inflight
     @_webex_reconnect_inflight.setter
     def _webex_reconnect_inflight(self, val): self.bridge_service.webex_reconnect_inflight = val
 

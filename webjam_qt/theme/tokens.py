@@ -24,7 +24,7 @@ class Color:
     # Text
     TEXT_PRIMARY = "#E8ECF4"
     TEXT_SECONDARY = "#A0AEC6"   # bumped from #9AA4B8 for AA contrast safety margin on BG_CARD
-    TEXT_MUTED = "#7A8AA0"       # bumped from #5F6B85 — was 2.93:1 on BG_CARD (AA fail)
+    TEXT_MUTED = "#828FA6"       # 4.80:1 on BG_CARD — clears WCAG AA (#5F6B85 was 2.93:1; #7A8AA0 was 4.46:1, just under)
     TEXT_INVERSE = "#0B0E14"
 
     # Accents

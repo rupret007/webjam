@@ -11,7 +11,11 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only cancel superseded PR runs. Pushes to branches/tags must run to
+  # completion so master always produces a green build + release artifacts
+  # (rapid successive pushes previously cancelled every run, leaving the
+  # branch with no green CI and no downloadable builds).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 

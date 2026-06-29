@@ -117,6 +117,43 @@ class TestMixManagerLoad(unittest.TestCase):
             self.assertIn("loaded", flashes[0][0].lower())
 
 
+class TestMixManagerSaveResult(unittest.TestCase):
+    """save()/save_to() must report success/failure so the caller can decide
+    whether to clear its dirty flag (the shutdown auto-save safety net)."""
+
+    def test_save_returns_true_on_success(self):
+        with _TempHome():
+            manager, _jamulus, _flashes = _make_mix_manager()
+            self.assertTrue(manager.save())
+
+    def test_save_returns_false_when_write_fails(self):
+        with _TempHome():
+            manager, _jamulus, flashes = _make_mix_manager()
+            with mock.patch(
+                "webjam_qt.controllers.mix_manager.atomic_write_text",
+                side_effect=OSError("disk full"),
+            ):
+                result = manager.save()
+            self.assertFalse(result, "save() must report failure on write error")
+            # User still gets a flash explaining the failure.
+            self.assertTrue(flashes)
+            self.assertIn("couldn't save", flashes[-1][0].lower())
+
+    def test_save_to_returns_true_on_success(self):
+        with _TempHome() as home:
+            manager, _jamulus, _flashes = _make_mix_manager()
+            self.assertTrue(manager.save_to(home / "song1.json"))
+
+    def test_save_to_returns_false_when_write_fails(self):
+        with _TempHome() as home:
+            manager, _jamulus, _flashes = _make_mix_manager()
+            with mock.patch(
+                "webjam_qt.controllers.mix_manager.atomic_write_text",
+                side_effect=OSError("permission denied"),
+            ):
+                self.assertFalse(manager.save_to(home / "song1.json"))
+
+
 class TestMixManagerAutoRestore(unittest.TestCase):
     def test_auto_restore_silent_on_missing_file(self):
         """No mix file → auto_restore() returns without flashing anything."""

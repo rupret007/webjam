@@ -432,9 +432,14 @@ class JamulusProtocolAdapter:
         else:
             # Log each unknown msg_id only once per session — prevents log
             # flooding from malformed/hostile packet storms.
-            if msg_id not in self._unknown_msg_ids_seen:
-                if len(self._unknown_msg_ids_seen) < _MAX_UNKNOWN_MSG_IDS_REMEMBERED:
-                    self._unknown_msg_ids_seen.add(msg_id)
+            if (
+                msg_id not in self._unknown_msg_ids_seen
+                and len(self._unknown_msg_ids_seen) < _MAX_UNKNOWN_MSG_IDS_REMEMBERED
+            ):
+                # Only log when we can also record the id; once the cap is hit we
+                # stop logging entirely rather than re-logging every unrecorded
+                # id forever (which would re-open the flooding hole this guards).
+                self._unknown_msg_ids_seen.add(msg_id)
                 _logger.debug(
                     "Unhandled Jamulus msg_id=%d len=%d (subsequent occurrences silenced)",
                     msg_id, len(data),

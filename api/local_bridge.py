@@ -31,8 +31,37 @@ class LocalApiBridge:
         self._server = None
         self._running = False
 
+    @staticmethod
+    def _host_allowed(host_header: Optional[str]) -> bool:
+        """True only for loopback Host headers.
+
+        Defends against DNS-rebinding: a malicious web page can force a browser
+        to send requests to 127.0.0.1, but it cannot forge the Host header to a
+        loopback name, so requiring one keeps remote origins out even though the
+        socket is bound to localhost.
+        """
+        if not host_header:
+            return False
+        host = host_header.strip()
+        # Strip the port. Handle bracketed IPv6 ("[::1]:8765") and host:port.
+        if host.startswith("["):
+            host = host[1:host.index("]")] if "]" in host else host[1:]
+        elif host.count(":") == 1:
+            host = host.split(":", 1)[0]
+        return host.lower() in {"localhost", "127.0.0.1", "::1"}
+
     def _create_app(self, FastAPI: Any, HTTPException: Any) -> Any:
         app = FastAPI(title="WebJam Local Bridge")
+
+        @app.middleware("http")
+        async def _reject_non_loopback_host(request: Any, call_next: Any) -> Any:
+            from starlette.responses import JSONResponse
+            if not self._host_allowed(request.headers.get("host")):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "forbidden: non-loopback Host header"},
+                )
+            return await call_next(request)
 
         @app.get("/health")
         def health() -> Dict[str, str]:

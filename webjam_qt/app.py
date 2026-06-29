@@ -58,6 +58,7 @@ def run() -> int:
         initial_title="Band Rehearsal",
     )
     controller = ApplicationController(window, settings=settings)
+    controller.start_companion_api()  # optional localhost bridge for DAWs/editors
     window.show()
 
     exit_code = app.exec()

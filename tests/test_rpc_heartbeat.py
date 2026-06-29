@@ -39,6 +39,26 @@ class TestRpcHeartbeat(unittest.TestCase):
             client._handle_sse_event("someUnknownEvent", "")
         self.assertGreaterEqual(client._last_activity_at, before)
 
+    def test_start_resets_stale_heartbeat_across_restart(self):
+        """A reused client must not carry a previous session's heartbeat.
+
+        The controller keeps one JamulusRpcClient across stop()/start()
+        cycles.  Without resetting _last_activity_at on start(), a stale
+        timestamp from the prior session makes last_activity_age() return a
+        finite, growing age instead of inf right after relaunch — which can
+        trip a false "Jamulus stopped responding" banner on a healthy server.
+        """
+        client = JamulusRpcClient(port=22222)
+        # Simulate a previous session that last succeeded 100s ago.
+        client._last_activity_at = time.monotonic() - 100.0
+        client.stop()
+        try:
+            client.start()
+            # Right after restart, before any new success, age must be inf.
+            self.assertEqual(client.last_activity_age(), float("inf"))
+        finally:
+            client.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

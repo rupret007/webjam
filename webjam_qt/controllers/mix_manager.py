@@ -48,14 +48,20 @@ class MixManager:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def save(self) -> None:
-        """Serialize current mixer state to ~/.webjam_mix.json."""
+    def save(self) -> bool:
+        """Serialize current mixer state to ~/.webjam_mix.json.
+
+        Returns True on a successful write, False if the write failed.  The
+        caller uses this to decide whether to clear its dirty flag \u2014 clearing
+        it after a failed save would disarm the shutdown auto-save safety net.
+        """
         mix_path = Path.home() / _MIX_FILE
         try:
             payload = self._jamulus.serialize_mix()
             atomic_write_text(mix_path, json.dumps(payload, indent=2))
             self._log.info("Mix saved to %s", mix_path)
             self._flash("Mix saved  \u00b7  Ctrl+O to restore", 4000)
+            return True
         except OSError as exc:
             self._log.exception("Failed to save mix to %s", mix_path)
             self._flash(
@@ -63,12 +69,14 @@ class MixManager:
                 f"Check folder permissions and disk space.",
                 6000,
             )
+            return False
         except Exception as exc:  # noqa: BLE001
             self._log.exception("Failed to save mix")
             self._flash(
                 f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
                 6000,
             )
+            return False
 
     def load(self) -> bool:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus.
@@ -113,19 +121,21 @@ class MixManager:
             )
             return False
 
-    def save_to(self, path: Path) -> None:
+    def save_to(self, path: Path) -> bool:
         """Serialize current mixer state to ``path`` (atomic, indented JSON).
 
         Like :meth:`save` but writes to an explicit path instead of the
         default ``~/.webjam_mix.json`` slot — used by the "Save Mix As..."
         dialog so users can keep multiple named mixes (one per song,
-        one per band-mate setup, etc.).
+        one per band-mate setup, etc.).  Returns True on success, False on
+        failure.
         """
         try:
             payload = self._jamulus.serialize_mix()
             atomic_write_text(path, json.dumps(payload, indent=2))
             self._log.info("Mix saved to %s", path)
             self._flash(f"Mix saved to {path.name}", 4000)
+            return True
         except OSError as exc:
             self._log.exception("Failed to save mix to %s", path)
             self._flash(
@@ -133,12 +143,14 @@ class MixManager:
                 f"Check folder permissions and disk space.",
                 6000,
             )
+            return False
         except Exception as exc:  # noqa: BLE001
             self._log.exception("Failed to save mix to %s", path)
             self._flash(
                 f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
                 6000,
             )
+            return False
 
     def load_from(self, path: Path) -> bool:
         """Load mixer state from ``path`` and apply to Jamulus.
@@ -166,6 +178,11 @@ class MixManager:
                 f"Mix file is corrupted ({exc.msg}). Pick another file or save a fresh one.",
                 6000,
             )
+            if self._metrics is not None:
+                try:
+                    self._metrics.increment("metric_mix_corruption_recovered")
+                except Exception:  # noqa: BLE001
+                    self._log.debug("metric increment failed", exc_info=True)
             return False
         except OSError as exc:
             self._log.exception("Could not read mix file %s", path)

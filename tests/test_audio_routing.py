@@ -33,6 +33,24 @@ class TestAudioRoutingStatus:
         status = AudioRoutingStatus(loopback_device=None)
         assert status.ok is False
 
+    def test_scan_never_raises_when_backend_missing(self):
+        """sounddevice installed but native PortAudio missing raises OSError on
+        import — scan must capture it (docstring promises 'never raises') so the
+        background routing-scan thread can't die silently."""
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sounddevice":
+                raise OSError("PortAudio library not found")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            status = scan_loopback_devices()  # must NOT raise
+        assert isinstance(status, AudioRoutingStatus)
+        assert status.ok is False
+        assert status.scan_error  # a reason is recorded
+
     def test_status_ok_true_when_device_present(self):
         """ok is True when a loopback device is set."""
         dev = LoopbackDevice(

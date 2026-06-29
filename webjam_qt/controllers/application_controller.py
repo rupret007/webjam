@@ -105,6 +105,17 @@ class ApplicationController(QObject):
         # True once JamulusController has pushed at least one real update
         self._jamulus_connected = False
 
+        # Companion API — optional localhost HTTP bridge for DAWs/editors.
+        # Constructed here (no side effects) but only started in
+        # start_companion_api(), which the app bootstrap calls; this keeps
+        # tests that build a controller directly from binding a real port.
+        from api.local_bridge import LocalApiBridge
+        self.api_bridge = LocalApiBridge(
+            get_participants=self._companion_get_participants,
+            get_diagnostics=self._companion_get_diagnostics,
+            port=self.settings.companion_api_port,
+        )
+
         # Latch so the "Jamulus disconnected" flash only fires once per crash
         self._reconnect_banner_shown = False
         # Latch for the "RPC hung" banner — fires once when activity stalls,
@@ -212,6 +223,60 @@ class ApplicationController(QObject):
             self.webex.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Webex stop failed")
+        try:
+            self.api_bridge.stop()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Companion API stop failed")
+
+    # ------------------------------------------------------------------
+    # Companion API (optional localhost bridge for DAWs/editors/scripts)
+    # ------------------------------------------------------------------
+    def start_companion_api(self) -> bool:
+        """Start the localhost companion API if enabled (best-effort).
+
+        Called from the app bootstrap, not __init__, so unit tests that build a
+        controller don't bind a real port.  Returns True if it started.
+        """
+        if not self.settings.companion_api_enabled:
+            LOGGER.info("Companion API disabled in settings — not starting")
+            return False
+        try:
+            started = self.api_bridge.start()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Companion API failed to start")
+            return False
+        if started:
+            LOGGER.info(
+                "Companion API on http://127.0.0.1:%d", self.settings.companion_api_port
+            )
+        else:
+            LOGGER.info("Companion API not started (fastapi/uvicorn missing or port busy)")
+        return started
+
+    def _companion_get_participants(self) -> list[dict]:
+        """Snapshot of the current mixer participants for the companion API."""
+        out: list[dict] = []
+        for p in self.participants.values():
+            out.append({
+                "channel_id": p.channel_id,
+                "name": p.name,
+                "fader_level": p.fader_level,
+                "pan": getattr(p, "pan", 50),
+                "muted": bool(p.muted),
+                "solo": bool(p.solo),
+                "is_local": bool(getattr(p, "is_local", False)),
+            })
+        return out
+
+    def _companion_get_diagnostics(self) -> dict:
+        """Non-sensitive session state for the companion API (no secrets)."""
+        return {
+            "jamulus_state": str(self.bridge.jamulus_state),
+            "webex_state": str(self.bridge.webex_state),
+            "jamulus_connected": str(self._jamulus_connected),
+            "participant_count": str(len(self.participants)),
+            "jamulus_server": f"{self.settings.jamulus_server}:{self.settings.jamulus_port}",
+        }
 
     # ------------------------------------------------------------------
     # Initial wiring
@@ -767,8 +832,10 @@ class ApplicationController(QObject):
             self.jamulus.set_mute(local_channel_id, new_muted)
         # Mirror mute state into the embedded Webex meeting if we're in one,
         # so the conductor only has to hit one button to silence themselves
-        # in both audio and video.  No-op if Webex hasn't joined.
-        if self._jamulus_connected and self._is_video_active():
+        # in both audio and video.  No-op if Webex hasn't joined.  (We've
+        # already returned above if there's no local Jamulus channel, so this
+        # only needs to gate on the video being active.)
+        if self._is_video_active():
             try:
                 self.window.webex_embed.mute_webex_self(new_muted)
             except Exception:  # noqa: BLE001
@@ -859,10 +926,11 @@ class ApplicationController(QObject):
     # implementation lives in ``MixManager`` (~/.webjam_mix.json).
     def _on_save_mix(self) -> None:
         """Serialize current mixer state to ~/.webjam_mix.json."""
-        self._mix_manager.save()
-        # If MixManager actually wrote (no exception), clear the dirty flag.
-        # The exception path leaves it dirty so a retry knows there's work to do.
-        self._mix_dirty = False
+        # Only clear the dirty flag if the write actually succeeded.  If the
+        # save failed (permissions, disk full), keeping it dirty preserves the
+        # shutdown auto-save safety net so mid-session tweaks aren't lost.
+        if self._mix_manager.save():
+            self._mix_dirty = False
 
     def _on_load_mix(self) -> None:
         """Load mixer state from ~/.webjam_mix.json and apply to Jamulus."""
@@ -884,10 +952,10 @@ class ApplicationController(QObject):
         )
         if not path:
             return
-        self._mix_manager.save_to(Path(path))
-        # Treat an explicit "Save As" as a successful checkpoint of the
-        # current state, the same way Ctrl+S does.
-        self._mix_dirty = False
+        # Treat a successful explicit "Save As" as a checkpoint of the current
+        # state, the same way Ctrl+S does — but only if the write succeeded.
+        if self._mix_manager.save_to(Path(path)):
+            self._mix_dirty = False
 
     def _on_load_mix_from(self) -> None:
         """Ctrl+Shift+O — open a Load dialog and apply the chosen mix file."""
@@ -1008,8 +1076,15 @@ class ApplicationController(QObject):
     def _start_routing_scan(self) -> None:
         """Scan for VB-CABLE / BlackHole in a background thread."""
         def _scan() -> None:
-            from core.audio_routing import scan_loopback_devices
-            status = scan_loopback_devices()
+            from core.audio_routing import AudioRoutingStatus, scan_loopback_devices
+            try:
+                status = scan_loopback_devices()
+            except Exception as exc:  # noqa: BLE001
+                # scan_loopback_devices() is contracted never to raise, but guard
+                # anyway so an unexpected failure can't silently kill this thread
+                # and leave the routing status blank forever.
+                LOGGER.warning("routing scan failed: %s", exc, exc_info=True)
+                status = AudioRoutingStatus(scan_error=str(exc))
             self._ui_invoker.invoke(lambda: self._apply_routing_status(status))
 
         threading.Thread(target=_scan, daemon=True, name="routing-scan").start()

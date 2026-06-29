@@ -307,6 +307,13 @@ class WebexEmbed(QFrame):
         self._page = _make_webex_page(self._profile)
         self._page.setWebChannel(self._channel)
 
+        # Inject qwebchannel.js so the page's `new QWebChannel(...)` call works.
+        # setWebChannel() wires up qt.webChannelTransport but does NOT define the
+        # QWebChannel JS class — without it, the JS→Qt bridge never connects, so
+        # in guest-widget mode `page_ready` never fires and the meeting never
+        # starts.  Guarded so any API/resource hiccup leaves prior behavior intact.
+        self._inject_qwebchannel_js()
+
         self._view = QWebEngineView(self)
         self._view.setPage(self._page)
         self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -314,6 +321,46 @@ class WebexEmbed(QFrame):
         # the user can fall back to opening Webex in the browser.
         self._view.loadFinished.connect(self._on_view_load_finished)
         self._stack.addWidget(self._view)  # index 1
+
+    def _inject_qwebchannel_js(self) -> None:
+        """Inject Qt's bundled qwebchannel.js as a document-creation script.
+
+        The HTML calls ``new QWebChannel(qt.webChannelTransport, ...)`` but that
+        class is only defined by Qt's ``qwebchannel.js`` resource, which Qt does
+        NOT auto-inject when you call ``setWebChannel()``.  We read it from the
+        ``:/qtwebchannel/qwebchannel.js`` qrc resource and inject it before the
+        page's own scripts run, so the JS→Qt bridge actually connects.
+
+        Fully guarded: any import/resource/API problem is logged and ignored,
+        leaving the previous (bridge-less but non-crashing) behavior intact.
+        """
+        try:
+            from PySide6.QtCore import QFile, QIODevice
+            from PySide6.QtWebEngineCore import QWebEngineScript
+
+            qfile = QFile(":/qtwebchannel/qwebchannel.js")
+            if not qfile.open(QIODevice.OpenModeFlag.ReadOnly):
+                LOGGER.warning(
+                    "qwebchannel.js resource not found; Webex JS bridge disabled"
+                )
+                return
+            try:
+                source = bytes(qfile.readAll().data()).decode("utf-8")
+            finally:
+                qfile.close()
+
+            script = QWebEngineScript()
+            script.setName("qwebchannel.js")
+            script.setSourceCode(source)
+            script.setInjectionPoint(
+                QWebEngineScript.InjectionPoint.DocumentCreation
+            )
+            script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+            script.setRunsOnSubFrames(False)
+            self._page.scripts().insert(script)
+            LOGGER.debug("Injected qwebchannel.js into Webex page")
+        except Exception:  # noqa: BLE001
+            LOGGER.warning("Could not inject qwebchannel.js", exc_info=True)
 
     # ------------------------------------------------------------------
     # Internal slots

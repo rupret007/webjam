@@ -18,7 +18,7 @@ from typing import Any
 
 LOGGER = logging.getLogger("webjam.qt.diagnostics")
 
-_REDACTED_FIELDS = {"webex_guest_issuer_secret"}
+_REDACTED_FIELDS = {"webex_guest_issuer_secret", "sentry_dsn"}
 _LOG_TAIL_LINES = 30
 
 
