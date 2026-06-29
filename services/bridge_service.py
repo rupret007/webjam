@@ -273,11 +273,35 @@ class BridgeService:
                         self.jamulus_reconnect_inflight = False
                     return
 
+                # Launch Jamulus with JSON-RPC so WebJam can query/control it.
+                # Jamulus requires a shared secret for JSON-RPC: write one to the
+                # file both Jamulus and our RPC client read, and pass it on the
+                # command line.  Without it, --jsonrpcport alone does nothing.
+                import secrets as _secrets
+                from core.file_io import atomic_write_text
+                from core.jamulus_rpc_client import DEFAULT_SECRET_PATH
+                jsonrpc_secret_args: list[str] = []
+                try:
+                    atomic_write_text(
+                        DEFAULT_SECRET_PATH,
+                        _secrets.token_urlsafe(24) + "\n",
+                        mode=0o600,
+                    )
+                    jsonrpc_secret_args = [
+                        "--jsonrpcsecretfile", str(DEFAULT_SECRET_PATH)
+                    ]
+                except OSError as exc:
+                    LOGGER.warning(
+                        "Could not write JSON-RPC secret file: %s; "
+                        "Jamulus mixer control will be unavailable", exc
+                    )
+
                 # Launch Jamulus with JSON-RPC port so WebJam can query it
                 cmd = [
                     jamulus_path,
                     "--connect", server,
                     "--jsonrpcport", str(self.settings.jamulus_rpc_port),
+                    *jsonrpc_secret_args,
                 ]
                 # Capture Jamulus stdout+stderr to ~/.webjam_jamulus.log for
                 # post-hoc troubleshooting. Best-effort — fall back to DEVNULL

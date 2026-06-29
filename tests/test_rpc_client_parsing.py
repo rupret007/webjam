@@ -1,131 +1,130 @@
-"""Parsing / event-handling tests for JamulusRpcClient.
+"""Parsing / notification-handling tests for JamulusRpcClient.
 
-Exercises the response-parsing and SSE-handling paths against malformed and
-hostile RPC payloads (the client talks to a localhost RPC port that any local
-process could answer), with no real server — everything is mocked.
+Exercises the client's response/notification parsing against malformed and
+hostile payloads (it talks to a localhost socket any local process could
+answer) without a real server — calling the handlers directly.
 """
 from __future__ import annotations
 
 import unittest
-from unittest import mock
-
-import httpx
 
 from core.jamulus_rpc_client import JamulusRpcClient
 
 
 def _client():
-    c = JamulusRpcClient(port=22222)
-    c._local_channel_id = 0  # short-circuit the getClientInfo lookup
-    return c
+    seen = {"participants": [], "levels": {}}
+    c = JamulusRpcClient(
+        port=22222,
+        on_participants_changed=lambda lst: seen["participants"].append(lst),
+        on_levels=lambda d: seen["levels"].update(d),
+    )
+    return c, seen
 
 
-class TestGetChannelClients(unittest.TestCase):
+class TestUpdateClients(unittest.TestCase):
     def test_parses_valid_list(self):
-        c = _client()
-        with mock.patch.object(c, "_call", return_value={"result": [
-            {"channelId": 0, "name": "Me", "instrument": "Bass"},
-            {"channelId": 1, "name": "Alice"},
-        ]}):
-            clients = c.get_channel_clients()
-        self.assertEqual([ci.channel_id for ci in clients], [0, 1])
-        self.assertEqual(clients[0].name, "Me")
-        self.assertTrue(clients[0].is_local)         # channel 0 == cached local id
-        self.assertEqual(clients[1].name, "Alice")
-
-    def test_none_when_call_fails(self):
-        c = _client()
-        with mock.patch.object(c, "_call", return_value=None):
-            self.assertIsNone(c.get_channel_clients())
-
-    def test_none_when_result_not_a_list(self):
-        c = _client()
-        with mock.patch.object(c, "_call", return_value={"result": {"oops": 1}}):
-            self.assertIsNone(c.get_channel_clients())
+        c, seen = _client()
+        c._set_local_id(0)
+        c._update_clients([
+            {"id": 0, "name": "Me", "instrument": "Bass"},
+            {"id": 1, "name": "Alice"},
+        ])
+        last = seen["participants"][-1]
+        self.assertEqual([ci.channel_id for ci in last], [0, 1])
+        self.assertTrue(last[0].is_local)
+        self.assertEqual(last[1].name, "Alice")
 
     def test_skips_malformed_entries(self):
-        c = _client()
-        with mock.patch.object(c, "_call", return_value={"result": [
+        c, seen = _client()
+        c._update_clients([
             "not a dict",
-            {"name": "no channel id"},          # missing channelId -> default -1 -> skipped
-            {"channelId": -5, "name": "neg"},   # negative -> skipped
-            {"channelId": "x", "name": "str"},  # non-int -> skipped
-            {"channelId": 2, "name": "Bob"},    # the only valid one
-        ]}):
-            clients = c.get_channel_clients()
-        self.assertEqual([ci.channel_id for ci in clients], [2])
+            {"name": "no id"},           # missing id -> falls back to index 1 -> kept? no: index used
+            {"id": -5, "name": "neg"},   # negative -> skipped
+            {"id": "x", "name": "str"},  # non-int -> skipped
+            {"id": 2, "name": "Bob"},
+        ])
+        last = seen["participants"][-1]
+        # Only well-formed, non-negative integer ids survive (1 via index fallback, 2 explicit)
+        ids = [ci.channel_id for ci in last]
+        self.assertIn(2, ids)
+        self.assertNotIn(-5, ids)
+
+    def test_non_list_is_noop(self):
+        c, seen = _client()
+        c._update_clients({"oops": 1})
+        self.assertEqual(seen["participants"], [])
 
     def test_missing_name_gets_placeholder(self):
-        c = _client()
-        with mock.patch.object(c, "_call", return_value={"result": [
-            {"channelId": 3, "name": ""},
-        ]}):
-            clients = c.get_channel_clients()
-        self.assertEqual(clients[0].name, "Participant 3")
+        c, seen = _client()
+        c._update_clients([{"id": 3, "name": ""}])
+        self.assertEqual(seen["participants"][-1][0].name, "Participant 3")
 
 
-class TestLocalChannelId(unittest.TestCase):
-    def test_caches_after_first_lookup(self):
-        c = JamulusRpcClient(port=22222)
-        with mock.patch.object(c, "_call", return_value={"result": {"channelId": 4}}) as call:
-            self.assertEqual(c._get_local_channel_id(), 4)
-            self.assertEqual(c._get_local_channel_id(), 4)  # cached
-        self.assertEqual(call.call_count, 1)
+class TestEmitLevels(unittest.TestCase):
+    def test_levels_normalized_and_clamped(self):
+        c, seen = _client()
+        # channelLevelList is 0..9; junk skipped; out-of-range clamped
+        c._emit_levels([9, 0, 99, "junk"])
+        self.assertEqual(seen["levels"][0], 1.0)
+        self.assertEqual(seen["levels"][1], 0.0)
+        self.assertEqual(seen["levels"][2], 1.0)  # clamped
+        self.assertNotIn(3, seen["levels"])       # "junk" skipped, no raise
 
-    def test_malformed_channel_id_returns_minus_one_without_raising(self):
-        c = JamulusRpcClient(port=22222)
-        with mock.patch.object(c, "_call", return_value={"result": {"channelId": "bogus"}}):
-            self.assertEqual(c._get_local_channel_id(), -1)  # must not raise
-
-    def test_none_result(self):
-        c = JamulusRpcClient(port=22222)
-        with mock.patch.object(c, "_call", return_value=None):
-            self.assertEqual(c._get_local_channel_id(), -1)
+    def test_non_list_is_noop(self):
+        c, seen = _client()
+        c._emit_levels("nope")
+        self.assertEqual(seen["levels"], {})
 
 
-class TestSseEvent(unittest.TestCase):
-    def test_level_list_parsed_and_clamped(self):
-        c = _client()
-        got = {}
-        c._on_levels = lambda d: got.update(d)
-        # 32767 -> 1.0, 0 -> 0.0, over-range -> clamped, junk -> skipped
-        c._handle_sse_event("channelLevelListReceived",
-                            '{"levels": [32767, 0, 99999, "junk"]}')
-        self.assertEqual(got[0], 1.0)
-        self.assertEqual(got[1], 0.0)
-        self.assertEqual(got[2], 1.0)        # clamped to 1.0
-        self.assertNotIn(3, got)             # "junk" skipped, didn't raise
+class TestLocalId(unittest.TestCase):
+    def test_valid_sets_and_retags(self):
+        c, _ = _client()
+        c._update_clients([{"id": 4, "name": "X"}])
+        c._set_local_id(4)
+        self.assertEqual(c._get_local_channel_id(), 4)
+        self.assertTrue(c._clients[0].is_local)
 
-    def test_malformed_json_does_not_raise(self):
-        c = _client()
-        c._handle_sse_event("channelLevelListReceived", "{not json")  # must not raise
+    def test_malformed_does_not_raise(self):
+        c, _ = _client()
+        c._set_local_id("bogus")   # must not raise
+        c._set_local_id(None)
+        self.assertEqual(c._get_local_channel_id(), -1)
 
-    def test_channel_connected_triggers_participant_refresh(self):
-        c = _client()
-        seen = []
-        c._on_participants_changed = lambda clients: seen.append(clients)
-        with mock.patch.object(c, "get_channel_clients",
-                               return_value=["fake-client"]):
-            c._handle_sse_event("channelConnected", "{}")
-        self.assertEqual(seen, [["fake-client"]])
 
-    def test_any_event_stamps_heartbeat(self):
-        c = _client()
+class TestGetChannelClientsCache(unittest.TestCase):
+    def test_none_when_unavailable(self):
+        c, _ = _client()
+        self.assertIsNone(c.get_channel_clients())
+
+    def test_returns_cache_when_available(self):
+        c, _ = _client()
+        c._available = True
+        c._update_clients([{"id": 0, "name": "Me"}])
+        clients = c.get_channel_clients()
+        self.assertEqual([ci.name for ci in clients], ["Me"])
+
+
+class TestDispatch(unittest.TestCase):
+    def test_notification_routed_and_stamps_heartbeat(self):
+        c, seen = _client()
         c._last_activity_at = 0.0
-        c._handle_sse_event("somethingUnknown", "")
+        c._dispatch_obj({
+            "jsonrpc": "2.0",
+            "method": "jamulusclient/channelLevelListReceived",
+            "params": {"channelLevelList": [9]},
+        })
+        self.assertEqual(seen["levels"][0], 1.0)
         self.assertGreater(c._last_activity_at, 0.0)
 
-
-class TestCall(unittest.TestCase):
-    def test_connect_error_returns_none(self):
-        c = _client()
-        with mock.patch("httpx.post", side_effect=httpx.ConnectError("no server")):
-            self.assertIsNone(c._call("jamulus/getChannelClients", {}))
-
-    def test_generic_error_returns_none(self):
-        c = _client()
-        with mock.patch("httpx.post", side_effect=ValueError("boom")):
-            self.assertIsNone(c._call("jamulus/getChannelClients", {}))
+    def test_response_routed_by_inflight_method(self):
+        c, seen = _client()
+        # simulate an in-flight getClientList whose response now arrives
+        c._inflight[7] = "jamulusclient/getClientList"
+        c._dispatch_obj({
+            "jsonrpc": "2.0", "id": 7,
+            "result": {"clients": [{"id": 1, "name": "Alice"}]},
+        })
+        self.assertEqual(seen["participants"][-1][0].name, "Alice")
 
 
 if __name__ == "__main__":

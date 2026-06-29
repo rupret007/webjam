@@ -30,14 +30,17 @@ class TestRpcHeartbeat(unittest.TestCase):
         self.assertGreaterEqual(age, 9.5)
         self.assertLess(age, 10.5)
 
-    def test_sse_event_stamps_heartbeat(self):
-        """Any SSE event should refresh the heartbeat, even unhandled types."""
+    def test_any_dispatched_message_stamps_heartbeat(self):
+        """Any inbound JSON-RPC message refreshes the heartbeat, even an
+        unknown notification type."""
         client = JamulusRpcClient(port=22222)
-        before = time.monotonic()
-        # _handle_sse_event wraps the stamp + dispatch in the same code path
-        with patch.object(client, "get_channel_clients", return_value=None):
-            client._handle_sse_event("someUnknownEvent", "")
-        self.assertGreaterEqual(client._last_activity_at, before)
+        client._last_activity_at = 0.0
+        client._dispatch_obj({
+            "jsonrpc": "2.0",
+            "method": "jamulusclient/someUnknownEvent",
+            "params": {},
+        })
+        self.assertGreater(client._last_activity_at, 0.0)
 
     def test_start_resets_stale_heartbeat_across_restart(self):
         """A reused client must not carry a previous session's heartbeat.

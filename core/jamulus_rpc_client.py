@@ -1,32 +1,50 @@
 """
-JamulusRpcClient — JSON-RPC HTTP client for Jamulus 3.9+.
+JamulusRpcClient — JSON-RPC client for the Jamulus client's control API.
 
-Jamulus 3.9+ ships an optional JSON-RPC server on the CLIENT side.
-When WebJam launches Jamulus with ``--jsonrpcport 22222``, this client
-can query and control it over localhost HTTP.
+Speaks the **real** Jamulus JSON-RPC protocol (Jamulus 3.9+, verified against
+3.12.0): newline-delimited JSON-RPC 2.0 over a raw **TCP** socket on localhost,
+authenticated with ``jamulus/apiAuth`` using the secret from the file Jamulus
+was launched with (``--jsonrpcsecretfile``).
 
-Architecture:
-    ``JamulusRpcClient.start()``
-        → background thread polls ``get_channel_clients()`` every 5 s
-        → SSE listener receives real-time events (channelConnected,
-          channelDisconnected, channelLevelListReceived)
-        → calls ``on_participants_changed(list[ChannelInfo])``
-        → calls ``on_levels(dict[int, float])``
+    WebJam launches Jamulus with:
+        --jsonrpcport <port> --jsonrpcsecretfile <DEFAULT_SECRET_PATH>
+    (see services/bridge_service.py), then this client connects, authenticates,
+    and translates between WebJam's mixer model and the Jamulus client API.
 
-Caller never touches HTTP; they register callbacks and call ``set_channel_gain``.
+Methods used (client mode):
+    jamulus/apiAuth                  — authenticate (required first)
+    jamulusclient/getChannelInfo     — our own channel id (for is_local)
+    jamulusclient/getClientList      — current participants
+    jamulusclient/setFaderLevel      — per-channel fader (level 0..100)
+    jamulusclient/setMuted           — mute/unmute self
+
+Notifications consumed:
+    jamulusclient/clientListReceived        — participant list changed
+    jamulusclient/channelLevelListReceived  — per-channel levels (0..9)
+    jamulusclient/connected / disconnected  — refresh trigger
+
+Caller never touches the socket: it registers ``on_participants_changed`` /
+``on_levels`` callbacks and calls ``set_channel_gain`` / ``set_channel_mute``.
+When the RPC server isn't reachable (Jamulus not started, old version, auth not
+ready) every call silently no-ops so the UDP fallback and demo data take over.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import socket
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-import httpx
-
 _logger = logging.getLogger("webjam.jamulus_rpc")
+
+# Shared secret file: bridge_service writes it and launches Jamulus with
+# --jsonrpcsecretfile pointing here; this client reads it to authenticate.
+DEFAULT_SECRET_PATH = Path.home() / ".webjam_jsonrpc_secret"
 
 
 @dataclass
@@ -41,21 +59,15 @@ class ChannelInfo:
 
 
 class JamulusRpcClient:
-    """
-    JSON-RPC 2.0 HTTP client for a running Jamulus GUI client
-    (started with ``--jsonrpcport PORT``).
-
-    This is the primary integration path for Jamulus 3.9+.  When the
-    JSON-RPC server isn't reachable (old Jamulus, not started yet), all
-    calls silently no-op so the UDP fallback and demo data take over.
-    """
+    """JSON-RPC 2.0 client (NDJSON over TCP) for a running Jamulus client."""
 
     JSONRPC_VERSION = "2.0"
-    POLL_INTERVAL_S = 5.0
     CONNECT_TIMEOUT_S = 1.0
-    REQUEST_TIMEOUT_S = 3.0
-    LEVEL_RANGE = 32767      # Jamulus level values are 0..32767
-    GAIN_RANGE_MAX = 10000   # setChannelGain uses 0..10000
+    AUTH_TIMEOUT_S = 3.0
+    RECONNECT_WAIT_S = 2.0
+    LEVEL_MAX = 9      # channelLevelList values are integers 0..9
+    FADER_MAX = 100    # setFaderLevel level is 0..100
+    GAIN_RANGE_IN = 127  # WebJam's internal mixer range (0..127)
 
     def __init__(
         self,
@@ -63,26 +75,25 @@ class JamulusRpcClient:
         *,
         on_participants_changed: Optional[Callable[[List[ChannelInfo]], None]] = None,
         on_levels: Optional[Callable[[Dict[int, float]], None]] = None,
+        secret_path: Optional[Path] = None,
     ) -> None:
         self._port = port
-        self._base_url = f"http://127.0.0.1:{port}"
+        self._secret_path = Path(secret_path) if secret_path else DEFAULT_SECRET_PATH
         self._on_participants_changed = on_participants_changed
         self._on_levels = on_levels
 
-        self._available = False   # True once we've had one successful call
+        self._available = False
+        self._authed = False
         self._running = False
-        self._poll_thread: Optional[threading.Thread] = None
-        self._sse_thread: Optional[threading.Thread] = None
-        self._request_counter = 0
+        self._thread: Optional[threading.Thread] = None
+        self._sock: Optional[socket.socket] = None
         self._lock = threading.Lock()
-        self._http_client: Optional[httpx.Client] = None
-        # Cache the local channel ID so we don't make a second HTTP call on
-        # every poll cycle (getChannelClients already costs one request).
+        self._request_counter = 0
+        self._inflight: Dict[int, str] = {}      # request id -> method name
+        self._clients: List[ChannelInfo] = []     # last-known participant list
         self._local_channel_id: int = -1
-        # Heartbeat: monotonic time of the last successful RPC interaction
-        # (poll or SSE event).  Stays at 0.0 until the first success.  Used
-        # by ``last_activity_age()`` so callers can detect a hung Jamulus
-        # (process alive but RPC silent).
+        # Heartbeat: monotonic time of the last successful RPC interaction.
+        # Stays 0.0 until the first success; reset on (re)start.
         self._last_activity_at: float = 0.0
 
     # ------------------------------------------------------------------
@@ -92,264 +103,297 @@ class JamulusRpcClient:
         if self._running:
             return
         self._running = True
-        # Reset heartbeat so a reused client (the controller keeps one instance
-        # across stop()/start() cycles) doesn't carry a stale activity timestamp
-        # from the previous session.  Without this, last_activity_age() returns
-        # a finite, growing age instead of inf right after a relaunch, which can
-        # trip a false "Jamulus stopped responding" banner on a healthy server.
         self._last_activity_at = 0.0
         self._available = False
-        self._poll_thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="jamulus-rpc-poll"
+        self._authed = False
+        with self._lock:
+            self._request_counter = 0
+            self._inflight.clear()
+        self._thread = threading.Thread(
+            target=self._run_loop, daemon=True, name="jamulus-rpc"
         )
-        self._poll_thread.start()
-        self._sse_thread = threading.Thread(
-            target=self._sse_loop, daemon=True, name="jamulus-rpc-sse"
-        )
-        self._sse_thread.start()
+        self._thread.start()
 
     def stop(self) -> None:
         self._running = False
-        self._local_channel_id = -1  # reset so next session re-queries
         self._available = False
-        with self._lock:  # _next_id() reads/writes this under the same lock
-            self._request_counter = 0  # next session starts request IDs at 1
-        if self._http_client is not None:
+        self._authed = False
+        self._local_channel_id = -1
+        with self._lock:
+            self._request_counter = 0
+            self._inflight.clear()
+        sock = self._sock
+        self._sock = None
+        if sock is not None:
             try:
-                self._http_client.close()
-            except Exception:
+                sock.close()
+            except Exception:  # noqa: BLE001
                 pass
 
     @property
     def available(self) -> bool:
         return self._available
 
-    # ------------------------------------------------------------------
-    # Commands
-    # ------------------------------------------------------------------
-    def set_channel_gain(self, channel_id: int, gain_0_to_127: int) -> bool:
-        """
-        Set the local mix gain for ``channel_id``.
-
-        Converts from the Jamulus-controller 0..127 range to the JSON-RPC
-        0..10000 range and sends ``jamulus/setChannelGain``.
-
-        Returns True on success.
-        """
-        gain_rpc = int(gain_0_to_127 / 127.0 * self.GAIN_RANGE_MAX)
-        result = self._call("jamulus/setChannelGain", {
-            "channelId": channel_id,
-            "gain": gain_rpc,
-        })
-        return result is not None
-
-    def set_channel_mute(self, channel_id: int, muted: bool) -> bool:
-        # Mute = gain of 0
-        if muted:
-            return self.set_channel_gain(channel_id, 0)
-        # Un-mute: restore to "unity" (100/127 → ~7874/10000)
-        return self.set_channel_gain(channel_id, 100)
-
-    # ------------------------------------------------------------------
-    # Polling
-    # ------------------------------------------------------------------
-    def _poll_loop(self) -> None:
-        self._http_client = httpx.Client()
-        while self._running:
-            try:
-                clients = self.get_channel_clients()
-                if clients is not None:
-                    self._available = True
-                    self._last_activity_at = time.monotonic()
-                    if self._on_participants_changed:
-                        try:
-                            self._on_participants_changed(clients)
-                        except Exception as exc:  # noqa: BLE001
-                            _logger.debug("callback error: %s", exc)
-            except Exception as exc:  # noqa: BLE001
-                _logger.debug("RPC poll error: %s", exc)
-                self._available = False
-            time.sleep(self.POLL_INTERVAL_S)
-
     def last_activity_age(self) -> float:
         """Seconds since the most recent successful RPC interaction.
 
-        Returns ``float('inf')`` if no successful interaction has happened
-        since ``start()`` was called.  Callers (e.g. the controller's
-        reconnect tick) can use this to detect a hung Jamulus — process
-        still alive, but RPC and SSE both silent for too long.
+        Returns ``float('inf')`` if nothing has succeeded since ``start()``.
         """
         if self._last_activity_at <= 0.0:
             return float("inf")
         return time.monotonic() - self._last_activity_at
 
+    def _stamp(self) -> None:
+        self._last_activity_at = time.monotonic()
+
+    # ------------------------------------------------------------------
+    # Public commands (fire-and-forget; no-op when not connected)
+    # ------------------------------------------------------------------
+    def set_channel_gain(self, channel_id: int, gain_0_to_127: int) -> bool:
+        """Set the fader for ``channel_id``. Maps WebJam's 0..127 to 0..100."""
+        gain = max(0, min(self.GAIN_RANGE_IN, int(gain_0_to_127)))
+        level = round(gain / self.GAIN_RANGE_IN * self.FADER_MAX)
+        return self._send("jamulusclient/setFaderLevel", {
+            "channelIndex": channel_id,
+            "level": level,
+        }) is not None
+
+    def set_channel_mute(self, channel_id: int, muted: bool) -> bool:
+        # The client API has no per-channel mute; muting a channel in your own
+        # mix = setting its fader to 0.  Unmute restores to unity (100/127).
+        return self.set_channel_gain(channel_id, 0 if muted else 100)
+
+    def set_self_muted(self, muted: bool) -> bool:
+        """Mute/unmute the local user globally (jamulusclient/setMuted)."""
+        return self._send("jamulusclient/setMuted", {"muted": bool(muted)}) is not None
+
     def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
-        raw = self._call("jamulus/getChannelClients", {})
-        if raw is None:
+        """Return the last-known participant list, or None if not yet received."""
+        if not self._available:
             return None
-        result = raw.get("result")
-        if not isinstance(result, list):
-            return None
-        clients: List[ChannelInfo] = []
-        local_id = self._get_local_channel_id()
-        for entry in result:
-            if not isinstance(entry, dict):
-                continue
-            channel_id = entry.get("channelId", -1)
-            if not isinstance(channel_id, int) or channel_id < 0:
-                continue
-            info = ChannelInfo(
-                channel_id=channel_id,
-                name=str(entry.get("name", "") or f"Participant {channel_id}"),
-                instrument=str(entry.get("instrument", "")),
-                skill_level=str(entry.get("skillLevel", "")),
-                country=str(entry.get("country", "")),
-                city=str(entry.get("city", "")),
-                is_local=(channel_id == local_id),
-            )
-            clients.append(info)
-        return clients
+        return list(self._clients)
 
     def _get_local_channel_id(self) -> int:
-        """Return the local (self) channel ID, querying RPC only on first call.
-
-        The local channel ID is stable for the lifetime of the Jamulus session,
-        so we cache the result after the first successful lookup to avoid a
-        second HTTP request on every 5-second poll cycle.
-        """
-        if self._local_channel_id >= 0:
-            return self._local_channel_id
-        raw = self._call("jamulus/getClientInfo", {})
-        if raw is None:
-            return -1
-        result = raw.get("result")
-        if isinstance(result, dict):
-            try:
-                cid = int(result.get("channelId", -1))
-            except (TypeError, ValueError):
-                # Malformed/hostile getClientInfo response — don't let a bad
-                # channelId raise out of every participant-refresh poll.
-                return -1
-            if cid >= 0:
-                self._local_channel_id = cid
-            return cid
-        return -1
+        """Return the cached local channel id (-1 if unknown)."""
+        return self._local_channel_id
 
     # ------------------------------------------------------------------
-    # SSE listener — real-time events
+    # Connection / reader loop
     # ------------------------------------------------------------------
-    def _sse_loop(self) -> None:
-        """
-        Listen to the Jamulus SSE event stream.
+    def _read_secret(self) -> Optional[str]:
+        try:
+            secret = self._secret_path.read_text(encoding="utf-8").strip()
+            return secret or None
+        except Exception:  # noqa: BLE001
+            return None
 
-        Events we handle:
-          channelConnected      → trigger participant refresh
-          channelDisconnected   → trigger participant refresh
-          channelLevelListReceived → parse per-channel levels, call on_levels
-        """
-        if self._http_client is None:
-            self._http_client = httpx.Client()
-        retry_wait = 2.0
+    def _run_loop(self) -> None:
+        wait = self.RECONNECT_WAIT_S
         while self._running:
             try:
-                with self._http_client.stream(
-                    "GET",
-                    f"{self._base_url}/events",
-                    timeout=httpx.Timeout(connect=1.0, read=30.0, write=5.0, pool=5.0),
-                    headers={"Accept": "text/event-stream"},
-                ) as response:
-                    retry_wait = 2.0
-                    event_type = ""
-                    data_lines: list[str] = []
-
-                    for line in response.iter_lines():
-                        if not self._running:
-                            break
-                        line = line.strip()
-                        if line.startswith("event:"):
-                            event_type = line[len("event:"):].strip()
-                        elif line.startswith("data:"):
-                            data_lines.append(line[len("data:"):].strip())
-                        elif line == "" and event_type:
-                            self._handle_sse_event(event_type, "\n".join(data_lines))
-                            event_type = ""
-                            data_lines = []
-
-            except httpx.ConnectError:
-                pass  # Jamulus not up yet — expected during startup
+                self._serve_once()
+                wait = self.RECONNECT_WAIT_S
             except Exception as exc:  # noqa: BLE001
-                _logger.debug("SSE loop error: %s", exc)
-
+                _logger.debug("RPC connection ended: %s", exc)
+            self._available = False
+            self._authed = False
             if self._running:
-                time.sleep(retry_wait)
-                retry_wait = min(retry_wait * 1.5, 30.0)
+                time.sleep(wait)
+                wait = min(wait * 1.5, 30.0)
 
-    def _handle_sse_event(self, event_type: str, data: str) -> None:
-        import json
-        # Any SSE event (even ones we don't act on) proves Jamulus is alive
-        # and responsive — refresh the heartbeat.
-        self._last_activity_at = time.monotonic()
+    def _serve_once(self) -> None:
+        secret = self._read_secret()
+        if not secret:
+            # Jamulus not launched yet (no secret file) — back off and retry.
+            raise ConnectionError("jsonrpc secret not available yet")
+
+        sock = socket.create_connection(
+            ("127.0.0.1", self._port), timeout=self.CONNECT_TIMEOUT_S
+        )
+        self._sock = sock
+        reader = sock.makefile("r", encoding="utf-8", newline="\n")
+
         try:
-            payload = json.loads(data) if data.strip() else {}
-        except json.JSONDecodeError:
-            payload = {}
+            # 1. Authenticate (must be the first message).
+            auth_id = self._send("jamulus/apiAuth", {"secret": secret})
+            if not self._await_auth(reader, auth_id):
+                raise ConnectionError("apiAuth failed or refused")
+            self._authed = True
+            self._available = True
+            self._stamp()
 
-        if event_type in ("channelConnected", "channelDisconnected"):
-            # Refresh participant list
+            # 2. Prime local channel id + participant list.
+            self._send("jamulusclient/getChannelInfo", {})
+            self._send("jamulusclient/getClientList", {})
+
+            # 3. Stream notifications + responses until disconnected/stopped.
+            sock.settimeout(1.0)
+            while self._running:
+                try:
+                    line = reader.readline()
+                except socket.timeout:
+                    continue
+                if line == "":
+                    raise ConnectionError("server closed connection")
+                self._dispatch_line(line)
+        finally:
             try:
-                clients = self.get_channel_clients()
-                if clients is not None and self._on_participants_changed:
-                    self._on_participants_changed(clients)
-            except Exception as exc:  # noqa: BLE001
-                _logger.debug("Post-event refresh failed: %s", exc)
+                reader.close()
+            except Exception:  # noqa: BLE001
+                pass
+            if self._sock is sock:
+                self._sock = None
+            try:
+                sock.close()
+            except Exception:  # noqa: BLE001
+                pass
 
-        elif event_type == "channelLevelListReceived":
-            # payload is {"levels": [int, int, ...]} — one value per channel, 0..32767
-            raw_levels = payload.get("levels") or []
-            if not isinstance(raw_levels, list):
-                return
-            levels: Dict[int, float] = {}
-            for idx, raw in enumerate(raw_levels):
-                try:
-                    levels[idx] = min(1.0, max(0.0, int(raw) / self.LEVEL_RANGE))
-                except (TypeError, ValueError):
-                    pass
-            if levels and self._on_levels:
-                try:
-                    self._on_levels(levels)
-                except Exception as exc:  # noqa: BLE001
-                    _logger.debug("callback error: %s", exc)
+    def _await_auth(self, reader, auth_id: Optional[int]) -> bool:
+        """Read lines until the apiAuth response arrives; dispatch any
+        notifications seen in the meantime."""
+        deadline = time.monotonic() + self.AUTH_TIMEOUT_S
+        while self._running and time.monotonic() < deadline:
+            line = reader.readline()
+            if line == "":
+                return False
+            obj = self._parse(line)
+            if obj is None:
+                continue
+            if obj.get("id") == auth_id and ("result" in obj or "error" in obj):
+                self._inflight.pop(auth_id, None)
+                return obj.get("result") == "ok"
+            # Notifications can arrive before the auth ack — handle them.
+            self._dispatch_obj(obj)
+        return False
 
     # ------------------------------------------------------------------
-    # HTTP helper
+    # Sending / dispatch
     # ------------------------------------------------------------------
     def _next_id(self) -> int:
         with self._lock:
             self._request_counter += 1
             return self._request_counter
 
-    def _call(self, method: str, params: dict) -> Optional[dict]:
-        payload = {
+    def _send(self, method: str, params: dict) -> Optional[int]:
+        sock = self._sock
+        if sock is None:
+            return None
+        req_id = self._next_id()
+        with self._lock:
+            self._inflight[req_id] = method
+        payload = json.dumps({
             "jsonrpc": self.JSONRPC_VERSION,
-            "id": self._next_id(),
+            "id": req_id,
             "method": method,
             "params": params,
-        }
+        }) + "\n"
         try:
-            response = httpx.post(
-                self._base_url,
-                json=payload,
-                timeout=httpx.Timeout(
-                    connect=self.CONNECT_TIMEOUT_S,
-                    read=self.REQUEST_TIMEOUT_S,
-                    write=self.REQUEST_TIMEOUT_S,
-                    pool=self.REQUEST_TIMEOUT_S,
-                ),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.ConnectError:
-            return None  # Jamulus not running — expected
+            sock.sendall(payload.encode("utf-8"))
         except Exception as exc:  # noqa: BLE001
-            _logger.debug("RPC call %s failed: %s", method, exc)
+            _logger.debug("RPC send %s failed: %s", method, exc)
+            with self._lock:
+                self._inflight.pop(req_id, None)
             return None
+        return req_id
+
+    @staticmethod
+    def _parse(line: str) -> Optional[dict]:
+        line = line.strip()
+        if not line:
+            return None
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        return obj if isinstance(obj, dict) else None
+
+    def _dispatch_line(self, line: str) -> None:
+        obj = self._parse(line)
+        if obj is not None:
+            self._dispatch_obj(obj)
+
+    def _dispatch_obj(self, obj: dict) -> None:
+        self._stamp()  # any traffic proves Jamulus is alive
+        method = obj.get("method")
+        if method and obj.get("id") is None:
+            self._handle_notification(method, obj.get("params") or {})
+            return
+        if "id" in obj and ("result" in obj or "error" in obj):
+            with self._lock:
+                req_method = self._inflight.pop(obj.get("id"), None)
+            if "result" in obj:
+                self._handle_response(req_method, obj["result"])
+
+    # ------------------------------------------------------------------
+    # Response + notification handling
+    # ------------------------------------------------------------------
+    def _handle_response(self, method: Optional[str], result) -> None:
+        if method == "jamulusclient/getChannelInfo" and isinstance(result, dict):
+            self._set_local_id(result.get("id"))
+        elif method == "jamulusclient/getClientList" and isinstance(result, dict):
+            self._update_clients(result.get("clients"))
+
+    def _handle_notification(self, method: str, params: dict) -> None:
+        if method == "jamulusclient/clientListReceived":
+            self._update_clients(params.get("clients"))
+        elif method == "jamulusclient/channelLevelListReceived":
+            self._emit_levels(params.get("channelLevelList"))
+        elif method == "jamulusclient/connected":
+            self._set_local_id(params.get("id"))
+            # ask for a fresh list now that we're connected
+            self._send("jamulusclient/getClientList", {})
+        elif method == "jamulusclient/disconnected":
+            self._update_clients([])
+
+    def _set_local_id(self, value) -> None:
+        try:
+            cid = int(value)
+        except (TypeError, ValueError):
+            return
+        if cid >= 0:
+            self._local_channel_id = cid
+            # Re-tag cached clients' is_local if we learned our id late.
+            for c in self._clients:
+                c.is_local = (c.channel_id == cid)
+
+    def _update_clients(self, raw_clients) -> None:
+        if not isinstance(raw_clients, list):
+            return
+        clients: List[ChannelInfo] = []
+        for idx, entry in enumerate(raw_clients):
+            if not isinstance(entry, dict):
+                continue
+            # Jamulus client entries use "id"; be lenient about index fallback.
+            cid = entry.get("id", entry.get("channelId", idx))
+            if not isinstance(cid, int) or cid < 0:
+                continue
+            clients.append(ChannelInfo(
+                channel_id=cid,
+                name=str(entry.get("name", "") or f"Participant {cid}"),
+                instrument=str(entry.get("instrument", "")),
+                skill_level=str(entry.get("skillLevel", "")),
+                country=str(entry.get("country", "")),
+                city=str(entry.get("city", "")),
+                is_local=(cid == self._local_channel_id),
+            ))
+        self._clients = clients
+        if self._on_participants_changed:
+            try:
+                self._on_participants_changed(list(clients))
+            except Exception as exc:  # noqa: BLE001
+                _logger.debug("on_participants_changed callback error: %s", exc)
+
+    def _emit_levels(self, raw_levels) -> None:
+        if not isinstance(raw_levels, list) or not self._on_levels:
+            return
+        levels: Dict[int, float] = {}
+        for idx, raw in enumerate(raw_levels):
+            try:
+                levels[idx] = min(1.0, max(0.0, int(raw) / self.LEVEL_MAX))
+            except (TypeError, ValueError):
+                continue
+        if levels:
+            try:
+                self._on_levels(levels)
+            except Exception as exc:  # noqa: BLE001
+                _logger.debug("on_levels callback error: %s", exc)
