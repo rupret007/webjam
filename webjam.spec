@@ -20,12 +20,31 @@
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
 #     dist\WebJam\WebJam.exe
 
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)
 
 block_cipher = None
+
+# Keep the bundle version in sync with webjam_qt.__version__ (single source of
+# truth) instead of hardcoding it — the macOS Info.plist below used to be stuck
+# at 0.3.0.
+_init_src = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
+_m = re.search(r'__version__\s*=\s*"([^"]+)"', _init_src)
+VERSION = _m.group(1) if _m else "0.0.0"
+
+# On Windows, bundle the VB-CABLE installers so the app folder really does
+# contain the virtual-audio-cable setup the band guide points users to.
+# (Useless on macOS — that uses BlackHole — so only include it on Windows.)
+_extra_datas = []
+if sys.platform == "win32":
+    _vb_dir = ROOT / "VB"
+    if _vb_dir.is_dir():
+        for _p in _vb_dir.iterdir():
+            if _p.is_file():
+                _extra_datas.append((str(_p), "VB"))
 
 a = Analysis(
     [str(ROOT / "webjam_qt_main.py")],
@@ -36,8 +55,7 @@ a = Analysis(
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
         # Webex widget HTML template
         (str(ROOT / "webjam_qt" / "webex_widget.html"), "webjam_qt"),
-        # Default settings schema (informational)
-        # (ROOT / "docs", "docs"),
+        *_extra_datas,
     ],
     hiddenimports=[
         # PySide6 WebEngine (not always auto-discovered)
@@ -54,6 +72,8 @@ a = Analysis(
         "services.bridge_service",
         "storage.repository",
         "ui.services",
+        "core.file_io",
+        "api.local_bridge",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",
         "numpy",
@@ -124,7 +144,7 @@ if sys.platform == "darwin":
                 "WebJam uses the camera for the embedded Webex video conference.",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
-            "CFBundleShortVersionString": "0.3.0",
-            "CFBundleVersion": "0.3.0",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
         },
     )
