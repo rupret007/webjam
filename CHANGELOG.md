@@ -4,6 +4,47 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.8] — 2026-06-29
+
+### Real-world hardening, correct Jamulus control, and onboarding
+
+The headline: WebJam's Jamulus control was rebuilt against the **actual** current
+Jamulus JSON-RPC API, plus a multi-round audit fixed real bugs and the CI/release
+pipeline. First release intended for live band use.
+
+#### Jamulus integration (correctness)
+- **Rebuilt the JSON-RPC client against shipping Jamulus (3.9–3.12).** The old
+  client spoke an experimental HTTP+SSE fork (`jamulus/getChannelClients`,
+  gain 0–10000) that never matched released Jamulus. It now uses
+  newline-delimited JSON-RPC over **TCP**, the `jamulus/apiAuth` handshake
+  (`--jsonrpcsecretfile`, generated at launch), and the real `jamulusclient/*`
+  methods (`getClientList`, `setFaderLevel` 0–100, `setMuted`) and notifications
+  (`clientListReceived`, `channelLevelListReceived` 0–9, `connected`/`disconnected`).
+- **Real "Mute Me"** via `jamulusclient/setMuted` — previously it zeroed your own
+  fader, which only muted you in your *own* monitor; the band still heard you.
+- **In-session chat** — incoming Jamulus chat (`chatTextReceived`) is appended to
+  the shared session canvas; `sendChatText` is wired.
+
+#### Reliability / security fixes (from the audit rounds)
+- RPC heartbeat no longer false-fires "Jamulus stopped responding" after a restart.
+- Mix auto-save safety net no longer disarmed by a failed save.
+- Background audio-routing scan no longer dies silently when PortAudio is missing.
+- Companion API: added a loopback-only `Host`-header check (DNS-rebinding defense),
+  redacted `sentry_dsn`, and **actually wired it into the app** (it was documented
+  as auto-starting but never instantiated).
+- Python 3.10 compatibility fix; unknown-msg-id log-flood cap; assorted Lows.
+
+#### Pipeline / docs
+- **CI no longer cancels branch/tag runs**, so `master` can go green and produce builds.
+- **`README_SIMPLE.md` rewritten** as an accurate band onboarding guide for the Qt app.
+- **`WEBJAM_NEXT_LEVEL.md`** added: engine evaluation (stay on Jamulus; SonoBus/JackTrip considered) + roadmap.
+
+#### Tests
+- Suite expanded to **600+** (incl. a fake-Jamulus TCP server verifying the real
+  wire protocol). `__version__` → 0.4.8.
+
+---
+
 ## [0.4.7] — 2026-04-24
 
 ### Round 4 deep-dive — controller refactor, telemetry expansion, multi-mix, audio device picker
