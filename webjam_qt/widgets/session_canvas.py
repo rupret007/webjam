@@ -103,6 +103,19 @@ class SessionCanvas(QFrame):
     def current_notes(self) -> str:
         return self._notes.toPlainText()
 
+    def append_line(self, text: str) -> None:
+        """Append a line to the end of the notes (e.g. incoming band chat),
+        so it becomes part of the shared session record.  Inserted as plain
+        text (the editor is a QTextEdit) so chat content isn't HTML-parsed."""
+        if not text:
+            return
+        from PySide6.QtGui import QTextCursor
+        self._notes.moveCursor(QTextCursor.MoveOperation.End)
+        if self._notes.toPlainText():
+            self._notes.insertPlainText("\n")
+        self._notes.insertPlainText(text)
+        self._notes.moveCursor(QTextCursor.MoveOperation.End)
+
     def insert_timestamp(self) -> None:
         """Insert the current time as a Markdown heading at the cursor."""
         ts = datetime.now().strftime("## %H:%M:%S")

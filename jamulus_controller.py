@@ -60,11 +60,15 @@ class JamulusController:
         # Property setters/getters on this controller proxy through to it.
         self._build_state_manager()
 
+        # Optional consumer hook for incoming band chat (set by the UI).
+        self.chat_callback: Optional[Callable[[str], None]] = None
+
         # Primary integration: JSON-RPC (Jamulus 3.9+)
         self.rpc_client = JamulusRpcClient(
             port=rpc_port,
             on_participants_changed=self._on_rpc_participants,
             on_levels=self._on_rpc_levels,
+            on_chat=self._on_rpc_chat,
         )
 
         # Secondary integration: UDP protocol (all versions)
@@ -316,6 +320,42 @@ class JamulusController:
         """Solo/unsolo a channel, preserving prior mute state.  Exclusive
         solo: switching keeps the snapshot; leaving solo restores it."""
         self._state.set_solo(channel_id, solo)
+
+    def set_self_muted(self, muted: bool) -> bool:
+        """Globally mute/unmute the local user via Jamulus (jamulusclient/setMuted).
+
+        Unlike ``set_mute(channel)`` — which only changes YOUR local monitor
+        mix — this tells Jamulus to stop sending your audio to the server, so
+        the rest of the band actually stops hearing you (a real "Mute Me").
+        Returns True if the command was sent; no-op/False if RPC isn't
+        available (old Jamulus / not yet connected)."""
+        if not self.rpc_client.available:
+            return False
+        try:
+            return bool(self.rpc_client.set_self_muted(muted))
+        except Exception:
+            return False
+
+    def send_chat(self, text: str) -> bool:
+        """Send a chat message to the band via Jamulus (jamulusclient/sendChatText).
+
+        Returns True if sent; no-op/False if RPC isn't available."""
+        if not text or not self.rpc_client.available:
+            return False
+        try:
+            return bool(self.rpc_client.send_chat_text(text))
+        except Exception:
+            return False
+
+    def _on_rpc_chat(self, text: str) -> None:
+        """Incoming band chat from Jamulus — forward to the UI hook if set."""
+        cb = self.chat_callback
+        if cb is None:
+            return
+        try:
+            cb(text)
+        except Exception:
+            pass
     
     def _apply_mixer_setting(self, channel_id: int, notify: bool = True):
         """Apply mixer settings to Jamulus via protocol adapter and audio engine."""

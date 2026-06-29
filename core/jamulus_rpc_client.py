@@ -75,12 +75,14 @@ class JamulusRpcClient:
         *,
         on_participants_changed: Optional[Callable[[List[ChannelInfo]], None]] = None,
         on_levels: Optional[Callable[[Dict[int, float]], None]] = None,
+        on_chat: Optional[Callable[[str], None]] = None,
         secret_path: Optional[Path] = None,
     ) -> None:
         self._port = port
         self._secret_path = Path(secret_path) if secret_path else DEFAULT_SECRET_PATH
         self._on_participants_changed = on_participants_changed
         self._on_levels = on_levels
+        self._on_chat = on_chat
 
         self._available = False
         self._authed = False
@@ -166,6 +168,14 @@ class JamulusRpcClient:
     def set_self_muted(self, muted: bool) -> bool:
         """Mute/unmute the local user globally (jamulusclient/setMuted)."""
         return self._send("jamulusclient/setMuted", {"muted": bool(muted)}) is not None
+
+    def send_chat_text(self, text: str) -> bool:
+        """Send a chat message to the band (jamulusclient/sendChatText)."""
+        if not text:
+            return False
+        return self._send(
+            "jamulusclient/sendChatText", {"chatText": str(text)}
+        ) is not None
 
     def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
         """Return the last-known participant list, or None if not yet received."""
@@ -338,6 +348,8 @@ class JamulusRpcClient:
             self._update_clients(params.get("clients"))
         elif method == "jamulusclient/channelLevelListReceived":
             self._emit_levels(params.get("channelLevelList"))
+        elif method == "jamulusclient/chatTextReceived":
+            self._emit_chat(params.get("chatText"))
         elif method == "jamulusclient/connected":
             self._set_local_id(params.get("id"))
             # ask for a fresh list now that we're connected
@@ -382,6 +394,14 @@ class JamulusRpcClient:
                 self._on_participants_changed(list(clients))
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("on_participants_changed callback error: %s", exc)
+
+    def _emit_chat(self, text) -> None:
+        if not isinstance(text, str) or not self._on_chat:
+            return
+        try:
+            self._on_chat(text)
+        except Exception as exc:  # noqa: BLE001
+            _logger.debug("on_chat callback error: %s", exc)
 
     def _emit_levels(self, raw_levels) -> None:
         if not isinstance(raw_levels, list) or not self._on_levels:

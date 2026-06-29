@@ -134,6 +134,14 @@ class TestMuteSelfMirrorsToWebex(unittest.TestCase):
         self.assertTrue(local.muted)
         mute_webex.assert_called_once_with(True)
 
+    def test_mute_self_uses_jamulus_global_setmuted(self):
+        """Mute Me must call the real global self-mute, not zero the local
+        channel fader (which would only mute us in our own monitor)."""
+        self._install_local_participant()
+        self.controller.bridge.webex_state = "Not opened"
+        self.controller._on_mute_self()
+        self.controller.jamulus.set_self_muted.assert_called_once_with(True)
+
     def test_mute_self_skips_webex_when_not_in_meeting(self):
         self._install_local_participant()
         self.controller.bridge.webex_state = "Not opened"  # _is_video_active() False

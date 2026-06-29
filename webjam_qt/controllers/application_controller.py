@@ -81,6 +81,9 @@ class ApplicationController(QObject):
         )
         self.webex = WebexController(meeting_url=self.settings.webex_url)
 
+        # Surface incoming band chat (from Jamulus) in the shared canvas.
+        self.jamulus.chat_callback = self._on_jamulus_chat
+
         self._shutdown = False
 
         self.bridge = BridgeService(
@@ -366,6 +369,21 @@ class ApplicationController(QObject):
     def _on_jamulus_participants(self, jamulus_participants: list) -> None:
         """Receive live participant list from JamulusController — runs on a worker thread."""
         self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
+
+    def _on_jamulus_chat(self, text: str) -> None:
+        """Incoming band chat (arrives on the RPC reader thread).
+
+        Jamulus chat text can contain HTML markup (sender/time formatting);
+        strip it to plain text and append it to the shared canvas so the whole
+        band's conversation lives in the session record.
+        """
+        import re
+        plain = re.sub(r"<[^>]+>", "", text or "").strip()
+        if not plain:
+            return
+        self._ui_invoker.invoke(
+            lambda: self.window.session_canvas.append_line(plain)
+        )
 
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
@@ -829,7 +847,11 @@ class ApplicationController(QObject):
         p.muted = new_muted
         self._mix_dirty = True
         if self._jamulus_connected:
-            self.jamulus.set_mute(local_channel_id, new_muted)
+            # Real self-mute: tell Jamulus to stop sending OUR audio to the
+            # band (jamulusclient/setMuted).  Zeroing our own channel fader
+            # would only mute us in our own monitor — the others would still
+            # hear us.
+            self.jamulus.set_self_muted(new_muted)
         # Mirror mute state into the embedded Webex meeting if we're in one,
         # so the conductor only has to hit one button to silence themselves
         # in both audio and video.  No-op if Webex hasn't joined.  (We've

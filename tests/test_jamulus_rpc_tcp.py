@@ -118,10 +118,12 @@ class _ClientHarness:
         self._tmp.close()
         self.participants = []
         self.levels = {}
+        self.chats = []
         self.client = JamulusRpcClient(
             port=self.server.port,
             on_participants_changed=lambda c: self.participants.append(c),
             on_levels=lambda d: self.levels.update(d),
+            on_chat=lambda t: self.chats.append(t),
             secret_path=Path(self._tmp.name),
         )
 
@@ -170,6 +172,19 @@ class TestJamulusRpcTcp(unittest.TestCase):
         finally:
             h.close()
 
+    def test_set_self_muted_sends_real_setmuted(self):
+        h = _ClientHarness()
+        try:
+            h.client.start()
+            self.assertTrue(_wait(lambda: h.client.available))
+            h.client.set_self_muted(True)
+            self.assertTrue(_wait(
+                lambda: h.server.requests_for("jamulusclient/setMuted")))
+            req = h.server.requests_for("jamulusclient/setMuted")[-1]
+            self.assertEqual(req["params"], {"muted": True})
+        finally:
+            h.close()
+
     def test_level_notification_normalized(self):
         h = _ClientHarness()
         try:
@@ -194,6 +209,30 @@ class TestJamulusRpcTcp(unittest.TestCase):
                           {"clients": [{"id": 0, "name": "Me"}]})
             self.assertTrue(_wait(lambda: len(h.participants) > before))
             self.assertEqual({c.name for c in h.participants[-1]}, {"Me"})
+        finally:
+            h.close()
+
+    def test_send_chat_text_sends_real_sendchattext(self):
+        h = _ClientHarness()
+        try:
+            h.client.start()
+            self.assertTrue(_wait(lambda: h.client.available))
+            h.client.send_chat_text("hey band")
+            self.assertTrue(_wait(
+                lambda: h.server.requests_for("jamulusclient/sendChatText")))
+            req = h.server.requests_for("jamulusclient/sendChatText")[-1]
+            self.assertEqual(req["params"], {"chatText": "hey band"})
+        finally:
+            h.close()
+
+    def test_incoming_chat_notification_fires_callback(self):
+        h = _ClientHarness()
+        try:
+            h.client.start()
+            self.assertTrue(_wait(lambda: h.client.available))
+            h.server.push("jamulusclient/chatTextReceived", {"chatText": "<b>Al</b> hi"})
+            self.assertTrue(_wait(lambda: h.chats))
+            self.assertEqual(h.chats[-1], "<b>Al</b> hi")
         finally:
             h.close()
 
