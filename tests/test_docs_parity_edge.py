@@ -52,10 +52,15 @@ class TestDocsParityEdge(unittest.TestCase):
             self.assertIn(shortcut, guide_text)
             self.assertIn(action, guide_text)
 
-    def test_readme_simple_describes_browser_open_and_mix_restore(self):
+    def test_readme_simple_is_the_qt_band_guide(self):
+        # README_SIMPLE is the band-facing quick start for the primary Qt
+        # Conductor app: it must name the real entry point, the real session
+        # buttons, and the mix auto-restore behavior.
         readme_text = (ROOT / "README_SIMPLE.md").read_text(encoding="utf-8")
-        self.assertIn("Click **Launch Webex**. Your browser opens to the meeting.", readme_text)
-        self.assertIn("Saved default mixes restore automatically on next sign-in or launch.", readme_text)
+        self.assertIn("webjam_qt_main.py", readme_text)
+        self.assertIn("Launch Audio", readme_text)
+        self.assertIn("Join Video", readme_text)
+        self.assertIn("auto-restores your last mix", readme_text)
 
     def test_ux_smoke_gate_passes(self):
         self.assertEqual(ux_smoke_test.main(), 0)
