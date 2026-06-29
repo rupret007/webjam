@@ -185,6 +185,19 @@ class TestJamulusRpcTcp(unittest.TestCase):
         finally:
             h.close()
 
+    def test_set_name_sends_real_setname(self):
+        h = _ClientHarness()
+        try:
+            h.client.start()
+            self.assertTrue(_wait(lambda: h.client.available))
+            h.client.set_name("Bassist Bob")
+            self.assertTrue(_wait(
+                lambda: h.server.requests_for("jamulusclient/setName")))
+            req = h.server.requests_for("jamulusclient/setName")[-1]
+            self.assertEqual(req["params"], {"name": "Bassist Bob"})
+        finally:
+            h.close()
+
     def test_level_notification_normalized(self):
         h = _ClientHarness()
         try:

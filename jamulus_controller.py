@@ -347,6 +347,16 @@ class JamulusController:
         except Exception:
             return False
 
+    def set_name(self, name: str) -> bool:
+        """Push the local musician's display name to Jamulus so the band sees a
+        real name instead of a blank. No-op/False if RPC isn't available."""
+        if not name or not self.rpc_client.available:
+            return False
+        try:
+            return bool(self.rpc_client.set_name(name))
+        except Exception:
+            return False
+
     def _on_rpc_chat(self, text: str) -> None:
         """Incoming band chat from Jamulus — forward to the UI hook if set."""
         cb = self.chat_callback

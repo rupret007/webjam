@@ -392,6 +392,8 @@ class ApplicationController(QObject):
 
         if not self._jamulus_connected:
             self._jamulus_connected = True
+            # Push our display name to Jamulus so the band sees a real name.
+            self.jamulus.set_name(self.settings.webex_display_name)
             self._demo_timer.stop()
             # Clear demo data; real participants take over
             self.participants.clear()

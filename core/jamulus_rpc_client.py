@@ -177,6 +177,12 @@ class JamulusRpcClient:
             "jamulusclient/sendChatText", {"chatText": str(text)}
         ) is not None
 
+    def set_name(self, name: str) -> bool:
+        """Set the local musician's display name (jamulusclient/setName)."""
+        if not name:
+            return False
+        return self._send("jamulusclient/setName", {"name": str(name)}) is not None
+
     def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
         """Return the last-known participant list, or None if not yet received."""
         if not self._available:
