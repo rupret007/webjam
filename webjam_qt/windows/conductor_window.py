@@ -161,6 +161,8 @@ class ConductorWindow(QMainWindow):
 
         # Cmd/Ctrl+L — focus session title
         QShortcut(QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title())
+        # F2 — pre-jam Ready Check (signal consumed by controller)
+        self._ready_check_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self)
         # F11 — fullscreen toggle
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self._toggle_fullscreen)
         # Escape — exit fullscreen
@@ -266,6 +268,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+D</b> — Copy diagnostics to clipboard<br>"
+            "&nbsp;&nbsp;<b>F2</b> — Ready Check (is my setup ready to jam?)<br>"
             "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
             "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"
             "&nbsp;&nbsp;<b>Esc</b> — Exit fullscreen<br>"

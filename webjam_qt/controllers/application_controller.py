@@ -318,6 +318,7 @@ class ApplicationController(QObject):
         self.window._mute_self_shortcut.activated.connect(self._on_mute_self)
         # Diagnostics export shortcut (Ctrl+Shift+D)
         self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
+        self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
         # Reset all faders shortcut (Ctrl+Shift+R)
         self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
@@ -369,6 +370,19 @@ class ApplicationController(QObject):
     def _on_jamulus_participants(self, jamulus_participants: list) -> None:
         """Receive live participant list from JamulusController — runs on a worker thread."""
         self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
+
+    def _on_ready_check(self) -> None:
+        """F2 — run the pre-jam Ready Check and show the report."""
+        from core.preflight import run_ready_check
+        from PySide6.QtWidgets import QMessageBox
+        report = run_ready_check(self.settings)
+        box = QMessageBox(self.window)
+        box.setWindowTitle("WebJam — Ready Check")
+        box.setIcon(
+            QMessageBox.Icon.Information if report.all_ok else QMessageBox.Icon.Warning
+        )
+        box.setText(report.to_text())
+        box.exec()
 
     def _on_jamulus_chat(self, text: str) -> None:
         """Incoming band chat (arrives on the RPC reader thread).
