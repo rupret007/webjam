@@ -4,6 +4,26 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.4.9] — 2026-06-29
+
+### Live-session features + build correctness
+
+- **In-session chat both ways** — a chat box in the session canvas sends to the
+  band (`jamulusclient/sendChatText`) and echoes locally; incoming chat appends
+  to the shared canvas.
+- **Name sync** — on connect, WebJam pushes your display name to Jamulus
+  (`jamulusclient/setName`) so bandmates see a real name, not a blank.
+- **Ready Check (F2)** — `core/preflight.py` reports what's missing before you
+  jam (Jamulus installed, server/port set, virtual audio cable detected, Webex
+  link), surfaced via an F2 shortcut + F1 help.
+- **Build correctness** — macOS bundle version now tracks `__version__` (was
+  pinned to 0.3.0); Windows builds bundle the VB-CABLE installers; added
+  `api.local_bridge` / `core.file_io` to PyInstaller hiddenimports.
+- **Tests** — suite at 620 (fake-Jamulus TCP server, preflight, chat send,
+  build data-file guards). `__version__` → 0.4.9.
+
+---
+
 ## [0.4.8] — 2026-06-29
 
 ### Real-world hardening, correct Jamulus control, and onboarding
