@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -38,6 +39,7 @@ class SessionCanvas(QFrame):
     CANVAS_MIN_WIDTH = 280
 
     notes_changed = Signal(str)
+    chat_submitted = Signal(str)   # user pressed Enter in the chat box
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -83,12 +85,22 @@ class SessionCanvas(QFrame):
         )
         self._notes.textChanged.connect(self._on_text_changed)
 
+        # Chat box — send a message to the whole band (Jamulus chat).
+        self._chat_input = QLineEdit()
+        self._chat_input.setObjectName("CanvasChatInput")
+        self._chat_input.setPlaceholderText("Message your band… (Enter to send)")
+        self._chat_input.returnPressed.connect(self._on_chat_entered)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, Space.MD)
         layout.setSpacing(Space.SM)
         layout.addWidget(header)
         layout.addLayout(btn_row)
         layout.addWidget(self._notes, stretch=1)
+        chat_row = QHBoxLayout()
+        chat_row.setContentsMargins(Space.MD, 0, Space.MD, 0)
+        chat_row.addWidget(self._chat_input)
+        layout.addLayout(chat_row)
 
     # ------------------------------------------------------------------
     # Public API
@@ -102,6 +114,13 @@ class SessionCanvas(QFrame):
 
     def current_notes(self) -> str:
         return self._notes.toPlainText()
+
+    def _on_chat_entered(self) -> None:
+        text = self._chat_input.text().strip()
+        if not text:
+            return
+        self._chat_input.clear()
+        self.chat_submitted.emit(text)
 
     def append_line(self, text: str) -> None:
         """Append a line to the end of the notes (e.g. incoming band chat),

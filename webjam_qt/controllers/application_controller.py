@@ -319,6 +319,7 @@ class ApplicationController(QObject):
         # Diagnostics export shortcut (Ctrl+Shift+D)
         self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
         self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
+        self.window.session_canvas.chat_submitted.connect(self._on_chat_submitted)
         # Reset all faders shortcut (Ctrl+Shift+R)
         self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
@@ -383,6 +384,15 @@ class ApplicationController(QObject):
         )
         box.setText(report.to_text())
         box.exec()
+
+    def _on_chat_submitted(self, text: str) -> None:
+        """User sent a chat message from the canvas box — send to the band and
+        echo it locally so the sender sees their own message."""
+        text = (text or "").strip()
+        if not text:
+            return
+        self.jamulus.send_chat(text)
+        self.window.session_canvas.append_line(f"You: {text}")
 
     def _on_jamulus_chat(self, text: str) -> None:
         """Incoming band chat (arrives on the RPC reader thread).
