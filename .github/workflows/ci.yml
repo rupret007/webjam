@@ -65,10 +65,13 @@ jobs:
 
   # ------------------------------------------------------------------
   # Job 2: Build desktop artifacts
-  # Three targets built from webjam.spec (single source of truth):
+  # Two targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-latest (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
-  #   macos-x64    → macos-13       (Intel, last Intel runner)
+  # macos-x64 (Intel) was dropped 2026-07: GitHub retired macos-13, the
+  # last Intel hosted runner — the matrix entry sat "awaiting a runner"
+  # for 24h and killed every release run. Intel Mac users: run from
+  # source (README) until we add a self-hosted/cross build.
   #
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
@@ -77,6 +80,7 @@ jobs:
     name: Build Desktop (${{ matrix.target }})
     needs: test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -85,8 +89,6 @@ jobs:
             target: windows-x64
           - os: macos-14
             target: macos-arm64
-          - os: macos-13
-            target: macos-x64
 
     steps:
       - name: Checkout
@@ -156,7 +158,7 @@ jobs:
   # ------------------------------------------------------------------
   # Job 3: GitHub Release
   # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
-  # Downloads all 3 artifacts and attaches them to a GitHub Release.
+  # Downloads both artifacts and attaches them to a GitHub Release.
   # Auto-generates release notes from commits since previous tag.
   # ------------------------------------------------------------------
   release:
@@ -164,6 +166,7 @@ jobs:
     needs: build-desktop
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
@@ -178,12 +181,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webjam-macos-arm64
-          path: release-assets/
-
-      - name: Download macos-x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: webjam-macos-x64
           path: release-assets/
 
       - name: Create GitHub Release
