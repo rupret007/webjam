@@ -4,6 +4,20 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased]
+
+- **Fix: routing-scan shutdown race** — the background audio-routing scan no
+  longer dies with a `RuntimeError` traceback if the app shuts down while the
+  scan is in flight (the status is quietly dropped instead).
+- **Tests** — live-session engine coverage push: `application_controller`
+  69%→86%, `jamulus_controller` 63%→88%, `bridge_service` →91%. New suites for
+  the Join/Leave Video flow, Webex state machine, token refresh, Launch/Stop
+  Audio toggle, crash-reconnect banner, settings wizard round-trip,
+  diagnostics export, JamulusController lifecycle, and BridgeService launch
+  failure paths + Jamulus command-line contract. Suite at 720.
+
+---
+
 ## [0.4.9] — 2026-06-29
 
 ### Live-session features + build correctness
