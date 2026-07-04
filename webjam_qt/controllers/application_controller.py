@@ -897,8 +897,9 @@ class ApplicationController(QObject):
     def _on_mute_all(self) -> None:
         """Ctrl+M — toggle mute state for every participant.
 
-        If any channel is unmuted, mute all. If all are already muted, unmute all.
-        Skips participants that are currently soloed (solo mutes others implicitly).
+        If any channel is unmuted, mute all. If all are already muted, unmute
+        all.  Applies to soloed channels too — a panic "mute everything" must
+        actually silence the room, solo or not.
         """
         if not self.participants:
             return
@@ -1133,7 +1134,13 @@ class ApplicationController(QObject):
                 # and leave the routing status blank forever.
                 LOGGER.warning("routing scan failed: %s", exc, exc_info=True)
                 status = AudioRoutingStatus(scan_error=str(exc))
-            self._ui_invoker.invoke(lambda: self._apply_routing_status(status))
+            try:
+                self._ui_invoker.invoke(lambda: self._apply_routing_status(status))
+            except RuntimeError:
+                # The Qt invoker was destroyed while we were scanning (app
+                # shut down mid-scan).  Nobody is left to show the status —
+                # drop it instead of dying with a traceback.
+                LOGGER.debug("routing status dropped — UI already gone")
 
         threading.Thread(target=_scan, daemon=True, name="routing-scan").start()
 
