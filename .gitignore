@@ -28,3 +28,8 @@ test_results.json
 # Large local binaries (publish via GitHub Releases instead)
 jamulus_3.11.0_win.exe
 webjam_launch_session.exe
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
