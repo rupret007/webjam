@@ -4,8 +4,15 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [Unreleased]
+## [0.4.10] — 2026-07-04
 
+### First shippable v0.4.x build — release pipeline unblocked
+
+- **CI: release pipeline fixed** — every tag run since v0.4.5 was killed at
+  the 24h wall because the build matrix still listed `macos-13` (Intel), a
+  runner type GitHub has retired; the release job never fired. The Intel
+  entry is removed (Intel Macs: run from source) and jobs now carry real
+  timeouts. This is the first v0.4.x tag whose build can actually publish.
 - **Fix: routing-scan shutdown race** — the background audio-routing scan no
   longer dies with a `RuntimeError` traceback if the app shuts down while the
   scan is in flight (the status is quietly dropped instead).
