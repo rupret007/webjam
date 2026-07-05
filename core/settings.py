@@ -14,7 +14,7 @@ def _coerce_settings_data(data: dict) -> None:
     defaults = asdict(AppSettings())
     # Integer fields
     for key in ("jamulus_port", "jamulus_rpc_port", "audio_blocksize", "audio_samplerate",
-                "audio_input_device_index", "companion_api_port"):
+                "audio_input_device_index", "companion_api_port", "server_rpc_port"):
         if key in data:
             try:
                 data[key] = int(data[key]) if data[key] is not None else defaults[key]
@@ -39,6 +39,7 @@ def _coerce_settings_data(data: dict) -> None:
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
+                "server_rpc_secret_file",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
                 "webex_guest_issuer_id", "webex_guest_issuer_secret", "webex_display_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
@@ -85,6 +86,12 @@ class AppSettings:
     # Starts automatically on launch when fastapi/uvicorn are installed.
     companion_api_enabled: bool = True
     companion_api_port: int = 8765
+    # Band-server RPC (the Record button). The server's JSON-RPC stays on
+    # its loopback; WebJam reaches it through an SSH tunnel terminating at
+    # 127.0.0.1:server_rpc_port. server_rpc_secret_file points at a local
+    # copy of the server's jsonrpc.secret. Empty = Record button unconfigured.
+    server_rpc_port: int = 22240
+    server_rpc_secret_file: str = ""
 
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
@@ -107,6 +114,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_JAMULUS_SERVER": "jamulus_server",
         "WEBJAM_JAMULUS_PORT": "jamulus_port",
         "WEBJAM_JAMULUS_RPC_PORT": "jamulus_rpc_port",
+        "WEBJAM_SERVER_RPC_PORT": "server_rpc_port",
+        "WEBJAM_SERVER_RPC_SECRET_FILE": "server_rpc_secret_file",
         "WEBJAM_WEBEX_URL": "webex_url",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
@@ -166,6 +175,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
     if settings.audio_samplerate <= 0:
         _logger.warning("audio_samplerate %d invalid; resetting to 48000", settings.audio_samplerate)
         settings = AppSettings(**{**asdict(settings), "audio_samplerate": 48000})
+    if not (1 <= settings.server_rpc_port <= 65535):
+        _logger.warning("server_rpc_port %d out of range; resetting to 22240",
+                        settings.server_rpc_port)
+        settings = AppSettings(**{**asdict(settings), "server_rpc_port": 22240})
     if not (1 <= settings.companion_api_port <= 65535):
         _logger.warning("companion_api_port %d out of range; resetting to 8765",
                         settings.companion_api_port)
