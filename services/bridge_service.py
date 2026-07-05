@@ -186,6 +186,34 @@ class BridgeService:
             self.jamulus_next_reconnect_at = 0.0
             self.metrics_service.increment("metric_jamulus_launch_attempt")
 
+        # No server configured (fresh install where the wizard was skipped,
+        # or a hand-edited config).  Without this guard we'd launch Jamulus
+        # with "--connect :22124" and fail in a way that looks like a crash.
+        server_host = str(self.settings.jamulus_server or "").strip()
+        if not server_host:
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            # Don't keep auto-reconnecting into a missing config.
+            self.jamulus_launch_intended = False
+            self._set_jamulus_state(JamulusState.NOT_RUNNING)
+            self.schedule_ui_callback(self.refresh_readiness)
+            if reconnect:
+                self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                LOGGER.warning("Jamulus reconnect skipped: no server configured.")
+                return
+            self.metrics_service.increment("metric_jamulus_launch_failed")
+            self.show_actionable_error(
+                "No Jamulus Server Configured",
+                what_failed="WebJam doesn't know which Jamulus server to connect to.",
+                likely_cause="The setup wizard was skipped, or the config file was edited.",
+                next_action=(
+                    "Open Settings (Ctrl+, or the gear in the side rail) and enter "
+                    "your band's Jamulus server address, then press Launch Audio again."
+                ),
+                retry_callback=None,
+            )
+            return
+
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
             if reconnect:

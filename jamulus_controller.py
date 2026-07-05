@@ -48,7 +48,13 @@ class JamulusController:
     def __init__(self, host: str = "127.0.0.1", port: int = 22124, rpc_port: int = 22222):
         self.settings = load_settings()
         self.logger = configure_logging(self.settings).getChild("jamulus_controller")
-        self.host = host
+        # Fresh installs have no server configured (jamulus_server defaults to
+        # "").  The UDP protocol adapter validates host as non-empty, and the
+        # controller must still construct so the app can start and walk the
+        # user through the wizard — fall back to loopback.  Launching is
+        # separately guarded in BridgeService, and the UDP fallback is only
+        # consulted after a (guarded) launch, so the placeholder is inert.
+        self.host = (host or "").strip() or "127.0.0.1"
         self.port = port
         self.rpc_port = rpc_port
         self.callbacks: List[Callable] = []

@@ -47,10 +47,14 @@ def _coerce_settings_data(data: dict) -> None:
 
 @dataclass
 class AppSettings:
-    jamulus_server: str = "172.24.194.9"
+    # jamulus_server / webex_url intentionally default to EMPTY: the old
+    # defaults (a private LAN IP and a sandbox meeting link) were dead for
+    # anyone but the original dev box, and silently "working" against them
+    # was worse than being asked.  The first-run wizard requires both.
+    jamulus_server: str = ""
     jamulus_port: int = 22124
     jamulus_rpc_port: int = 22222   # JSON-RPC server port (--jsonrpcport flag)
-    webex_url: str = "https://webjam-sbx.webex.com/meet/webjam01"
+    webex_url: str = ""
     jamulus_candidates: list[str] = field(default_factory=lambda: [
         # macOS (bundle binary)
         "/Applications/Jamulus.app/Contents/MacOS/Jamulus",

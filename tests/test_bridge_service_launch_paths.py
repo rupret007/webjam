@@ -94,6 +94,51 @@ class TestLaunchJamulusNotFound(unittest.TestCase):
         )
 
 
+class TestLaunchJamulusNoServerConfigured(unittest.TestCase):
+    """Fresh installs have NO default server (the old default was a dead
+    LAN IP).  Launching without one must explain itself, not crash-loop."""
+
+    def test_manual_launch_without_server_shows_actionable_error(self):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = ""
+        bridge.jamulus_reconnect_inflight = True
+
+        bridge.launch_jamulus(manual=True, reconnect=False)
+
+        self.assertEqual(bridge.jamulus_state, "Not running")
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        self.assertFalse(bridge.jamulus_launch_intended)  # no reconnect loop
+        bridge.show_actionable_error.assert_called_once()
+        self.assertEqual(
+            bridge.show_actionable_error.call_args.args[0],
+            "No Jamulus Server Configured",
+        )
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_jamulus_launch_failed"
+        )
+
+    def test_whitespace_server_treated_as_missing(self):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "   "
+        bridge.launch_jamulus(manual=True, reconnect=False)
+        bridge.show_actionable_error.assert_called_once()
+
+    def test_reconnect_without_server_stays_quiet_and_stops_retrying(self):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = ""
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_reconnect_inflight = True
+
+        bridge.launch_jamulus(manual=False, reconnect=True)
+
+        bridge.show_actionable_error.assert_not_called()
+        self.assertFalse(bridge.jamulus_launch_intended)
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_jamulus_reconnect_failed"
+        )
+
+
 class TestLaunchJamulusAlreadyRunning(unittest.TestCase):
     def test_manual_launch_flashes_already_running_banner(self):
         bridge = _make_bridge()

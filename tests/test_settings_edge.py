@@ -4,7 +4,6 @@ import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from core.settings import AppSettings, load_settings, _coerce_settings_data
@@ -164,3 +163,26 @@ class TestCoerceSettingsData(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFreshInstallDefaultsAreBlank(unittest.TestCase):
+    """The old defaults (private LAN IP 172.24.194.9 + a sandbox Webex link)
+    were dead for anyone but the original dev box.  Fresh installs must start
+    unconfigured so the wizard (whose server/URL fields are mandatory) and
+    the F2 Ready Check drive the user to real values."""
+
+    def test_jamulus_server_default_is_empty(self):
+        from core.settings import AppSettings
+        self.assertEqual(AppSettings().jamulus_server, "")
+
+    def test_webex_url_default_is_empty(self):
+        from core.settings import AppSettings
+        self.assertEqual(AppSettings().webex_url, "")
+
+    def test_ready_check_flags_unconfigured_fresh_install(self):
+        from core.preflight import run_ready_check
+        from core.settings import AppSettings
+        report = run_ready_check(AppSettings(jamulus_candidates=[]))
+        failed = {item.name for item in report.items if not item.ok}
+        self.assertIn("Jamulus server set", failed)
+        self.assertIn("Webex meeting set", failed)

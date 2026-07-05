@@ -94,6 +94,25 @@ class TestStartStopLifecycle(unittest.TestCase):
         self.assertIn("poll exploded", c.last_error)
 
 
+class TestUnconfiguredHostFallback(unittest.TestCase):
+    """Fresh installs ship with jamulus_server = "" — the controller must
+    still construct (the app has to start so the wizard can run).
+    Regression: empty host used to propagate into JamulusProtocolAdapter,
+    which raises ValueError, crashing the whole app at startup."""
+
+    def test_empty_host_falls_back_to_loopback(self):
+        c = JamulusController(host="", port=22124, rpc_port=22222)
+        self.assertEqual(c.host, "127.0.0.1")
+
+    def test_whitespace_host_falls_back_to_loopback(self):
+        c = JamulusController(host="   ", port=22124, rpc_port=22222)
+        self.assertEqual(c.host, "127.0.0.1")
+
+    def test_real_host_is_kept(self):
+        c = JamulusController(host="band.example.com", port=22124, rpc_port=22222)
+        self.assertEqual(c.host, "band.example.com")
+
+
 class TestRpcCallbackRouting(unittest.TestCase):
     def test_rpc_participants_accepts_objects_and_dicts(self):
         c = _make_controller()
