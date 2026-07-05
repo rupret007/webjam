@@ -4,6 +4,26 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.6.0] — 2026-07-05
+
+### The Record Button
+
+- **● Record in the Conductor** — one press arms the band server's
+  multitrack recorder; one press stops it. Every musician gets their own
+  track and every take lands as a ready-to-open Reaper project on the
+  server. The whole band sees the red ● REC chip while tape rolls.
+- **Band-server RPC transport** (`core/jamulus_server_rpc.py`) — reaches
+  the server's loopback-only JSON-RPC through an SSH tunnel; new settings
+  `server_rpc_port` (default 22240) and `server_rpc_secret_file` (a local
+  copy of the server's jsonrpc.secret). Unconfigured? The button tells you
+  exactly how to set it up.
+- **Machine-verified against real Jamulus** — the Record cycle (arm →
+  new-take → stop), roster query, and wrong-secret rejection all run
+  against the shipping jamulus-headless binary in CI on every push.
+- Suite at 719 (+16 unit, +3 real-binary integration).
+
+---
+
 ## [0.5.0] — 2026-07-04
 
 ### The "make it amazing" release — practice mode, recording awareness, band server

@@ -51,6 +51,23 @@ jamulus-headless --server --nogui --port 22124 \
 - Getting stems off the server: `scp -r you@server:recordings/<take> .`
   (a friendlier flow is planned for WebJam's session archive).
 
+## Hooking up WebJam's ● Record button (one-time, per conductor)
+
+1. Copy the server's secret to your machine:
+   `scp you@your-server:path/to/jsonrpc.secret ~/.webjam_server_rpc.secret`
+2. Tell WebJam where it is — either add
+   `"server_rpc_secret_file": "~/.webjam_server_rpc.secret"` (use the full
+   path) to `~/.webjam_config.json`, or set the
+   `WEBJAM_SERVER_RPC_SECRET_FILE` environment variable.
+3. Before the session, open the tunnel (the server's RPC stays loopback-only
+   on purpose):
+   `ssh -N -L 22240:127.0.0.1:22222 you@your-server`
+
+Now the **● Record** button in the Conductor arms/stops the multitrack
+recorder for the whole band; everyone sees the red ● REC chip while tape
+rolls. Every take lands in `recordings/` as one WAV per musician + a
+Reaper `.rpp`.
+
 ## Security notes
 
 - The JSON-RPC port binds **127.0.0.1 only** — never expose it publicly.
