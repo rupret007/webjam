@@ -12,6 +12,21 @@ python webjam_qt_main.py
 
 ---
 
+## Downloading WebJam (and getting past the security warnings)
+
+Grab the newest release from **[github.com/rupret007/webjam/releases](https://github.com/rupret007/webjam/releases)**:
+
+- **Windows:** `WebJam-windows-x64.zip`
+- **Mac (Apple Silicon — M1/M2/M3/M4):** `WebJam-macos-arm64.zip`
+- **Mac (Intel, 2020 or earlier):** no prebuilt download — run from source (see "For tinkerers" below).
+
+Unzip it and run the **WebJam** app inside. **The first launch will trigger a security warning — this is expected.** WebJam isn't code-signed yet (that requires a paid developer certificate), so your OS flags it like any app from an "unidentified developer." It's the same file the build robot published on GitHub; here's how to open it:
+
+- **macOS:** don't double-click the first time. **Right-click (or Ctrl-click) the app → Open → Open.** You only have to do this once. If macOS says the app "is damaged," clear the download quarantine flag instead: open Terminal and run `xattr -dr com.apple.quarantine /path/to/WebJam.app`
+- **Windows:** when SmartScreen shows "Windows protected your PC," click **More info → Run anyway.** Once, then it remembers.
+
+---
+
 ## What each person needs (once)
 
 Every band member installs three things on their own computer:
@@ -85,6 +100,10 @@ The Conductor window has two big buttons at the top:
 > **On macOS**, the mute shortcuts use the literal **Control** key (shown as `⌃M` / `⌃⇧M`), not Cmd — so they don't clash with Cmd+M (minimize).
 
 ---
+
+## Planning the band's first session?
+
+Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test → two-person test → full band) with a failure playbook.
 
 ## Before your first real jam — a 60-second check
 
