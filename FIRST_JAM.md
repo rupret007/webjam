@@ -14,17 +14,11 @@ failure you find solo is one you don't debug live with four people.
   [explorer.jamulus.io](https://explorer.jamulus.io) (choose one with low
   ping and few people). Fine for a first test; anyone can join public
   servers, so don't discuss secrets over it.
-- *Best for the band:* self-host. Any $5/mo VPS (or a spare machine with
-  port forwarding) works:
-
-  ```bash
-  # on a Ubuntu/Debian VPS:
-  sudo apt install jamulus-headless   # or: docker run -d -p 22124:22124/udp grundic/jamulus
-  jamulus-headless --server --nogui --port 22124 --welcomemessage "Rad Dad rehearsal"
-  ```
-
-  Open UDP port 22124 in the VPS firewall. Your server address is the VPS IP
-  (or a DNS name you point at it).
+- *Best for the band:* self-host with the ready-made recipe in
+  [`server/`](server/README.md) — one `docker compose up -d` on any $5/mo
+  VPS gives you a private server **with multitrack recording armed**
+  (every take = one WAV per musician + a ready-to-open Reaper project).
+  Open UDP 22124 in the firewall; your server address is the VPS IP.
 
 **B. Create the Webex meeting link.** Use your personal room
 (`https://<site>.webex.com/meet/<you>`) or schedule a recurring meeting.
@@ -43,6 +37,12 @@ security-warning walkthrough).
 
 Work through this in order; note anything that deviates.
 
+0. **Practice first (no server needed).** Press **Ctrl+P** (or the
+   **Practice** button). WebJam starts a private Jamulus server *on your
+   machine* and connects to it — you should see your own card, hear
+   yourself, and be able to move your fader and Mute Me. If practice
+   works, your whole local audio path is proven before any network enters
+   the picture. Stop Audio ends it.
 1. **First-run wizard** appears (fresh installs are unconfigured on
    purpose). Enter the server host/port from Stage 0 and the Webex link.
    Audio-routing page should show a green check for BlackHole.

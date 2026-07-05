@@ -85,6 +85,8 @@ The Conductor window has two big buttons at the top:
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+P` | **Practice solo** — private local server, hear yourself, no internet |
+| `F2` | Ready Check — is my setup ready to jam? |
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
 | `Ctrl+M` | Mute / unmute **all** |
@@ -106,6 +108,8 @@ The Conductor window has two big buttons at the top:
 Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test → two-person test → full band) with a failure playbook.
 
 ## Before your first real jam — a 60-second check
+
+Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private Jamulus server *on your own computer* and connects to it — if you can hear yourself and see your meter move, your audio setup works, full stop. Then:
 
 1. Everyone: **Launch Audio** and confirm you see each other's cards and hear each other in Jamulus.
 2. One person: **Join Video** and confirm Webex hears the band (the virtual cable is working).

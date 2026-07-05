@@ -4,7 +4,27 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [Unreleased]
+## [0.5.0] — 2026-07-04
+
+### The "make it amazing" release — practice mode, recording awareness, band server
+
+- **Practice mode (Ctrl+P / Practice button)** — WebJam starts a private
+  Jamulus server on your own machine and connects to it: hear yourself,
+  watch your meter, test the mixer — zero internet, zero band-server
+  dependency. Works on a fresh unconfigured install. Stop Audio tears the
+  local server down with the client.
+- **● REC indicator** — when the band server's multitrack recorder is
+  rolling, every member sees a red ● REC chip in the status bar (wired to
+  Jamulus `recorderState` notifications).
+- **Stage cards v2** — cards now show each musician's skill level from
+  their Jamulus profile alongside the instrument ("Bass · Intermediate").
+- **Band server recipe (`server/`)** — one `docker compose up -d` gives the
+  band a private server with multitrack recording armed: every take is one
+  WAV per musician plus a ready-to-open Reaper project. JSON-RPC stays on
+  loopback (SSH-tunnel only) — the foundation for the upcoming Record
+  button.
+- **Vision** — see WEBJAM_VISION.md for the roadmap this release starts
+  (Session Record concept, server browser, Webex intelligence).
 
 - **Fresh installs start unconfigured** — the dead default Jamulus server
   (a private LAN IP) and sandbox Webex link are gone. The wizard requires
