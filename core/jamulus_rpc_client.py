@@ -66,6 +66,8 @@ class JamulusRpcClient:
     AUTH_TIMEOUT_S = 3.0
     RECONNECT_WAIT_S = 2.0
     LEVEL_MAX = 9      # channelLevelList values are integers 0..9
+    # Jamulus ERecorderState: 1=not initialised, 2=not enabled, 3=recording.
+    RECORDER_STATE_RECORDING = 3
     FADER_MAX = 100    # setFaderLevel level is 0..100
     GAIN_RANGE_IN = 127  # WebJam's internal mixer range (0..127)
 
@@ -76,6 +78,7 @@ class JamulusRpcClient:
         on_participants_changed: Optional[Callable[[List[ChannelInfo]], None]] = None,
         on_levels: Optional[Callable[[Dict[int, float]], None]] = None,
         on_chat: Optional[Callable[[str], None]] = None,
+        on_recorder_state: Optional[Callable[[bool, int], None]] = None,
         secret_path: Optional[Path] = None,
     ) -> None:
         self._port = port
@@ -83,6 +86,7 @@ class JamulusRpcClient:
         self._on_participants_changed = on_participants_changed
         self._on_levels = on_levels
         self._on_chat = on_chat
+        self._on_recorder_state = on_recorder_state
 
         self._available = False
         self._authed = False
@@ -362,6 +366,8 @@ class JamulusRpcClient:
             self._send("jamulusclient/getClientList", {})
         elif method == "jamulusclient/disconnected":
             self._update_clients([])
+        elif method == "jamulusclient/recorderState":
+            self._emit_recorder_state(params.get("state"))
 
     def _set_local_id(self, value) -> None:
         try:
@@ -400,6 +406,23 @@ class JamulusRpcClient:
                 self._on_participants_changed(list(clients))
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("on_participants_changed callback error: %s", exc)
+
+    def _emit_recorder_state(self, raw_state) -> None:
+        """The server we're connected to changed recorder state.
+
+        Jamulus sends its ERecorderState enum; 3 (RS_RECORDING) means every
+        musician is being captured to a separate track on the server.
+        """
+        if self._on_recorder_state is None:
+            return
+        try:
+            state = int(raw_state)
+        except (TypeError, ValueError):
+            return
+        try:
+            self._on_recorder_state(state == self.RECORDER_STATE_RECORDING, state)
+        except Exception as exc:  # noqa: BLE001
+            _logger.debug("on_recorder_state callback error: %s", exc)
 
     def _emit_chat(self, text) -> None:
         if not isinstance(text, str) or not self._on_chat:

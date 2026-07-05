@@ -27,6 +27,7 @@ class JamulusParticipant:
     muted: bool = False
     solo: bool = False
     instrument: str = ""    # as reported by Jamulus JSON-RPC
+    skill_level: str = ""   # beginner / intermediate / expert ("" if unset)
     is_local: bool = False  # True for the local Jamulus client (from RPC getClientInfo)
 
 

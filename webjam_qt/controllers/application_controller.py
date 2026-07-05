@@ -83,6 +83,9 @@ class ApplicationController(QObject):
 
         # Surface incoming band chat (from Jamulus) in the shared canvas.
         self.jamulus.chat_callback = self._on_jamulus_chat
+        # Surface server recorder state (multitrack stems) in the status bar.
+        self.jamulus.recorder_state_callback = self._on_recorder_state
+        self._server_recording = False
 
         self._shutdown = False
 
@@ -394,6 +397,23 @@ class ApplicationController(QObject):
         self.jamulus.send_chat(text)
         self.window.session_canvas.append_line(f"You: {text}")
 
+    def _on_recorder_state(self, recording: bool, raw_state: int) -> None:
+        """Server recorder state changed (arrives on the RPC reader thread)."""
+        self._ui_invoker.invoke(lambda: self._apply_recorder_state(recording))
+
+    def _apply_recorder_state(self, recording: bool) -> None:
+        if recording == self._server_recording:
+            return  # no transition — don't re-flash
+        self._server_recording = recording
+        self.window.set_status_recording(recording)
+        if recording:
+            self.window.flash_message(
+                "● Server is recording — every musician gets their own track.",
+                ms=5000,
+            )
+        else:
+            self.window.flash_message("Server recording stopped.", ms=3000)
+
     def _on_jamulus_chat(self, text: str) -> None:
         """Incoming band chat (arrives on the RPC reader thread).
 
@@ -489,6 +509,10 @@ class ApplicationController(QObject):
             bits.append(instrument.title())
         if not bits:
             bits.append("Musician")
+        # Skill badge from the musician's Jamulus profile (stage view v2).
+        skill = (getattr(jp, "skill_level", "") or "").strip()
+        if skill and skill.lower() != "null":
+            bits.append(skill.title())
         return " · ".join(bits)
 
     # ------------------------------------------------------------------
@@ -562,6 +586,7 @@ class ApplicationController(QObject):
         # visual signal that audio is off (instead of frozen real participants).
         self._jamulus_connected = False
         self._level_timer.stop()
+        self._apply_recorder_state(False)
         self._reset_to_demo_state()
         # Clear the crash-banner latch so a future crash flashes again.
         # Without this, manually stopping during a reconnect would lock the

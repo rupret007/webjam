@@ -68,6 +68,9 @@ class JamulusController:
 
         # Optional consumer hook for incoming band chat (set by the UI).
         self.chat_callback: Optional[Callable[[str], None]] = None
+        # Optional hook for server recorder-state changes (set by the UI).
+        # Called with (recording: bool, raw_state: int).
+        self.recorder_state_callback: Optional[Callable[[bool, int], None]] = None
 
         # Primary integration: JSON-RPC (Jamulus 3.9+)
         self.rpc_client = JamulusRpcClient(
@@ -75,6 +78,7 @@ class JamulusController:
             on_participants_changed=self._on_rpc_participants,
             on_levels=self._on_rpc_levels,
             on_chat=self._on_rpc_chat,
+            on_recorder_state=self._on_rpc_recorder_state,
         )
 
         # Secondary integration: UDP protocol (all versions)
@@ -189,18 +193,21 @@ class JamulusController:
         """Receive participant list from JSON-RPC (authoritative when available)."""
         normalized: Dict[int, str] = {}
         instrument_map: Dict[int, str] = {}
+        skill_map: Dict[int, str] = {}
         is_local_map: Dict[int, bool] = {}
         for info in channel_infos:
             if hasattr(info, "channel_id"):
                 cid = info.channel_id
                 normalized[cid] = info.name or f"Participant {cid}"
                 instrument_map[cid] = getattr(info, "instrument", "") or ""
+                skill_map[cid] = getattr(info, "skill_level", "") or ""
                 is_local_map[cid] = bool(getattr(info, "is_local", False))
             elif isinstance(info, dict):
                 cid = info.get("channel_id", -1)
                 if cid >= 0:
                     normalized[cid] = info.get("name") or f"Participant {cid}"
                     instrument_map[cid] = info.get("instrument", "") or ""
+                    skill_map[cid] = info.get("skill_level", "") or ""
                     is_local_map[cid] = bool(info.get("is_local", False))
         if normalized:
             self._sync_participants_from_protocol(normalized)
@@ -209,6 +216,9 @@ class JamulusController:
                 for cid, instrument in instrument_map.items():
                     if cid in self.participants:
                         self.participants[cid].instrument = instrument
+                for cid, skill in skill_map.items():
+                    if cid in self.participants:
+                        self.participants[cid].skill_level = skill
                 for cid, is_local in is_local_map.items():
                     if cid in self.participants:
                         self.participants[cid].is_local = is_local
@@ -362,6 +372,16 @@ class JamulusController:
             return bool(self.rpc_client.set_name(name))
         except Exception:
             return False
+
+    def _on_rpc_recorder_state(self, recording: bool, raw_state: int) -> None:
+        """Server recorder state changed — forward to the UI hook if set."""
+        cb = self.recorder_state_callback
+        if cb is None:
+            return
+        try:
+            cb(recording, raw_state)
+        except Exception:
+            pass
 
     def _on_rpc_chat(self, text: str) -> None:
         """Incoming band chat from Jamulus — forward to the UI hook if set."""

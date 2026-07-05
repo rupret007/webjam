@@ -116,10 +116,25 @@ class ConductorWindow(QMainWindow):
         self._status_bar = QStatusBar(self)
         self.setStatusBar(self._status_bar)
 
+        # Server-recording indicator — hidden until the server's recorder
+        # is actually rolling (Jamulus multitrack recording, one track per
+        # musician). Deliberately loud: the whole band should know.
+        self._status_recording = QLabel("● REC")
+        self._status_recording.setObjectName("StatusRecording")
+        self._status_recording.setStyleSheet(
+            "color: #E5484D; font-weight: 700; letter-spacing: 1px;"
+        )
+        self._status_recording.setToolTip(
+            "The Jamulus server is recording this session — every musician "
+            "gets their own track."
+        )
+        self._status_recording.setVisible(False)
+
         self._status_audio   = QLabel("Audio: —")
         self._status_video   = QLabel("Video: —")
         self._status_latency = QLabel("Session: —")
         self._status_routing = QLabel("Routing: checking…")
+        self._status_bar.addPermanentWidget(self._status_recording)
         self._status_bar.addPermanentWidget(self._status_audio)
         self._status_bar.addPermanentWidget(self._status_video)
         self._status_bar.addPermanentWidget(self._status_latency)
@@ -304,6 +319,10 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Public helpers for ApplicationController
     # ------------------------------------------------------------------
+    def set_status_recording(self, active: bool) -> None:
+        """Show/hide the red ● REC chip in the status bar."""
+        self._status_recording.setVisible(bool(active))
+
     def set_status_audio(self, text: str) -> None:
         self._status_audio.setText(f"Audio: {text}")
 
