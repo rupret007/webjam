@@ -1,0 +1,35 @@
+# WebJam band server — Jamulus with multitrack recording + JSON-RPC control.
+#
+# One command on any $5/mo VPS (or a spare machine with port forwarding):
+#
+#   docker compose up -d
+#
+# What you get:
+#   - A private Jamulus server on UDP 22124 for the band to jam on.
+#   - MULTITRACK RECORDING: every musician is captured to their own track,
+#     and each take is written as a ready-to-open Reaper project (.rpp)
+#     plus per-musician WAVs under ./recordings/.
+#   - JSON-RPC control on 127.0.0.1:22222 (NOT exposed publicly — reach it
+#     via SSH tunnel; see README.md) so WebJam's Record button can start/
+#     stop recordings remotely in a future release.
+#
+# Before first start:  echo "$(openssl rand -base64 24)" > jsonrpc.secret
+
+services:
+  jamulus:
+    image: grundic/jamulus:latest
+    container_name: webjam-server
+    restart: unless-stopped
+    network_mode: host          # UDP latency — avoid docker NAT on the audio path
+    volumes:
+      - ./recordings:/recordings
+      - ./jsonrpc.secret:/run/jamulus/jsonrpc.secret:ro
+    command: >
+      --server
+      --nogui
+      --port 22124
+      --recording /recordings
+      --norecord
+      --welcomemessage "WebJam band server — press Record in WebJam to tape the session"
+      --jsonrpcport 22222
+      --jsonrpcsecretfile /run/jamulus/jsonrpc.secret
