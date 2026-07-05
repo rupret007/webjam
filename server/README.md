@@ -27,9 +27,12 @@ that in WebJam's setup wizard.
 ## Without Docker (bare Ubuntu/Debian)
 
 ```bash
-sudo apt install jamulus   # or download from jamulus.io
+# Jamulus isn't in stock Ubuntu — add the official repo first:
+curl https://raw.githubusercontent.com/jamulussoftware/jamulus/main/linux/setup_repo.sh | sudo bash
+sudo apt install jamulus-headless
+
 mkdir -p ~/webjam-recordings
-jamulus --server --nogui --port 22124 \
+jamulus-headless --server --nogui --port 22124 \
         --recording ~/webjam-recordings --norecord \
         --jsonrpcport 22222 --jsonrpcsecretfile ~/jsonrpc.secret
 ```
