@@ -795,7 +795,7 @@ class TestCodeQuality(unittest.TestCase):
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            py_compile.compile(str(_root / 'jamulus_controller.py'), temp_file, doraise=True)
+            py_compile.compile(str(_root.parents[1] / 'jamulus_controller.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in jamulus_controller.py: {e}")
         finally:
@@ -812,7 +812,7 @@ class TestCodeQuality(unittest.TestCase):
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            py_compile.compile(str(_root / 'webex_integration.py'), temp_file, doraise=True)
+            py_compile.compile(str(_root.parents[1] / 'webex_integration.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in webex_integration.py: {e}")
         finally:
@@ -829,7 +829,7 @@ class TestCodeQuality(unittest.TestCase):
         try:
             with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as f:
                 temp_file = f.name
-            py_compile.compile(str(_root / 'webjam_app_enhanced.py'), temp_file, doraise=True)
+            py_compile.compile(str(_root.parents[0] / 'webjam_app_enhanced.py'), temp_file, doraise=True)
         except py_compile.PyCompileError as e:
             self.fail(f"Syntax error in webjam_app_enhanced.py: {e}")
         finally:

@@ -16,7 +16,7 @@ Being honest about where this app is **right now** (2026-06-29):
 |---|---|
 | **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 600+ tests pass. |
 | **Qt Conductor UI** | ✅ **Shipped in v0.3.0, fully usable as of v0.4.8.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
-| **Legacy Tkinter UI** | ⚠️ Retained as fallback (`webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
+| **Legacy Tkinter UI** | ⚠️ Retained as fallback (`legacy/webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Jamulus must be installed separately.** |
 | **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
 | **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
@@ -102,7 +102,7 @@ The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in 
 webjam/
 ├── webjam_qt_main.py        # Primary entry point — Qt Conductor UI
 ├── webjam_qt/               # Qt application (windows, widgets, controllers)
-├── webjam_app_enhanced.py   # Legacy Tkinter UI (fallback, not actively developed)
+├── legacy/                  # Quarantined Tkinter app + its tests (see legacy/README.md)
 ├── jamulus_controller.py    # Mixer state + RPC/UDP integration
 ├── core/                    # Settings, modes, templates, protocol, metrics
 ├── ui/                      # Service layer shared with legacy UI (MixerService etc.)

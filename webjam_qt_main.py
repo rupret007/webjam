@@ -5,7 +5,7 @@ WebJam — Conductor UI entry point.
 Run with:
     python webjam_qt_main.py
 
-The legacy Tkinter app (``webjam_app_enhanced.py``) remains available for
+The legacy Tkinter app (``legacy/webjam_app_enhanced.py``) remains available for
 fallback use until the Qt port reaches feature parity.
 """
 

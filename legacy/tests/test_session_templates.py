@@ -2,7 +2,7 @@
 
 import unittest
 
-from core.session_templates import (
+from session_templates import (
     SESSION_TEMPLATES,
     SessionTemplate,
     get_all_templates,

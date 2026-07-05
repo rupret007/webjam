@@ -52,7 +52,7 @@ jobs:
           pip install pytest ruff
 
       - name: Lint (ruff)
-        run: ruff check webjam_qt/ core/ ui/mixer_service.py
+        run: ruff check webjam_qt/ core/ ui/ services/ api/
 
       - name: Run UX smoke gate
         run: python ux_smoke_test.py

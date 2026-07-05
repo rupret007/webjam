@@ -20,6 +20,16 @@ from typing import Optional, Dict, Any, Callable
 import socket
 
 # Import Jamulus controller
+# Quarantined legacy app: make both this folder (ui/, admin/,
+# session_templates) and the repo root (core/, jamulus_controller, ...)
+# importable when run as a script from anywhere.
+import sys as _sys
+from pathlib import Path as _Path
+_legacy_dir = _Path(__file__).resolve().parent
+for _p in (str(_legacy_dir), str(_legacy_dir.parent)):
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+
 from jamulus_controller import JamulusController, JamulusAudioMonitor, JamulusParticipant
 from webex_integration import WebexController
 from admin.admin_panel import AdminPanel
@@ -49,7 +59,7 @@ from ui.status_bar import StatusBar
 from ui.mixer_service import MixerService
 from services.bridge_service import BridgeService
 from core.creative_modes import CREATIVE_MODES, get_mode_by_label_or_default, get_mode_by_key_or_default
-from core.session_templates import get_templates_for_mode, SESSION_TEMPLATES
+from session_templates import get_templates_for_mode, SESSION_TEMPLATES
 
 # Try to use customtkinter for modern UI
 try:

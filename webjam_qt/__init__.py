@@ -5,7 +5,7 @@ A unified single-window experience that orchestrates Jamulus (low-latency audio)
 and Webex (video) into one session view.
 
 This package is the forward-looking UI. The legacy Tkinter app
-(``webjam_app_enhanced.py``) remains callable until feature parity is reached,
+(``legacy/webjam_app_enhanced.py``) is quarantined in ``legacy/``,
 then will be removed.
 """
 

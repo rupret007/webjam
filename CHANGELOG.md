@@ -4,6 +4,25 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased]
+
+- **Fresh installs start unconfigured** — the dead default Jamulus server
+  (a private LAN IP) and sandbox Webex link are gone. The wizard requires
+  real values; Launch Audio without a server now shows an actionable error
+  instead of spawning `Jamulus --connect :22124`; the empty default no
+  longer crashes the app at startup.
+- **FIRST_JAM.md** — staged runbook for the band's first session (solo
+  smoke test → two-person → full band) with a failure playbook.
+- **Download & security-warning docs** — README_SIMPLE now covers grabbing
+  release zips and getting past Gatekeeper/SmartScreen (builds are unsigned).
+- **Legacy Tkinter app quarantined** — `webjam_app*.py`, the Tkinter `ui/`
+  modules, `admin/`, `session_templates`, old installer scripts, and their
+  tests moved to `legacy/` (see `legacy/README.md`). CI no longer needs
+  tkinter to collect the active suite; `ui/services.py` (live MetricsService)
+  stays. Active suite: 674 tests, zero collection errors.
+
+---
+
 ## [0.4.10] — 2026-07-04
 
 ### First shippable v0.4.x build — release pipeline unblocked
