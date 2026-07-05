@@ -287,6 +287,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>F2</b> — Ready Check (is my setup ready to jam?)<br>"
             "&nbsp;&nbsp;<b>Ctrl+P</b> — Practice solo (private local server)<br>"
             "&nbsp;&nbsp;<b>● Record</b> — band-server multitrack recording (see server/README)<br>"
+            "&nbsp;&nbsp;<b>Takes</b> (side rail) — play back & mix your recorded takes<br>"
             "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
             "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"
             "&nbsp;&nbsp;<b>Esc</b> — Exit fullscreen<br>"

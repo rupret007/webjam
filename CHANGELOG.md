@@ -4,6 +4,29 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.7.0] — 2026-07-05
+
+### The Take Deck — play back and mix your jams, in-app
+
+- **Take Deck (side-rail "Takes")** — the recordings the ● Record button
+  captures are now reviewable *inside WebJam*: pick a take, hit play, and
+  mix it with the very same console the live session uses (per-track
+  faders, mute, solo, live meters, scrub). Musicians who connect mid-jam
+  line up correctly — track start offsets are read from the take's
+  Audacity `.lof`. This is the first half of the "Demo Deck": review now,
+  overdub next.
+- **Multitrack playback engine** (`core/take_player.py`) — streaming
+  per-track mixing on a numpy bus with gain/mute/solo/offsets and a
+  transport, behind a sink abstraction so the whole engine is unit-tested
+  headless (no audio hardware in CI).
+- **Take library** (`core/take_library.py`) — discovers take folders and
+  parses `.lof` offsets; robust to missing/garbled metadata.
+- **Review-only, on purpose** — no editing/plugins here; every take keeps
+  its Reaper-project escape hatch for the DAW.
+- New dependency: `soundfile`. New setting: `takes_directory`. Suite +34.
+
+---
+
 ## [0.6.0] — 2026-07-05
 
 ### The Record Button

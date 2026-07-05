@@ -87,6 +87,7 @@ The Conductor window has two big buttons at the top:
 |-----|--------|
 | `Ctrl+P` | **Practice solo** — private local server, hear yourself, no internet |
 | `● Record` button | Band-server **multitrack recording** — every musician gets their own track + a Reaper project (one-time setup: `server/README.md`) |
+| **Takes** (side rail) | **Take Deck** — play back and mix any recorded take right in WebJam, per-track faders/mute/solo. Point `takes_directory` at your downloaded recordings folder. |
 | `F2` | Ready Check — is my setup ready to jam? |
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |

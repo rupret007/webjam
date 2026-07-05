@@ -74,6 +74,11 @@ a = Analysis(
         "ui.services",
         "core.file_io",
         "api.local_bridge",
+        "core.take_library",
+        "core.take_player",
+        "core.jamulus_server_rpc",
+        "webjam_qt.windows.take_deck",
+        "soundfile",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",
         "numpy",
