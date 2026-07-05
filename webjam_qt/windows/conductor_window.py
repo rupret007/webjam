@@ -218,6 +218,7 @@ class ConductorWindow(QMainWindow):
         )
         # Mute-all and mute-self use the macOS-safe binder so they don't
         # collide with system minimize (Cmd+M).
+        self._practice_shortcut = QShortcut(_ctrl("P"), self)
         self._mute_all_shortcut = QShortcut(_ctrl("M"), self)
         if on_mac:
             # Ctrl+Shift+M with literal Control key on macOS

@@ -26,6 +26,9 @@ class JamulusState(str, Enum):
     STOPPED        = "Stopped"
 
 
+PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
+
+
 class BridgeService:
     """
     Service layer for managing external integrations: Jamulus and Webex.
@@ -86,6 +89,14 @@ class BridgeService:
         self.jamulus_reconnect_inflight = False
         self.webex_reconnect_inflight = False
         self._reconnect_lock = threading.Lock()
+
+        # Practice mode: a private Jamulus server on this machine so a
+        # musician can validate audio routing and hear themselves with zero
+        # internet dependency. `practice_server_process` is the local
+        # `Jamulus --server --nogui` subprocess; `practice_mode` makes
+        # launch/reconnect target 127.0.0.1 instead of the band server.
+        self.practice_mode = False
+        self.practice_server_process: Optional[subprocess.Popen] = None
 
         # File handle for capturing Jamulus stdout+stderr — closed in stop_jamulus.
         # Captures to ~/.webjam_jamulus.log, overwritten on each launch so the
@@ -189,8 +200,10 @@ class BridgeService:
         # No server configured (fresh install where the wizard was skipped,
         # or a hand-edited config).  Without this guard we'd launch Jamulus
         # with "--connect :22124" and fail in a way that looks like a crash.
+        # Practice mode is exempt — it supplies its own local target, so a
+        # fresh install can practice before the band server even exists.
         server_host = str(self.settings.jamulus_server or "").strip()
-        if not server_host:
+        if not server_host and not self.practice_mode:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             # Don't keep auto-reconnecting into a missing config.
@@ -288,11 +301,11 @@ class BridgeService:
             return
 
         banner_text = "Launching Jamulus..." if not reconnect else "Auto-reconnecting Jamulus..."
+        if self.practice_mode:
+            banner_text = "Starting practice session..."
         self.set_status_banner(banner_text, color="#ffcc00")
-        
-        server_host = self.settings.jamulus_server
-        server_port = self.settings.jamulus_port
-        server = f"{server_host}:{server_port}"
+
+        server = self.effective_server()
 
         def _do_launch() -> None:
             try:
@@ -458,6 +471,100 @@ class BridgeService:
                 pass
             self._jamulus_log_file = None
 
+    def effective_server(self) -> str:
+        """The host:port Jamulus is (or would be) connected to right now —
+        the local practice server when practicing, the band server otherwise."""
+        if self.practice_mode:
+            return f"127.0.0.1:{PRACTICE_PORT}"
+        return f"{self.settings.jamulus_server}:{self.settings.jamulus_port}"
+
+    def launch_practice_session(self) -> bool:
+        """Start a private local Jamulus server and connect to it.
+
+        Practice mode lets a musician validate their whole audio path —
+        interface, virtual cable, levels, mixer control — alone, before the
+        first band session, with zero internet dependency.  Returns True if
+        the practice server spawned and the client launch was kicked off.
+        """
+        if self.shutdown_requested():
+            return False
+        if self.jamulus_process is not None and self.jamulus_process.poll() is None:
+            self.schedule_ui_callback(
+                lambda: self.set_status_banner(
+                    "Stop Audio first, then start a practice session."
+                )
+            )
+            return False
+
+        jamulus_path = self.find_jamulus()
+        if not jamulus_path:
+            self.metrics_service.increment("metric_practice_launch_failed")
+            self.show_actionable_error(
+                "Jamulus Not Found",
+                what_failed="WebJam could not locate the Jamulus executable.",
+                likely_cause="Jamulus is not installed or is in a non-default location.",
+                next_action=(
+                    "Download Jamulus (free) from https://jamulus.io and install it. "
+                    "If it's already installed in a custom location, open Settings "
+                    "(Ctrl+,) and set the Jamulus executable path."
+                ),
+                retry_callback=None,
+            )
+            return False
+
+        # Spawn the private local server (headless).  Its output goes to a
+        # dedicated log for troubleshooting.
+        cmd = [jamulus_path, "--server", "--nogui", "--port", str(PRACTICE_PORT)]
+        stdout_dest = subprocess.DEVNULL
+        try:
+            log_path = Path.home() / ".webjam_practice_server.log"
+            stdout_dest = open(log_path, "w", buffering=1)
+        except OSError:
+            pass
+        popen_kwargs: dict = {
+            "stdout": stdout_dest,
+            "stderr": subprocess.STDOUT if stdout_dest is not subprocess.DEVNULL
+                      else subprocess.DEVNULL,
+        }
+        import sys
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            self.practice_server_process = subprocess.Popen(cmd, **popen_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Practice server failed to start: %s", exc)
+            self.metrics_service.increment("metric_practice_launch_failed")
+            exc_msg = str(exc)
+            self.show_actionable_error(
+                "Practice Server Failed",
+                what_failed=f"The local practice server could not start ({exc_msg}).",
+                likely_cause="Jamulus path invalid, or the practice port is blocked.",
+                next_action="Check the Jamulus path in Settings, then retry.",
+                retry_callback=None,
+            )
+            return False
+
+        self.practice_mode = True
+        self.metrics_service.increment("metric_practice_mode_started")
+        # Connect the regular client to the local server.
+        self.launch_jamulus(manual=True, reconnect=False)
+        return True
+
+    def _end_practice_if_server_died(self) -> bool:
+        """Reconnect-tick guard: if the local practice server died, end the
+        practice session instead of reconnect-looping into a dead port."""
+        proc = self.practice_server_process
+        if not self.practice_mode or proc is None or proc.poll() is None:
+            return False
+        LOGGER.warning("Practice server exited — ending practice session")
+        self.stop_jamulus()
+        self.schedule_ui_callback(
+            lambda: self.set_status_banner(
+                "Practice session ended — the local practice server stopped."
+            )
+        )
+        return True
+
     def stop_jamulus(self) -> bool:
         """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
 
@@ -502,6 +609,21 @@ class BridgeService:
         # Close the Jamulus log file if we opened one.  The contents are
         # preserved on disk for post-hoc inspection.
         self._close_jamulus_log_file()
+
+        # End practice mode: bring the private local server down with the
+        # client so nothing keeps running in the background.
+        practice_proc = self.practice_server_process
+        if practice_proc is not None and practice_proc.poll() is None:
+            try:
+                practice_proc.terminate()
+                try:
+                    practice_proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    practice_proc.kill()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Failed to terminate practice server: %s", exc)
+        self.practice_server_process = None
+        self.practice_mode = False
 
         self.metrics_service.increment("metric_jamulus_stop")
         self.schedule_ui_callback(self.refresh_readiness)
@@ -648,6 +770,9 @@ class BridgeService:
         if not auto_reconnect_enabled:
             return
             
+        if self._end_practice_if_server_died():
+            return
+
         now = time.monotonic()
         self._attempt_auto_reconnect_jamulus(now)
         self._attempt_auto_reconnect_webex(now)

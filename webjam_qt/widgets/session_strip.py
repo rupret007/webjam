@@ -38,6 +38,7 @@ class SessionStrip(QFrame):
     launch_audio_requested = Signal()
     join_video_requested = Signal()
     mute_self_requested = Signal()      # toggle local-user mute
+    practice_requested = Signal()       # start a solo practice session
 
     STRIP_HEIGHT = 72
 
@@ -102,6 +103,16 @@ class SessionStrip(QFrame):
         )
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 
+        self._practice_button = QPushButton("Practice")
+        self._practice_button.setObjectName("GhostButton")
+        self._practice_button.setAccessibleName("Start a solo practice session")
+        self._practice_button.setToolTip(
+            "Practice solo (Ctrl+P): starts a private Jamulus server on this\n"
+            "computer and connects to it — hear yourself and test your audio\n"
+            "setup with zero internet. Stop Audio ends the practice session."
+        )
+        self._practice_button.clicked.connect(self.practice_requested.emit)
+
         self._mute_self_button = QPushButton("Mute Me")
         self._mute_self_button.setObjectName("GhostButton")
         self._mute_self_button.setCheckable(True)
@@ -137,6 +148,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._record_dot)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
+        layout.addWidget(self._practice_button)
         layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
         layout.addWidget(self._video_button)

@@ -294,6 +294,7 @@ class ApplicationController(QObject):
         strip.launch_audio_requested.connect(self._on_launch_audio)
         strip.join_video_requested.connect(self._on_join_video)
         strip.mute_self_requested.connect(self._on_mute_self)
+        strip.practice_requested.connect(self._on_practice_requested)
         # Fallback button opens Webex in the system browser when embed unavailable
         self.window.webex_embed.fallback_button().clicked.connect(
             lambda: self.bridge.launch_webex(manual=True)
@@ -319,6 +320,8 @@ class ApplicationController(QObject):
         self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
         # Mute-self shortcut
         self.window._mute_self_shortcut.activated.connect(self._on_mute_self)
+        # Practice mode shortcut (Ctrl+P)
+        self.window._practice_shortcut.activated.connect(self._on_practice_requested)
         # Diagnostics export shortcut (Ctrl+Shift+D)
         self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
         self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
@@ -451,10 +454,18 @@ class ApplicationController(QObject):
             except Exception:  # noqa: BLE001
                 LOGGER.debug("metric_session_started increment failed", exc_info=True)
             # Celebrate the moment — first connection deserves a flash
-            self.window.flash_message(
-                f"Connected to {self.settings.jamulus_server}. Waiting for band members…",
-                ms=4000,
-            )
+            if self.bridge.practice_mode:
+                self.window.flash_message(
+                    "Practice session live — you're on a private local server. "
+                    "Play something and watch your meter.",
+                    ms=5000,
+                )
+            else:
+                self.window.flash_message(
+                    f"Connected to {self.settings.jamulus_server}. "
+                    "Waiting for band members…",
+                    ms=4000,
+                )
 
         # Update participant count in status bar.  When the user is alone on
         # the server (only their own channel), say so explicitly — "1
@@ -564,6 +575,28 @@ class ApplicationController(QObject):
             self.window.set_status_audio("Launching…")
             self.window.session_strip.set_audio_state("Launching…", enabled=False)
             self.bridge.launch_jamulus(manual=True)
+
+    def _on_practice_requested(self) -> None:
+        """Ctrl+P / Practice button — solo session against a private local
+        Jamulus server.  Validates the musician's whole audio path (interface,
+        virtual cable, mixer control) with zero internet dependency."""
+        if self._is_jamulus_running():
+            self.window.flash_message(
+                "Stop Audio first, then press Practice for a solo session.",
+                ms=4000,
+            )
+            return
+        self.window.set_status_audio("Starting practice…")
+        self.window.session_strip.set_audio_state("Starting…", enabled=False)
+        self.window.flash_message(
+            "Practice mode: private server on this computer — play and hear "
+            "yourself, no internet needed. Stop Audio ends it.",
+            ms=6000,
+        )
+        started = self.bridge.launch_practice_session()
+        if not started:
+            self.window.session_strip.set_audio_state("Launch Audio", enabled=True)
+            self.window.set_status_audio("Ready to launch")
 
     def _stop_audio(self) -> None:
         """Confirm with the user, then stop Jamulus and reset UI state."""
@@ -738,8 +771,11 @@ class ApplicationController(QObject):
         audio_state = self.bridge.jamulus_state
         jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
         if jamulus_up:
-            server = f"{self.settings.jamulus_server}:{self.settings.jamulus_port}"
-            audio_state = f"{audio_state} ({server})"
+            server = self.bridge.effective_server()
+            if self.bridge.practice_mode:
+                audio_state = f"Practice ({server})"
+            else:
+                audio_state = f"{audio_state} ({server})"
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
         self.window.session_strip.set_audio_state(
