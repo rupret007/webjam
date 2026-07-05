@@ -64,6 +64,46 @@ jobs:
           pytest tests/ -v
 
   # ------------------------------------------------------------------
+  # Job 1b: Integration against a REAL Jamulus binary.
+  # Installs the pinned official jamulus-headless release (checksum-
+  # verified) and runs the integration suite: real apiAuth handshake for
+  # WebJam's RPC client, the jamulusserver/* recorder contract the Record
+  # button uses, and the exact practice-mode command line.
+  # ------------------------------------------------------------------
+  integration-jamulus:
+    name: Integration (real Jamulus)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install real Jamulus (pinned official release)
+        run: |
+          curl -fsSL -o jamulus-headless.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus-headless_3.12.2_ubuntu_amd64.deb
+          echo "aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab  jamulus-headless.deb" | sha256sum -c -
+          sudo apt-get update -q
+          sudo apt-get install -y -q ./jamulus-headless.deb
+          # The package can auto-start a systemd service on the default
+          # port — stop it so the tests own their ports.
+          sudo systemctl stop jamulus-headless 2>/dev/null || true
+          sudo systemctl disable jamulus-headless 2>/dev/null || true
+          echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
+
+      - name: Install test deps
+        run: pip install pytest
+
+      - name: Run integration suite against the real binary
+        run: pytest tests/test_real_jamulus_integration.py -v
+
+  # ------------------------------------------------------------------
   # Job 2: Build desktop artifacts
   # Two targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-latest (x86-64)
