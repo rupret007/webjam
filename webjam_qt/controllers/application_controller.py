@@ -86,6 +86,10 @@ class ApplicationController(QObject):
         # Surface server recorder state (multitrack stems) in the status bar.
         self.jamulus.recorder_state_callback = self._on_recorder_state
         self._server_recording = False
+        # Last-known band-server recorder ARMED state (set by the Record
+        # button worker; distinct from _server_recording, which is "actually
+        # rolling right now" from recorderState notifications).
+        self._recorder_armed = False
 
         self._shutdown = False
 
@@ -295,6 +299,7 @@ class ApplicationController(QObject):
         strip.join_video_requested.connect(self._on_join_video)
         strip.mute_self_requested.connect(self._on_mute_self)
         strip.practice_requested.connect(self._on_practice_requested)
+        strip.record_requested.connect(self._on_record_requested)
         # Fallback button opens Webex in the system browser when embed unavailable
         self.window.webex_embed.fallback_button().clicked.connect(
             lambda: self.bridge.launch_webex(manual=True)
@@ -575,6 +580,100 @@ class ApplicationController(QObject):
             self.window.set_status_audio("Launching…")
             self.window.session_strip.set_audio_state("Launching…", enabled=False)
             self.bridge.launch_jamulus(manual=True)
+
+    def _on_record_requested(self) -> None:
+        """● Record — toggle the band server's multitrack recorder.
+
+        The heavy lifting happens on a worker thread; the server's own
+        ``recorderState`` notification (via the local Jamulus client) flips
+        the ● REC chip for the whole band once tape is actually rolling.
+        """
+        secret_file = (self.settings.server_rpc_secret_file or "").strip()
+        if not secret_file:
+            self._show_actionable_error(
+                "Record Button Not Set Up",
+                what_failed="WebJam doesn't have access to your band server's recorder yet.",
+                likely_cause="The band-server RPC hasn't been configured on this machine.",
+                next_action=(
+                    "One-time setup (see server/README.md in the WebJam repo):\n"
+                    "1. Copy jsonrpc.secret from your band server to this computer.\n"
+                    "2. Set server_rpc_secret_file to that path in ~/.webjam_config.json\n"
+                    "   (or the WEBJAM_SERVER_RPC_SECRET_FILE environment variable).\n"
+                    "3. Open the tunnel:  ssh -N -L "
+                    f"{self.settings.server_rpc_port}:127.0.0.1:22222 you@your-server"
+                ),
+            )
+            return
+        target_armed = not self._recorder_armed
+        self.window.session_strip.set_recording_state(
+            self._recorder_armed, enabled=False
+        )
+        threading.Thread(
+            target=self._record_toggle_worker,
+            args=(target_armed, secret_file),
+            daemon=True,
+            name="record-toggle",
+        ).start()
+
+    def _record_toggle_worker(self, target_armed: bool, secret_file: str) -> None:
+        """Worker thread: talk to the band server's RPC, then report back."""
+        from core.jamulus_server_rpc import (
+            JamulusServerRpc,
+            ServerRpcError,
+            read_secret_file,
+        )
+        try:
+            secret = read_secret_file(secret_file)
+            with JamulusServerRpc(
+                port=self.settings.server_rpc_port, secret=secret
+            ) as rpc:
+                if target_armed:
+                    rpc.start_recording()
+                else:
+                    rpc.stop_recording()
+                status = rpc.get_recorder_status()
+            armed = bool(status.get("enabled", target_armed))
+            self._ui_invoker.invoke(
+                lambda: self._apply_record_toggle_result(armed)
+            )
+        except ServerRpcError as exc:
+            message = str(exc)
+            self._ui_invoker.invoke(
+                lambda: self._apply_record_toggle_failure(message)
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Record toggle failed unexpectedly")
+            self._ui_invoker.invoke(
+                lambda: self._apply_record_toggle_failure(
+                    "Unexpected error talking to the band server — see ~/.webjam.log."
+                )
+            )
+
+    def _apply_record_toggle_result(self, armed: bool) -> None:
+        self._recorder_armed = armed
+        self.window.session_strip.set_recording_state(armed, enabled=True)
+        if armed:
+            self.window.flash_message(
+                "Recording armed on the band server — every musician gets "
+                "their own track. Tape rolls while people are connected.",
+                ms=6000,
+            )
+            try:
+                self.metrics.increment("metric_recording_armed")
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("recording metric failed", exc_info=True)
+        else:
+            self.window.flash_message(
+                "Band-server recording stopped. Stems + Reaper project are "
+                "in the server's recordings folder.",
+                ms=6000,
+            )
+
+    def _apply_record_toggle_failure(self, message: str) -> None:
+        self.window.session_strip.set_recording_state(
+            self._recorder_armed, enabled=True
+        )
+        self.window.flash_message(f"Record: {message}", ms=8000)
 
     def _on_practice_requested(self) -> None:
         """Ctrl+P / Practice button — solo session against a private local

@@ -39,6 +39,7 @@ class SessionStrip(QFrame):
     join_video_requested = Signal()
     mute_self_requested = Signal()      # toggle local-user mute
     practice_requested = Signal()       # start a solo practice session
+    record_requested = Signal()         # toggle band-server multitrack recording
 
     STRIP_HEIGHT = 72
 
@@ -103,6 +104,18 @@ class SessionStrip(QFrame):
         )
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
 
+        self._record_button = QPushButton("● Record")
+        self._record_button.setObjectName("GhostButton")
+        self._record_button.setAccessibleName(
+            "Start or stop band-server multitrack recording"
+        )
+        self._record_button.setToolTip(
+            "Record the session on the band server: every musician gets\n"
+            "their own track plus a ready-to-open Reaper project.\n"
+            "Needs the band-server RPC set up once — see server/README.md."
+        )
+        self._record_button.clicked.connect(self.record_requested.emit)
+
         self._practice_button = QPushButton("Practice")
         self._practice_button.setObjectName("GhostButton")
         self._practice_button.setAccessibleName("Start a solo practice session")
@@ -148,6 +161,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._record_dot)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
+        layout.addWidget(self._record_button)
         layout.addWidget(self._practice_button)
         layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
@@ -179,6 +193,11 @@ class SessionStrip(QFrame):
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
         self._video_button.setText(label)
         self._video_button.setEnabled(enabled)
+
+    def set_recording_state(self, armed: bool, *, enabled: bool = True) -> None:
+        """Reflect band-server recorder state on the Record button."""
+        self._record_button.setText("■ Stop Rec" if armed else "● Record")
+        self._record_button.setEnabled(enabled)
 
     def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
         """Update the 'Mute Me' button state without emitting signals."""

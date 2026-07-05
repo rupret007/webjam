@@ -244,6 +244,86 @@ class TestRealJamulusServerRpc(unittest.TestCase):
 
 
 @unittest.skipUnless(JAMULUS, "WEBJAM_JAMULUS_BINARY not set — integration skipped")
+class TestWebJamServerRpcAgainstRealBinary(unittest.TestCase):
+    """WebJam's Record-button transport (JamulusServerRpc) vs the real
+    binary — the wrappers the Conductor's ● Record button calls."""
+
+    UDP_PORT = 22164
+    RPC_PORT = 22165
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory(prefix="webjam-srpc-")
+        cls.secret_path = Path(cls.tmp.name) / "secret.txt"
+        cls.secret_path.write_text(SECRET + "\n", encoding="utf-8")
+        rec = Path(cls.tmp.name) / "recordings"
+        rec.mkdir()
+        cls.proc = subprocess.Popen(
+            [
+                JAMULUS, "--server", "--nogui",
+                "--port", str(cls.UDP_PORT),
+                "--jsonrpcport", str(cls.RPC_PORT),
+                "--jsonrpcsecretfile", str(cls.secret_path),
+                "--recording", str(rec),
+                "--norecord",
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        if not _wait_for_tcp(cls.RPC_PORT):
+            cls.proc.terminate()
+            raise AssertionError("server RPC port never opened")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        try:
+            cls.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            cls.proc.kill()
+        cls.tmp.cleanup()
+
+    def test_record_button_cycle_for_real(self):
+        from core.jamulus_server_rpc import JamulusServerRpc
+
+        with JamulusServerRpc(port=self.RPC_PORT, secret=SECRET) as rpc:
+            status = rpc.get_recorder_status()
+            self.assertTrue(status["initialised"])
+            self.assertFalse(status["enabled"])
+
+            self.assertTrue(rpc.start_recording())
+            deadline = time.monotonic() + 5.0
+            enabled = False
+            while time.monotonic() < deadline and not enabled:
+                enabled = rpc.get_recorder_status()["enabled"]
+                if not enabled:
+                    time.sleep(0.2)
+            self.assertTrue(enabled, "start_recording never armed the recorder")
+
+            self.assertTrue(rpc.restart_recording())  # new take
+            self.assertTrue(rpc.stop_recording())
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and enabled:
+                enabled = rpc.get_recorder_status()["enabled"]
+                if enabled:
+                    time.sleep(0.2)
+            self.assertFalse(enabled, "stop_recording never disarmed")
+
+    def test_get_clients_for_real(self):
+        from core.jamulus_server_rpc import JamulusServerRpc
+
+        with JamulusServerRpc(port=self.RPC_PORT, secret=SECRET) as rpc:
+            result = rpc.get_clients()
+        self.assertEqual(result["connections"], 0)
+        self.assertIn("clients", result)
+
+    def test_wrong_secret_raises_for_real(self):
+        from core.jamulus_server_rpc import JamulusServerRpc, ServerRpcError
+
+        with self.assertRaises(ServerRpcError):
+            JamulusServerRpc(port=self.RPC_PORT, secret="wrong").connect()
+
+
+@unittest.skipUnless(JAMULUS, "WEBJAM_JAMULUS_BINARY not set — integration skipped")
 class TestPracticeModeCommandLine(unittest.TestCase):
     def test_practice_server_command_runs_on_real_binary(self):
         """Spawn EXACTLY the command BridgeService.launch_practice_session
