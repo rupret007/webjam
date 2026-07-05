@@ -39,7 +39,7 @@ def _coerce_settings_data(data: dict) -> None:
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
-                "server_rpc_secret_file",
+                "server_rpc_secret_file", "takes_directory",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
                 "webex_guest_issuer_id", "webex_guest_issuer_secret", "webex_display_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
@@ -92,6 +92,9 @@ class AppSettings:
     # copy of the server's jsonrpc.secret. Empty = Record button unconfigured.
     server_rpc_port: int = 22240
     server_rpc_secret_file: str = ""
+    # Take Deck: where recorded takes live locally (fetched from the band
+    # server, e.g. scp'd into this folder). Empty = the Deck shows a hint.
+    takes_directory: str = ""
 
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
@@ -116,6 +119,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_JAMULUS_RPC_PORT": "jamulus_rpc_port",
         "WEBJAM_SERVER_RPC_PORT": "server_rpc_port",
         "WEBJAM_SERVER_RPC_SECRET_FILE": "server_rpc_secret_file",
+        "WEBJAM_TAKES_DIRECTORY": "takes_directory",
         "WEBJAM_WEBEX_URL": "webex_url",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",

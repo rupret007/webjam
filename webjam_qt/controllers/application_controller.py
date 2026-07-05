@@ -1226,6 +1226,18 @@ class ApplicationController(QObject):
                     "Settings saved — take effect on next Launch Audio / Join Video."
                 )
 
+    def _open_take_deck(self) -> None:
+        """Open (or re-focus) the Take Deck — review & mix recorded takes."""
+        from webjam_qt.windows.take_deck import TakeDeck
+        existing = getattr(self, "_take_deck", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
+        deck = TakeDeck(self.settings.takes_directory, parent=self.window)
+        self._take_deck = deck
+        deck.show()
+
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter
         total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
@@ -1246,6 +1258,11 @@ class ApplicationController(QObject):
             elif key == "canvas":
                 # Canvas: expand the notes panel
                 splitter.setSizes([int(total * 0.28), int(total * 0.72)])
+        elif key == "takes":
+            # Restore the previous content view and open the Take Deck dialog.
+            prev = getattr(self, "_last_content_key", "stage")
+            self.window.side_rail.set_active_key(prev)
+            self._open_take_deck()
         elif key == "chat":
             # Flash message and restore the previous content selection
             prev = getattr(self, "_last_content_key", "stage")

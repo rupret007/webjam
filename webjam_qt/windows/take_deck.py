@@ -1,0 +1,264 @@
+"""
+TakeDeck — review and mix a recorded take (the Demo Deck, Level 1).
+
+A non-modal dialog that lists the takes captured by the Record button and
+plays any of them back with a full mixer — reusing the very same
+ParticipantGrid console the live session uses, except the "participants"
+here are the recorded tracks (Dave's bass, your guitar). Transport bar on
+top; track console below.
+
+Deliberately review-only: play, scrub, and dial a rough mix. Editing lives
+in the DAW (the take keeps its Reaper-project escape hatch).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+
+from core.take_library import discover_takes
+from core.take_player import TakePlayer
+from webjam_qt.widgets.participant_card import ParticipantPresentation
+from webjam_qt.widgets.participant_grid import ParticipantGrid
+
+LOGGER = logging.getLogger("webjam.qt.take_deck")
+
+
+def _fmt_time(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+class TakeDeck(QDialog):
+    """Take library + playback console. Owns a TakePlayer for the current take."""
+
+    closed = Signal()
+
+    def __init__(self, takes_dir: str, parent: Optional[QWidget] = None,
+                 player: Optional[TakePlayer] = None):
+        super().__init__(parent)
+        self.setObjectName("TakeDeck")
+        self.setWindowTitle("WebJam — Take Deck")
+        self.resize(880, 620)
+        self._takes_dir = takes_dir
+        self._takes = []
+        self._current = None
+
+        # A caller can inject a player (tests use a headless sink); otherwise
+        # the default player builds a real sounddevice sink lazily on play().
+        self._player = player or TakePlayer(
+            on_position=self._on_position_bg,
+            on_levels=self._on_levels_bg,
+            on_finished=self._on_finished_bg,
+        )
+        self._player._on_position = self._on_position_bg
+        self._player._on_levels = self._on_levels_bg
+        self._player._on_finished = self._on_finished_bg
+
+        self._build_ui()
+        self.reload()
+
+        # UI-thread poll for transport position/levels (audio callbacks fire
+        # on the audio thread; we marshal via a timer to stay Qt-safe).
+        self._ui_timer = QTimer(self)
+        self._ui_timer.setInterval(60)
+        self._ui_timer.timeout.connect(self._tick_ui)
+        self._ui_timer.start()
+        self._pending_levels: dict[int, float] = {}
+
+    # -- construction -----------------------------------------------------
+    def _build_ui(self) -> None:
+        root = QHBoxLayout(self)
+
+        # Left: take list
+        left = QVBoxLayout()
+        left.addWidget(QLabel("Takes"))
+        self._take_list = QListWidget()
+        self._take_list.setMinimumWidth(220)
+        self._take_list.currentRowChanged.connect(self._on_take_selected)
+        left.addWidget(self._take_list, stretch=1)
+        self._reload_btn = QPushButton("Refresh")
+        self._reload_btn.clicked.connect(self.reload)
+        left.addWidget(self._reload_btn)
+        root.addLayout(left)
+
+        # Right: transport + console
+        right = QVBoxLayout()
+
+        self._title = QLabel("Select a take")
+        self._title.setObjectName("TakeTitle")
+        right.addWidget(self._title)
+
+        transport = QHBoxLayout()
+        self._play_btn = QPushButton("▶ Play")
+        self._play_btn.setEnabled(False)
+        self._play_btn.clicked.connect(self._toggle_play)
+        transport.addWidget(self._play_btn)
+
+        self._stop_btn = QPushButton("■ Stop")
+        self._stop_btn.setEnabled(False)
+        self._stop_btn.clicked.connect(self._on_stop)
+        transport.addWidget(self._stop_btn)
+
+        self._pos_label = QLabel("0:00 / 0:00")
+        transport.addWidget(self._pos_label)
+
+        self._scrub = QSlider(Qt.Orientation.Horizontal)
+        self._scrub.setRange(0, 1000)
+        self._scrub.setEnabled(False)
+        self._scrub.sliderReleased.connect(self._on_scrub_released)
+        self._scrub.sliderPressed.connect(self._on_scrub_pressed)
+        self._scrubbing = False
+        transport.addWidget(self._scrub, stretch=1)
+        right.addLayout(transport)
+
+        self._console = ParticipantGrid()
+        self._console.fader_changed.connect(self._on_fader)
+        self._console.mute_toggled.connect(self._on_mute)
+        self._console.solo_toggled.connect(self._on_solo)
+        right.addWidget(self._console, stretch=1)
+
+        self._hint = QLabel("")
+        self._hint.setWordWrap(True)
+        self._hint.setObjectName("TakeHint")
+        right.addWidget(self._hint)
+
+        root.addLayout(right, stretch=1)
+
+    # -- take library -----------------------------------------------------
+    def reload(self) -> None:
+        self._player.stop()
+        self._takes = discover_takes(self._takes_dir) if self._takes_dir else []
+        self._take_list.clear()
+        if not self._takes:
+            self._hint.setText(
+                "No takes found yet. Press ● Record during a jam to capture "
+                "one (needs the band-server recorder — see server/README.md). "
+                f"Looking in: {self._takes_dir or '(no takes folder set)'}"
+            )
+            self._title.setText("Select a take")
+            self._play_btn.setEnabled(False)
+            self._stop_btn.setEnabled(False)
+            self._scrub.setEnabled(False)
+            self._console.set_participants([])
+            return
+        self._hint.setText("")
+        for take in self._takes:
+            label = f"{take.name}  ·  {take.track_count} tracks  ·  {_fmt_time(take.duration_s)}"
+            self._take_list.addItem(QListWidgetItem(label))
+        self._take_list.setCurrentRow(0)
+
+    def _on_take_selected(self, row: int) -> None:
+        if row < 0 or row >= len(self._takes):
+            return
+        take = self._takes[row]
+        self._current = take
+        self._player.load(take)
+        self._title.setText(f"{take.name}  ·  {take.track_count} tracks")
+        self._console.set_participants([
+            ParticipantPresentation(
+                channel_id=t.channel_id,
+                name=t.name,
+                role=f"Recorded track · starts {_fmt_time(t.offset_s)}"
+                if t.offset_s > 0.5 else "Recorded track",
+                fader_level=100,
+            )
+            for t in self._player.tracks
+        ])
+        self._play_btn.setEnabled(True)
+        self._play_btn.setText("▶ Play")
+        self._stop_btn.setEnabled(True)
+        self._scrub.setEnabled(True)
+        self._scrub.setValue(0)
+        self._update_pos_label(0.0, self._player.duration_s)
+
+    # -- transport --------------------------------------------------------
+    def _toggle_play(self) -> None:
+        if self._player.is_playing:
+            self._player.pause()
+            self._play_btn.setText("▶ Play")
+        else:
+            self._player.play()
+            self._play_btn.setText("⏸ Pause")
+
+    def _on_stop(self) -> None:
+        self._player.stop()
+        self._play_btn.setText("▶ Play")
+        self._scrub.setValue(0)
+        self._update_pos_label(0.0, self._player.duration_s)
+
+    def _on_scrub_pressed(self) -> None:
+        self._scrubbing = True
+
+    def _on_scrub_released(self) -> None:
+        self._scrubbing = False
+        dur = self._player.duration_s
+        if dur > 0:
+            self._player.seek(self._scrub.value() / 1000.0 * dur)
+
+    # -- console -> player -------------------------------------------------
+    def _on_fader(self, channel_id: int, level: int) -> None:
+        self._player.set_gain(channel_id, level / 100.0)
+
+    def _on_mute(self, channel_id: int, muted: bool) -> None:
+        self._player.set_muted(channel_id, muted)
+
+    def _on_solo(self, channel_id: int, solo: bool) -> None:
+        self._player.set_solo(channel_id, solo)
+
+    # -- background callbacks (audio thread) ------------------------------
+    def _on_position_bg(self, seconds: float) -> None:
+        self._last_pos = seconds
+
+    def _on_levels_bg(self, levels: dict) -> None:
+        self._pending_levels = dict(levels)
+
+    def _on_finished_bg(self) -> None:
+        self._finished_flag = True
+
+    # -- UI thread poll ----------------------------------------------------
+    _last_pos = 0.0
+    _finished_flag = False
+
+    def _tick_ui(self) -> None:
+        # levels -> meters
+        if self._pending_levels:
+            for cid, lvl in self._pending_levels.items():
+                self._console.update_level(cid, lvl)
+            self._pending_levels = {}
+        self._console.tick_all_meters()
+
+        dur = self._player.duration_s
+        pos = self._player.position_s
+        if not self._scrubbing and dur > 0:
+            self._scrub.setValue(int(pos / dur * 1000))
+        self._update_pos_label(pos, dur)
+
+        if self._finished_flag:
+            self._finished_flag = False
+            self._play_btn.setText("▶ Play")
+
+    def _update_pos_label(self, pos: float, dur: float) -> None:
+        self._pos_label.setText(f"{_fmt_time(pos)} / {_fmt_time(dur)}")
+
+    # -- lifecycle --------------------------------------------------------
+    def closeEvent(self, event) -> None:  # noqa: N802
+        try:
+            self._ui_timer.stop()
+            self._player.stop()
+        finally:
+            self.closed.emit()
+            super().closeEvent(event)
