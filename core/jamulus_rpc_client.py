@@ -94,6 +94,7 @@ class JamulusRpcClient:
         self._thread: Optional[threading.Thread] = None
         self._sock: Optional[socket.socket] = None
         self._lock = threading.Lock()
+        self._send_lock = threading.Lock()  # serialises sendall on the socket
         self._request_counter = 0
         self._inflight: Dict[int, str] = {}      # request id -> method name
         self._clients: List[ChannelInfo] = []     # last-known participant list
@@ -108,10 +109,17 @@ class JamulusRpcClient:
     def start(self) -> None:
         if self._running:
             return
+        # A previous reader may still be winding down (mid-backoff-sleep or
+        # mid-readline). Join it first so a rapid stop()->start() can't leave
+        # two reader threads racing on the same socket/callbacks.
+        prev = self._thread
+        if prev is not None and prev.is_alive():
+            prev.join(timeout=2.0)
         self._running = True
         self._last_activity_at = 0.0
         self._available = False
         self._authed = False
+        self._sock = None
         with self._lock:
             self._request_counter = 0
             self._inflight.clear()
@@ -132,9 +140,13 @@ class JamulusRpcClient:
         self._sock = None
         if sock is not None:
             try:
-                sock.close()
+                sock.close()   # unblocks a blocked readline in the reader
             except Exception:  # noqa: BLE001
                 pass
+        # Join the reader so it can't resume serving after stop() returns.
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
 
     @property
     def available(self) -> bool:
@@ -253,6 +265,15 @@ class JamulusRpcClient:
                     line = reader.readline()
                 except socket.timeout:
                     continue
+                except OSError as exc:
+                    # A buffered reader driven by settimeout raises "cannot
+                    # read from timed out object" on the read that follows a
+                    # timeout mid-frame — that's still a timeout, not a
+                    # disconnect. Treat it as such so a slow/fragmented frame
+                    # doesn't tear down and reconnect the session.
+                    if "timed out" in str(exc).lower():
+                        continue
+                    raise
                 if line == "":
                     raise ConnectionError("server closed connection")
                 self._dispatch_line(line)
@@ -308,7 +329,8 @@ class JamulusRpcClient:
             "params": params,
         }) + "\n"
         try:
-            sock.sendall(payload.encode("utf-8"))
+            with self._send_lock:
+                sock.sendall(payload.encode("utf-8"))
         except Exception as exc:  # noqa: BLE001
             _logger.debug("RPC send %s failed: %s", method, exc)
             with self._lock:
@@ -435,12 +457,19 @@ class JamulusRpcClient:
     def _emit_levels(self, raw_levels) -> None:
         if not isinstance(raw_levels, list) or not self._on_levels:
             return
+        # Per the Jamulus protocol, channelLevelList[i] corresponds to
+        # clients[i] from the last clientListReceived — so map by that
+        # client's channel id, not the raw list position (channel ids can be
+        # sparse after disconnects, which would mis-attribute meters).
+        clients = self._clients
         levels: Dict[int, float] = {}
         for idx, raw in enumerate(raw_levels):
             try:
-                levels[idx] = min(1.0, max(0.0, int(raw) / self.LEVEL_MAX))
+                value = min(1.0, max(0.0, int(raw) / self.LEVEL_MAX))
             except (TypeError, ValueError):
                 continue
+            cid = clients[idx].channel_id if idx < len(clients) else idx
+            levels[cid] = value
         if levels:
             try:
                 self._on_levels(levels)

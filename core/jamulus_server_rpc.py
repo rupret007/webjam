@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,10 @@ _logger = logging.getLogger("webjam.server_rpc")
 class ServerRpcError(Exception):
     """Raised when the band-server RPC is unreachable, refuses auth, or
     answers a call with an error."""
+
+
+class _CallTimeout(Exception):
+    """Internal: one call exceeded its deadline (mapped to ServerRpcError)."""
 
 
 def read_secret_file(path: str | Path) -> str:
@@ -75,7 +80,7 @@ class JamulusServerRpc:
         self._port = int(port)
         self._secret = secret
         self._sock: Optional[socket.socket] = None
-        self._reader = None
+        self._buf = b""          # unparsed bytes from the last recv
         self._id = 0
 
     # -- lifecycle ---------------------------------------------------------
@@ -90,7 +95,6 @@ class JamulusServerRpc:
                 f"({exc}). Is the SSH tunnel up? "
                 f"(ssh -N -L {self._port}:127.0.0.1:22222 you@your-server)"
             ) from exc
-        self._reader = self._sock.makefile("r", encoding="utf-8", newline="\n")
         result = self._call_raw("jamulus/apiAuth", {"secret": self._secret})
         if result != "ok":
             self.close()
@@ -101,14 +105,14 @@ class JamulusServerRpc:
         return self
 
     def close(self) -> None:
-        for closer in (self._reader, self._sock):
+        sock = self._sock
+        self._sock = None
+        self._buf = b""
+        if sock is not None:
             try:
-                if closer is not None:
-                    closer.close()
+                sock.close()
             except OSError:
                 pass
-        self._reader = None
-        self._sock = None
 
     def __enter__(self) -> "JamulusServerRpc":
         return self.connect()
@@ -117,6 +121,29 @@ class JamulusServerRpc:
         self.close()
 
     # -- transport ---------------------------------------------------------
+    def _readline(self, deadline: float) -> bytes:
+        """Return one newline-delimited frame (bytes, no trailing \n) from
+        the socket, buffering partial reads. NDJSON framed from raw recv so a
+        response split across a network stall can't be mis-timed (a buffered
+        reader driven by settimeout raises "cannot read from timed out
+        object" on the retry, defeating the deadline)."""
+        while True:
+            nl = self._buf.find(b"\n")
+            if nl >= 0:
+                line, self._buf = self._buf[:nl], self._buf[nl + 1:]
+                return line
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _CallTimeout()
+            self._sock.settimeout(remaining)
+            try:
+                chunk = self._sock.recv(4096)
+            except socket.timeout as exc:
+                raise _CallTimeout() from exc
+            if chunk == b"":
+                raise ServerRpcError("The band server closed the RPC connection.")
+            self._buf += chunk
+
     def _call_raw(self, method: str, params: dict):
         if self._sock is None:
             raise ServerRpcError("Not connected to the band server RPC.")
@@ -127,20 +154,18 @@ class JamulusServerRpc:
         }) + "\n"
         try:
             self._sock.sendall(payload.encode("utf-8"))
-            self._sock.settimeout(1.0)
-            import time
             deadline = time.monotonic() + self.CALL_TIMEOUT_S
-            while time.monotonic() < deadline:
+            while True:
                 try:
-                    line = self._reader.readline()
-                except socket.timeout:
-                    continue
-                if line == "":
+                    raw = self._readline(deadline)
+                except _CallTimeout:
                     raise ServerRpcError(
-                        "The band server closed the RPC connection."
-                    )
+                        f"{method} timed out after {self.CALL_TIMEOUT_S}s."
+                    ) from None
+                if not raw.strip():
+                    continue
                 try:
-                    obj = json.loads(line)
+                    obj = json.loads(raw)
                 except ValueError:
                     continue
                 if obj.get("id") != req_id:
@@ -150,7 +175,6 @@ class JamulusServerRpc:
                     msg = err.get("message", err) if isinstance(err, dict) else err
                     raise ServerRpcError(f"{method} failed: {msg}")
                 return obj.get("result")
-            raise ServerRpcError(f"{method} timed out after {self.CALL_TIMEOUT_S}s.")
         except OSError as exc:
             raise ServerRpcError(f"RPC transport error during {method}: {exc}") from exc
 
