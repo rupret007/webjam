@@ -4,6 +4,35 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.7.1] — 2026-07-05
+
+### Deep code + logic review — hardening pass
+
+A four-reviewer deep audit of the audio engine, RPC layer, and controller
+state machines. Confirmed the security model is sound (0o600 secrets, no
+command injection, loopback-only RPC + SSH tunnel, Host-header guard). Fixes:
+
+- **Take Deck plays at the take's real samplerate.** A 44.1 kHz take no
+  longer plays pitch-shifted / misaligned through a fixed 48 kHz device.
+  Replaying a finished take rewinds instead of sitting silent, and finishing
+  a take now releases the audio stream + file handles.
+- **RPC framing is stall-proof.** Both the Record-button transport and the
+  live client now frame NDJSON from raw sockets, so a response split across a
+  network stall no longer hard-fails a call or drops notifications.
+- **No zombie RPC reader** after a fast Stop Audio → Launch Audio; sends are
+  serialised; channel meters map by channel id, not list position.
+- **Record button polls** the server recorder until it actually arms/disarms
+  (Jamulus does it asynchronously), and resets on Stop Audio.
+- **Reconnect** shows a clear "couldn't reconnect after 5 tries" instead of
+  hanging on "Reconnecting…" forever.
+- **Practice mode** cleans up its private server if the client launch fails,
+  and never freezes the UI during teardown.
+- Webex button can't get stuck lying "Leave Video"; shutdown is re-entrant;
+  companion-API reads are race-safe; diagnostics redaction is future-proofed.
+- 12 regression tests added; suite at 754.
+
+---
+
 ## [0.7.0] — 2026-07-05
 
 ### The Take Deck — play back and mix your jams, in-app
