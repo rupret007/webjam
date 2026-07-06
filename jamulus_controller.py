@@ -211,17 +211,26 @@ class JamulusController:
                     is_local_map[cid] = bool(info.get("is_local", False))
         if normalized:
             self._sync_participants_from_protocol(normalized)
-            # Propagate RPC metadata after sync (sync only handles names)
+            # Propagate RPC metadata after sync (sync only handles names).
+            changed = False
             with self._participants_lock:
                 for cid, instrument in instrument_map.items():
                     if cid in self.participants:
                         self.participants[cid].instrument = instrument
+                        changed = True
                 for cid, skill in skill_map.items():
                     if cid in self.participants:
                         self.participants[cid].skill_level = skill
                 for cid, is_local in is_local_map.items():
                     if cid in self.participants:
                         self.participants[cid].is_local = is_local
+                        changed = True
+            # sync_from_protocol already fired a callback with names only, so
+            # the metadata (instrument/skill, and crucially which row is
+            # "you") would otherwise not reach the UI until the *next* push.
+            # Notify again now that it's attached.
+            if changed:
+                self._notify_callbacks()
 
     def _on_rpc_levels(self, levels: Dict[int, float]) -> None:
         """Receive audio levels from JSON-RPC SSE events."""

@@ -23,8 +23,21 @@ class UiThreadInvoker(QObject):
         self._invoke.connect(self._run_on_main, Qt.ConnectionType.QueuedConnection)
 
     def invoke(self, callable_: Callable[[], Any]) -> None:
-        """Call from any thread — ``callable_`` will run on the UI thread."""
-        self._invoke.emit(callable_)
+        """Call from any thread — ``callable_`` will run on the UI thread.
+
+        A worker (RPC reader, record-toggle, routing-scan, subprocess launch)
+        can still call this after the window/controller C++ objects are torn
+        down, at which point ``emit`` raises "Internal C++ object already
+        deleted". That's a benign shutdown race — drop the callback rather
+        than let it surface on a daemon thread.
+        """
+        try:
+            self._invoke.emit(callable_)
+        except RuntimeError:
+            import logging
+            logging.getLogger("webjam.ui_thread").debug(
+                "UI callback dropped — invoker already destroyed"
+            )
 
     @Slot(object)
     def _run_on_main(self, callable_: Callable[[], Any]) -> None:

@@ -448,6 +448,12 @@ class BridgeService:
                     return
                     
                 self.metrics_service.increment("metric_jamulus_launch_failed")
+                # If this launch was the client half of a practice session,
+                # the private local server is now orphaned — kill it and exit
+                # practice mode so it doesn't linger until app close.
+                if self.practice_mode:
+                    self._terminate_practice_server()
+                    self.practice_mode = False
                 self.schedule_ui_callback(self.refresh_readiness)
                 exc_msg = str(exc)
                 self.schedule_ui_callback(
@@ -550,6 +556,20 @@ class BridgeService:
         self.launch_jamulus(manual=True, reconnect=False)
         return True
 
+    def _terminate_practice_server(self) -> None:
+        """Terminate the private local practice server if running. Idempotent."""
+        proc = self.practice_server_process
+        self.practice_server_process = None
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Failed to terminate practice server: %s", exc)
+
     def _end_practice_if_server_died(self) -> bool:
         """Reconnect-tick guard: if the local practice server died, end the
         practice session instead of reconnect-looping into a dead port."""
@@ -557,7 +577,12 @@ class BridgeService:
         if not self.practice_mode or proc is None or proc.poll() is None:
             return False
         LOGGER.warning("Practice server exited — ending practice session")
-        self.stop_jamulus()
+        # stop_jamulus() blocks up to ~4s on proc.wait() joins; this runs on
+        # the UI-thread reconnect tick, so do the teardown on a worker thread
+        # to keep the GUI responsive.
+        threading.Thread(
+            target=self.stop_jamulus, daemon=True, name="practice-end",
+        ).start()
         self.schedule_ui_callback(
             lambda: self.set_status_banner(
                 "Practice session ended — the local practice server stopped."
@@ -612,17 +637,7 @@ class BridgeService:
 
         # End practice mode: bring the private local server down with the
         # client so nothing keeps running in the background.
-        practice_proc = self.practice_server_process
-        if practice_proc is not None and practice_proc.poll() is None:
-            try:
-                practice_proc.terminate()
-                try:
-                    practice_proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    practice_proc.kill()
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.warning("Failed to terminate practice server: %s", exc)
-        self.practice_server_process = None
+        self._terminate_practice_server()
         self.practice_mode = False
 
         self.metrics_service.increment("metric_jamulus_stop")

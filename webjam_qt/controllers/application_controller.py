@@ -128,6 +128,8 @@ class ApplicationController(QObject):
 
         # Latch so the "Jamulus disconnected" flash only fires once per crash
         self._reconnect_banner_shown = False
+        # Latch so the 'gave up after 5 tries' message fires once.
+        self._reconnect_gave_up = False
         # Latch for the "RPC hung" banner — fires once when activity stalls,
         # cleared when activity resumes.
         self._rpc_hang_banner_shown = False
@@ -207,6 +209,8 @@ class ApplicationController(QObject):
     # Lifecycle
     # ------------------------------------------------------------------
     def shutdown(self) -> None:
+        if self._shutdown:
+            return  # closeEvent + app.py both call this; run teardown once
         self._shutdown = True
         self._demo_timer.stop()
         self._level_timer.stop()
@@ -263,10 +267,21 @@ class ApplicationController(QObject):
             LOGGER.info("Companion API not started (fastapi/uvicorn missing or port busy)")
         return started
 
+    def _snapshot_participants(self) -> list:
+        """Copy the participants list; retries the copy if the UI thread
+        mutates the dict mid-iteration (the companion API reads from its own
+        uvicorn thread). Returns a list of ParticipantPresentation."""
+        for _ in range(5):
+            try:
+                return list(self.participants.values())
+            except RuntimeError:
+                continue  # "dict changed size during iteration" — retry
+        return []
+
     def _companion_get_participants(self) -> list[dict]:
         """Snapshot of the current mixer participants for the companion API."""
         out: list[dict] = []
-        for p in self.participants.values():
+        for p in self._snapshot_participants():
             out.append({
                 "channel_id": p.channel_id,
                 "name": p.name,
@@ -284,7 +299,7 @@ class ApplicationController(QObject):
             "jamulus_state": str(self.bridge.jamulus_state),
             "webex_state": str(self.bridge.webex_state),
             "jamulus_connected": str(self._jamulus_connected),
-            "participant_count": str(len(self.participants)),
+            "participant_count": str(len(self._snapshot_participants())),
             "jamulus_server": f"{self.settings.jamulus_server}:{self.settings.jamulus_port}",
         }
 
@@ -577,6 +592,11 @@ class ApplicationController(QObject):
         if self._is_jamulus_running():
             self._stop_audio()
         else:
+            # Fresh manual launch — clear the crash/hang/gave-up latches so
+            # banners fire again for a new session.
+            self._reconnect_banner_shown = False
+            self._rpc_hang_banner_shown = False
+            self._reconnect_gave_up = False
             self.window.set_status_audio("Launching…")
             self.window.session_strip.set_audio_state("Launching…", enabled=False)
             self.bridge.launch_jamulus(manual=True)
@@ -623,6 +643,7 @@ class ApplicationController(QObject):
             read_secret_file,
         )
         try:
+            import time as _time
             secret = read_secret_file(secret_file)
             with JamulusServerRpc(
                 port=self.settings.server_rpc_port, secret=secret
@@ -631,8 +652,16 @@ class ApplicationController(QObject):
                     rpc.start_recording()
                 else:
                     rpc.stop_recording()
-                status = rpc.get_recorder_status()
-            armed = bool(status.get("enabled", target_armed))
+                # Jamulus flips the recorder's ``enabled`` flag asynchronously
+                # after acknowledging start/stop, so poll until it matches (or
+                # a short deadline) rather than trusting one immediate read.
+                armed = target_armed
+                deadline = _time.monotonic() + 4.0
+                while _time.monotonic() < deadline:
+                    armed = bool(rpc.get_recorder_status().get("enabled", target_armed))
+                    if armed == target_armed:
+                        break
+                    _time.sleep(0.25)
             self._ui_invoker.invoke(
                 lambda: self._apply_record_toggle_result(armed)
             )
@@ -719,12 +748,18 @@ class ApplicationController(QObject):
         self._jamulus_connected = False
         self._level_timer.stop()
         self._apply_recorder_state(False)
+        # The band-server recorder state is meaningless once we've left the
+        # session — reset the Record button so it doesn't show a stale
+        # "■ Stop Rec" that no longer matches the server.
+        self._recorder_armed = False
+        self.window.session_strip.set_recording_state(False, enabled=True)
         self._reset_to_demo_state()
         # Clear the crash-banner latch so a future crash flashes again.
         # Without this, manually stopping during a reconnect would lock the
         # latch True and the next crash would be silent.
         self._reconnect_banner_shown = False
         self._rpc_hang_banner_shown = False
+        self._reconnect_gave_up = False
 
     def _reset_to_demo_state(self) -> None:
         """Replace current participants with demo placeholders + restart demo timer."""
@@ -821,12 +856,20 @@ class ApplicationController(QObject):
 
         # In direct-URL mode the widget never sends a post-join state
         # transition (no JS bridge); re-enable the button after 6 s so
-        # the user can leave or rejoin without restarting the app.
+        # the user can leave or rejoin without restarting the app. Guard it
+        # with a token so a terminal state (error/ENDED/left) arriving inside
+        # those 6 s can't get overwritten with a stale "Leave Video".
+        self._webex_join_token = getattr(self, "_webex_join_token", 0) + 1
         if state == "joining":
-            QTimer.singleShot(
-                6_000,
-                lambda: self.window.session_strip.set_video_state("Leave Video", enabled=True),
-            )
+            token = self._webex_join_token
+
+            def _reenable_if_still_joining():
+                if self._webex_join_token == token and self._is_video_active():
+                    self.window.session_strip.set_video_state(
+                        "Leave Video", enabled=True
+                    )
+
+            QTimer.singleShot(6_000, _reenable_if_still_joining)
 
     # ------------------------------------------------------------------
     # Mixer card handlers → JamulusController
@@ -952,7 +995,26 @@ class ApplicationController(QObject):
         ):
             # Reconnect succeeded — clear the flag so we'd flash again on next crash.
             self._reconnect_banner_shown = False
+            self._reconnect_gave_up = False
             self.window.flash_message("Jamulus reconnected.", ms=3000)
+        elif (
+            self.bridge.jamulus_launch_intended
+            and proc is not None
+            and proc.poll() is not None
+            and self.bridge.jamulus_reconnect_attempts >= 5
+            and not getattr(self, "_reconnect_gave_up", False)
+        ):
+            # Auto-reconnect exhausted its 5 attempts and the process is still
+            # dead. Tell the user once, and stop showing "Reconnecting…"
+            # forever (which the crash branch above would otherwise leave up).
+            self._reconnect_gave_up = True
+            self.window.set_status_audio("Not connected")
+            self.window.session_strip.set_audio_state("Launch Audio", enabled=True)
+            self.window.flash_message(
+                "Couldn't reconnect to Jamulus after 5 tries — press Launch "
+                "Audio to try again.",
+                ms=8000,
+            )
 
         # Detect RPC hang: process is alive AND was previously responsive
         # (we got past _jamulus_connected=True) AND the RPC heartbeat hasn't
