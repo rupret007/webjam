@@ -183,6 +183,13 @@ def discover_takes(root: str | Path) -> List[TakeInfo]:
         _logger.warning("could not scan takes root %s: %s", root, exc)
         return takes
 
-    takes.sort(key=lambda t: t.path.stat().st_mtime if t.path.exists() else 0,
-               reverse=True)
+    def _mtime(take: TakeInfo) -> float:
+        # exists()+stat() would TOCTOU-race a deleted folder; stat() alone,
+        # guarded, keeps the documented "never raises" contract.
+        try:
+            return take.path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    takes.sort(key=_mtime, reverse=True)
     return takes

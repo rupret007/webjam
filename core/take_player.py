@@ -128,10 +128,31 @@ class TakePlayer:
     # -- loading ----------------------------------------------------------
     def load(self, take) -> None:
         """Load a TakeInfo (or anything with ``.tracks`` of path/name/offset).
-        Resets transport to the start."""
+        Resets transport to the start.
+
+        The playback samplerate is adopted from the take's tracks (Jamulus
+        records every track of a session at one rate). Without this the
+        engine would stream a 44.1 kHz take through a 48 kHz device — a
+        ~1.5-semitone pitch shift plus offset/duration misalignment.
+        """
         self.stop()
         with self._lock:
             self._tracks = []
+            # Adopt the take's samplerate (most common non-zero rate across
+            # its tracks); keep the current default if none is known.
+            _rates = [int(getattr(t, "samplerate", 0) or 0)
+                      for t in getattr(take, "tracks", [])]
+            _rates = [r for r in _rates if r > 0]
+            if _rates:
+                from collections import Counter
+                self.samplerate = Counter(_rates).most_common(1)[0][0]
+                _distinct = set(_rates)
+                if len(_distinct) > 1:
+                    _logger.warning(
+                        "take has mixed track samplerates %s; playing all at "
+                        "%d Hz (other-rate tracks will be off-pitch)",
+                        sorted(_distinct), self.samplerate,
+                    )
             longest = 0
             for i, t in enumerate(getattr(take, "tracks", [])):
                 offset_frames = int(max(0.0, getattr(t, "offset_s", 0.0))
@@ -187,8 +208,14 @@ class TakePlayer:
     def play(self) -> None:
         if self._playing:
             return
+        with self._lock:
+            # Replaying after the take finished: rewind instead of starting a
+            # stream that would immediately sit at EOF emitting silence.
+            if self._pos_frames >= self._total_frames:
+                self._pos_frames = 0
+                self._close_readers()
+            self._playing = True
         self._open_readers()
-        self._playing = True
         self._sink.start(self.samplerate, self.blocksize, self._pull)
 
     def pause(self) -> None:
@@ -289,7 +316,7 @@ class TakePlayer:
                     t.level = 0.0
                 levels[t.channel_id] = t.level
 
-            # Soft-clip to protect ears/speakers when many tracks stack.
+            # Hard-limit to protect ears/speakers when many tracks stack.
             np.clip(mix, -1.0, 1.0, out=mix)
             self._pos_frames += frames
             pos_s = self.position_s

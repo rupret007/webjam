@@ -53,18 +53,23 @@ class TakeDeck(QDialog):
         self.setObjectName("TakeDeck")
         self.setWindowTitle("WebJam — Take Deck")
         self.resize(880, 620)
+        # Tear the C++ dialog down on close so reopening doesn't leak hidden
+        # QDialogs (the controller builds a fresh one each open).
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self._takes_dir = takes_dir
         self._takes = []
         self._current = None
 
+        # Cross-thread state, initialised before anything can touch it.
+        self._pending_levels: dict[int, float] = {}
+        self._finished_flag = False
+
         # A caller can inject a player (tests use a headless sink); otherwise
         # the default player builds a real sounddevice sink lazily on play().
-        self._player = player or TakePlayer(
-            on_position=self._on_position_bg,
-            on_levels=self._on_levels_bg,
-            on_finished=self._on_finished_bg,
-        )
-        self._player._on_position = self._on_position_bg
+        # We always own the callbacks (single wiring site — works the same
+        # for a default or an injected player).
+        self._player = player or TakePlayer()
+        self._player._on_position = None  # position is polled from the player
         self._player._on_levels = self._on_levels_bg
         self._player._on_finished = self._on_finished_bg
 
@@ -77,7 +82,6 @@ class TakeDeck(QDialog):
         self._ui_timer.setInterval(60)
         self._ui_timer.timeout.connect(self._tick_ui)
         self._ui_timer.start()
-        self._pending_levels: dict[int, float] = {}
 
     # -- construction -----------------------------------------------------
     def _build_ui(self) -> None:
@@ -220,25 +224,19 @@ class TakeDeck(QDialog):
         self._player.set_solo(channel_id, solo)
 
     # -- background callbacks (audio thread) ------------------------------
-    def _on_position_bg(self, seconds: float) -> None:
-        self._last_pos = seconds
-
     def _on_levels_bg(self, levels: dict) -> None:
+        # Rebind (atomic under the GIL); the UI thread swaps it out wholesale.
         self._pending_levels = dict(levels)
 
     def _on_finished_bg(self) -> None:
         self._finished_flag = True
 
     # -- UI thread poll ----------------------------------------------------
-    _last_pos = 0.0
-    _finished_flag = False
-
     def _tick_ui(self) -> None:
-        # levels -> meters
-        if self._pending_levels:
-            for cid, lvl in self._pending_levels.items():
-                self._console.update_level(cid, lvl)
-            self._pending_levels = {}
+        # levels -> meters (atomic snapshot-and-clear to avoid a torn read)
+        pending, self._pending_levels = self._pending_levels, {}
+        for cid, lvl in pending.items():
+            self._console.update_level(cid, lvl)
         self._console.tick_all_meters()
 
         dur = self._player.duration_s
@@ -249,6 +247,12 @@ class TakeDeck(QDialog):
 
         if self._finished_flag:
             self._finished_flag = False
+            # H3: the player finishes on the audio thread but must not stop
+            # its own sink from inside the callback — do it here on the UI
+            # thread so the stream + file handles are actually released.
+            self._player.stop()
+            self._scrub.setValue(0)
+            self._update_pos_label(0.0, self._player.duration_s)
             self._play_btn.setText("▶ Play")
 
     def _update_pos_label(self, pos: float, dur: float) -> None:
