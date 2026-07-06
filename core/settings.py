@@ -146,7 +146,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                 data[key] = parsed
             continue
         if key in {"audio_blocksize", "audio_samplerate", "audio_input_device_index",
-                   "companion_api_port"}:
+                   "companion_api_port", "server_rpc_port"}:
             try:
                 parsed = int(raw)
             except ValueError:
@@ -155,7 +155,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                 continue
             if key == "audio_samplerate" and parsed <= 0:
                 continue
-            if key == "companion_api_port" and not (1 <= parsed <= 65535):
+            if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
             data[key] = parsed
         elif key in {"enable_sentry", "companion_api_enabled"}:

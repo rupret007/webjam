@@ -54,7 +54,7 @@ jamulus-headless --server --nogui --port 22124 \
 ## Hooking up WebJam's ● Record button (one-time, per conductor)
 
 1. Copy the server's secret to your machine:
-   `scp you@your-server:path/to/jsonrpc.secret ~/.webjam_server_rpc.secret`
+   `scp you@your-server:path/to/jsonrpc.secret ~/.webjam_server_rpc.secret && chmod 600 ~/.webjam_server_rpc.secret`
 2. Tell WebJam where it is — either add
    `"server_rpc_secret_file": "~/.webjam_server_rpc.secret"` (use the full
    path) to `~/.webjam_config.json`, or set the
@@ -72,7 +72,7 @@ Reaper `.rpp`.
 
 - The JSON-RPC port binds **127.0.0.1 only** — never expose it publicly.
   Reach it from your machine with an SSH tunnel:
-  `ssh -L 22222:127.0.0.1:22222 you@your-server`
+  `ssh -N -L 22240:127.0.0.1:22222 you@your-server`
 - Anyone who knows the address can join a public-internet Jamulus server.
   Don't register it in a public directory, use a non-default port if you
   like, and treat the welcome message as your "you're in the right place"

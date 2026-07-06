@@ -19,6 +19,9 @@ from typing import Any
 LOGGER = logging.getLogger("webjam.qt.diagnostics")
 
 _REDACTED_FIELDS = {"webex_guest_issuer_secret", "sentry_dsn"}
+# Any field whose name hints at a secret is redacted too, so a future
+# AppSettings field can't leak into a shared bug report by omission.
+_REDACTED_NAME_HINTS = ("secret", "token", "password", "passwd", "dsn", "api_key")
 _LOG_TAIL_LINES = 30
 
 
@@ -120,8 +123,12 @@ class DiagnosticsExporter:
         except TypeError:
             data = {k: getattr(self.settings, k) for k in dir(self.settings)
                     if not k.startswith("_") and not callable(getattr(self.settings, k))}
-        for field in _REDACTED_FIELDS:
-            if field in data and data[field]:
+        for field in list(data.keys()):
+            lname = field.lower()
+            if data[field] and (
+                field in _REDACTED_FIELDS
+                or any(h in lname for h in _REDACTED_NAME_HINTS)
+            ):
                 data[field] = "[redacted]"
         try:
             return json.dumps(data, indent=2, default=str, sort_keys=True)
