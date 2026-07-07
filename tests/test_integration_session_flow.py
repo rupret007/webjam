@@ -98,8 +98,12 @@ class TestFullSessionFlow(unittest.TestCase):
             c._on_reset_all_faders()
         self.assertTrue(all(p.fader_level == 100 for p in c.participants.values()))
 
-        # 6. Self-mute (local channel present).
-        c._on_mute_self()
+        # 6. Self-mute (local channel present and proven RPC succeeds).
+        c.participants[0].muted = False
+        with mock.patch.object(c.jamulus, "set_self_muted", return_value=True) as set_self_muted:
+            c._on_mute_self()
+        set_self_muted.assert_called_once_with(True)
+        self.assertTrue(c.participants[0].muted)
 
         # 7. A bandmate leaves.
         c._apply_jamulus_participants([

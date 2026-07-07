@@ -16,6 +16,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(s.audio_samplerate, 48000)
         self.assertEqual(s.audio_blocksize, 0)
         self.assertFalse(s.enable_sentry)
+        self.assertFalse(s.companion_api_enabled)
 
     def test_load_nonexistent_file_returns_defaults(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
@@ -76,6 +77,16 @@ class TestSettingsBoundaryPorts(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_jamulus_rpc_port_out_of_range_resets_to_default(self):
+        fd, path = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump({"jamulus_rpc_port": 999999}, f)
+            s = load_settings(path)
+            self.assertEqual(s.jamulus_rpc_port, 22222)
+        finally:
+            os.remove(path)
+
     def test_port_1_accepted(self):
         fd, path = tempfile.mkstemp(suffix=".json")
         try:
@@ -127,6 +138,16 @@ class TestSettingsEnvOverrides(unittest.TestCase):
     def test_env_invalid_port_ignored(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
         self.assertEqual(s.jamulus_port, 22124)
+
+    @patch.dict(os.environ, {"WEBJAM_JAMULUS_RPC_PORT": "33333"})
+    def test_env_rpc_port_override(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.jamulus_rpc_port, 33333)
+
+    @patch.dict(os.environ, {"WEBJAM_JAMULUS_RPC_PORT": "999999"})
+    def test_env_rpc_port_out_of_range_ignored(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.jamulus_rpc_port, 22222)
 
     @patch.dict(os.environ, {"WEBJAM_ENABLE_SENTRY": "true"})
     def test_env_sentry_bool(self):

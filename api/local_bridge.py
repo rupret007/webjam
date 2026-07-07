@@ -18,7 +18,7 @@ class LocalApiBridge:
     def __init__(
         self,
         get_participants: Callable[[], List[Dict]],
-        get_diagnostics: Callable[[], Dict[str, str]],
+        get_diagnostics: Callable[[], Dict[str, Any]],
         host: str = "127.0.0.1",
         port: int = 8765,
     ):
@@ -75,7 +75,7 @@ class LocalApiBridge:
                 raise HTTPException(status_code=500, detail=f"participants callback failed: {exc}") from exc
 
         @app.get("/diagnostics")
-        def diagnostics() -> Dict[str, Dict[str, str]]:
+        def diagnostics() -> Dict[str, Dict[str, Any]]:
             try:
                 return {"diagnostics": self.get_diagnostics()}
             except Exception as exc:
@@ -186,4 +186,3 @@ class LocalApiBridge:
             thread.join(timeout=2)
             if thread.is_alive():
                 _LOGGER.warning("LocalApiBridge server thread did not exit within 2s; may still be shutting down")
-

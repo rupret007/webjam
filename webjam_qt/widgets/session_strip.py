@@ -40,6 +40,7 @@ class SessionStrip(QFrame):
     mute_self_requested = Signal()      # toggle local-user mute
     practice_requested = Signal()       # start a solo practice session
     record_requested = Signal()         # toggle band-server multitrack recording
+    ready_check_requested = Signal()    # run the pre-jam readiness report
 
     STRIP_HEIGHT = 72
 
@@ -116,6 +117,15 @@ class SessionStrip(QFrame):
         )
         self._record_button.clicked.connect(self.record_requested.emit)
 
+        self._ready_button = QPushButton("Ready")
+        self._ready_button.setObjectName("GhostButton")
+        self._ready_button.setAccessibleName("Run Ready Check")
+        self._ready_button.setToolTip(
+            "Run Ready Check (F2): verifies Jamulus, server settings, "
+            "audio routing, and Webex before a jam."
+        )
+        self._ready_button.clicked.connect(self.ready_check_requested.emit)
+
         self._practice_button = QPushButton("Practice")
         self._practice_button.setObjectName("GhostButton")
         self._practice_button.setAccessibleName("Start a solo practice session")
@@ -162,6 +172,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
         layout.addWidget(self._record_button)
+        layout.addWidget(self._ready_button)
         layout.addWidget(self._practice_button)
         layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)

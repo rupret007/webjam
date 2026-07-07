@@ -32,6 +32,11 @@ class TestPackagedDataFiles(unittest.TestCase):
         # webex_embed.py: Path(__file__).parent.parent / "webex_widget.html"
         self.assertTrue((PKG / "webex_widget.html").is_file())
 
+    def test_webex_widget_cdn_version_is_pinned(self):
+        html = (PKG / "webex_widget.html").read_text(encoding="utf-8")
+        self.assertNotIn("@latest", html)
+        self.assertIn("@webex/widgets@1.28.2", html)
+
     def test_spec_bundles_the_runtime_data_files(self):
         self.assertIn("conductor.qss", SPEC)
         self.assertIn("webex_widget.html", SPEC)

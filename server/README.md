@@ -2,10 +2,9 @@
 
 A private Jamulus server for your band with **multitrack recording**: every
 musician gets their own track, and every take lands as a ready-to-open
-**Reaper project** (`.rpp` + per-musician WAVs). This is the foundation for
-WebJam's Record button (Phase B of the roadmap) — and it's useful today:
-recordings can be started from any connected Jamulus client's GUI, or via
-JSON-RPC.
+**Reaper project** (`.rpp` + per-musician WAVs). This is the band-server
+setup used by WebJam's pilot **● Record** button; recordings can also be
+started from a connected Jamulus client GUI or via JSON-RPC.
 
 ## Quick start (Docker, any Linux VPS)
 
@@ -19,6 +18,10 @@ echo "$(openssl rand -base64 24)" > jsonrpc.secret && chmod 600 jsonrpc.secret
 # 3. Go
 docker compose up -d
 ```
+
+The compose file pins the Jamulus container by digest so a future `latest`
+image cannot change your band server unexpectedly. Review and intentionally
+update `server/docker-compose.yml` when you want to upgrade Jamulus.
 
 Open **UDP 22124** in your VPS firewall/security group. Your band's server
 address is the VPS IP (or a DNS name you point at it), port `22124` — put
@@ -50,6 +53,11 @@ jamulus-headless --server --nogui --port 22124 \
   musician + a `.rpp` Reaper project that opens with everything laid out.
 - Getting stems off the server: `scp -r you@server:recordings/<take> .`
   (a friendlier flow is planned for WebJam's session archive).
+- Retention/backup: recordings are your master tapes. Before a pilot, decide
+  how long the VPS keeps takes, who can delete them, and where they are backed
+  up. A simple starting policy is: after every session, copy the take folder to
+  a second machine/cloud bucket, verify the Reaper project opens, then prune
+  server-side takes older than 30 days.
 
 ## Hooking up WebJam's ● Record button (one-time, per conductor)
 

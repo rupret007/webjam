@@ -1,9 +1,8 @@
 """Wiring test: the companion API is connected to the live ApplicationController.
 
 Verifies the previously-orphaned LocalApiBridge is now instantiated by the
-controller, fed real participant/diagnostics data, gated by the setting,
-started by the app bootstrap, and stopped on shutdown — i.e. COMPANION_API.md
-("starts automatically when you launch WebJam") is now actually true.
+controller, fed real participant/diagnostics data, gated by the opt-in setting,
+started by the app bootstrap when enabled, and stopped on shutdown.
 """
 from __future__ import annotations
 
@@ -98,6 +97,41 @@ class TestCompanionApiWiring(_ControllerFixture):
         with mock.patch.object(c.api_bridge, "stop") as stop:
             c.shutdown()
             stop.assert_called_once()
+
+    def test_settings_reconfigure_restarts_enabled_api_on_port_change(self):
+        c = self._build(companion_api_enabled=True, companion_api_port=8765)
+        old_settings = c.settings
+        c.api_bridge._running = True
+        c.settings = AppSettings(companion_api_enabled=True, companion_api_port=9876)
+        with mock.patch.object(c.api_bridge, "stop") as stop, \
+             mock.patch.object(c, "start_companion_api", return_value=True) as start:
+            c._reconfigure_services_after_settings(old_settings)
+        stop.assert_called_once()
+        start.assert_called_once()
+        self.assertEqual(c.api_bridge.port, 9876)
+
+    def test_settings_reconfigure_stops_api_when_disabled(self):
+        c = self._build(companion_api_enabled=True, companion_api_port=8765)
+        old_settings = c.settings
+        c.api_bridge._running = True
+        c.settings = AppSettings(companion_api_enabled=False, companion_api_port=8765)
+        with mock.patch.object(c.api_bridge, "stop") as stop, \
+             mock.patch.object(c, "start_companion_api", return_value=True) as start:
+            c._reconfigure_services_after_settings(old_settings)
+        stop.assert_called_once()
+        start.assert_not_called()
+
+    def test_settings_reconfigure_replaces_rpc_client_on_port_change(self):
+        c = self._build(jamulus_rpc_port=22222)
+        old_settings = c.settings
+        old_rpc = mock.MagicMock()
+        c.jamulus.rpc_client = old_rpc
+        c.settings = AppSettings(jamulus_rpc_port=23333)
+
+        c._reconfigure_services_after_settings(old_settings)
+
+        old_rpc.stop.assert_called_once()
+        self.assertEqual(c.jamulus.rpc_client._port, 23333)
 
     @unittest.skipUnless(_HAVE_TESTCLIENT, "fastapi testclient unavailable")
     def test_end_to_end_http_serves_live_participants(self):

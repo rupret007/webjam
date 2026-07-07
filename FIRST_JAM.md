@@ -30,42 +30,46 @@ Any always-on URL works.
 
 ## Stage 1 — Solo smoke test (you alone, ~30 min) ← DO THIS FIRST
 
-Setup: your Mac, Jamulus installed, BlackHole installed, WebJam v0.4.10+
+Setup: one pilot machine for each release artifact you intend to validate
+(Windows x64, macOS ARM64, macOS Intel x64), with Jamulus installed
+separately and VB-CABLE/BlackHole installed as appropriate, WebJam v0.7.2
 from [Releases](https://github.com/rupret007/webjam/releases)
-(right-click → Open the first time — see README_SIMPLE for the
+(right-click → Open the first time on macOS — see README_SIMPLE for the
 security-warning walkthrough).
 
 Work through this in order; note anything that deviates.
 
-0. **Practice first (no server needed).** Press **Ctrl+P** (or the
+1. **First-run wizard** appears (fresh installs are unconfigured on
+   purpose). Enter the server host/port from Stage 0, confirm the Jamulus
+   executable path, paste the Webex link, and confirm the audio-routing page
+   shows a green check for VB-CABLE/BlackHole.
+2. **Ready / F2 — Ready Check.** All four items should pass. If one fails, it
+   tells you what to fix. Fix it before continuing.
+3. **Practice smoke (no band server needed).** Press **Ctrl+P** (or the
    **Practice** button). WebJam starts a private Jamulus server *on your
    machine* and connects to it — you should see your own card, hear
    yourself, and be able to move your fader and Mute Me. If practice
    works, your whole local audio path is proven before any network enters
    the picture. Stop Audio ends it.
-1. **First-run wizard** appears (fresh installs are unconfigured on
-   purpose). Enter the server host/port from Stage 0 and the Webex link.
-   Audio-routing page should show a green check for BlackHole.
-2. **F2 — Ready Check.** All four items should pass. If one fails, it
-   tells you what to fix. Fix it before continuing.
-3. **Launch Audio.** Within ~10 s the status bar should read
-   `Running (yourserver:22124)` and the demo cards should be replaced by a
+4. **Launch Audio.** The status bar should read `Connecting` first; within
+   ~10 s it should change to `Connected (yourserver:22124)` and the demo cards
+   should be replaced by a
    single real card with **your name** ("1 participant · waiting for
    others"). This step is the big one — it proves the JSON-RPC control
    channel works against real Jamulus.
    - Also confirm: a second window (Jamulus's own GUI) opened. Ignore it;
      WebJam is the controller.
-4. **Mixer sanity.** Drag your own fader — no errors. Click **Mute Me**:
+5. **Mixer sanity.** Drag your own fader — no errors. Click **Mute Me**:
    the Jamulus GUI's mute indicator should light up (that proves *real*
    self-mute via RPC, not just a local fader trick).
-5. **Chat.** Type a message in the canvas chat box. It should echo as
+6. **Chat.** Type a message in the canvas chat box. It should echo as
    `You: …` and appear in the Jamulus GUI chat window too.
-6. **Join Video.** Either the embedded pane loads your meeting, or you
+7. **Join Video.** Either the embedded pane loads your meeting, or you
    get the "Open video call in browser" fallback button (also a pass —
    the embed depends on QtWebEngine + your meeting's embed permissions).
-7. **Stop Audio → Launch Audio again.** Reconnect should work; no zombie
+8. **Stop Audio → Launch Audio again.** Reconnect should work; no zombie
    Jamulus processes left behind (check Activity Monitor).
-8. **Quit WebJam.** Jamulus should quit with it.
+9. **Quit WebJam.** Jamulus should quit with it.
 
 **If anything fails:** hit `Ctrl+Shift+D` (copies a diagnostics summary to
 the clipboard) and paste it into a GitHub issue — or into a Claude session,

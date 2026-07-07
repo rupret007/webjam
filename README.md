@@ -10,22 +10,22 @@ A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio)
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-06-29):
+Being honest about where this app is **right now** (2026-07-06):
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. 600+ tests pass. |
-| **Qt Conductor UI** | ✅ **Shipped in v0.3.0, fully usable as of v0.4.8.** `webjam_qt_main.py` is the primary entry point. Run with `python webjam_qt_main.py`. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
-| **Legacy Tkinter UI** | ⚠️ Retained as fallback (`legacy/webjam_app_enhanced.py`). Not actively developed. Will be removed when Qt UI reaches full parity. |
+| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. Full suite is 750+ tests plus real-Jamulus integration. |
+| **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` is the entry point. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
+| **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Jamulus must be installed separately.** |
 | **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
 | **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
-| **Builds** | ✅ Windows x64, macOS ARM64, macOS x64 — all three zips at [Releases](https://github.com/rupret007/webjam/releases). |
-| **Local Companion API** | ✅ Localhost bridge for external tools. See [COMPANION_API.md](COMPANION_API.md). |
+| **Builds** | ✅ Three release artifacts: Windows x64, macOS ARM64, and macOS Intel x64. |
+| **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today (v0.4.8): WebJam is a **unified Qt Conductor** — one window that launches Jamulus, embeds Webex, and gives you a live mixer for every participant. The Jamulus window still appears separately (it must be installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold, the video button is teal; the status bar shows the connected server address once Jamulus is running. Click the audio button again to stop, the video button again to leave; the conductor's session title persists across launches.
+In practice today (v0.7.2): WebJam is a **closed-pilot-ready Qt Conductor** — one window that launches Jamulus, embeds Webex, runs Ready Check, and gives you a live mixer for every participant. The Jamulus window still appears separately (it must be installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold, the video button is teal; the status bar shows “Connecting” until participant/RPC truth arrives. Click the audio button again to stop, the video button again to leave; the conductor's session title persists across launches.
 
-Future phases: full embedded Webex video tiles per-participant, macOS code signing, and listening profiles in the Qt UI.
+Before widening the closed pilot or calling the release broadly ready, validate on real hardware: clean-machine Windows/macOS installs, Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback. Demo Deck Level 2 should wait until those pass.
 
 ---
 
@@ -33,13 +33,10 @@ Future phases: full embedded Webex video tiles per-participant, macOS code signi
 
 See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Near-term engineering phases:
 
-1. **Phase 0** — Doc truth-up (in progress)
-2. **Phase 1** — Refactor god-file into `ApplicationController` + thin shell
-3. **Phase 4-preview** — Conductor-style UI mockup in Qt
-4. **Phase 2** — Implement Jamulus UDP protocol (real fader sync, real participant reconciliation)
-5. **Phase 3** — Webex Web SDK embedded in `QWebEngineView`
-6. **Phase 5** — Automatic VB-CABLE / BlackHole detection + routing
-7. **Phase 6** — Onboarding, recovery, a11y, signed installer
+1. **Pilot gates** — real-audio Ctrl+P, two-person Jamulus, Record, take retrieval, Take Deck playback
+2. **Supportability** — signed/notarized builds, diagnostics redaction, recording retention guidance
+3. **Architecture cleanup** — split `ApplicationController` into session/audio/video/recording/settings/API coordinators
+4. **Post-pilot expansion** — Demo Deck Level 2, overdub/export, richer creative modes
 
 ---
 
@@ -87,6 +84,7 @@ Environment overrides:
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
 | **Ctrl+,** | Open Settings wizard |
+| **F2 / Ready** | Run Ready Check before a jam |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
 | **F1** | Show in-app help (shortcut & getting-started reference) |
@@ -110,8 +108,8 @@ webjam/
 ├── storage/                 # SQLite repository (users, mixes, room context, canvas)
 ├── admin/                   # RBAC policy engine and admin panel
 ├── api/                     # Optional FastAPI companion API
-├── tests/                   # 493 passing tests
-├── webjam_installer.py      # Windows/macOS installer script
+├── tests/                   # Unit/UI/integration regression suite
+├── build_webjam.py          # Legacy build helper; releases use webjam.spec
 └── VB/                      # VB-Cable installer payload (Windows)
 ```
 

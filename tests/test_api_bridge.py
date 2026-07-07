@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 try:
     from fastapi.testclient import TestClient
@@ -24,12 +24,30 @@ class TestLocalApiBridgeLifecycle(unittest.TestCase):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
         bridge.stop()
 
-    def test_start_returns_true_when_fastapi_available(self):
+    @unittest.skipUnless(BRIDGE_RUNTIME_AVAILABLE, "fastapi/uvicorn not available")
+    @patch.object(LocalApiBridge, "_create_app", return_value=object())
+    @patch("uvicorn.Config")
+    @patch("uvicorn.Server")
+    @patch("api.local_bridge.threading.Thread")
+    def test_start_returns_true_when_fastapi_available(
+        self,
+        thread_cls,
+        server_cls,
+        config_cls,
+        _create_app,
+    ):
+        server = MagicMock()
+        server.started = True
+        server_cls.return_value = server
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        thread_cls.return_value = thread
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
-        result = bridge.start()
-        if result:
-            bridge.stop()
-        # result depends on whether fastapi/uvicorn are installed
+
+        self.assertTrue(bridge.start())
+        config_cls.assert_called_once()
+        server_cls.assert_called_once()
+        thread.start.assert_called_once()
 
     def test_start_rejects_invalid_host(self):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {}, host="")

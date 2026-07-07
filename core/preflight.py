@@ -81,12 +81,12 @@ def _check_audio_routing(settings) -> CheckItem:
 
 
 def _check_webex(settings) -> CheckItem:
+    from core.webex_url import normalize_webex_url, webex_url_error
     url = str(getattr(settings, "webex_url", "") or "").strip()
-    if url and "." in url:
-        return CheckItem("Webex meeting set", True, url)
-    return CheckItem(
-        "Webex meeting set", False, "paste your Webex meeting link in Settings"
-    )
+    error = webex_url_error(url)
+    if error is None:
+        return CheckItem("Webex meeting set", True, normalize_webex_url(url))
+    return CheckItem("Webex meeting set", False, error)
 
 
 def run_ready_check(settings) -> ReadyCheckReport:

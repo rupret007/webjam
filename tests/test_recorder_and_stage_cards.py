@@ -43,10 +43,20 @@ class TestRpcRecorderStateParsing(unittest.TestCase):
         client._handle_notification("jamulusclient/recorderState", {"state": 2})
         self.assertEqual(received, [(False, 2)])
 
+    def test_not_initialised_state_1_means_not_recording(self):
+        client, received = self._client_with_hook()
+        client._handle_notification("jamulusclient/recorderState", {"state": 1})
+        self.assertEqual(received, [(False, 1)])
+
     def test_garbage_state_is_ignored(self):
         client, received = self._client_with_hook()
         client._handle_notification("jamulusclient/recorderState", {"state": "??"})
         client._handle_notification("jamulusclient/recorderState", {})
+        self.assertEqual(received, [])
+
+    def test_unknown_numeric_state_is_ignored(self):
+        client, received = self._client_with_hook()
+        client._handle_notification("jamulusclient/recorderState", {"state": 99})
         self.assertEqual(received, [])
 
     def test_no_hook_is_safe(self):

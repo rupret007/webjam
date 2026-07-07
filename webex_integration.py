@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from core.logging_config import configure_logging
 from core.settings import load_settings
+from core.webex_url import is_allowed_webex_url, normalize_webex_url
 
 
 @dataclass
@@ -102,6 +103,9 @@ class WebexController:
             email: Email address (if required)
         """
         try:
+            self.meeting_url = normalize_webex_url(self.meeting_url)
+            if not is_allowed_webex_url(self.meeting_url):
+                raise RuntimeError("invalid or untrusted Webex meeting URL")
             # Open meeting in browser
             opened = webbrowser.open(self.meeting_url)
             if not opened:
@@ -417,7 +421,10 @@ class WebexConfig:
 def open_webex_meeting(url: str):
     """Simple utility to open Webex meeting in browser"""
     try:
-        return bool(webbrowser.open(url))
+        meeting_url = normalize_webex_url(url)
+        if not is_allowed_webex_url(meeting_url):
+            return False
+        return bool(webbrowser.open(meeting_url))
     except Exception as e:
         try:
             from core.logging_config import configure_logging
@@ -512,4 +519,3 @@ if __name__ == "__main__":
     
     controller.stop()
     print("\nTest complete!")
-

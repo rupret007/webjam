@@ -5,19 +5,31 @@ exchange failure falling back to the direct-URL path.
 from __future__ import annotations
 
 import os
+import json
 import unittest
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-from webjam_qt.widgets.webex_embed import WebexEmbed  # noqa: E402
+from webjam_qt.widgets.webex_embed import WebexEmbed, _HTML_TEMPLATE  # noqa: E402
 
 
 class TestLeaveBeforeLoad(unittest.TestCase):
+    def test_untrusted_url_is_refused_before_webengine_init(self):
+        embed = WebexEmbed()
+        states = []
+        embed.meeting_state_changed.connect(states.append)
+
+        embed.load_meeting("https://example.com/meet/not-webex")
+
+        self.assertIsNone(embed._view)
+        self.assertIn("error", states)
+
     def test_leave_meeting_before_load_completes_no_crash(self):
         embed = WebexEmbed()
         # Sanity: no WebEngine objects yet, view is on placeholder (idx 0).
@@ -39,6 +51,38 @@ class TestLeaveBeforeLoad(unittest.TestCase):
         embed.load_meeting("https://x.webex.com/y")
         self.assertIsNotNone(embed._view)
         self.assertEqual(embed._stack.currentIndex(), 1)
+
+    def test_page_ready_uses_json_encoded_token_and_url(self):
+        embed = WebexEmbed()
+        embed._page = unittest.mock.MagicMock()
+        embed._pending_token = "tok'en\nvalue"
+        embed._pending_url = "https://x.webex.com/meet/a'b"
+
+        embed._on_page_ready()
+
+        js = embed._page.runJavaScript.call_args.args[0]
+        token_json = json.dumps("tok'en\nvalue")
+        url_json = json.dumps("https://x.webex.com/meet/a'b")
+        expected = (
+            "startWebexMeeting("
+            f"{token_json}, "
+            f"{url_json});"
+        )
+        self.assertEqual(js, expected)
+        self.assertIsNone(embed._pending_token)
+
+    def test_local_widget_permission_url_allowed_only_for_trusted_meeting(self):
+        embed = WebexEmbed()
+        widget_url = QUrl.fromLocalFile(str(_HTML_TEMPLATE.resolve()))
+
+        self.assertFalse(embed._is_trusted_widget_permission_url(widget_url))
+
+        embed._pending_token = "token"
+        embed._pending_url = "https://x.webex.com/meet/band"
+        self.assertTrue(embed._is_trusted_widget_permission_url(widget_url))
+
+        embed._pending_url = "https://example.com/meet/not-webex"
+        self.assertFalse(embed._is_trusted_widget_permission_url(widget_url))
 
 
 class TestGuestTokenFallback(unittest.TestCase):

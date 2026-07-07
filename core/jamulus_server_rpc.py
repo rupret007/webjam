@@ -194,7 +194,7 @@ class JamulusServerRpc:
 
     def get_recorder_status(self) -> dict:
         result = self._call_raw("jamulusserver/getRecorderStatus", {})
-        if not isinstance(result, dict):
+        if not isinstance(result, dict) or not isinstance(result.get("enabled"), bool):
             raise ServerRpcError("Unexpected getRecorderStatus payload.")
         return result
 

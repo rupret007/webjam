@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
@@ -45,12 +46,14 @@ def run() -> int:
     app.setStyleSheet(load_stylesheet())
 
     # Show setup wizard on first run (no config file yet)
+    run_ready_check_after_startup = False
     if SetupWizard.should_show_on_startup(settings):
         wizard = SetupWizard(settings)
         if wizard.exec() == SetupWizard.DialogCode.Rejected:
             return 0  # User cancelled — exit cleanly
         # Reload settings that the wizard just saved
         settings = load_settings()
+        run_ready_check_after_startup = True
 
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
@@ -60,6 +63,8 @@ def run() -> int:
     controller = ApplicationController(window, settings=settings)
     controller.start_companion_api()  # optional localhost bridge for DAWs/editors
     window.show()
+    if run_ready_check_after_startup:
+        QTimer.singleShot(0, controller._on_ready_check)
 
     exit_code = app.exec()
     controller.shutdown()

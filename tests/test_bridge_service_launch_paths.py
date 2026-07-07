@@ -252,7 +252,7 @@ class TestLaunchCommandContract(unittest.TestCase):
         self.assertIn("--jsonrpcsecretfile", cmd)
         self.assertEqual(bridge.jamulus_state, "Running")
 
-    def test_secret_write_failure_launches_without_secret_args(self, _thread):
+    def test_secret_write_failure_fails_closed_without_launch(self, _thread):
         bridge = _make_bridge()
         bridge.settings.jamulus_server = "nosecret-probe.example.com"
         bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
@@ -262,9 +262,9 @@ class TestLaunchCommandContract(unittest.TestCase):
                    side_effect=OSError("read-only home")):
             cmd = self._launch_and_capture_cmd(bridge)
 
-        self.assertNotIn("--jsonrpcsecretfile", cmd)
-        self.assertIn("--connect", cmd)  # launch still proceeds
-        self.assertEqual(bridge.jamulus_state, "Running")
+        self.assertEqual(cmd, [])
+        self.assertEqual(bridge.jamulus_state, "Launch failed")
+        bridge.show_actionable_error.assert_called_once()
 
 
 class TestFindJamulusFallback(unittest.TestCase):

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from core.redaction import redact_mapping, redact_text
+
 
 class RetryService:
     @staticmethod
@@ -107,12 +109,17 @@ class MetricsService:
 
     @staticmethod
     def _json_safe(value: Any) -> Any:
-        if value is None or isinstance(value, (str, int, float, bool)):
+        if value is None or isinstance(value, (int, float, bool)):
             return value
+        if isinstance(value, str):
+            return redact_text(value)
         if isinstance(value, Path):
             return str(value)
         if isinstance(value, dict):
-            return {str(k): MetricsService._json_safe(v) for k, v in value.items()}
+            safe = {
+                str(k): MetricsService._json_safe(v) for k, v in value.items()
+            }
+            return redact_mapping(safe)
         if isinstance(value, (list, tuple, set)):
             return [MetricsService._json_safe(item) for item in value]
         return str(value)
@@ -135,6 +142,8 @@ class MetricsService:
         sources: Iterable[Path],
         destination: Path,
         missing_sink: list[str],
+        *,
+        redact: bool = False,
     ) -> list[str]:
         copied: list[str] = []
         name_counts: dict[str, int] = {}
@@ -152,7 +161,14 @@ class MetricsService:
             else:
                 target_name = base_name
             target = destination / target_name
-            shutil.copy2(source, target)
+            if redact:
+                try:
+                    text = source.read_text(encoding="utf-8", errors="replace")
+                    target.write_text(redact_text(text), encoding="utf-8")
+                except OSError:
+                    shutil.copy2(source, target)
+            else:
+                shutil.copy2(source, target)
             copied.append(str(source))
         return copied
 
@@ -422,6 +438,7 @@ class MetricsService:
                 self._normalize_file_candidates(log_files),
                 logs_dir,
                 missing_files,
+                redact=True,
             )
             copied_support = self._copy_files(
                 self._normalize_file_candidates(support_files),

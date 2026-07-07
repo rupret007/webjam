@@ -26,6 +26,7 @@ from PySide6.QtCore import QObject, QTimer, Qt
 from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
+from core.session_health import SessionHealth
 from core.settings import AppSettings, load_settings
 from services.bridge_service import BridgeService
 from storage.repository import WebJamRepository
@@ -65,6 +66,7 @@ class ApplicationController(QObject):
         super().__init__(window)
         self.window = window
         self.settings = settings or load_settings()
+        self.session_health = SessionHealth()
 
         self._ui_invoker = UiThreadInvoker(self)
 
@@ -81,10 +83,7 @@ class ApplicationController(QObject):
         )
         self.webex = WebexController(meeting_url=self.settings.webex_url)
 
-        # Surface incoming band chat (from Jamulus) in the shared canvas.
-        self.jamulus.chat_callback = self._on_jamulus_chat
-        # Surface server recorder state (multitrack stems) in the status bar.
-        self.jamulus.recorder_state_callback = self._on_recorder_state
+        self._attach_jamulus_callbacks()
         self._server_recording = False
         # Last-known band-server recorder ARMED state (set by the Record
         # button worker; distinct from _server_recording, which is "actually
@@ -301,7 +300,13 @@ class ApplicationController(QObject):
             "jamulus_connected": str(self._jamulus_connected),
             "participant_count": str(len(self._snapshot_participants())),
             "jamulus_server": f"{self.settings.jamulus_server}:{self.settings.jamulus_port}",
+            "session_health": self.session_health.to_public_dict(),
         }
+
+    def _attach_jamulus_callbacks(self) -> None:
+        """Attach UI callbacks to the current JamulusController instance."""
+        self.jamulus.chat_callback = self._on_jamulus_chat
+        self.jamulus.recorder_state_callback = self._on_recorder_state
 
     # ------------------------------------------------------------------
     # Initial wiring
@@ -315,6 +320,7 @@ class ApplicationController(QObject):
         strip.mute_self_requested.connect(self._on_mute_self)
         strip.practice_requested.connect(self._on_practice_requested)
         strip.record_requested.connect(self._on_record_requested)
+        strip.ready_check_requested.connect(self._on_ready_check)
         # Fallback button opens Webex in the system browser when embed unavailable
         self.window.webex_embed.fallback_button().clicked.connect(
             lambda: self.bridge.launch_webex(manual=True)
@@ -369,6 +375,8 @@ class ApplicationController(QObject):
         self.window.set_status_video("Ready to join")
         self.window.set_status_latency("Not connected")
         self.window.set_status_routing("scanning…")
+        self.session_health.reset_live_truth()
+        self.session_health.mark_process(self.bridge.jamulus_state)
         self.window.session_strip.start_session_clock()
         self._demo_timer.start()
         # Start the global meter decay tick (continuous; one timer for the
@@ -409,7 +417,15 @@ class ApplicationController(QObject):
             QMessageBox.Icon.Information if report.all_ok else QMessageBox.Icon.Warning
         )
         box.setText(report.to_text())
+        settings_btn = None
+        if not report.all_ok:
+            settings_btn = box.addButton(
+                "Open Settings", QMessageBox.ButtonRole.ActionRole
+            )
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
         box.exec()
+        if settings_btn is not None and box.clickedButton() is settings_btn:
+            self._open_settings_wizard()
 
     def _on_chat_submitted(self, text: str) -> None:
         """User sent a chat message from the canvas box — send to the band and
@@ -428,6 +444,9 @@ class ApplicationController(QObject):
         if recording == self._server_recording:
             return  # no transition — don't re-flash
         self._server_recording = recording
+        self.session_health.mark_recorder(
+            armed=self._recorder_armed, recording=recording
+        )
         self.window.set_status_recording(recording)
         if recording:
             self.window.flash_message(
@@ -455,10 +474,23 @@ class ApplicationController(QObject):
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
         if not jamulus_participants:
+            if self._jamulus_connected:
+                self._jamulus_connected = False
+                self._level_timer.stop()
+                self.window.set_status_latency("Not connected")
+                self.window.set_status_audio("Connecting…")
+                self._reset_to_demo_state()
             return
+        rpc = getattr(self.jamulus, "rpc_client", None)
+        self.session_health.mark_process(
+            self.bridge.jamulus_state,
+            rpc_available=bool(getattr(rpc, "available", False)),
+        )
+        self.session_health.mark_participants(len(jamulus_participants))
 
         if not self._jamulus_connected:
             self._jamulus_connected = True
+            self.session_health.mark_rpc_result("participants", True)
             # Push our display name to Jamulus so the band sees a real name.
             self.jamulus.set_name(self.settings.webex_display_name)
             self._demo_timer.stop()
@@ -475,12 +507,18 @@ class ApplicationController(QObject):
                 LOGGER.debug("metric_session_started increment failed", exc_info=True)
             # Celebrate the moment — first connection deserves a flash
             if self.bridge.practice_mode:
+                self.window.set_status_audio(
+                    f"Practice connected ({self.bridge.effective_server()})"
+                )
                 self.window.flash_message(
                     "Practice session live — you're on a private local server. "
                     "Play something and watch your meter.",
                     ms=5000,
                 )
             else:
+                self.window.set_status_audio(
+                    f"Connected ({self.bridge.effective_server()})"
+                )
                 self.window.flash_message(
                     f"Connected to {self.settings.jamulus_server}. "
                     "Waiting for band members…",
@@ -551,6 +589,12 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     def _poll_levels(self) -> None:
         """Called every 100 ms; pushes audio engine levels to participant grid."""
+        try:
+            diag = self.jamulus.audio_engine.diagnostics()
+            source = getattr(diag, "backend", "unknown")
+        except Exception:  # noqa: BLE001
+            source = "unknown"
+        self.session_health.mark_levels(source)
         for channel_id in self.participants:
             level = self.jamulus.audio_engine.get_level(channel_id)
             self.window.participant_grid.update_level(channel_id, level)
@@ -658,7 +702,12 @@ class ApplicationController(QObject):
                 armed = target_armed
                 deadline = _time.monotonic() + 4.0
                 while _time.monotonic() < deadline:
-                    armed = bool(rpc.get_recorder_status().get("enabled", target_armed))
+                    status = rpc.get_recorder_status()
+                    if not isinstance(status, dict) or "enabled" not in status:
+                        raise ServerRpcError(
+                            "Recorder status did not include an enabled flag."
+                        )
+                    armed = bool(status["enabled"])
                     if armed == target_armed:
                         break
                     _time.sleep(0.25)
@@ -680,6 +729,10 @@ class ApplicationController(QObject):
 
     def _apply_record_toggle_result(self, armed: bool) -> None:
         self._recorder_armed = armed
+        self.session_health.mark_recorder(
+            armed=armed, recording=self._server_recording
+        )
+        self.session_health.mark_rpc_result("recorder", True)
         self.window.session_strip.set_recording_state(armed, enabled=True)
         if armed:
             self.window.flash_message(
@@ -699,6 +752,7 @@ class ApplicationController(QObject):
             )
 
     def _apply_record_toggle_failure(self, message: str) -> None:
+        self.session_health.mark_rpc_result("recorder", False, message)
         self.window.session_strip.set_recording_state(
             self._recorder_armed, enabled=True
         )
@@ -763,6 +817,7 @@ class ApplicationController(QObject):
 
     def _reset_to_demo_state(self) -> None:
         """Replace current participants with demo placeholders + restart demo timer."""
+        self.session_health.reset_live_truth()
         self.participants.clear()
         for p in _DEMO_PARTICIPANTS:
             self.participants[p.channel_id] = ParticipantPresentation(
@@ -780,17 +835,28 @@ class ApplicationController(QObject):
 
     def _on_join_video(self) -> None:
         """Toggle handler — joins the meeting if not joined, leaves if active."""
+        from core.webex_url import normalize_webex_url, webex_url_error
+
         if self._is_video_active():
             self._leave_video()
             return
 
-        url = self.settings.webex_url
+        url = normalize_webex_url(self.settings.webex_url)
         if not url:
             self._show_actionable_error(
                 "No Meeting URL",
                 what_failed="No Webex meeting URL is configured.",
                 likely_cause="A meeting link hasn't been entered yet.",
                 next_action="Go to Settings and enter your Webex meeting link.",
+            )
+            return
+        error = webex_url_error(url)
+        if error:
+            self._show_actionable_error(
+                "Invalid Webex URL",
+                what_failed="WebJam will not open this meeting link.",
+                likely_cause=error,
+                next_action="Open Settings and paste the HTTPS webex.com meeting link.",
             )
             return
 
@@ -908,16 +974,32 @@ class ApplicationController(QObject):
         self.window.flash_message(text)
 
     def _refresh_readiness(self) -> None:
-        # Append server address when Jamulus is running so musicians can confirm
-        # they're on the right server at a glance.
-        audio_state = self.bridge.jamulus_state
+        # A launched process is not the same as a proven Jamulus session.  Keep
+        # the "Running" wording out of the UI until participant/RPC truth has
+        # arrived; the button can still offer Stop Audio for a live subprocess.
         jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
+        rpc = getattr(self.jamulus, "rpc_client", None)
+        self.session_health.mark_process(
+            self.bridge.jamulus_state,
+            rpc_available=bool(getattr(rpc, "available", False)),
+        )
+        audio_state = self.bridge.jamulus_state
         if jamulus_up:
             server = self.bridge.effective_server()
             if self.bridge.practice_mode:
-                audio_state = f"Practice ({server})"
+                audio_state = (
+                    f"Practice connected ({server})"
+                    if self._jamulus_connected
+                    else f"Practice connecting ({server})"
+                )
             else:
-                audio_state = f"{audio_state} ({server})"
+                audio_state = (
+                    f"Connected ({server})"
+                    if self._jamulus_connected
+                    else f"Connecting ({server})"
+                )
+        else:
+            self.session_health.reset_live_truth()
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
         self.window.session_strip.set_audio_state(
@@ -1089,17 +1171,41 @@ class ApplicationController(QObject):
             )
             # Reset the button to unchecked since we didn't actually mute
             self.window.session_strip.set_self_muted(False)
+            self.session_health.mark_rpc_result(
+                "self-mute", False, "local channel not available"
+            )
+            return
+        if not self._jamulus_connected:
+            self.window.flash_message(
+                "Connect to Jamulus first — Mute Me needs the live RPC session.",
+                ms=4000,
+            )
+            self.window.session_strip.set_self_muted(False)
+            self.session_health.mark_rpc_result(
+                "self-mute", False, "Jamulus session not proven"
+            )
             return
         p = self.participants[local_channel_id]
+        old_muted = bool(p.muted)
         new_muted = not p.muted
         p.muted = new_muted
         self._mix_dirty = True
-        if self._jamulus_connected:
-            # Real self-mute: tell Jamulus to stop sending OUR audio to the
-            # band (jamulusclient/setMuted).  Zeroing our own channel fader
-            # would only mute us in our own monitor — the others would still
-            # hear us.
-            self.jamulus.set_self_muted(new_muted)
+        # Real self-mute: tell Jamulus to stop sending OUR audio to the band
+        # (jamulusclient/setMuted).  Zeroing our own channel fader would only
+        # mute us in our own monitor — the others would still hear us.
+        if not self.jamulus.set_self_muted(new_muted):
+            p.muted = old_muted
+            self.session_health.mark_rpc_result(
+                "self-mute", False, "Jamulus RPC rejected setMuted"
+            )
+            self._push_participants_to_grid()
+            self.window.session_strip.set_self_muted(old_muted)
+            self.window.flash_message(
+                "Mute Me did not reach Jamulus — your mute state was not changed.",
+                ms=6000,
+            )
+            return
+        self.session_health.mark_rpc_result("self-mute", True)
         # Mirror mute state into the embedded Webex meeting if we're in one,
         # so the conductor only has to hit one button to silence themselves
         # in both audio and video.  No-op if Webex hasn't joined.  (We've
@@ -1249,9 +1355,70 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Settings wizard (Phase 6)
     # ------------------------------------------------------------------
+    def _reconfigure_services_after_settings(self, old_settings: AppSettings) -> None:
+        """Apply freshly saved settings to all long-lived integration objects."""
+        self.bridge.settings = self.settings
+
+        # Webex browser fallback controller is long-lived; keep its meeting URL
+        # in sync with the settings object used by the embedded pane.
+        self.webex.meeting_url = self.settings.webex_url
+        self.bridge.webex_controller = self.webex
+
+        # JamulusController owns RPC, UDP fallback, and audio-engine settings.
+        # Reconfigure in place so BridgeService, MixManager, and tests keep the
+        # same object identity while still seeing the new target.
+        self.jamulus.settings = self.settings
+        self.jamulus.host = (self.settings.jamulus_server or "").strip() or "127.0.0.1"
+        self.jamulus.port = self.settings.jamulus_port
+        self.jamulus.rpc_port = self.settings.jamulus_rpc_port
+        protocol = getattr(self.jamulus, "protocol", None)
+        if protocol is not None:
+            protocol.host = self.jamulus.host
+            protocol.port = self.jamulus.port
+        audio_engine = getattr(self.jamulus, "audio_engine", None)
+        if audio_engine is not None:
+            audio_engine.settings = self.settings
+
+        old_rpc_port = getattr(old_settings, "jamulus_rpc_port", None)
+        if old_rpc_port != self.settings.jamulus_rpc_port:
+            old_rpc = getattr(self.jamulus, "rpc_client", None)
+            if old_rpc is not None:
+                try:
+                    old_rpc.stop()
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug("Old Jamulus RPC client stop failed", exc_info=True)
+            from core.jamulus_rpc_client import JamulusRpcClient
+            self.jamulus.rpc_client = JamulusRpcClient(
+                port=self.settings.jamulus_rpc_port,
+                on_participants_changed=self.jamulus._on_rpc_participants,
+                on_levels=self.jamulus._on_rpc_levels,
+                on_chat=self.jamulus._on_rpc_chat,
+                on_recorder_state=self.jamulus._on_rpc_recorder_state,
+            )
+
+        self.bridge.jamulus_controller = self.jamulus
+        self._mix_manager._jamulus = self.jamulus
+
+        api_port_changed = self.api_bridge.port != self.settings.companion_api_port
+        api_enabled_changed = (
+            old_settings.companion_api_enabled != self.settings.companion_api_enabled
+        )
+        was_api_running = bool(getattr(self.api_bridge, "_running", False))
+        if api_port_changed or api_enabled_changed or not self.settings.companion_api_enabled:
+            try:
+                self.api_bridge.stop()
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("Companion API stop during settings apply failed", exc_info=True)
+        self.api_bridge.port = self.settings.companion_api_port
+        if self.settings.companion_api_enabled and (
+            api_enabled_changed or api_port_changed or was_api_running
+        ):
+            self.start_companion_api()
+
     def _open_settings_wizard(self) -> None:
         from webjam_qt.windows.setup_wizard import SetupWizard
         # Snapshot relevant fields before the wizard so we can detect changes.
+        old_settings = self.settings
         old_webex_url = self.settings.webex_url
         old_jamulus_server = (self.settings.jamulus_server, self.settings.jamulus_port)
         # In-session reopen — skip the welcome page since the user already
@@ -1260,9 +1427,7 @@ class ApplicationController(QObject):
         if wizard.exec() == SetupWizard.DialogCode.Accepted:
             from core.settings import load_settings
             self.settings = load_settings()
-            # Push new settings to services immediately so the next Launch Audio
-            # or Join Video uses the updated server / Jamulus path / Webex URL.
-            self.bridge.settings = self.settings
+            self._reconfigure_services_after_settings(old_settings)
 
             # Build a context-aware confirmation message so the user knows
             # whether they need to take any action for the change to apply.

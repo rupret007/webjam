@@ -181,16 +181,23 @@ class JamulusController:
         except AttributeError:
             pass  # older audio engine without the method
         self.audio_engine.stop()
-        # Clear callback list so the next session starts fresh and we don't
-        # hold references to dead listeners.
-        with self._lock:
-            self.callbacks.clear()
+        # Keep registered UI callbacks across Stop Audio -> Launch Audio.
+        # ApplicationController registers its participant callback once during
+        # construction; clearing here disconnects future sessions from the UI.
 
     # ------------------------------------------------------------------
     # RPC / UDP participant callbacks (called from background threads)
     # ------------------------------------------------------------------
     def _on_rpc_participants(self, channel_infos: list) -> None:
         """Receive participant list from JSON-RPC (authoritative when available)."""
+        if not channel_infos:
+            with self._participants_lock:
+                had_participants = bool(self.participants)
+                self.participants.clear()
+            if had_participants:
+                self._notify_callbacks()
+            return
+
         normalized: Dict[int, str] = {}
         instrument_map: Dict[int, str] = {}
         skill_map: Dict[int, str] = {}
@@ -643,4 +650,3 @@ if __name__ == "__main__":
     controller.stop()
     
     print("Test complete!")
-

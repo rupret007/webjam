@@ -67,6 +67,8 @@ class JamulusRpcClient:
     RECONNECT_WAIT_S = 2.0
     LEVEL_MAX = 9      # channelLevelList values are integers 0..9
     # Jamulus ERecorderState: 1=not initialised, 2=not enabled, 3=recording.
+    RECORDER_STATE_NOT_INITIALISED = 1
+    RECORDER_STATE_STOPPED = 2
     RECORDER_STATE_RECORDING = 3
     FADER_MAX = 100    # setFaderLevel level is 0..100
     GAIN_RANGE_IN = 127  # WebJam's internal mixer range (0..127)
@@ -440,6 +442,14 @@ class JamulusRpcClient:
         try:
             state = int(raw_state)
         except (TypeError, ValueError):
+            return
+        known_states = {
+            self.RECORDER_STATE_NOT_INITIALISED,
+            self.RECORDER_STATE_STOPPED,
+            self.RECORDER_STATE_RECORDING,
+        }
+        if state not in known_states:
+            _logger.debug("Ignoring unknown recorderState value: %r", raw_state)
             return
         try:
             self._on_recorder_state(state == self.RECORDER_STATE_RECORDING, state)

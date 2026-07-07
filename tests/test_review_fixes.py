@@ -256,19 +256,75 @@ class TestDiagnosticsRedaction(unittest.TestCase):
         from dataclasses import asdict
 
         from core.settings import AppSettings
-        from webjam_qt.controllers import diagnostics as dg
+        from core.redaction import REDACTED, redact_mapping
 
         s = AppSettings()
         s.webex_guest_issuer_secret = "supersecret"
         # A future secret-named field must redact via the name convention.
         data = asdict(s)
         data["some_future_token"] = "leakme"
-        for f in list(data.keys()):
-            if data[f] and (f in dg._REDACTED_FIELDS or
-                            any(h in f.lower() for h in dg._REDACTED_NAME_HINTS)):
-                data[f] = "[redacted]"
-        self.assertEqual(data["webex_guest_issuer_secret"], "[redacted]")
-        self.assertEqual(data["some_future_token"], "[redacted]")
+        redacted = redact_mapping(data)
+
+        self.assertEqual(redacted["webex_guest_issuer_secret"], REDACTED)
+        self.assertEqual(redacted["some_future_token"], REDACTED)
+
+    def test_diagnostics_exporter_uses_shared_redaction(self):
+        from core.settings import AppSettings
+        from webjam_qt.controllers.diagnostics import DiagnosticsExporter
+
+        s = AppSettings()
+        s.webex_guest_issuer_secret = "supersecret"
+        exporter = DiagnosticsExporter(
+            settings=s,
+            bridge=object(),
+            jamulus_controller=object(),
+            window_version="0.7.2",
+        )
+
+        payload = exporter._sanitised_settings_json()
+
+        self.assertIn('"webex_guest_issuer_secret": "[redacted]"', payload)
+        self.assertNotIn("supersecret", payload)
+
+    def test_redact_text_handles_json_and_env_secret_names(self):
+        from core.redaction import redact_text
+
+        text = (
+            'WEBJAM_WEBEX_GUEST_ISSUER_SECRET=envsecret '
+            '{"webex_guest_issuer_secret": "jsonsecret", '
+            '"access_token": "tok123", '
+            '"safe": "visible"} '
+            "Authorization: Bearer bearer-secret"
+        )
+
+        redacted = redact_text(text)
+
+        self.assertNotIn("envsecret", redacted)
+        self.assertNotIn("jsonsecret", redacted)
+        self.assertNotIn("tok123", redacted)
+        self.assertNotIn("bearer-secret", redacted)
+        self.assertIn('"safe": "visible"', redacted)
+
+    def test_metrics_service_redacts_log_file_copy(self):
+        from ui.services import MetricsService
+
+        with tempfile.TemporaryDirectory() as d:
+            source = Path(d) / "webjam.log"
+            target_dir = Path(d) / "out"
+            target_dir.mkdir()
+            source.write_text(
+                'WEBJAM_WEBEX_GUEST_ISSUER_SECRET=envsecret\n'
+                '{"webex_guest_issuer_secret": "jsonsecret"}\n',
+                encoding="utf-8",
+            )
+            missing: list[str] = []
+
+            MetricsService._copy_files([source], target_dir, missing, redact=True)
+
+            copied = (target_dir / "webjam.log").read_text(encoding="utf-8")
+            self.assertEqual(missing, [])
+            self.assertNotIn("envsecret", copied)
+            self.assertNotIn("jsonsecret", copied)
 
 
 if __name__ == "__main__":

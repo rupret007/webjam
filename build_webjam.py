@@ -1,6 +1,12 @@
 """
-Build script for WebJam
-Creates standalone executable using PyInstaller
+Legacy build script for the pre-Conductor installer path.
+
+This script is kept only for historical/manual compatibility. The v0.7.x
+pilot release path is:
+
+    python -m PyInstaller --clean --noconfirm webjam.spec
+
+CI and GitHub Releases build from ``webjam.spec`` only.
 """
 
 import subprocess
@@ -241,8 +247,10 @@ For more information, see README.md
 def main():
     """Main build process"""
     print("="*70)
-    print("WebJam Build System")
+    print("WebJam Legacy Build System")
     print("="*70)
+    print("\n[WARN] build_webjam.py is legacy. Pilot releases use:")
+    print("       python -m PyInstaller --clean --noconfirm webjam.spec")
     print("\nThis will build:")
     print("  1. WebJam Application (standalone GUI)")
     print("  2. WebJam Installer (with bundled dependencies)")
@@ -327,4 +335,3 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
-

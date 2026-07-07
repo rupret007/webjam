@@ -1,6 +1,7 @@
 # WebJam — Taking It to the Next Level
 
 **Date:** 2026-06-29
+**Status:** Historical memo. v0.7.1 is already released; current next step is v0.7.2 Pilot Readiness and real-hardware pilot gates, not the v0.4.8 release plan below.
 An evaluation of what WebJam needs to become a tool a band actually relies on, with the audio engine assessed against the current open-source landscape — plus the headline fix implemented this round.
 
 ---
@@ -49,7 +50,7 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 **P0 — make the core actually work & ship**
 - ✅ **Correct Jamulus control API** (done this round).
-- **Cut a signed release.** No downloadable build exists since v0.3.0. Tag `v0.4.8`; add macOS codesign + notarization and Windows signing so Gatekeeper/SmartScreen don't block your bandmates. *(CI build matrix already exists; needs certs.)*
+- **Historical note:** this memo predated the v0.7.x releases. Signed/notarized builds still matter, but downloadable Windows x64, macOS ARM64, and macOS Intel x64 artifacts now exist.
 
 **P1 — leverage the now-correct API (concrete, high-value features the fix unlocks)**
 - **Global "Mute Me"** via `jamulusclient/setMuted` (true self-mute in Jamulus, not just fader-to-zero). The client method is now wired and ready to expose.
@@ -67,4 +68,4 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Cut the **v0.4.8 release** so the band can finally run all of this (the Jamulus fix included), then build the P1 features (`setMuted`, chat) — they're small now that the control channel is correct, and they make the app feel alive in a session.
+Current recommendation: treat v0.7.1 as closed-pilot-ready, ship v0.7.2 pilot-readiness hardening, then run the real-hardware gates from `FIRST_JAM.md` before Demo Deck Level 2.

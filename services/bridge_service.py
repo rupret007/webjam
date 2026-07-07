@@ -332,10 +332,10 @@ class BridgeService:
                         "--jsonrpcsecretfile", str(DEFAULT_SECRET_PATH)
                     ]
                 except OSError as exc:
-                    LOGGER.warning(
-                        "Could not write JSON-RPC secret file: %s; "
-                        "Jamulus mixer control will be unavailable", exc
-                    )
+                    raise RuntimeError(
+                        "Could not create Jamulus JSON-RPC secret file; "
+                        "refusing to launch without RPC authentication."
+                    ) from exc
 
                 # Launch Jamulus with JSON-RPC port so WebJam can query it
                 cmd = [

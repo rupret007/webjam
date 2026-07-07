@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -81,6 +80,32 @@ class TestReadyCheck(unittest.TestCase):
         self.assertFalse(rep.all_ok)
         item = next(i for i in rep.items if i.name == "Webex meeting set")
         self.assertFalse(item.ok)
+
+    def test_webex_http_url_fails(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                webex_url="http://org.webex.com/meet/band",
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+                rep = preflight.run_ready_check(s)
+        self.assertFalse(rep.all_ok)
+        item = next(i for i in rep.items if i.name == "Webex meeting set")
+        self.assertFalse(item.ok)
+        self.assertIn("https", item.detail.lower())
+
+    def test_non_webex_url_fails(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                webex_url="https://example.com/meet/band",
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+                rep = preflight.run_ready_check(s)
+        self.assertFalse(rep.all_ok)
+        item = next(i for i in rep.items if i.name == "Webex meeting set")
+        self.assertFalse(item.ok)
+        self.assertIn("webex.com", item.detail)
 
     def test_to_text_marks_failures(self):
         s = _settings(jamulus_candidates=[], webex_url="")

@@ -74,16 +74,16 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 ### Installation Steps
 
 1. **Get WebJam**
-   - **Option A (recommended)**: Download the built app from [GitHub Actions](https://github.com/rupret007/webjam/actions) (artifacts after a successful run) or [Releases](https://github.com/rupret007/webjam/releases). Use `WebJam.exe` on Windows or the macOS app/zip for your architecture.
-   - **Option B**: Clone the repo and run the Python installer script `webjam_installer.py` (run as Administrator) to install VB-Cable, Jamulus, Webex, and create shortcuts.
+   - **Option A (recommended)**: Download the built app from [Releases](https://github.com/rupret007/webjam/releases).
+     - Windows: `WebJam-windows-x64.zip`
+     - macOS Apple Silicon: `WebJam-macos-arm64.zip`
+     - macOS Intel: `WebJam-macos-x64.zip`
+   - **Option B**: Clone the repo and run `python webjam_qt_main.py` from source.
 
-2. **Follow Installation Wizard** (if using Option B)
-   - The installer will set up:
-     - VB-Cable virtual audio device
-     - Jamulus audio client
-     - Webex desktop app (official Cisco MSI by architecture)
-     - WebJam GUI and desktop shortcut
-   - Click "Install" when prompted for VB-Cable driver.
+2. **Install prerequisites**
+   - Install Jamulus from [jamulus.io](https://jamulus.io).
+   - Install a virtual audio cable: VB-CABLE on Windows, BlackHole on macOS.
+   - Have your Webex meeting link ready.
 
 3. **Restart Computer** (if prompted)
    - Required if VB-Cable was just installed.
@@ -92,10 +92,9 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
    - Use the desktop shortcut, or run `WebJam.exe` (built app) or `python webjam_qt_main.py` (from source).
    - The first time you run WebJam, a Setup Wizard will walk you through configuration.
 
-5. **First Admin Sign-In**
-   - If you need admin access on a fresh install, use `Admin -> Sign In`.
-   - While bootstrap credentials are active, WebJam shows the location of a local one-time credential file.
-   - Sign in as `admin`, change the password immediately, and WebJam removes that bootstrap file automatically.
+5. **Run Ready Check**
+   - Click **Ready** in the top bar, or press `F2`.
+   - Fix any failed item before the first real jam.
 
 ---
 
@@ -106,10 +105,10 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 The first time you run WebJam, a Setup Wizard will open automatically. It has 5 steps:
 
 1. **Welcome** — Overview of what WebJam does
-2. **Jamulus Server** — Enter your band's server address (ask your admin for this)
+2. **Jamulus Server** — Enter your band's server host/port and confirm the Jamulus executable path. Jamulus must be installed separately before setup can complete.
 3. **Webex Meeting** — Enter your Webex meeting link
 4. **Audio Setup** — WebJam checks if your computer has the audio routing software installed
-5. **Done** — Click Finish to save your settings
+5. **Configuration saved** — Click Finish, then run Ready Check
 
 If the audio check fails, click "Show me how to set this up" for instructions on installing the audio routing software (VB-CABLE on Windows, BlackHole on macOS).
 
@@ -146,13 +145,13 @@ Before joining a session:
    - The application window opens
 
 2. **Connect to Audio Server**
-   - Click "🎵 Launch Jamulus" button
+   - Click **Launch Audio** in the top bar
    - Jamulus connects to the server
    - Wait for other participants to appear
 
 3. **Join Video Meeting**
-   - Click "📹 Launch Webex" button
-   - Your browser opens to the Webex meeting
+   - Click **Join Video** in the top bar
+   - WebJam opens the Webex meeting in the embedded video pane, with browser fallback if needed
    - Join the meeting with video/audio
 
 4. **Configure Your Mix**
@@ -169,17 +168,13 @@ Before joining a session:
 
 Before your first real rehearsal, run:
 
-1. **Session -> Run Ready Check**
-   - Quick pass/fail summary with latency quality + participant count
-   - Direct actions to open diagnostics, run setup wizard, or export a support bundle
-2. **Help -> Run Setup Wizard**
-   - Verifies Jamulus path and endpoint
-   - Validates Webex URL format
-   - Captures audio diagnostics state
-3. **Session -> Open Diagnostics Panel**
-   - Confirms current runtime state and quick recovery actions
-4. **Help -> View Usage Metrics**
-   - View local counters to track successful launches and recurring issues
+1. Click **Ready** in the top bar, or press `F2`.
+   - Ready Check verifies Jamulus, server settings, audio routing, and Webex.
+   - If it fails, use the dialog's **Open Settings** action or click **Settings** in the side rail.
+2. Click **Practice**, or press `Ctrl+P`.
+   - This starts a private local Jamulus server so you can hear yourself and confirm meters move.
+3. Click **Ctrl+Shift+D** if something fails.
+   - WebJam copies a redacted diagnostics summary you can paste into a GitHub issue.
 
 ### Step 4: Use Session Canvas + Mode Defaults (Recommended)
 
@@ -310,11 +305,7 @@ Before each session, set your mode, template, and goal in the top bar. WebJam st
 
 ### Export Session Brief
 
-Use `Session -> Export Session Brief` to create a markdown handoff file that includes:
-- mode, template, goal, and review state
-- participant list at export time
-- pinned artifacts/references
-- current session notes
+Use **Export...** in the Session Canvas to save a markdown handoff file with the current session notes.
 
 Use this brief for async updates and to kick off the next session quickly.
 
@@ -322,10 +313,9 @@ Use this brief for async updates and to kick off the next session quickly.
 
 Once you've created the mix you want:
 
-1. Click `Save Mix`
-2. If you are signed in, WebJam saves the default mix to your WebJam user profile
-3. If you are not signed in, WebJam saves a local default mix on this computer
-4. That saved default mix restores automatically the next time you sign in or launch WebJam
+1. Press `Ctrl+S` to save the default mix.
+2. WebJam saves a local default mix on this computer.
+3. That saved default mix restores automatically when Jamulus first connects.
 
 **What Gets Saved:**
 - All fader positions
@@ -336,10 +326,8 @@ Once you've created the mix you want:
 
 Your saved default mix can restore automatically, and you can also load it manually:
 
-1. Go to **File** -> **Load Mix**
-2. If you are signed in, WebJam loads your saved profile mix first
-3. Otherwise it falls back to the local saved mix file
-4. The mix applies to matching participants
+1. Press `Ctrl+O` to load the default mix.
+2. The mix applies to matching participants.
 
 **Tip:** Save different mixes for different songs or configurations!
 
@@ -356,10 +344,9 @@ For advanced users:
 
 ### Listening Profiles
 
-WebJam also supports named local listening profiles from the `File` menu:
-- `Save Listening Profile` stores the current mix under a reusable name
-- `Load Listening Profile` reapplies a saved named profile
-- `Delete Listening Profile` removes a profile you no longer need
+WebJam also supports named local mix files:
+- `Ctrl+Shift+S` saves the current mix to a file you choose.
+- `Ctrl+Shift+O` loads a mix file you choose.
 
 This works well for mode-specific setups such as `Music Jam - Rehearsal`, `Writer's Room - Voice Forward`, or `Design Critique - Presenter Focus`.
 
@@ -373,24 +360,17 @@ This works well for mode-specific setups such as `Music Jam - Rehearsal`, `Write
 
 Use this order for fastest recovery:
 
-1. `Session -> Run Ready Check`
-2. `Session -> Open Diagnostics Panel`
-3. `Help -> Run Setup Wizard`
-4. Retry `Launch Jamulus` then `Launch Webex`
-5. If still failing, open `Help -> Quick Start Guide` (troubleshooting path)
+1. Click **Ready**, or press `F2`.
+2. Open **Settings** from the side rail if Ready Check reports a setup issue.
+3. Press `Ctrl+Shift+D` to copy redacted diagnostics.
+4. Retry **Launch Audio**, then **Join Video**.
+5. If still failing, attach the diagnostics plus the last 50 lines of `~/.webjam.log` and `~/.webjam_jamulus.log` to a GitHub issue.
 
-### Diagnostics Export and Metrics Reset
+### Diagnostics
 
-From either Diagnostics Panel or Usage Metrics:
-- **Export Snapshot** writes a timestamped local JSON report with states, diagnostics, and counters.
-- **Export Bundle** writes a timestamped ZIP with snapshot + settings + room context + environment + available logs/support files.
-- **Reset Metrics** clears local counters when starting a new observation window.
+Press `Ctrl+Shift+D` to copy a redacted diagnostics summary to the clipboard. The summary includes runtime state, settings with secrets removed, and pointers to the relevant logs.
 
-For pilot programs, use the `Validation` menu:
-- **Set Cohort Name** to tag creator groups (visual_artists, writers, designers, mixed_discipline)
-- **Record Session Complete** when a room finishes
-
-This enables local cohort-level tracking for activation and cross-mode adoption.
+For pilot programs, track acceptance outside the app with the checklist in `FIRST_JAM.md`: clean install, Ready Check, Ctrl+P solo, two-person Jamulus, Webex audio routing, Record button, take retrieval, and Take Deck playback.
 
 #### ❌ "No Audio from Other Musicians"
 
@@ -446,25 +426,24 @@ Video lag is okay! Remember:
 #### ❌ "Participants Not Showing Up"
 
 **Troubleshooting:**
-1. Click **Session** → **Add Demo Participants** to verify mixer works
-2. Ensure you're connected to Jamulus server
-3. Wait 30 seconds - participants appear gradually
-4. Check Jamulus window to see if they're connected there
+1. Confirm **Launch Audio** changed to **Stop Audio**.
+2. Check the Jamulus window to see whether you are connected to the server.
+3. Wait 30 seconds - participants can appear gradually after RPC connects.
+4. Press `Ctrl+Shift+D` and include diagnostics if WebJam still shows preview cards.
 
 #### ❌ "Jamulus Launch Failed"
 
 **Try:**
-1. Open `Session -> Open Diagnostics Panel`
-2. Confirm Jamulus path is found
-3. Run `Help -> Run Setup Wizard` and re-run checks
-4. Retry launch from main controls
+1. Click **Ready** and use **Open Settings** if Jamulus is missing.
+2. Confirm the Jamulus executable path is found.
+3. Retry **Launch Audio** from the top bar.
 
 #### ❌ "Webex Open Failed"
 
 **Try:**
-1. Open `Session -> Open Diagnostics Panel`
-2. Confirm Webex URL is valid and browser can open links
-3. Retry from the actionable error dialog
+1. Click **Ready** and use **Open Settings** if the Webex URL is invalid.
+2. Confirm the URL is an HTTPS `webex.com` meeting link.
+3. Retry **Join Video** from the top bar.
 
 ---
 
@@ -539,49 +518,32 @@ Position instruments to avoid "masking":
 
 | Shortcut | Action |
 |----------|--------|
+| `Ctrl + L` | Focus session title |
 | `Ctrl + S` | Save Current Mix |
 | `Ctrl + O` | Load Mix |
-| `Ctrl + Q` | Quit WebJam |
+| `Ctrl + Shift + S` | Save Mix As... |
+| `Ctrl + Shift + O` | Load Mix... |
+| `Ctrl + ,` | Open Settings |
 | `F1` | Open Help |
-| `Ctrl + H` | Toggle High Contrast |
-| `Ctrl + +` | Increase Text Size |
-| `Ctrl + -` | Decrease Text Size |
+| `F2` | Run Ready Check |
+| `F11` | Toggle fullscreen |
+| `Escape` | Exit fullscreen |
 
 ### Mixer Controls
 
 | Shortcut | Action |
 |----------|--------|
-| `Space` | Unmute All |
-| `Ctrl + R` | Reset All Faders |
-| `Ctrl + P` | Center All Pans |
-| `M` | Mute Selected Channel |
-| `S` | Solo Selected Channel |
-
-Select a channel first by clicking its mixer strip, then use `M` or `S`.
+| `Ctrl + M` | Mute or unmute all participants |
+| `Ctrl + Shift + M` | Mute or unmute yourself |
+| `Ctrl + Shift + R` | Reset all faders to 0 dB |
 
 ### Session Management
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl + J` | Launch Jamulus |
-| `Ctrl + W` | Launch Webex |
-
-### Accessibility Controls
-
-WebJam is built for diverse creators—musicians, artists, writers, and designers of all abilities. Use `View` menu for:
-- High Contrast Mode
-- Large Text Mode
-- Fine-grained text size adjustments
-
-### Startup Behavior Controls
-
-Use `Startup` menu for:
-- Run Setup Wizard automatically on launch
-- Auto reconnect services with bounded backoff retries
-- Reset all UI preferences to defaults
-- Reset window size/position to defaults
-
-These preferences persist across sessions.
+| `Ctrl + P` | Practice solo with a private local Jamulus server |
+| `Ctrl + T` | Insert timestamp in the Session Canvas |
+| `Ctrl + Shift + D` | Copy redacted diagnostics to clipboard |
 
 ---
 
@@ -592,8 +554,10 @@ These preferences persist across sessions.
 - [ ] WebJam installed and launched
 - [ ] Audio interface connected
 - [ ] Headphones plugged in
-- [ ] Clicked "Launch Jamulus"
-- [ ] Clicked "Launch Webex"
+- [ ] Ready Check passed
+- [ ] Ctrl+P practice worked
+- [ ] Clicked **Launch Audio**
+- [ ] Clicked **Join Video**
 - [ ] Other musicians visible in mixer
 - [ ] Adjusted faders for good balance
 - [ ] Saved mix settings
@@ -687,4 +651,3 @@ If behind a firewall:
 **Welcome to the future of music collaboration! 🎵**
 
 For the latest releases: **[github.com/rupret007/webjam/releases](https://github.com/rupret007/webjam/releases)**
-

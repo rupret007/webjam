@@ -20,7 +20,6 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont
@@ -41,6 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.settings import AppSettings, load_settings
+from core.webex_url import normalize_webex_url, webex_url_error
 from webjam_qt.theme.tokens import Font, Space
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
@@ -124,6 +124,7 @@ class _WelcomePage(QWizardPage):
 class _JamulusPage(QWizardPage):
     def __init__(self, settings: AppSettings) -> None:
         super().__init__()
+        self._settings = settings
         self.setTitle("Jamulus Server")
         self.setSubTitle(
             "Enter your band's Jamulus server details. Ask your band admin if you're not sure."
@@ -183,7 +184,7 @@ class _JamulusPage(QWizardPage):
                 break
         self._jamulus_path = QLineEdit(detected_path)
         self._jamulus_path.setPlaceholderText(
-            "Leave blank to auto-detect  –or–  enter full path to Jamulus"
+            "Enter the full path to Jamulus"
         )
         self._jamulus_path.setAccessibleName("Path to Jamulus executable")
         browse_btn = QPushButton("Browse…")
@@ -240,10 +241,30 @@ class _JamulusPage(QWizardPage):
             return
         self._host_hint.setVisible(False)
 
+    def _resolved_jamulus_path(self) -> str:
+        explicit = self._jamulus_path.text().strip()
+        if explicit:
+            path = Path(explicit).expanduser()
+            return str(path) if path.exists() else ""
+        checked: set[str] = set()
+        for candidate in list(self._settings.jamulus_candidates) + list(
+            AppSettings().jamulus_candidates
+        ):
+            if candidate in checked:
+                continue
+            checked.add(candidate)
+            if Path(candidate).expanduser().exists():
+                return candidate
+        return ""
+
     def validatePage(self) -> bool:
         host = self._host.text().strip()
         if not host:
             self._host.setFocus()
+            return False
+        if not self._resolved_jamulus_path():
+            self._jamulus_path.setFocus()
+            self._jamulus_path.selectAll()
             return False
         return True
 
@@ -261,7 +282,7 @@ class _JamulusPage(QWizardPage):
 
     @property
     def jamulus_path(self) -> str:
-        return self._jamulus_path.text().strip()
+        return self._resolved_jamulus_path() or self._jamulus_path.text().strip()
 
 
 # ---------------------------------------------------------------------------
@@ -344,12 +365,9 @@ class _WebexPage(QWizardPage):
             self._url_hint.setVisible(True)
             return
         if "://" in stripped:
-            # Has a scheme — flag missing-domain (e.g. "https://localhost").
-            parsed = urlparse(stripped)
-            if parsed.netloc and "." not in parsed.netloc:
-                self._url_hint.setText(
-                    "URL needs a domain (e.g. myorg.webex.com), not just localhost"
-                )
+            error = webex_url_error(stripped)
+            if error:
+                self._url_hint.setText(error)
                 self._url_hint.setVisible(True)
                 return
             self._url_hint.setVisible(False)
@@ -363,20 +381,10 @@ class _WebexPage(QWizardPage):
         self._url_hint.setVisible(False)
 
     def validatePage(self) -> bool:
-        url = self._url.text().strip()
-        # Be forgiving: if user typed "myorg.webex.com/meet/foo" without scheme,
-        # auto-prepend https:// rather than silently refusing to advance.
-        # Require a dot in the input so bare words like "not-a-url" still fail.
-        if url and "://" not in url and "." in url.split("/", 1)[0]:
-            url = "https://" + url
+        url = normalize_webex_url(self._url.text())
+        if url != self._url.text().strip():
             self._url.setText(url)
-        parsed = urlparse(url)
-        # Also require a dot in netloc — rejects scheme-prefixed bare words.
-        if (
-            parsed.scheme not in ("http", "https")
-            or not parsed.netloc
-            or "." not in parsed.netloc
-        ):
+        if webex_url_error(url):
             self._url.setFocus()
             self._url.selectAll()
             return False
@@ -384,7 +392,7 @@ class _WebexPage(QWizardPage):
 
     @property
     def webex_url(self) -> str:
-        return self._url.text().strip()
+        return normalize_webex_url(self._url.text())
 
     @property
     def guest_issuer_id(self) -> str:
@@ -559,14 +567,14 @@ class _RoutingPage(QWizardPage):
 class _DonePage(QWizardPage):
     def __init__(self) -> None:
         super().__init__()
-        self.setTitle("You\u2019re all set!")
-        self.setSubTitle("WebJam is configured and ready for your session.")
+        self.setTitle("Configuration saved")
+        self.setSubTitle("Run Ready Check before your first jam.")
 
         layout = QVBoxLayout(self)
         layout.addWidget(_body_label(
             "Click Finish to launch the Conductor.\n\n"
             "Quick-start:\n"
-            "  1.  Make sure Jamulus is installed and running on your machine\n"
+            "  1.  Click Ready in the top bar to run Ready Check\n"
             "  2.  Click \u201cLaunch Audio\u201d — WebJam will connect to your Jamulus server\n"
             "  3.  Click \u201cJoin Video\u201d to open your Webex meeting\n"
             "  4.  Adjust faders as musicians join the session\n\n"

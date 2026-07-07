@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -76,8 +77,24 @@ class TestJamulusPage(unittest.TestCase):
 
     def test_filled_host_passes_validation(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
-        page = _JamulusPage(AppSettings(jamulus_server="192.168.1.10"))
-        self.assertTrue(page.validatePage())
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+            ))
+            self.assertTrue(page.validatePage())
+
+    def test_missing_jamulus_executable_fails_validation(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "webjam_qt.windows.setup_wizard.AppSettings",
+            return_value=AppSettings(jamulus_candidates=[]),
+        ):
+            page = _JamulusPage(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=["/nope/Jamulus"],
+            ))
+            self.assertFalse(page.validatePage())
 
     def test_host_property_strips_whitespace(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
@@ -108,10 +125,15 @@ class TestWebexPage(unittest.TestCase):
         page = _WebexPage(AppSettings(webex_url="https://org.webex.com/meet/bandroom"))
         self.assertTrue(page.validatePage())
 
-    def test_valid_http_url_passes(self):
+    def test_http_url_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage
-        page = _WebexPage(AppSettings(webex_url="http://local.webex.test/meet/x"))
-        self.assertTrue(page.validatePage())
+        page = _WebexPage(AppSettings(webex_url="http://org.webex.com/meet/x"))
+        self.assertFalse(page.validatePage())
+
+    def test_non_webex_url_fails(self):
+        from webjam_qt.windows.setup_wizard import _WebexPage
+        page = _WebexPage(AppSettings(webex_url="https://example.com/meet/x"))
+        self.assertFalse(page.validatePage())
 
     def test_bare_word_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage

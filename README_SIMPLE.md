@@ -18,7 +18,7 @@ Grab the newest release from **[github.com/rupret007/webjam/releases](https://gi
 
 - **Windows:** `WebJam-windows-x64.zip`
 - **Mac (Apple Silicon — M1/M2/M3/M4):** `WebJam-macos-arm64.zip`
-- **Mac (Intel, 2020 or earlier):** no prebuilt download — run from source (see "For tinkerers" below).
+- **Mac (Intel, 2020 or earlier):** `WebJam-macos-x64.zip`
 
 Unzip it and run the **WebJam** app inside. **The first launch will trigger a security warning — this is expected.** WebJam isn't code-signed yet (that requires a paid developer certificate), so your OS flags it like any app from an "unidentified developer." It's the same file the build robot published on GitHub; here's how to open it:
 
@@ -62,7 +62,7 @@ The first time you open WebJam, a short setup wizard runs:
 2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave "Server control port" at `22222` unless told otherwise (it lets WebJam show participant names and control the mixer). If Jamulus isn't auto-found, point it at the app — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
 3. **Webex Meeting** — paste the meeting link.
 4. **Audio Routing** — WebJam scans for your virtual cable. A green check means you're good. If it's not found, click **"Show me how to set this up,"** install the cable, and relaunch. You can also **Skip for now** and set it up later.
-5. **You're all set** — click Finish.
+5. **Configuration saved** — click Finish. WebJam opens the Conductor and runs **Ready Check**; fix anything it flags before your first jam.
 
 You can rerun this any time from **Settings** (`Ctrl+,`).
 
@@ -85,10 +85,10 @@ The Conductor window has two big buttons at the top:
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+P` | **Practice solo** — private local server, hear yourself, no internet |
-| `● Record` button | Band-server **multitrack recording** — every musician gets their own track + a Reaper project (one-time setup: `server/README.md`) |
-| **Takes** (side rail) | **Take Deck** — play back and mix any recorded take right in WebJam, per-track faders/mute/solo. Point `takes_directory` at your downloaded recordings folder. |
-| `F2` | Ready Check — is my setup ready to jam? |
+| `Ctrl+P` | **Practice solo pilot check** — private local server, hear yourself, no internet; include this in the real-hardware gate. |
+| `● Record` button | **Pilot/server-admin feature** — band-server multitrack recording after `server/README.md` setup; validate on real hardware before relying on it for a session. |
+| **Takes** (side rail) | **Pilot validation** — play back copied/downloaded take folders; include take retrieval + Take Deck playback in the real-hardware gate. |
+| `F2` / `Ready` | Ready Check — is my setup ready to jam? |
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
 | `Ctrl+M` | Mute / unmute **all** |
@@ -131,6 +131,6 @@ Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private
 
 ## For tinkerers
 
-WebJam exposes an optional read-only **Companion API** on `http://127.0.0.1:8765` (participants, session state) for DAWs/editors/scripts — see `COMPANION_API.md`. It starts automatically when WebJam launches.
+WebJam exposes an optional read-only **Companion API** on `http://127.0.0.1:8765` (participants, session state) for DAWs/editors/scripts — see `COMPANION_API.md`. It is off by default; enable it only if you need an external tool to read session state.
 
 Questions or bugs: [github.com/rupret007/webjam](https://github.com/rupret007/webjam).

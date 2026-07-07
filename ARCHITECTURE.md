@@ -1,12 +1,12 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-04-24 (v0.4.0)
+> **Last updated:** 2026-07-06 (v0.7.2)
 
 ## Overview
 
 WebJam is a creative-collaboration shell that orchestrates **Jamulus** (low-latency audio) and **Webex** (video) into a single window, with a shared session canvas for notes, artifacts, and mode-aware templates.
 
-The primary runtime is a **Qt/PySide6 Conductor UI**. A legacy Tkinter UI (`webjam_app_enhanced.py`) is retained as a fallback until the Qt port reaches full parity.
+The primary runtime is a **Qt/PySide6 Conductor UI**. A legacy Tkinter UI (`legacy/webjam_app_enhanced.py`) is quarantined for archive/fallback use and is not part of the pilot release path.
 
 ---
 
@@ -35,7 +35,7 @@ webjam_qt_main.py          ← entry point
 | File | Purpose |
 |------|---------|
 | `webjam_qt_main.py` | **Primary.** Bootstraps PySide6, shows setup wizard on first run, then opens `ConductorWindow`. |
-| `webjam_app_enhanced.py` | **Legacy fallback.** Tkinter/customtkinter UI. Not actively developed. |
+| `legacy/webjam_app_enhanced.py` | **Legacy fallback.** Tkinter/customtkinter UI. Not actively developed. |
 
 ---
 
@@ -52,7 +52,7 @@ webjam_qt_main.py          ← entry point
 | `widgets/level_meter.py` | Animated RMS level meter widget |
 | `widgets/session_strip.py` | Top control bar: mode, title, launch buttons |
 | `widgets/side_rail.py` | Right-side settings and diagnostics panel |
-| `widgets/webex_embed.py` | Lazy-init `QWebEngineView` for embedded Webex (Phase 2) |
+| `widgets/webex_embed.py` | Lazy-init `QWebEngineView` for embedded Webex with browser fallback |
 | `controllers/application_controller.py` | Wires `ConductorWindow` to `BridgeService`; drives polling loop |
 | `theme.py` | QSS stylesheet loader |
 
@@ -74,7 +74,7 @@ Since v0.4: `set_mute()` and `set_solo()` now use `_send_rpc_gain()` so mute/sol
 
 ### `webex_integration.py` — Webex
 
-Currently opens `settings.webex_url` in the system browser. Embedded `QWebEngineView` (via `webex_embed.py`) is built but not yet wired to the main launch flow.
+Browser fallback controller for Webex meeting URLs. The main Conductor flow uses `widgets/webex_embed.py` first and falls back to this browser path when needed. Webex URLs must be HTTPS `webex.com`.
 
 ### `ui/` — Tkinter service layer (shared with legacy UI)
 
@@ -95,7 +95,7 @@ Currently opens `settings.webex_url` in the system browser. Embedded `QWebEngine
 | `templates.py` | Per-mode quick-start templates |
 | `audio_routing.py` | Loopback device detection (VB-CABLE, BlackHole, JACK) |
 | `jamulus_protocol.py` | Low-level Jamulus UDP packet encode/decode |
-| `metrics_service.py` | Local counters, session-brief export, diagnostics-bundle export |
+| `ui/services.py` / `MetricsService` | Local counters, session-brief export, diagnostics-bundle export |
 
 ### `storage/` — Persistence
 
@@ -107,7 +107,7 @@ Hand-rolled role/permission engine. `AuthController.authorize()` checks `role �
 
 ### `api/` — Companion API
 
-Optional FastAPI localhost bridge. Off by default; enabled via env var. Allows external tools to read session state.
+Optional FastAPI localhost bridge. Off by default; enabled via settings/env var. Allows external tools to read session state.
 
 ---
 
@@ -169,10 +169,10 @@ JamulusController background thread
 
 ---
 
-## Current Limitations (as of v0.4)
+## Current Limitations (as of v0.7.2)
 
-- Qt level meters run on **demo jitter** — real audio-level data from Jamulus RPC is not yet wired to the Qt widgets.
-- **Webex embed** (`QWebEngineView`) is implemented but the main launch button still opens a browser tab.
-- **Qt UI has no Save/Load Mix shortcuts** (Ctrl+S/O) — those exist only in the Tkinter fallback.
-- **Listening profiles** (named mix snapshots) exist in `MixerService` but are not surfaced in the Qt Conductor UI yet.
-- macOS code signing is not yet set up; downloaded `.app` requires manual Gatekeeper override.
+- v0.7.2 is closed-pilot-ready, not broad-release-ready; real-hardware gates still need Windows/macOS clean installs, Ctrl+P audio smoke, two-person Jamulus, Record, take retrieval, and Take Deck playback.
+- Jamulus must be installed separately and the first-run wizard now requires its executable path before setup can complete.
+- Webex embed is constrained to HTTPS `webex.com` URLs and mic/camera permissions only; some meetings may still require the browser fallback.
+- Listening profiles and deeper creative-mode workflows exist conceptually but are not first-class pilot workflows.
+- macOS code signing/notarization is not yet set up; downloaded `.app` requires manual Gatekeeper override.

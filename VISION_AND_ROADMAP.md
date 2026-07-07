@@ -73,11 +73,11 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Shipped — v0.3.0 (2026-04-21)
+### ✅ Shipped — v0.7.2 pilot readiness (2026-07-06)
 
-Everything below is live in the downloadable builds at [Releases](https://github.com/rupret007/webjam/releases/tag/v0.3.0).
+Everything below is live in the current Conductor code and v0.7.x release line at [Releases](https://github.com/rupret007/webjam/releases).
 
-- **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; `webjam_app_enhanced.py` retained as fallback
+- **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done with Jamulus install note)
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
 - **Webex embed** — `QWebEngineView` pane with guest-token generation; direct-URL fallback
@@ -85,24 +85,16 @@ Everything below is live in the downloadable builds at [Releases](https://github
 - **Session canvas** — shared notes, artifact types, review states (Draft→In review→Approved)
 - **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
 - **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration
-- **Three downloadable builds** — Windows x64, macOS ARM64, macOS Intel x64
-- **CI/CD** — full pytest suite (375+ tests), ruff linting gate, PyInstaller builds on tag push
+- **Three downloadable builds** — Windows x64, macOS ARM64, and macOS Intel x64
+- **CI/CD** — ruff, UX smoke, full pytest, real Jamulus integration, PyInstaller builds on tag push
 - **Accessibility** — `setAccessibleName` on all major panels, keyboard shortcuts, focus rings in QSS
 
-### 🔜 Next — v0.4 (planned)
+### 🔜 Next — closed pilot gates
 
-**Jamulus real mixer control** (highest priority):
-- Wire `JamulusController` fader/mute/solo signals to `JamulusRpcClient` in `ApplicationController`
-- Real-time participant reconciliation from JSON-RPC polling
-- Fallback to UDP binary if RPC unavailable
-
-**Webex full embed** (second priority):
-- Replace browser-open fallback with fully embedded Web SDK inside `QWebEngineView`
-- Participant video streams in `ParticipantCard` video tiles
-
-**macOS code signing**:
-- Apple Developer ID certificate ($99/yr) for Gatekeeper-clean installs
-- `ditto` + `codesign` + `xcrun notarytool` in CI
+- Clean-machine installs on Windows x64, macOS ARM64, and macOS Intel x64.
+- Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback on real hardware.
+- macOS code signing/notarization and Windows signing.
+- Architecture split after pilot-readiness fixes: audio/session, video, recording, settings, and companion API coordinators.
 
 ### Phase 2 – Differentiation (mid term)
 

@@ -16,12 +16,15 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from core.redaction import (
+    REDACTED_FIELDS as _REDACTED_FIELDS,  # noqa: F401 - compatibility re-export
+    REDACTED_NAME_HINTS as _REDACTED_NAME_HINTS,  # noqa: F401 - compatibility re-export
+    redact_mapping,
+    redact_text,
+)
+
 LOGGER = logging.getLogger("webjam.qt.diagnostics")
 
-_REDACTED_FIELDS = {"webex_guest_issuer_secret", "sentry_dsn"}
-# Any field whose name hints at a secret is redacted too, so a future
-# AppSettings field can't leak into a shared bug report by omission.
-_REDACTED_NAME_HINTS = ("secret", "token", "password", "passwd", "dsn", "api_key")
 _LOG_TAIL_LINES = 30
 
 
@@ -114,7 +117,8 @@ class DiagnosticsExporter:
             LOGGER.debug("Unexpected log read failure", exc_info=True)
             return ["(log file unavailable)"]
         all_lines = text.splitlines()
-        return all_lines[-_LOG_TAIL_LINES:] if all_lines else ["(empty log)"]
+        tail = all_lines[-_LOG_TAIL_LINES:] if all_lines else ["(empty log)"]
+        return [redact_text(line) for line in tail]
 
     def _sanitised_settings_json(self) -> str:
         import json
@@ -123,13 +127,7 @@ class DiagnosticsExporter:
         except TypeError:
             data = {k: getattr(self.settings, k) for k in dir(self.settings)
                     if not k.startswith("_") and not callable(getattr(self.settings, k))}
-        for field in list(data.keys()):
-            lname = field.lower()
-            if data[field] and (
-                field in _REDACTED_FIELDS
-                or any(h in lname for h in _REDACTED_NAME_HINTS)
-            ):
-                data[field] = "[redacted]"
+        data = redact_mapping(data)
         try:
             return json.dumps(data, indent=2, default=str, sort_keys=True)
         except Exception:  # noqa: BLE001

@@ -2,7 +2,7 @@
 
 Covers:
 * ``JamulusController.unregister_callback`` add/remove + silent-on-missing.
-* ``JamulusController.stop`` clears the callbacks list.
+* ``JamulusController.stop`` preserves callbacks for Stop Audio -> Launch Audio.
 * ``JamulusProtocolAdapter._handle_packet`` caps the unknown-msg-id set.
 """
 
@@ -114,7 +114,7 @@ class TestJamulusControllerCallbackUnregister(unittest.TestCase):
         controller.unregister_callback(never_registered)
         self.assertEqual(controller.callbacks, [])
 
-    def test_stop_clears_callbacks_list(self):
+    def test_stop_preserves_callbacks_for_relaunch(self):
         controller = _build_controller()
         controller.register_callback(lambda _p: None)
         controller.register_callback(lambda _p: None)
@@ -122,7 +122,7 @@ class TestJamulusControllerCallbackUnregister(unittest.TestCase):
 
         controller.stop()
 
-        self.assertEqual(controller.callbacks, [])
+        self.assertEqual(len(controller.callbacks), 2)
 
 
 class TestJamulusProtocolUnknownMsgIdCap(unittest.TestCase):

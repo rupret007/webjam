@@ -83,8 +83,8 @@ class AppSettings:
     webex_guest_issuer_secret: str = ""
     webex_display_name: str = "WebJam Guest"
     # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
-    # Starts automatically on launch when fastapi/uvicorn are installed.
-    companion_api_enabled: bool = True
+    # Opt-in: starts on launch only when enabled and fastapi/uvicorn exist.
+    companion_api_enabled: bool = False
     companion_api_port: int = 8765
     # Band-server RPC (the Record button). The server's JSON-RPC stays on
     # its loopback; WebJam reaches it through an SSH tunnel terminating at
@@ -137,7 +137,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         raw = os.getenv(env_name)
         if raw is None:
             continue
-        if key == "jamulus_port":
+        if key in {"jamulus_port", "jamulus_rpc_port"}:
             try:
                 parsed = int(raw)
             except ValueError:
@@ -173,6 +173,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
     if not (1 <= settings.jamulus_port <= 65535):
         _logger.warning("jamulus_port %d out of range; resetting to 22124", settings.jamulus_port)
         settings = AppSettings(**{**asdict(settings), "jamulus_port": 22124})
+    if not (1 <= settings.jamulus_rpc_port <= 65535):
+        _logger.warning("jamulus_rpc_port %d out of range; resetting to 22222",
+                        settings.jamulus_rpc_port)
+        settings = AppSettings(**{**asdict(settings), "jamulus_rpc_port": 22222})
     if settings.audio_blocksize < 0:
         _logger.warning("audio_blocksize %d negative; resetting to 0", settings.audio_blocksize)
         settings = AppSettings(**{**asdict(settings), "audio_blocksize": 0})
@@ -189,4 +193,3 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
     return settings
-

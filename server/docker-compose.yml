@@ -17,7 +17,7 @@
 
 services:
   jamulus:
-    image: grundic/jamulus:latest
+    image: grundic/jamulus:3.9.0@sha256:20836f9a0fe063858960907c2f1137a8e8bf80c5a6b87dbf8fc696048c2da2d8
     container_name: webjam-server
     restart: unless-stopped
     network_mode: host          # UDP latency — avoid docker NAT on the audio path

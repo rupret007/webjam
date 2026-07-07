@@ -84,6 +84,36 @@ class TestJoinLeaveVideo(_ControllerTestBase):
             "Joining…", enabled=False
         )
 
+    def test_join_invalid_webex_url_shows_actionable_error(self):
+        c = self.controller
+        c.settings.webex_url = "http://example.webex.com/meet/band"
+        c._show_actionable_error = MagicMock()
+
+        c._on_join_video()
+
+        c._show_actionable_error.assert_called_once()
+        self.assertEqual(
+            c._show_actionable_error.call_args.args[0],
+            "Invalid Webex URL",
+        )
+        c.window.webex_embed.load_meeting.assert_not_called()
+        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+
+    def test_join_non_webex_url_shows_actionable_error(self):
+        c = self.controller
+        c.settings.webex_url = "https://example.com/meet/band"
+        c._show_actionable_error = MagicMock()
+
+        c._on_join_video()
+
+        c._show_actionable_error.assert_called_once()
+        self.assertEqual(
+            c._show_actionable_error.call_args.args[0],
+            "Invalid Webex URL",
+        )
+        c.window.webex_embed.load_meeting.assert_not_called()
+        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+
     def test_join_with_guest_creds_uses_token_path(self):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/band"
@@ -371,9 +401,21 @@ class TestSettingsWizard(_ControllerTestBase):
     def test_accepted_wizard_reloads_and_pushes_settings(self):
         c = self.controller
         fresh = AppSettings()
+        fresh.jamulus_server = "fresh.example.com"
+        fresh.jamulus_port = 22224
+        fresh.jamulus_rpc_port = 23333
+        fresh.webex_url = "https://fresh.webex.com/meet/room"
+        fresh.companion_api_port = 8877
         self._run_wizard(accepted=True, new_settings=fresh)
         self.assertIs(c.settings, fresh)
         self.assertIs(c.bridge.settings, fresh)
+        self.assertEqual(c.jamulus.host, "fresh.example.com")
+        self.assertEqual(c.jamulus.port, 22224)
+        self.assertEqual(c.jamulus.rpc_port, 23333)
+        self.assertEqual(c.jamulus.rpc_client._port, 23333)
+        self.assertEqual(c.webex.meeting_url, "https://fresh.webex.com/meet/room")
+        self.assertEqual(c.api_bridge.port, 8877)
+        self.assertIs(c._mix_manager._jamulus, c.jamulus)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("Settings saved" in m for m in msgs), msgs)
 

@@ -11,18 +11,24 @@
 Use this workflow for current development and release validation:
 
 ```bash
-# Full edge/unit suite
-python -m unittest discover -s tests -p "test_*.py"
+# Lint
+ruff check webjam_qt/ core/ ui/ services/ api/
 
-# Root-level integration/smoke suite
-python -m unittest test_webjam.py test_modernization.py
+# UX smoke
+QT_QPA_PLATFORM=offscreen python ux_smoke_test.py
 
-# Build validation
-python build_webjam.py
+# Full unit/UI suite
+QT_QPA_PLATFORM=offscreen PYSIDE6_OPTION_LAZY=0 pytest tests/ -q
+
+# Real Jamulus integration
+WEBJAM_JAMULUS_BINARY=/path/to/jamulus-headless pytest tests/test_real_jamulus_integration.py -v
+
+# Frozen app smoke build
+python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Success criteria: all commands above complete without failures.  
-Note: historical sections below reference the older `test_webjam.py` multi-run flow and are retained for archive context.
+Success criteria for v0.7.2 closed-pilot release readiness: all commands above pass, the three artifacts are produced (`WebJam-windows-x64.zip`, `WebJam-macos-arm64.zip`, `WebJam-macos-x64.zip`), and the real-hardware pilot gate checklist is complete on physical Windows x64, macOS ARM64, and macOS Intel x64 machines: clean install/first launch including unsigned-app warning, Ready Check visible and passing, Jamulus installed separately and found by the wizard, Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback.
+Note: historical sections below reference the older `test_webjam.py` multi-run flow and are archive-only; do not use them as v0.7.2 release gates.
 
 ---
 
@@ -496,4 +502,3 @@ WebJam Application
 ---
 
 **This procedure must be followed exactly to ensure consistent, reliable test results.**
-

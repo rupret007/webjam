@@ -56,13 +56,14 @@ class TestStartStopLifecycle(unittest.TestCase):
         finally:
             c.stop()
 
-    def test_stop_clears_registered_callbacks(self):
+    def test_stop_preserves_registered_callbacks_for_relaunch(self):
         c = _make_controller()
         c.rpc_client.available = True
-        c.register_callback(lambda participants: None)
+        callback = MagicMock()
+        c.register_callback(callback)
         c.start()
         c.stop()
-        self.assertEqual(c.callbacks, [])
+        self.assertEqual(c.callbacks, [callback])
 
     def test_stop_survives_audio_engine_without_override_clear(self):
         c = _make_controller()
@@ -135,6 +136,27 @@ class TestRpcCallbackRouting(unittest.TestCase):
         c = _make_controller()
         c._on_rpc_participants([{"channel_id": 3, "name": ""}])
         self.assertEqual(c.participants[3].name, "Participant 3")
+
+    def test_empty_rpc_participants_clears_cache_and_notifies_when_changed(self):
+        c = _make_controller()
+        callback = MagicMock()
+        c.register_callback(callback)
+        c._on_rpc_participants([{"channel_id": 3, "name": "Ann"}])
+        callback.reset_mock()
+
+        c._on_rpc_participants([])
+
+        self.assertEqual(c.participants, {})
+        callback.assert_called_once_with([])
+
+    def test_empty_rpc_participants_does_not_notify_when_already_empty(self):
+        c = _make_controller()
+        callback = MagicMock()
+        c.register_callback(callback)
+
+        c._on_rpc_participants([])
+
+        callback.assert_not_called()
 
     def test_rpc_levels_set_engine_overrides(self):
         c = _make_controller()

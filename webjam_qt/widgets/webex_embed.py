@@ -18,9 +18,10 @@ Two join modes, chosen automatically based on AppSettings:
                        user-agent. The Webex web client handles auth via the
                        browser session stored in the persistent profile.
 
-Camera, microphone and screen-capture permission requests are granted
-automatically.  The view uses a named persistent profile (``webjam_webex``)
-so cookies and local-storage survive restarts.
+Camera and microphone permission requests are granted only for trusted Webex
+origins. Screen-capture and notification requests are denied by default. The
+view uses a named persistent profile (``webjam_webex``) so cookies and
+local-storage survive restarts.
 
 WebEngine objects are created lazily on first ``load_meeting()`` call so the
 Chromium subprocess is only started when the user actually joins a meeting.
@@ -29,6 +30,7 @@ Chromium subprocess is only started when the user actually joins a meeting.
 from __future__ import annotations
 
 import logging
+import json
 import threading
 import time
 from pathlib import Path
@@ -45,6 +47,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.webex_url import is_allowed_webex_url
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -67,9 +70,6 @@ def _web_page_feature_grant_set():
         QWebEnginePage.Feature.MediaAudioCapture,
         QWebEnginePage.Feature.MediaVideoCapture,
         QWebEnginePage.Feature.MediaAudioVideoCapture,
-        QWebEnginePage.Feature.DesktopVideoCapture,
-        QWebEnginePage.Feature.DesktopAudioVideoCapture,
-        QWebEnginePage.Feature.Notifications,
     })
 
 
@@ -94,7 +94,7 @@ class _WebexBridge(QObject):
 # ---------------------------------------------------------------------------
 # Custom QWebEnginePage — auto-grants A/V permissions (created lazily)
 # ---------------------------------------------------------------------------
-def _make_webex_page(profile):
+def _make_webex_page(profile, is_trusted_permission_url: Callable[[QUrl], bool]):
     """Build a QWebEnginePage subclass that auto-grants A/V permissions."""
     from PySide6.QtWebEngineCore import QWebEnginePage
 
@@ -106,9 +106,10 @@ def _make_webex_page(profile):
             self.featurePermissionRequested.connect(self._on_permission)
 
         def _on_permission(self, url, feature):
+            trusted_origin = is_allowed_webex_url(url.toString()) or is_trusted_permission_url(url)
             policy = (
                 QWebEnginePage.PermissionPolicy.PermissionGrantedByUser
-                if feature in grant_set
+                if feature in grant_set and trusted_origin
                 else QWebEnginePage.PermissionPolicy.PermissionDeniedByUser
             )
             self.setFeaturePermission(url, feature, policy)
@@ -204,6 +205,11 @@ class WebexEmbed(QFrame):
                           (local HTML + Webex Meetings Widget) when set.
                           Omit to use direct-URL mode.
         """
+        if not is_allowed_webex_url(meeting_url):
+            LOGGER.warning("WebexEmbed refused untrusted meeting URL")
+            self.meeting_state_changed.emit("error")
+            return
+
         self._ensure_webengine()
         self._stack.setCurrentIndex(1)
 
@@ -219,7 +225,7 @@ class WebexEmbed(QFrame):
             local_url = QUrl.fromLocalFile(str(_HTML_TEMPLATE.resolve()))
             self._view.load(local_url)
         else:
-            LOGGER.info("WebexEmbed: direct-URL mode → %s", meeting_url)
+            LOGGER.info("WebexEmbed: direct-URL mode")
             self._pending_token = None
             self._pending_url   = meeting_url
             # Direct-URL mode doesn't use a guest token — clear the stamp
@@ -271,6 +277,24 @@ class WebexEmbed(QFrame):
         self._stack.setCurrentIndex(0)
         self.meeting_state_changed.emit("left")
 
+    def _is_trusted_widget_permission_url(self, url: QUrl) -> bool:
+        """Allow mic/camera for the bundled widget only for a trusted meeting.
+
+        Guest-token mode loads ``webex_widget.html`` from ``file://`` and the
+        Webex widget runs inside that local page. The permission prompt can
+        therefore originate from the local file, not ``*.webex.com``. Gate that
+        local origin on the pending meeting URL so arbitrary file pages still
+        fail closed.
+        """
+        if not self._pending_token or not is_allowed_webex_url(self._pending_url):
+            return False
+        if not url.isLocalFile():
+            return False
+        try:
+            return Path(url.toLocalFile()).resolve() == _HTML_TEMPLATE.resolve()
+        except Exception:  # noqa: BLE001
+            return False
+
     def fallback_button(self) -> QPushButton:
         """Return the 'Open Webex in browser' button on the placeholder."""
         return self._fallback_btn
@@ -290,10 +314,10 @@ class WebexEmbed(QFrame):
         self._profile = QWebEngineProfile("webjam_webex", self)
         self._profile.setHttpUserAgent(_CHROME_UA)
         s = self._profile.settings()
-        s.setAttribute(QWebEngineSettings.WebAttribute.ScreenCaptureEnabled, True)
+        s.setAttribute(QWebEngineSettings.WebAttribute.ScreenCaptureEnabled, False)
         s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
-        s.setAttribute(QWebEngineSettings.WebAttribute.WebRTCPublicInterfacesOnly, False)
+        s.setAttribute(QWebEngineSettings.WebAttribute.WebRTCPublicInterfacesOnly, True)
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
 
         self._bridge = _WebexBridge(self)
@@ -304,7 +328,7 @@ class WebexEmbed(QFrame):
         self._channel.registerObject("webexBridge", self._bridge)
 
         # Page parented to profile → page is destroyed before profile (Qt child order)
-        self._page = _make_webex_page(self._profile)
+        self._page = _make_webex_page(self._profile, self._is_trusted_widget_permission_url)
         self._page.setWebChannel(self._channel)
 
         # Inject qwebchannel.js so the page's `new QWebChannel(...)` call works.
@@ -475,9 +499,10 @@ class WebexEmbed(QFrame):
         """HTML template signalled bridge-live — inject token into widget."""
         if not self._pending_token or not self._pending_url:
             return
-        safe_token = self._pending_token.replace("\\", "\\\\").replace("'", "\\'")
-        safe_url   = self._pending_url.replace("\\", "\\\\").replace("'", "\\'")
-        self._page.runJavaScript(f"startWebexMeeting('{safe_token}', '{safe_url}');")
+        token = json.dumps(self._pending_token)
+        url = json.dumps(self._pending_url)
+        self._pending_token = None
+        self._page.runJavaScript(f"startWebexMeeting({token}, {url});")
 
     @Slot(str)
     def _on_meeting_state(self, state: str) -> None:

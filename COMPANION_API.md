@@ -1,6 +1,6 @@
 # WebJam Companion API
 
-The WebJam Companion API is an optional localhost HTTP API that lets external tools (DAWs, editors, scripts) read live session state from a running WebJam instance. It starts automatically when you launch WebJam, if FastAPI and uvicorn are installed.
+The WebJam Companion API is an optional localhost HTTP API that lets external tools (DAWs, editors, scripts) read live session state from a running WebJam instance. It is off by default and starts only when explicitly enabled and FastAPI/uvicorn are installed.
 
 ## Overview
 
@@ -93,7 +93,7 @@ GET http://127.0.0.1:8765/diagnostics
 ## Usage
 
 1. Launch WebJam.
-2. The API starts in the background when the app initializes (when FastAPI/Uvicorn are available and background services start).
+2. Enable the API first (`companion_api_enabled: true` or `WEBJAM_COMPANION_API=1`); then it starts in the background when the app initializes, if FastAPI/Uvicorn are available.
 3. Call the endpoints from your tool, script, or DAW integration.
 
 **Example (curl):**
@@ -115,11 +115,11 @@ for p in data["participants"]:
 
 ## Configuration
 
-The API starts automatically on launch (when its dependencies are installed). Control it via settings in `~/.webjam_config.json` or environment variables:
+The API is opt-in. It starts on launch only when enabled and its dependencies are installed. Control it via settings in `~/.webjam_config.json` or environment variables:
 
 | Setting | Env var | Default | Meaning |
 |---------|---------|---------|---------|
-| `companion_api_enabled` | `WEBJAM_COMPANION_API` | `true` | Set to `false`/`0` to disable the API entirely. |
+| `companion_api_enabled` | `WEBJAM_COMPANION_API` | `false` | Set to `true`/`1` to enable the API. |
 | `companion_api_port` | `WEBJAM_COMPANION_API_PORT` | `8765` | Localhost port to serve on. |
 
 ## Security

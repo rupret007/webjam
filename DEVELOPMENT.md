@@ -68,7 +68,7 @@ All dependencies are listed in `requirements.txt`. Key dependencies:
 
 ```bash
 python webjam_qt_main.py          # Qt Conductor UI (current)
-python webjam_app_enhanced.py     # Legacy Tkinter UI (fallback)
+python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
 On first launch a setup wizard runs automatically to configure your Jamulus server, Webex URL, and audio routing. You can reopen it any time with **Ctrl+,** or the ⚙ Settings button in the left rail.
@@ -81,7 +81,7 @@ The project uses `pytest`. Run the full suite:
 python -m pytest tests/ -v
 ```
 
-Expected result: all tests pass (493 pass, 12 skip as of v0.4). The skips are Windows-only elevation tests that auto-skip on macOS/Linux.
+Expected result: all tests pass (750+ pass, plus platform-dependent skips). The skips are mostly platform-specific tests that auto-skip when the host cannot run them.
 
 ### Running tests locally (CI-equivalent)
 
@@ -89,18 +89,17 @@ CI runs the suite quietly on every push. To match the CI gate exactly
 (see `.github/workflows/ci.yml` line 60):
 
 ```bash
-python3 -m pytest tests/ -q
+QT_QPA_PLATFORM=offscreen PYSIDE6_OPTION_LAZY=0 python3 -m pytest tests/ -q
 ```
 
 A single failing test fails the CI job, so always run this before pushing.
 
 ### Code style (ruff)
 
-CI runs `ruff check` against the three first-party source roots
-(`.github/workflows/ci.yml` line 51). Match that gate locally:
+CI runs `ruff check` against the first-party source roots. Match that gate locally:
 
 ```bash
-python3 -m ruff check webjam_qt/ core/ ui/mixer_service.py
+python3 -m ruff check webjam_qt/ core/ ui/ services/ api/
 ```
 
 Fix every warning before you commit — the lint job is the first to fail
@@ -125,9 +124,11 @@ display attached (the CI workflow does the same).
 ```bash
 pip install pyinstaller
 
-pyinstaller webjam.spec
+python -m PyInstaller --clean --noconfirm webjam.spec
 # Produces dist/WebJam/WebJam.exe (Windows) or dist/WebJam.app (macOS)
 ```
+
+`build_webjam.py` is legacy installer tooling and is not the pilot-release build path.
 
 ## Environment Variables
 
@@ -135,9 +136,9 @@ Override defaults without editing code:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WEBJAM_JAMULUS_SERVER` | `172.24.194.9` | Jamulus server hostname or IP |
+| `WEBJAM_JAMULUS_SERVER` | empty | Jamulus server hostname or IP |
 | `WEBJAM_JAMULUS_PORT` | `22124` | Jamulus server port |
-| `WEBJAM_WEBEX_URL` | `https://webjam-sbx.webex.com/meet/webjam01` | Webex meeting URL |
+| `WEBJAM_WEBEX_URL` | empty | HTTPS `webex.com` meeting URL |
 | `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
 | `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
 | `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |
@@ -147,22 +148,19 @@ Override defaults without editing code:
 ```
 webjam_qt_main.py          Primary entry point — Qt Conductor UI
 webjam_qt/                 Qt application (windows, widgets, controllers)
-webjam_app_enhanced.py     Legacy Tkinter/customtkinter UI (fallback)
-webjam_app.py              Legacy basic GUI
+legacy/                    Quarantined Tkinter/customtkinter UI and old installer
 core/                      Settings, models, creative modes, templates, protocol
 storage/                   SQLite repository for users, settings, canvas, audit
-admin/                     RBAC policy engine and admin panel
 ui/                        Auth controller, services, dialogs, views, theme
 api/                       Optional FastAPI companion API
-utils/                     Platform helpers (installer, audio routing detection)
 tests/                     Unit and edge-case test modules
 VB/                        VB-Cable driver INFs (Windows audio routing)
-.github/workflows/ci.yml   CI: test on Windows, build for Windows + macOS
+.github/workflows/ci.yml   CI: lint, UX smoke, tests, real Jamulus, desktop builds
 ```
 
 ## Windows-Specific Notes
 
-- **VB-Cable**: The `VB/` directory contains INF files for the virtual audio cable driver. The installer (`webjam_installer.py`) handles VB-Cable setup automatically.
+- **VB-Cable**: The Windows release build bundles VB-CABLE installers in `VB/`, but WebJam does not install the driver automatically. Pilot users install VB-CABLE separately, then rerun Ready Check.
 - **Admin detection**: `utils/installer_helpers.py` uses `ctypes.windll` to check for admin privileges -- this only activates on Windows.
 - **SmartScreen**: Downloaded `.exe` files trigger a "Windows protected your PC" warning. Click "More info" then "Run anyway".
 

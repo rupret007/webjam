@@ -4,6 +4,28 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.7.2] — 2026-07-06
+
+### Pilot readiness hardening
+
+- Added a session-health snapshot so the Conductor distinguishes a launched
+  Jamulus process from proven RPC/participant/meter truth.
+- Made Ready Check visible in the session strip and run it automatically after
+  first-run setup completes.
+- Hardened first-run setup: Jamulus executable presence is required, Webex
+  links must be HTTPS `webex.com`, and setup completion copy no longer implies
+  the rig is jam-ready before Ready Check passes.
+- Made `Mute Me` truthful: it only changes local UI state after Jamulus RPC
+  accepts `setMuted`, and reverts on failure.
+- Tightened recorder status parsing, Webex permissions/token injection, log and
+  diagnostics redaction, Companion API opt-in behavior, and Jamulus RPC secret
+  fail-closed launch.
+- CI desktop builds now wait for the real-Jamulus integration job.
+- Restored an Intel Mac release artifact (`WebJam-macos-x64.zip`) using
+  GitHub's current `macos-15-intel` hosted runner.
+
+---
+
 ## [0.7.1] — 2026-07-05
 
 ### Deep code + logic review — hardening pass
@@ -919,4 +941,3 @@ SOFTWARE.
 **Status**: Release Candidate
 
 For the latest updates, visit: **[github.com/yourusername/webjam](https://github.com/yourusername/webjam)**
-
