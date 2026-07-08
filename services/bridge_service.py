@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import sys
 import threading
 import time
 from enum import Enum
@@ -7,6 +8,67 @@ from pathlib import Path
 from typing import Optional
 
 LOGGER = logging.getLogger("webjam.services.bridge")
+
+
+def _bundled_jamulus_candidate() -> Optional[str]:
+    """Path to the copy of Jamulus bundled inside WebJam's own app, if any.
+
+    macOS builds nest an unmodified, Apple-signed/notarized ``Jamulus.app``
+    at ``WebJam.app/Contents/Resources/Jamulus.app`` (see
+    ``.github/workflows/ci.yml``'s macOS build steps), so a fresh install
+    works with zero configuration. This returns the path to the executable
+    inside that nested bundle when present.
+
+    Windows has no portable Jamulus binary to bundle this way — Jamulus
+    only ships an installer there (see ``_bundled_jamulus_installer``) —
+    so this always returns ``None`` on Windows.
+
+    Returns ``None`` when not running from a frozen (PyInstaller) build,
+    on any platform other than macOS, or when the nested copy isn't
+    present (e.g. dev checkouts, or a build that predates bundling).
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    if sys.platform != "darwin":
+        return None
+    try:
+        # Frozen macOS layout: WebJam.app/Contents/MacOS/WebJam
+        macos_dir = Path(sys.executable).resolve().parent
+        candidate = (
+            macos_dir.parent / "Resources" / "Jamulus.app"
+            / "Contents" / "MacOS" / "Jamulus"
+        )
+    except OSError:
+        return None
+    return str(candidate) if candidate.is_file() else None
+
+
+def _bundled_jamulus_installer() -> Optional[str]:
+    """Path to the bundled Jamulus Windows installer, if present.
+
+    Jamulus only publishes an NSIS installer on Windows (no portable
+    binary), so "bundling" there means shipping that unmodified installer
+    inside WebJam's own install directory at ``Jamulus/jamulus_*_win.exe``
+    (see the ``Jamulus/`` datas block in ``webjam.spec``) and letting the
+    Setup Wizard offer to run it on demand.
+
+    Returns ``None`` when not running from a frozen (PyInstaller) build,
+    on any platform other than Windows, or when the bundled installer
+    isn't present.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    if sys.platform != "win32":
+        return None
+    try:
+        app_dir = Path(sys.executable).resolve().parent
+        jamulus_dir = app_dir / "Jamulus"
+        if not jamulus_dir.is_dir():
+            return None
+        candidates = sorted(jamulus_dir.glob("jamulus_*_win.exe"))
+    except OSError:
+        return None
+    return str(candidates[0]) if candidates else None
 
 
 class JamulusState(str, Enum):
@@ -149,7 +211,10 @@ class BridgeService:
 
         Checks user-configured candidates first, then falls back to the
         AppSettings default candidates so that a config file written before
-        macOS/Linux paths were added still works.
+        macOS/Linux paths were added still works, and finally falls back to
+        the copy of Jamulus bundled inside WebJam's own app on macOS (see
+        `_bundled_jamulus_candidate`) so a fresh install works with zero
+        configuration.
         """
         from core.settings import AppSettings
         checked: set[str] = set()
@@ -173,7 +238,8 @@ class BridgeService:
                 resolved = _resolve(path)
                 if resolved:
                     return resolved
-        return None
+        # Last resort: the copy bundled inside WebJam's own app (macOS only).
+        return _bundled_jamulus_candidate()
 
     def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
         """Launch the Jamulus client subprocess and connect to the band's server.

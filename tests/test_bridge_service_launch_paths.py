@@ -9,6 +9,7 @@ reconnect-gating branches.  No real processes are spawned.
 """
 from __future__ import annotations
 
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -267,6 +268,112 @@ class TestLaunchCommandContract(unittest.TestCase):
         bridge.show_actionable_error.assert_called_once()
 
 
+class TestBundledJamulusCandidate(unittest.TestCase):
+    """macOS zero-install bundling: WebJam.app/Contents/Resources/Jamulus.app."""
+
+    def test_returns_none_when_not_frozen(self):
+        from services.bridge_service import _bundled_jamulus_candidate
+        with patch.object(sys, "frozen", False, create=True):
+            self.assertIsNone(_bundled_jamulus_candidate())
+
+    def test_returns_none_on_non_macos_even_when_frozen(self):
+        from services.bridge_service import _bundled_jamulus_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "win32"):
+            self.assertIsNone(_bundled_jamulus_candidate())
+
+    def test_returns_nested_binary_path_when_present(self):
+        from services.bridge_service import _bundled_jamulus_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"), \
+             patch.object(sys, "executable",
+                           "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
+             patch("pathlib.Path.is_file", return_value=True):
+            result = _bundled_jamulus_candidate()
+        self.assertEqual(
+            result,
+            "/Applications/WebJam.app/Contents/Resources/Jamulus.app"
+            "/Contents/MacOS/Jamulus",
+        )
+
+    def test_returns_none_when_nested_app_missing(self):
+        from services.bridge_service import _bundled_jamulus_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"), \
+             patch.object(sys, "executable",
+                           "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
+             patch("pathlib.Path.is_file", return_value=False):
+            self.assertIsNone(_bundled_jamulus_candidate())
+
+
+class TestBundledJamulusInstaller(unittest.TestCase):
+    """Windows bundling: a Jamulus/ dir shipped next to WebJam.exe."""
+
+    def test_returns_none_when_not_frozen(self):
+        from services.bridge_service import _bundled_jamulus_installer
+        with patch.object(sys, "frozen", False, create=True):
+            self.assertIsNone(_bundled_jamulus_installer())
+
+    def test_returns_none_on_non_windows_even_when_frozen(self):
+        from services.bridge_service import _bundled_jamulus_installer
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"):
+            self.assertIsNone(_bundled_jamulus_installer())
+
+    def test_returns_installer_path_when_present(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Resolve up front: sys.executable is resolved internally
+            # (macOS commonly symlinks /var -> /private/var), so compare
+            # against the same resolved path to avoid a false mismatch.
+            app_dir = Path(tmp).resolve()
+            jamulus_dir = app_dir / "Jamulus"
+            jamulus_dir.mkdir()
+            installer = jamulus_dir / "jamulus_3.12.2_win.exe"
+            installer.write_bytes(b"stub")
+            (jamulus_dir / "JAMULUS_COPYING.txt").write_text("license")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path):
+                result = _bundled_jamulus_installer()
+
+        self.assertEqual(result, str(installer))
+
+    def test_returns_none_when_jamulus_dir_missing(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            exe_path = str(Path(tmp) / "WebJam.exe")
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path):
+                self.assertIsNone(_bundled_jamulus_installer())
+
+    def test_returns_none_when_no_exe_matches_pattern(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp)
+            jamulus_dir = app_dir / "Jamulus"
+            jamulus_dir.mkdir()
+            (jamulus_dir / "JAMULUS_COPYING.txt").write_text("license")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path):
+                self.assertIsNone(_bundled_jamulus_installer())
+
+
 class TestFindJamulusFallback(unittest.TestCase):
     def test_user_candidate_wins_when_it_exists(self):
         import tempfile
@@ -293,8 +400,27 @@ class TestFindJamulusFallback(unittest.TestCase):
         bridge.settings.jamulus_candidates = ["/nonexistent/a"]
         default_settings = MagicMock()
         default_settings.jamulus_candidates = ["/nonexistent/b"]
-        with patch("core.settings.AppSettings", return_value=default_settings):
+        with patch("core.settings.AppSettings", return_value=default_settings), \
+             patch("services.bridge_service._bundled_jamulus_candidate",
+                   return_value=None):
             self.assertIsNone(bridge.find_jamulus())
+
+    def test_falls_back_to_bundled_candidate_as_last_resort(self):
+        """A fresh macOS install with no configured paths should still find
+        the copy of Jamulus bundled inside WebJam.app itself."""
+        bridge = _make_bridge()
+        bridge.settings.jamulus_candidates = ["/nonexistent/custom"]
+        default_settings = MagicMock()
+        default_settings.jamulus_candidates = ["/nonexistent/default"]
+        with patch("core.settings.AppSettings", return_value=default_settings), \
+             patch("services.bridge_service._bundled_jamulus_candidate",
+                   return_value="/Applications/WebJam.app/Contents/Resources"
+                                "/Jamulus.app/Contents/MacOS/Jamulus"):
+            self.assertEqual(
+                bridge.find_jamulus(),
+                "/Applications/WebJam.app/Contents/Resources/Jamulus.app"
+                "/Contents/MacOS/Jamulus",
+            )
 
 
 @patch("services.bridge_service.time.sleep")
