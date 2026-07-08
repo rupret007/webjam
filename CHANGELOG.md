@@ -4,6 +4,24 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.7.3] — 2026-07-08
+
+### Test isolation fix and doc cleanup
+
+- Fixed a test-isolation bug in
+  `tests/test_application_controller_demo_to_real_transition.py`: the
+  audio "stopping" latch set by `AudioCoordinator.stop()` wasn't reset in
+  `setUp()`, so a prior test's stop() could leak into the next test and
+  make `apply_participants()` silently no-op.
+- Fixed `DEVELOPMENT.md`'s "Adding a Jamulus JSON-RPC method call"
+  tutorial, which still described the pre-rewrite RPC client (separate
+  poll/SSE threads, a synchronous `_call()` helper) and referenced a
+  nonexistent `GAIN_RANGE_MAX` attribute in its example code. Rewritten
+  to match the current single-thread NDJSON reader and fire-and-forget
+  `_send()`.
+
+---
+
 ## [0.7.2] — 2026-07-06
 
 ### Pilot readiness hardening
