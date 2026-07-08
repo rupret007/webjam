@@ -71,6 +71,48 @@ class TestLeaveBeforeLoad(unittest.TestCase):
         self.assertEqual(js, expected)
         self.assertIsNone(embed._pending_token)
 
+    def test_leave_meeting_does_not_purge_cookies_or_cache(self):
+        """Regression: leave_meeting() must preserve the persistent profile.
+
+        The whole point of the named persistent profile (``webjam_webex``)
+        is that Webex session state survives across joins/leaves so users
+        aren't forced to re-authenticate every time. A prior version wiped
+        cookies/cache on every leave, defeating that design.
+        """
+        embed = WebexEmbed()
+        embed.load_meeting("https://x.webex.com/y")
+        self.assertIsNotNone(embed._profile)
+
+        embed._profile.cookieStore = unittest.mock.MagicMock()
+        embed._profile.clearHttpCache = unittest.mock.MagicMock()
+
+        embed.leave_meeting()
+
+        embed._profile.cookieStore.assert_not_called()
+        embed._profile.clearHttpCache.assert_not_called()
+        self.assertEqual(embed._stack.currentIndex(), 0)
+
+    def test_shutdown_tears_down_view_and_is_idempotent(self):
+        embed = WebexEmbed()
+        # Safe no-op before any load.
+        try:
+            embed.shutdown()
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"shutdown raised before any load: {exc!r}")
+        self.assertIsNone(embed._view)
+
+        embed.load_meeting("https://x.webex.com/y")
+        self.assertIsNotNone(embed._view)
+
+        embed.shutdown()
+        self.assertIsNone(embed._view)
+
+        # Calling shutdown again must not raise.
+        try:
+            embed.shutdown()
+        except Exception as exc:  # noqa: BLE001
+            self.fail(f"shutdown raised on second call: {exc!r}")
+
     def test_local_widget_permission_url_allowed_only_for_trusted_meeting(self):
         embed = WebexEmbed()
         widget_url = QUrl.fromLocalFile(str(_HTML_TEMPLATE.resolve()))
