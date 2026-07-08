@@ -4,6 +4,61 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.8.0] — 2026-07-08
+
+### Bundle Jamulus with downloadable builds (both platforms)
+
+Removes the "leave WebJam, find jamulus.io, download, install, come back"
+detour for most users. Both platforms bundle the same pinned Jamulus
+version (`3.12.2` / tag `r3_12_2`) already used by the `integration-jamulus`
+CI job, unmodified, under GPL/AGPL "mere aggregation" terms — see the new
+`THIRD_PARTY_NOTICES.md` for the full licensing rationale.
+
+- **macOS: zero-install.** CI downloads and checksum-verifies the official,
+  Apple-signed and notarized `jamulus_3.12.2_mac.dmg`, extracts the
+  unmodified `Jamulus.app`, and nests it (via `ditto`, never re-signed) into
+  `WebJam.app/Contents/Resources/Jamulus.app`. A fresh install finds it
+  automatically with zero configuration.
+- **Windows: bundled installer.** Jamulus only ships an NSIS installer on
+  Windows (no portable binary), so CI downloads and checksum-verifies
+  `jamulus_3.12.2_win.exe` and `webjam.spec`'s new `Jamulus/` datas block
+  (mirroring the existing `VB/` block) ships it inside the WebJam install
+  directory. The Setup Wizard's Jamulus page now shows an **"Install
+  Jamulus now"** button when no install is found — it launches the bundled
+  installer and polls (non-blocking, via `QTimer`) for completion, filling
+  in the executable path automatically once it lands.
+- Added `services.bridge_service._bundled_jamulus_candidate()` (macOS) and
+  `_bundled_jamulus_installer()` (Windows) — both frozen-build-aware and
+  no-ops in dev checkouts. `find_jamulus()` now falls back to the bundled
+  macOS candidate as a last resort after all configured/default candidates
+  are exhausted.
+- The manual override (Browse button, `WEBJAM_JAMULUS_CANDIDATES` env var)
+  is unchanged and remains the escape hatch for anyone who needs a
+  different Jamulus install than the bundled one.
+- Added `licenses/JAMULUS_COPYING.txt` (the exact GPL text from the pinned
+  Jamulus release tag) and `THIRD_PARTY_NOTICES.md`; CI places a copy
+  alongside the bundled Jamulus in every build (macOS:
+  `WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/`; Windows:
+  `Jamulus/` next to the installer).
+- Updated the Setup Wizard's Welcome-page notice (no longer an "install
+  this yourself" warning) and the Jamulus page (pre-fills + notes the
+  bundled macOS copy; shows the install button on Windows).
+- Updated README, README_SIMPLE, DEVELOPMENT, ARCHITECTURE, USER_GUIDE,
+  FIRST_JAM, COHORT_VALIDATION_PLAYBOOK, TEST_PROCEDURE, and
+  VISION_AND_ROADMAP to reflect per-platform bundling instead of a blanket
+  "install Jamulus separately" requirement (still true for source
+  checkouts, which don't go through the PyInstaller bundling step).
+- Added `TestBundledJamulusCandidate`, `TestBundledJamulusInstaller`, and
+  `TestJamulusPageBundling` test suites (28 + new wizard cases) covering
+  frozen/non-frozen and platform-gating branches, the `find_jamulus()`
+  fallback, and the install-button launch/poll/failure paths. Full suite:
+  823 tests passing (0 regressions).
+- Known trade-off, not blocking: bundling ties the shipped Jamulus version
+  to WebJam's own release cadence — see `THIRD_PARTY_NOTICES.md`'s
+  "Staying current" note.
+
+---
+
 ## [0.7.3] — 2026-07-08
 
 ### Test isolation fix and doc cleanup
