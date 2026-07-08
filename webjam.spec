@@ -16,6 +16,16 @@
 #     --username your@apple.id --password @keychain:AC_PASSWORD \
 #     --file dist/WebJam.app
 #
+#   CAVEAT: dist/WebJam.app/Contents/Resources/Jamulus.app (bundled by CI,
+#   see .github/workflows/ci.yml) is ALREADY signed and notarized by the
+#   Jamulus project itself. `codesign --deep` re-signs every nested bundle
+#   it finds, which would overwrite that existing Developer ID signature
+#   with your own and invalidate Jamulus's notarization ticket. If signing
+#   locally (CI does not currently automate macOS signing), either drop
+#   `--deep` and sign nested non-Apple binaries individually first
+#   (bottom-up), or re-`ditto` a fresh unsigned-by-you copy of Jamulus.app
+#   back in after your codesign step completes.
+#
 # Windows — sign after building:
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
 #     dist\WebJam\WebJam.exe
@@ -45,6 +55,22 @@ if sys.platform == "win32":
         for _p in _vb_dir.iterdir():
             if _p.is_file():
                 _extra_datas.append((str(_p), "VB"))
+
+    # Bundle the official Jamulus Windows installer (staged by CI at build
+    # time into a repo-root Jamulus/ dir — see .github/workflows/ci.yml —
+    # absent in plain dev checkouts, matching the VB/ pattern above) so the
+    # Setup Wizard can offer an "Install Jamulus now" button instead of
+    # sending users to jamulus.io. Jamulus has no portable Windows binary
+    # to bundle directly (unlike macOS's Jamulus.app — see BUNDLE below),
+    # so this ships the unmodified upstream installer, not a runnable copy.
+    _jamulus_dir = ROOT / "Jamulus"
+    if _jamulus_dir.is_dir():
+        for _p in _jamulus_dir.iterdir():
+            if _p.is_file():
+                _extra_datas.append((str(_p), "Jamulus"))
+        _jamulus_license = ROOT / "licenses" / "JAMULUS_COPYING.txt"
+        if _jamulus_license.is_file():
+            _extra_datas.append((str(_jamulus_license), "Jamulus"))
 
 a = Analysis(
     [str(ROOT / "webjam_qt_main.py")],
@@ -137,6 +163,13 @@ coll = COLLECT(
 )
 
 if sys.platform == "darwin":
+    # NOTE: the bundled Jamulus.app (macOS's zero-install Jamulus bundling —
+    # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
+    # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
+    # must be `ditto`'d in whole and unmodified (to preserve its Apple code
+    # signature) *after* this BUNDLE() call produces dist/WebJam.app — see
+    # the "Stage bundled Jamulus.app" + "Build desktop artifact" steps in
+    # .github/workflows/ci.yml.
     app = BUNDLE(
         coll,
         name="WebJam.app",

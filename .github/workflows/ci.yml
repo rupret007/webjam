@@ -143,6 +143,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Bundling Jamulus removes the "leave WebJam, go find jamulus.io,
+      # download, come back" detour for most users. Both platforms bundle
+      # the same pinned version already used by integration-jamulus above,
+      # unmodified, per the "mere aggregation" terms in THIRD_PARTY_NOTICES.md.
+      - name: Stage bundled Jamulus installer (Windows)
+        if: matrix.target == 'windows-x64'
+        shell: bash
+        run: |
+          curl -fsSL -o jamulus_installer.exe \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_win.exe
+          echo "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9  jamulus_installer.exe" | sha256sum -c -
+          mkdir -p Jamulus
+          mv jamulus_installer.exe Jamulus/jamulus_3.12.2_win.exe
+          # webjam.spec's Jamulus/ datas block (mirrors VB/) picks this up.
+
+      - name: Stage bundled Jamulus.app (macOS)
+        if: matrix.target != 'windows-x64'
+        run: |
+          curl -fsSL -o jamulus.dmg \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_mac.dmg
+          echo "adf185aaf78e27d9f603daa6895e7698b4bdffee18fe29ad789cd7c1021d6bd0  jamulus.dmg" | shasum -a 256 -c -
+          # The dmg carries an embedded software-license-agreement prompt;
+          # `yes |` auto-accepts it non-interactively (matches Jamulus's
+          # own CI-friendly install docs).
+          yes | hdiutil attach jamulus.dmg -nobrowse -mountpoint "$RUNNER_TEMP/jamulus_mnt"
+          ditto "$RUNNER_TEMP/jamulus_mnt/Jamulus.app" "$RUNNER_TEMP/Jamulus.app"
+          hdiutil detach "$RUNNER_TEMP/jamulus_mnt" -force
+
       - name: Build desktop artifact
         shell: bash
         run: |
@@ -153,6 +181,16 @@ jobs:
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
           else
+            # Nest the bundled Jamulus.app (unmodified, Apple-notarized) and
+            # its license text into WebJam.app before zipping, so a fresh
+            # install works with zero configuration. Jamulus.app is copied
+            # in as-is (never re-signed here) — see webjam.spec's header
+            # comment for why the eventual codesign step must NOT use
+            # --deep against this bundle.
+            mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
+            ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
+            cp licenses/JAMULUS_COPYING.txt \
+              dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \
