@@ -89,6 +89,9 @@ class BridgeService:
         self.jamulus_reconnect_inflight = False
         self.webex_reconnect_inflight = False
         self._reconnect_lock = threading.Lock()
+        # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
+        # cannot race the old process's port release.
+        self._jamulus_lifecycle_lock = threading.Lock()
 
         # Practice mode: a private Jamulus server on this machine so a
         # musician can validate audio routing and hear themselves with zero
@@ -102,6 +105,7 @@ class BridgeService:
         # Captures to ~/.webjam_jamulus.log, overwritten on each launch so the
         # user can inspect the CURRENT session's Jamulus output when troubleshooting.
         self._jamulus_log_file: Optional[object] = None
+        self._practice_log_file: Optional[object] = None
 
     def _set_jamulus_state(self, state: "JamulusState | str") -> None:
         """Atomically update `jamulus_state` under `_reconnect_lock`.
@@ -149,17 +153,26 @@ class BridgeService:
         """
         from core.settings import AppSettings
         checked: set[str] = set()
+
+        def _resolve(path: str) -> Optional[str]:
+            candidate = Path(path).expanduser()
+            if candidate.is_file():
+                return str(candidate)
+            return None
+
         for path in self.settings.jamulus_candidates:
             if path not in checked:
                 checked.add(path)
-                if Path(path).exists():
-                    return path
+                resolved = _resolve(path)
+                if resolved:
+                    return resolved
         # Fallback: check any default candidate not already tried
         for path in AppSettings().jamulus_candidates:
             if path not in checked:
                 checked.add(path)
-                if Path(path).exists():
-                    return path
+                resolved = _resolve(path)
+                if resolved:
+                    return resolved
         return None
 
     def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
@@ -277,27 +290,34 @@ class BridgeService:
         # Jamulus process that didn't shut down cleanly), Popen would succeed
         # but Jamulus would silently fail to bind — leaving a running
         # subprocess we can't control via RPC.
-        if manual and self._is_rpc_port_in_use():
+        if self._is_rpc_port_in_use():
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             self._set_jamulus_state(JamulusState.PORT_IN_USE)
-            self.metrics_service.increment("metric_jamulus_port_conflict")
-            self.schedule_ui_callback(self.refresh_readiness)
             port = self.settings.jamulus_rpc_port
-            self.show_actionable_error(
-                "Jamulus Port In Use",
-                what_failed=f"Port {port} (Jamulus JSON-RPC) is already in use on this machine.",
-                likely_cause=(
-                    "Another WebJam instance is already running, or a previous "
-                    "Jamulus process didn't shut down cleanly."
-                ),
-                next_action=(
-                    "Close any other WebJam instances and quit any running Jamulus, "
-                    "then retry. To use a different port, set the "
-                    "WEBJAM_JAMULUS_RPC_PORT environment variable."
-                ),
-                retry_callback=lambda: self.launch_jamulus(manual=True),
-            )
+            if manual:
+                self.metrics_service.increment("metric_jamulus_port_conflict")
+                self.schedule_ui_callback(self.refresh_readiness)
+                self.show_actionable_error(
+                    "Jamulus Port In Use",
+                    what_failed=f"Port {port} (Jamulus JSON-RPC) is already in use on this machine.",
+                    likely_cause=(
+                        "Another WebJam instance is already running, or a previous "
+                        "Jamulus process didn't shut down cleanly."
+                    ),
+                    next_action=(
+                        "Close any other WebJam instances and quit any running Jamulus, "
+                        "then retry. To use a different port, set the "
+                        "WEBJAM_JAMULUS_RPC_PORT environment variable."
+                    ),
+                    retry_callback=lambda: self.launch_jamulus(manual=True),
+                )
+            else:
+                self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                self.schedule_ui_callback(self.refresh_readiness)
+                LOGGER.warning(
+                    "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
+                )
             return
 
         banner_text = "Launching Jamulus..." if not reconnect else "Auto-reconnecting Jamulus..."
@@ -308,163 +328,146 @@ class BridgeService:
         server = self.effective_server()
 
         def _do_launch() -> None:
-            try:
-                if self.shutdown_requested():
-                    with self._reconnect_lock:
-                        self.jamulus_reconnect_inflight = False
-                    return
-
-                # Launch Jamulus with JSON-RPC so WebJam can query/control it.
-                # Jamulus requires a shared secret for JSON-RPC: write one to the
-                # file both Jamulus and our RPC client read, and pass it on the
-                # command line.  Without it, --jsonrpcport alone does nothing.
-                import secrets as _secrets
-                from core.file_io import atomic_write_text
-                from core.jamulus_rpc_client import DEFAULT_SECRET_PATH
-                jsonrpc_secret_args: list[str] = []
+            with self._jamulus_lifecycle_lock:
                 try:
-                    atomic_write_text(
-                        DEFAULT_SECRET_PATH,
-                        _secrets.token_urlsafe(24) + "\n",
-                        mode=0o600,
-                    )
-                    jsonrpc_secret_args = [
-                        "--jsonrpcsecretfile", str(DEFAULT_SECRET_PATH)
+                    if self.shutdown_requested():
+                        with self._reconnect_lock:
+                            self.jamulus_reconnect_inflight = False
+                        return
+
+                    import secrets as _secrets
+                    from core.file_io import atomic_write_text
+                    from core.jamulus_rpc_client import DEFAULT_SECRET_PATH
+                    jsonrpc_secret_args: list[str] = []
+                    try:
+                        atomic_write_text(
+                            DEFAULT_SECRET_PATH,
+                            _secrets.token_urlsafe(24) + "\n",
+                            mode=0o600,
+                        )
+                        jsonrpc_secret_args = [
+                            "--jsonrpcsecretfile", str(DEFAULT_SECRET_PATH)
+                        ]
+                    except OSError as exc:
+                        raise RuntimeError(
+                            "Could not create Jamulus JSON-RPC secret file; "
+                            "refusing to launch without RPC authentication."
+                        ) from exc
+
+                    cmd = [
+                        jamulus_path,
+                        "--connect", server,
+                        "--jsonrpcport", str(self.settings.jamulus_rpc_port),
+                        *jsonrpc_secret_args,
                     ]
-                except OSError as exc:
-                    raise RuntimeError(
-                        "Could not create Jamulus JSON-RPC secret file; "
-                        "refusing to launch without RPC authentication."
-                    ) from exc
-
-                # Launch Jamulus with JSON-RPC port so WebJam can query it
-                cmd = [
-                    jamulus_path,
-                    "--connect", server,
-                    "--jsonrpcport", str(self.settings.jamulus_rpc_port),
-                    *jsonrpc_secret_args,
-                ]
-                # Capture Jamulus stdout+stderr to ~/.webjam_jamulus.log for
-                # post-hoc troubleshooting. Best-effort — fall back to DEVNULL
-                # if we can't open the file (e.g. read-only home directory).
-                log_file = None
-                stdout_dest = subprocess.DEVNULL
-                try:
-                    log_path = Path.home() / ".webjam_jamulus.log"
-                    log_file = open(log_path, "w", buffering=1)
-                    # Close any previous log file before reassigning
-                    if self._jamulus_log_file is not None:
-                        try:
-                            self._jamulus_log_file.close()
-                        except Exception:
-                            pass
-                    self._jamulus_log_file = log_file
-                    stdout_dest = log_file
-                except OSError as exc:
-                    LOGGER.debug("Could not open Jamulus log file: %s", exc)
-
-                # Windows: hide the spurious console window that subprocess.Popen
-                # would otherwise pop up alongside the Jamulus GUI.
-                # POSIX: no-op (CREATE_NO_WINDOW doesn't exist there).
-                popen_kwargs: dict = {
-                    "stdout": stdout_dest,
-                    "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
-                }
-                import sys
-                if sys.platform == "win32":
-                    popen_kwargs["creationflags"] = (
-                        getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                    )
-
-                proc = None
-                for i in range(3):
+                    log_file = None
+                    stdout_dest = subprocess.DEVNULL
                     try:
-                        proc = subprocess.Popen(cmd, **popen_kwargs)
-                        break
-                    except Exception:
-                        if i == 2:
-                            raise
-                        time.sleep(0.5)
+                        log_path = Path.home() / ".webjam_jamulus.log"
+                        log_file = open(log_path, "w", buffering=1)
+                        if self._jamulus_log_file is not None:
+                            try:
+                                self._jamulus_log_file.close()
+                            except Exception:
+                                pass
+                        self._jamulus_log_file = log_file
+                        stdout_dest = log_file
+                    except OSError as exc:
+                        LOGGER.debug("Could not open Jamulus log file: %s", exc)
 
-                if self.shutdown_requested():
-                    if proc:
-                        proc.terminate()
+                    popen_kwargs: dict = {
+                        "stdout": stdout_dest,
+                        "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
+                    }
+                    import sys
+                    if sys.platform == "win32":
+                        popen_kwargs["creationflags"] = (
+                            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                        )
+
+                    proc = None
+                    for i in range(3):
+                        try:
+                            proc = subprocess.Popen(cmd, **popen_kwargs)
+                            break
+                        except Exception:
+                            if i == 2:
+                                raise
+                            time.sleep(0.5)
+
+                    if self.shutdown_requested():
+                        if proc:
+                            proc.terminate()
+                        self._close_jamulus_log_file()
+                        with self._reconnect_lock:
+                            self.jamulus_reconnect_inflight = False
+                        return
+
+                    with self._reconnect_lock:
+                        self.jamulus_process = proc
+                        self.jamulus_state = JamulusState.RUNNING.value
+                        self.jamulus_reconnect_inflight = False
+                    self.jamulus_reconnect_attempts = 0
+                    self.jamulus_next_reconnect_at = 0.0
+
+                    if reconnect:
+                        self.metrics_service.increment("metric_jamulus_reconnect_success")
+                    else:
+                        self.metrics_service.increment("metric_jamulus_launch_success")
+
+                    def _start_monitoring():
+                        time.sleep(2.0)
+                        try:
+                            self.jamulus_controller.start()
+                        except Exception as exc:
+                            LOGGER.warning("JamulusController.start() failed: %s", exc)
+
+                    threading.Thread(target=_start_monitoring, daemon=True).start()
+
+                    self.schedule_ui_callback(self.refresh_readiness)
+                    if manual:
+                        msg = (
+                            f"Jamulus launched — connecting to {server}. "
+                            "Participants will appear shortly."
+                        )
+                        self.schedule_ui_callback(
+                            lambda m=msg: self.set_status_banner(m)
+                        )
+
+                except Exception as exc:
+                    LOGGER.exception("Failed to launch Jamulus: %s", exc)
+                    # Close the log file we opened before Popen — Jamulus never
+                    # started, nothing's writing to it.
                     self._close_jamulus_log_file()
+                    self._set_jamulus_state(
+                        JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
+                    )
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
-                    return
 
-                # Atomically publish: process handle, state, and inflight flag.
-                # The audit found that `jamulus_process` was being written
-                # from this worker thread while the QTimer reconnect tick
-                # could read it on the UI thread without coordination — fold
-                # all three writes into a single locked section so that any
-                # observer either sees pre-launch state (process=None,
-                # state="Not launched"/etc.) or post-launch state
-                # (process=proc, state="Running"), never an inconsistent mix.
-                with self._reconnect_lock:
-                    self.jamulus_process = proc
-                    self.jamulus_state = JamulusState.RUNNING.value
-                    self.jamulus_reconnect_inflight = False
-                self.jamulus_reconnect_attempts = 0
-                self.jamulus_next_reconnect_at = 0.0
+                    if reconnect:
+                        self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                        self.schedule_ui_callback(self.refresh_readiness)
+                        return
 
-                if reconnect:
-                    self.metrics_service.increment("metric_jamulus_reconnect_success")
-                else:
-                    self.metrics_service.increment("metric_jamulus_launch_success")
-
-                # Start monitoring (JSON-RPC + audio engine) after brief startup delay
-                def _start_monitoring():
-                    time.sleep(2.0)  # give Jamulus time to bind its RPC port
-                    try:
-                        self.jamulus_controller.start()
-                    except Exception as exc:
-                        LOGGER.warning("JamulusController.start() failed: %s", exc)
-
-                threading.Thread(target=_start_monitoring, daemon=True).start()
-
-                self.schedule_ui_callback(self.refresh_readiness)
-                if manual:
-                    msg = f"Jamulus launched — connecting to {server}. Participants will appear shortly."
-                    self.schedule_ui_callback(
-                        lambda m=msg: self.set_status_banner(m)
-                    )
-
-            except Exception as exc:
-                LOGGER.exception("Failed to launch Jamulus: %s", exc)
-                # Close the log file we opened before Popen — Jamulus never
-                # started, nothing's writing to it.
-                self._close_jamulus_log_file()
-                self._set_jamulus_state(
-                    JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
-                )
-                with self._reconnect_lock:
-                    self.jamulus_reconnect_inflight = False
-                
-                if reconnect:
-                    self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                    self.metrics_service.increment("metric_jamulus_launch_failed")
+                    # If this launch was the client half of a practice session,
+                    # the private local server is now orphaned — kill it and exit
+                    # practice mode so it doesn't linger until app close.
+                    if self.practice_mode:
+                        self._terminate_practice_server()
+                        self.practice_mode = False
                     self.schedule_ui_callback(self.refresh_readiness)
-                    return
-                    
-                self.metrics_service.increment("metric_jamulus_launch_failed")
-                # If this launch was the client half of a practice session,
-                # the private local server is now orphaned — kill it and exit
-                # practice mode so it doesn't linger until app close.
-                if self.practice_mode:
-                    self._terminate_practice_server()
-                    self.practice_mode = False
-                self.schedule_ui_callback(self.refresh_readiness)
-                exc_msg = str(exc)
-                self.schedule_ui_callback(
-                    lambda m=exc_msg: self.show_actionable_error(
-                        "Jamulus Launch Failed",
-                        what_failed=f"Jamulus could not start ({m}).",
-                        likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
-                        next_action="Open diagnostics, verify path/server, then retry.",
-                        retry_callback=lambda: self.launch_jamulus(manual=True)
+                    exc_msg = str(exc)
+                    self.schedule_ui_callback(
+                        lambda m=exc_msg: self.show_actionable_error(
+                            "Jamulus Launch Failed",
+                            what_failed=f"Jamulus could not start ({m}).",
+                            likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
+                            next_action="Open diagnostics, verify path/server, then retry.",
+                            retry_callback=lambda: self.launch_jamulus(manual=True)
+                        )
                     )
-                )
 
         threading.Thread(target=_do_launch, daemon=True).start()
 
@@ -482,7 +485,11 @@ class BridgeService:
         the local practice server when practicing, the band server otherwise."""
         if self.practice_mode:
             return f"127.0.0.1:{PRACTICE_PORT}"
-        return f"{self.settings.jamulus_server}:{self.settings.jamulus_port}"
+        host = str(self.settings.jamulus_server or "").strip()
+        port = int(self.settings.jamulus_port)
+        if ":" in host:
+            return host
+        return f"{host}:{port}"
 
     def launch_practice_session(self) -> bool:
         """Start a private local Jamulus server and connect to it.
@@ -522,9 +529,13 @@ class BridgeService:
         # dedicated log for troubleshooting.
         cmd = [jamulus_path, "--server", "--nogui", "--port", str(PRACTICE_PORT)]
         stdout_dest = subprocess.DEVNULL
+        practice_log = None
         try:
             log_path = Path.home() / ".webjam_practice_server.log"
-            stdout_dest = open(log_path, "w", buffering=1)
+            practice_log = open(log_path, "w", buffering=1)
+            stdout_dest = practice_log
+            self._close_practice_log_file()
+            self._practice_log_file = practice_log
         except OSError:
             pass
         popen_kwargs: dict = {
@@ -556,6 +567,15 @@ class BridgeService:
         self.launch_jamulus(manual=True, reconnect=False)
         return True
 
+    def _close_practice_log_file(self) -> None:
+        """Close the practice-server log file if open. Idempotent."""
+        if self._practice_log_file is not None:
+            try:
+                self._practice_log_file.close()
+            except Exception:
+                pass
+            self._practice_log_file = None
+
     def _terminate_practice_server(self) -> None:
         """Terminate the private local practice server if running. Idempotent."""
         proc = self.practice_server_process
@@ -569,6 +589,7 @@ class BridgeService:
                     proc.kill()
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("Failed to terminate practice server: %s", exc)
+        self._close_practice_log_file()
 
     def _end_practice_if_server_died(self) -> bool:
         """Reconnect-tick guard: if the local practice server died, end the
@@ -598,51 +619,44 @@ class BridgeService:
         ``"Stopped"`` and the auto-reconnect logic is disabled (because
         ``jamulus_launch_intended`` is set to False).
         """
-        # Disable any pending reconnect attempts — user explicitly asked to stop
-        self.jamulus_launch_intended = False
-        self.jamulus_reconnect_attempts = 0
-        self.jamulus_next_reconnect_at = 0.0
-        with self._reconnect_lock:
-            self.jamulus_reconnect_inflight = False
+        with self._jamulus_lifecycle_lock:
+            # Disable any pending reconnect attempts — user explicitly asked to stop
+            self.jamulus_launch_intended = False
+            self.jamulus_reconnect_attempts = 0
+            self.jamulus_next_reconnect_at = 0.0
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
 
-        # Stop monitoring (RPC + UDP) so we don't keep polling a dead process
-        try:
-            self.jamulus_controller.stop()
-        except Exception as exc:
-            LOGGER.warning("JamulusController.stop() failed: %s", exc)
-
-        terminated = False
-        proc = self.jamulus_process
-        if proc is not None and proc.poll() is None:
+            # Stop monitoring (RPC + UDP) so we don't keep polling a dead process
             try:
-                proc.terminate()
-                # Give Jamulus 2 seconds to exit gracefully, then force-kill
-                try:
-                    proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                terminated = True
+                self.jamulus_controller.stop()
             except Exception as exc:
-                LOGGER.warning("Failed to terminate Jamulus: %s", exc)
+                LOGGER.warning("JamulusController.stop() failed: %s", exc)
 
-        # Pair the `jamulus_process` clear with the state write under the
-        # lock — same invariant as `_do_launch`'s success path.
-        with self._reconnect_lock:
-            self.jamulus_process = None
-            self.jamulus_state = JamulusState.STOPPED.value
+            terminated = False
+            proc = self.jamulus_process
+            if proc is not None and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2.0)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    terminated = True
+                except Exception as exc:
+                    LOGGER.warning("Failed to terminate Jamulus: %s", exc)
 
-        # Close the Jamulus log file if we opened one.  The contents are
-        # preserved on disk for post-hoc inspection.
-        self._close_jamulus_log_file()
+            with self._reconnect_lock:
+                self.jamulus_process = None
+                self.jamulus_state = JamulusState.STOPPED.value
 
-        # End practice mode: bring the private local server down with the
-        # client so nothing keeps running in the background.
-        self._terminate_practice_server()
-        self.practice_mode = False
+            self._close_jamulus_log_file()
+            self._terminate_practice_server()
+            self.practice_mode = False
 
-        self.metrics_service.increment("metric_jamulus_stop")
-        self.schedule_ui_callback(self.refresh_readiness)
-        return terminated
+            self.metrics_service.increment("metric_jamulus_stop")
+            self.schedule_ui_callback(self.refresh_readiness)
+            return terminated
 
     def leave_webex(self) -> None:
         """Disable Webex auto-reconnect and reset state to 'Not opened'.

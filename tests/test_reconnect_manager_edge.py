@@ -221,7 +221,8 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.jamulus_next_reconnect_at = 5.0
         bridge.jamulus_reconnect_inflight = True
 
-        with patch("pathlib.Path.exists", return_value=True):
+        # find_jamulus() resolves candidates via Path.is_file(), not exists().
+        with patch("pathlib.Path.is_file", return_value=True):
             bridge.launch_jamulus(manual=True, reconnect=False)
 
         self.assertEqual(bridge.jamulus_state, "Running")
@@ -255,7 +256,8 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         popen_mock.side_effect = _popen_and_flag
 
-        with patch("pathlib.Path.exists", return_value=True):
+        # find_jamulus() resolves candidates via Path.is_file(), not exists().
+        with patch("pathlib.Path.is_file", return_value=True):
             bridge.launch_jamulus(manual=True, reconnect=False)
 
         fake_proc.terminate.assert_called_once()

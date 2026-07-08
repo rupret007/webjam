@@ -35,6 +35,9 @@ from ui.services import MetricsService
 from webjam_qt.controllers.mix_manager import MixManager
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
+from webjam_qt.controllers.audio_coordinator import AudioCoordinator
+from webjam_qt.controllers.video_coordinator import VideoCoordinator
+from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -112,7 +115,9 @@ class ApplicationController(QObject):
         self.participants: dict[int, ParticipantPresentation] = {}
 
         # True once JamulusController has pushed at least one real update
-        self._jamulus_connected = False
+        self.audio = AudioCoordinator(self)
+        self.video = VideoCoordinator(self)
+        self.recording = RecordingCoordinator(self)
 
         # Companion API — optional localhost HTTP bridge for DAWs/editors.
         # Constructed here (no side effects) but only started in
@@ -236,6 +241,12 @@ class ApplicationController(QObject):
             self.webex.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Webex stop failed")
+        # Tear down the embedded QWebEngineView so its Chromium subprocess
+        # doesn't outlive WebJam — it was otherwise never explicitly closed.
+        try:
+            self.window.webex_embed.shutdown()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Webex embed shutdown failed")
         try:
             self.api_bridge.stop()
         except Exception:  # noqa: BLE001
@@ -265,6 +276,14 @@ class ApplicationController(QObject):
         else:
             LOGGER.info("Companion API not started (fastapi/uvicorn missing or port busy)")
         return started
+
+    @property
+    def _jamulus_connected(self) -> bool:
+        return self.audio.connected
+
+    @_jamulus_connected.setter
+    def _jamulus_connected(self, value: bool) -> None:
+        self.audio.connected = value
 
     def _snapshot_participants(self) -> list:
         """Copy the participants list; retries the copy if the UI thread
@@ -473,99 +492,7 @@ class ApplicationController(QObject):
 
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
-        if not jamulus_participants:
-            if self._jamulus_connected:
-                self._jamulus_connected = False
-                self._level_timer.stop()
-                self.window.set_status_latency("Not connected")
-                self.window.set_status_audio("Connecting…")
-                self._reset_to_demo_state()
-            return
-        rpc = getattr(self.jamulus, "rpc_client", None)
-        self.session_health.mark_process(
-            self.bridge.jamulus_state,
-            rpc_available=bool(getattr(rpc, "available", False)),
-        )
-        self.session_health.mark_participants(len(jamulus_participants))
-
-        if not self._jamulus_connected:
-            self._jamulus_connected = True
-            self.session_health.mark_rpc_result("participants", True)
-            # Push our display name to Jamulus so the band sees a real name.
-            self.jamulus.set_name(self.settings.webex_display_name)
-            self._demo_timer.stop()
-            # Clear demo data; real participants take over
-            self.participants.clear()
-            # Start polling real audio engine levels
-            self._level_timer.start()
-            # Restore saved mix (best-effort — silently skipped if no file)
-            self._restore_saved_mix()
-            # Telemetry: count sessions where we actually got real participants
-            try:
-                self.metrics.increment("metric_session_started")
-            except Exception:  # noqa: BLE001
-                LOGGER.debug("metric_session_started increment failed", exc_info=True)
-            # Celebrate the moment — first connection deserves a flash
-            if self.bridge.practice_mode:
-                self.window.set_status_audio(
-                    f"Practice connected ({self.bridge.effective_server()})"
-                )
-                self.window.flash_message(
-                    "Practice session live — you're on a private local server. "
-                    "Play something and watch your meter.",
-                    ms=5000,
-                )
-            else:
-                self.window.set_status_audio(
-                    f"Connected ({self.bridge.effective_server()})"
-                )
-                self.window.flash_message(
-                    f"Connected to {self.settings.jamulus_server}. "
-                    "Waiting for band members…",
-                    ms=4000,
-                )
-
-        # Update participant count in status bar.  When the user is alone on
-        # the server (only their own channel), say so explicitly — "1
-        # participant" is technically correct but doesn't convey "waiting".
-        n = len(jamulus_participants)
-        if n == 1:
-            self.window.set_status_latency("1 participant · waiting for others")
-        else:
-            self.window.set_status_latency(f"{n} participants")
-
-        incoming_ids = {p.channel_id for p in jamulus_participants}
-
-        # Remove participants that left
-        for cid in list(self.participants.keys()):
-            if cid not in incoming_ids:
-                del self.participants[cid]
-
-        # Upsert — preserve existing mixer state (fader/mute/solo)
-        for jp in jamulus_participants:
-            existing = self.participants.get(jp.channel_id)
-            if existing is None:
-                self.participants[jp.channel_id] = ParticipantPresentation(
-                    channel_id=jp.channel_id,
-                    name=jp.name,
-                    role=self._role_label(jp),
-                    fader_level=jp.fader_level,
-                    muted=jp.muted,
-                    solo=jp.solo,
-                    is_connected=jp.is_connected,
-                    is_local=getattr(jp, "is_local", jp.channel_id == 0),
-                )
-            else:
-                # Preserve fader/mute/solo the user set in WebJam
-                existing.name = jp.name
-                existing.is_connected = jp.is_connected
-                existing.is_local = getattr(jp, "is_local", jp.channel_id == 0)
-                # Refresh role if instrument changed (e.g. mid-session update)
-                new_role = self._role_label(jp)
-                if new_role != existing.role:
-                    existing.role = new_role
-
-        self._push_participants_to_grid()
+        self.audio.apply_participants(jamulus_participants)
 
     @staticmethod
     def _role_label(jp) -> str:
@@ -633,17 +560,7 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
-        if self._is_jamulus_running():
-            self._stop_audio()
-        else:
-            # Fresh manual launch — clear the crash/hang/gave-up latches so
-            # banners fire again for a new session.
-            self._reconnect_banner_shown = False
-            self._rpc_hang_banner_shown = False
-            self._reconnect_gave_up = False
-            self.window.set_status_audio("Launching…")
-            self.window.session_strip.set_audio_state("Launching…", enabled=False)
-            self.bridge.launch_jamulus(manual=True)
+        self.audio.on_launch_toggle()
 
     def _on_record_requested(self) -> None:
         """● Record — toggle the band server's multitrack recorder.
@@ -759,76 +676,15 @@ class ApplicationController(QObject):
         self.window.flash_message(f"Record: {message}", ms=8000)
 
     def _on_practice_requested(self) -> None:
-        """Ctrl+P / Practice button — solo session against a private local
-        Jamulus server.  Validates the musician's whole audio path (interface,
-        virtual cable, mixer control) with zero internet dependency."""
-        if self._is_jamulus_running():
-            self.window.flash_message(
-                "Stop Audio first, then press Practice for a solo session.",
-                ms=4000,
-            )
-            return
-        self.window.set_status_audio("Starting practice…")
-        self.window.session_strip.set_audio_state("Starting…", enabled=False)
-        self.window.flash_message(
-            "Practice mode: private server on this computer — play and hear "
-            "yourself, no internet needed. Stop Audio ends it.",
-            ms=6000,
-        )
-        started = self.bridge.launch_practice_session()
-        if not started:
-            self.window.session_strip.set_audio_state("Launch Audio", enabled=True)
-            self.window.set_status_audio("Ready to launch")
+        self.audio.on_practice_requested()
 
     def _stop_audio(self) -> None:
         """Confirm with the user, then stop Jamulus and reset UI state."""
-        reply = QMessageBox.question(
-            self.window, "Stop Audio?",
-            "Stop the Jamulus audio session?\n\nYou can restart it any time with the audio button.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        self.window.set_status_audio("Stopping…")
-        self.window.set_status_latency("Not connected")
-        self.window.session_strip.set_audio_state("Stopping…", enabled=False)
-        # Stop in a worker thread; bridge will refresh readiness when done
-        threading.Thread(
-            target=self.bridge.stop_jamulus, daemon=True, name="jamulus-stop",
-        ).start()
-        # Reset state and restore the demo grid so the user sees a clear
-        # visual signal that audio is off (instead of frozen real participants).
-        self._jamulus_connected = False
-        self._level_timer.stop()
-        self._apply_recorder_state(False)
-        # The band-server recorder state is meaningless once we've left the
-        # session — reset the Record button so it doesn't show a stale
-        # "■ Stop Rec" that no longer matches the server.
-        self._recorder_armed = False
-        self.window.session_strip.set_recording_state(False, enabled=True)
-        self._reset_to_demo_state()
-        # Clear the crash-banner latch so a future crash flashes again.
-        # Without this, manually stopping during a reconnect would lock the
-        # latch True and the next crash would be silent.
-        self._reconnect_banner_shown = False
-        self._rpc_hang_banner_shown = False
-        self._reconnect_gave_up = False
+        self.audio.stop()
 
     def _reset_to_demo_state(self) -> None:
         """Replace current participants with demo placeholders + restart demo timer."""
-        self.session_health.reset_live_truth()
-        self.participants.clear()
-        for p in _DEMO_PARTICIPANTS:
-            self.participants[p.channel_id] = ParticipantPresentation(
-                channel_id=p.channel_id,
-                name=p.name,
-                role=p.role,
-                fader_level=p.fader_level,
-                is_local=p.is_local,
-            )
-        self._push_participants_to_grid()
-        self._demo_timer.start()
+        self.audio.reset_to_demo()
 
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
@@ -971,7 +827,7 @@ class ApplicationController(QObject):
     # BridgeService callbacks (already on UI thread via invoker)
     # ------------------------------------------------------------------
     def _set_status_banner(self, text: str, color: str | None = None) -> None:
-        self.window.flash_message(text)
+        self.window.flash_message(text, color=color)
 
     def _refresh_readiness(self) -> None:
         # A launched process is not the same as a proven Jamulus session.  Keep
@@ -1000,6 +856,7 @@ class ApplicationController(QObject):
                 )
         else:
             self.session_health.reset_live_truth()
+        self.audio.on_readiness_refresh(jamulus_up)
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
         self.window.session_strip.set_audio_state(

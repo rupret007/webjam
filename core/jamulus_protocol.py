@@ -170,6 +170,17 @@ _MAX_LEVEL_LIST_ENTRIES = 500
 _MAX_UNKNOWN_MSG_IDS_REMEMBERED = 256
 
 
+def _map_level_list_to_channels(
+    index_levels: Dict[int, float], channel_order: list[int]
+) -> Dict[int, float]:
+    """Map CLT_CHANNEL_LEVEL_LIST indices to Jamulus channel IDs."""
+    mapped: Dict[int, float] = {}
+    for idx, level in index_levels.items():
+        if idx < len(channel_order):
+            mapped[channel_order[idx]] = level
+    return mapped
+
+
 def _parse_level_list(data: bytes) -> Dict[int, float]:
     """
     Parse CLT_CHANNEL_LEVEL_LIST payload.
@@ -231,6 +242,7 @@ class JamulusProtocolAdapter:
 
         self._sock: Optional[socket.socket] = None
         self._participants: Dict[int, str] = {}
+        self._participant_order: list[int] = []
         self._participants_lock = threading.Lock()
 
         self._running = False
@@ -399,6 +411,7 @@ class JamulusProtocolAdapter:
             if clients:
                 with self._participants_lock:
                     self._participants = clients
+                    self._participant_order = list(clients.keys())
                 if self._on_participants_changed:
                     try:
                         self._on_participants_changed(dict(clients))
@@ -406,7 +419,10 @@ class JamulusProtocolAdapter:
                         _logger.debug("on_participants_changed callback error: %s", exc)
 
         elif msg_id == _MsgId.CLT_CHANNEL_LEVEL_LIST:
-            levels = _parse_level_list(data)
+            index_levels = _parse_level_list(data)
+            with self._participants_lock:
+                channel_order = list(self._participant_order)
+            levels = _map_level_list_to_channels(index_levels, channel_order)
             if levels and self._on_levels:
                 try:
                     self._on_levels(levels)

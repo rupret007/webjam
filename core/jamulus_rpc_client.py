@@ -245,45 +245,56 @@ class JamulusRpcClient:
             ("127.0.0.1", self._port), timeout=self.CONNECT_TIMEOUT_S
         )
         self._sock = sock
-        reader = sock.makefile("r", encoding="utf-8", newline="\n")
+        read_buf = b""
+
+        def _readline(deadline: Optional[float] = None) -> str:
+            nonlocal read_buf
+            while True:
+                nl = read_buf.find(b"\n")
+                if nl >= 0:
+                    line, read_buf = read_buf[:nl], read_buf[nl + 1:]
+                    return line.decode("utf-8")
+                if deadline is not None and time.monotonic() >= deadline:
+                    return ""
+                remaining = 1.0 if deadline is None else max(
+                    0.0, deadline - time.monotonic()
+                )
+                if remaining <= 0:
+                    return ""
+                sock.settimeout(remaining)
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    if deadline is not None:
+                        continue
+                    return ""
+                except OSError as exc:
+                    if "timed out" in str(exc).lower():
+                        if deadline is not None:
+                            continue
+                        return ""
+                    raise
+                if chunk == b"":
+                    raise ConnectionError("server closed connection")
+                read_buf += chunk
 
         try:
-            # 1. Authenticate (must be the first message).
             auth_id = self._send("jamulus/apiAuth", {"secret": secret})
-            if not self._await_auth(reader, auth_id):
+            if not self._await_auth(_readline, auth_id):
                 raise ConnectionError("apiAuth failed or refused")
             self._authed = True
             self._available = True
             self._stamp()
 
-            # 2. Prime local channel id + participant list.
             self._send("jamulusclient/getChannelInfo", {})
             self._send("jamulusclient/getClientList", {})
 
-            # 3. Stream notifications + responses until disconnected/stopped.
-            sock.settimeout(1.0)
             while self._running:
-                try:
-                    line = reader.readline()
-                except socket.timeout:
+                line = _readline()
+                if not line:
                     continue
-                except OSError as exc:
-                    # A buffered reader driven by settimeout raises "cannot
-                    # read from timed out object" on the read that follows a
-                    # timeout mid-frame — that's still a timeout, not a
-                    # disconnect. Treat it as such so a slow/fragmented frame
-                    # doesn't tear down and reconnect the session.
-                    if "timed out" in str(exc).lower():
-                        continue
-                    raise
-                if line == "":
-                    raise ConnectionError("server closed connection")
                 self._dispatch_line(line)
         finally:
-            try:
-                reader.close()
-            except Exception:  # noqa: BLE001
-                pass
             if self._sock is sock:
                 self._sock = None
             try:
@@ -291,21 +302,20 @@ class JamulusRpcClient:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _await_auth(self, reader, auth_id: Optional[int]) -> bool:
+    def _await_auth(self, readline, auth_id: Optional[int]) -> bool:
         """Read lines until the apiAuth response arrives; dispatch any
         notifications seen in the meantime."""
         deadline = time.monotonic() + self.AUTH_TIMEOUT_S
         while self._running and time.monotonic() < deadline:
-            line = reader.readline()
-            if line == "":
-                return False
+            line = readline(deadline)
+            if not line:
+                continue
             obj = self._parse(line)
             if obj is None:
                 continue
             if obj.get("id") == auth_id and ("result" in obj or "error" in obj):
                 self._inflight.pop(auth_id, None)
                 return obj.get("result") == "ok"
-            # Notifications can arrive before the auth ack — handle them.
             self._dispatch_obj(obj)
         return False
 

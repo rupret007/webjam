@@ -110,12 +110,13 @@ class ParticipantStateManager:
             self._notify_callbacks()
 
     def set_fader_level(self, channel_id: int, level: int) -> None:
+        clamped = max(0, min(127, int(level)))
         with self._participants_lock:
             if channel_id in self.participants:
-                self.participants[channel_id].fader_level = max(0, min(127, level))
+                self.participants[channel_id].fader_level = clamped
             else:
                 return
-        self._send_rpc_gain(channel_id, level)
+        self._send_rpc_gain(channel_id, clamped)
         self._apply_mixer_setting(channel_id)
 
     def set_pan(self, channel_id: int, pan: int) -> None:
