@@ -262,20 +262,39 @@ class WebexEmbed(QFrame):
         threading.Thread(target=_worker, daemon=True, name="webex-token").start()
 
     def leave_meeting(self) -> None:
-        """Navigate away from the meeting and restore the placeholder."""
+        """Navigate away from the meeting and restore the placeholder.
+
+        Deliberately does NOT clear cookies/cache — the whole point of the
+        named persistent profile (``webjam_webex``) is that Webex session
+        state survives across joins/leaves and app restarts, so the user
+        isn't re-prompted to log in every time they rejoin. Use
+        ``shutdown()`` to actually tear down the WebEngine profile.
+        """
         if self._view is not None:
             self._view.load(QUrl("about:blank"))
-        if self._profile is not None:
-            try:
-                self._profile.cookieStore().deleteAllCookies()
-                self._profile.clearHttpCache()
-            except Exception:  # noqa: BLE001
-                LOGGER.debug("WebEngine profile cleanup failed", exc_info=True)
         self._pending_token = None
         self._pending_url   = ""
         self._token_acquired_at = 0.0
         self._stack.setCurrentIndex(0)
         self.meeting_state_changed.emit("left")
+
+    def shutdown(self) -> None:
+        """Best-effort teardown of the QWebEngineView on app shutdown.
+
+        Navigates away first so no meeting media keeps running, then
+        deletes the view. The persistent profile itself is intentionally
+        left alone — Chromium/Qt persists it to disk on the profile's own
+        schedule, and destroying it here isn't necessary for a clean exit.
+        """
+        if self._view is not None:
+            try:
+                self._view.load(QUrl("about:blank"))
+                self._view.setParent(None)
+                self._view.deleteLater()
+            except Exception:  # noqa: BLE001
+                LOGGER.debug("WebEngineView teardown failed", exc_info=True)
+            finally:
+                self._view = None
 
     def _is_trusted_widget_permission_url(self, url: QUrl) -> bool:
         """Allow mic/camera for the bundled widget only for a trusted meeting.

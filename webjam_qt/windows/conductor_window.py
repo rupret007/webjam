@@ -140,6 +140,9 @@ class ConductorWindow(QMainWindow):
         self._status_bar.addPermanentWidget(self._status_latency)
         self._status_bar.addPermanentWidget(self._status_routing)
         self._status_bar.showMessage("Ready")
+        # Reset any temporary flash_message() color once its timed message
+        # clears (QStatusBar emits messageChanged with an empty string).
+        self._status_bar.messageChanged.connect(self._on_status_message_changed)
 
         # --- Accessibility names
         self.session_strip.setAccessibleName("Session controls strip")
@@ -340,8 +343,21 @@ class ConductorWindow(QMainWindow):
     def set_status_routing(self, text: str) -> None:
         self._status_routing.setText(f"Routing: {text}")
 
-    def flash_message(self, text: str, *, ms: int = 4000) -> None:
+    def flash_message(self, text: str, *, ms: int = 4000, color: str | None = None) -> None:
+        """Show a temporary status-bar message, optionally tinted.
+
+        ``color`` (any value accepted by Qt stylesheets, e.g. ``"#ffcc00"``)
+        highlights attention-worthy banners (reconnect warnings, etc.). The
+        tint is cleared automatically once the message times out or is
+        replaced — see ``_on_status_message_changed``.
+        """
+        self._status_bar.setStyleSheet(f"QStatusBar{{color: {color};}}" if color else "")
         self._status_bar.showMessage(text, ms)
+
+    def _on_status_message_changed(self, text: str) -> None:
+        """Clear any flash_message() color tint once its message clears."""
+        if not text:
+            self._status_bar.setStyleSheet("")
 
     # ------------------------------------------------------------------
     # Qt overrides

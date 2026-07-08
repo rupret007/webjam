@@ -149,7 +149,7 @@ class _JamulusPage(QWizardPage):
         # Helpful hint for users who don't yet have a server
         _hint = _body_label(
             "Don't have a server? Browse free public ones at "
-            "<a href='https://directory.jamulus.io'>directory.jamulus.io</a> "
+            "<a href='https://explorer.jamulus.io'>explorer.jamulus.io</a> "
             "or run your own locally (jamulus.io)."
         )
         _hint.setOpenExternalLinks(True)

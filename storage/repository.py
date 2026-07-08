@@ -147,6 +147,10 @@ class WebJamRepository:
             if "locked_until" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN locked_until INTEGER NOT NULL DEFAULT 0")
             conn.commit()
+        try:
+            os.chmod(self.db_path, 0o600)
+        except OSError:
+            LOGGER.debug("Could not chmod database file %s", self.db_path, exc_info=True)
 
     def _bootstrap_credentials_path(self) -> Path:
         db_path = Path(self.db_path).expanduser()
