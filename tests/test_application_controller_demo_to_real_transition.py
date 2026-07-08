@@ -36,8 +36,14 @@ class TestDemoToRealTransition(unittest.TestCase):
         cls.controller.shutdown()
 
     def setUp(self):
-        # Reset to demo state before each test
+        # Reset to demo state before each test. Also clear the stopping
+        # latch: audio.stop() sets it True and only bridge.stop_jamulus()'s
+        # refresh_readiness callback clears it in production, but these
+        # tests mock stop_jamulus out entirely, so a prior test's stop()
+        # would otherwise leak `stopping=True` into the next test and make
+        # apply_participants() silently no-op.
         self.controller._jamulus_connected = False
+        self.controller.audio.stopping = False
         self.controller._reset_to_demo_state()
 
     def test_demo_replaced_then_restored_after_stop_audio(self):
