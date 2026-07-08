@@ -1,33 +1,17 @@
-# WebJam In-App Help Routing Map
+# WebJam Help Routing Map (Qt Conductor)
 
-## Primary Routes
+Maps common user questions to the **Qt Conductor** UI. Legacy Tkinter menu paths are archived under `legacy/`.
 
-- **First Run**
-  - `Help -> Run Setup Wizard`
-  - Use for initial checks, missing prerequisites, and baseline readiness.
-
-- **Connection Problems**
-  - `Session -> Open Diagnostics Panel`
-  - Use for Jamulus endpoint checks, current audio diagnostics, and runtime error context.
-
-- **General Usage**
-  - `Help -> Quick Start Guide`
-  - Use for launch order, mixer basics, and operating tips.
-
-## Error Dialog Routing
-
-- **Jamulus Launch Failed**
-  - Retry from dialog -> then Setup Wizard -> then Diagnostics Panel.
-
-- **Webex Open Failed**
-  - Retry from dialog -> verify URL and browser -> open Diagnostics Panel.
-
-- **Save/Load Mix Failed**
-  - Retry from dialog -> run Setup Wizard to verify paths -> save a fresh preset.
-
-## Recommended Support Sequence
-
-1. Capture current state in Diagnostics Panel.
-2. Re-run Setup Wizard checks.
-3. Retry action from main controls.
-4. Escalate with diagnostics details if unresolved.
+| User need | Qt Conductor path |
+|-----------|-------------------|
+| First-time setup | Launch app → Setup Wizard; or side rail **Settings** / **Ctrl+,** |
+| Run Ready Check before a jam | **F2** |
+| Launch Jamulus audio | Session strip **Launch Audio** (gold button) |
+| Stop Jamulus audio | Session strip **Stop Audio** |
+| Practice alone (local server) | **Ctrl+P** or side rail Practice |
+| Join Webex video | Session strip **Join Video** (teal button) |
+| Save / load mix | **Ctrl+S** / **Ctrl+O** |
+| Export diagnostics for a bug report | **Ctrl+Shift+D** |
+| Keyboard shortcuts reference | **F1** |
+| Band-server recording setup | `server/README.md` in the repo |
+| Companion API for external tools | `COMPANION_API.md` (opt-in via settings) |

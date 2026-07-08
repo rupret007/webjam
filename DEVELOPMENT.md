@@ -81,15 +81,15 @@ The project uses `pytest`. Run the full suite:
 python -m pytest tests/ -v
 ```
 
-Expected result: all tests pass (750+ pass, plus platform-dependent skips). The skips are mostly platform-specific tests that auto-skip when the host cannot run them.
+Expected result: all tests pass (800+ pass, plus platform-dependent skips). The skips are mostly platform-specific tests that auto-skip when the host cannot run them. See `CHANGELOG.md` for the exact count as of the latest release — it grows with nearly every change, so treat any hardcoded number as approximate.
 
 ### Running tests locally (CI-equivalent)
 
-CI runs the suite quietly on every push. To match the CI gate exactly
-(see `.github/workflows/ci.yml` line 60):
+CI runs the suite headlessly on every push. To match the `test` job's
+"Run test suite" step exactly (see `.github/workflows/ci.yml`):
 
 ```bash
-QT_QPA_PLATFORM=offscreen PYSIDE6_OPTION_LAZY=0 python3 -m pytest tests/ -q
+QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ -v
 ```
 
 A single failing test fails the CI job, so always run this before pushing.
@@ -109,7 +109,7 @@ on a dirty PR, and it blocks the build / release jobs that follow.
 
 `ux_smoke_test.py` boots the Qt Conductor window headlessly and asserts
 the shell wires up without raising. It runs in CI between lint and the
-test suite (workflow line 54):
+test suite (the `test` job's "Run UX smoke gate" step):
 
 ```bash
 python3 ux_smoke_test.py
@@ -267,8 +267,8 @@ def set_channel_pan(self, channel_id: int, pan_0_to_100: int) -> bool:
     """Set stereo pan for ``channel_id``. 0=left, 50=center, 100=right."""
     pan_rpc = max(0, min(self.GAIN_RANGE_MAX,
                          int(pan_0_to_100 / 100.0 * self.GAIN_RANGE_MAX)))
-    result = self._call("jamulus/setChannelPan", {
-        "channelId": channel_id,
+    result = self._send("jamulusclient/setChannelPan", {
+        "channelIndex": channel_id,
         "pan": pan_rpc,
     })
     return result is not None
@@ -314,7 +314,7 @@ Store the shortcut as `self._whatever_shortcut`, then connect its
 
 ```python
 # conductor_window.py — _setup_shortcuts
-self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
 ```
 
 ```python
@@ -330,7 +330,7 @@ all use Pattern B.
 `ConductorWindow._show_help` (line 164) so users discover the new key:
 
 ```python
-"&nbsp;&nbsp;<b>Ctrl+R</b> — Reset all faders to 0 dB<br>"
+"&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
 ```
 
 **Update the README table.** The user-facing list lives at the

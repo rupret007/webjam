@@ -53,8 +53,11 @@ webjam_qt_main.py          ← entry point
 | `widgets/session_strip.py` | Top control bar: mode, title, launch buttons |
 | `widgets/side_rail.py` | Right-side settings and diagnostics panel |
 | `widgets/webex_embed.py` | Lazy-init `QWebEngineView` for embedded Webex with browser fallback |
-| `controllers/application_controller.py` | Wires `ConductorWindow` to `BridgeService`; drives polling loop |
-| `theme.py` | QSS stylesheet loader |
+| `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
+| `controllers/audio_coordinator.py` | Launch/Stop Audio, practice mode, participant grid transitions |
+| `controllers/video_coordinator.py` | Join/Leave Webex (first extraction step) |
+| `controllers/recording_coordinator.py` | Band-server Record button (first extraction step) |
+| `theme/tokens.py` | Color tokens and QSS stylesheet |
 
 ### `services/` — Process lifecycle
 
@@ -76,15 +79,19 @@ Since v0.4: `set_mute()` and `set_solo()` now use `_send_rpc_gain()` so mute/sol
 
 Browser fallback controller for Webex meeting URLs. The main Conductor flow uses `widgets/webex_embed.py` first and falls back to this browser path when needed. Webex URLs must be HTTPS `webex.com`.
 
-### `ui/` — Tkinter service layer (shared with legacy UI)
+### `legacy/ui/` — Tkinter service layer (legacy UI only)
 
 | Module | Responsibility |
 |--------|----------------|
-| `mixer_service.py` | Save/load mix, listening profiles, startup mix restore, reset faders |
-| `auth_controller.py` | Sign-in / authorize gate |
-| `mode_controller.py` | Mode layout spec + sash computation |
-| `session_controller.py` | Session canvas dirty-state tracking |
-| `theme.py` / `accessibility.py` | High-contrast and text-size helpers |
+| `mixer_service.py` | Save/load mix, listening profiles (Tkinter app) |
+| `auth_controller.py` | Sign-in / authorize gate (legacy) |
+| `mode_controller.py` | Mode layout spec + sash computation (legacy) |
+
+The Qt Conductor uses `webjam_qt/controllers/mix_manager.py` and `jamulus_controller.py` directly instead.
+
+### `server/` — Band-server recipe
+
+Docker Compose recipe for a headless Jamulus server with multitrack recording. Powers the **Record** button via SSH tunnel + `core/jamulus_server_rpc.py`. See `server/README.md`.
 
 ### `core/` — Domain models
 
@@ -101,9 +108,9 @@ Browser fallback controller for Webex meeting URLs. The main Conductor flow uses
 
 SQLite via `WebJamRepository`. Stores users, mix profiles, room context, canvas notes, artifacts, audit log, settings.
 
-### `admin/` — RBAC
+### `legacy/admin/` — RBAC (legacy Tkinter only)
 
-Hand-rolled role/permission engine. `AuthController.authorize()` checks `role → action` policy. Bootstrap admin credentials written to a temp file on first run; cleared after password change.
+Hand-rolled role/permission engine used by the quarantined Tkinter app. **Not wired into the Qt Conductor** — the shipping pilot is a single-user desktop app with no in-app RBAC.
 
 ### `api/` — Companion API
 

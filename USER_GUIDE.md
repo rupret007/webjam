@@ -244,11 +244,10 @@ The green/yellow/red bar shows real-time audio activity:
 
 ### Status + Latency Indicators
 
-The bottom status area now shows:
+The bottom status area shows:
 
-- **Connection Summary**: current Jamulus and Webex states
-- **Mixer Readiness**: whether participants are available for mixing
-- **Latency Quality**: estimated endpoint quality (Good/Fair/Poor)
+- **Connection Summary**: current Jamulus and Webex states (e.g. Connected, Connecting, Not connected)
+- **Participant count / latency line**: updates when real Jamulus participants arrive (e.g. `3 participants` or `1 participant · waiting for others`)
 
 Hover over key controls to see quick tooltips for what each action does.
 
@@ -291,11 +290,13 @@ Click to hear ONLY that musician:
 
 ### Master Controls
 
-At the top of the mixer:
+Keyboard shortcuts (also listed in **F1** help):
 
-- **Reset All Faders**: Returns all volumes to 0dB
-- **Unmute All**: Clears all mute buttons
-- **Center All Pans**: Returns all pan controls to center
+- **Ctrl+Shift+R**: Reset all faders to 0 dB (with confirmation)
+- **Ctrl+M**: Mute all / unmute all (toggle)
+- **Ctrl+Shift+M**: Mute yourself (self-mute)
+
+Per-channel pan is adjusted on each participant card; there is no global "center all pans" button in the Qt Conductor.
 
 ---
 
@@ -303,11 +304,9 @@ At the top of the mixer:
 
 Before each session, set your mode, template, and goal in the top bar. WebJam stores this context so repeated teams can keep momentum across sessions.
 
-### Export Session Brief
+### Session notes and canvas
 
-Use **Export...** in the Session Canvas to save a markdown handoff file with the current session notes.
-
-Use this brief for async updates and to kick off the next session quickly.
+Session notes in the canvas are saved to `~/.webjam_notes.md` on exit and restored on next launch. Use the canvas for shared band notes during the session.
 
 ### Saving Your Mix
 

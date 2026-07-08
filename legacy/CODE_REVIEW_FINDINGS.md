@@ -1,5 +1,7 @@
 # WebJam Code Review - Findings and Recommendations
 
+> **Archived:** This document reviews the **legacy Tkinter app** (`legacy/webjam_app_enhanced.py`). It is **not** a list of open issues for the Qt Conductor pilot. See `README.md` → Current State and `CHANGELOG.md` for the shipping app's status.
+
 ## ✅ Overall Assessment
 
 **Status**: Code is well-structured and functional with a few minor issues to address.

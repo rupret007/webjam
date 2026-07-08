@@ -44,11 +44,12 @@ GET http://127.0.0.1:8765/participants
   "participants": [
     {
       "channel_id": 0,
-      "name": "You (Local)",
+      "name": "You",
       "fader_level": 100,
       "pan": 50,
       "muted": false,
-      "solo": false
+      "solo": false,
+      "is_local": true
     },
     {
       "channel_id": 1,
@@ -56,7 +57,8 @@ GET http://127.0.0.1:8765/participants
       "fader_level": 80,
       "pan": 25,
       "muted": false,
-      "solo": false
+      "solo": false,
+      "is_local": false
     }
   ]
 }
@@ -66,7 +68,7 @@ GET http://127.0.0.1:8765/participants
 
 ### GET /diagnostics
 
-Returns audio and runtime diagnostics.
+Returns non-sensitive session state from the running Qt Conductor (no secrets).
 
 **Request:**
 ```
@@ -77,13 +79,16 @@ GET http://127.0.0.1:8765/diagnostics
 ```json
 {
   "diagnostics": {
-    "backend": "PortAudio",
-    "samplerate": "48000",
-    "blocksize": "256",
-    "latency_mode": "low",
-    "active": "True",
-    "message": "Active",
-    "last_error": "none"
+    "jamulus_state": "Running",
+    "webex_state": "Embedded",
+    "jamulus_connected": "True",
+    "participant_count": "3",
+    "jamulus_server": "jam.example.com:22124",
+    "session_health": {
+      "process_state": "Running",
+      "rpc_available": true,
+      "participant_count": 3
+    }
   }
 }
 ```

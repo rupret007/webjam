@@ -14,6 +14,9 @@ pytest legacy/tests/                    # legacy test suite (needs tkinter)
 Contents: `webjam_app_enhanced.py` / `webjam_app.py` (Tkinter UIs),
 `ui/` (Tkinter widgets/services — the live `ui/services.py` stayed at the
 repo root), `admin/` (admin panel + policy engine), `session_templates.py`,
-the old installer/launcher scripts, and their tests.
+the old installer/launcher scripts, and their tests. Also holds
+`CODE_REVIEW_FINDINGS.md` (review of the Tkinter app) and
+`TEST_PROCEDURE_2024.md` (the original test procedure, written for the
+now-removed `test_webjam.py` harness) — both archived, not current guidance.
 
 Removal is planned once nobody has needed this folder for a while.

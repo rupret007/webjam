@@ -1,37 +1,35 @@
-# Cohort Validation Playbook
+# Cohort Validation Playbook (Qt Conductor)
 
-## Objective
-Validate WebJam as a single creative collaboration app across mixed creator disciplines.
+Closed-pilot validation for the **Qt Conductor** (`webjam_qt_main.py`). Replace Tkinter-era menu steps with the controls below.
 
-## Cohorts
-- `visual_artists`
-- `writers`
-- `designers`
-- `mixed_discipline`
+## Pre-session (each musician)
 
-## In-App Workflow
-1. Set cohort tag in `Validation -> Set Cohort Name`.
-2. Run a normal session using selected creative mode.
-3. On completion, click `Validation -> Record Session Complete`.
-4. Review counters in `Help -> View Usage Metrics`.
-5. Export diagnostics snapshot for local analysis.
+1. Install Jamulus separately from [jamulus.io](https://jamulus.io).
+2. Launch WebJam; complete Setup Wizard if prompted.
+3. Press **F2** (Ready Check) — resolve any red items (virtual cable, Jamulus path, server).
+4. Optional: **Ctrl+P** Practice — confirm your meter moves when you play.
 
-## Metrics to Track
-- Activation: setup wizard completion + first session completion.
-- Cross-mode adoption: `metric_mode_selected_*` values.
-- Collaboration quality proxies:
-  - session artifacts created
-  - notes captured
-  - review state transitions
-- Retention proxy: repeated `metric_session_completed` over time.
+## Two-person Jamulus smoke
 
-## Reporting Cadence
-- Weekly per cohort.
-- Compare:
-  - session completion count
-  - mode mix distribution
-  - recurring failure counters (launch failures, setup failures).
+1. Both musicians: **Launch Audio** — status should show **Connecting** then **Connected** with participant count.
+2. Confirm fader/mute changes in WebJam affect heard levels.
+3. One musician: **Stop Audio** — demo grid returns; other musician still connected on server.
 
-## Operational Notes
-- Metrics are local-only and lightweight.
-- Use diagnostics snapshots for archived checkpoints between pilot rounds.
+## Video smoke
+
+1. **Join Video** — embedded Webex loads or browser fallback opens.
+2. **Leave Video** — embed clears; status returns to not joined.
+
+## Record button (band server)
+
+1. Follow `server/README.md` one-time setup (SSH tunnel + `jsonrpc.secret`).
+2. With audio connected, toggle **Record** — chip shows armed/recording state from server notifications.
+
+## Post-session
+
+1. **Ctrl+Shift+D** — paste diagnostics into pilot feedback channel (no secrets in export).
+2. Note any crashes in `~/.webjam.log` and `~/.webjam_jamulus.log`.
+
+## Pilot gate
+
+Do not widen the pilot until: clean-machine install, Ctrl+P real-audio, two-person Jamulus, Record, take retrieval, and Take Deck playback all pass on target hardware.

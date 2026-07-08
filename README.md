@@ -14,7 +14,7 @@ Being honest about where this app is **right now** (2026-07-06):
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. Full suite is 750+ tests plus real-Jamulus integration. |
+| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. Full suite is 800+ tests plus real-Jamulus integration (see `CHANGELOG.md` for the exact current count). |
 | **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` is the entry point. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Jamulus must be installed separately.** |
@@ -100,13 +100,12 @@ The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in 
 webjam/
 ├── webjam_qt_main.py        # Primary entry point — Qt Conductor UI
 ├── webjam_qt/               # Qt application (windows, widgets, controllers)
-├── legacy/                  # Quarantined Tkinter app + its tests (see legacy/README.md)
+├── legacy/                  # Quarantined Tkinter app, admin RBAC, old tests
+├── server/                  # Band-server Docker recipe (Record button backend)
 ├── jamulus_controller.py    # Mixer state + RPC/UDP integration
-├── core/                    # Settings, modes, templates, protocol, metrics
-├── ui/                      # Service layer shared with legacy UI (MixerService etc.)
+├── core/                    # Settings, modes, protocol, metrics, take library
 ├── services/                # BridgeService (Jamulus/Webex process lifecycle)
-├── storage/                 # SQLite repository (users, mixes, room context, canvas)
-├── admin/                   # RBAC policy engine and admin panel
+├── storage/                 # SQLite repository (users, mixes, room context)
 ├── api/                     # Optional FastAPI companion API
 ├── tests/                   # Unit/UI/integration regression suite
 ├── build_webjam.py          # Legacy build helper; releases use webjam.spec
@@ -117,8 +116,8 @@ Additional reading:
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system diagram and component responsibilities
 - [DEVELOPMENT.md](DEVELOPMENT.md) — dev environment setup
 - [CHANGELOG.md](CHANGELOG.md) — release history
-- [CODE_REVIEW_FINDINGS.md](CODE_REVIEW_FINDINGS.md) — open issues
 - [COMPANION_API.md](COMPANION_API.md) — localhost API for external tools
+- [legacy/CODE_REVIEW_FINDINGS.md](legacy/CODE_REVIEW_FINDINGS.md) — archived Tkinter-era review (not current open issues)
 
 ---
 

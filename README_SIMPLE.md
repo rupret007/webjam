@@ -47,7 +47,7 @@ Every band member installs three things on their own computer:
 
 One person (the "band admin") decides two things and shares them with everyone:
 
-1. **A Jamulus server** — either run your own (see jamulus.io) or pick a free public one from [directory.jamulus.io](https://directory.jamulus.io). Share the **server host** (e.g. `myband.example.com` or an IP) and **port** (usually `22124`).
+1. **A Jamulus server** — either run your own (see jamulus.io) or pick a free public one from [explorer.jamulus.io](https://explorer.jamulus.io). Share the **server host** (e.g. `myband.example.com` or an IP) and **port** (usually `22124`).
 2. **A Webex meeting link** — create a meeting and share the URL (e.g. `https://yourco.webex.com/meet/yourband`).
 
 Send the band the **Jamulus server host + port** and the **Webex link**. That's everything a member needs for the setup wizard.
