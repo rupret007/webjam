@@ -29,9 +29,9 @@ Unzip it and run the **WebJam** app inside. **The first launch will trigger a se
 
 ## What each person needs (once)
 
-Every band member installs three things on their own computer:
+Every band member installs (or auto-gets) three things on their own computer:
 
-1. **Jamulus** — the live-audio engine. Free at [jamulus.io](https://jamulus.io). WebJam launches and manages it for you, but doesn't bundle it, so install it first.
+1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** the Setup Wizard's Jamulus page has an "Install Jamulus now" button that runs the bundled installer for you. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
 2. **A virtual audio cable** — this is how your playing gets *into* the Webex call.
    - **Windows:** VB-CABLE — from [vb-audio.com](https://vb-audio.com), or use the installer bundled in WebJam's `VB/` folder (`VBCABLE_Setup_x64.exe`).
    - **macOS:** BlackHole — free at [existential.audio/blackhole](https://existential.audio/blackhole).
@@ -58,8 +58,8 @@ Send the band the **Jamulus server host + port** and the **Webex link**. That's 
 
 The first time you open WebJam, a short setup wizard runs:
 
-1. **Welcome** — confirms you've installed Jamulus.
-2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave "Server control port" at `22222` unless told otherwise (it lets WebJam show participant names and control the mixer). If Jamulus isn't auto-found, point it at the app — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
+1. **Welcome** — a quick overview; downloadable builds bundle Jamulus, so most people can just continue.
+2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave "Server control port" at `22222` unless told otherwise (it lets WebJam show participant names and control the mixer). The Jamulus executable path is usually pre-filled (macOS: the bundled copy; Windows: click **"Install Jamulus now"** if it's blank and let the installer finish). If you need to point at a different install, browse to it — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
 3. **Webex Meeting** — paste the meeting link.
 4. **Audio Routing** — WebJam scans for your virtual cable. A green check means you're good. If it's not found, click **"Show me how to set this up,"** install the cable, and relaunch. You can also **Skip for now** and set it up later.
 5. **Configuration saved** — click Finish. WebJam opens the Conductor and runs **Ready Check**; fix anything it flags before your first jam.
@@ -121,7 +121,7 @@ Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private
 
 ## Troubleshooting
 
-- **"Jamulus Not Found" when I click Launch Audio** — Jamulus isn't installed, or WebJam can't find it. Install from [jamulus.io](https://jamulus.io), or set the path in Settings → Jamulus.
+- **"Jamulus Not Found" when I click Launch Audio** — WebJam can't find (or wasn't shipped with) a Jamulus install. Reopen Settings → Jamulus: on Windows click **"Install Jamulus now"** if it's offered, otherwise install from [jamulus.io](https://jamulus.io) and set the path.
 - **No one can hear the band in Webex** — the virtual audio cable isn't set as Webex's microphone, or isn't installed. Reinstall it (see above), relaunch WebJam, and in Webex pick the cable ("VB-Cable" / "BlackHole") as your mic.
 - **"No audio routing device found" in setup** — install the virtual cable for your OS and relaunch.
 - **Can't connect to the server** — double-check the host and port with your band admin, and that everyone is pointed at the *same* server.

@@ -73,12 +73,16 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
+### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
+
+- **Bundled Jamulus** — downloadable builds ship Jamulus itself: macOS is zero-install (unmodified, notarized `Jamulus.app` nested in the bundle), Windows offers an in-wizard "Install Jamulus now" button that runs the bundled official installer. Removes the "leave WebJam, find jamulus.io, download, come back" step for most users; the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who needs a different install. See `THIRD_PARTY_NOTICES.md`.
+
 ### ✅ Shipped — v0.7.2 pilot readiness (2026-07-06)
 
 Everything below is live in the current Conductor code and v0.7.x release line at [Releases](https://github.com/rupret007/webjam/releases).
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
-- **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done with Jamulus install note)
+- **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done)
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
 - **Webex embed** — `QWebEngineView` pane with guest-token generation; direct-URL fallback
 - **Audio routing detect** — `core/audio_routing.py` auto-detects VB-CABLE / BlackHole / JACK / Loopback

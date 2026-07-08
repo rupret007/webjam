@@ -1,6 +1,6 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-06 (v0.7.2)
+> **Last updated:** 2026-07-08 (v0.8.0)
 
 ## Overview
 
@@ -176,10 +176,11 @@ JamulusController background thread
 
 ---
 
-## Current Limitations (as of v0.7.2)
+## Current Limitations
 
-- v0.7.2 is closed-pilot-ready, not broad-release-ready; real-hardware gates still need Windows/macOS clean installs, Ctrl+P audio smoke, two-person Jamulus, Record, take retrieval, and Take Deck playback.
-- Jamulus must be installed separately and the first-run wizard now requires its executable path before setup can complete.
+- Closed-pilot-ready, not broad-release-ready; real-hardware gates still need Windows/macOS clean installs, Ctrl+P audio smoke, two-person Jamulus, Record, take retrieval, and Take Deck playback.
+- Downloadable builds bundle Jamulus (macOS: zero-install nested `Jamulus.app`; Windows: bundled installer the Setup Wizard can launch — see `THIRD_PARTY_NOTICES.md`); the first-run wizard still requires a resolvable executable path before setup can complete, and running from source needs Jamulus installed separately since the bundling only happens in the PyInstaller build.
+- The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
 - Webex embed is constrained to HTTPS `webex.com` URLs and mic/camera permissions only; some meetings may still require the browser fallback.
 - Listening profiles and deeper creative-mode workflows exist conceptually but are not first-class pilot workflows.
 - macOS code signing/notarization is not yet set up; downloaded `.app` requires manual Gatekeeper override.

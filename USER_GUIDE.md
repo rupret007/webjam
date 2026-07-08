@@ -81,7 +81,10 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
    - **Option B**: Clone the repo and run `python webjam_qt_main.py` from source.
 
 2. **Install prerequisites**
-   - Install Jamulus from [jamulus.io](https://jamulus.io).
+   - Jamulus: downloadable builds bundle it — macOS is zero-install, Windows offers
+     an "Install Jamulus now" button on the Setup Wizard's Jamulus page. Only
+     install it yourself from [jamulus.io](https://jamulus.io) if you're running
+     from source, or your build predates bundling.
    - Install a virtual audio cable: VB-CABLE on Windows, BlackHole on macOS.
    - Have your Webex meeting link ready.
 
@@ -105,7 +108,7 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 The first time you run WebJam, a Setup Wizard will open automatically. It has 5 steps:
 
 1. **Welcome** — Overview of what WebJam does
-2. **Jamulus Server** — Enter your band's server host/port and confirm the Jamulus executable path. Jamulus must be installed separately before setup can complete.
+2. **Jamulus Server** — Enter your band's server host/port and confirm the Jamulus executable path. On macOS, downloadable builds pre-fill this automatically with the bundled copy. On Windows, if nothing is found, an "Install Jamulus now" button launches the bundled installer and the path fills in automatically once it finishes. Setup can't complete until a valid path is resolved one way or another.
 3. **Webex Meeting** — Enter your Webex meeting link
 4. **Audio Setup** — WebJam checks if your computer has the audio routing software installed
 5. **Configuration saved** — Click Finish, then run Ready Check

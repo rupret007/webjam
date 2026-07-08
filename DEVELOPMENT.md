@@ -8,6 +8,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 |------|---------|-------|
 | Python | 3.10+ | Download from https://www.python.org/downloads/ |
 | Git | Latest | https://git-scm.com/downloads |
+| Jamulus | 3.9+ | **Install separately for development** — free at [jamulus.io](https://jamulus.io). Downloadable release *builds* bundle Jamulus (macOS: zero-install nested app; Windows: bundled installer via the Setup Wizard — see `THIRD_PARTY_NOTICES.md`), but that bundling happens at PyInstaller build time and has no effect when running from source with `python webjam_qt_main.py`. |
 | VB-Cable | Latest | Optional, Windows only -- for audio routing between Jamulus and Webex |
 
 When installing Python on Windows, check **"Add python.exe to PATH"** during the installer.

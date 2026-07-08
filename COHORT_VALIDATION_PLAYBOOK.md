@@ -4,7 +4,9 @@ Closed-pilot validation for the **Qt Conductor** (`webjam_qt_main.py`). Replace 
 
 ## Pre-session (each musician)
 
-1. Install Jamulus separately from [jamulus.io](https://jamulus.io).
+1. Downloadable WebJam builds bundle Jamulus (macOS: zero-install; Windows: use
+   the Setup Wizard's "Install Jamulus now" button). Only install it yourself
+   from [jamulus.io](https://jamulus.io) for source/unbundled builds.
 2. Launch WebJam; complete Setup Wizard if prompted.
 3. Press **F2** (Ready Check) — resolve any red items (virtual cable, Jamulus path, server).
 4. Optional: **Ctrl+P** Practice — confirm your meter moves when you play.

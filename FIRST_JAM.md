@@ -31,18 +31,22 @@ Any always-on URL works.
 ## Stage 1 — Solo smoke test (you alone, ~30 min) ← DO THIS FIRST
 
 Setup: one pilot machine for each release artifact you intend to validate
-(Windows x64, macOS ARM64, macOS Intel x64), with Jamulus installed
-separately and VB-CABLE/BlackHole installed as appropriate, WebJam v0.7.2
-from [Releases](https://github.com/rupret007/webjam/releases)
+(Windows x64, macOS ARM64, macOS Intel x64), with VB-CABLE/BlackHole
+installed as appropriate, the latest WebJam build from
+[Releases](https://github.com/rupret007/webjam/releases)
 (right-click → Open the first time on macOS — see README_SIMPLE for the
-security-warning walkthrough).
+security-warning walkthrough). Downloadable builds bundle Jamulus (macOS:
+zero-install; Windows: install it via the Setup Wizard's "Install Jamulus
+now" button) — no separate download needed unless you're testing an
+unbundled/source build.
 
 Work through this in order; note anything that deviates.
 
 1. **First-run wizard** appears (fresh installs are unconfigured on
    purpose). Enter the server host/port from Stage 0, confirm the Jamulus
-   executable path, paste the Webex link, and confirm the audio-routing page
-   shows a green check for VB-CABLE/BlackHole.
+   executable path (pre-filled on bundled builds — on Windows use "Install
+   Jamulus now" if it's blank), paste the Webex link, and confirm the
+   audio-routing page shows a green check for VB-CABLE/BlackHole.
 2. **Ready / F2 — Ready Check.** All four items should pass. If one fails, it
    tells you what to fix. Fix it before continuing.
 3. **Practice smoke (no band server needed).** Press **Ctrl+P** (or the
@@ -117,7 +121,7 @@ Everything from Stage 2, times N. Tips for the first full session:
 |---|---|---|
 | "No Jamulus Server Configured" | wizard skipped | Settings (Ctrl+,) → enter server |
 | Cards stay "Preview · …" after Launch | RPC handshake failed | check `~/.webjam_jamulus.log`; confirm Jamulus ≥ 3.9; port 22222 free |
-| "Jamulus Not Found" | not installed / custom path | install from jamulus.io, or set the path in Settings |
+| "Jamulus Not Found" | not bundled/installed, or custom path | Windows: click "Install Jamulus now" in Settings → Jamulus; otherwise install from jamulus.io, or set the path in Settings |
 | "Port in use" | old Jamulus still running | quit it (Activity Monitor / Task Manager), retry |
 | I hear myself echo | Webex mic set to real mic AND Jamulus monitoring | in Webex, set mic to the virtual cable only |
 | Others can't hear my instrument on video | Webex mic not set to virtual cable | Webex settings → microphone → BlackHole / CABLE Output |
