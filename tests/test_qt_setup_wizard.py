@@ -113,6 +113,130 @@ class TestJamulusPage(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# _JamulusPage — bundled Jamulus (macOS zero-install / Windows installer)
+# ---------------------------------------------------------------------------
+@skip_no_pyside6
+class TestJamulusPageBundling(unittest.TestCase):
+    def setUp(self):
+        _qapp()
+
+    def test_no_install_button_when_path_already_found(self):
+        """A configured/detected candidate should hide the install button —
+        nothing to install."""
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="x", jamulus_candidates=[jam.name],
+            ))
+            self.assertFalse(page._install_jamulus_btn.isVisibleTo(page))
+            self.assertIsNone(page._bundled_installer_path)
+
+    def test_install_button_hidden_when_no_bundled_installer(self):
+        """Dev checkouts / non-frozen runs never bundle an installer."""
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+        self.assertFalse(page._install_jamulus_btn.isVisibleTo(page))
+        self.assertIsNone(page._bundled_installer_path)
+
+    def test_install_button_shown_when_bundled_installer_present(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "services.bridge_service._bundled_jamulus_installer",
+            return_value="/app/Jamulus/jamulus_3.12.2_win.exe",
+        ):
+            page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+        self.assertTrue(page._install_jamulus_btn.isVisibleTo(page))
+        self.assertEqual(
+            page._bundled_installer_path, "/app/Jamulus/jamulus_3.12.2_win.exe"
+        )
+
+    def test_bundled_macos_candidate_prefills_path_with_note(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/App/WebJam.app/Contents/Resources/Jamulus.app"
+                         "/Contents/MacOS/Jamulus",
+        ):
+            page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+        self.assertEqual(
+            page._jamulus_path.text(),
+            "/App/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus",
+        )
+        # A bundled macOS copy means there's nothing to "install".
+        self.assertFalse(page._install_jamulus_btn.isVisibleTo(page))
+
+    def test_install_bundled_jamulus_launches_and_starts_poll_timer(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "services.bridge_service._bundled_jamulus_installer",
+            return_value="/app/Jamulus/jamulus_3.12.2_win.exe",
+        ):
+            page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+
+        with patch(
+            "webjam_qt.windows.setup_wizard.subprocess.Popen"
+        ) as mock_popen:
+            page._install_bundled_jamulus()
+
+        mock_popen.assert_called_once_with(
+            ["/app/Jamulus/jamulus_3.12.2_win.exe"], shell=False
+        )
+        self.assertTrue(page._install_poll_timer.isActive())
+        self.assertFalse(page._install_jamulus_btn.isEnabled())
+
+    def test_install_bundled_jamulus_handles_launch_failure_gracefully(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "services.bridge_service._bundled_jamulus_installer",
+            return_value="/app/Jamulus/jamulus_3.12.2_win.exe",
+        ):
+            page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+
+        with patch(
+            "webjam_qt.windows.setup_wizard.subprocess.Popen",
+            side_effect=OSError("no such file"),
+        ):
+            page._install_bundled_jamulus()  # must not raise
+
+        self.assertFalse(page._install_poll_timer.isActive())
+        self.assertTrue(page._install_jamulus_btn.isEnabled())
+
+    def test_poll_fills_path_and_hides_button_once_installed(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            with patch(
+                "services.bridge_service._bundled_jamulus_installer",
+                return_value="/app/Jamulus/jamulus_3.12.2_win.exe",
+            ):
+                page = _JamulusPage(AppSettings(
+                    jamulus_server="x", jamulus_candidates=[jam.name],
+                ))
+            # Constructor already found jam.name as a real candidate, so
+            # force the pre-install state to exercise the poll in isolation.
+            page._jamulus_path.setText("")
+            page._install_jamulus_btn.setVisible(True)
+            page._install_poll_timer.start()
+
+            page._poll_for_jamulus_install()
+
+            self.assertEqual(page._jamulus_path.text(), jam.name)
+            self.assertFalse(page._install_jamulus_btn.isVisibleTo(page))
+            self.assertFalse(page._install_poll_timer.isActive())
+
+    def test_poll_does_nothing_while_install_incomplete(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        page = _JamulusPage(AppSettings(
+            jamulus_server="x", jamulus_candidates=["/nonexistent/Jamulus"],
+        ))
+        page._install_poll_timer.start()
+
+        page._poll_for_jamulus_install()
+
+        self.assertTrue(page._install_poll_timer.isActive())
+        page._install_poll_timer.stop()
+
+
+# ---------------------------------------------------------------------------
 # _WebexPage — URL validation
 # ---------------------------------------------------------------------------
 @skip_no_pyside6

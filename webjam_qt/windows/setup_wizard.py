@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QUrl, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -99,19 +100,22 @@ class _WelcomePage(QWizardPage):
             "You can change any setting later from the Settings panel."
         ))
 
-        # Prominent Jamulus prerequisite notice — appears on first page so users
-        # discover the dependency before they hit a launch failure later.
+        # Jamulus prerequisite notice — appears on first page. macOS builds
+        # bundle Jamulus (zero-install); Windows builds bundle its official
+        # installer. Dev checkouts and older builds fall back to a manual
+        # install, so this stays visible as a heads-up either way.
         notice = _body_label(
-            "\u26a0\ufe0f  Heads up: Jamulus must be installed separately before you continue. "
-            "WebJam launches and manages it for you, but does not bundle it. "
-            "Get it free at <a href='https://jamulus.io'>jamulus.io</a>."
+            "\u2139\ufe0f  WebJam uses Jamulus for the actual band audio. Recent "
+            "builds bundle it (macOS: zero-install; Windows: an in-wizard "
+            "installer on the next page) — if yours doesn't, get it free at "
+            "<a href='https://jamulus.io'>jamulus.io</a>."
         )
         notice.setOpenExternalLinks(True)
         notice.setTextFormat(Qt.TextFormat.RichText)
         notice.setWordWrap(True)
         notice.setStyleSheet(
-            "QLabel { background: rgba(255, 200, 0, 0.10); "
-            "border: 1px solid rgba(255, 200, 0, 0.35); "
+            "QLabel { background: rgba(120, 170, 255, 0.10); "
+            "border: 1px solid rgba(120, 170, 255, 0.35); "
             "border-radius: 6px; padding: 10px; }"
         )
         layout.addWidget(notice)
@@ -176,12 +180,24 @@ class _JamulusPage(QWizardPage):
         ))
 
         layout.addWidget(_section_label("Jamulus executable"))
-        # Pre-populate with first existing candidate path
+        # Pre-populate with first existing user/default candidate path...
         detected_path = ""
         for candidate in settings.jamulus_candidates:
             if Path(candidate).exists():
                 detected_path = candidate
                 break
+
+        # ...falling back to the copy bundled inside WebJam itself (macOS
+        # zero-install nesting — see THIRD_PARTY_NOTICES.md) so a fresh
+        # install doesn't need this field touched at all.
+        bundled_note = False
+        if not detected_path:
+            from services.bridge_service import _bundled_jamulus_candidate
+            bundled = _bundled_jamulus_candidate()
+            if bundled:
+                detected_path = bundled
+                bundled_note = True
+
         self._jamulus_path = QLineEdit(detected_path)
         self._jamulus_path.setPlaceholderText(
             "Enter the full path to Jamulus"
@@ -195,16 +211,79 @@ class _JamulusPage(QWizardPage):
         path_row.addWidget(self._jamulus_path, stretch=1)
         path_row.addWidget(browse_btn)
         layout.addLayout(path_row)
-        layout.addWidget(_body_label(
-            "macOS: /Applications/Jamulus.app/Contents/MacOS/Jamulus\n"
-            "Windows: C:\\Program Files\\Jamulus\\Jamulus.exe\n"
-            "Required — WebJam launches Jamulus for you (free at jamulus.io)."
-        ))
+
+        if bundled_note:
+            layout.addWidget(_body_label(
+                "\u2713 Using the copy of Jamulus bundled with WebJam — "
+                "nothing else to install."
+            ))
+        else:
+            layout.addWidget(_body_label(
+                "macOS: /Applications/Jamulus.app/Contents/MacOS/Jamulus\n"
+                "Windows: C:\\Program Files\\Jamulus\\Jamulus.exe\n"
+                "Required — WebJam launches Jamulus for you (free at jamulus.io)."
+            ))
+
+        # Windows: WebJam ships the official Jamulus installer inside its
+        # own install directory (see the Jamulus/ datas block in
+        # webjam.spec). If nothing was found above but that bundled
+        # installer is present, offer to run it instead of sending the
+        # user to jamulus.io — mirrors the audio-routing page's "Show me
+        # how to set this up" pattern below.
+        self._bundled_installer_path: Optional[str] = None
+        install_btn = QPushButton("Install Jamulus now")
+        install_btn.setObjectName("GhostButton")
+        install_btn.setVisible(False)
+        install_btn.clicked.connect(self._install_bundled_jamulus)
+        layout.addWidget(install_btn)
+        self._install_jamulus_btn = install_btn
+
+        self._install_poll_timer = QTimer(self)
+        self._install_poll_timer.setInterval(2000)
+        self._install_poll_timer.timeout.connect(self._poll_for_jamulus_install)
+
+        if not detected_path:
+            from services.bridge_service import _bundled_jamulus_installer
+            installer = _bundled_jamulus_installer()
+            if installer:
+                self._bundled_installer_path = installer
+                self._install_jamulus_btn.setVisible(True)
+
         layout.addStretch(1)
 
         self.registerField("jamulus_server*", self._host)
         self.registerField("jamulus_port",    self._port, "value")
         self.registerField("jamulus_rpc_port", self._rpc_port, "value")
+
+    def _install_bundled_jamulus(self) -> None:
+        """Launch the bundled Jamulus installer and poll for completion.
+
+        Non-blocking equivalent of the wait-and-poll pattern used by the
+        legacy VB-CABLE install flow (legacy/webjam_launch_session.py):
+        instead of a blocking sleep loop, a QTimer ticks every 2s so the
+        wizard UI stays responsive while the user works through the
+        (Jamulus-owned) installer UI and UAC prompt.
+        """
+        if not self._bundled_installer_path:
+            return
+        try:
+            subprocess.Popen([self._bundled_installer_path], shell=False)
+        except Exception as exc:
+            LOGGER.warning("Failed to launch bundled Jamulus installer: %s", exc)
+            return
+        self._install_jamulus_btn.setEnabled(False)
+        self._install_jamulus_btn.setText("Waiting for install to finish\u2026")
+        self._install_poll_timer.start()
+
+    def _poll_for_jamulus_install(self) -> None:
+        """QTimer tick: fill in the path field as soon as install lands."""
+        for candidate in self._settings.jamulus_candidates:
+            path = Path(candidate).expanduser()
+            if path.is_file():
+                self._install_poll_timer.stop()
+                self._jamulus_path.setText(str(path))
+                self._install_jamulus_btn.setVisible(False)
+                return
 
     def _browse_jamulus(self) -> None:
         start_dir = ""
@@ -255,7 +334,8 @@ class _JamulusPage(QWizardPage):
             checked.add(candidate)
             if Path(candidate).expanduser().exists():
                 return candidate
-        return ""
+        from services.bridge_service import _bundled_jamulus_candidate
+        return _bundled_jamulus_candidate() or ""
 
     def validatePage(self) -> bool:
         host = self._host.text().strip()
