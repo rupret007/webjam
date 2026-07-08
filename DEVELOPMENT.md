@@ -250,33 +250,41 @@ the new field too.
 
 ### Tutorial 2: Adding a Jamulus JSON-RPC method call
 
-The RPC client lives in `core/jamulus_rpc_client.py`. It owns its own
-poll thread (`_poll_loop`, line 142) and SSE thread (`_sse_loop`, line
-209); both fire callbacks on the worker thread, so anything UI-bound has
-to hop back via `UiThreadInvoker`.
+The RPC client lives in `core/jamulus_rpc_client.py`. It speaks real
+Jamulus JSON-RPC: newline-delimited JSON-RPC 2.0 over a single raw TCP
+socket, authenticated with `jamulus/apiAuth`. `start()` spawns one
+background reader thread (`_run_loop` → `_serve_once`) that connects,
+authenticates, then loops reading NDJSON lines and dispatching them;
+callbacks (`on_participants_changed`, `on_levels`, etc.) fire on that
+worker thread, so anything UI-bound has to hop back via
+`UiThreadInvoker`.
 
-The synchronous helper `_call(method, params)` (line 296) returns the
-parsed JSON-RPC response or `None` on any failure (connect error, HTTP
-error, JSON decode error, timeout). Errors are silenced with a debug
-log — by design, so a missing Jamulus 3.9 client doesn't spam the UI.
+Commands are fire-and-forget: `_send(method, params)` writes one
+JSON-RPC request and returns the request id it assigned (or `None` if
+there's no live socket) — it does **not** wait for or return the
+response. Failures are silenced with a debug log — by design, so a
+missing/older Jamulus client doesn't spam the UI.
 
-**1. Add the new command** alongside `set_channel_gain` (line 116):
+**1. Add the new command** alongside `set_channel_gain`:
 
 ```python
 def set_channel_pan(self, channel_id: int, pan_0_to_100: int) -> bool:
     """Set stereo pan for ``channel_id``. 0=left, 50=center, 100=right."""
-    pan_rpc = max(0, min(self.GAIN_RANGE_MAX,
-                         int(pan_0_to_100 / 100.0 * self.GAIN_RANGE_MAX)))
-    result = self._send("jamulusclient/setChannelPan", {
+    pan = max(0, min(100, int(pan_0_to_100)))
+    return self._send("jamulusclient/setChannelPan", {
         "channelIndex": channel_id,
-        "pan": pan_rpc,
-    })
-    return result is not None
+        "pan": pan,
+    }) is not None
 ```
+
+(Confirm the exact method name and param shape against
+[JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs/JSON-RPC.md)
+before shipping — `setChannelPan` is illustrative here, not a method
+WebJam currently calls.)
 
 **2. Fire-and-forget from the controller.** UI-triggered calls must not
 block the Qt thread. Mirror `_send_rpc_gain` in `jamulus_controller.py`
-(line 336) — wrap the call in a daemon thread:
+— wrap the call in a daemon thread:
 
 ```python
 def _send_rpc_pan(self, channel_id: int, pan: int) -> None:
@@ -291,8 +299,8 @@ def _send_rpc_pan(self, channel_id: int, pan: int) -> None:
 ```
 
 Call `_send_rpc_pan` from `set_pan` the same way `set_fader_level` calls
-`_send_rpc_gain`. Errors propagate as a debug log inside `_call`; the UI
-keeps moving. This is intentional — Jamulus may not be running yet.
+`_send_rpc_gain`. Failures are silenced with a debug log inside `_send`;
+the UI keeps moving. This is intentional — Jamulus may not be running yet.
 
 ### Tutorial 3: Wiring a new keyboard shortcut
 
