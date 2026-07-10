@@ -167,7 +167,7 @@ class _JamulusPage(QWizardPage):
         self._port.setAccessibleName("Jamulus server port number")
         layout.addWidget(self._port)
 
-        layout.addWidget(_section_label("Server control port"))
+        layout.addWidget(_section_label("Local Jamulus control port"))
         self._rpc_port = QSpinBox()
         self._rpc_port.setRange(1, 65535)
         self._rpc_port.setValue(settings.jamulus_rpc_port)
@@ -176,7 +176,9 @@ class _JamulusPage(QWizardPage):
 
         layout.addWidget(_body_label(
             "Leave this as 22222 unless your band admin says otherwise. "
-            "This lets WebJam read participant names and control the mixer."
+            "WebJam assigns this port to the Jamulus client it launches so "
+            "it can read participant names and control your mixer. It is "
+            "not the band's audio-server or recorder-control port."
         ))
 
         layout.addWidget(_section_label("Jamulus executable"))
@@ -565,7 +567,8 @@ class _RoutingPage(QWizardPage):
             self._status_label.setText(
                 f"\u2705  Virtual audio device detected:\n\n"
                 f"    {status.device_name}\n\n"
-                "WebJam will use this for audio automatically."
+                "WebJam can use this for metering. Configure your operating "
+                "system and Webex routing before the session."
             )
             self._install_btn.setVisible(False)
             self._complete = True

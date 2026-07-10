@@ -6,7 +6,72 @@ musician gets their own track, and every take lands as a ready-to-open
 setup used by WebJam's pilot **● Record** button; recordings can also be
 started from a connected Jamulus client GUI or via JSON-RPC.
 
-## Quick start (Docker, any Linux VPS)
+## macOS host + musician workstation (v0.8.1 pilot)
+
+Install the official Jamulus 3.12.2 app at `/Applications/Jamulus.app`.
+The Mac can run the band server and its own WebJam client simultaneously as
+long as their JSON-RPC ports are different: the WebJam-launched client keeps
+`22222`, while the recording server uses `22240`.
+
+In a dedicated Terminal window, run:
+
+```bash
+JAMULUS="/Applications/Jamulus.app/Contents/MacOS/Jamulus"
+SECRET="$HOME/.webjam_server_rpc.secret"
+RECORDINGS="$HOME/Music/WebJam Recordings"
+LOG="$HOME/.webjam_server.log"
+
+test -x "$JAMULUS" || { echo "Install Jamulus 3.12.2 first" >&2; exit 1; }
+mkdir -p "$RECORDINGS"
+if [ ! -s "$SECRET" ]; then
+  (umask 077 && openssl rand -base64 24 > "$SECRET")
+fi
+chmod 600 "$SECRET"
+
+caffeinate -dimsu "$JAMULUS" \
+  --server --nogui --port 22124 \
+  --recording "$RECORDINGS" --norecord \
+  --jsonrpcbindip 127.0.0.1 \
+  --jsonrpcport 22240 --jsonrpcsecretfile "$SECRET" \
+  --welcomemessage "WebJam private band server" \
+  2>&1 | tee -a "$LOG"
+```
+
+Leave that Terminal window open. `caffeinate` prevents sleep while the server
+is running; **Ctrl+C** stops the server cleanly. From another Terminal, verify
+the intended listeners and watch the log:
+
+```bash
+lsof -nP -iUDP:22124
+lsof -nP -iTCP:22240 -sTCP:LISTEN
+tail -f "$HOME/.webjam_server.log"
+```
+
+The TCP listener must report `127.0.0.1:22240`, never `*:22240`. Give the Mac
+a DHCP reservation, disable its VPN during the pilot, allow Jamulus through
+the macOS firewall, and forward **UDP 22124 only** from the router. Never
+forward TCP 22222 or 22240.
+
+Configure the host Mac's WebJam settings with:
+
+- Jamulus server: `127.0.0.1`, port `22124`
+- Local Jamulus control port: `22222`
+- `server_rpc_port`: `22240`
+- `server_rpc_secret_file`: the full path to
+  `~/.webjam_server_rpc.secret`
+- `takes_directory`: the full path to `~/Music/WebJam Recordings`
+
+The remote musician uses the home's public address on UDP 22124 and does not
+receive the recorder secret. Prove this from a genuinely external network
+before rehearsal. If it fails because of CGNAT or router restrictions, the
+recording pilot is blocked until a private VPS is approved.
+
+## Docker on a Linux VPS (legacy-compatible option)
+
+The checked-in Compose recipe remains pinned to a third-party Jamulus 3.9.0
+image for reproducibility. It is compatible with the current RPC contract but
+is **not** the v0.8.1 weekend validation path; that path uses the official
+3.12.2 macOS binary above. Do not silently change the image digest.
 
 ```bash
 # 1. Get these files onto the server
@@ -27,7 +92,7 @@ Open **UDP 22124** in your VPS firewall/security group. Your band's server
 address is the VPS IP (or a DNS name you point at it), port `22124` — put
 that in WebJam's setup wizard.
 
-## Without Docker (bare Ubuntu/Debian)
+## Official package on Ubuntu/Debian
 
 ```bash
 # Jamulus isn't in stock Ubuntu — add the official repo first:
@@ -40,7 +105,7 @@ jamulus-headless --server --nogui --port 22124 \
         --jsonrpcport 22222 --jsonrpcsecretfile ~/jsonrpc.secret
 ```
 
-(Wrap it in a systemd unit for restarts; ask WebJam's maintainer-bot for one.)
+(Wrap it in a reviewed systemd unit for restarts.)
 
 ## Recording
 
@@ -51,6 +116,8 @@ jamulus-headless --server --nogui --port 22124 \
   `stopRecording`) or by any client GUI's Edit menu if enabled.
 - Each take becomes `recordings/<timestamp>/` containing one WAV per
   musician + a `.rpp` Reaper project that opens with everything laid out.
+- Logic users import the WAV stems directly; the `.rpp` file is a Reaper
+  project and is not expected to open in Logic.
 - Getting stems off the server: `scp -r you@server:recordings/<take> .`
   (a friendlier flow is planned for WebJam's session archive).
 - Retention/backup: recordings are your master tapes. Before a pilot, decide
@@ -67,9 +134,12 @@ jamulus-headless --server --nogui --port 22124 \
    `"server_rpc_secret_file": "~/.webjam_server_rpc.secret"` (use the full
    path) to `~/.webjam_config.json`, or set the
    `WEBJAM_SERVER_RPC_SECRET_FILE` environment variable.
-3. Before the session, open the tunnel (the server's RPC stays loopback-only
+3. For a remote Linux server, open the tunnel (the server's RPC stays loopback-only
    on purpose):
    `ssh -N -L 22240:127.0.0.1:22222 you@your-server`
+
+For the same-Mac setup above, do not open an SSH tunnel: the server already
+listens on loopback port 22240.
 
 Now the **● Record** button in the Conductor arms/stops the multitrack
 recorder for the whole band; everyone sees the red ● REC chip while tape
@@ -78,7 +148,8 @@ Reaper `.rpp`.
 
 ## Security notes
 
-- The JSON-RPC port binds **127.0.0.1 only** — never expose it publicly.
+- The JSON-RPC port defaults to loopback and the macOS command also sets
+  `--jsonrpcbindip 127.0.0.1` explicitly — never expose it publicly.
   Reach it from your machine with an SSH tunnel:
   `ssh -N -L 22240:127.0.0.1:22222 you@your-server`
 - Anyone who knows the address can join a public-internet Jamulus server.

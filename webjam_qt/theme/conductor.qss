@@ -528,3 +528,41 @@ QScrollBar::sub-page:horizontal {
     background: none;
     width: 0;
 }
+
+/* ============================================================
+ * Session Pulse — local note-derived session structure
+ * ============================================================ */
+QFrame#SessionPulse {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    margin: 0 ${SPACE_MD}px;
+}
+
+QLabel#PulseHeader {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: 600;
+}
+
+QLabel#PulseStage {
+    color: ${COLOR_ACCENT_AUDIO};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 700;
+}
+
+QLabel#PulseSummary {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+QLabel#PulseNext {
+    color: ${COLOR_ACCENT_VIDEO};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+}
+
+QLabel#PulseSignals {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}

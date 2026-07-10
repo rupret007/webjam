@@ -119,11 +119,18 @@ You can re-run the wizard any time by clicking the Settings button in the app.
 
 ### Step 1: Test Your Audio
 
-**Why audio routing?** When you play together using Jamulus, the music needs to also reach the Webex video call so everyone on video can hear you. WebJam handles this automatically using virtual audio software — you just need to have it installed.
+**Why audio routing?** When you play together using Jamulus, the music may also need to reach the Webex video call. WebJam detects virtual audio software and can meter it, but it does not change operating-system, Jamulus, or Webex device settings automatically.
 - **Windows**: Install VB-CABLE (free from vb-audio.com)
 - **macOS**: Install BlackHole (free from existential.audio)
 
 The Setup Wizard will check if this is installed and show you how to get it if not.
+
+For the closed pilot, designate one Mac as the Webex audio bridge. Create a
+Multi-Output Device containing the physical headphones/interface and
+BlackHole, set Jamulus output to that device, set Webex microphone to
+BlackHole, and keep Webex speaker on the physical output. Everyone else uses
+Jamulus for audio and keeps Webex microphone/speaker muted unless a separate
+interface-loopback path has been verified.
 
 Before joining a session:
 
@@ -186,6 +193,10 @@ Before each room starts:
 - confirm template and session goal
 - pin references in Session Canvas
 - capture notes and review state for continuity
+- use explicit `Decision:`, `Action:`, `Blocker:`, and `Question:` lines when
+  you want Session Pulse to surface structure
+- choose **Export… → Session brief…** for a local Markdown handoff containing
+  the Pulse plus the unmodified raw notes
 
 ---
 
@@ -377,18 +388,19 @@ For pilot programs, track acceptance outside the app with the checklist in `FIRS
 #### ❌ "No Audio from Other Musicians"
 
 **Check:**
-1. VB-Cable is installed (look for CABLE Input/Output in Sound Settings)
+1. VB-CABLE is installed (look for CABLE Input/Output in Sound Settings)
 2. Jamulus is connected (green dot in status bar)
 3. Other musicians are not muted in your mix
 4. Your internet connection is stable
 
 **Fix:**
 ```
-1. Close WebJam and Jamulus
-2. Open Windows Sound Settings
-3. Set CABLE Output as default recording device
-4. Set CABLE Input as default playback device
-5. Restart WebJam
+1. Close WebJam and Jamulus.
+2. Keep rehearsal input/output on the drummer's verified Jamulus audio device.
+3. Use the designated Mac bridge for Webex band audio.
+4. Mute Webex microphone and speaker on Windows to prevent delayed feedback.
+5. Only enable a Windows Webex audio bridge after its interface-loopback path
+   has been tested separately.
 ```
 
 #### ❌ "I Can't Hear Myself"

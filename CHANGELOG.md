@@ -4,6 +4,32 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.8.1] — Release candidate
+
+### Session Pulse and brief export
+
+- The Qt Session Canvas now presents a local, deterministic Session Pulse from
+  the active mode, title, confirmed participants, and captured notes. It
+  surfaces decisions, owned actions, blockers, questions, references, and the
+  next checkpoint without sending session content to a network service.
+- **Export… → Session brief…** exports a Markdown handoff through the existing atomic-write
+  path. The brief includes the structured pulse and the raw notes, so no
+  session context is discarded.
+- Pulse content is rendered as plain text; preview cards are never presented
+  as real attendees, and a brief is rebuilt immediately before export.
+- A single responsive Export menu replaces the clipping notes/brief button
+  pair at the supported 280 px canvas width. Cancellation and write failures
+  are covered, and a failed Pulse refresh discards stale derived data while
+  preserving raw notes.
+- Setup now distinguishes the local Jamulus client RPC port (22222) from the
+  band recorder RPC port (22240), and routing copy no longer claims that
+  detecting BlackHole/VB-CABLE configures Jamulus or Webex.
+- Release CI verifies the packaged executable, UI resources, version, and
+  bundled Jamulus payload on every platform. Tagged builds create a draft
+  GitHub release until physical pilot gates pass.
+
+---
+
 ## [0.8.0] — 2026-07-08
 
 ### Bundle Jamulus with downloadable builds (both platforms)

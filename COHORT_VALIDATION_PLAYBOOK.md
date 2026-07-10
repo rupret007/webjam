@@ -19,11 +19,12 @@ We're jamming on WebJam. One-time setup (~10 min):
    - macOS: right-click the app -> Open -> Open (once).
    - Windows: "More info" -> "Run anyway" (once).
 
-3. Install the virtual audio cable (feeds our music into Webex):
+3. Install the virtual audio cable (the designated bridge feeds music into Webex):
    - Windows: run VBCABLE_Setup_x64.exe from WebJam's VB/ folder.
    - macOS: install BlackHole from https://existential.audio/blackhole
    Jamulus itself is already bundled — nothing to install on macOS; on
    Windows click "Install Jamulus now" in the wizard if prompted.
+   Detection confirms the cable exists; it does not configure device routing.
 
 4. In the Setup Wizard, enter:
    - Jamulus server host: <FILL IN>
@@ -50,12 +51,18 @@ Questions? Reply here. Full walkthrough: README_SIMPLE.md
 
 ## Video smoke
 
-1. **Join Video** — embedded Webex loads or browser fallback opens.
-2. **Leave Video** — embed clears; status returns to not joined.
+1. On the designated Mac bridge, use a physical-output + BlackHole
+   Multi-Output Device for Jamulus, BlackHole as Webex microphone, and the
+   physical device as Webex speaker.
+2. Other musicians keep Webex microphone/speaker muted and use Jamulus for audio.
+3. **Join Video** — embedded Webex loads or browser fallback opens; confirm
+   the Mac carries the band mix without echo.
+4. **Leave Video** — embed clears; status returns to not joined.
 
 ## Record button (band server)
 
-1. Follow `server/README.md` one-time setup (SSH tunnel + `jsonrpc.secret`).
+1. Follow `server/README.md` one-time setup. The same-Mac pilot uses recorder
+   RPC 22240 directly; a remote Linux server uses an SSH tunnel.
 2. With audio connected, toggle **Record** — chip shows armed/recording state from server notifications.
 
 ## Post-session

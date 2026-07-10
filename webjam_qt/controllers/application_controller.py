@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.session_health import SessionHealth
+from core.session_intelligence import build_session_pulse
 from core.settings import AppSettings, load_settings
 from services.bridge_service import BridgeService
 from storage.repository import WebJamRepository
@@ -177,6 +178,13 @@ class ApplicationController(QObject):
         self._token_refresh_timer.setInterval(60_000)
         self._token_refresh_timer.timeout.connect(self._on_token_refresh_tick)
 
+        # Rebuilding the pulse scans the note text. Coalesce rapid typing
+        # while retaining an immediate refresh before a brief is exported.
+        self._pulse_refresh_timer = QTimer(self)
+        self._pulse_refresh_timer.setSingleShot(True)
+        self._pulse_refresh_timer.setInterval(200)
+        self._pulse_refresh_timer.timeout.connect(self._refresh_session_pulse)
+
         # Register real participant callback
         self.jamulus.register_callback(self._on_jamulus_participants)
 
@@ -221,6 +229,7 @@ class ApplicationController(QObject):
         self._reconnect_timer.stop()
         self._meter_tick_timer.stop()
         self._token_refresh_timer.stop()
+        self._pulse_refresh_timer.stop()
         self._save_notes()
         self._save_session_title()
         # Auto-save mix if user touched anything since last save AND we were
@@ -371,6 +380,12 @@ class ApplicationController(QObject):
         self.window._diagnostics_shortcut.activated.connect(self._on_export_diagnostics)
         self.window._ready_check_shortcut.activated.connect(self._on_ready_check)
         self.window.session_canvas.chat_submitted.connect(self._on_chat_submitted)
+        self.window.session_canvas.notes_changed.connect(
+            self._schedule_session_pulse_refresh
+        )
+        self.window.session_canvas.brief_export_requested.connect(
+            self._refresh_session_pulse
+        )
         # Reset all faders shortcut (Ctrl+Shift+R)
         self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
@@ -406,10 +421,12 @@ class ApplicationController(QObject):
         self._token_refresh_timer.start()
         self._load_notes()
         self._load_session_title()
+        self._refresh_session_pulse()
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
         self._sync_self_mute_button()
+        self._refresh_session_pulse()
 
     def _sync_self_mute_button(self) -> None:
         """Update the SessionStrip 'Mute Me' button to match local-user mute state."""
@@ -548,12 +565,14 @@ class ApplicationController(QObject):
         self._save_session_title()
         mode = get_mode_by_key_or_default(mode_key)
         self._apply_mode(mode)
+        self._refresh_session_pulse()
         self.window.flash_message(f"Switched to {mode.label}")
 
     def _on_title_changed(self, title: str) -> None:
         LOGGER.info("Session title set: %s", title)
         # Persist immediately so a crash before clean shutdown doesn't lose it
         self._save_session_title()
+        self._refresh_session_pulse()
 
     def _apply_mode(self, mode) -> None:
         self.window.flash_message(mode.quick_help, ms=6000)
@@ -1379,6 +1398,37 @@ class ApplicationController(QObject):
     def _save_session_title(self) -> None:
         """Persist the current session title and mode to disk."""
         self._persistence._save_session_metadata()
+
+    def _schedule_session_pulse_refresh(self, _notes: str) -> None:
+        """Coalesce note edits before recalculating the local session pulse."""
+        if not self._shutdown:
+            self._pulse_refresh_timer.start()
+
+    def _session_pulse_participants(self) -> list[ParticipantPresentation]:
+        """Return confirmed, non-preview participants for the local pulse."""
+        if not self._jamulus_connected:
+            return []
+        return [
+            participant
+            for participant in self._snapshot_participants()
+            if not participant.role.startswith("Preview ·")
+        ]
+
+    def _refresh_session_pulse(self) -> None:
+        """Rebuild the local pulse from the current UI session state."""
+        try:
+            pulse = build_session_pulse(
+                mode_key=self.window.session_strip.current_mode_key(),
+                title=self.window.session_strip.current_title(),
+                notes=self.window.session_canvas.current_notes(),
+                participants=self._session_pulse_participants(),
+            )
+            self.window.session_canvas.set_session_pulse(pulse)
+        except Exception:  # noqa: BLE001
+            # Never leave stale derived content beside newer raw notes. Brief
+            # export then safely falls back to the notes themselves.
+            self.window.session_canvas.clear_session_pulse()
+            LOGGER.warning("Session pulse refresh failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Audio routing detection (Phase 5)

@@ -178,6 +178,10 @@ jobs:
           python -m PyInstaller --clean --noconfirm webjam.spec
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
+            test -f dist/WebJam/WebJam.exe
+            test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
+            test -n "$(find dist/WebJam -path '*/webjam_qt/webex_widget.html' -print -quit)"
+            test -n "$(find dist/WebJam -path '*/Jamulus/jamulus_3.12.2_win.exe' -print -quit)"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
           else
@@ -191,6 +195,18 @@ jobs:
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             cp licenses/JAMULUS_COPYING.txt \
               dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
+            test -x dist/WebJam.app/Contents/MacOS/WebJam
+            test -f dist/WebJam.app/Contents/Resources/webjam_qt/theme/conductor.qss
+            test -f dist/WebJam.app/Contents/Resources/webjam_qt/webex_widget.html
+            test -x dist/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus
+            expected_version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+            packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+              dist/WebJam.app/Contents/Info.plist)"
+            test "$packaged_version" = "$expected_version"
+            # Preserve and verify the upstream Jamulus signature before the
+            # unsigned private-pilot parent bundle is archived.
+            codesign --verify --strict \
+              dist/WebJam.app/Contents/Resources/Jamulus.app
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \
@@ -269,5 +285,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # Hardware validation is a release gate. Tags create a reviewable
+          # draft; a maintainer publishes only after exact artifacts pass.
+          draft: true
           generate_release_notes: true
           files: release-assets/*

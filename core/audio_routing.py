@@ -1,9 +1,10 @@
 """
-Audio routing detection and configuration.
+Audio routing detection and readiness status.
 
 Detects virtual loopback audio devices (VB-CABLE on Windows, BlackHole on
-macOS) that are used to route Jamulus's output mix back to WebJam for
-metering and to Webex for conference participants to hear the band.
+macOS) that can be used to route Jamulus's output mix back to WebJam for
+metering and to Webex for conference participants to hear the band. Device
+detection does not configure operating-system, Jamulus, or Webex routing.
 
 Detection is platform-aware and falls back gracefully when sounddevice is
 unavailable or no loopback device is installed.

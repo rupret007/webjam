@@ -88,7 +88,11 @@ class TestAppChatIntegration(unittest.TestCase):
             mode_entries=ApplicationController.mode_entries(),
             initial_mode_key="music_jam", initial_title="Chat",
         )
-        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+        # The production invoker queues routing-scan callbacks correctly. This
+        # test replaces it with a synchronous stub, so prevent an in-flight
+        # scan from crossing that test-only boundary on a worker thread.
+        with mock.patch.object(ApplicationController, "_start_routing_scan"):
+            cls.controller = ApplicationController(cls.window, settings=AppSettings())
         # Run the UI-thread invoker synchronously for deterministic testing.
         cls.controller._ui_invoker = SimpleNamespace(invoke=lambda fn: fn())
 

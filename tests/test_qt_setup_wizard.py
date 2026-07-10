@@ -111,6 +111,16 @@ class TestJamulusPage(unittest.TestCase):
         page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_rpc_port=22222))
         self.assertEqual(page.rpc_port, 22222)
 
+    def test_rpc_copy_distinguishes_local_client_from_recorder_control(self):
+        from PySide6.QtWidgets import QLabel
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        page = _JamulusPage(AppSettings(jamulus_server="x"))
+        copy = " ".join(label.text() for label in page.findChildren(QLabel))
+
+        self.assertIn("Local Jamulus control port", copy)
+        self.assertIn("not the band's audio-server or recorder-control port", copy)
+
 
 # ---------------------------------------------------------------------------
 # _JamulusPage — bundled Jamulus (macOS zero-install / Windows installer)

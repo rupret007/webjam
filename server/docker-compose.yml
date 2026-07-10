@@ -1,4 +1,6 @@
-# WebJam band server — Jamulus with multitrack recording + JSON-RPC control.
+# WebJam legacy-compatible Linux band server — Jamulus 3.9.0 with
+# multitrack recording + JSON-RPC control. The v0.8.1 Mac mini pilot uses
+# official Jamulus 3.12.2 natively; see server/README.md.
 #
 # One command on any $5/mo VPS (or a spare machine with port forwarding):
 #
@@ -11,7 +13,7 @@
 #     plus per-musician WAVs under ./recordings/.
 #   - JSON-RPC control on 127.0.0.1:22222 (NOT exposed publicly — reach it
 #     via SSH tunnel; see README.md) so WebJam's Record button can start/
-#     stop recordings remotely in a future release.
+#     stop recordings remotely.
 #
 # Before first start:  echo "$(openssl rand -base64 24)" > jsonrpc.secret
 

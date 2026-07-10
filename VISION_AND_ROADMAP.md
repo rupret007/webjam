@@ -43,7 +43,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 | Idea | Description | Phase |
 |------|-------------|-------|
 | **Time-linked notes and references** | Pin a note or link to "what's happening now" (e.g. "from 12:34" or "during chorus"); support recap/replay when recording exists. | 2 |
-| **Exportable session brief** | One PDF/doc: goal, mode, template, key notes, artifacts, who was there; handoff for next session or for people who missed it. | 2 |
+| **Exportable session brief** | Local Markdown brief now ships from the Session Canvas with decisions, actions, blockers, questions, references, and raw notes. PDF, artifact embedding, and richer attendee detail remain future work. | 1/2 |
 | **Review states drive next session** | Draft → In review → Approved; on next open, suggest "Continue from In review" or "Start new round." (Partially in place.) | 1 |
 | **Offline-first notes** | Notes and artifacts save locally and sync when back online so bad connectivity doesn't lose the "minutes" of the session. | 2 |
 
@@ -79,14 +79,16 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ### ✅ Shipped — v0.7.2 pilot readiness (2026-07-06)
 
-Everything below is live in the current Conductor code and the v0.8.0 release line at [Releases](https://github.com/rupret007/webjam/releases).
+Everything below is live in the v0.8.1 release-candidate tree. v0.8.0 remains
+the latest published build at [Releases](https://github.com/rupret007/webjam/releases)
+until the physical pilot gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done)
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
 - **Webex embed** — `QWebEngineView` pane with guest-token generation; direct-URL fallback
 - **Audio routing detect** — `core/audio_routing.py` auto-detects VB-CABLE / BlackHole / JACK / Loopback
-- **Session canvas** — shared notes, artifact types, review states (Draft→In review→Approved)
+- **Session canvas** — shared notes, local Session Pulse, Markdown brief export, artifact types, review states (Draft→In review→Approved)
 - **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
 - **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration
 - **Three downloadable builds** — Windows x64, macOS ARM64, and macOS Intel x64

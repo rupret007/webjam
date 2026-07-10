@@ -10,7 +10,9 @@ A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio)
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-07-08, v0.8.0 — downloadable builds now bundle Jamulus per platform):
+Being honest about where this app is **right now** (2026-07-10): the source
+tree is the **v0.8.1 release candidate**; v0.8.0 remains the latest published
+download until the real-hardware pilot gates pass.
 
 | Area | Status |
 |---|---|
@@ -19,7 +21,8 @@ Being honest about where this app is **right now** (2026-07-08, v0.8.0 — downl
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install, Windows offers an in-wizard installer (see `THIRD_PARTY_NOTICES.md`); running from source still requires installing it separately. |
 | **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
-| **Audio routing** | ⚠️ **Semi-automatic.** Setup wizard detects VB-CABLE / BlackHole. If not installed, the wizard links to instructions. |
+| **Session canvas + Pulse** | ✅ **v0.8.1 candidate.** Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
+| **Audio routing** | ⚠️ **Detection only.** Setup finds VB-CABLE / BlackHole and links to installation help; users must still configure Jamulus, OS, and Webex device routing. |
 | **Builds** | ✅ Three release artifacts: Windows x64, macOS ARM64, and macOS Intel x64. |
 | **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
@@ -91,7 +94,7 @@ Environment overrides:
 | **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
-The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The left rail switches between Stage/Mixer view, Canvas view, and Settings. Session notes are saved to `~/.webjam_notes.md` on exit and restored automatically on next launch. Saved mixes are auto-restored when Jamulus first connects.
+The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The left rail switches between Stage/Mixer view, Canvas view, and Settings. Session notes are saved to `~/.webjam_notes.md` on exit and restored automatically on next launch. The canvas can export notes or a local Session Pulse brief. Saved mixes are auto-restored when Jamulus first connects.
 
 ---
 
@@ -102,7 +105,7 @@ webjam/
 ├── webjam_qt_main.py        # Primary entry point — Qt Conductor UI
 ├── webjam_qt/               # Qt application (windows, widgets, controllers)
 ├── legacy/                  # Quarantined Tkinter app, admin RBAC, old tests
-├── server/                  # Band-server Docker recipe (Record button backend)
+├── server/                  # Native macOS + Linux band-server runbooks
 ├── jamulus_controller.py    # Mixer state + RPC/UDP integration
 ├── core/                    # Settings, modes, protocol, metrics, take library
 ├── services/                # BridgeService (Jamulus/Webex process lifecycle)

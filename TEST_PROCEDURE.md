@@ -26,7 +26,16 @@ WEBJAM_JAMULUS_BINARY=/path/to/jamulus-headless pytest tests/test_real_jamulus_i
 python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Success criteria for closed-pilot release readiness: all commands above pass, the three artifacts are produced (`WebJam-windows-x64.zip`, `WebJam-macos-arm64.zip`, `WebJam-macos-x64.zip`), each bundling Jamulus per platform (macOS: nested `Jamulus.app`; Windows: bundled installer — see `THIRD_PARTY_NOTICES.md`), and the real-hardware pilot gate checklist is complete on physical Windows x64, macOS ARM64, and macOS Intel x64 machines: clean install/first launch including unsigned-app warning, Ready Check visible and passing, Jamulus auto-found by the wizard (macOS bundled copy) or installed via the wizard's "Install Jamulus now" button (Windows), Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback.
+Success criteria for closed-pilot release readiness: all commands above pass,
+the three artifacts are produced (`WebJam-windows-x64.zip`,
+`WebJam-macos-arm64.zip`, `WebJam-macos-x64.zip`), CI verifies their version,
+UI resources, and bundled Jamulus payload, and the real-hardware checklist is
+complete on physical Windows x64, macOS ARM64, and macOS Intel x64 machines.
+That checklist includes clean install/first launch with the unsigned-app
+warning, Ready Check, Jamulus discovery/installation, Ctrl+P real-audio,
+two-person Jamulus, echo-safe Webex routing, Session Pulse export, Record,
+take playback, and Logic/WAV-stem inspection. Tag builds remain draft releases
+until the exact artifacts pass these gates.
 
 ---
 

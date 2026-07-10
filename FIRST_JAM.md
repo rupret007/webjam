@@ -26,6 +26,25 @@ Any always-on URL works.
 
 **C. Share with the band:** server host, port (`22124`), and the Webex link.
 
+### v0.8.1 weekend topology: Mac mini host + Windows drummer
+
+For this pilot, use the native macOS server command in
+[`server/README.md`](server/README.md), not the legacy Docker image. The Mac
+mini uses `127.0.0.1:22124`; the drummer uses the home's public address on UDP
+22124. Keep WebJam's client-control RPC on 22222 and the server recorder RPC
+on loopback-only 22240. Disable the Mac's VPN, reserve its LAN address, allow
+Jamulus through the firewall, and forward **UDP 22124 only**.
+
+Prove the remote connection before rehearsal. If Windows cannot connect from
+an external network, do not substitute a public server and claim the Record
+gate passed; stop and resolve router/CGNAT hosting first.
+
+The Mac mini is the only Webex audio bridge: Jamulus outputs to a macOS
+Multi-Output Device containing the physical output and BlackHole; Webex uses
+BlackHole as microphone and the physical device as speaker. The drummer uses
+Jamulus for all audio and keeps Webex microphone/speaker muted. Device
+detection in Setup/Ready Check does not configure this routing.
+
 ---
 
 ## Stage 1 — Solo smoke test (you alone, ~30 min) ← DO THIS FIRST
@@ -92,9 +111,18 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
    moves only change *your* monitor mix, not theirs.
 4. One person **Mute Me** — the other should stop hearing them (this is
    the real test of self-mute).
-5. Both **Join Video**. Confirm band audio reaches Webex through the
-   virtual cable (the video call should carry the music, not just voices).
+5. Both **Join Video**. Confirm the designated Mac bridge carries the band
+   mix into Webex without echo. Keep Webex audio muted on the drummer's PC.
 6. Chat from both sides; both canvases should show the conversation.
+7. In the Canvas, enter one `Decision:`, `Action:`, `Blocker:`, and
+   `Question:` line. Confirm Pulse updates, then use **Export… → Session
+   brief…** and verify the exported Markdown also contains the raw notes.
+8. Start and stop **Record** from the Mac. Confirm a new take contains one
+   non-empty WAV per musician, plays in Take Deck, and imports into Logic.
+   The `.rpp` file is for Reaper and is not a Logic project.
+9. Briefly interrupt the drummer's network and confirm reconnect, then run
+   continuously for 45–60 minutes. Finish by checking diagnostics, logs, and
+   orphan Jamulus processes.
 
 Latency check: if the round-trip delay makes tight playing impossible,
 try a server geographically closer to both of you, set your audio
@@ -126,5 +154,7 @@ Everything from Stage 2, times N. Tips for the first full session:
 | "Port in use" | old Jamulus still running | quit it (Activity Monitor / Task Manager), retry |
 | I hear myself echo | Webex mic set to real mic AND Jamulus monitoring | in Webex, set mic to the virtual cable only |
 | Others can't hear my instrument on video | Webex mic not set to virtual cable | Webex settings → microphone → BlackHole / CABLE Output |
+| Remote drummer cannot reach Mac server | VPN, missing UDP forward, firewall, CGNAT | disable VPN; verify DHCP reservation and UDP 22124 forward; do not expose RPC ports |
+| Record button conflicts with client RPC | server and client both using 22222 | keep client RPC on 22222 and same-Mac server recorder RPC on 22240 |
 | Music sounds fine in Jamulus, awful in Webex | that's expected — Webex compresses | mix decisions happen in Jamulus; Webex is for faces |
 | Constant crackling in Jamulus | buffer too small / Wi-Fi | wired Ethernet; raise buffer in Jamulus settings |
