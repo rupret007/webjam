@@ -59,6 +59,16 @@ QMainWindow, QDialog {
     font-weight: 700;
 }
 
+#RecordElapsed {
+    color: ${COLOR_ACCENT_RECORD};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 700;
+    padding: 3px 7px;
+    border: 1px solid ${COLOR_ACCENT_RECORD};
+    border-radius: ${RADIUS_SM}px;
+}
+
 /* ============================================================
  * Side Rail (left)
  * ============================================================ */
@@ -302,7 +312,7 @@ QPushButton#AudioButton:disabled {
     border: 1px solid transparent;
 }
 
-QPushButton#GhostButton {
+QPushButton#GhostButton, QToolButton#GhostButton {
     background-color: transparent;
     color: ${COLOR_TEXT_PRIMARY};
     border: 1px solid ${COLOR_BORDER_STRONG};
@@ -311,18 +321,18 @@ QPushButton#GhostButton {
     font-weight: 500;
 }
 
-QPushButton#GhostButton:hover {
+QPushButton#GhostButton:hover, QToolButton#GhostButton:hover {
     background-color: ${COLOR_BG_CARD};
     border-color: ${COLOR_ACCENT_VIDEO};
 }
 
-QPushButton#GhostButton:focus {
+QPushButton#GhostButton:focus, QToolButton#GhostButton:focus {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_ACCENT_VIDEO};
     outline: none;
 }
 
-QPushButton#GhostButton:disabled {
+QPushButton#GhostButton:disabled, QToolButton#GhostButton:disabled {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_MUTED};
     border: 1px solid transparent;
@@ -331,13 +341,13 @@ QPushButton#GhostButton:disabled {
 /* When a ghost button is checkable and checked (e.g. 'Unmute Me' after
  * clicking Mute Me), paint it in the danger accent so the muted-self
  * state is obvious at a glance. */
-QPushButton#GhostButton:checked {
+QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
     background-color: ${COLOR_ACCENT_DANGER};
     color: ${COLOR_TEXT_INVERSE};
     border: 1px solid ${COLOR_ACCENT_DANGER};
 }
 
-QPushButton#GhostButton:checked:hover {
+QPushButton#GhostButton:checked:hover, QToolButton#GhostButton:checked:hover {
     background-color: #F26A7F;
 }
 

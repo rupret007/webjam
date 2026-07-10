@@ -218,6 +218,23 @@ class TestSessionStrip(unittest.TestCase):
         s._title_input.setText("  Hello  ")
         self.assertEqual(s.current_title(), "Hello")
 
+    def test_controls_fit_supported_width_while_recording(self):
+        s = self._strip()
+        s.set_recording_phase("recording")
+        s.resize(1100, s.STRIP_HEIGHT)
+        s.show()
+        _qapp().processEvents()
+        controls = [
+            s._logo, s._title_input, s._record_elapsed, s._timer_label,
+            s._mode_picker, s._record_button, s._test_button,
+            s._mute_self_button, s._audio_button, s._video_button,
+        ]
+        visible = [control for control in controls if control.isVisible()]
+        self.assertLess(max(control.geometry().right() for control in visible), 1100)
+        for left, right in zip(visible, visible[1:]):
+            self.assertLess(left.geometry().right(), right.geometry().left())
+        s.close()
+
 
 # ---------------------------------------------------------------------------
 # ParticipantGrid
@@ -309,10 +326,10 @@ class TestSideRail(unittest.TestCase):
 
     def test_initial_key_is_checked(self):
         from webjam_qt.widgets.side_rail import SideRail
-        r = SideRail(initial_key="mixer")
+        r = SideRail(initial_key="canvas")
         checked = [btn for btn in r._group.buttons() if btn.isChecked()]
         self.assertEqual(len(checked), 1)
-        self.assertEqual(checked[0].property("railKey"), "mixer")
+        self.assertEqual(checked[0].property("railKey"), "canvas")
 
 
 # ---------------------------------------------------------------------------

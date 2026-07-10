@@ -88,13 +88,16 @@ Environment overrides:
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
 | **Ctrl+,** | Open Settings wizard |
-| **F2 / Ready** | Run Ready Check before a jam |
+| **F2 / Test → Ready Check** | Run Ready Check before a jam |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
 | **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
-The session timer, mode picker, "Launch Audio", and "Join Video" buttons are in the top strip. The left rail switches between Stage/Mixer view, Canvas view, and Settings. Session notes are saved to `~/.webjam_notes.md` on exit and restored automatically on next launch. The canvas can export notes or a local Session Pulse brief. Saved mixes are auto-restored when Jamulus first connects.
+The session timer, mode picker, Record, Mute Me, Launch Audio, and Join Video
+controls are in the top strip; Ready Check and Practice are under **Test ▾**.
+The left rail contains the working Live, Canvas, Takes, and Settings views.
+Session notes are saved to `~/.webjam_notes.md` and restored automatically.
 
 ---
 

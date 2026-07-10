@@ -130,11 +130,13 @@ class TestJamulusServerRpc(unittest.TestCase):
             self._rpc(secret="wrong").connect()
         self.assertIn("refused the RPC secret", str(ctx.exception))
 
-    def test_unreachable_port_mentions_tunnel(self):
+    def test_unreachable_port_covers_same_mac_and_remote_server(self):
         dead = JamulusServerRpc(port=1, secret="x")
         with self.assertRaises(ServerRpcError) as ctx:
             dead.connect()
-        self.assertIn("SSH tunnel", str(ctx.exception))
+        message = str(ctx.exception)
+        self.assertIn("same-Mac server", message)
+        self.assertIn("SSH tunnel", message)
 
     def test_error_response_raises(self):
         self.fake.fail_method = "jamulusserver/startRecording"
@@ -228,6 +230,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         )
         kwargs = c._show_actionable_error.call_args.kwargs
         self.assertIn("jsonrpc.secret", kwargs["next_action"])
+        self.assertIn("Same Mac", kwargs["next_action"])
         self.assertIn("ssh -N -L", kwargs["next_action"])
 
     def test_configured_spawns_worker_toward_armed(self):

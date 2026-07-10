@@ -32,6 +32,10 @@ DEFAULT_SAMPLERATE = 48000
 DEFAULT_BLOCKSIZE = 1024
 
 
+class PlaybackError(RuntimeError):
+    """Raised when Take Deck playback cannot start safely."""
+
+
 @dataclass
 class TrackState:
     """Per-track mixer state (mutated live from the UI)."""
@@ -63,8 +67,9 @@ class OutputSink(Protocol):
 class SoundDeviceSink:
     """Real audio output via sounddevice (imported lazily)."""
 
-    def __init__(self) -> None:
+    def __init__(self, device_name: str = "") -> None:
         self._stream = None
+        self.device_name = str(device_name or "")
 
     def start(self, samplerate, blocksize, pull) -> None:
         import sounddevice as sd  # type: ignore
@@ -73,15 +78,18 @@ class SoundDeviceSink:
             if status:
                 _logger.debug("sounddevice status: %s", status)
             block = pull(frames)
-            if block.shape[0] < frames:
-                outdata[:block.shape[0], 0] = block
-                outdata[block.shape[0]:, 0] = 0.0
-            else:
-                outdata[:, 0] = block[:frames]
+            count = min(block.shape[0], frames)
+            outdata[:] = 0.0
+            if count:
+                # The Take Deck mix is mono by design, but headphone playback
+                # must reach both ears instead of only interface channel 1.
+                outdata[:count, 0] = block[:count]
+                outdata[:count, 1] = block[:count]
 
         self._stream = sd.OutputStream(
             samplerate=samplerate, blocksize=blocksize,
-            channels=1, dtype="float32", callback=_callback,
+            channels=2, dtype="float32", callback=_callback,
+            device=self.device_name or None,
         )
         self._stream.start()
 
@@ -216,7 +224,13 @@ class TakePlayer:
                 self._close_readers()
             self._playing = True
         self._open_readers()
-        self._sink.start(self.samplerate, self.blocksize, self._pull)
+        try:
+            self._sink.start(self.samplerate, self.blocksize, self._pull)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                self._playing = False
+                self._close_readers()
+            raise PlaybackError(f"Couldn't open the playback device: {exc}") from exc
 
     def pause(self) -> None:
         self._playing = False

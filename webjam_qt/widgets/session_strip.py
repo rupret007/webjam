@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import QTime, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -24,9 +25,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QMenu,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QToolButton,
 )
 
 from webjam_qt.theme.tokens import Space
@@ -81,6 +84,15 @@ class SessionStrip(QFrame):
         self._record_dot.setAccessibleName("Recording indicator")
         self._record_dot.setVisible(False)
 
+        self._record_elapsed = QLabel("REC 00:00")
+        self._record_elapsed.setObjectName("RecordElapsed")
+        self._record_elapsed.setAccessibleName("Recording elapsed time")
+        self._record_elapsed.setVisible(False)
+        self._record_elapsed_seconds = 0
+        self._record_clock = QTimer(self)
+        self._record_clock.setInterval(1000)
+        self._record_clock.timeout.connect(self._tick_recording)
+
         self._timer_label = QLabel("00:00:00")
         self._timer_label.setObjectName("SessionTimer")
         self._timer_label.setAccessibleName("Session elapsed time")
@@ -117,24 +129,21 @@ class SessionStrip(QFrame):
         )
         self._record_button.clicked.connect(self.record_requested.emit)
 
-        self._ready_button = QPushButton("Ready")
-        self._ready_button.setObjectName("GhostButton")
-        self._ready_button.setAccessibleName("Run Ready Check")
-        self._ready_button.setToolTip(
-            "Run Ready Check (F2): verifies Jamulus, server settings, "
-            "audio routing, and Webex before a jam."
-        )
-        self._ready_button.clicked.connect(self.ready_check_requested.emit)
-
-        self._practice_button = QPushButton("Practice")
-        self._practice_button.setObjectName("GhostButton")
-        self._practice_button.setAccessibleName("Start a solo practice session")
-        self._practice_button.setToolTip(
-            "Practice solo (Ctrl+P): starts a private Jamulus server on this\n"
-            "computer and connects to it — hear yourself and test your audio\n"
-            "setup with zero internet. Stop Audio ends the practice session."
-        )
-        self._practice_button.clicked.connect(self.practice_requested.emit)
+        self._test_button = QToolButton()
+        self._test_button.setText("Test ▾")
+        self._test_button.setObjectName("GhostButton")
+        self._test_button.setAccessibleName("Readiness and practice tests")
+        self._test_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        test_menu = QMenu(self._test_button)
+        self._ready_action = QAction("Ready Check\tF2", test_menu)
+        self._ready_action.setToolTip("Check devices, server settings, and recording readiness")
+        self._ready_action.triggered.connect(self.ready_check_requested.emit)
+        test_menu.addAction(self._ready_action)
+        self._practice_action = QAction("Practice Solo\tCtrl+P", test_menu)
+        self._practice_action.setToolTip("Start a private local Jamulus practice session")
+        self._practice_action.triggered.connect(self.practice_requested.emit)
+        test_menu.addAction(self._practice_action)
+        self._test_button.setMenu(test_menu)
 
         self._mute_self_button = QPushButton("Mute Me")
         self._mute_self_button.setObjectName("GhostButton")
@@ -169,11 +178,11 @@ class SessionStrip(QFrame):
         layout.addLayout(title_block, stretch=1)
 
         layout.addWidget(self._record_dot)
+        layout.addWidget(self._record_elapsed)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
         layout.addWidget(self._record_button)
-        layout.addWidget(self._ready_button)
-        layout.addWidget(self._practice_button)
+        layout.addWidget(self._test_button)
         layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
         layout.addWidget(self._video_button)
@@ -210,6 +219,34 @@ class SessionStrip(QFrame):
         self._record_button.setText("■ Stop Rec" if armed else "● Record")
         self._record_button.setEnabled(enabled)
 
+    def set_recording_phase(self, phase: str) -> None:
+        """Render the recorder state machine without relying on transient banners."""
+        phase = str(phase or "idle").lower()
+        if phase == "starting":
+            self._record_button.setText("Starting…")
+            self._record_button.setEnabled(False)
+            self._record_elapsed.setText("ARMING")
+            self._record_elapsed.setVisible(True)
+        elif phase == "recording":
+            self._record_button.setText("■ Stop Rec")
+            self._record_button.setEnabled(True)
+            if not self._record_clock.isActive():
+                self._record_elapsed_seconds = 0
+                self._update_record_elapsed()
+                self._record_clock.start()
+            self._record_elapsed.setVisible(True)
+        elif phase == "stopping":
+            self._record_button.setText("Stopping…")
+            self._record_button.setEnabled(False)
+            self._record_clock.stop()
+            self._record_elapsed.setText("SAVING…")
+            self._record_elapsed.setVisible(True)
+        else:
+            self._record_clock.stop()
+            self._record_button.setText("● Record")
+            self._record_button.setEnabled(True)
+            self._record_elapsed.setVisible(False)
+
     def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
         """Update the 'Mute Me' button state without emitting signals."""
         self._mute_self_button.blockSignals(True)
@@ -243,6 +280,14 @@ class SessionStrip(QFrame):
     def _tick(self) -> None:
         self._elapsed_seconds += 1
         self._update_timer_label()
+
+    def _tick_recording(self) -> None:
+        self._record_elapsed_seconds += 1
+        self._update_record_elapsed()
+
+    def _update_record_elapsed(self) -> None:
+        seconds = self._record_elapsed_seconds
+        self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
 
     def _update_timer_label(self) -> None:
         t = QTime(0, 0).addSecs(self._elapsed_seconds)

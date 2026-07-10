@@ -92,8 +92,10 @@ class JamulusServerRpc:
         except OSError as exc:
             raise ServerRpcError(
                 f"Can't reach the band server's RPC at {self._host}:{self._port} "
-                f"({exc}). Is the SSH tunnel up? "
-                f"(ssh -N -L {self._port}:127.0.0.1:22222 you@your-server)"
+                f"({exc}). For a same-Mac server, start JamulusServer.app and "
+                f"verify loopback TCP {self._port}. For a remote Linux server, "
+                f"verify the SSH tunnel (ssh -N -L "
+                f"{self._port}:127.0.0.1:22222 you@your-server)."
             ) from exc
         result = self._call_raw("jamulus/apiAuth", {"secret": self._secret})
         if result != "ok":

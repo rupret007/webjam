@@ -8,7 +8,7 @@ import tempfile  # noqa: E402
 import unittest  # noqa: E402
 from unittest import mock  # noqa: E402
 
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -82,59 +82,60 @@ class TestReadyCheckShortcut(unittest.TestCase):
             os.environ.pop("HOME", None)
         cls._tmp.cleanup()
 
+    def setUp(self):
+        dialog = getattr(self.controller, "_ready_check_dialog", None)
+        if dialog is not None:
+            dialog.close()
+            _app.processEvents()
+        self.controller._ready_check_dialog = None
+
     def test_f2_shortcut_exists(self):
         self.assertEqual(self.window._ready_check_shortcut.key().toString(), "F2")
 
     def test_visible_ready_check_button_exists_and_emits(self):
         strip = self.window.session_strip
-        self.assertEqual(strip._ready_button.accessibleName(), "Run Ready Check")
+        self.assertEqual(
+            strip._test_button.accessibleName(), "Readiness and practice tests"
+        )
         received = []
         strip.ready_check_requested.connect(lambda: received.append(True))
-        with mock.patch.object(QMessageBox, "exec", return_value=0), \
-             mock.patch("core.preflight.run_ready_check") as run:
-            run.return_value = mock.Mock(
-                all_ok=True, to_text=lambda: "Ready Check\n  ✓ ok"
-            )
-            strip._ready_button.click()
+        strip._ready_action.trigger()
         self.assertEqual(received, [True])
 
     def test_handler_runs_report_without_blocking(self):
-        with mock.patch.object(QMessageBox, "exec", return_value=0), \
-             mock.patch("core.preflight.run_ready_check") as run:
-            run.return_value = mock.Mock(all_ok=True, to_text=lambda: "Ready Check\n  ✓ ok")
+        with mock.patch("core.preflight.run_ready_check") as run:
+            run.return_value = mock.Mock(
+                all_ok=True, to_text=lambda: "Ready Check\n  ✓ ok"
+            )
             self.controller._on_ready_check()  # must not raise or block
+            for _ in range(20):
+                _app.processEvents()
+                if run.called:
+                    break
         run.assert_called_once_with(self.controller.settings)
+        self.assertTrue(self.controller._ready_check_dialog.isVisible())
 
     def test_failed_report_close_does_not_open_settings(self):
-        _FakeMessageBox.instances = []
-        _FakeMessageBox.clicked = None
         self.controller._open_settings_wizard = mock.Mock()
-        with mock.patch("PySide6.QtWidgets.QMessageBox", _FakeMessageBox), \
-             mock.patch("core.preflight.run_ready_check") as run:
+        with mock.patch("core.preflight.run_ready_check") as run:
             run.return_value = mock.Mock(
                 all_ok=False, to_text=lambda: "Ready Check\n  ✗ missing"
             )
-
             self.controller._on_ready_check()
-
+            _app.processEvents()
+            self.controller._ready_check_dialog.close()
+            _app.processEvents()
         self.controller._open_settings_wizard.assert_not_called()
-        self.assertEqual(
-            [label for label, _role, _button in _FakeMessageBox.instances[-1].buttons],
-            ["Open Settings", "Close"],
-        )
 
     def test_failed_report_open_settings_action_runs_wizard(self):
-        _FakeMessageBox.instances = []
-        _FakeMessageBox.clicked = "settings"
         self.controller._open_settings_wizard = mock.Mock()
-        with mock.patch("PySide6.QtWidgets.QMessageBox", _FakeMessageBox), \
-             mock.patch("core.preflight.run_ready_check") as run:
+        with mock.patch("core.preflight.run_ready_check") as run:
             run.return_value = mock.Mock(
                 all_ok=False, to_text=lambda: "Ready Check\n  ✗ missing"
             )
-
             self.controller._on_ready_check()
-
+            _app.processEvents()
+            self.controller._ready_check_dialog.settings_requested.emit()
         self.controller._open_settings_wizard.assert_called_once()
 
 

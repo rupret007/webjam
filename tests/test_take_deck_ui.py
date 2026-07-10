@@ -11,6 +11,7 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -144,6 +145,24 @@ class TestTakeDeckPopulated(unittest.TestCase):
         _make_take_dir(Path(self.tmp.name), "take_C", tracks=("keys.wav",))
         self.deck.reload()
         self.assertEqual(self.deck._take_list.count(), 3)
+
+    def test_output_choice_is_reported_and_reveal_is_available(self):
+        changed = []
+        with mock.patch(
+            "webjam_qt.windows.take_deck.list_output_devices",
+            return_value=[{"index": 3, "name": "SSL 2+", "channels": 2}],
+        ):
+            deck = TakeDeck(
+                self.tmp.name,
+                player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+                on_output_device_changed=changed.append,
+            )
+        try:
+            deck._output_picker.setCurrentIndex(1)
+            self.assertEqual(changed, ["SSL 2+"])
+            self.assertTrue(deck._reveal_btn.isEnabled())
+        finally:
+            deck.close()
 
 
 class TestControllerOpensDeck(unittest.TestCase):

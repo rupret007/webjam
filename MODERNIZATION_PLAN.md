@@ -2,9 +2,9 @@
 
 ## Audited baseline
 
-- Source baseline is `origin/master` at `d667e3f`: published v0.8.0 plus
-  post-release documentation. Its GitHub test, real-Jamulus integration, and
-  three desktop build jobs passed.
+- Source baseline is `origin/master` at `1d3a3d3`: the untagged v0.8.1 pilot
+  candidate. GitHub tests, real-Jamulus integration, and all three desktop
+  build jobs passed for that exact commit.
 - Before Session Pulse, local validation passed 823 tests with 12 expected
   skips, Ruff, the offscreen UX gate, and a clean macOS PyInstaller build.
 - The older dirty checkout at `/Users/jeffstory/Documents/webjam` remains
@@ -30,6 +30,15 @@
   Jamulus and changed tag releases to drafts pending hardware approval.
 - Added the official Jamulus 3.12.2 same-Mac server procedure, external UDP
   gate, BlackHole Multi-Output/Webex bridge topology, and Logic stem check.
+- Added recorder transition truth, elapsed time, duplicate-click protection,
+  stable-file discovery, and post-stop take validation with direct Take Deck
+  and Finder actions.
+- Made Take Deck output-selectable and stereo for headphones, with persisted
+  device choice, actionable playback errors, and take-health warnings.
+- Replaced blocking configuration-only Ready Check with a rerunnable report
+  that distinguishes the designated Webex bridge from Jamulus-only musicians.
+  Simplified navigation to Live, Canvas, Takes, and Settings and consolidated
+  Ready/Practice under the accessible Test menu.
 
 ## Verification completed so far
 
@@ -39,7 +48,7 @@
   rendering, immediate pre-export refresh, real 200 ms debounce, participant
   filtering, and 280/360/900 px layouts are covered.
 - Full local gate passes: `pip check`, Ruff, compile checks, offscreen UX
-  smoke, and 844 tests with 12 expected skips plus 3 width subtests. The only
+  smoke, and 853 tests with 12 expected skips plus 3 width subtests. The only
   pytest warning is the pre-existing Starlette/httpx deprecation; the prior
   test-induced Qt cross-thread timer warning is gone.
 - `pip-audit` 2.10.1 reports no known vulnerabilities. Audit-only packages
@@ -47,29 +56,43 @@
 - A clean dependency-only PyInstaller build produces v0.8.1 executables and
   the macOS bundle with correct plist version and UI resources; the frozen app
   remains running under an offscreen launch smoke. `git diff --check` passes.
+- The exact ARM64 CI artifact is installed on the host Mac and passes a
+  packaged offscreen startup smoke. Official notarized Jamulus and
+  JamulusServer 3.12.2 bundles pass signature verification.
+- The macOS server sandbox constraint was reproduced and corrected: recorder
+  secret and take storage now use the dedicated server app's real container
+  directory. UDP 22124, loopback-only RPC 22240, authentication, recorder
+  status, and record start/stop were validated on the host, followed by clean
+  shutdown.
+- The reliability/polish tree passes a clean ARM64 PyInstaller build, strict
+  bundle verification, v0.8.1 plist/resource inspection, packaged offscreen
+  startup, and termination without an orphan process.
 
 ## Remaining release gates
 
-1. Push the validated candidate only after final diff review and wait for all
-   GitHub jobs: tests, real Jamulus 3.12.2 integration, ARM Mac, Intel Mac,
-   and Windows x64 builds.
-2. On physical ARM Mac, Intel Mac, and Windows x64, validate clean first run,
-   unsigned warning, Ready Check, bundled Jamulus, virtual-device detection,
-   Ctrl+P Practice, and clean shutdown.
-3. With the Mac mini hosting and playing, prove external UDP 22124 from the
-   drummer's Windows machine while VPN is disabled. Never expose TCP 22222 or
-   22240; a failed external path blocks the recording pilot.
-4. Complete the full two-person gate: audio/latency, participant truth,
+1. Install BlackHole with administrator approval, restart the host, create and
+   verify the 48 kHz SSL + BlackHole Multi-Output bridge, then pass F2 Ready
+   Check and Ctrl+P Practice with real guitar/vocal input.
+2. On the drummer's Apple Silicon Mac, install Roland's TD-27 driver, select
+   VENDOR mode, verify 48 kHz USB audio, install the exact ARM64 candidate, and
+   pass Ready Check/Practice over Ethernet and wired headphones. BlackHole is
+   optional because this Mac is not the Webex audio bridge.
+3. Invite the drummer to Tailscale and prove a direct peer path. Reserve the
+   host LAN address, forward UDP 22124 only, prove the public path externally,
+   and compare both routes for ten stable minutes. Never expose TCP 22222 or
+   22240.
+4. Complete the full two-Mac gate: audio/latency, participant truth,
    fader/mute/solo/Mute Me, saved mix, chat, echo-safe Webex bridge, reconnect,
    Pulse/exports, server recording, non-empty per-player WAVs, Take Deck,
    Logic import, diagnostics, process cleanup, and a 45–60 minute soak.
-5. Tag the exact validated commit as v0.8.1, inspect the draft release's exact
+5. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
+   exact validated commit as v0.8.1, inspect the draft release's exact
    artifacts, repeat the critical packaged workflow, then publish.
 
 ## Intentionally unchanged
 
-- Jamulus client RPC/UDP behavior, Webex token/embed behavior, Take Deck data
-  model, persistence/database schemas, Companion API, and mixer semantics are
+- Jamulus client RPC/UDP behavior, Webex token/embed behavior, persistence/
+  database schemas, Companion API, and live mixer semantics are
   already sound and receive no speculative rewrite.
 - The legacy Docker server image stays digest-pinned and is explicitly not the
   v0.8.1 pilot path; changing that third-party runtime requires a separate
@@ -77,3 +100,5 @@
 - Code signing/notarization, Sentry rollout, broad coordinator refactoring,
   dependency churn, automatic router configuration, AI/network summarization,
   and native Logic integration remain outside the unsigned private pilot.
+- Windows remains CI-built but physical Windows validation is intentionally
+  deferred; Sunday approves only the two-Apple-Silicon-Mac closed pilot.

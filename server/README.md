@@ -8,28 +8,37 @@ started from a connected Jamulus client GUI or via JSON-RPC.
 
 ## macOS host + musician workstation (v0.8.1 pilot)
 
-Install the official Jamulus 3.12.2 app at `/Applications/Jamulus.app`.
-The Mac can run the band server and its own WebJam client simultaneously as
-long as their JSON-RPC ports are different: the WebJam-launched client keeps
-`22222`, while the recording server uses `22240`.
+Install both official Jamulus 3.12.2 apps from the macOS disk image:
+`/Applications/Jamulus.app` is the musician client and
+`/Applications/JamulusServer.app` is the dedicated server. The downloadable
+WebJam app bundles the client, but not the dedicated server. The Mac can run
+the server and its own WebJam client simultaneously because the
+WebJam-launched client keeps JSON-RPC `22222`, while recorder control uses
+loopback-only `22240`.
+
+Both official apps are sandboxed. In particular, the server cannot write to
+an arbitrary `~/Music` directory when launched from Terminal. Keep the RPC
+secret and takes in the server app's real `Data/Documents` container as shown
+below; `Data/Music` is only a symlink back to `~/Music` and is not suitable.
 
 In a dedicated Terminal window, run:
 
 ```bash
-JAMULUS="/Applications/Jamulus.app/Contents/MacOS/Jamulus"
-SECRET="$HOME/.webjam_server_rpc.secret"
-RECORDINGS="$HOME/Music/WebJam Recordings"
-LOG="$HOME/.webjam_server.log"
+JAMULUS="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
+CONTAINER="$HOME/Library/Containers/app.jamulussoftware.JamulusServer/Data"
+SECRET="$CONTAINER/Documents/webjam_server_rpc.secret"
+RECORDINGS="$CONTAINER/Documents/WebJam Recordings"
+LOG="$HOME/Library/Logs/WebJam/jamulus-server.log"
 
-test -x "$JAMULUS" || { echo "Install Jamulus 3.12.2 first" >&2; exit 1; }
-mkdir -p "$RECORDINGS"
+test -x "$JAMULUS" || { echo "Install JamulusServer.app 3.12.2 first" >&2; exit 1; }
+mkdir -p "$RECORDINGS" "$(dirname "$LOG")"
 if [ ! -s "$SECRET" ]; then
-  (umask 077 && openssl rand -base64 24 > "$SECRET")
+  (umask 077 && openssl rand -hex 32 > "$SECRET")
 fi
 chmod 600 "$SECRET"
 
 caffeinate -dimsu "$JAMULUS" \
-  --server --nogui --port 22124 \
+  --nogui --port 22124 \
   --recording "$RECORDINGS" --norecord \
   --jsonrpcbindip 127.0.0.1 \
   --jsonrpcport 22240 --jsonrpcsecretfile "$SECRET" \
@@ -37,14 +46,16 @@ caffeinate -dimsu "$JAMULUS" \
   2>&1 | tee -a "$LOG"
 ```
 
-Leave that Terminal window open. `caffeinate` prevents sleep while the server
-is running; **Ctrl+C** stops the server cleanly. From another Terminal, verify
-the intended listeners and watch the log:
+The checked-in `server/start_macos_pilot.sh` runs this same validated command,
+checks the exact version and port collisions, and creates the protected secret
+on first use. Leave its Terminal window open. `caffeinate` prevents sleep;
+**Ctrl+C once** stops the server cleanly. From another Terminal, verify the
+intended listeners and watch the log:
 
 ```bash
 lsof -nP -iUDP:22124
 lsof -nP -iTCP:22240 -sTCP:LISTEN
-tail -f "$HOME/.webjam_server.log"
+tail -f "$HOME/Library/Logs/WebJam/jamulus-server.log"
 ```
 
 The TCP listener must report `127.0.0.1:22240`, never `*:22240`. Give the Mac
@@ -58,13 +69,18 @@ Configure the host Mac's WebJam settings with:
 - Local Jamulus control port: `22222`
 - `server_rpc_port`: `22240`
 - `server_rpc_secret_file`: the full path to
-  `~/.webjam_server_rpc.secret`
-- `takes_directory`: the full path to `~/Music/WebJam Recordings`
+  `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/webjam_server_rpc.secret`
+- `takes_directory`: the full path to
+  `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/WebJam Recordings`
 
-The remote musician uses the home's public address on UDP 22124 and does not
-receive the recorder secret. Prove this from a genuinely external network
-before rehearsal. If it fails because of CGNAT or router restrictions, the
-recording pilot is blocked until a private VPS is approved.
+The remote musician does not receive the recorder secret. For the two-Mac
+pilot, test both the Mac mini's stable Tailscale address and the home's public
+address on UDP 22124. Require `tailscale ping` to report a direct path rather
+than DERP. For the public path, prove access from a genuinely external network.
+Use whichever route has lower stable delay and no recurring dropout. If direct
+UDP fails because of CGNAT or router restrictions, retain a direct Tailscale
+path or approve a private VPS; a public Jamulus server cannot pass the local
+recording gate.
 
 ## Docker on a Linux VPS (legacy-compatible option)
 

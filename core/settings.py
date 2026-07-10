@@ -22,7 +22,7 @@ def _coerce_settings_data(data: dict) -> None:
                 data[key] = defaults[key]
                 _logger.debug("Invalid %s in config; using default", key)
     # Boolean fields
-    for key in ("enable_sentry", "companion_api_enabled"):
+    for key in ("enable_sentry", "companion_api_enabled", "webex_audio_bridge_enabled"):
         if key in data:
             v = data[key]
             if isinstance(v, bool):
@@ -40,6 +40,7 @@ def _coerce_settings_data(data: dict) -> None:
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
                 "server_rpc_secret_file", "takes_directory",
+                "take_playback_output_device",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
                 "webex_guest_issuer_id", "webex_guest_issuer_secret", "webex_display_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
@@ -74,6 +75,7 @@ class AppSettings:
     audio_samplerate: int = 48000
     audio_latency: str = "low"
     audio_input_device_index: int = -1  # -1 means "system default / auto-detect"
+    webex_audio_bridge_enabled: bool = False
     enable_sentry: bool = False
     sentry_dsn: str = ""
     log_level: str = "INFO"
@@ -95,6 +97,7 @@ class AppSettings:
     # Take Deck: where recorded takes live locally (fetched from the band
     # server, e.g. scp'd into this folder). Empty = the Deck shows a hint.
     takes_directory: str = ""
+    take_playback_output_device: str = ""
 
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
@@ -120,6 +123,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_SERVER_RPC_PORT": "server_rpc_port",
         "WEBJAM_SERVER_RPC_SECRET_FILE": "server_rpc_secret_file",
         "WEBJAM_TAKES_DIRECTORY": "takes_directory",
+        "WEBJAM_TAKE_PLAYBACK_OUTPUT_DEVICE": "take_playback_output_device",
+        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "webex_audio_bridge_enabled",
         "WEBJAM_WEBEX_URL": "webex_url",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
@@ -158,7 +163,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
             data[key] = parsed
-        elif key in {"enable_sentry", "companion_api_enabled"}:
+        elif key in {"enable_sentry", "companion_api_enabled", "webex_audio_bridge_enabled"}:
             data[key] = raw.strip().lower() in {"1", "true", "yes", "on"}
         elif key == "jamulus_candidates":
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
@@ -193,3 +198,11 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
     return settings
+
+
+def save_settings(settings: AppSettings) -> None:
+    """Atomically persist all current settings with private-file permissions."""
+    from core.file_io import atomic_write_text
+
+    path = Path(settings.config_file).expanduser()
+    atomic_write_text(path, json.dumps(asdict(settings), indent=2), mode=0o600)

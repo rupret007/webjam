@@ -26,24 +26,30 @@ Any always-on URL works.
 
 **C. Share with the band:** server host, port (`22124`), and the Webex link.
 
-### v0.8.1 weekend topology: Mac mini host + Windows drummer
+### v0.8.1 weekend topology: Mac mini host + Apple Silicon Mac drummer
 
 For this pilot, use the native macOS server command in
 [`server/README.md`](server/README.md), not the legacy Docker image. The Mac
-mini uses `127.0.0.1:22124`; the drummer uses the home's public address on UDP
-22124. Keep WebJam's client-control RPC on 22222 and the server recorder RPC
-on loopback-only 22240. Disable the Mac's VPN, reserve its LAN address, allow
-Jamulus through the firewall, and forward **UDP 22124 only**.
+mini uses `127.0.0.1:22124`; the drummer tests both a direct Tailscale address
+and the home's public address on UDP 22124. Keep WebJam's client-control RPC on
+22222 and server recorder RPC on loopback-only 22240. Disable the Mac's VPN,
+reserve its LAN address, allow Jamulus through the firewall, and forward
+**UDP 22124 only**. Require Tailscale to report a direct peer path, not DERP.
 
-Prove the remote connection before rehearsal. If Windows cannot connect from
-an external network, do not substitute a public server and claim the Record
-gate passed; stop and resolve router/CGNAT hosting first.
+Prove the public route from an external network and compare it with direct
+Tailscale for ten minutes. Use the lower-delay stable route. If direct UDP is
+blocked by router/CGNAT restrictions, retain direct Tailscale or approve a VPS;
+do not substitute a public server and claim the local Record gate passed.
 
 The Mac mini is the only Webex audio bridge: Jamulus outputs to a macOS
 Multi-Output Device containing the physical output and BlackHole; Webex uses
 BlackHole as microphone and the physical device as speaker. The drummer uses
-Jamulus for all audio and keeps Webex microphone/speaker muted. Device
+Jamulus through the TD-27 for all audio and keeps Webex microphone/speaker
+muted. Device
 detection in Setup/Ready Check does not configure this routing.
+
+The exact host, TD-27, network, acceptance, and fallback steps are in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
 
 ---
 
@@ -66,8 +72,9 @@ Work through this in order; note anything that deviates.
    executable path (pre-filled on bundled builds — on Windows use "Install
    Jamulus now" if it's blank), paste the Webex link, and confirm the
    audio-routing page shows a green check for VB-CABLE/BlackHole.
-2. **Ready / F2 — Ready Check.** All four items should pass. If one fails, it
-   tells you what to fix. Fix it before continuing.
+2. **Test → Ready Check / F2.** All required items should pass. Optional bridge
+   warnings are expected on musicians who keep Webex audio muted. Fix required
+   failures before continuing.
 3. **Practice smoke (no band server needed).** Press **Ctrl+P** (or the
    **Practice** button). WebJam starts a private Jamulus server *on your
    machine* and connects to it — you should see your own card, hear
@@ -112,7 +119,7 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
 4. One person **Mute Me** — the other should stop hearing them (this is
    the real test of self-mute).
 5. Both **Join Video**. Confirm the designated Mac bridge carries the band
-   mix into Webex without echo. Keep Webex audio muted on the drummer's PC.
+   mix into Webex without echo. Keep Webex audio muted on the drummer's Mac.
 6. Chat from both sides; both canvases should show the conversation.
 7. In the Canvas, enter one `Decision:`, `Action:`, `Blocker:`, and
    `Question:` line. Confirm Pulse updates, then use **Export… → Session

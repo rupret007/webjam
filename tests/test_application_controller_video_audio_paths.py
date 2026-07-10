@@ -348,21 +348,12 @@ class TestRailViewChanges(_ControllerTestBase):
         sizes = c.window.center_splitter.sizes()
         self.assertGreater(sizes[0], sizes[1])
 
-    def test_chat_flashes_coming_soon_and_restores_selection(self):
-        c = self.controller
-        c._on_rail_view_changed("mixer")
-        c.window.side_rail.set_active_key = MagicMock()
-        c._on_rail_view_changed("chat")
-        c.window.side_rail.set_active_key.assert_called_once_with("mixer")
-        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("Chat" in m for m in msgs), msgs)
-
-    def test_roles_flashes_coming_soon(self):
-        c = self.controller
-        c.window.side_rail.set_active_key = MagicMock()
-        c._on_rail_view_changed("roles")
-        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("Role management" in m for m in msgs), msgs)
+    def test_dead_placeholder_views_are_not_in_navigation(self):
+        keys = {
+            button.property("railKey")
+            for button in self.window.side_rail._group.buttons()
+        }
+        self.assertEqual(keys, {"stage", "canvas", "takes", "settings"})
 
     def test_settings_key_opens_wizard_and_restores_selection(self):
         c = self.controller

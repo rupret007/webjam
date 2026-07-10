@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core.settings import AppSettings, load_settings, _coerce_settings_data
+from core.settings import (
+    AppSettings,
+    _coerce_settings_data,
+    load_settings,
+    save_settings,
+)
 
 
 class TestSettingsDefaults(unittest.TestCase):
@@ -17,10 +22,25 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(s.audio_blocksize, 0)
         self.assertFalse(s.enable_sentry)
         self.assertFalse(s.companion_api_enabled)
+        self.assertFalse(s.webex_audio_bridge_enabled)
+        self.assertEqual(s.take_playback_output_device, "")
 
     def test_load_nonexistent_file_returns_defaults(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
         self.assertEqual(s.jamulus_port, 22124)
+
+    def test_new_pilot_preferences_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            original = AppSettings(
+                config_file=path,
+                webex_audio_bridge_enabled=True,
+                take_playback_output_device="SSL 2+",
+            )
+            save_settings(original)
+            loaded = load_settings(path)
+        self.assertTrue(loaded.webex_audio_bridge_enabled)
+        self.assertEqual(loaded.take_playback_output_device, "SSL 2+")
 
 
 class TestSettingsMalformedJson(unittest.TestCase):

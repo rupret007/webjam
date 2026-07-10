@@ -29,15 +29,18 @@ Unzip it and run the **WebJam** app inside. **The first launch will trigger a se
 
 ## What each person needs (once)
 
-Every band member installs (or auto-gets) three things on their own computer:
+Every band member installs WebJam and uses its bundled Jamulus client:
 
 1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** the Setup Wizard's Jamulus page has an "Install Jamulus now" button that runs the bundled installer for you. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
-2. **A virtual audio cable** — this is how your playing gets *into* the Webex call.
+2. **A virtual audio cable, only on the designated Webex bridge Mac** — this
+   feeds the full Jamulus mix into the video call.
    - **Windows:** VB-CABLE — from [vb-audio.com](https://vb-audio.com), or use the installer bundled in WebJam's `VB/` folder (`VBCABLE_Setup_x64.exe`).
    - **macOS:** BlackHole — free at [existential.audio/blackhole](https://existential.audio/blackhole).
 
    WebJam detects this during setup, but detection is not routing. Before the
    session, configure Jamulus and Webex as described below.
+   Other musicians use Jamulus for audio and keep Webex microphone/speaker
+   muted while playing; they do not need BlackHole merely to pass Ready Check.
 3. **WebJam** itself, plus a Webex account/app for the video side.
 
 > **Why the virtual cable?** Jamulus carries the low-latency music between players. The virtual cable feeds that combined sound into Webex as a "microphone," so anyone on the video call hears the band play. Without it, Webex only hears your computer's regular mic.
@@ -62,7 +65,9 @@ The first time you open WebJam, a short setup wizard runs:
 1. **Welcome** — a quick overview; downloadable builds bundle Jamulus, so most people can just continue.
 2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave **Local Jamulus control port** at `22222`; WebJam assigns it to the client it launches so participant names and mixer controls work. It is not the band's server or recorder-control port. The Jamulus executable path is usually pre-filled (macOS: the bundled copy; Windows: click **"Install Jamulus now"** if it's blank and let the installer finish). If you need to point at a different install, browse to it — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
 3. **Webex Meeting** — paste the meeting link.
-4. **Audio Routing** — WebJam scans for your virtual cable. A green check means the device is available, not that Jamulus/Webex routing is configured. If it is missing, click **"Show me how to set this up,"** install it, and relaunch. You can also **Skip for now** and set it up later.
+4. **Audio Routing** — select whether this Mac is the Webex audio bridge. The
+   bridge Mac must have BlackHole/VB-CABLE; a Jamulus-only musician does not.
+   Detection confirms availability but does not configure routing.
 5. **Configuration saved** — click Finish. WebJam opens the Conductor and runs **Ready Check**; fix anything it flags before your first jam.
 
 You can rerun this any time from **Settings** (`Ctrl+,`).
@@ -84,12 +89,20 @@ delayed copy of the band back into Jamulus.
 
 ## In a session
 
-The Conductor window has two big buttons at the top:
+The Conductor keeps the live actions at the top:
 
 1. **Launch Audio** (gold) — starts Jamulus and connects to your band's server. Each member appears as a card as they join.
 2. **Join Video** (teal) — opens your Webex meeting.
 3. Adjust each player's **fader / mute / solo** on their card to build *your own* monitor mix — it only changes what you hear, not what others hear.
 4. Click the same buttons again to **stop audio** / **leave video**.
+
+Use **Test ▾** for Ready Check or Practice. The left rail contains only the
+working Live, Canvas, Takes, and Settings views.
+
+When the host stops recording, WebJam verifies the newly created tracks and
+shows track count, duration, sample rate, and any missing/silent-track warning.
+**Takes** opens Take Deck, where you can choose the physical playback output,
+review both headphone channels, and reveal the take in Finder.
 
 **Save your mix** so you don't rebuild it every time: `Ctrl+S` saves, `Ctrl+O` restores. WebJam also auto-restores your last mix when the band reconnects.
 
@@ -102,7 +115,7 @@ The Conductor window has two big buttons at the top:
 | `Ctrl+P` | **Practice solo pilot check** — private local server, hear yourself, no internet; include this in the real-hardware gate. |
 | `● Record` button | **Pilot/server-admin feature** — band-server multitrack recording after `server/README.md` setup; validate on real hardware before relying on it for a session. |
 | **Takes** (side rail) | **Pilot validation** — play back copied/downloaded take folders; include take retrieval + Take Deck playback in the real-hardware gate. |
-| `F2` / `Ready` | Ready Check — is my setup ready to jam? |
+| `F2` / `Test → Ready Check` | Is my setup ready to jam? |
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
 | `Ctrl+M` | Mute / unmute **all** |

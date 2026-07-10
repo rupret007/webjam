@@ -38,10 +38,7 @@ class SideRail(QFrame):
     RAIL_WIDTH = 68
 
     DEFAULT_ITEMS: tuple[RailItem, ...] = (
-        RailItem(key="stage", label="Stage", glyph="🎛"),
-        RailItem(key="mixer", label="Mixer", glyph="🎚"),
-        RailItem(key="chat", label="Chat", glyph="💬"),
-        RailItem(key="roles", label="Roles", glyph="🎭"),
+        RailItem(key="stage", label="Live", glyph="●"),
         RailItem(key="canvas", label="Canvas", glyph="📝"),
         RailItem(key="takes", label="Takes", glyph="⏺"),
         RailItem(key="settings", label="Settings", glyph="⚙"),

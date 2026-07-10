@@ -14,10 +14,12 @@ in the DAW (the take keeps its Reaper-project escape hatch).
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -29,8 +31,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.take_library import discover_takes
-from core.take_player import TakePlayer
+from core.audio_routing import list_output_devices
+from core.take_library import discover_takes, validate_take
+from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.widgets.participant_grid import ParticipantGrid
 
@@ -48,7 +51,9 @@ class TakeDeck(QDialog):
     closed = Signal()
 
     def __init__(self, takes_dir: str, parent: Optional[QWidget] = None,
-                 player: Optional[TakePlayer] = None):
+                 player: Optional[TakePlayer] = None,
+                 output_device_name: str = "",
+                 on_output_device_changed: Optional[Callable[[str], None]] = None):
         super().__init__(parent)
         self.setObjectName("TakeDeck")
         self.setWindowTitle("WebJam — Take Deck")
@@ -68,7 +73,13 @@ class TakeDeck(QDialog):
         # the default player builds a real sounddevice sink lazily on play().
         # We always own the callbacks (single wiring site — works the same
         # for a default or an injected player).
-        self._player = player or TakePlayer()
+        self._player_injected = player is not None
+        self._output_device_name = str(output_device_name or "")
+        self._output_fallback_message = ""
+        self._on_output_device_changed = on_output_device_changed
+        self._player = player or TakePlayer(
+            sink=SoundDeviceSink(self._output_device_name)
+        )
         self._player._on_position = None  # position is polled from the player
         self._player._on_levels = self._on_levels_bg
         self._player._on_finished = self._on_finished_bg
@@ -97,6 +108,10 @@ class TakeDeck(QDialog):
         self._reload_btn = QPushButton("Refresh")
         self._reload_btn.clicked.connect(self.reload)
         left.addWidget(self._reload_btn)
+        self._reveal_btn = QPushButton("Reveal in Finder")
+        self._reveal_btn.setEnabled(False)
+        self._reveal_btn.clicked.connect(self._reveal_current)
+        left.addWidget(self._reveal_btn)
         root.addLayout(left)
 
         # Right: transport + console
@@ -116,6 +131,13 @@ class TakeDeck(QDialog):
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._on_stop)
         transport.addWidget(self._stop_btn)
+
+        transport.addWidget(QLabel("Output:"))
+        self._output_picker = QComboBox()
+        self._output_picker.setAccessibleName("Take Deck playback output")
+        self._populate_output_devices()
+        self._output_picker.currentIndexChanged.connect(self._on_output_changed)
+        transport.addWidget(self._output_picker)
 
         self._pos_label = QLabel("0:00 / 0:00")
         transport.addWidget(self._pos_label)
@@ -138,6 +160,8 @@ class TakeDeck(QDialog):
         self._hint = QLabel("")
         self._hint.setWordWrap(True)
         self._hint.setObjectName("TakeHint")
+        if self._output_fallback_message:
+            self._hint.setText(self._output_fallback_message)
         right.addWidget(self._hint)
 
         root.addLayout(right, stretch=1)
@@ -158,6 +182,7 @@ class TakeDeck(QDialog):
             self._stop_btn.setEnabled(False)
             self._scrub.setEnabled(False)
             self._console.set_participants([])
+            self._reveal_btn.setEnabled(False)
             return
         self._hint.setText("")
         for take in self._takes:
@@ -171,7 +196,8 @@ class TakeDeck(QDialog):
         take = self._takes[row]
         self._current = take
         self._player.load(take)
-        self._title.setText(f"{take.name}  ·  {take.track_count} tracks")
+        validation = validate_take(take.path)
+        self._title.setText(f"{take.name}  ·  {validation.summary}")
         self._console.set_participants([
             ParticipantPresentation(
                 channel_id=t.channel_id,
@@ -188,6 +214,10 @@ class TakeDeck(QDialog):
         self._scrub.setEnabled(True)
         self._scrub.setValue(0)
         self._update_pos_label(0.0, self._player.duration_s)
+        self._reveal_btn.setEnabled(True)
+        messages = list(validation.errors)
+        messages.extend(f"Warning: {warning}" for warning in validation.warnings)
+        self._hint.setText("\n".join(messages))
 
     # -- transport --------------------------------------------------------
     def _toggle_play(self) -> None:
@@ -195,7 +225,12 @@ class TakeDeck(QDialog):
             self._player.pause()
             self._play_btn.setText("▶ Play")
         else:
-            self._player.play()
+            try:
+                self._player.play()
+            except PlaybackError as exc:
+                self._hint.setText(str(exc))
+                self._play_btn.setText("▶ Play")
+                return
             self._play_btn.setText("⏸ Pause")
 
     def _on_stop(self) -> None:
@@ -257,6 +292,44 @@ class TakeDeck(QDialog):
 
     def _update_pos_label(self, pos: float, dur: float) -> None:
         self._pos_label.setText(f"{_fmt_time(pos)} / {_fmt_time(dur)}")
+
+    def _populate_output_devices(self) -> None:
+        self._output_picker.blockSignals(True)
+        self._output_picker.addItem("System default", "")
+        for device in list_output_devices():
+            self._output_picker.addItem(
+                f"{device['name']} ({device['channels']} ch)", device["name"]
+            )
+        target = self._output_picker.findData(self._output_device_name)
+        self._output_picker.setCurrentIndex(target if target >= 0 else 0)
+        if self._output_device_name and target < 0:
+            self._output_fallback_message = (
+                f"Saved output '{self._output_device_name}' is unavailable; "
+                "using the system default."
+            )
+        self._output_picker.blockSignals(False)
+
+    def _on_output_changed(self, _index: int) -> None:
+        name = str(self._output_picker.currentData() or "")
+        self._output_device_name = name
+        if self._on_output_device_changed is not None:
+            self._on_output_device_changed(name)
+        if self._player_injected:
+            return
+        current = self._current
+        self._player.stop()
+        self._play_btn.setText("▶ Play")
+        self._scrub.setValue(0)
+        self._player = TakePlayer(sink=SoundDeviceSink(name))
+        self._player._on_levels = self._on_levels_bg
+        self._player._on_finished = self._on_finished_bg
+        if current is not None:
+            self._player.load(current)
+            self._update_pos_label(0.0, self._player.duration_s)
+
+    def _reveal_current(self) -> None:
+        if self._current is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._current.path)))
 
     # -- lifecycle --------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802

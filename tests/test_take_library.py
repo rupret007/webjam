@@ -9,8 +9,11 @@ from pathlib import Path
 
 from core.take_library import (
     discover_takes,
+    find_changed_take,
     load_take,
     parse_lof_offsets,
+    snapshot_take_directories,
+    validate_take,
 )
 
 
@@ -128,6 +131,37 @@ class TestDiscoverTakes(unittest.TestCase):
             takes = discover_takes(d)
         self.assertEqual(len(takes), 1)
         self.assertEqual(takes[0].track_count, 1)
+
+
+class TestTakeValidation(unittest.TestCase):
+    def test_reports_expected_track_shortfall_and_silence(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "guitar.wav", seconds=0.1)
+            result = validate_take(take, expected_tracks=2)
+        self.assertFalse(result.ok)
+        self.assertIn("Expected at least 2", result.errors[0])
+        self.assertTrue(any("silent" in warning for warning in result.warnings))
+
+    def test_reports_mixed_samplerates(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "one.wav", seconds=0.1, rate=48000)
+            _write_wav(take / "two.wav", seconds=0.1, rate=44100)
+            result = validate_take(take)
+        self.assertFalse(result.ok)
+        self.assertTrue(any("sample rates" in error for error in result.errors))
+
+    def test_snapshot_finds_new_take(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            before = snapshot_take_directories(root)
+            new = root / "new"
+            new.mkdir()
+            _write_wav(new / "track.wav", seconds=0.1)
+            self.assertEqual(find_changed_take(root, before), new)
 
 
 if __name__ == "__main__":

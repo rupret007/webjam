@@ -443,25 +443,23 @@ class ApplicationController(QObject):
         self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
 
     def _on_ready_check(self) -> None:
-        """F2 — run the pre-jam Ready Check and show the report."""
-        from core.preflight import run_ready_check
-        from PySide6.QtWidgets import QMessageBox
-        report = run_ready_check(self.settings)
-        box = QMessageBox(self.window)
-        box.setWindowTitle("WebJam — Ready Check")
-        box.setIcon(
-            QMessageBox.Icon.Information if report.all_ok else QMessageBox.Icon.Warning
+        """F2 — open/re-run the non-blocking pre-jam readiness report."""
+        existing = getattr(self, "_ready_check_dialog", None)
+        if existing is not None and existing.isVisible():
+            existing.run_checks()
+            existing.raise_()
+            existing.activateWindow()
+            return
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+
+        dialog = ReadyCheckDialog(lambda: self.settings, parent=self.window)
+        dialog.settings_requested.connect(self._open_settings_wizard)
+        dialog.practice_requested.connect(self._on_practice_requested)
+        dialog.finished.connect(
+            lambda _result: setattr(self, "_ready_check_dialog", None)
         )
-        box.setText(report.to_text())
-        settings_btn = None
-        if not report.all_ok:
-            settings_btn = box.addButton(
-                "Open Settings", QMessageBox.ButtonRole.ActionRole
-            )
-        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if settings_btn is not None and box.clickedButton() is settings_btn:
-            self._open_settings_wizard()
+        self._ready_check_dialog = dialog
+        dialog.show()
 
     def _on_chat_submitted(self, text: str) -> None:
         """User sent a chat message from the canvas box — send to the band and
@@ -477,20 +475,7 @@ class ApplicationController(QObject):
         self._ui_invoker.invoke(lambda: self._apply_recorder_state(recording))
 
     def _apply_recorder_state(self, recording: bool) -> None:
-        if recording == self._server_recording:
-            return  # no transition — don't re-flash
-        self._server_recording = recording
-        self.session_health.mark_recorder(
-            armed=self._recorder_armed, recording=recording
-        )
-        self.window.set_status_recording(recording)
-        if recording:
-            self.window.flash_message(
-                "● Server is recording — every musician gets their own track.",
-                ms=5000,
-            )
-        else:
-            self.window.flash_message("Server recording stopped.", ms=3000)
+        self.recording.on_server_state(recording)
 
     def _on_jamulus_chat(self, text: str) -> None:
         """Incoming band chat (arrives on the RPC reader thread).
@@ -582,117 +567,17 @@ class ApplicationController(QObject):
         self.audio.on_launch_toggle()
 
     def _on_record_requested(self) -> None:
-        """● Record — toggle the band server's multitrack recorder.
-
-        The heavy lifting happens on a worker thread; the server's own
-        ``recorderState`` notification (via the local Jamulus client) flips
-        the ● REC chip for the whole band once tape is actually rolling.
-        """
-        secret_file = (self.settings.server_rpc_secret_file or "").strip()
-        if not secret_file:
-            self._show_actionable_error(
-                "Record Button Not Set Up",
-                what_failed="WebJam doesn't have access to your band server's recorder yet.",
-                likely_cause="The band-server RPC hasn't been configured on this machine.",
-                next_action=(
-                    "One-time setup (see server/README.md in the WebJam repo):\n"
-                    "1. Copy jsonrpc.secret from your band server to this computer.\n"
-                    "2. Set server_rpc_secret_file to that path in ~/.webjam_config.json\n"
-                    "   (or the WEBJAM_SERVER_RPC_SECRET_FILE environment variable).\n"
-                    "3. Open the tunnel:  ssh -N -L "
-                    f"{self.settings.server_rpc_port}:127.0.0.1:22222 you@your-server"
-                ),
-            )
-            return
-        target_armed = not self._recorder_armed
-        self.window.session_strip.set_recording_state(
-            self._recorder_armed, enabled=False
-        )
-        threading.Thread(
-            target=self._record_toggle_worker,
-            args=(target_armed, secret_file),
-            daemon=True,
-            name="record-toggle",
-        ).start()
+        """Compatibility entry point; RecordingCoordinator owns the lifecycle."""
+        self.recording.on_record_requested()
 
     def _record_toggle_worker(self, target_armed: bool, secret_file: str) -> None:
-        """Worker thread: talk to the band server's RPC, then report back."""
-        from core.jamulus_server_rpc import (
-            JamulusServerRpc,
-            ServerRpcError,
-            read_secret_file,
-        )
-        try:
-            import time as _time
-            secret = read_secret_file(secret_file)
-            with JamulusServerRpc(
-                port=self.settings.server_rpc_port, secret=secret
-            ) as rpc:
-                if target_armed:
-                    rpc.start_recording()
-                else:
-                    rpc.stop_recording()
-                # Jamulus flips the recorder's ``enabled`` flag asynchronously
-                # after acknowledging start/stop, so poll until it matches (or
-                # a short deadline) rather than trusting one immediate read.
-                armed = target_armed
-                deadline = _time.monotonic() + 4.0
-                while _time.monotonic() < deadline:
-                    status = rpc.get_recorder_status()
-                    if not isinstance(status, dict) or "enabled" not in status:
-                        raise ServerRpcError(
-                            "Recorder status did not include an enabled flag."
-                        )
-                    armed = bool(status["enabled"])
-                    if armed == target_armed:
-                        break
-                    _time.sleep(0.25)
-            self._ui_invoker.invoke(
-                lambda: self._apply_record_toggle_result(armed)
-            )
-        except ServerRpcError as exc:
-            message = str(exc)
-            self._ui_invoker.invoke(
-                lambda: self._apply_record_toggle_failure(message)
-            )
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Record toggle failed unexpectedly")
-            self._ui_invoker.invoke(
-                lambda: self._apply_record_toggle_failure(
-                    "Unexpected error talking to the band server — see ~/.webjam.log."
-                )
-            )
+        self.recording.toggle_worker(target_armed, secret_file)
 
     def _apply_record_toggle_result(self, armed: bool) -> None:
-        self._recorder_armed = armed
-        self.session_health.mark_recorder(
-            armed=armed, recording=self._server_recording
-        )
-        self.session_health.mark_rpc_result("recorder", True)
-        self.window.session_strip.set_recording_state(armed, enabled=True)
-        if armed:
-            self.window.flash_message(
-                "Recording armed on the band server — every musician gets "
-                "their own track. Tape rolls while people are connected.",
-                ms=6000,
-            )
-            try:
-                self.metrics.increment("metric_recording_armed")
-            except Exception:  # noqa: BLE001
-                LOGGER.debug("recording metric failed", exc_info=True)
-        else:
-            self.window.flash_message(
-                "Band-server recording stopped. Stems + Reaper project are "
-                "in the server's recordings folder.",
-                ms=6000,
-            )
+        self.recording.apply_toggle_result(armed)
 
     def _apply_record_toggle_failure(self, message: str) -> None:
-        self.session_health.mark_rpc_result("recorder", False, message)
-        self.window.session_strip.set_recording_state(
-            self._recorder_armed, enabled=True
-        )
-        self.window.flash_message(f"Record: {message}", ms=8000)
+        self.recording.apply_toggle_failure(message)
 
     def _on_practice_requested(self) -> None:
         self.audio.on_practice_requested()
@@ -1337,16 +1222,33 @@ class ApplicationController(QObject):
             existing.raise_()
             existing.activateWindow()
             return
-        deck = TakeDeck(self.settings.takes_directory, parent=self.window)
+        deck = TakeDeck(
+            self.settings.takes_directory,
+            parent=self.window,
+            output_device_name=self.settings.take_playback_output_device,
+            on_output_device_changed=self._save_take_playback_output,
+        )
         self._take_deck = deck
         deck.show()
+
+    def _save_take_playback_output(self, device_name: str) -> None:
+        self.settings.take_playback_output_device = str(device_name or "")
+        try:
+            from core.settings import save_settings
+            save_settings(self.settings)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to persist Take Deck output device")
+            self.window.flash_message(
+                "Playback output changed for this run, but couldn't be saved.",
+                ms=6000,
+            )
 
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter
         total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
 
         # Keys that represent actual view changes (persist selection)
-        _CONTENT_KEYS = frozenset({"stage", "mixer", "canvas"})
+        _CONTENT_KEYS = frozenset({"stage", "canvas"})
 
         if key == "settings":
             # Restore rail to the previous content view before opening wizard
@@ -1355,8 +1257,8 @@ class ApplicationController(QObject):
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
             self._last_content_key = key
-            if key in ("stage", "mixer"):
-                # Stage/Mixer: participant grid takes most of the space
+            if key == "stage":
+                # Live view: participant grid takes most of the space
                 splitter.setSizes([int(total * 0.72), int(total * 0.28)])
             elif key == "canvas":
                 # Canvas: expand the notes panel
@@ -1366,15 +1268,6 @@ class ApplicationController(QObject):
             prev = getattr(self, "_last_content_key", "stage")
             self.window.side_rail.set_active_key(prev)
             self._open_take_deck()
-        elif key == "chat":
-            # Flash message and restore the previous content selection
-            prev = getattr(self, "_last_content_key", "stage")
-            self.window.side_rail.set_active_key(prev)
-            self.window.flash_message("Chat — coming in a future update", ms=3000)
-        elif key == "roles":
-            prev = getattr(self, "_last_content_key", "stage")
-            self.window.side_rail.set_active_key(prev)
-            self.window.flash_message("Role management — coming in a future update", ms=3000)
 
     # ------------------------------------------------------------------
     # Session notes persistence

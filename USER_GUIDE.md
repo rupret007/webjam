@@ -85,7 +85,8 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
      an "Install Jamulus now" button on the Setup Wizard's Jamulus page. Only
      install it yourself from [jamulus.io](https://jamulus.io) if you're running
      from source, or your build predates bundling.
-   - Install a virtual audio cable: VB-CABLE on Windows, BlackHole on macOS.
+   - On the designated Webex bridge only, install VB-CABLE on Windows or
+     BlackHole on macOS.
    - Have your Webex meeting link ready.
 
 3. **Restart Computer** (if prompted)
@@ -96,7 +97,7 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
    - The first time you run WebJam, a Setup Wizard will walk you through configuration.
 
 5. **Run Ready Check**
-   - Click **Ready** in the top bar, or press `F2`.
+   - Choose **Test → Ready Check**, or press `F2`.
    - Fix any failed item before the first real jam.
 
 ---
@@ -110,18 +111,21 @@ The first time you run WebJam, a Setup Wizard will open automatically. It has 5 
 1. **Welcome** — Overview of what WebJam does
 2. **Jamulus Server** — Enter your band's server host/port and confirm the Jamulus executable path. On macOS, downloadable builds pre-fill this automatically with the bundled copy. On Windows, if nothing is found, an "Install Jamulus now" button launches the bundled installer and the path fills in automatically once it finishes. Setup can't complete until a valid path is resolved one way or another.
 3. **Webex Meeting** — Enter your Webex meeting link
-4. **Audio Setup** — WebJam checks if your computer has the audio routing software installed
+4. **Audio Setup** — choose whether this Mac is the Webex audio bridge. Only
+   that bridge requires BlackHole/VB-CABLE; other musicians keep Webex audio
+   muted and use Jamulus directly.
 5. **Configuration saved** — Click Finish, then run Ready Check
 
-If the audio check fails, click "Show me how to set this up" for instructions on installing the audio routing software (VB-CABLE on Windows, BlackHole on macOS).
+If the bridge audio check fails, click "Show me how to set this up" for
+BlackHole/VB-CABLE installation instructions.
 
 You can re-run the wizard any time by clicking the Settings button in the app.
 
 ### Step 1: Test Your Audio
 
 **Why audio routing?** When you play together using Jamulus, the music may also need to reach the Webex video call. WebJam detects virtual audio software and can meter it, but it does not change operating-system, Jamulus, or Webex device settings automatically.
-- **Windows**: Install VB-CABLE (free from vb-audio.com)
-- **macOS**: Install BlackHole (free from existential.audio)
+- **Windows Webex bridge**: Install VB-CABLE (free from vb-audio.com)
+- **macOS Webex bridge**: Install BlackHole (free from existential.audio)
 
 The Setup Wizard will check if this is installed and show you how to get it if not.
 
@@ -178,8 +182,9 @@ Before joining a session:
 
 Before your first real rehearsal, run:
 
-1. Click **Ready** in the top bar, or press `F2`.
-   - Ready Check verifies Jamulus, server settings, audio routing, and Webex.
+1. Choose **Test → Ready Check**, or press `F2`.
+   - Ready Check verifies required Jamulus/server/device settings, optional
+     Webex bridge readiness, and host recorder control when configured.
    - If it fails, use the dialog's **Open Settings** action or click **Settings** in the side rail.
 2. Click **Practice**, or press `Ctrl+P`.
    - This starts a private local Jamulus server so you can hear yourself and confirm meters move.
@@ -373,7 +378,9 @@ This works well for mode-specific setups such as `Music Jam - Rehearsal`, `Write
 
 Use this order for fastest recovery:
 
-1. Click **Ready**, or press `F2`.
+1. Open **Test ▾ → Ready Check**, or press `F2`. The report runs without
+   blocking the Conductor and separates required failures from optional bridge
+   warnings.
 2. Open **Settings** from the side rail if Ready Check reports a setup issue.
 3. Press `Ctrl+Shift+D` to copy redacted diagnostics.
 4. Retry **Launch Audio**, then **Join Video**.
@@ -384,6 +391,20 @@ Use this order for fastest recovery:
 Press `Ctrl+Shift+D` to copy a redacted diagnostics summary to the clipboard. The summary includes runtime state, settings with secrets removed, and pointers to the relevant logs.
 
 For pilot programs, track acceptance outside the app with the checklist in `FIRST_JAM.md`: clean install, Ready Check, Ctrl+P solo, two-person Jamulus, Webex audio routing, Record button, take retrieval, and Take Deck playback.
+
+### Recording and Take Deck
+
+The host's Record control moves through Starting, Recording, and Stopping
+states and displays elapsed recording time. After Stop, WebJam waits for the
+server files to close, finds the new take, and verifies expected track count,
+readability, duration, sample rate, and sampled audio energy. Silence is a
+warning because a musician may intentionally not play; missing or unreadable
+tracks are failures.
+
+The completion panel can open Take Deck or reveal the folder in Finder. Take
+Deck is review-only: choose a physical output device, play/scrub, and adjust
+track faders/mute/solo. Its mono rough mix is sent to both headphone channels.
+Use Logic or Reaper for editing.
 
 #### ❌ "No Audio from Other Musicians"
 
@@ -448,14 +469,14 @@ Video lag is okay! Remember:
 #### ❌ "Jamulus Launch Failed"
 
 **Try:**
-1. Click **Ready** and use **Open Settings** if Jamulus is missing.
+1. Open **Test → Ready Check** and use **Open Settings** if Jamulus is missing.
 2. Confirm the Jamulus executable path is found.
 3. Retry **Launch Audio** from the top bar.
 
 #### ❌ "Webex Open Failed"
 
 **Try:**
-1. Click **Ready** and use **Open Settings** if the Webex URL is invalid.
+1. Open **Test → Ready Check** and use **Open Settings** if the Webex URL is invalid.
 2. Confirm the URL is an HTTPS `webex.com` meeting link.
 3. Retry **Join Video** from the top bar.
 

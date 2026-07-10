@@ -182,9 +182,32 @@ def list_input_devices() -> list[dict]:
     try:
         import sounddevice as sd  # type: ignore
         return [
-            {"index": i, "name": d["name"], "channels": d.get("max_input_channels", 0)}
+            {
+                "index": i,
+                "name": d["name"],
+                "channels": d.get("max_input_channels", 0),
+                "default_samplerate": int(d.get("default_samplerate", 0) or 0),
+            }
             for i, d in enumerate(sd.query_devices())
             if d.get("max_input_channels", 0) > 0
+        ]
+    except Exception:
+        return []
+
+
+def list_output_devices() -> list[dict]:
+    """Return output-capable audio devices using stable names plus live indices."""
+    try:
+        import sounddevice as sd  # type: ignore
+        return [
+            {
+                "index": i,
+                "name": d["name"],
+                "channels": d.get("max_output_channels", 0),
+                "default_samplerate": int(d.get("default_samplerate", 0) or 0),
+            }
+            for i, d in enumerate(sd.query_devices())
+            if d.get("max_output_channels", 0) > 0
         ]
     except Exception:
         return []

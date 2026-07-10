@@ -67,10 +67,40 @@ class TestReadyCheck(unittest.TestCase):
             s = _settings(jamulus_candidates=[jam.name])
             with mock.patch("core.audio_routing.scan_loopback_devices", _bad_audio):
                 rep = preflight.run_ready_check(s)
-        item = next(i for i in rep.items if i.name == "Audio routing device")
+        item = next(i for i in rep.items if i.name == "Webex audio bridge")
         self.assertFalse(item.ok)
-        self.assertIn("BlackHole", item.detail)
+        self.assertFalse(item.required)
+        self.assertTrue(rep.all_ok)
+
+    def test_bridge_mac_requires_virtual_device(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name], webex_audio_bridge_enabled=True
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _bad_audio):
+                rep = preflight.run_ready_check(s)
+        item = next(i for i in rep.items if i.name == "Webex audio bridge")
+        self.assertTrue(item.required)
         self.assertFalse(rep.all_ok)
+
+    def test_selected_input_must_support_requested_samplerate(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                audio_input_device_index=7,
+                audio_samplerate=48000,
+            )
+            devices = [{
+                "index": 7, "name": "Interface", "channels": 2,
+                "default_samplerate": 44100,
+            }]
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio), \
+                 mock.patch("core.audio_routing.list_input_devices", return_value=devices), \
+                 mock.patch("sounddevice.check_input_settings", side_effect=ValueError("bad rate")):
+                rep = preflight.run_ready_check(s)
+        item = next(i for i in rep.items if i.name == "Meter input")
+        self.assertFalse(item.ok)
+        self.assertIn("48000", item.detail)
 
     def test_webex_missing(self):
         with tempfile.NamedTemporaryFile() as jam:

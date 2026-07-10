@@ -8,6 +8,7 @@ however it likes; this module never touches Qt.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import List
 
@@ -17,6 +18,7 @@ class CheckItem:
     name: str
     ok: bool
     detail: str = ""
+    required: bool = True
 
 
 @dataclass
@@ -25,12 +27,13 @@ class ReadyCheckReport:
 
     @property
     def all_ok(self) -> bool:
-        return bool(self.items) and all(i.ok for i in self.items)
+        required = [item for item in self.items if item.required]
+        return bool(required) and all(item.ok for item in required)
 
     def to_text(self) -> str:
         lines = ["Ready Check"]
         for i in self.items:
-            mark = "✓" if i.ok else "✗"
+            mark = "✓" if i.ok else ("✗" if i.required else "!")
             line = f"  {mark} {i.name}"
             if i.detail:
                 line += f" — {i.detail}"
@@ -75,9 +78,88 @@ def _check_audio_routing(settings) -> CheckItem:
     # Imported lazily so this stays import-safe even if sounddevice is missing.
     from core.audio_routing import scan_loopback_devices
     status = scan_loopback_devices()  # contracted never to raise
+    bridge_required = bool(
+        getattr(settings, "webex_audio_bridge_enabled", False)
+    )
     if getattr(status, "ok", False):
-        return CheckItem("Audio routing device", True, status.device_name)
-    return CheckItem("Audio routing device", False, status.install_hint)
+        return CheckItem("Webex audio bridge", True, status.device_name)
+    if bridge_required:
+        return CheckItem("Webex audio bridge", False, status.install_hint)
+    return CheckItem(
+        "Webex audio bridge",
+        False,
+        "not enabled on this Mac — Jamulus audio is unaffected",
+        required=False,
+    )
+
+
+def _check_selected_input(settings) -> CheckItem:
+    from core.audio_routing import list_input_devices
+
+    selected = int(getattr(settings, "audio_input_device_index", -1) or -1)
+    if selected < 0:
+        return CheckItem("Meter input", True, "system default")
+    device = next(
+        (item for item in list_input_devices() if item["index"] == selected), None
+    )
+    if device is None:
+        return CheckItem(
+            "Meter input", False, "saved input device is no longer connected"
+        )
+    requested_rate = int(getattr(settings, "audio_samplerate", 48000) or 48000)
+    try:
+        import sounddevice as sd  # type: ignore
+
+        sd.check_input_settings(
+            device=selected,
+            channels=1,
+            samplerate=requested_rate,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return CheckItem(
+            "Meter input",
+            False,
+            f"{device['name']} does not accept {requested_rate} Hz: {exc}",
+        )
+    rate = int(device.get("default_samplerate", 0) or 0)
+    detail = (
+        f"{device['name']} · {requested_rate} Hz supported"
+        + (f" · default {rate} Hz" if rate else "")
+    )
+    return CheckItem("Meter input", True, detail)
+
+
+def _check_recorder(settings) -> CheckItem:
+    secret_path = str(getattr(settings, "server_rpc_secret_file", "") or "").strip()
+    if not secret_path:
+        return CheckItem(
+            "Host recorder",
+            True,
+            "not configured on this musician's Mac",
+            required=False,
+        )
+    try:
+        from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+
+        secret = read_secret_file(secret_path)
+        rpc = JamulusServerRpc(
+            port=int(getattr(settings, "server_rpc_port", 22240)), secret=secret
+        )
+        rpc.CONNECT_TIMEOUT_S = 0.75
+        rpc.CALL_TIMEOUT_S = 1.25
+        with rpc:
+            status = rpc.get_recorder_status()
+        if not status.get("initialised", False):
+            return CheckItem("Host recorder", False, "server recorder is not initialised")
+    except Exception as exc:  # noqa: BLE001
+        return CheckItem("Host recorder", False, str(exc))
+
+    takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
+    if not takes.is_dir() or not os.access(takes, os.W_OK):
+        return CheckItem("Host recorder", False, "local Takes folder is not writable")
+    return CheckItem(
+        "Host recorder", True, f"ready · {status.get('recordingDirectory', takes)}"
+    )
 
 
 def _check_webex(settings) -> CheckItem:
@@ -95,5 +177,7 @@ def run_ready_check(settings) -> ReadyCheckReport:
         _check_jamulus_executable(settings),
         _check_server(settings),
         _check_audio_routing(settings),
+        _check_selected_input(settings),
         _check_webex(settings),
+        _check_recorder(settings),
     ])

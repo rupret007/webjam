@@ -510,7 +510,17 @@ class _RoutingPage(QWizardPage):
         )
         self._complete = False
         self._saved_device_index = settings.audio_input_device_index if settings else -1
+        self._bridge_enabled = bool(
+            settings.webex_audio_bridge_enabled if settings else False
+        )
         self._status_label = _body_label("Checking your audio setup…")
+
+        self._bridge_chk = QCheckBox(
+            "This Mac sends the Jamulus mix into Webex"
+        )
+        self._bridge_chk.setChecked(self._bridge_enabled)
+        self._bridge_chk.setAccessibleName("Use this Mac as the Webex audio bridge")
+        self._bridge_chk.stateChanged.connect(self._on_bridge_changed)
 
         install_btn = QPushButton("Show me how to set this up")
         install_btn.setObjectName("GhostButton")
@@ -532,6 +542,7 @@ class _RoutingPage(QWizardPage):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(Space.MD)
+        layout.addWidget(self._bridge_chk)
         layout.addWidget(self._status_label)
         layout.addWidget(install_btn)
         layout.addWidget(self._device_label)
@@ -573,15 +584,23 @@ class _RoutingPage(QWizardPage):
             self._install_btn.setVisible(False)
             self._complete = True
         else:
-            self._status_label.setText(
-                "\u26a0\ufe0f  No audio routing device found.\n\n"
-                f"{status.install_hint}.\n\n"
-                "After installing, restart WebJam to activate audio routing.\n"
-                "You can skip this step and configure it later."
-            )
-            self._install_btn.setVisible(True)
+            if self._bridge_chk.isChecked():
+                self._status_label.setText(
+                    "\u26a0\ufe0f  No Webex bridge device found.\n\n"
+                    f"{status.install_hint}.\n\n"
+                    "After installing, restart WebJam to activate audio routing."
+                )
+                self._install_btn.setVisible(True)
+                self._complete = False
+            else:
+                self._status_label.setText(
+                    "\u2705  Jamulus-only musician mode.\n\n"
+                    "A virtual device is not required because this Mac will "
+                    "keep Webex microphone and speaker muted while playing."
+                )
+                self._install_btn.setVisible(False)
+                self._complete = True
             self._install_url = status.install_url
-            self._complete = False
         self._populate_device_picker()
         self._scan_done = True
         self.completeChanged.emit()
@@ -629,6 +648,12 @@ class _RoutingPage(QWizardPage):
         self._complete = bool(state)
         self.completeChanged.emit()
 
+    def _on_bridge_changed(self, state: int) -> None:
+        self._bridge_enabled = bool(state)
+        status = getattr(self, "_routing_status", None)
+        if status is not None:
+            self._apply_routing()
+
     def isComplete(self) -> bool:
         return self._complete
 
@@ -642,6 +667,10 @@ class _RoutingPage(QWizardPage):
             return int(data)
         except (TypeError, ValueError):
             return -1
+
+    @property
+    def bridge_enabled(self) -> bool:
+        return self._bridge_chk.isChecked()
 
 
 # ---------------------------------------------------------------------------
@@ -657,7 +686,7 @@ class _DonePage(QWizardPage):
         layout.addWidget(_body_label(
             "Click Finish to launch the Conductor.\n\n"
             "Quick-start:\n"
-            "  1.  Click Ready in the top bar to run Ready Check\n"
+            "  1.  Open Test → Ready Check (F2)\n"
             "  2.  Click \u201cLaunch Audio\u201d — WebJam will connect to your Jamulus server\n"
             "  3.  Click \u201cJoin Video\u201d to open your Webex meeting\n"
             "  4.  Adjust faders as musicians join the session\n\n"
@@ -725,6 +754,7 @@ class SetupWizard(QWizard):
         cfg["webex_guest_issuer_secret"]  = self._webex.guest_issuer_secret
         cfg["webex_display_name"]         = self._webex.display_name
         cfg["audio_input_device_index"]   = self._routing.device_index
+        cfg["webex_audio_bridge_enabled"] = self._routing.bridge_enabled
 
         # Insert user-specified Jamulus path at the front of candidates
         jamulus_path = self._jamulus.jamulus_path

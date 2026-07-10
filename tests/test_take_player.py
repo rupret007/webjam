@@ -7,16 +7,19 @@ the mixed output, so the whole engine is verified without audio hardware.
 from __future__ import annotations
 
 import struct
+import sys
 import tempfile
 import unittest
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List
+from unittest.mock import patch
 
 import numpy as np
 
-from core.take_player import TakePlayer
+from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
 
 
 RATE = 8000  # small rate keeps tests fast
@@ -254,6 +257,51 @@ class TestMissingFilesAreGraceful(unittest.TestCase):
             player.load(take)
             player._total_frames = int(0.3 * RATE)
             player.play()  # must not raise
+
+    def test_playback_open_failure_is_actionable_and_resets_state(self):
+        class _FailingSink:
+            def start(self, *_args):
+                raise OSError("device busy")
+
+            def stop(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as d:
+            take = _take_from(d, [("a.wav", 0.1, 0.2, 0.0)])
+            player = TakePlayer(samplerate=RATE, sink=_FailingSink())
+            player.load(take)
+            with self.assertRaisesRegex(PlaybackError, "device busy"):
+                player.play()
+        self.assertFalse(player.is_playing)
+
+
+class TestSoundDeviceStereoSink(unittest.TestCase):
+    def test_duplicates_mono_mix_to_both_output_channels(self):
+        captured = {}
+
+        class _Stream:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def start(self):
+                out = np.zeros((4, 2), dtype=np.float32)
+                captured["callback"](out, 4, None, None)
+                captured["out"] = out
+
+            def stop(self):
+                pass
+
+            def close(self):
+                pass
+
+        fake = SimpleNamespace(OutputStream=lambda **kwargs: _Stream(**kwargs))
+        with patch.dict(sys.modules, {"sounddevice": fake}):
+            sink = SoundDeviceSink("SSL 2+")
+            sink.start(48000, 128, lambda frames: np.arange(frames, dtype=np.float32))
+            sink.stop()
+        self.assertEqual(captured["channels"], 2)
+        self.assertEqual(captured["device"], "SSL 2+")
+        np.testing.assert_array_equal(captured["out"][:, 0], captured["out"][:, 1])
 
 
 if __name__ == "__main__":

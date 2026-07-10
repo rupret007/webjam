@@ -27,6 +27,24 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Release CI verifies the packaged executable, UI resources, version, and
   bundled Jamulus payload on every platform. Tagged builds create a draft
   GitHub release until physical pilot gates pass.
+- Corrected the native macOS recording-server path after physical validation:
+  use the official dedicated `JamulusServer.app`, with its secret and takes in
+  real sandbox container storage rather than `~/Music`. The checked-in pilot
+  launcher verifies version/ports and keeps recorder RPC loopback-only. Record
+  setup and connection errors now distinguish this same-Mac path from an SSH
+  tunnel to a remote Linux server.
+- Recording now has explicit starting/recording/stopping/error states, elapsed
+  time, duplicate-click protection, and post-stop verification of the new
+  take's expected tracks, readability, duration, sample rate, and sampled
+  signal. Completion can open Take Deck or reveal the take in Finder.
+- Take Deck adds persistent output-device selection, actionable device errors,
+  take-health warnings, Finder reveal, and stereo headphone playback instead
+  of sending the rough mono mix only to output channel 1.
+- Ready Check is non-blocking and rerunnable. Setup now distinguishes the one
+  Webex audio-bridge Mac from Jamulus-only musicians, so BlackHole/VB-CABLE is
+  required only where it is actually used. Dead Chat/Roles navigation and the
+  duplicate Stage/Mixer distinction were removed; Ready and Practice now live
+  in an accessible Test menu.
 
 ---
 

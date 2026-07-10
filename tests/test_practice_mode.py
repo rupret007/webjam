@@ -238,7 +238,7 @@ class TestConductorPracticeEntry(unittest.TestCase):
         self.window.session_strip.practice_requested.connect(
             lambda: received.append(True)
         )
-        self.window.session_strip._practice_button.click()
+        self.window.session_strip._practice_action.trigger()
         self.assertEqual(received, [True])
 
     def test_readiness_shows_practice_server_when_practicing(self):

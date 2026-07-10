@@ -1,6 +1,6 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-08 (v0.8.0)
+> **Last updated:** 2026-07-10 (v0.8.1 release candidate)
 
 ## Overview
 
@@ -22,7 +22,10 @@ webjam_qt_main.py          ← entry point
                 └─ ConductorWindow        (main window)
                         │
                         └─ ApplicationController
-                                ├─ BridgeService          (Jamulus + Webex lifecycle)
+                                ├─ AudioCoordinator       (launch/practice/live truth)
+                                ├─ VideoCoordinator       (Webex lifecycle)
+                                ├─ RecordingCoordinator   (RPC/state/take verification)
+                                ├─ BridgeService          (process lifecycle/reconnect)
                                 ├─ JamulusController      (mixer state + RPC/UDP)
                                 ├─ WebexController         (meeting URL + browser)
                                 └─ ParticipantGrid         (Qt mixer UI)
@@ -56,7 +59,9 @@ webjam_qt_main.py          ← entry point
 | `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
 | `controllers/audio_coordinator.py` | Launch/Stop Audio, practice mode, participant grid transitions |
 | `controllers/video_coordinator.py` | Join/Leave Webex (first extraction step) |
-| `controllers/recording_coordinator.py` | Band-server Record button (first extraction step) |
+| `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, completion actions |
+| `windows/ready_check.py` | Non-blocking required/optional readiness report |
+| `windows/take_deck.py` | Validated take library, selectable stereo playback output, review mixer |
 | `theme/tokens.py` | Color tokens and QSS stylesheet |
 
 ### `services/` — Process lifecycle
@@ -91,7 +96,18 @@ The Qt Conductor uses `webjam_qt/controllers/mix_manager.py` and `jamulus_contro
 
 ### `server/` — Band-server recipe
 
-Docker Compose recipe for a headless Jamulus server with multitrack recording. Powers the **Record** button via SSH tunnel + `core/jamulus_server_rpc.py`. See `server/README.md`.
+The pilot uses official `JamulusServer.app` 3.12.2 with recorder data in its
+real sandbox container. A remote Linux server remains available through the
+legacy-compatible recipe and SSH tunnel. Both use `core/jamulus_server_rpc.py`.
+
+## Data Flow: Recording completion
+
+```
+Record button → RecordingCoordinator (starting)
+  → authenticated loopback JSON-RPC → recorderState (recording + timer)
+  → Stop RPC → wait for stable files → validate expected WAVs
+  → completion summary → Take Deck / Finder
+```
 
 ### `core/` — Domain models
 
@@ -178,7 +194,8 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot-ready, not broad-release-ready; real-hardware gates still need Windows/macOS clean installs, Ctrl+P audio smoke, two-person Jamulus, Record, take retrieval, and Take Deck playback.
+- Closed-pilot-ready, not broad-release-ready; real-hardware gates still need
+  the two-Mac Jamulus/Webex/recording/Take Deck soak and exact-artifact checks.
 - Downloadable builds bundle Jamulus (macOS: zero-install nested `Jamulus.app`; Windows: bundled installer the Setup Wizard can launch — see `THIRD_PARTY_NOTICES.md`); the first-run wizard still requires a resolvable executable path before setup can complete, and running from source needs Jamulus installed separately since the bundling only happens in the PyInstaller build.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
 - Webex embed is constrained to HTTPS `webex.com` URLs and mic/camera permissions only; some meetings may still require the browser fallback.
