@@ -10,7 +10,7 @@ A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio)
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-07-06):
+Being honest about where this app is **right now** (2026-07-08, v0.8.0 — downloadable builds now bundle Jamulus per platform):
 
 | Area | Status |
 |---|---|
@@ -110,6 +110,8 @@ webjam/
 ├── api/                     # Optional FastAPI companion API
 ├── tests/                   # Unit/UI/integration regression suite
 ├── build_webjam.py          # Legacy build helper; releases use webjam.spec
+├── THIRD_PARTY_NOTICES.md   # Bundled Jamulus/VB-CABLE attribution + licensing
+├── licenses/                # Bundled third-party license texts (JAMULUS_COPYING.txt)
 └── VB/                      # VB-Cable installer payload (Windows)
 ```
 

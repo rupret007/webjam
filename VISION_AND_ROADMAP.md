@@ -79,7 +79,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ### ✅ Shipped — v0.7.2 pilot readiness (2026-07-06)
 
-Everything below is live in the current Conductor code and v0.7.x release line at [Releases](https://github.com/rupret007/webjam/releases).
+Everything below is live in the current Conductor code and the v0.8.0 release line at [Releases](https://github.com/rupret007/webjam/releases).
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done)

@@ -84,8 +84,9 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
 
 ## Stage 2 — Two-person test (you + one patient bandmate, ~30 min)
 
-1. Bandmate installs per README_SIMPLE (Jamulus, virtual cable, WebJam,
-   wizard values you shared).
+1. Bandmate installs per README_SIMPLE (WebJam + virtual cable; Jamulus is
+   bundled in the release build — macOS zero-install, Windows "Install
+   Jamulus now" in the wizard) and enters the wizard values you shared.
 2. Both **Launch Audio**. Each should see the other's named card appear.
 3. **Play something.** Adjust each other's faders — confirm your fader
    moves only change *your* monitor mix, not theirs.

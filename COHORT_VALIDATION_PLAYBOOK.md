@@ -2,6 +2,37 @@
 
 Closed-pilot validation for the **Qt Conductor** (`webjam_qt_main.py`). Replace Tkinter-era menu steps with the controls below.
 
+## Band admin: share template (copy-paste to musicians)
+
+Send this to every musician before the session so setup happens off the clock:
+
+```
+We're jamming on WebJam. One-time setup (~10 min):
+
+1. Download the build for your OS from:
+   https://github.com/rupret007/webjam/releases/latest
+   - Windows: WebJam-windows-x64.zip
+   - Mac (M1/M2/M3/M4): WebJam-macos-arm64.zip
+   - Mac (Intel): WebJam-macos-x64.zip
+
+2. First launch shows a security warning (WebJam isn't code-signed yet):
+   - macOS: right-click the app -> Open -> Open (once).
+   - Windows: "More info" -> "Run anyway" (once).
+
+3. Install the virtual audio cable (feeds our music into Webex):
+   - Windows: run VBCABLE_Setup_x64.exe from WebJam's VB/ folder.
+   - macOS: install BlackHole from https://existential.audio/blackhole
+   Jamulus itself is already bundled — nothing to install on macOS; on
+   Windows click "Install Jamulus now" in the wizard if prompted.
+
+4. In the Setup Wizard, enter:
+   - Jamulus server host: <FILL IN>
+   - Jamulus server port: 22124
+   - Webex link: <FILL IN>
+
+Questions? Reply here. Full walkthrough: README_SIMPLE.md
+```
+
 ## Pre-session (each musician)
 
 1. Downloadable WebJam builds bundle Jamulus (macOS: zero-install; Windows: use
