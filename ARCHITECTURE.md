@@ -54,12 +54,13 @@ webjam_qt_main.py          ← entry point
 | `widgets/participant_card.py` | Per-channel fader, pan, mute, solo, level meter |
 | `widgets/level_meter.py` | Animated RMS level meter widget |
 | `widgets/session_strip.py` | Top control bar: mode, title, launch buttons |
-| `widgets/side_rail.py` | Right-side settings and diagnostics panel |
+| `widgets/side_rail.py` | Left workspace switcher plus Takes/Settings utility actions |
 | `widgets/webex_embed.py` | Lazy-init `QWebEngineView` for embedded Webex with browser fallback |
 | `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
 | `controllers/audio_coordinator.py` | Launch/Stop Audio, practice mode, participant grid transitions |
 | `controllers/video_coordinator.py` | Join/Leave Webex (first extraction step) |
 | `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, completion actions |
+| `session_state.py` | UI-only Live workspace truth for idle/connect/practice/reconnect/error states |
 | `windows/ready_check.py` | Non-blocking required/optional readiness report |
 | `windows/take_deck.py` | Validated take library, selectable stereo playback output, review mixer |
 | `theme/tokens.py` | Color tokens and QSS stylesheet |
@@ -103,17 +104,25 @@ legacy-compatible recipe and SSH tunnel. Both use `core/jamulus_server_rpc.py`.
 ## Data Flow: Recording completion
 
 ```
-Record button → RecordingCoordinator (starting)
+Record button → RecordingCoordinator (preflight)
+  → host only: LocalInputCapture opens inputs 1–2 at 48 kHz
   → authenticated loopback JSON-RPC → recorderState (recording + timer)
-  → Stop RPC → wait for stable files → validate expected WAVs
+  → Stop RPC → finalize atomic host WAVs → wait for stable server files
+  → align local stems → write secret-free webjam-take.json → validate WAVs
   → completion summary → Take Deck / Finder
 ```
+
+Supplemental host capture never participates in the live mix. If it fails,
+Jamulus audio and server-recorder shutdown remain authoritative; WebJam keeps
+the available files and blocks take approval with `Needs Attention`.
 
 ### `core/` — Domain models
 
 | Module | Responsibility |
 |--------|----------------|
 | `settings.py` | `AppSettings` dataclass, `load_settings()` / `save_settings()` — `~/.webjam_config.json` |
+| `local_capture.py` | Atomic two-channel host capture with explicit failure cleanup |
+| `take_library.py` | Take discovery, alignment, manifest evidence, and validation |
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
 | `templates.py` | Per-mode quick-start templates |
 | `audio_routing.py` | Loopback device detection (VB-CABLE, BlackHole, JACK) |
@@ -167,7 +176,7 @@ Main thread (Qt event loop)
 
 ApplicationController polling timer (Qt timer, main thread)
   ├─ calls BridgeService.attempt_auto_reconnects()
-  └─ drives level-meter demo data (until real Jamulus audio stream)
+  └─ drives real participant meter decay after Jamulus connection
 
 BridgeService launch threads (daemon)
   ├─ _launch_jamulus_thread(): Popen + state machine

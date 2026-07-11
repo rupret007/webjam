@@ -72,7 +72,7 @@ Work through this in order; note anything that deviates.
    executable path (pre-filled on bundled builds — on Windows use "Install
    Jamulus now" if it's blank), paste the Webex link, and confirm the
    audio-routing page shows a green check for VB-CABLE/BlackHole.
-2. **Test → Ready Check / F2.** All required items should pass. Optional bridge
+2. **Checks → Ready Check / F2.** All required items should pass. Optional bridge
    warnings are expected on musicians who keep Webex audio muted. Fix required
    failures before continuing.
 3. **Practice smoke (no band server needed).** Press **Ctrl+P** (or the
@@ -81,10 +81,10 @@ Work through this in order; note anything that deviates.
    yourself, and be able to move your fader and Mute Me. If practice
    works, your whole local audio path is proven before any network enters
    the picture. Stop Audio ends it.
-4. **Launch Audio.** The status bar should read `Connecting` first; within
-   ~10 s it should change to `Connected (yourserver:22124)` and the demo cards
-   should be replaced by a
-   single real card with **your name** ("1 participant · waiting for
+4. **Start Audio.** The status bar should read `Connecting` first; within
+   ~10 s it should change to `Connected (yourserver:22124)` and the truthful
+   connecting state should be replaced by a single real card with **your
+   name** ("1 participant · waiting for
    others"). This step is the big one — it proves the JSON-RPC control
    channel works against real Jamulus.
    - Also confirm: a second window (Jamulus's own GUI) opened. Ignore it;
@@ -97,7 +97,7 @@ Work through this in order; note anything that deviates.
 7. **Join Video.** Either the embedded pane loads your meeting, or you
    get the "Open video call in browser" fallback button (also a pass —
    the embed depends on QtWebEngine + your meeting's embed permissions).
-8. **Stop Audio → Launch Audio again.** Reconnect should work; no zombie
+8. **Stop Audio → Start Audio again.** Reconnect should work; no zombie
    Jamulus processes left behind (check Activity Monitor).
 9. **Quit WebJam.** Jamulus should quit with it.
 
@@ -113,7 +113,7 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
 1. Bandmate installs per README_SIMPLE (WebJam + virtual cable; Jamulus is
    bundled in the release build — macOS zero-install, Windows "Install
    Jamulus now" in the wizard) and enters the wizard values you shared.
-2. Both **Launch Audio**. Each should see the other's named card appear.
+2. Both **Start Audio**. Each should see the other's named card appear.
 3. **Play something.** Adjust each other's faders — confirm your fader
    moves only change *your* monitor mix, not theirs.
 4. One person **Mute Me** — the other should stop hearing them (this is
@@ -124,9 +124,14 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
 7. In the Canvas, enter one `Decision:`, `Action:`, `Blocker:`, and
    `Question:` line. Confirm Pulse updates, then use **Export… → Session
    brief…** and verify the exported Markdown also contains the raw notes.
-8. Start and stop **Record** from the Mac. Confirm a new take contains one
-   non-empty WAV per musician, plays in Take Deck, and imports into Logic.
-   The `.rpp` file is for Reaper and is not a Logic project.
+8. Start and stop **Record** from the Mac. Require Preflight and Validating to
+   finish without a **Needs Attention** result. Confirm the take contains one
+   non-empty server WAV per musician plus `host-guitar.wav`,
+   `host-vocal.wav`, and `webjam-take.json`. Play it in Take Deck and import
+   the aligned stems into Logic. The `.rpp` file is for Reaper and is not a
+   Logic project. If isolated capture cannot share the SSL with Jamulus, keep
+   the server take but treat the recording gate as failed; do not change the
+   live audio path during the session.
 9. Briefly interrupt the drummer's network and confirm reconnect, then run
    continuously for 45–60 minutes. Finish by checking diagnostics, logs, and
    orphan Jamulus processes.
@@ -156,7 +161,7 @@ Everything from Stage 2, times N. Tips for the first full session:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | "No Jamulus Server Configured" | wizard skipped | Settings (Ctrl+,) → enter server |
-| Cards stay "Preview · …" after Launch | RPC handshake failed | check `~/.webjam_jamulus.log`; confirm Jamulus ≥ 3.9; port 22222 free |
+| Stage stays on "Connecting" after Start Audio | RPC handshake failed | check `~/.webjam_jamulus.log`; confirm Jamulus ≥ 3.9; port 22222 free |
 | "Jamulus Not Found" | not bundled/installed, or custom path | Windows: click "Install Jamulus now" in Settings → Jamulus; otherwise install from jamulus.io, or set the path in Settings |
 | "Port in use" | old Jamulus still running | quit it (Activity Monitor / Task Manager), retry |
 | I hear myself echo | Webex mic set to real mic AND Jamulus monitoring | in Webex, set mic to the virtual cable only |

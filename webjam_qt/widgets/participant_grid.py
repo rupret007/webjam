@@ -6,14 +6,20 @@ from typing import Dict, Iterable, Optional
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QLayout,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
+    QVBoxLayout,
     QWidget,
     QWidgetItem,
 )
 
 from webjam_qt.theme.tokens import Space
+from webjam_qt.session_state import SessionUiState
 from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
 
 
@@ -124,6 +130,8 @@ class ParticipantGrid(QScrollArea):
     fader_changed = Signal(int, int)    # channel_id, level
     mute_toggled  = Signal(int, bool)   # channel_id, muted
     solo_toggled  = Signal(int, bool)   # channel_id, solo
+    ready_check_requested = Signal()
+    start_audio_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -145,6 +153,49 @@ class ParticipantGrid(QScrollArea):
         self.setWidget(container)
 
         self._cards: Dict[int, ParticipantCard] = {}
+        self._empty_state = self._build_empty_state(container)
+        self._flow.addWidget(self._empty_state)
+        self.set_session_state(SessionUiState.idle())
+
+    def _build_empty_state(self, parent: QWidget) -> QFrame:
+        state = QFrame(parent)
+        state.setObjectName("StageEmptyState")
+        state.setMinimumSize(440, 250)
+        state.setAccessibleName("Live session status")
+
+        self._empty_eyebrow = QLabel("NOT CONNECTED")
+        self._empty_eyebrow.setObjectName("StageEmptyEyebrow")
+        self._empty_title = QLabel()
+        self._empty_title.setObjectName("StageEmptyTitle")
+        self._empty_title.setWordWrap(True)
+        self._empty_message = QLabel()
+        self._empty_message.setObjectName("StageEmptyMessage")
+        self._empty_message.setWordWrap(True)
+
+        self._empty_primary = QPushButton("Start Audio")
+        self._empty_primary.setObjectName("AudioButton")
+        self._empty_primary.setAccessibleName("Start Jamulus audio")
+        self._empty_primary.clicked.connect(self.start_audio_requested.emit)
+        self._empty_ready = QPushButton("Run Ready Check")
+        self._empty_ready.setObjectName("GhostButton")
+        self._empty_ready.clicked.connect(self.ready_check_requested.emit)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(Space.SM)
+        actions.addWidget(self._empty_primary)
+        actions.addWidget(self._empty_ready)
+        actions.addStretch(1)
+
+        layout = QVBoxLayout(state)
+        layout.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.XL)
+        layout.setSpacing(Space.MD)
+        layout.addStretch(1)
+        layout.addWidget(self._empty_eyebrow)
+        layout.addWidget(self._empty_title)
+        layout.addWidget(self._empty_message)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+        return state
 
     # ------------------------------------------------------------------
     # Public API
@@ -163,6 +214,44 @@ class ParticipantGrid(QScrollArea):
                 self._cards[channel_id].update_presentation(presentation)
             else:
                 self._add_card(presentation)
+        self._empty_state.setVisible(not bool(incoming))
+
+    def set_empty_state(
+        self,
+        state: str,
+        title: str,
+        message: str,
+        *,
+        primary_text: str = "Start Audio",
+        primary_enabled: bool = True,
+        show_primary: bool = True,
+        show_ready_check: bool = True,
+    ) -> None:
+        """Show persistent session truth when no real participants exist."""
+        self._empty_state.setProperty("sessionState", state)
+        self._empty_eyebrow.setText(state.replace("_", " ").upper())
+        self._empty_title.setText(title)
+        self._empty_message.setText(message)
+        self._empty_primary.setText(primary_text)
+        self._empty_primary.setEnabled(primary_enabled)
+        self._empty_primary.setVisible(show_primary)
+        self._empty_ready.setVisible(show_ready_check)
+        self._empty_state.setAccessibleDescription(f"{title}. {message}")
+        self._empty_state.setVisible(not bool(self._cards))
+        style = self._empty_state.style()
+        style.unpolish(self._empty_state)
+        style.polish(self._empty_state)
+
+    def set_session_state(self, state: SessionUiState) -> None:
+        """Render a centralized Live-workspace state snapshot."""
+        self.set_empty_state(
+            state.phase.value,
+            state.title,
+            state.message,
+            primary_text=state.primary_text,
+            primary_enabled=state.primary_enabled,
+            show_ready_check=state.show_ready_check,
+        )
 
     def update_level(self, channel_id: int, level: float) -> None:
         card = self._cards.get(channel_id)

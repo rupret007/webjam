@@ -235,6 +235,17 @@ class TestSessionStrip(unittest.TestCase):
             self.assertLess(left.geometry().right(), right.geometry().left())
         s.close()
 
+    def test_recording_validation_and_attention_states_are_explicit(self):
+        s = self._strip()
+        s.set_recording_phase("validating")
+        self.assertEqual(s._record_button.text(), "Validating…")
+        self.assertFalse(s._record_button.isEnabled())
+        self.assertEqual(s._record_elapsed.text(), "CHECKING TRACKS…")
+        s.set_recording_phase("needs_attention")
+        self.assertEqual(s._record_button.text(), "● Record Again")
+        self.assertTrue(s._record_button.isEnabled())
+        self.assertEqual(s._record_elapsed.text(), "NEEDS ATTENTION")
+
 
 # ---------------------------------------------------------------------------
 # ParticipantGrid
@@ -253,6 +264,18 @@ class TestParticipantGrid(unittest.TestCase):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
         g = ParticipantGrid()
         self.assertEqual(len(g._cards), 0)
+        self.assertFalse(g._empty_state.isHidden())
+        self.assertEqual(g._empty_title.text(), "Ready when you are")
+
+    def test_empty_state_actions_emit_semantic_signals(self):
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        g = ParticipantGrid()
+        events = []
+        g.start_audio_requested.connect(lambda: events.append("audio"))
+        g.ready_check_requested.connect(lambda: events.append("ready"))
+        g._empty_primary.click()
+        g._empty_ready.click()
+        self.assertEqual(events, ["audio", "ready"])
 
     def test_set_participants_creates_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -264,6 +287,7 @@ class TestParticipantGrid(unittest.TestCase):
         ]
         g.set_participants(participants)
         self.assertEqual(len(g._cards), 2)
+        self.assertTrue(g._empty_state.isHidden())
 
     def test_set_participants_replaces_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -284,6 +308,7 @@ class TestParticipantGrid(unittest.TestCase):
         g.set_participants([ParticipantPresentation(channel_id=0, name="Alice")])
         g.set_participants([])
         self.assertEqual(len(g._cards), 0)
+        self.assertFalse(g._empty_state.isHidden())
 
     def test_update_level_does_not_raise_for_unknown_channel(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -330,6 +355,22 @@ class TestSideRail(unittest.TestCase):
         checked = [btn for btn in r._group.buttons() if btn.isChecked()]
         self.assertEqual(len(checked), 1)
         self.assertEqual(checked[0].property("railKey"), "canvas")
+
+    def test_workspace_and_utility_items_have_distinct_semantics(self):
+        from webjam_qt.widgets.side_rail import SideRail
+        r = SideRail()
+        buttons = {btn.property("railKey"): btn for btn in r._group.buttons()}
+        self.assertEqual(buttons["canvas"].text(), "Notes")
+        self.assertEqual(buttons["takes"].property("utility"), "true")
+        self.assertEqual(buttons["settings"].accessibleName(), "Open Settings")
+
+    def test_trigger_uses_normal_signal_path(self):
+        from webjam_qt.widgets.side_rail import SideRail
+        r = SideRail()
+        events = []
+        r.view_changed.connect(events.append)
+        r.trigger("canvas")
+        self.assertEqual(events, ["canvas"])
 
 
 # ---------------------------------------------------------------------------

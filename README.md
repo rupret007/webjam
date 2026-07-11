@@ -88,15 +88,17 @@ Environment overrides:
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
 | **Ctrl+,** | Open Settings wizard |
-| **F2 / Test → Ready Check** | Run Ready Check before a jam |
+| **F2 / Checks → Ready Check** | Run Ready Check before a jam |
+| **Ctrl+1 / Ctrl+2 / Ctrl+3** | Open Live / Notes / Takes |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
 | **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
-The session timer, mode picker, Record, Mute Me, Launch Audio, and Join Video
-controls are in the top strip; Ready Check and Practice are under **Test ▾**.
-The left rail contains the working Live, Canvas, Takes, and Settings views.
+The session timer, mode picker, Record, Mute Me, Start Audio, and Join Video
+controls are in the top strip; Ready Check and Practice are under **Checks ▾**.
+The left rail switches between the Live and Notes workspaces; Takes and
+Settings are utility actions that open their dedicated windows.
 Session notes are saved to `~/.webjam_notes.md` and restored automatically.
 
 ---

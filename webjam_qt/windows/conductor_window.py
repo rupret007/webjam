@@ -153,6 +153,7 @@ class ConductorWindow(QMainWindow):
 
         # --- Keyboard shortcuts
         self._setup_shortcuts()
+        self._setup_tab_order()
 
     def _setup_shortcuts(self) -> None:
         # On macOS, "Ctrl" in QKeySequence parses to Cmd (Qt.ControlModifier).
@@ -261,6 +262,29 @@ class ConductorWindow(QMainWindow):
             self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
         # F1 — show help dialog
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
+        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.side_rail.trigger("stage"))
+        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.side_rail.trigger("canvas"))
+        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.side_rail.trigger("takes"))
+
+    def _setup_tab_order(self) -> None:
+        """Keep keyboard traversal aligned with the visible workflow."""
+        strip = self.session_strip
+        order = [
+            strip._title_input,
+            strip._mode_picker,
+            strip._record_button,
+            strip._test_button,
+            strip._mute_self_button,
+            strip._audio_button,
+            strip._video_button,
+            *self.side_rail._group.buttons(),
+            self.participant_grid._empty_primary,
+            self.participant_grid._empty_ready,
+            self.session_canvas._notes,
+            self.session_canvas._chat_input,
+        ]
+        for current, following in zip(order, order[1:]):
+            QWidget.setTabOrder(current, following)
 
     def _show_help(self) -> None:
         """Display a keyboard-shortcut and getting-started reference."""
@@ -288,6 +312,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+D</b> — Copy diagnostics to clipboard<br>"
             "&nbsp;&nbsp;<b>F2</b> — Ready Check (is my setup ready to jam?)<br>"
+            "&nbsp;&nbsp;<b>Ctrl+1 / Ctrl+2 / Ctrl+3</b> — Live / Notes / Takes<br>"
             "&nbsp;&nbsp;<b>Ctrl+P</b> — Practice solo (private local server)<br>"
             "&nbsp;&nbsp;<b>● Record</b> — band-server multitrack recording (see server/README)<br>"
             "&nbsp;&nbsp;<b>Takes</b> (side rail) — play back & mix your recorded takes<br>"
@@ -298,7 +323,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Double-click fader</b> — Reset to 0 dB<br><br>"
             "<b>Getting started:</b><br>"
             "0. New? Click <b>Practice</b> first — hear yourself solo, no internet needed.<br>"
-            "1. Click <b>Launch Audio</b> (gold button) to start Jamulus.<br>"
+            "1. Click <b>Start Audio</b> (gold button) to start Jamulus.<br>"
             "2. Click <b>Join Video</b> (teal button) to open Webex.<br>"
             "3. Adjust faders as your band joins.<br>"
             "4. Click the same buttons again to stop / leave.<br><br>"

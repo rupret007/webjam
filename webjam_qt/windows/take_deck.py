@@ -152,6 +152,13 @@ class TakeDeck(QDialog):
         right.addLayout(transport)
 
         self._console = ParticipantGrid()
+        self._console.set_empty_state(
+            "no_take",
+            "Select a take to review",
+            "Recorded tracks and playback controls will appear here.",
+            show_primary=False,
+            show_ready_check=False,
+        )
         self._console.fader_changed.connect(self._on_fader)
         self._console.mute_toggled.connect(self._on_mute)
         self._console.solo_toggled.connect(self._on_solo)
@@ -182,11 +189,25 @@ class TakeDeck(QDialog):
             self._stop_btn.setEnabled(False)
             self._scrub.setEnabled(False)
             self._console.set_participants([])
+            self._console.set_empty_state(
+                "no_takes",
+                "No recorded takes yet",
+                "Record a short test from the Live workspace, then refresh this list.",
+                show_primary=False,
+                show_ready_check=False,
+            )
             self._reveal_btn.setEnabled(False)
             return
         self._hint.setText("")
         for take in self._takes:
-            label = f"{take.name}  ·  {take.track_count} tracks  ·  {_fmt_time(take.duration_s)}"
+            status = {
+                "complete": "Verified",
+                "needs_attention": "Needs Attention",
+            }.get(take.validation_status, "Unchecked")
+            label = (
+                f"{take.name}  ·  {status}  ·  {take.track_count} tracks"
+                f"  ·  {_fmt_time(take.duration_s)}"
+            )
             self._take_list.addItem(QListWidgetItem(label))
         self._take_list.setCurrentRow(0)
 
@@ -202,8 +223,10 @@ class TakeDeck(QDialog):
             ParticipantPresentation(
                 channel_id=t.channel_id,
                 name=t.name,
-                role=f"Recorded track · starts {_fmt_time(t.offset_s)}"
-                if t.offset_s > 0.5 else "Recorded track",
+                role=(
+                    ("Isolated SSL input" if t.source == "local_ssl" else "Jamulus server track")
+                    + (f" · starts {_fmt_time(t.offset_s)}" if t.offset_s > 0.5 else "")
+                ),
                 fader_level=100,
             )
             for t in self._player.tracks

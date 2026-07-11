@@ -7,7 +7,7 @@ Shows, left to right:
   - Live session timer
   - Record indicator
   - Mode picker
-  - Primary actions (Launch Audio, Join Video)
+  - Primary actions (Start Audio, Join Video)
 
 Emits semantic signals; ApplicationController wires them to services.
 """
@@ -108,7 +108,7 @@ class SessionStrip(QFrame):
         self._mode_picker.currentIndexChanged.connect(self._on_mode_index_changed)
         self._sync_subtitle()
 
-        self._audio_button = QPushButton("Launch Audio")
+        self._audio_button = QPushButton("Start Audio")
         self._audio_button.setObjectName("AudioButton")
         self._audio_button.setAccessibleName("Launch or stop Jamulus audio")
         self._audio_button.setToolTip(
@@ -130,7 +130,7 @@ class SessionStrip(QFrame):
         self._record_button.clicked.connect(self.record_requested.emit)
 
         self._test_button = QToolButton()
-        self._test_button.setText("Test ▾")
+        self._test_button.setText("Checks ▾")
         self._test_button.setObjectName("GhostButton")
         self._test_button.setAccessibleName("Readiness and practice tests")
         self._test_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -209,10 +209,18 @@ class SessionStrip(QFrame):
     def set_audio_state(self, label: str, *, enabled: bool = True) -> None:
         self._audio_button.setText(label)
         self._audio_button.setEnabled(enabled)
+        self._audio_button.setAccessibleName(label)
+        self._audio_button.setAccessibleDescription(
+            f"Jamulus audio action. Current action: {label}."
+        )
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
         self._video_button.setText(label)
         self._video_button.setEnabled(enabled)
+        self._video_button.setAccessibleName(label)
+        self._video_button.setAccessibleDescription(
+            f"Webex video action. Current action: {label}."
+        )
 
     def set_recording_state(self, armed: bool, *, enabled: bool = True) -> None:
         """Reflect band-server recorder state on the Record button."""
@@ -222,11 +230,18 @@ class SessionStrip(QFrame):
     def set_recording_phase(self, phase: str) -> None:
         """Render the recorder state machine without relying on transient banners."""
         phase = str(phase or "idle").lower()
-        if phase == "starting":
+        if phase == "preflight":
+            self._record_button.setText("Checking…")
+            self._record_button.setEnabled(False)
+            self._record_elapsed.setText("PREFLIGHT")
+            self._record_elapsed.setVisible(True)
+            description = "Checking server and isolated host recording inputs."
+        elif phase == "starting":
             self._record_button.setText("Starting…")
             self._record_button.setEnabled(False)
             self._record_elapsed.setText("ARMING")
             self._record_elapsed.setVisible(True)
+            description = "Recording is being armed on the band server."
         elif phase == "recording":
             self._record_button.setText("■ Stop Rec")
             self._record_button.setEnabled(True)
@@ -235,17 +250,50 @@ class SessionStrip(QFrame):
                 self._update_record_elapsed()
                 self._record_clock.start()
             self._record_elapsed.setVisible(True)
+            description = "Recording is active. Activate to stop and verify the take."
         elif phase == "stopping":
             self._record_button.setText("Stopping…")
             self._record_button.setEnabled(False)
             self._record_clock.stop()
             self._record_elapsed.setText("SAVING…")
             self._record_elapsed.setVisible(True)
+            description = "Recording stopped; WebJam is saving and checking the tracks."
+        elif phase == "validating":
+            self._record_button.setText("Validating…")
+            self._record_button.setEnabled(False)
+            self._record_clock.stop()
+            self._record_elapsed.setText("CHECKING TRACKS…")
+            self._record_elapsed.setVisible(True)
+            description = "WebJam is waiting for stable files and validating every track."
+        elif phase == "needs_attention":
+            self._record_clock.stop()
+            self._record_button.setText("● Record Again")
+            self._record_button.setEnabled(True)
+            self._record_elapsed.setText("NEEDS ATTENTION")
+            self._record_elapsed.setVisible(True)
+            description = "The take was preserved but did not pass recording validation."
+        elif phase == "complete":
+            self._record_clock.stop()
+            self._record_button.setText("● Record")
+            self._record_button.setEnabled(True)
+            self._record_elapsed.setText("TAKE VERIFIED")
+            self._record_elapsed.setVisible(True)
+            description = "The previous take passed validation. Activate to record another."
+        elif phase == "error":
+            self._record_clock.stop()
+            self._record_button.setText("Retry Record")
+            self._record_button.setEnabled(True)
+            self._record_elapsed.setText("RECORD ERROR")
+            self._record_elapsed.setVisible(True)
+            description = "The recording request failed. Activate to try again."
         else:
             self._record_clock.stop()
             self._record_button.setText("● Record")
             self._record_button.setEnabled(True)
             self._record_elapsed.setVisible(False)
+            description = "Start band-server multitrack recording."
+        self._record_button.setAccessibleName(self._record_button.text())
+        self._record_button.setAccessibleDescription(description)
 
     def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
         """Update the 'Mute Me' button state without emitting signals."""
@@ -253,6 +301,13 @@ class SessionStrip(QFrame):
         self._mute_self_button.setChecked(muted)
         self._mute_self_button.setText("Unmute Me" if muted else "Mute Me")
         self._mute_self_button.setEnabled(enabled)
+        self._mute_self_button.setAccessibleName(
+            "Unmute yourself" if muted else "Mute yourself"
+        )
+        self._mute_self_button.setAccessibleDescription(
+            "Your Jamulus channel is muted." if muted
+            else "Your Jamulus channel is audible."
+        )
         self._mute_self_button.blockSignals(False)
 
     def current_mode_key(self) -> str:

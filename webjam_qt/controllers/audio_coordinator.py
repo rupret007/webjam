@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QMessageBox
 
 from webjam_qt.widgets.participant_card import ParticipantPresentation
+from webjam_qt.session_state import SessionUiState
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -37,6 +38,9 @@ class AudioCoordinator:
             self._c._reconnect_gave_up = False
             self._c.window.set_status_audio("Launching…")
             self._c.window.session_strip.set_audio_state("Launching…", enabled=False)
+            self._c.window.participant_grid.set_session_state(
+                SessionUiState.connecting(self._c.bridge.effective_server())
+            )
             self._c.bridge.launch_jamulus(manual=True)
 
     def on_practice_requested(self) -> None:
@@ -48,6 +52,7 @@ class AudioCoordinator:
             return
         self._c.window.set_status_audio("Starting practice…")
         self._c.window.session_strip.set_audio_state("Starting…", enabled=False)
+        self._c.window.participant_grid.set_session_state(SessionUiState.practice())
         self._c.window.flash_message(
             "Practice mode: private server on this computer — play and hear "
             "yourself, no internet needed. Stop Audio ends it.",
@@ -55,8 +60,9 @@ class AudioCoordinator:
         )
         started = self._c.bridge.launch_practice_session()
         if not started:
-            self._c.window.session_strip.set_audio_state("Launch Audio", enabled=True)
+            self._c.window.session_strip.set_audio_state("Start Audio", enabled=True)
             self._c.window.set_status_audio("Ready to launch")
+            self.reset_to_idle()
 
     def stop(self) -> None:
         reply = QMessageBox.question(
@@ -79,26 +85,20 @@ class AudioCoordinator:
         self._c._apply_recorder_state(False)
         self._c._recorder_armed = False
         self._c.window.session_strip.set_recording_state(False, enabled=True)
-        self.reset_to_demo()
+        self.reset_to_idle()
         self._c._reconnect_banner_shown = False
         self._c._rpc_hang_banner_shown = False
         self._c._reconnect_gave_up = False
 
-    def reset_to_demo(self) -> None:
-        from webjam_qt.controllers.application_controller import _DEMO_PARTICIPANTS
-
+    def reset_to_idle(self) -> None:
         self._c.session_health.reset_live_truth()
         self._c.participants.clear()
-        for p in _DEMO_PARTICIPANTS:
-            self._c.participants[p.channel_id] = ParticipantPresentation(
-                channel_id=p.channel_id,
-                name=p.name,
-                role=p.role,
-                fader_level=p.fader_level,
-                is_local=p.is_local,
-            )
         self._c._push_participants_to_grid()
-        self._c._demo_timer.start()
+        self._c.window.participant_grid.set_session_state(SessionUiState.idle())
+
+    def reset_to_demo(self) -> None:
+        """Compatibility alias retained for older extensions."""
+        self.reset_to_idle()
 
     def apply_participants(self, jamulus_participants: list) -> None:
         if self.stopping:
@@ -109,7 +109,11 @@ class AudioCoordinator:
                 self._c._level_timer.stop()
                 self._c.window.set_status_latency("Not connected")
                 self._c.window.set_status_audio("Connecting…")
-                self.reset_to_demo()
+                self._c.participants.clear()
+                self._c._push_participants_to_grid()
+                self._c.window.participant_grid.set_session_state(
+                    SessionUiState.reconnecting()
+                )
             return
         rpc = getattr(self._c.jamulus, "rpc_client", None)
         self._c.session_health.mark_process(
@@ -122,7 +126,6 @@ class AudioCoordinator:
             self.connected = True
             self._c.session_health.mark_rpc_result("participants", True)
             self._c.jamulus.set_name(self._c.settings.webex_display_name)
-            self._c._demo_timer.stop()
             self._c.participants.clear()
             self._c._level_timer.start()
             self._c._restore_saved_mix()

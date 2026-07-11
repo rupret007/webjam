@@ -17,7 +17,7 @@ from core.take_library import (
     TakeValidationResult,
     find_changed_take,
     snapshot_take_directories,
-    validate_take,
+    write_take_manifest,
     wait_for_take_files_stable,
 )
 
@@ -29,9 +29,13 @@ LOGGER = logging.getLogger("webjam.qt.recording")
 
 class RecorderPhase(str, Enum):
     IDLE = "idle"
+    PREFLIGHT = "preflight"
     STARTING = "starting"
     RECORDING = "recording"
     STOPPING = "stopping"
+    VALIDATING = "validating"
+    COMPLETE = "complete"
+    NEEDS_ATTENTION = "needs_attention"
     ERROR = "error"
 
 
@@ -53,6 +57,7 @@ class RecordingCoordinator:
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
         self._completion_box = None
+        self._local_capture = None
 
     @property
     def snapshot(self) -> RecorderSnapshot:
@@ -80,18 +85,41 @@ class RecordingCoordinator:
                 ),
             )
             return
-        if self.phase in (RecorderPhase.STARTING, RecorderPhase.STOPPING):
+        if self.phase in (
+            RecorderPhase.PREFLIGHT, RecorderPhase.STARTING,
+            RecorderPhase.STOPPING, RecorderPhase.VALIDATING,
+        ):
             return
 
         target_armed = not self._c._recorder_armed
         if target_armed:
+            self._set_phase(RecorderPhase.PREFLIGHT)
+            real_participants = [
+                participant for participant in self._c.participants.values()
+                if not participant.role.startswith("Preview")
+            ]
+            if not self._c._jamulus_connected or not real_participants:
+                self._set_phase(RecorderPhase.ERROR)
+                self._c._show_actionable_error(
+                    "Recording Preflight Failed",
+                    what_failed="No confirmed Jamulus musician is connected.",
+                    likely_cause=(
+                        "Audio has not connected yet, or the participant list has "
+                        "not arrived from Jamulus."
+                    ),
+                    next_action=(
+                        "Start Audio, wait for the real participant card, verify input "
+                        "meters, then press Record again."
+                    ),
+                    retry_callback=self.on_record_requested,
+                )
+                return
             self._before_takes = snapshot_take_directories(
                 self._c.settings.takes_directory
             )
-            self._expected_tracks = sum(
-                1 for participant in self._c.participants.values()
-                if not participant.role.startswith("Preview")
-            )
+            self._expected_tracks = len(real_participants)
+            if not self._start_local_capture():
+                return
             self._set_phase(RecorderPhase.STARTING)
         else:
             self._set_phase(RecorderPhase.STOPPING)
@@ -101,6 +129,53 @@ class RecordingCoordinator:
             daemon=True,
             name="record-toggle",
         ).start()
+
+    def _start_local_capture(self) -> bool:
+        """Start isolated SSL capture on the designated host/bridge only."""
+        if not self._c.settings.webex_audio_bridge_enabled:
+            self._local_capture = None
+            return True
+        root = (self._c.settings.takes_directory or "").strip()
+        if not root:
+            self._set_phase(RecorderPhase.ERROR)
+            self._c._show_actionable_error(
+                "Recording Preflight Failed",
+                what_failed="No writable Takes folder is configured for isolated host tracks.",
+                likely_cause="This Mac is the Webex bridge/host, so guitar and vocal isolation is required.",
+                next_action="Open Settings, choose the local Jamulus recording folder, then retry.",
+                retry_callback=self.on_record_requested,
+            )
+            return False
+        try:
+            from core.local_capture import LocalInputCapture
+
+            capture = LocalInputCapture(
+                root,
+                device=self._c.settings.audio_input_device_index,
+                samplerate=self._c.settings.audio_samplerate,
+                blocksize=self._c.settings.audio_blocksize,
+            )
+            capture.start()
+            self._local_capture = capture
+            return True
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Isolated host capture preflight failed: %s", exc)
+            self._local_capture = None
+            self._set_phase(RecorderPhase.ERROR)
+            self._c._show_actionable_error(
+                "Recording Preflight Failed",
+                what_failed=str(exc),
+                likely_cause=(
+                    "SSL 2+ is unavailable, is not selected, is not at 48 kHz, "
+                    "or another application prevented two-channel capture."
+                ),
+                next_action=(
+                    "Keep Jamulus running, verify SSL inputs 1–2 at 48 kHz in "
+                    "Ready Check, then retry. No server recording was started."
+                ),
+                retry_callback=self.on_record_requested,
+            )
+            return False
 
     def toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         from core.jamulus_server_rpc import (
@@ -151,14 +226,12 @@ class RecordingCoordinator:
         )
         self._c.session_health.mark_rpc_result("recorder", True)
         if armed:
-            # A recorderState notification normally promotes this to RECORDING.
-            self._set_phase(
-                RecorderPhase.RECORDING
-                if self._c._server_recording else RecorderPhase.STARTING
-            )
+            # Authenticated status polling confirmed the recorder is enabled;
+            # do not leave the UI hanging if a notification is delayed/lost.
+            self._set_phase(RecorderPhase.RECORDING)
             self._c.window.session_strip.set_recording_state(True, enabled=True)
             self._c.window.flash_message(
-                "Recording armed — waiting for the server's live confirmation.",
+                "Recording confirmed by the band server.",
                 ms=5000,
             )
             try:
@@ -166,13 +239,29 @@ class RecordingCoordinator:
             except Exception:  # noqa: BLE001
                 LOGGER.debug("recording metric failed", exc_info=True)
         else:
-            self._set_phase(RecorderPhase.IDLE)
+            self._set_phase(RecorderPhase.VALIDATING)
             self._begin_take_validation()
 
     def apply_toggle_failure(self, message: str) -> None:
+        if not self._c._recorder_armed and self._local_capture is not None:
+            self._local_capture.abort()
+            self._local_capture = None
         self._c.session_health.mark_rpc_result("recorder", False, message)
         self._set_phase(RecorderPhase.ERROR)
-        self._c.window.flash_message(f"Record: {message}", ms=8000)
+        self._c._show_actionable_error(
+            "Recording Could Not Start" if not self._c._recorder_armed
+            else "Recording Could Not Stop",
+            what_failed=message,
+            likely_cause=(
+                "The recorder RPC is unavailable, the secret is incorrect, or "
+                "JamulusServer is not ready."
+            ),
+            next_action=(
+                "Run Ready Check and verify the host recorder, then retry. "
+                "Do not close the server while a recording may still be active."
+            ),
+            retry_callback=self.on_record_requested,
+        )
 
     def on_server_state(self, recording: bool) -> None:
         if recording == self._c._server_recording:
@@ -192,7 +281,7 @@ class RecordingCoordinator:
             )
         elif self.phase is not RecorderPhase.STOPPING:
             self._c._recorder_armed = False
-            self._set_phase(RecorderPhase.IDLE)
+            self._set_phase(RecorderPhase.VALIDATING)
             if prior_phase is RecorderPhase.RECORDING:
                 self._begin_take_validation()
         if not recording:
@@ -208,6 +297,15 @@ class RecordingCoordinator:
             self._c.window.flash_message(
                 "Recording stopped, but no local Takes folder is configured.", ms=7000
             )
+            if self._local_capture is not None:
+                recovered = Path.home() / "Music" / "WebJam Recovered Takes" / time.strftime("%Y%m%d-%H%M%S")
+                result = self._local_capture.stop_into(recovered)
+                self._local_capture = None
+                self._c.window.flash_message(
+                    f"Server take unavailable; isolated tracks preserved in {recovered}. "
+                    f"{' '.join(result.errors)}", ms=10000,
+                )
+            self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             return
         threading.Thread(
             target=self._validate_take_worker,
@@ -218,18 +316,65 @@ class RecordingCoordinator:
     def _validate_take_worker(self) -> None:
         root = self._c.settings.takes_directory
         take_dir = None
-        for _ in range(12):
+        for _ in range(80):
             take_dir = find_changed_take(root, self._before_takes)
             if take_dir is not None:
                 break
             time.sleep(0.25)
+        required_local = 1 if self._local_capture is not None else 0
         if take_dir is None:
-            result = TakeValidationResult(
-                None, ("No new take folder appeared after recording stopped.",)
-            )
+            recovered = Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
+            capture_errors: tuple[str, ...] = ()
+            started_utc = ""
+            duration_s = 0.0
+            if self._local_capture is not None:
+                local_result = self._local_capture.stop_into(recovered)
+                self._local_capture = None
+                capture_errors = local_result.errors
+                started_utc = local_result.started_utc
+                duration_s = local_result.duration_s
+            if recovered.is_dir():
+                from webjam_qt import __version__
+                result = write_take_manifest(
+                    recovered,
+                    expected_tracks=self._expected_tracks,
+                    required_local_stems=2 if required_local else 0,
+                    local_started_utc=started_utc,
+                    local_duration_s=duration_s,
+                    capture_errors=(
+                        "No new Jamulus take folder appeared after recording stopped.",
+                        *capture_errors,
+                    ),
+                    app_version=__version__,
+                )
+            else:
+                result = TakeValidationResult(
+                    None,
+                    ("No new Jamulus take folder appeared after recording stopped.",),
+                )
         else:
-            wait_for_take_files_stable(take_dir)
-            result = validate_take(take_dir, expected_tracks=self._expected_tracks)
+            capture_errors: tuple[str, ...] = ()
+            started_utc = ""
+            duration_s = 0.0
+            if self._local_capture is not None:
+                local_result = self._local_capture.stop_into(take_dir)
+                self._local_capture = None
+                capture_errors = local_result.errors
+                started_utc = local_result.started_utc
+                duration_s = local_result.duration_s
+            stable = wait_for_take_files_stable(take_dir, polls=20, interval_s=0.25)
+            if not stable:
+                capture_errors = (*capture_errors, "Take files did not become stable in time.")
+            from webjam_qt import __version__
+            result = write_take_manifest(
+                take_dir,
+                expected_tracks=self._expected_tracks,
+                required_local_stems=2 if required_local else 0,
+                local_started_utc=started_utc,
+                local_duration_s=duration_s,
+                capture_errors=capture_errors,
+                app_version=__version__,
+            )
         self._c._ui_invoker.invoke(
             lambda: self._show_validation_result(result)
         )
@@ -238,9 +383,11 @@ class RecordingCoordinator:
         self.last_validation = result
         self.last_completed_take = result.take.path if result.take else None
         if not result.ok:
+            self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             detail = "\n".join(result.errors) or "The take could not be verified."
             self._c.window.flash_message(f"Take needs attention: {detail}", ms=10000)
         else:
+            self._set_phase(RecorderPhase.COMPLETE)
             suffix = f" · {len(result.warnings)} warning(s)" if result.warnings else ""
             self._c.window.flash_message(
                 f"Take saved · {result.summary}{suffix}", ms=10000

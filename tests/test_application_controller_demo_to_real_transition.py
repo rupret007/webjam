@@ -1,7 +1,6 @@
 """
-ApplicationController demo<->real participant transition: when real Jamulus
-data arrives the demo grid is replaced; when the user clicks Stop Audio
-(confirming the dialog), the demo grid is restored.
+ApplicationController idle<->real participant transition: only confirmed
+Jamulus participants become cards; stopping returns to an actionable empty state.
 """
 from __future__ import annotations
 
@@ -36,7 +35,7 @@ class TestDemoToRealTransition(unittest.TestCase):
         cls.controller.shutdown()
 
     def setUp(self):
-        # Reset to demo state before each test. Also clear the stopping
+        # Reset to disconnected state before each test. Also clear the stopping
         # latch: audio.stop() sets it True and only bridge.stop_jamulus()'s
         # refresh_readiness callback clears it in production, but these
         # tests mock stop_jamulus out entirely, so a prior test's stop()
@@ -46,14 +45,11 @@ class TestDemoToRealTransition(unittest.TestCase):
         self.controller.audio.stopping = False
         self.controller._reset_to_demo_state()
 
-    def test_demo_replaced_then_restored_after_stop_audio(self):
-        # Pre-condition: demo participants populated by _reset_to_demo_state.
-        demo_ids_before = set(self.controller.participants.keys())
-        self.assertTrue(demo_ids_before, "demo participants should exist")
-        # Demo names are 'Sample N' / 'You' — verify by sniffing.
-        self.assertTrue(
-            any(p.name.startswith("Sample") or p.name == "You"
-                for p in self.controller.participants.values())
+    def test_idle_replaced_then_restored_after_stop_audio(self):
+        self.assertEqual(self.controller.participants, {})
+        self.assertFalse(self.window.participant_grid._empty_state.isHidden())
+        self.assertEqual(
+            self.window.participant_grid._empty_title.text(), "Ready when you are"
         )
 
         # Real participants arrive via Jamulus callback.
@@ -63,7 +59,7 @@ class TestDemoToRealTransition(unittest.TestCase):
         ]
         self.controller._apply_jamulus_participants(real)
 
-        # Demo cleared; only real channels remain.
+        # Only real channels are rendered.
         self.assertEqual(set(self.controller.participants.keys()), {10, 11})
         self.assertTrue(self.controller._jamulus_connected)
         self.assertEqual(self.controller.participants[10].name, "RealAlice")
@@ -79,14 +75,11 @@ class TestDemoToRealTransition(unittest.TestCase):
         ):
             self.controller._stop_audio()
 
-        # Demo participants restored.
+        # Truthful disconnected state restored; no fake mixer cards.
         self.assertFalse(self.controller._jamulus_connected)
-        names = {p.name for p in self.controller.participants.values()}
-        self.assertIn("You", names)
-        # At least one of the demo "Sample N" entries should be present.
-        self.assertTrue(
-            any(n.startswith("Sample") for n in names),
-            f"expected Sample-N demo participants, got {names!r}",
+        self.assertEqual(self.controller.participants, {})
+        self.assertEqual(
+            self.window.participant_grid._empty_title.text(), "Ready when you are"
         )
 
     def test_stop_audio_cancelled_keeps_real_state(self):

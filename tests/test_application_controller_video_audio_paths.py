@@ -241,7 +241,7 @@ class TestLaunchStopAudio(_ControllerTestBase):
             "Launching…", enabled=False
         )
 
-    def test_stop_confirmed_resets_to_demo(self):
+    def test_stop_confirmed_resets_to_disconnected_state(self):
         c = self.controller
         c.bridge.jamulus_state = "Running"
         c._jamulus_connected = True
@@ -264,10 +264,10 @@ class TestLaunchStopAudio(_ControllerTestBase):
         self.assertFalse(c._jamulus_connected)
         self.assertFalse(c._reconnect_banner_shown)
         self.assertFalse(c._rpc_hang_banner_shown)
-        # Demo participants restored
-        names = {p.name for p in c.participants.values()}
-        self.assertIn("You", names)
-        self.assertEqual(len(c.participants), 5)
+        self.assertEqual(c.participants, {})
+        self.assertEqual(
+            c.window.participant_grid._empty_title.text(), "Ready when you are"
+        )
 
     def test_stop_declined_makes_no_changes(self):
         c = self.controller

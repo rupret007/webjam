@@ -15,6 +15,10 @@ QWidget {
     font-size: ${FONT_SIZE_BASE}px;
 }
 
+QLabel {
+    background-color: transparent;
+}
+
 QMainWindow, QDialog {
     background-color: ${COLOR_BG_BASE};
 }
@@ -99,6 +103,10 @@ QToolButton#SideRailButton:checked {
     border-left: 2px solid ${COLOR_ACCENT_VIDEO};
 }
 
+QToolButton#SideRailButton[utility="true"] {
+    color: ${COLOR_TEXT_MUTED};
+}
+
 QToolButton#SideRailButton:focus {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
@@ -120,6 +128,36 @@ QToolButton#SideRailButton:focus {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
+}
+
+#StageEmptyState {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_LG}px;
+}
+
+#StageEmptyState[sessionState="connecting"],
+#StageEmptyState[sessionState="reconnecting"],
+#StageEmptyState[sessionState="practice"] {
+    border: 1px solid ${COLOR_ACCENT_AUDIO};
+}
+
+#StageEmptyEyebrow {
+    color: ${COLOR_ACCENT_AUDIO};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+#StageEmptyTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: 700;
+}
+
+#StageEmptyMessage {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
 }
 
 /* ============================================================
@@ -574,5 +612,66 @@ QLabel#PulseNext {
 
 QLabel#PulseSignals {
     color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* ============================================================
+ * Ready Check — structured pre-jam results
+ * ============================================================ */
+QLabel#ReadySummary {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: 700;
+}
+
+QLabel#ReadySummary[result="pass"] {
+    border-color: ${COLOR_ACCENT_SUCCESS};
+    color: ${COLOR_ACCENT_SUCCESS};
+}
+
+QLabel#ReadySummary[result="fail"] {
+    border-color: ${COLOR_ACCENT_DANGER};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QFrame#ReadyCheckRow {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+QFrame#ReadyCheckRow:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QFrame#ReadyCheckRow[result="fail"] {
+    border-left: 4px solid ${COLOR_ACCENT_DANGER};
+}
+
+QFrame#ReadyCheckRow[result="warn"] {
+    border-left: 4px solid ${COLOR_ACCENT_WARN};
+}
+
+QFrame#ReadyCheckRow[result="pass"] {
+    border-left: 4px solid ${COLOR_ACCENT_SUCCESS};
+}
+
+QLabel#ReadyCheckMark {
+    min-width: 62px;
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: 700;
+}
+
+QLabel#ReadyCheckName {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: 600;
+}
+
+QLabel#ReadyCheckDetail {
+    color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_SM}px;
 }

@@ -15,6 +15,7 @@ environments without libsndfile.
 from __future__ import annotations
 
 import logging
+import json
 import re
 import time
 import wave
@@ -35,6 +36,7 @@ class TrackInfo:
     offset_s: float = 0.0          # start offset within the take timeline
     duration_s: float = 0.0        # audio length (0 if unknown)
     samplerate: int = 0
+    source: str = "jamulus_server"
 
     @property
     def end_s(self) -> float:
@@ -48,6 +50,8 @@ class TakeInfo:
     name: str
     tracks: List[TrackInfo] = field(default_factory=list)
     reaper_project: Optional[Path] = None
+    validation_status: str = "unchecked"
+    manifest_path: Optional[Path] = None
 
     @property
     def track_count(self) -> int:
@@ -66,6 +70,7 @@ class TakeValidationResult:
     take: Optional[TakeInfo]
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    manifest_path: Optional[Path] = None
 
     @property
     def ok(self) -> bool:
@@ -170,7 +175,9 @@ def _track_has_signal(path: Path) -> Optional[bool]:
         return None
 
 
-def validate_take(take_dir: str | Path, *, expected_tracks: int = 0) -> TakeValidationResult:
+def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
+                  require_48k: bool = True,
+                  required_local_stems: int = 0) -> TakeValidationResult:
     """Validate a completed Jamulus take and report errors separately from warnings."""
     path = Path(take_dir).expanduser()
     take = load_take(path)
@@ -186,6 +193,14 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0) -> TakeVali
     rates = {track.samplerate for track in take.tracks if track.samplerate > 0}
     if len(rates) > 1:
         errors.append(f"Tracks use different sample rates: {sorted(rates)}.")
+    if require_48k and any(rate != 48000 for rate in rates):
+        errors.append(f"All tracks must be 48 kHz; found {sorted(rates)}.")
+    local_tracks = [track for track in take.tracks if track.source == "local_ssl"]
+    if required_local_stems and len(local_tracks) < required_local_stems:
+        errors.append(
+            f"Expected {required_local_stems} isolated host stems but found "
+            f"{len(local_tracks)}."
+        )
     for track in take.tracks:
         try:
             size = track.path.stat().st_size
@@ -199,7 +214,130 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0) -> TakeVali
             warnings.append(f"{track.name} appears silent.")
         elif signal is None:
             warnings.append(f"{track.name} could not be checked for audible signal.")
-    return TakeValidationResult(take, tuple(errors), tuple(warnings))
+    return TakeValidationResult(
+        take, tuple(errors), tuple(warnings), take.manifest_path,
+    )
+
+
+def estimate_local_alignment(take_dir: str | Path) -> tuple[float, float]:
+    """Estimate local-stem offset against the closest Jamulus server track.
+
+    Returns ``(offset_seconds, confidence)``.  Correlation is bounded to keep
+    post-record validation responsive and never runs on the audio thread.
+    """
+    path = Path(take_dir)
+    local = [path / "host-guitar.wav", path / "host-vocal.wav"]
+    server = [p for p in path.glob("*.wav") if p not in local]
+    if not all(p.is_file() for p in local) or not server:
+        return (0.0, 0.0)
+    try:
+        import numpy as np
+        import soundfile as sf  # type: ignore
+
+        limit = 48000 * 60
+        guitar, rate = sf.read(str(local[0]), frames=limit, dtype="float32")
+        vocal, vocal_rate = sf.read(str(local[1]), frames=limit, dtype="float32")
+        if rate != 48000 or vocal_rate != rate:
+            return (0.0, 0.0)
+        local_mix = np.asarray(guitar)[:len(vocal)] + np.asarray(vocal)[:len(guitar)]
+        # A 100 Hz envelope-scale signal is sufficient for take alignment and
+        # keeps the bounded full correlation comfortably fast on pilot Macs.
+        stride = 480
+        local_mix = local_mix[::stride]
+        if local_mix.size < 256 or float(np.max(np.abs(local_mix))) < 1e-5:
+            return (0.0, 0.0)
+        local_mix = local_mix - float(np.mean(local_mix))
+        best: tuple[float, int] = (0.0, 0)
+        for candidate in server:
+            audio, candidate_rate = sf.read(
+                str(candidate), frames=limit, dtype="float32", always_2d=True
+            )
+            if candidate_rate != rate or audio.size == 0:
+                continue
+            mono = np.mean(audio, axis=1)[::stride]
+            mono = mono - float(np.mean(mono))
+            correlation = np.correlate(mono, local_mix, mode="full")
+            index = int(np.argmax(np.abs(correlation)))
+            peak = float(abs(correlation[index]))
+            denom = float(np.linalg.norm(mono) * np.linalg.norm(local_mix))
+            confidence = peak / denom if denom > 0 else 0.0
+            lag = index - (len(local_mix) - 1)
+            if confidence > best[0]:
+                best = (confidence, lag)
+        return (max(0.0, best[1] * stride / rate), best[0])
+    except Exception:  # noqa: BLE001
+        _logger.exception("Could not align isolated host stems")
+        return (0.0, 0.0)
+
+
+def write_take_manifest(
+    take_dir: str | Path, *, expected_tracks: int, required_local_stems: int,
+    local_started_utc: str = "", local_duration_s: float = 0.0,
+    capture_errors: tuple[str, ...] = (), app_version: str = "",
+) -> TakeValidationResult:
+    """Validate a take and atomically persist a secret-free evidence manifest."""
+    from core.file_io import atomic_write_text
+
+    path = Path(take_dir)
+    offset_s, confidence = estimate_local_alignment(path)
+    local_files = {"host-guitar.wav", "host-vocal.wav"}
+    # Write a preliminary manifest so load_take can classify supplemental files.
+    manifest_path = path / "webjam-take.json"
+    preliminary = {
+        "schema_version": 1,
+        "app_version": app_version,
+        "status": "validating",
+        "expected_server_tracks": expected_tracks,
+        "required_local_stems": required_local_stems,
+        "local_capture": {
+            "started_utc": local_started_utc,
+            "duration_s": round(local_duration_s, 6),
+            "offset_s": round(offset_s, 6),
+            "alignment_confidence": round(confidence, 6),
+            "errors": list(capture_errors),
+        },
+        "tracks": [
+            {"filename": p.name,
+             "source": "local_ssl" if p.name in local_files else "jamulus_server",
+             "offset_s": round(offset_s, 6) if p.name in local_files else None}
+            for p in sorted(path.glob("*.wav"))
+        ],
+    }
+    atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
+    result = validate_take(
+        path, expected_tracks=expected_tracks + required_local_stems,
+        required_local_stems=required_local_stems,
+    )
+    errors = list(result.errors) + list(capture_errors)
+    if required_local_stems and confidence < 0.15:
+        errors.append("Isolated host stems could not be aligned confidently.")
+    take = result.take
+    track_evidence = []
+    if take is not None:
+        for track in take.tracks:
+            try:
+                size = track.path.stat().st_size
+            except OSError:
+                size = 0
+            track_evidence.append({
+                "filename": track.path.name, "name": track.name,
+                "source": track.source, "size_bytes": size,
+                "sample_rate": track.samplerate,
+                "duration_s": round(track.duration_s, 6),
+                "offset_s": round(track.offset_s, 6),
+                "has_signal": _track_has_signal(track.path),
+            })
+    preliminary.update({
+        "status": "complete" if not errors else "needs_attention",
+        "errors": errors,
+        "warnings": list(result.warnings),
+        "tracks": track_evidence,
+    })
+    atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
+    loaded = load_take(path)
+    return TakeValidationResult(
+        loaded, tuple(errors), result.warnings, manifest_path,
+    )
 
 
 def _probe_audio(path: Path) -> tuple[float, int]:
@@ -274,7 +412,20 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
     if not audio_files:
         return None
 
-    # Offsets: prefer a .lof if present (simple, unambiguous).
+    manifest_path = take_dir / "webjam-take.json"
+    manifest: dict = {}
+    try:
+        loaded_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(loaded_manifest, dict):
+            manifest = loaded_manifest
+    except (OSError, ValueError):
+        manifest_path = None
+    manifest_tracks = {
+        item.get("filename"): item for item in manifest.get("tracks", [])
+        if isinstance(item, dict) and isinstance(item.get("filename"), str)
+    }
+
+    # Offsets: prefer a .lof if present, then manifest overrides for local stems.
     offsets: dict[str, float] = {}
     lofs = list(take_dir.glob("*.lof"))
     if lofs:
@@ -285,12 +436,18 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
     tracks: List[TrackInfo] = []
     for audio in audio_files:
         duration, rate = _probe_audio(audio)
+        evidence = manifest_tracks.get(audio.name, {})
+        manifest_offset = evidence.get("offset_s")
+        offset = offsets.get(audio.name, 0.0)
+        if isinstance(manifest_offset, (int, float)):
+            offset = float(manifest_offset)
         tracks.append(TrackInfo(
             path=audio,
             name=_prettify(audio.stem),
-            offset_s=max(0.0, offsets.get(audio.name, 0.0)),
+            offset_s=max(0.0, offset),
             duration_s=duration,
             samplerate=rate,
+            source=str(evidence.get("source") or "jamulus_server"),
         ))
 
     return TakeInfo(
@@ -298,6 +455,8 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         name=take_dir.name,
         tracks=tracks,
         reaper_project=reaper,
+        validation_status=str(manifest.get("status") or "unchecked"),
+        manifest_path=manifest_path,
     )
 
 

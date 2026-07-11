@@ -230,7 +230,7 @@ class TestConductorPracticeEntry(unittest.TestCase):
         c.window.session_strip.set_audio_state = MagicMock()
         c._on_practice_requested()
         c.window.session_strip.set_audio_state.assert_called_with(
-            "Launch Audio", enabled=True
+            "Start Audio", enabled=True
         )
 
     def test_strip_button_emits_signal(self):

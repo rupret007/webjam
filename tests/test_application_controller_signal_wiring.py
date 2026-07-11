@@ -18,6 +18,7 @@ _app = QApplication.instance() or QApplication([])
 from core.settings import AppSettings  # noqa: E402
 from jamulus_controller import JamulusParticipant  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
@@ -65,8 +66,11 @@ class TestCardFaderSignalWiring(unittest.TestCase):
         self.controller.jamulus = fake_jamulus
         self.controller._jamulus_connected = False
 
-        # Use a demo card from the existing _reset_to_demo_state grid.
         self.controller._reset_to_demo_state()
+        self.controller.participants[9] = ParticipantPresentation(
+            channel_id=9, name="Local preview", is_local=True
+        )
+        self.controller._push_participants_to_grid()
         cards = self.window.participant_grid._cards
         any_id = next(iter(cards))
         cards[any_id]._fader.setValue(50)

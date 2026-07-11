@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import struct
+import json
 import tempfile
 import unittest
 import wave
@@ -14,6 +15,8 @@ from core.take_library import (
     parse_lof_offsets,
     snapshot_take_directories,
     validate_take,
+    write_take_manifest,
+    estimate_local_alignment,
 )
 
 
@@ -153,6 +156,65 @@ class TestTakeValidation(unittest.TestCase):
             result = validate_take(take)
         self.assertFalse(result.ok)
         self.assertTrue(any("sample rates" in error for error in result.errors))
+
+    def test_rejects_single_non_48k_track(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "one.wav", seconds=0.1, rate=44100)
+            result = validate_take(take)
+        self.assertFalse(result.ok)
+        self.assertTrue(any("48 kHz" in error for error in result.errors))
+
+    def test_manifest_classifies_local_stems_and_blocks_silent_alignment(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "server-host.wav", seconds=0.1)
+            _write_wav(take / "host-guitar.wav", seconds=0.1)
+            _write_wav(take / "host-vocal.wav", seconds=0.1)
+            result = write_take_manifest(
+                take, expected_tracks=1, required_local_stems=2,
+                app_version="test",
+            )
+            manifest = json.loads((take / "webjam-take.json").read_text())
+            loaded = load_take(take)
+        self.assertFalse(result.ok)
+        self.assertEqual(manifest["status"], "needs_attention")
+        self.assertTrue(any("aligned confidently" in e for e in result.errors))
+        self.assertEqual(
+            len([track for track in loaded.tracks if track.source == "local_ssl"]), 2
+        )
+        self.assertEqual(loaded.validation_status, "needs_attention")
+
+    def test_manifest_does_not_store_capture_secrets(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "server.wav", seconds=0.1)
+            write_take_manifest(take, expected_tracks=1, required_local_stems=0)
+            text = (take / "webjam-take.json").read_text()
+        self.assertNotIn("secret", text.lower())
+
+    def test_alignment_recovers_known_server_delay(self):
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            rng = np.random.default_rng(7)
+            guitar = np.zeros(rate * 5, dtype="float32")
+            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            vocal = np.zeros_like(guitar)
+            server = np.concatenate((np.zeros(rate // 2, dtype="float32"), guitar))
+            sf.write(take / "host-guitar.wav", guitar, rate)
+            sf.write(take / "host-vocal.wav", vocal, rate)
+            sf.write(take / "server-host.wav", server, rate)
+            offset, confidence = estimate_local_alignment(take)
+        self.assertAlmostEqual(offset, 0.5, delta=0.02)
+        self.assertGreater(confidence, 0.9)
 
     def test_snapshot_finds_new_take(self):
         with tempfile.TemporaryDirectory() as d:

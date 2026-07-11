@@ -97,7 +97,7 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
    - The first time you run WebJam, a Setup Wizard will walk you through configuration.
 
 5. **Run Ready Check**
-   - Choose **Test → Ready Check**, or press `F2`.
+   - Choose **Checks → Ready Check**, or press `F2`.
    - Fix any failed item before the first real jam.
 
 ---
@@ -159,7 +159,7 @@ Before joining a session:
    - The application window opens
 
 2. **Connect to Audio Server**
-   - Click **Launch Audio** in the top bar
+   - Click **Start Audio** in the top bar
    - Jamulus connects to the server
    - Wait for other participants to appear
 
@@ -182,7 +182,7 @@ Before joining a session:
 
 Before your first real rehearsal, run:
 
-1. Choose **Test → Ready Check**, or press `F2`.
+1. Choose **Checks → Ready Check**, or press `F2`.
    - Ready Check verifies required Jamulus/server/device settings, optional
      Webex bridge readiness, and host recorder control when configured.
    - If it fails, use the dialog's **Open Settings** action or click **Settings** in the side rail.
@@ -378,12 +378,12 @@ This works well for mode-specific setups such as `Music Jam - Rehearsal`, `Write
 
 Use this order for fastest recovery:
 
-1. Open **Test ▾ → Ready Check**, or press `F2`. The report runs without
+1. Open **Checks ▾ → Ready Check**, or press `F2`. The report runs without
    blocking the Conductor and separates required failures from optional bridge
    warnings.
 2. Open **Settings** from the side rail if Ready Check reports a setup issue.
 3. Press `Ctrl+Shift+D` to copy redacted diagnostics.
-4. Retry **Launch Audio**, then **Join Video**.
+4. Retry **Start Audio**, then **Join Video**.
 5. If still failing, attach the diagnostics plus the last 50 lines of `~/.webjam.log` and `~/.webjam_jamulus.log` to a GitHub issue.
 
 ### Diagnostics
@@ -394,17 +394,28 @@ For pilot programs, track acceptance outside the app with the checklist in `FIRS
 
 ### Recording and Take Deck
 
-The host's Record control moves through Starting, Recording, and Stopping
-states and displays elapsed recording time. After Stop, WebJam waits for the
-server files to close, finds the new take, and verifies expected track count,
-readability, duration, sample rate, and sampled audio energy. Silence is a
-warning because a musician may intentionally not play; missing or unreadable
-tracks are failures.
+The host's Record control moves through Preflight, Starting, Recording,
+Stopping, and Validating states and displays elapsed recording time. On the
+designated Webex bridge Mac, preflight also opens the selected two-channel
+input at 48 kHz. Inputs 1 and 2 are recorded locally as isolated guitar and
+vocal stems while Jamulus remains the authoritative live path and continues
+creating one server track per connected musician.
+
+After Stop, WebJam waits for stable server files, attaches the two isolated
+host stems, aligns them to the server timeline, and writes
+`webjam-take.json`. The manifest records expected/observed tracks, file health,
+sample rates, durations, offsets, signal evidence, and validation findings;
+it contains no recorder credentials. A missing, corrupt, non-48-kHz, or
+unreadable or unconfidently aligned required track leaves all audio intact but marks the
+take **Needs Attention**. Silence remains a warning for ordinary server
+tracks because a musician may intentionally not play.
 
 The completion panel can open Take Deck or reveal the folder in Finder. Take
-Deck is review-only: choose a physical output device, play/scrub, and adjust
-track faders/mute/solo. Its mono rough mix is sent to both headphone channels.
-Use Logic or Reaper for editing.
+Deck labels Verified, Needs Attention, and legacy Unchecked takes, identifies
+Jamulus versus isolated SSL tracks, and applies manifest offsets. It is
+review-only: choose a physical output device, play/scrub, and adjust track
+faders/mute/solo. Its mono rough mix is sent to both headphone channels. Use
+Logic or Reaper for editing.
 
 #### ❌ "No Audio from Other Musicians"
 
@@ -461,7 +472,7 @@ Video lag is okay! Remember:
 #### ❌ "Participants Not Showing Up"
 
 **Troubleshooting:**
-1. Confirm **Launch Audio** changed to **Stop Audio**.
+1. Confirm **Start Audio** changed to **Stop Audio**.
 2. Check the Jamulus window to see whether you are connected to the server.
 3. Wait 30 seconds - participants can appear gradually after RPC connects.
 4. Press `Ctrl+Shift+D` and include diagnostics if WebJam still shows preview cards.
@@ -469,14 +480,14 @@ Video lag is okay! Remember:
 #### ❌ "Jamulus Launch Failed"
 
 **Try:**
-1. Open **Test → Ready Check** and use **Open Settings** if Jamulus is missing.
+1. Open **Checks → Ready Check** and use **Open Settings** if Jamulus is missing.
 2. Confirm the Jamulus executable path is found.
-3. Retry **Launch Audio** from the top bar.
+3. Retry **Start Audio** from the top bar.
 
 #### ❌ "Webex Open Failed"
 
 **Try:**
-1. Open **Test → Ready Check** and use **Open Settings** if the Webex URL is invalid.
+1. Open **Checks → Ready Check** and use **Open Settings** if the Webex URL is invalid.
 2. Confirm the URL is an HTTPS `webex.com` meeting link.
 3. Retry **Join Video** from the top bar.
 
@@ -591,7 +602,7 @@ Position instruments to avoid "masking":
 - [ ] Headphones plugged in
 - [ ] Ready Check passed
 - [ ] Ctrl+P practice worked
-- [ ] Clicked **Launch Audio**
+- [ ] Clicked **Start Audio**
 - [ ] Clicked **Join Video**
 - [ ] Other musicians visible in mixer
 - [ ] Adjusted faders for good balance

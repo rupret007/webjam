@@ -4,12 +4,9 @@ ApplicationController — the brain.
 Owns session state and wires ConductorWindow signals to the service layer.
 
 Participant lifecycle:
-  1. On startup: show 5 demo cards (named placeholders) with animated levels
-     so the UI feels alive before Jamulus connects.
-  2. When ``JamulusController`` fires a participants callback (real data from
-     JSON-RPC or UDP), real names replace demo names; mixer state is preserved.
-  3. Level meters switch from the demo jitter to real audio engine values
-     polled via ``_level_poll_timer`` every 100 ms.
+  1. Startup and connection transitions show explicit, actionable empty states.
+  2. Only confirmed Jamulus participants appear as mixer cards.
+  3. Real level values are polled every 100 ms after connection.
 
 Mixer signals (fader/mute/solo) route directly to ``JamulusController`` which
 sends them to Jamulus via JSON-RPC (preferred) or UDP protocol (fallback).
@@ -18,7 +15,6 @@ sends them to Jamulus via JSON-RPC (preferred) or UDP protocol (fallback).
 from __future__ import annotations
 
 import logging
-import random
 import threading
 from typing import Optional
 
@@ -41,25 +37,14 @@ from webjam_qt.controllers.video_coordinator import VideoCoordinator
 from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
+from webjam_qt.session_state import SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
-
-# Demo participants shown before Jamulus connects.  Names are deliberately
-# labelled "Preview" so users don't mistake them for saved band-member data.
-_DEMO_PARTICIPANTS = [
-    ParticipantPresentation(channel_id=0, name="You",         role="Preview · You",     fader_level=100, is_local=True),
-    ParticipantPresentation(channel_id=1, name="Sample 1",    role="Preview · Guitar",  fader_level=96),
-    ParticipantPresentation(channel_id=2, name="Sample 2",    role="Preview · Bass",    fader_level=104),
-    ParticipantPresentation(channel_id=3, name="Sample 3",    role="Preview · Vocals",  fader_level=110),
-    ParticipantPresentation(channel_id=4, name="Sample 4",    role="Preview · Keys",    fader_level=88),
-]
-
 
 class ApplicationController(QObject):
     """Glue layer between ConductorWindow and the service layer."""
 
     _LEVEL_POLL_MS = 100   # how often to push meter updates to the grid
-    _DEMO_TICK_MS  = 120   # demo level jitter interval
     _METER_TICK_MS = 40    # global LevelMeter decay tick (was per-meter)
 
     def __init__(
@@ -145,14 +130,10 @@ class ApplicationController(QObject):
         # Mix-dirty tracking: True when fader/mute/solo state has changed
         # since the last successful save.  shutdown() auto-saves if True
         # AND _jamulus_connected (so we don't overwrite a real saved mix
-        # with stale demo data).
+        # with stale disconnected state).
         self._mix_dirty = False
 
         # Timers
-        self._demo_timer = QTimer(self)
-        self._demo_timer.setInterval(self._DEMO_TICK_MS)
-        self._demo_timer.timeout.connect(self._demo_tick)
-
         self._level_timer = QTimer(self)
         self._level_timer.setInterval(self._LEVEL_POLL_MS)
         self._level_timer.timeout.connect(self._poll_levels)
@@ -224,17 +205,19 @@ class ApplicationController(QObject):
         if self._shutdown:
             return  # closeEvent + app.py both call this; run teardown once
         self._shutdown = True
-        self._demo_timer.stop()
         self._level_timer.stop()
         self._reconnect_timer.stop()
         self._meter_tick_timer.stop()
         self._token_refresh_timer.stop()
         self._pulse_refresh_timer.stop()
+        if self.recording._local_capture is not None:
+            self.recording._local_capture.abort()
+            self.recording._local_capture = None
         self._save_notes()
         self._save_session_title()
         # Auto-save mix if user touched anything since last save AND we were
         # connected to a real Jamulus (don't overwrite a real saved mix with
-        # demo data).  Best-effort: failures are caught by _on_save_mix.
+        # disconnected data). Best-effort: failures are caught by _on_save_mix.
         if self._mix_dirty and self._jamulus_connected:
             try:
                 self._on_save_mix()
@@ -363,6 +346,8 @@ class ApplicationController(QObject):
         grid.fader_changed.connect(self._on_fader_changed)
         grid.mute_toggled.connect(self._on_mute_toggled)
         grid.solo_toggled.connect(self._on_solo_toggled)
+        grid.ready_check_requested.connect(self._on_ready_check)
+        grid.start_audio_requested.connect(self._on_launch_audio)
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -390,16 +375,9 @@ class ApplicationController(QObject):
         self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
     def _bootstrap_ui(self) -> None:
-        for p in _DEMO_PARTICIPANTS:
-            # Copy so we don't mutate the module-level default
-            self.participants[p.channel_id] = ParticipantPresentation(
-                channel_id=p.channel_id,
-                name=p.name,
-                role=p.role,
-                fader_level=p.fader_level,
-                is_local=p.is_local,
-            )
+        self.participants.clear()
         self._push_participants_to_grid()
+        self.window.participant_grid.set_session_state(SessionUiState.idle())
 
         mode = get_mode_by_key_or_default(
             self.window.session_strip.current_mode_key() or "music_jam"
@@ -412,7 +390,6 @@ class ApplicationController(QObject):
         self.session_health.reset_live_truth()
         self.session_health.mark_process(self.bridge.jamulus_state)
         self.window.session_strip.start_session_clock()
-        self._demo_timer.start()
         # Start the global meter decay tick (continuous; one timer for the
         # whole grid instead of one per LevelMeter).
         self._meter_tick_timer.start()
@@ -529,19 +506,6 @@ class ApplicationController(QObject):
             self.window.participant_grid.update_level(channel_id, level)
 
     # ------------------------------------------------------------------
-    # Demo level animation (shown before Jamulus connects)
-    # ------------------------------------------------------------------
-    def _demo_tick(self) -> None:
-        for participant in self.participants.values():
-            if participant.muted or not participant.is_connected:
-                level = 0.0
-            else:
-                fader_ratio = participant.fader_level / 127.0
-                activity = random.uniform(0.05, 0.60)
-                level = min(1.0, fader_ratio * activity)
-            self.window.participant_grid.update_level(participant.channel_id, level)
-
-    # ------------------------------------------------------------------
     # Session strip handlers
     # ------------------------------------------------------------------
     def _on_mode_changed(self, mode_key: str) -> None:
@@ -587,8 +551,8 @@ class ApplicationController(QObject):
         self.audio.stop()
 
     def _reset_to_demo_state(self) -> None:
-        """Replace current participants with demo placeholders + restart demo timer."""
-        self.audio.reset_to_demo()
+        """Compatibility entry point: reset to truthful disconnected state."""
+        self.audio.reset_to_idle()
 
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
@@ -764,7 +728,7 @@ class ApplicationController(QObject):
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
         self.window.session_strip.set_audio_state(
-            "Stop Audio" if jamulus_up else "Launch Audio", enabled=True
+            "Stop Audio" if jamulus_up else "Start Audio", enabled=True
         )
         webex_open = self._is_video_active()
         self.window.session_strip.set_video_state(
@@ -796,13 +760,24 @@ class ApplicationController(QObject):
         retry_btn = None
         if retry_callback:
             retry_btn = box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+        settings_btn = box.addButton(
+            "Open Settings", QMessageBox.ButtonRole.ActionRole
+        )
+        diagnostics_btn = box.addButton(
+            "Copy Diagnostics", QMessageBox.ButtonRole.ActionRole
+        )
         box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
         box.exec()
-        if retry_btn is not None and box.clickedButton() is retry_btn:
+        clicked = box.clickedButton()
+        if retry_btn is not None and clicked is retry_btn:
             try:
                 retry_callback()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Retry callback failed")
+        elif clicked is settings_btn:
+            self._open_settings_wizard()
+        elif clicked is diagnostics_btn:
+            self._on_export_diagnostics()
 
     def _show_message(self, title: str, message: str) -> None:
         QMessageBox.information(self.window, title, message)
@@ -831,6 +806,11 @@ class ApplicationController(QObject):
                 ms=5000,
             )
             self.window.set_status_audio("Reconnecting…")
+            self.participants.clear()
+            self._push_participants_to_grid()
+            self.window.participant_grid.set_session_state(
+                SessionUiState.reconnecting(attempts)
+            )
             self._reconnect_banner_shown = True
         elif (
             self.bridge.jamulus_state in ("Running", "Already running")
@@ -852,7 +832,10 @@ class ApplicationController(QObject):
             # forever (which the crash branch above would otherwise leave up).
             self._reconnect_gave_up = True
             self.window.set_status_audio("Not connected")
-            self.window.session_strip.set_audio_state("Launch Audio", enabled=True)
+            self.window.session_strip.set_audio_state("Start Audio", enabled=True)
+            self.window.participant_grid.set_session_state(
+                SessionUiState.reconnect_failed()
+            )
             self.window.flash_message(
                 "Couldn't reconnect to Jamulus after 5 tries — press Launch "
                 "Audio to try again.",
@@ -875,7 +858,7 @@ class ApplicationController(QObject):
             if age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
                 self.window.flash_message(
                     f"Jamulus stopped responding ({int(age)}s of silence). "
-                    f"Try Stop Audio + Launch Audio if it persists.",
+                    f"Try Stop Audio + Start Audio if it persists.",
                     ms=8000,
                 )
                 self.window.set_status_audio("Not responding")
@@ -1211,7 +1194,7 @@ class ApplicationController(QObject):
                 )
             else:
                 self.window.flash_message(
-                    "Settings saved — take effect on next Launch Audio / Join Video."
+                    "Settings saved — take effect on next Start Audio / Join Video."
                 )
 
     def _open_take_deck(self) -> None:
@@ -1301,6 +1284,8 @@ class ApplicationController(QObject):
         """Return confirmed, non-preview participants for the local pulse."""
         if not self._jamulus_connected:
             return []
+        # Normal startup no longer creates previews, but retain the guard for
+        # older extensions and restored in-memory fixtures.
         return [
             participant
             for participant in self._snapshot_participants()

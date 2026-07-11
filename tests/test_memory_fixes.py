@@ -2,7 +2,7 @@
 
 Covers:
 * ``JamulusController.unregister_callback`` add/remove + silent-on-missing.
-* ``JamulusController.stop`` preserves callbacks for Stop Audio -> Launch Audio.
+* ``JamulusController.stop`` preserves callbacks for Stop Audio -> Start Audio.
 * ``JamulusProtocolAdapter._handle_packet`` caps the unknown-msg-id set.
 """
 

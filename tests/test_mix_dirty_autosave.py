@@ -39,7 +39,7 @@ class TestMixDirtyAutosave(unittest.TestCase):
 
     def test_dirty_flag_set_on_fader_change(self):
         self.assertFalse(self.controller._mix_dirty)
-        # Use a demo participant (channel_id 1 exists in _DEMO_PARTICIPANTS)
+        # Dirty tracking is independent of whether the participant is still present.
         self.controller._on_fader_changed(1, 80)
         self.assertTrue(self.controller._mix_dirty)
 
@@ -74,7 +74,7 @@ class TestMixDirtyAutosave(unittest.TestCase):
 
     def test_shutdown_does_not_save_when_disconnected(self):
         # Even if dirty, skip auto-save when not connected — in-memory state
-        # is just demo placeholders and would clobber a previously-saved mix.
+        # has no confirmed live state and could clobber a previously-saved mix.
         self.controller._mix_dirty = True
         self.controller._jamulus_connected = False
         self.controller._on_save_mix = MagicMock()  # type: ignore[method-assign]

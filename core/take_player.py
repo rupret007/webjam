@@ -43,6 +43,7 @@ class TrackState:
     name: str
     path: Path
     offset_s: float = 0.0
+    source: str = "jamulus_server"
     gain: float = 1.0        # 0..~1.27 (fader/100)
     muted: bool = False
     solo: bool = False
@@ -173,6 +174,7 @@ class TakePlayer:
                     name=getattr(t, "name", f"Track {i}"),
                     path=Path(getattr(t, "path")),
                     offset_s=max(0.0, getattr(t, "offset_s", 0.0)),
+                    source=str(getattr(t, "source", "jamulus_server")),
                 ))
             self._total_frames = longest
             self._pos_frames = 0

@@ -12,6 +12,7 @@ import os
 import socket
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -204,6 +205,11 @@ class TestRecordButtonWiring(unittest.TestCase):
         c = self.controller
         c.window.flash_message = MagicMock()
         c._recorder_armed = False
+        c._server_recording = False
+        c.recording.phase = c.recording.phase.__class__.IDLE
+        c.recording._local_capture = None
+        c.settings.webex_audio_bridge_enabled = False
+        c.settings.takes_directory = ""
         c.settings.server_rpc_secret_file = ""
         # A prior test may have left the button disabled mid-toggle.
         self.window.session_strip.set_recording_state(False, enabled=True)
@@ -236,11 +242,49 @@ class TestRecordButtonWiring(unittest.TestCase):
     def test_configured_spawns_worker_toward_armed(self):
         c = self.controller
         c.settings.server_rpc_secret_file = "/tmp/secret"
+        c._jamulus_connected = True
+        c.participants = {1: SimpleNamespace(role="Guitar")}
         with patch.object(c, "_record_toggle_worker") as worker, \
              patch("webjam_qt.controllers.application_controller.threading.Thread",
                    side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
             c._on_record_requested()
         worker.assert_called_once_with(True, "/tmp/secret")
+        c._jamulus_connected = False
+        c.participants = {}
+
+    def test_record_preflight_requires_confirmed_participant(self):
+        c = self.controller
+        c.settings.server_rpc_secret_file = "/tmp/secret"
+        c._jamulus_connected = False
+        c.participants = {}
+        with patch.object(c, "_record_toggle_worker") as worker:
+            c._on_record_requested()
+        worker.assert_not_called()
+        self.assertEqual(c.recording.phase.value, "error")
+        c._show_actionable_error.assert_called_once()
+
+    def test_bridge_host_preflight_starts_isolated_capture(self):
+        c = self.controller
+        c.settings.webex_audio_bridge_enabled = True
+        c.settings.takes_directory = "/tmp/takes"
+        fake_capture = MagicMock()
+        with patch("core.local_capture.LocalInputCapture", return_value=fake_capture):
+            self.assertTrue(c.recording._start_local_capture())
+        fake_capture.start.assert_called_once()
+        self.assertIs(c.recording._local_capture, fake_capture)
+        c.recording._local_capture = None
+        c.settings.webex_audio_bridge_enabled = False
+
+    def test_bridge_host_preflight_failure_blocks_server_start(self):
+        c = self.controller
+        c.settings.webex_audio_bridge_enabled = True
+        c.settings.takes_directory = "/tmp/takes"
+        with patch("core.local_capture.LocalInputCapture",
+                   side_effect=RuntimeError("device busy")):
+            self.assertFalse(c.recording._start_local_capture())
+        self.assertEqual(c.recording.phase.value, "error")
+        c._show_actionable_error.assert_called_once()
+        c.settings.webex_audio_bridge_enabled = False
 
     def test_worker_success_arms_button_and_flashes(self):
         c = self.controller
@@ -261,9 +305,9 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.window.session_strip._record_button.text(), "■ Stop Rec"
         )
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("armed" in m for m in msgs), msgs)
+        self.assertTrue(any("confirmed" in m for m in msgs), msgs)
 
-    def test_worker_failure_flashes_and_restores_button(self):
+    def test_worker_failure_offers_actionable_retry(self):
         c = self.controller
         with patch("core.jamulus_server_rpc.read_secret_file",
                    side_effect=ServerRpcError("Is the SSH tunnel up?")), \
@@ -272,10 +316,13 @@ class TestRecordButtonWiring(unittest.TestCase):
             c._record_toggle_worker(True, "/tmp/secret")
         self.assertFalse(c._recorder_armed)
         self.assertEqual(
-            self.window.session_strip._record_button.text(), "● Record"
+            self.window.session_strip._record_button.text(), "Retry Record"
         )
-        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("SSH tunnel" in m for m in msgs), msgs)
+        c._show_actionable_error.assert_called_once()
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Could Not Start")
+        self.assertIn("SSH tunnel", kwargs["what_failed"])
+        self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
     def test_worker_stop_path(self):
         c = self.controller

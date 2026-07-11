@@ -125,7 +125,7 @@ class TestFullSessionFlow(unittest.TestCase):
         # 10. Shutdown must stop every timer it owns.
         c.shutdown()
         for name in (
-            "_demo_timer", "_level_timer", "_reconnect_timer",
+            "_level_timer", "_reconnect_timer",
             "_meter_tick_timer", "_token_refresh_timer",
         ):
             timer = getattr(c, name)

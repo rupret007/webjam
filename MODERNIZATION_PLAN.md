@@ -2,7 +2,7 @@
 
 ## Audited baseline
 
-- Source baseline is `origin/master` at `1d3a3d3`: the untagged v0.8.1 pilot
+- Source baseline is `origin/master` at `fd3d313`: the untagged v0.8.1 pilot
   candidate. GitHub tests, real-Jamulus integration, and all three desktop
   build jobs passed for that exact commit.
 - Before Session Pulse, local validation passed 823 tests with 12 expected
@@ -37,8 +37,27 @@
   device choice, actionable playback errors, and take-health warnings.
 - Replaced blocking configuration-only Ready Check with a rerunnable report
   that distinguishes the designated Webex bridge from Jamulus-only musicians.
-  Simplified navigation to Live, Canvas, Takes, and Settings and consolidated
-  Ready/Practice under the accessible Test menu.
+  Simplified navigation to Live/Notes workspaces plus Takes/Settings utilities
+  and consolidated Ready/Practice under the accessible Checks menu.
+- Removed simulated startup participants and animated fake meters. Idle,
+  connecting, practice, reconnecting, and failed states now render persistent,
+  actionable truth through a centralized UI-only session-state model.
+- Reworked Ready Check into structured pass/fix/optional rows with an overall
+  result, focus on the first required failure, and retained rerun/settings/
+  practice actions.
+- Added consistent Start Audio wording, workspace keyboard navigation, explicit
+  tab order, dynamic accessible state descriptions, recording retry state, and
+  Retry/Settings/Diagnostics recovery actions.
+- Added Take Deck-specific empty states so the shared mixer grid never presents
+  live-session actions while reviewing recordings.
+- Added host-only supplemental SSL capture: inputs 1 and 2 finalize atomically
+  as isolated guitar/vocal stems without changing Jamulus live audio.
+- Added explicit Preflight/Validating/Complete/Needs Attention phases, bounded
+  take discovery, stable-file enforcement, mandatory 48 kHz validation, and
+  preservation of partial/recovered audio.
+- Added versioned, secret-free take manifests with file evidence, source
+  labels, offsets, alignment confidence, errors, and warnings. Take Deck now
+  distinguishes verified/attention/legacy takes and server/local tracks.
 
 ## Verification completed so far
 
@@ -47,8 +66,10 @@
 - Brief cancellation and write failure, stale-state fallback, safe plain-text
   rendering, immediate pre-export refresh, real 200 ms debounce, participant
   filtering, and 280/360/900 px layouts are covered.
-- Full local gate passes: `pip check`, Ruff, compile checks, offscreen UX
-  smoke, and 853 tests with 12 expected skips plus 3 width subtests. The only
+- The previous full local gate passed `pip check`, Ruff, compile checks,
+  offscreen UX smoke, and 857 tests with 12 expected skips plus 3 width subtests.
+  The final recording/UI regression pass now passes 868 tests with 12 expected
+  skips plus 3 width subtests. The only
   pytest warning is the pre-existing Starlette/httpx deprecation; the prior
   test-induced Qt cross-thread timer warning is gone.
 - `pip-audit` 2.10.1 reports no known vulnerabilities. Audit-only packages
@@ -67,6 +88,12 @@
 - The reliability/polish tree passes a clean ARM64 PyInstaller build, strict
   bundle verification, v0.8.1 plist/resource inspection, packaged offscreen
   startup, and termination without an orphan process.
+- The recording candidate also passes known-offset alignment, atomic capture,
+  device-busy cleanup, participant preflight, `pip check`, scoped Ruff,
+  compile checks, UX smoke, `git diff --check`, and `pip-audit` with no known
+  vulnerabilities. A clean ARM64 bundle contains the capture/manifest/session
+  modules, v0.8.1 metadata, QSS/Webex resources, and the verified official
+  Jamulus payload; packaged startup and process cleanup pass.
 
 ## Remaining release gates
 
@@ -81,11 +108,16 @@
    host LAN address, forward UDP 22124 only, prove the public path externally,
    and compare both routes for ten stable minutes. Never expose TCP 22222 or
    22240.
-4. Complete the full two-Mac gate: audio/latency, participant truth,
+4. On the host, prove that SSL 2+ can be opened concurrently by Jamulus and
+   WebJam supplemental capture. Require separate audible guitar/vocal WAVs,
+   confident manifest alignment, Verified Take Deck status, and aligned Logic
+   import. Any isolated-stem failure preserves the server take but blocks the
+   recording gate.
+5. Complete the full two-Mac gate: audio/latency, participant truth,
    fader/mute/solo/Mute Me, saved mix, chat, echo-safe Webex bridge, reconnect,
    Pulse/exports, server recording, non-empty per-player WAVs, Take Deck,
    Logic import, diagnostics, process cleanup, and a 45–60 minute soak.
-5. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
+6. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
    exact validated commit as v0.8.1, inspect the draft release's exact
    artifacts, repeat the critical packaged workflow, then publish.
 
@@ -98,7 +130,9 @@
   v0.8.1 pilot path; changing that third-party runtime requires a separate
   Linux server validation round.
 - Code signing/notarization, Sentry rollout, broad coordinator refactoring,
-  dependency churn, automatic router configuration, AI/network summarization,
-  and native Logic integration remain outside the unsigned private pilot.
+  dependency churn, automatic router configuration, and native Logic
+  integration remain outside the unsigned private pilot. The optional,
+  preview-first Improvement Center is explicitly post-pilot and cannot edit
+  code, run commands, submit issues, or transmit diagnostics automatically.
 - Windows remains CI-built but physical Windows validation is intentionally
   deferred; Sunday approves only the two-Apple-Silicon-Mac closed pilot.

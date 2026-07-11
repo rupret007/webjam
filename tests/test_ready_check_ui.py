@@ -8,11 +8,12 @@ import tempfile  # noqa: E402
 import unittest  # noqa: E402
 from unittest import mock  # noqa: E402
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
+from core.preflight import CheckItem, ReadyCheckReport  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
@@ -137,6 +138,26 @@ class TestReadyCheckShortcut(unittest.TestCase):
             _app.processEvents()
             self.controller._ready_check_dialog.settings_requested.emit()
         self.controller._open_settings_wizard.assert_called_once()
+
+    def test_structured_report_separates_required_and_optional_results(self):
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+        dialog = ReadyCheckDialog(lambda: AppSettings())
+        dialog.show()
+        _app.processEvents()
+        dialog._scan_id += 1
+        report = ReadyCheckReport(items=[
+            CheckItem("Jamulus", True, "found"),
+            CheckItem("Server", False, "enter a host"),
+            CheckItem("Webex bridge", False, "not needed", required=False),
+        ])
+        dialog._apply_report((dialog._scan_id, report))
+        self.assertIn("Fix 1 required item", dialog._summary.text())
+        self.assertIn("1 optional warning", dialog._summary.text())
+        rows = dialog._report_content.findChildren(QFrame, "ReadyCheckRow")
+        self.assertEqual([row.property("result") for row in rows], ["pass", "fail", "warn"])
+        _app.processEvents()
+        self.assertEqual(_app.focusWidget().property("result"), "fail")
+        dialog.close()
 
 
 if __name__ == "__main__":

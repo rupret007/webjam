@@ -18,6 +18,7 @@ from unittest import mock  # noqa: E402
 
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
@@ -72,7 +73,7 @@ class TestToggleButtonState(unittest.TestCase):
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._audio_button.text(), "Launch Audio"
+            self.window.session_strip._audio_button.text(), "Start Audio"
         )
 
     def test_audio_button_says_stop_when_running(self):
@@ -128,12 +129,14 @@ class TestMuteSelf(unittest.TestCase):
         cls.controller.shutdown()
 
     def setUp(self):
-        # Reset demo participants before each test so state is consistent
         self.controller._jamulus_connected = False
         self.controller._reset_to_demo_state()
+        self.controller.participants[0] = ParticipantPresentation(
+            channel_id=0, name="You", is_local=True
+        )
+        self.controller._push_participants_to_grid()
 
     def test_mute_self_without_live_session_does_not_toggle(self):
-        # Demo participants include a local user at channel_id 0
         local = self.controller.participants[0]
         self.assertTrue(local.is_local)
         self.assertFalse(local.muted)
@@ -248,8 +251,12 @@ class TestMutedCardDimming(unittest.TestCase):
         cls.controller.shutdown()
 
     def test_muting_card_sets_muted_property(self):
+        self.controller.participants[5] = ParticipantPresentation(
+            channel_id=5, name="Bandmate"
+        )
+        self.controller._push_participants_to_grid()
         cards = list(self.window.participant_grid._cards.values())
-        self.assertTrue(cards, "expected demo cards to exist")
+        self.assertTrue(cards, "expected a real participant card to exist")
         c = cards[0]
         c._apply_mute_state(True)
         self.assertEqual(c.property("muted"), "true")

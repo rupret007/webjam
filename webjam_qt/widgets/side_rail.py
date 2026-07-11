@@ -22,7 +22,8 @@ from webjam_qt.theme.tokens import Space
 class RailItem:
     key: str
     label: str
-    glyph: str   # emoji/symbol placeholder; icon fonts come in Phase 6
+    glyph: str
+    utility: bool = False
 
 
 class SideRail(QFrame):
@@ -38,10 +39,10 @@ class SideRail(QFrame):
     RAIL_WIDTH = 68
 
     DEFAULT_ITEMS: tuple[RailItem, ...] = (
-        RailItem(key="stage", label="Live", glyph="●"),
-        RailItem(key="canvas", label="Canvas", glyph="📝"),
-        RailItem(key="takes", label="Takes", glyph="⏺"),
-        RailItem(key="settings", label="Settings", glyph="⚙"),
+        RailItem(key="stage", label="Live", glyph="LIVE"),
+        RailItem(key="canvas", label="Notes", glyph="NOTE"),
+        RailItem(key="takes", label="Takes", glyph="TAKE", utility=True),
+        RailItem(key="settings", label="Settings", glyph="SET", utility=True),
     )
 
     def __init__(
@@ -66,14 +67,23 @@ class SideRail(QFrame):
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
 
-        for item in self._items:
+        for index, item in enumerate(self._items):
+            if item.utility and index and not self._items[index - 1].utility:
+                layout.addSpacing(Space.LG)
             button = QToolButton(self)
             button.setObjectName("SideRailButton")
-            button.setText(f"{item.glyph}\n{item.label}")
+            button.setText(item.label)
             button.setCheckable(True)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setProperty("railKey", item.key)
+            button.setProperty("utility", "true" if item.utility else "false")
+            button.setAccessibleName(
+                f"Open {item.label}" if item.utility else f"Show {item.label} workspace"
+            )
+            button.setToolTip(
+                f"Open {item.label}" if item.utility else f"Switch to the {item.label} workspace"
+            )
             button.clicked.connect(self._on_clicked)
             if item.key == initial_key:
                 button.setChecked(True)
@@ -94,6 +104,13 @@ class SideRail(QFrame):
         for btn in self._group.buttons():
             if btn.property("railKey") == key:
                 btn.setChecked(True)
+                return
+
+    def trigger(self, key: str) -> None:
+        """Activate a rail destination through the same path as a click."""
+        for btn in self._group.buttons():
+            if btn.property("railKey") == key:
+                btn.click()
                 return
 
     def _on_clicked(self) -> None:
