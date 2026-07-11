@@ -66,7 +66,7 @@ class ReadyCheckDialog(QDialog):
         settings = QPushButton("Open Settings")
         settings.clicked.connect(self.settings_requested.emit)
         actions.addWidget(settings)
-        practice = QPushButton("Start Practice")
+        practice = QPushButton("Practice Solo")
         practice.clicked.connect(self.practice_requested.emit)
         actions.addWidget(practice)
         actions.addStretch(1)

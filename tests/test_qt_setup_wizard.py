@@ -243,7 +243,43 @@ class TestJamulusPageBundling(unittest.TestCase):
         page._poll_for_jamulus_install()
 
         self.assertTrue(page._install_poll_timer.isActive())
+        self.assertFalse(page._install_status.isVisibleTo(page))
         page._install_poll_timer.stop()
+
+    def test_install_poll_times_out_and_reenables_button(self):
+        """A cancelled/failed installer must not leave the button stuck on
+        'Waiting…' forever."""
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        page = _JamulusPage(AppSettings(
+            jamulus_server="x", jamulus_candidates=["/nonexistent/Jamulus"],
+        ))
+        page._install_jamulus_btn.setEnabled(False)
+        page._install_jamulus_btn.setText("Waiting for install to finish…")
+        page._install_poll_ticks = 0
+        page._install_poll_timer.start()
+
+        for _ in range(page._INSTALL_POLL_LIMIT):
+            page._poll_for_jamulus_install()
+
+        self.assertFalse(page._install_poll_timer.isActive())
+        self.assertTrue(page._install_jamulus_btn.isEnabled())
+        self.assertEqual(page._install_jamulus_btn.text(), "Install Jamulus now")
+        self.assertTrue(page._install_status.isVisibleTo(page))
+        self.assertIn("Browse…", page._install_status.text())
+
+    def test_poll_success_leaves_no_timeout_message(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="x", jamulus_candidates=[jam.name],
+            ))
+            page._install_poll_ticks = page._INSTALL_POLL_LIMIT - 1
+            page._install_poll_timer.start()
+
+            page._poll_for_jamulus_install()
+
+            self.assertFalse(page._install_poll_timer.isActive())
+            self.assertFalse(page._install_status.isVisibleTo(page))
 
 
 # ---------------------------------------------------------------------------

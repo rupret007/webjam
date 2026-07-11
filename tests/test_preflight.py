@@ -101,6 +101,25 @@ class TestReadyCheck(unittest.TestCase):
         item = next(i for i in rep.items if i.name == "Meter input")
         self.assertFalse(item.ok)
         self.assertIn("48000", item.detail)
+        # The detail must lead with guidance, not a raw exception.
+        self.assertIn("Settings", item.detail)
+        self.assertIn("bad rate", item.detail)
+
+    def test_recorder_unreachable_detail_is_actionable(self):
+        with tempfile.NamedTemporaryFile() as jam, \
+                tempfile.NamedTemporaryFile() as secret:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                server_rpc_secret_file=secret.name,
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio), \
+                 mock.patch("core.jamulus_server_rpc.read_secret_file",
+                            side_effect=OSError("connection refused")):
+                rep = preflight.run_ready_check(s)
+        item = next(i for i in rep.items if i.name == "Host recorder")
+        self.assertFalse(item.ok)
+        self.assertIn("Ready Check", item.detail)
+        self.assertIn("connection refused", item.detail)
 
     def test_webex_missing(self):
         with tempfile.NamedTemporaryFile() as jam:

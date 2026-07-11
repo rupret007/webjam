@@ -119,7 +119,8 @@ def _check_selected_input(settings) -> CheckItem:
         return CheckItem(
             "Meter input",
             False,
-            f"{device['name']} does not accept {requested_rate} Hz: {exc}",
+            f"{device['name']} can't open at {requested_rate} Hz — pick a "
+            f"different input or sample rate in Settings. (Details: {exc})",
         )
     rate = int(device.get("default_samplerate", 0) or 0)
     detail = (
@@ -152,7 +153,13 @@ def _check_recorder(settings) -> CheckItem:
         if not status.get("initialised", False):
             return CheckItem("Host recorder", False, "server recorder is not initialised")
     except Exception as exc:  # noqa: BLE001
-        return CheckItem("Host recorder", False, str(exc))
+        return CheckItem(
+            "Host recorder",
+            False,
+            "couldn't reach the band server's recorder — check the SSH "
+            "tunnel, RPC port, and secret file, then run Ready Check again. "
+            f"(Details: {exc})",
+        )
 
     takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
     if not takes.is_dir() or not os.access(takes, os.W_OK):

@@ -240,9 +240,15 @@ class _JamulusPage(QWizardPage):
         layout.addWidget(install_btn)
         self._install_jamulus_btn = install_btn
 
+        self._install_status = QLabel("")
+        self._install_status.setWordWrap(True)
+        self._install_status.setVisible(False)
+        layout.addWidget(self._install_status)
+
         self._install_poll_timer = QTimer(self)
         self._install_poll_timer.setInterval(2000)
         self._install_poll_timer.timeout.connect(self._poll_for_jamulus_install)
+        self._install_poll_ticks = 0
 
         if not detected_path:
             from services.bridge_service import _bundled_jamulus_installer
@@ -275,7 +281,13 @@ class _JamulusPage(QWizardPage):
             return
         self._install_jamulus_btn.setEnabled(False)
         self._install_jamulus_btn.setText("Waiting for install to finish\u2026")
+        self._install_status.setVisible(False)
+        self._install_poll_ticks = 0
         self._install_poll_timer.start()
+
+    # 150 ticks \u00d7 2 s = 5 minutes; a cancelled or failed installer must not
+    # leave the button stuck on "Waiting\u2026" forever.
+    _INSTALL_POLL_LIMIT = 150
 
     def _poll_for_jamulus_install(self) -> None:
         """QTimer tick: fill in the path field as soon as install lands."""
@@ -285,7 +297,19 @@ class _JamulusPage(QWizardPage):
                 self._install_poll_timer.stop()
                 self._jamulus_path.setText(str(path))
                 self._install_jamulus_btn.setVisible(False)
+                self._install_status.setVisible(False)
                 return
+        self._install_poll_ticks += 1
+        if self._install_poll_ticks >= self._INSTALL_POLL_LIMIT:
+            self._install_poll_timer.stop()
+            self._install_jamulus_btn.setEnabled(True)
+            self._install_jamulus_btn.setText("Install Jamulus now")
+            self._install_status.setText(
+                "The installer didn't finish after 5 minutes. If Jamulus is "
+                "already installed, click Browse\u2026 to point WebJam at it, "
+                "or press Install Jamulus now to try again."
+            )
+            self._install_status.setVisible(True)
 
     def _browse_jamulus(self) -> None:
         start_dir = ""

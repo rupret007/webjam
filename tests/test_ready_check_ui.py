@@ -139,6 +139,16 @@ class TestReadyCheckShortcut(unittest.TestCase):
             self.controller._ready_check_dialog.settings_requested.emit()
         self.controller._open_settings_wizard.assert_called_once()
 
+    def test_practice_button_label_matches_checks_menu(self):
+        """One name everywhere: the Checks menu calls it 'Practice Solo'."""
+        from PySide6.QtWidgets import QPushButton
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+        dialog = ReadyCheckDialog(lambda: AppSettings())
+        labels = [b.text() for b in dialog.findChildren(QPushButton)]
+        self.assertIn("Practice Solo", labels)
+        self.assertNotIn("Start Practice", labels)
+        dialog.close()
+
     def test_structured_report_separates_required_and_optional_results(self):
         from webjam_qt.windows.ready_check import ReadyCheckDialog
         dialog = ReadyCheckDialog(lambda: AppSettings())
