@@ -22,6 +22,8 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(s.audio_blocksize, 0)
         self.assertFalse(s.enable_sentry)
         self.assertFalse(s.companion_api_enabled)
+        self.assertEqual(s.webex_audio_mode, "talkback")
+        self.assertFalse(s.local_capture_enabled)
         self.assertFalse(s.webex_audio_bridge_enabled)
         self.assertEqual(s.take_playback_output_device, "")
 
@@ -34,13 +36,73 @@ class TestSettingsDefaults(unittest.TestCase):
             path = os.path.join(d, "settings.json")
             original = AppSettings(
                 config_file=path,
-                webex_audio_bridge_enabled=True,
+                webex_audio_mode="audience_bridge",
+                local_capture_enabled=True,
                 take_playback_output_device="SSL 2+",
             )
             save_settings(original)
             loaded = load_settings(path)
         self.assertTrue(loaded.webex_audio_bridge_enabled)
+        self.assertEqual(loaded.webex_audio_mode, "audience_bridge")
+        self.assertTrue(loaded.local_capture_enabled)
         self.assertEqual(loaded.take_playback_output_device, "SSL 2+")
+
+    def test_save_omits_legacy_bridge_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            save_settings(AppSettings(config_file=path, webex_audio_mode="audience_bridge"))
+            saved = json.loads(open(path, encoding="utf-8").read())
+        self.assertNotIn("webex_audio_bridge_enabled", saved)
+
+    def test_legacy_bridge_true_migrates_mode_and_capture(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
+            json.dump({"webex_audio_bridge_enabled": True}, config)
+            config.flush()
+            loaded = load_settings(config.name)
+        self.assertEqual(loaded.webex_audio_mode, "audience_bridge")
+        self.assertTrue(loaded.local_capture_enabled)
+
+    def test_legacy_bridge_false_preserves_video_only_behavior(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
+            json.dump({"webex_audio_bridge_enabled": False}, config)
+            config.flush()
+            loaded = load_settings(config.name)
+        self.assertEqual(loaded.webex_audio_mode, "video_only")
+        self.assertFalse(loaded.local_capture_enabled)
+
+    def test_new_fields_take_precedence_over_legacy_file_value(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
+            json.dump({
+                "webex_audio_bridge_enabled": True,
+                "webex_audio_mode": "talkback",
+                "local_capture_enabled": False,
+            }, config)
+            config.flush()
+            loaded = load_settings(config.name)
+        self.assertEqual(loaded.webex_audio_mode, "talkback")
+        self.assertFalse(loaded.local_capture_enabled)
+
+    def test_legacy_guest_fields_are_dropped_and_display_name_migrates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            with open(path, "w", encoding="utf-8") as config:
+                json.dump({
+                    "config_file": path,
+                    "webex_guest_issuer_id": "legacy-id",
+                    "webex_guest_issuer_secret": "legacy-secret",
+                    "webex_display_name": "Jeff",
+                }, config)
+            loaded = load_settings(path)
+            self.assertEqual(loaded.musician_name, "Jeff")
+            self.assertFalse(hasattr(loaded, "webex_guest_issuer_id"))
+            self.assertFalse(hasattr(loaded, "webex_guest_issuer_secret"))
+            self.assertFalse(hasattr(loaded, "webex_display_name"))
+            save_settings(loaded)
+            saved = json.loads(open(path, encoding="utf-8").read())
+        self.assertEqual(saved["musician_name"], "Jeff")
+        self.assertNotIn("webex_guest_issuer_id", saved)
+        self.assertNotIn("webex_guest_issuer_secret", saved)
+        self.assertNotIn("webex_display_name", saved)
 
 
 class TestSettingsMalformedJson(unittest.TestCase):
@@ -179,6 +241,41 @@ class TestSettingsEnvOverrides(unittest.TestCase):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
         self.assertEqual(s.jamulus_candidates, ["/usr/bin/jamulus", "/opt/jamulus"])
 
+    @patch.dict(os.environ, {
+        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
+    })
+    def test_legacy_bridge_environment_migrates_mode_and_capture(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.webex_audio_mode, "audience_bridge")
+        self.assertTrue(s.local_capture_enabled)
+
+    @patch.dict(os.environ, {
+        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
+        "WEBJAM_WEBEX_AUDIO_MODE": "talkback",
+    })
+    def test_new_mode_environment_overrides_legacy_environment(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.webex_audio_mode, "talkback")
+        self.assertFalse(s.local_capture_enabled)
+
+    @patch.dict(os.environ, {
+        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
+        "WEBJAM_WEBEX_AUDIO_MODE": "talkbak",
+    })
+    def test_invalid_new_mode_environment_does_not_fall_through_to_legacy(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.webex_audio_mode, "talkback")
+        self.assertFalse(s.local_capture_enabled)
+
+    @patch.dict(os.environ, {
+        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
+        "WEBJAM_LOCAL_CAPTURE_ENABLED": "false",
+    })
+    def test_explicit_local_capture_environment_overrides_legacy_derived_value(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.webex_audio_mode, "audience_bridge")
+        self.assertFalse(s.local_capture_enabled)
+
 
 class TestCoerceSettingsData(unittest.TestCase):
     def test_none_port_uses_default(self):
@@ -200,6 +297,11 @@ class TestCoerceSettingsData(unittest.TestCase):
         data = {"jamulus_server": 12345}
         _coerce_settings_data(data)
         self.assertEqual(data["jamulus_server"], "12345")
+
+    def test_invalid_audio_mode_falls_back_to_talkback(self):
+        data = {"webex_audio_mode": "not-a-mode"}
+        _coerce_settings_data(data)
+        self.assertEqual(data["webex_audio_mode"], "talkback")
 
 
 if __name__ == "__main__":

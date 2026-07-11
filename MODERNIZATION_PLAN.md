@@ -2,12 +2,12 @@
 
 ## Audited baseline
 
-- Source baseline is `origin/master` at `fd3d313`: the untagged v0.8.1 pilot
-  candidate. GitHub tests, real-Jamulus integration, and all three desktop
-  build jobs passed for that exact commit.
+- Source baseline is clean `origin/master` at `f023e56`: the untagged v0.8.1
+  pilot candidate. GitHub tests, real-Jamulus integration, and all three
+  desktop build jobs passed for that exact commit before this uncommitted round.
 - Before Session Pulse, local validation passed 823 tests with 12 expected
   skips, Ruff, the offscreen UX gate, and a clean macOS PyInstaller build.
-- The older dirty checkout at `/Users/jeffstory/Documents/webjam` remains
+- The older dirty checkout outside this repository remains
   untouched. This work continues only in the clean checkout.
 
 ## v0.8.1 work completed in the tree
@@ -29,14 +29,15 @@
 - Hardened CI artifact assertions for executable/resources/version/bundled
   Jamulus and changed tag releases to drafts pending hardware approval.
 - Added the official Jamulus 3.12.2 same-Mac server procedure, external UDP
-  gate, BlackHole Multi-Output/Webex bridge topology, and Logic stem check.
+  gate, audience-bridge topology, and Logic stem check. The later two-lane
+  round moved the musician pilot to direct Jamulus plus Webex speech talkback.
 - Added recorder transition truth, elapsed time, duplicate-click protection,
   stable-file discovery, and post-stop take validation with direct Take Deck
   and Finder actions.
 - Made Take Deck output-selectable and stereo for headphones, with persisted
   device choice, actionable playback errors, and take-health warnings.
-- Replaced blocking configuration-only Ready Check with a rerunnable report
-  that distinguishes the designated Webex bridge from Jamulus-only musicians.
+- Replaced blocking configuration-only Ready Check with a rerunnable,
+  role-aware report.
   Simplified navigation to Live/Notes workspaces plus Takes/Settings utilities
   and consolidated Ready/Practice under the accessible Checks menu.
 - Removed simulated startup participants and animated fake meters. Idle,
@@ -130,15 +131,60 @@
   build with bundle/version inspection, packaged offscreen startup, and
   orphan-process check. Hardware gates below remain open and unclaimed.
 
+## Two-lane music and talkback round
+
+- Made `talkback` the default Webex role, with explicit `video_only` and
+  advanced `audience_bridge` alternatives. Jamulus remains the only music
+  path; native Webex is a muted-by-default speech lane for musicians.
+- Replaced the bridge checkbox with three mutually exclusive, accessible Setup
+  choices. Only audience-bridge mode scans for BlackHole/VB-CABLE.
+- Separated supplemental local capture from the Webex role and renamed its
+  selector **Meter and local recording input**. The selector remains available
+  for metering even when local recording is disabled.
+- Removed legacy Guest Issuer credential collection from Setup and omit those
+  deprecated credentials on save. Added a first-class musician name instead.
+- Added `WEBEX_AUDIO_MODES.md` as the canonical signal-flow and failure-safety
+  guide. Aligned the pilot/runbook documentation and corrected the false claim
+  that Jamulus never returns the local musician in the personal server mix.
+- Made native Webex launch truthful (`Not opened`, `Opening…`, `Opened
+  externally`, `Open failed`), removed fake leave/reconnect/participant/media
+  controls, and reduced the former video pane to a role-aware launch card.
+- Added Jamulus-only **Talk Break / Resume Music** with default-cancel resume,
+  persistent PLAY/TALK guidance, reconnect intent, and a dedicated global
+  transmit state that cannot be confused with the local mixer-card mute.
+  `setMuted` now waits for Jamulus `ok`; error, timeout, and disconnect all
+  fail closed instead of inviting Webex speech on an unconfirmed mute.
+- Added manual VERIFY rows, readable scrolling, focus/keyboard styling,
+  platform-specific guidance, a Takes-folder chooser for local capture, and
+  worst-state strip coverage at the supported 1100 px width.
+- Final integrated validation passes 948 tests with 12 expected skips, six
+  subtests, the single pre-existing Starlette/httpx deprecation warning, Ruff,
+  compile checks, `pip check`, `pip-audit` with no known vulnerabilities,
+  offscreen UX smoke, and `git diff --check`.
+- The installed official JamulusServer 3.12.2 passes all 11 real integration
+  tests when temporary secrets and recordings use its permitted macOS sandbox
+  container. This validates API authentication, client/server RPC, recorder
+  start/restart/stop, client shape, and the exact practice command locally in
+  addition to the Linux CI gate.
+- Final audit corrections prevent an unacknowledged reconnect from rendering
+  TALK, make the new audio-mode environment variable unconditionally outrank
+  the legacy bridge flag, block duplicate Webex launches while Opening, redact
+  the retained compatibility widget's failure URL, require a real first-run
+  participant name, and remove stale camera privacy metadata. Windows builds
+  now carry and verify the same 0.8.1 ProductVersion as macOS bundles.
+- A clean ARM64 PyInstaller build produces v0.8.1 with the required QSS/Webex
+  resources. The packaged app starts offscreen and exits on TERM without an
+  orphan WebJam or Qt WebEngine process. Hardware evidence remains required.
+
 ## Remaining release gates
 
-1. Install BlackHole with administrator approval, restart the host, create and
-   verify the 48 kHz SSL + BlackHole Multi-Output bridge, then pass F2 Ready
-   Check and Ctrl+P Practice with real guitar/vocal input.
+1. On both musician Macs choose talkback mode, route Jamulus directly through
+   the wired music interface, select a dedicated Webex speech mic when
+   possible, and pass F2 Ready Check plus every manual Webex `VERIFY` item.
 2. On the drummer's Apple Silicon Mac, install Roland's TD-27 driver, select
    VENDOR mode, verify 48 kHz USB audio, install the exact ARM64 candidate, and
    pass Ready Check/Practice over Ethernet and wired headphones. BlackHole is
-   optional because this Mac is not the Webex audio bridge.
+   not part of the talkback path.
 3. Invite the drummer to Tailscale and prove a direct peer path. Reserve the
    host LAN address, forward UDP 22124 only, prove the public path externally,
    and compare both routes for ten stable minutes. Never expose TCP 22222 or
@@ -149,7 +195,8 @@
    import. Any isolated-stem failure preserves the server take but blocks the
    recording gate.
 5. Complete the full two-Mac gate: audio/latency, participant truth,
-   fader/mute/solo/Mute Me, saved mix, chat, echo-safe Webex bridge, reconnect,
+   fader/mute/solo/Talk Break, saved mix, chat, echo-free Webex talkback,
+   reconnect,
    Pulse/exports, server recording, non-empty per-player WAVs, Take Deck,
    Logic import, diagnostics, process cleanup, and a 45–60 minute soak.
 6. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
@@ -181,9 +228,10 @@ changing the Jamulus or recording path:
 
 ## Intentionally unchanged
 
-- Jamulus client RPC/UDP behavior, Webex token/embed behavior, persistence/
-  database schemas, Companion API, and live mixer semantics are
-  already sound and receive no speculative rewrite.
+- Jamulus client RPC/UDP behavior, persistence/database schemas, Companion API,
+  and live mixer semantics receive no speculative rewrite. Legacy Webex guest
+  tokens and embedded meeting state are intentionally retired from the normal
+  pilot path in favor of truthful native Webex launch.
 - The legacy Docker server image stays digest-pinned and is explicitly not the
   v0.8.1 pilot path; changing that third-party runtime requires a separate
   Linux server validation round.

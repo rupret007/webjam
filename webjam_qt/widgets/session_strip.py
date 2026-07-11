@@ -7,7 +7,7 @@ Shows, left to right:
   - Live session timer
   - Record indicator
   - Mode picker
-  - Primary actions (Start Audio, Join Video)
+  - Primary actions (Start Audio, Open Webex)
 
 Emits semantic signals; ApplicationController wires them to services.
 """
@@ -62,6 +62,7 @@ class SessionStrip(QFrame):
 
         self._mode_entries = list(mode_entries)
         self._elapsed_seconds = 0
+        self._webex_audio_mode = "talkback"
 
         # --- Widgets
         self._logo = QLabel("WJ")
@@ -71,7 +72,10 @@ class SessionStrip(QFrame):
         self._title_input.setObjectName("SessionStripTitle")
         self._title_input.setAccessibleName("Session title")
         self._title_input.setFrame(False)
-        self._title_input.setMinimumWidth(180)
+        # Keep enough room to recognise/edit the title while leaving the
+        # safety-critical live actions readable at the supported 1100px
+        # window minimum.
+        self._title_input.setMinimumWidth(128)
         self._title_input.editingFinished.connect(
             lambda: self.session_title_changed.emit(self._title_input.text().strip())
         )
@@ -94,6 +98,7 @@ class SessionStrip(QFrame):
 
         self._mode_picker = QComboBox()
         self._mode_picker.setAccessibleName("Session mode")
+        self._mode_picker.setMaximumWidth(140)
         for key, label in self._mode_entries:
             self._mode_picker.addItem(label, key)
         if initial_mode_key:
@@ -140,29 +145,32 @@ class SessionStrip(QFrame):
         test_menu.addAction(self._practice_action)
         self._test_button.setMenu(test_menu)
 
-        self._mute_self_button = QPushButton("Mute Me")
+        self._mute_self_button = QPushButton("Talk Break")
         self._mute_self_button.setObjectName("GhostButton")
         self._mute_self_button.setCheckable(True)
-        self._mute_self_button.setAccessibleName("Mute or unmute yourself")
+        self._mute_self_button.setAccessibleName("Start a talk break")
         self._mute_self_button.setToolTip(
-            "Toggle mute on your own channel.\n"
-            "Quickly silence yourself when answering a phone or talking off-mic."
+            "Mute your Jamulus send before using Webex push-to-talk.\n"
+            "This control never changes the Webex microphone."
         )
         self._mute_self_button.clicked.connect(self.mute_self_requested.emit)
 
-        self._video_button = QPushButton("Join Video")
+        self._video_button = QPushButton("Open Webex")
         self._video_button.setObjectName("PrimaryButton")
-        self._video_button.setAccessibleName("Join or leave Webex video")
+        self._video_button.setAccessibleName("Open Webex")
         self._video_button.setToolTip(
-            "Open the band's Webex meeting in the embedded video pane.\n"
-            "Click again to leave the meeting."
+            "Open the band's meeting in the native Webex app or browser.\n"
+            "WebJam cannot inspect or control the external meeting."
         )
         self._video_button.clicked.connect(self.join_video_requested.emit)
 
         # --- Layout
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
-        layout.setSpacing(Space.LG)
+        # Nine controls share this strip.  Compact spacing prevents the
+        # longest live states (Record Again + Unmute Jamulus Send) from being
+        # silently truncated at the supported minimum window width.
+        layout.setSpacing(Space.SM)
 
         layout.addWidget(self._logo)
 
@@ -286,19 +294,41 @@ class SessionStrip(QFrame):
         self._record_button.setAccessibleName(self._record_button.text())
         self._record_button.setAccessibleDescription(description)
 
+    def set_webex_audio_mode(self, mode: str) -> None:
+        """Apply role-specific wording to the Jamulus transmit control."""
+        self._webex_audio_mode = (
+            mode if mode in {"talkback", "video_only", "audience_bridge"}
+            else "talkback"
+        )
+        self.set_self_muted(self._mute_self_button.isChecked())
+
     def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
-        """Update the 'Mute Me' button state without emitting signals."""
+        """Update the Jamulus-send button state without emitting signals."""
         self._mute_self_button.blockSignals(True)
         self._mute_self_button.setChecked(muted)
-        self._mute_self_button.setText("Unmute Me" if muted else "Mute Me")
+        talkback = self._webex_audio_mode == "talkback"
+        if talkback:
+            label = "Resume Music" if muted else "Talk Break"
+            accessible = "Resume Jamulus music" if muted else "Start a talk break"
+            description = (
+                "Jamulus send is muted. Release Spacebar and make sure Webex is "
+                "muted before resuming music."
+                if muted else
+                "Mute Jamulus send before holding Spacebar to talk in Webex. "
+                "This control never changes the Webex microphone."
+            )
+        else:
+            label = "Unmute Jamulus Send" if muted else "Mute Jamulus Send"
+            accessible = label
+            description = (
+                "Your Jamulus send is muted."
+                if muted else "Your Jamulus send is audible."
+            )
+        self._mute_self_button.setText(label)
         self._mute_self_button.setEnabled(enabled)
-        self._mute_self_button.setAccessibleName(
-            "Unmute yourself" if muted else "Mute yourself"
-        )
-        self._mute_self_button.setAccessibleDescription(
-            "Your Jamulus channel is muted." if muted
-            else "Your Jamulus channel is audible."
-        )
+        self._mute_self_button.setAccessibleName(accessible)
+        self._mute_self_button.setAccessibleDescription(description)
+        self._mute_self_button.setToolTip(description)
         self._mute_self_button.blockSignals(False)
 
     def current_mode_key(self) -> str:

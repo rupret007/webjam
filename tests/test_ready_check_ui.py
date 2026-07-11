@@ -8,7 +8,8 @@ import tempfile  # noqa: E402
 import unittest  # noqa: E402
 from unittest import mock  # noqa: E402
 
-from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QFrame  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -166,7 +167,69 @@ class TestReadyCheckShortcut(unittest.TestCase):
         rows = dialog._report_content.findChildren(QFrame, "ReadyCheckRow")
         self.assertEqual([row.property("result") for row in rows], ["pass", "fail", "warn"])
         _app.processEvents()
-        self.assertEqual(_app.focusWidget().property("result"), "fail")
+        self.assertEqual(rows[1].focusPolicy(), Qt.FocusPolicy.StrongFocus)
+        self.assertIn("Required failure", rows[1].accessibleName())
+        dialog.close()
+
+    def test_manual_verify_rows_update_summary_and_reset_on_rerun(self):
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+
+        dialog = ReadyCheckDialog(lambda: AppSettings())
+        dialog.show()
+        _app.processEvents()
+        dialog._scan_id += 1
+        report = ReadyCheckReport(items=[
+            CheckItem("Jamulus", True, "found"),
+            CheckItem(
+                "Webex muted for Play",
+                False,
+                "Confirm mute",
+                manual_verification=True,
+            ),
+        ])
+        dialog._apply_report((dialog._scan_id, report))
+        self.assertEqual(
+            dialog._summary.text(),
+            "Automated checks passed; confirm 1 Webex setting.",
+        )
+        verify = dialog._report_content.findChild(QCheckBox, "ReadyCheckMark")
+        self.assertIsNotNone(verify)
+        self.assertEqual(verify.text(), "VERIFY")
+        verify.setChecked(True)
+        self.assertEqual(
+            dialog._summary.text(), "Ready to play — all required checks passed."
+        )
+        with mock.patch("core.preflight.run_ready_check") as run:
+            run.return_value = report
+            dialog.run_checks()
+            self.assertFalse(report.items[1].ok)
+        dialog.close()
+
+    def test_full_manual_report_scrolls_without_clipping_rows(self):
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+
+        dialog = ReadyCheckDialog(lambda: AppSettings())
+        dialog.show()
+        _app.processEvents()
+        dialog._scan_id += 1
+        report = ReadyCheckReport(items=[
+            CheckItem(
+                f"Webex setting {index}",
+                False,
+                "Confirm this setting in native Webex before the rehearsal.",
+                manual_verification=True,
+            )
+            for index in range(10)
+        ])
+        dialog._apply_report((dialog._scan_id, report))
+        _app.processEvents()
+
+        rows = dialog._report_content.findChildren(QFrame, "ReadyCheckRow")
+        self.assertEqual(len(rows), 10)
+        self.assertTrue(
+            all(row.height() >= row.minimumSizeHint().height() for row in rows)
+        )
+        self.assertGreater(dialog._report.verticalScrollBar().maximum(), 0)
         dialog.close()
 
 

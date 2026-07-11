@@ -81,6 +81,7 @@ class TestJamulusPage(unittest.TestCase):
             page = _JamulusPage(AppSettings(
                 jamulus_server="192.168.1.10",
                 jamulus_candidates=[jam.name],
+                musician_name="Test Musician",
             ))
             self.assertTrue(page.validatePage())
 
@@ -120,6 +121,27 @@ class TestJamulusPage(unittest.TestCase):
 
         self.assertIn("Local Jamulus control port", copy)
         self.assertIn("not the band's audio-server or recorder-control port", copy)
+
+    def test_musician_name_is_required_and_accessible(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+                musician_name="Jeff — Guitar",
+            ))
+            self.assertEqual(page.musician_name, "Jeff — Guitar")
+            self.assertIn("Jamulus", page._musician_name.accessibleName())
+            page._musician_name.clear()
+            self.assertFalse(page.validatePage())
+
+    def test_generic_default_requires_a_real_participant_name(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        page = _JamulusPage(AppSettings(musician_name="WebJam Musician"))
+        self.assertEqual(page.musician_name, "")
+        self.assertFalse(page.validatePage())
 
 
 # ---------------------------------------------------------------------------
@@ -338,15 +360,139 @@ class TestWebexPage(unittest.TestCase):
         page = _WebexPage(AppSettings(webex_url="  https://a.webex.com/m/b  "))
         self.assertEqual(page.webex_url, "https://a.webex.com/m/b")
 
-    def test_guest_group_unchecked_returns_empty_credentials(self):
+    def test_legacy_guest_credentials_are_not_exposed(self):
+        from PySide6.QtWidgets import QGroupBox, QLineEdit
         from webjam_qt.windows.setup_wizard import _WebexPage
-        page = _WebexPage(AppSettings(
-            webex_url="https://a.webex.com/m/b",
-            webex_guest_issuer_id="",
+
+        page = _WebexPage(AppSettings(webex_url="https://a.webex.com/m/b"))
+        copy = " ".join(group.title() for group in page.findChildren(QGroupBox))
+        values = [line.text() for line in page.findChildren(QLineEdit)]
+
+        self.assertNotIn("Guest Issuer", copy)
+        self.assertEqual(values, ["https://a.webex.com/m/b"])
+
+
+# ---------------------------------------------------------------------------
+# _RoutingPage — exclusive Webex roles and independent local capture
+# ---------------------------------------------------------------------------
+@skip_no_pyside6
+class TestRoutingPage(unittest.TestCase):
+    def setUp(self):
+        _qapp()
+
+    def test_talkback_is_default_and_needs_no_loopback_scan(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings())
+        with patch.object(page, "_start_loopback_scan") as scan:
+            page.initializePage()
+
+        self.assertEqual(page.audio_mode, "talkback")
+        self.assertTrue(page.isComplete())
+        scan.assert_not_called()
+
+    def test_modes_are_mutually_exclusive(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(webex_audio_mode="talkback"))
+        page._video_only_radio.setChecked(True)
+        self.assertEqual(page.audio_mode, "video_only")
+        self.assertFalse(page._talkback_radio.isChecked())
+        page._audience_bridge_radio.setChecked(True)
+        self.assertEqual(page.audio_mode, "audience_bridge")
+        self.assertFalse(page._video_only_radio.isChecked())
+
+    def test_audience_bridge_alone_starts_loopback_scan(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(webex_audio_mode="audience_bridge"))
+        with patch.object(page, "_start_loopback_scan") as scan:
+            page.initializePage()
+
+        scan.assert_called_once_with()
+
+    def test_late_audience_scan_result_does_not_change_talkback(self):
+        from core.audio_routing import AudioRoutingStatus
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(webex_audio_mode="audience_bridge"))
+        page._routing_status = AudioRoutingStatus()
+        page._talkback_radio.setChecked(True)
+        with patch.object(page, "isVisible", return_value=True):
+            page._apply_routing()
+
+        self.assertEqual(page.audio_mode, "talkback")
+        self.assertTrue(page.isComplete())
+        self.assertIn("No virtual audio device is required", page._status_label.text())
+        self.assertFalse(page._install_btn.isVisibleTo(page))
+
+    def test_scan_finishing_off_page_can_be_retried(self):
+        from core.audio_routing import AudioRoutingStatus
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(webex_audio_mode="audience_bridge"))
+        page._scan_running = True
+        page._routing_status = AudioRoutingStatus()
+        with patch.object(page, "isVisible", return_value=False):
+            page._apply_routing()
+
+        self.assertFalse(page._scan_running)
+
+    def test_skip_is_only_available_for_audience_bridge(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(webex_audio_mode="talkback"))
+        self.assertFalse(page._skip_chk.isVisibleTo(page))
+        page._skip_chk.setChecked(True)
+        page._skip_chk.setChecked(False)
+        self.assertTrue(page.isComplete())
+
+    def test_local_capture_is_independent_of_webex_mode(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(
+            webex_audio_mode="talkback",
+            local_capture_enabled=True,
+            takes_directory="/tmp/WebJam Takes",
         ))
-        self.assertFalse(page._guest_group.isChecked())
-        self.assertEqual(page.guest_issuer_id, "")
-        self.assertEqual(page.guest_issuer_secret, "")
+        self.assertTrue(page.local_capture_enabled)
+        self.assertEqual(page.takes_directory, "/tmp/WebJam Takes")
+        self.assertTrue(page._device_picker.isEnabled())
+        page._video_only_radio.setChecked(True)
+        self.assertTrue(page.local_capture_enabled)
+        page._capture_chk.setChecked(False)
+        self.assertFalse(page.local_capture_enabled)
+        self.assertTrue(page._device_picker.isEnabled())
+        self.assertFalse(page._capture_hint.isVisibleTo(page))
+
+    def test_local_capture_requires_and_can_choose_takes_folder(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings(
+            webex_audio_mode="talkback",
+            local_capture_enabled=True,
+            takes_directory="",
+        ))
+        self.assertFalse(page.isComplete())
+        with patch(
+            "webjam_qt.windows.setup_wizard.QFileDialog.getExistingDirectory",
+            return_value="/tmp/WebJam Takes",
+        ):
+            page._choose_takes_directory()
+        self.assertTrue(page.isComplete())
+        self.assertEqual(page.takes_directory, "/tmp/WebJam Takes")
+
+    def test_accessibility_names_describe_each_role(self):
+        from webjam_qt.windows.setup_wizard import _RoutingPage
+
+        page = _RoutingPage(AppSettings())
+        self.assertIn("talkback", page._talkback_radio.accessibleName().lower())
+        self.assertIn("without computer audio", page._video_only_radio.accessibleName())
+        self.assertIn("audience", page._audience_bridge_radio.accessibleName().lower())
+        self.assertEqual(
+            page._device_picker.accessibleName(),
+            "Meter and local recording input",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +558,35 @@ class TestSetupWizardSmoke(unittest.TestCase):
             wizard._save_settings()
             data = json.loads(Path(tmp).read_text(encoding="utf-8"))
             self.assertEqual(data["jamulus_rpc_port"], 33333)
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+
+    def test_save_uses_new_audio_fields_and_omits_legacy_webex_secrets(self):
+        from webjam_qt.windows.setup_wizard import SetupWizard
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            tmp = f.name
+        Path(tmp).unlink()
+        try:
+            settings = AppSettings(
+                config_file=tmp,
+                webex_audio_mode="talkback",
+                local_capture_enabled=True,
+                musician_name="Jeff — Guitar",
+                takes_directory="/tmp/WebJam Takes",
+            )
+            wizard = SetupWizard(settings=settings)
+            wizard._save_settings()
+            data = json.loads(Path(tmp).read_text(encoding="utf-8"))
+
+            self.assertEqual(data["webex_audio_mode"], "talkback")
+            self.assertTrue(data["local_capture_enabled"])
+            self.assertEqual(data["musician_name"], "Jeff — Guitar")
+            self.assertEqual(data["takes_directory"], "/tmp/WebJam Takes")
+            self.assertNotIn("webex_audio_bridge_enabled", data)
+            self.assertNotIn("webex_guest_issuer_id", data)
+            self.assertNotIn("webex_guest_issuer_secret", data)
+            self.assertNotIn("webex_display_name", data)
         finally:
             Path(tmp).unlink(missing_ok=True)
 

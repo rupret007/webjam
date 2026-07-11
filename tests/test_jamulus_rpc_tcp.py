@@ -14,6 +14,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from core.jamulus_rpc_client import JamulusRpcClient
 
@@ -177,13 +178,65 @@ class TestJamulusRpcTcp(unittest.TestCase):
         try:
             h.client.start()
             self.assertTrue(_wait(lambda: h.client.available))
-            h.client.set_self_muted(True)
+            self.assertTrue(h.client.set_self_muted(True))
             self.assertTrue(_wait(
                 lambda: h.server.requests_for("jamulusclient/setMuted")))
             req = h.server.requests_for("jamulusclient/setMuted")[-1]
             self.assertEqual(req["params"], {"muted": True})
         finally:
             h.close()
+
+    def test_set_self_muted_requires_ok_response(self):
+        client = JamulusRpcClient()
+        client._sock = MagicMock()
+        result: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: result.append(client.set_self_muted(True))
+        )
+        worker.start()
+        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
+        request_id = next(iter(client._pending_commands))
+        client._dispatch_obj(
+            {"jsonrpc": "2.0", "id": request_id, "result": "ok"}
+        )
+        worker.join(timeout=1)
+        self.assertEqual(result, [True])
+
+    def test_set_self_muted_rejects_rpc_error(self):
+        client = JamulusRpcClient()
+        client._sock = MagicMock()
+        result: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: result.append(client.set_self_muted(True))
+        )
+        worker.start()
+        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
+        request_id = next(iter(client._pending_commands))
+        client._dispatch_obj(
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -1}}
+        )
+        worker.join(timeout=1)
+        self.assertEqual(result, [False])
+
+    def test_set_self_muted_times_out_without_response(self):
+        client = JamulusRpcClient()
+        client._sock = MagicMock()
+        client.COMMAND_TIMEOUT_S = 0.01
+        self.assertFalse(client.set_self_muted(True))
+        self.assertFalse(client._pending_commands)
+
+    def test_set_self_muted_fails_when_connection_drops(self):
+        client = JamulusRpcClient()
+        client._sock = MagicMock()
+        result: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: result.append(client.set_self_muted(True))
+        )
+        worker.start()
+        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
+        client._fail_pending_commands()
+        worker.join(timeout=1)
+        self.assertEqual(result, [False])
 
     def test_set_name_sends_real_setname(self):
         h = _ClientHarness()

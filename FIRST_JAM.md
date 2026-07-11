@@ -41,12 +41,12 @@ Tailscale for ten minutes. Use the lower-delay stable route. If direct UDP is
 blocked by router/CGNAT restrictions, retain direct Tailscale or approve a VPS;
 do not substitute a public server and claim the local Record gate passed.
 
-The Mac mini is the only Webex audio bridge: Jamulus outputs to a macOS
-Multi-Output Device containing the physical output and BlackHole; Webex uses
-BlackHole as microphone and the physical device as speaker. The drummer uses
-Jamulus through the TD-27 for all audio and keeps Webex microphone/speaker
-muted. Device
-detection in Setup/Ready Check does not configure this routing.
+Both musicians use **Musician with talkback**. Jamulus carries music through
+their wired interfaces; native Webex carries muted-by-default speech through a
+dedicated talkback mic when possible. Hold Space in Webex only between takes.
+BlackHole and a Multi-Output Device are not needed for this pilot. The separate
+advanced audience-bridge topology is documented in
+[`WEBEX_AUDIO_MODES.md`](WEBEX_AUDIO_MODES.md).
 
 The exact host, TD-27, network, acceptance, and fallback steps are in
 [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
@@ -56,8 +56,8 @@ The exact host, TD-27, network, acceptance, and fallback steps are in
 ## Stage 1 — Solo smoke test (you alone, ~30 min) ← DO THIS FIRST
 
 Setup: one pilot machine for each release artifact you intend to validate
-(Windows x64, macOS ARM64, macOS Intel x64), with VB-CABLE/BlackHole
-installed as appropriate, the latest WebJam build from
+(Windows x64, macOS ARM64, macOS Intel x64), with wired headphones and the
+latest WebJam build from
 [Releases](https://github.com/rupret007/webjam/releases)
 (right-click → Open the first time on macOS — see README_SIMPLE for the
 security-warning walkthrough). Downloadable builds bundle Jamulus (macOS:
@@ -70,15 +70,15 @@ Work through this in order; note anything that deviates.
 1. **First-run wizard** appears (fresh installs are unconfigured on
    purpose). Enter the server host/port from Stage 0, confirm the Jamulus
    executable path (pre-filled on bundled builds — on Windows use "Install
-   Jamulus now" if it's blank), paste the Webex link, and confirm the
-   audio-routing page shows a green check for VB-CABLE/BlackHole.
-2. **Checks → Ready Check / F2.** All required items should pass. Optional bridge
-   warnings are expected on musicians who keep Webex audio muted. Fix required
-   failures before continuing.
+   Jamulus now" if it's blank), paste the Webex link, choose **Musician with
+   talkback**, and select supplemental local recording only when needed.
+2. **Checks → Ready Check / F2.** Automated items should pass. Manually confirm
+   each Webex `VERIFY` row; WebJam cannot inspect native Webex device or mute
+   selections. Talkback and video-only modes must not ask for BlackHole.
 3. **Practice smoke (no band server needed).** Press **Ctrl+P** (or the
    **Practice** button). WebJam starts a private Jamulus server *on your
    machine* and connects to it — you should see your own card, hear
-   yourself, and be able to move your fader and Mute Me. If practice
+   yourself, and be able to move your fader and use Talk Break. If practice
    works, your whole local audio path is proven before any network enters
    the picture. Stop Audio ends it.
 4. **Start Audio.** The status bar should read `Connecting` first; within
@@ -89,14 +89,15 @@ Work through this in order; note anything that deviates.
    channel works against real Jamulus.
    - Also confirm: a second window (Jamulus's own GUI) opened. Ignore it;
      WebJam is the controller.
-5. **Mixer sanity.** Drag your own fader — no errors. Click **Mute Me**:
-   the Jamulus GUI's mute indicator should light up (that proves *real*
-   self-mute via RPC, not just a local fader trick).
+5. **Mixer sanity.** Drag your own fader — no errors. Click **Talk Break**:
+   the Jamulus GUI's mute indicator should light up. Confirm Webex does not
+   change. Release Webex Space/mute it, choose **Resume Music**, and confirm the
+   Jamulus send returns.
 6. **Chat.** Type a message in the canvas chat box. It should echo as
    `You: …` and appear in the Jamulus GUI chat window too.
-7. **Join Video.** Either the embedded pane loads your meeting, or you
-   get the "Open video call in browser" fallback button (also a pass —
-   the embed depends on QtWebEngine + your meeting's embed permissions).
+7. **Open Webex.** WebJam opens native Webex or the default browser and reports
+   `Opened externally`. Finish joining there. This status does not claim that
+   WebJam can see meeting membership or control Webex.
 8. **Stop Audio → Start Audio again.** Reconnect should work; no zombie
    Jamulus processes left behind (check Activity Monitor).
 9. **Quit WebJam.** Jamulus should quit with it.
@@ -116,10 +117,11 @@ and I'll debug from there. Logs live at `~/.webjam.log` (WebJam) and
 2. Both **Start Audio**. Each should see the other's named card appear.
 3. **Play something.** Adjust each other's faders — confirm your fader
    moves only change *your* monitor mix, not theirs.
-4. One person **Mute Me** — the other should stop hearing them (this is
-   the real test of self-mute).
-5. Both **Join Video**. Confirm the designated Mac bridge carries the band
-   mix into Webex without echo. Keep Webex audio muted on the drummer's Mac.
+4. One person selects **Talk Break** — the other should stop hearing them in
+   Jamulus, while Webex remains untouched. Resume only after Webex is muted.
+5. Both **Open Webex** and join muted with computer audio. Webex speakers feed
+   the wired interfaces. Hold Space only to speak between takes; require clear
+   speech and no delayed duplicate music during ten minutes of playing.
 6. Chat from both sides; both canvases should show the conversation.
 7. In the Canvas, enter one `Decision:`, `Action:`, `Blocker:`, and
    `Question:` line. Confirm Pulse updates, then use **Export… → Session
@@ -151,8 +153,8 @@ Everything from Stage 2, times N. Tips for the first full session:
 - The conductor (you) can Ctrl+M mute-all while sorting out someone's
   setup, and `Ctrl+S` saves the mix once levels feel right — it
   auto-restores next session.
-- Anyone whose video pane misbehaves should use the browser-fallback
-  button and move on; audio is the thing that matters.
+- If Webex does not open, use **Copy meeting link** and open it directly in
+  native Webex or a supported browser. WebJam does not host the meeting.
 
 ---
 
@@ -164,9 +166,9 @@ Everything from Stage 2, times N. Tips for the first full session:
 | Stage stays on "Connecting" after Start Audio | RPC handshake failed | check `~/.webjam_jamulus.log`; confirm Jamulus ≥ 3.9; port 22222 free |
 | "Jamulus Not Found" | not bundled/installed, or custom path | Windows: click "Install Jamulus now" in Settings → Jamulus; otherwise install from jamulus.io, or set the path in Settings |
 | "Port in use" | old Jamulus still running | quit it (Activity Monitor / Task Manager), retry |
-| I hear myself echo | Webex mic set to real mic AND Jamulus monitoring | in Webex, set mic to the virtual cable only |
-| Others can't hear my instrument on video | Webex mic not set to virtual cable | Webex settings → microphone → BlackHole / CABLE Output |
+| I hear delayed duplicate music | Webex microphone is open or a bridge feed reaches a musician | mute Webex; use talkback mode and keep all music in Jamulus |
+| Nobody hears Webex speech | joined without computer audio or wrong talkback mic | join with computer audio, choose the speech mic and wired interface speaker, then test Spacebar |
 | Remote drummer cannot reach Mac server | VPN, missing UDP forward, firewall, CGNAT | disable VPN; verify DHCP reservation and UDP 22124 forward; do not expose RPC ports |
 | Record button conflicts with client RPC | server and client both using 22222 | keep client RPC on 22222 and same-Mac server recorder RPC on 22240 |
-| Music sounds fine in Jamulus, awful in Webex | that's expected — Webex compresses | mix decisions happen in Jamulus; Webex is for faces |
+| I cannot hear my own Jamulus return | interface/mixer routing or local channel problem | check the Jamulus personal mix; Jamulus normally returns the local musician with the server mix |
 | Constant crackling in Jamulus | buffer too small / Wi-Fi | wired Ethernet; raise buffer in Jamulus settings |

@@ -11,10 +11,11 @@ import core.audio_engine as ae
 from core.audio_engine import RealAudioEngine, _MAX_LEVEL_ENTRIES
 
 
-def _settings(device_index=-1):
+def _settings(device_index=-1, webex_audio_mode="talkback"):
     return SimpleNamespace(
         audio_samplerate=48000, audio_blocksize=0,
         audio_latency="low", audio_input_device_index=device_index,
+        webex_audio_mode=webex_audio_mode,
     )
 
 
@@ -71,7 +72,9 @@ class TestResolveDevice(unittest.TestCase):
         self.assertEqual(eng.diagnostics().input_device, "Configured Iface")
 
     def test_auto_detect_loopback(self):
-        eng = RealAudioEngine(_settings(device_index=-1))
+        eng = RealAudioEngine(
+            _settings(device_index=-1, webex_audio_mode="audience_bridge")
+        )
         fake_sd = mock.MagicMock()
         status = SimpleNamespace(
             ok=True,

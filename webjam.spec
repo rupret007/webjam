@@ -45,6 +45,50 @@ _init_src = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 _m = re.search(r'__version__\s*=\s*"([^"]+)"', _init_src)
 VERSION = _m.group(1) if _m else "0.0.0"
 
+# Give the Windows executable the same authoritative version metadata as the
+# macOS bundle. CI reads ProductVersion from the built PE before packaging.
+_windows_version_info = None
+if sys.platform == "win32":
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo,
+        StringFileInfo,
+        StringStruct,
+        StringTable,
+        VarFileInfo,
+        VarStruct,
+        VSVersionInfo,
+    )
+
+    _version_parts = [int(part) for part in VERSION.split(".")[:4]]
+    _version_parts.extend([0] * (4 - len(_version_parts)))
+    _version_tuple = tuple(_version_parts)
+    _windows_version_info = VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=_version_tuple,
+            prodvers=_version_tuple,
+            mask=0x3F,
+            flags=0x0,
+            OS=0x40004,
+            fileType=0x1,
+            subtype=0x0,
+            date=(0, 0),
+        ),
+        kids=[
+            StringFileInfo([
+                StringTable("040904B0", [
+                    StringStruct("CompanyName", "WebJam"),
+                    StringStruct("FileDescription", "WebJam"),
+                    StringStruct("FileVersion", VERSION),
+                    StringStruct("InternalName", "WebJam"),
+                    StringStruct("OriginalFilename", "WebJam.exe"),
+                    StringStruct("ProductName", "WebJam"),
+                    StringStruct("ProductVersion", VERSION),
+                ]),
+            ]),
+            VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+        ],
+    )
+
 # On Windows, bundle the VB-CABLE installers so the app folder really does
 # contain the virtual-audio-cable setup the band guide points users to.
 # (Useless on macOS — that uses BlackHole — so only include it on Windows.)
@@ -147,6 +191,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version=_windows_version_info,
     # icon="webjam_qt/theme/webjam.icns" if sys.platform == "darwin" else
     #      "webjam_qt/theme/webjam.ico",
 )
@@ -177,9 +222,7 @@ if sys.platform == "darwin":
         bundle_identifier="com.webjam.app",
         info_plist={
             "NSMicrophoneUsageDescription":
-                "WebJam uses the microphone through Jamulus for low-latency audio.",
-            "NSCameraUsageDescription":
-                "WebJam uses the camera for the embedded Webex video conference.",
+                "WebJam uses the selected input for metering and optional local recording.",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             "CFBundleShortVersionString": VERSION,

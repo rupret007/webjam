@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 _app = QApplication.instance() or QApplication([])
 
 import unittest  # noqa: E402
@@ -55,17 +55,17 @@ class TestToggleButtonState(unittest.TestCase):
         self.controller.bridge.webex_state = "Not opened"
         self.assertFalse(self.controller._is_video_active())
 
-    def test_is_video_active_true_for_in_meeting(self):
+    def test_is_video_active_does_not_claim_in_meeting(self):
         self.controller.bridge.webex_state = "In Meeting"
+        self.assertFalse(self.controller._is_video_active())
+
+    def test_is_video_active_true_for_opened_externally(self):
+        self.controller.bridge.webex_state = "Opened externally"
         self.assertTrue(self.controller._is_video_active())
 
-    def test_is_video_active_true_for_opened_in_browser(self):
-        self.controller.bridge.webex_state = "Opened in browser"
-        self.assertTrue(self.controller._is_video_active())
-
-    def test_is_video_active_true_for_lobby(self):
+    def test_is_video_active_does_not_claim_lobby(self):
         self.controller.bridge.webex_state = "Lobby"
-        self.assertTrue(self.controller._is_video_active())
+        self.assertFalse(self.controller._is_video_active())
 
     # -- button labels -----------------------------------------------------
     def test_audio_button_says_launch_when_stopped(self):
@@ -84,20 +84,20 @@ class TestToggleButtonState(unittest.TestCase):
             self.window.session_strip._audio_button.text(), "Stop Audio"
         )
 
-    def test_video_button_says_join_when_not_active(self):
+    def test_video_button_says_open_when_not_active(self):
         self.controller.bridge.jamulus_state = "Not launched"
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Join Video"
+            self.window.session_strip._video_button.text(), "Open Webex"
         )
 
-    def test_video_button_says_leave_when_in_meeting(self):
+    def test_video_button_says_open_again_after_external_launch(self):
         self.controller.bridge.jamulus_state = "Not launched"
-        self.controller.bridge.webex_state = "In Meeting"
+        self.controller.bridge.webex_state = "Opened externally"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Leave Video"
+            self.window.session_strip._video_button.text(), "Open Again"
         )
 
     def test_status_audio_includes_server_when_running(self):
@@ -130,6 +130,8 @@ class TestMuteSelf(unittest.TestCase):
 
     def setUp(self):
         self.controller._jamulus_connected = False
+        self.controller._talk_break_intended = False
+        self.controller._self_transmit_muted = False
         self.controller._reset_to_demo_state()
         self.controller.participants[0] = ParticipantPresentation(
             channel_id=0, name="You", is_local=True
@@ -144,7 +146,19 @@ class TestMuteSelf(unittest.TestCase):
         self.controller._on_mute_self()
 
         self.assertFalse(self.controller.participants[0].muted)
-        self.assertEqual(self.window.session_strip._mute_self_button.text(), "Mute Me")
+        self.assertEqual(self.window.session_strip._mute_self_button.text(), "Talk Break")
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+    def test_unconfirmed_reconnect_intent_does_not_render_as_talk(self):
+        self.controller._talk_break_intended = True
+        self.controller._self_transmit_muted = False
+        self.controller.participants.clear()
+
+        self.controller._on_mute_self()
+
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Talk Break"
+        )
         self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
 
     def test_mute_self_with_live_rpc_success_toggles_mute(self):
@@ -154,9 +168,10 @@ class TestMuteSelf(unittest.TestCase):
         ):
             self.controller._on_mute_self()
 
-        self.assertTrue(self.controller.participants[0].muted)
+        self.assertFalse(self.controller.participants[0].muted)
+        self.assertTrue(self.controller._self_transmit_muted)
         self.assertEqual(
-            self.window.session_strip._mute_self_button.text(), "Unmute Me"
+            self.window.session_strip._mute_self_button.text(), "Resume Music"
         )
         self.assertTrue(self.window.session_strip._mute_self_button.isChecked())
 
@@ -167,13 +182,84 @@ class TestMuteSelf(unittest.TestCase):
             self.controller.jamulus, "set_self_muted", return_value=True
         ):
             self.controller._on_mute_self()
-            self.controller._on_mute_self()
+            with mock.patch.object(
+                QMessageBox,
+                "question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ):
+                self.controller._on_mute_self()
 
         self.assertFalse(self.controller.participants[0].muted)
+        self.assertFalse(self.controller._self_transmit_muted)
         self.assertEqual(
-            self.window.session_strip._mute_self_button.text(), "Mute Me"
+            self.window.session_strip._mute_self_button.text(), "Talk Break"
         )
         self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+    def test_resume_defaults_to_cancel_and_keeps_jamulus_muted(self):
+        self.controller._jamulus_connected = True
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
+        with mock.patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.No,
+        ), mock.patch.object(self.controller.jamulus, "set_self_muted") as rpc:
+            self.controller._on_mute_self()
+        rpc.assert_not_called()
+        self.assertTrue(self.controller._self_transmit_muted)
+        self.assertTrue(self.controller._talk_break_intended)
+
+    def test_resume_rpc_failure_stays_in_talk_state(self):
+        self.controller._jamulus_connected = True
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
+        with mock.patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), mock.patch.object(
+            self.controller.jamulus, "set_self_muted", return_value=False
+        ):
+            self.controller._on_mute_self()
+        self.assertTrue(self.controller._self_transmit_muted)
+        self.assertTrue(self.controller._talk_break_intended)
+
+    def test_reconnect_reapplies_talk_break_before_speaking(self):
+        self.controller._jamulus_connected = True
+        self.controller.participants[0].muted = False
+        self.controller._self_transmit_muted = False
+        self.controller._talk_break_intended = True
+        with mock.patch.object(
+            self.controller.jamulus, "set_self_muted", return_value=True
+        ) as rpc:
+            self.controller._reapply_talk_break_after_reconnect()
+        rpc.assert_called_once_with(True)
+        self.assertTrue(self.controller._self_transmit_muted)
+        self.assertFalse(self.controller.participants[0].muted)
+
+    def test_reconnect_failure_never_claims_talk_break_is_confirmed(self):
+        self.controller._jamulus_connected = True
+        self.controller._self_transmit_muted = False
+        self.controller._talk_break_intended = True
+        with mock.patch.object(
+            self.controller.jamulus, "set_self_muted", return_value=False
+        ):
+            self.controller._reapply_talk_break_after_reconnect()
+        self.assertFalse(self.controller._self_transmit_muted)
+        self.assertTrue(self.controller._talk_break_intended)
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Talk Break"
+        )
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+    def test_confirmed_reconnect_mute_is_not_reapplied_on_every_update(self):
+        self.controller._jamulus_connected = True
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
+        with mock.patch.object(self.controller.jamulus, "set_self_muted") as rpc:
+            self.controller._reapply_talk_break_after_reconnect()
+        rpc.assert_not_called()
 
     def test_mute_self_rpc_failure_reverts_button_and_participant(self):
         self.controller._jamulus_connected = True
@@ -183,17 +269,37 @@ class TestMuteSelf(unittest.TestCase):
             self.controller._on_mute_self()
 
         self.assertFalse(self.controller.participants[0].muted)
-        self.assertEqual(self.window.session_strip._mute_self_button.text(), "Mute Me")
+        self.assertEqual(self.window.session_strip._mute_self_button.text(), "Talk Break")
         self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
 
-    def test_sync_self_mute_button_reflects_local_user_mute_state(self):
+    def test_sync_self_mute_button_ignores_local_mixer_mute(self):
         self.controller.participants[0].muted = True
+        self.controller._sync_self_mute_button()
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
         self.controller._sync_self_mute_button()
         self.assertTrue(self.window.session_strip._mute_self_button.isChecked())
 
-        self.controller.participants[0].muted = False
-        self.controller._sync_self_mute_button()
-        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+    def test_local_card_mute_does_not_change_talk_break(self):
+        self.controller._jamulus_connected = True
+        with mock.patch.object(self.controller.jamulus, "set_mute"):
+            self.controller._on_mute_toggled(0, True)
+        self.assertTrue(self.controller.participants[0].muted)
+        self.assertFalse(self.controller._self_transmit_muted)
+        self.assertFalse(self.controller._talk_break_intended)
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Talk Break"
+        )
+
+    def test_mute_all_does_not_change_talk_break(self):
+        self.controller._jamulus_connected = True
+        with mock.patch.object(self.controller.jamulus, "set_mute"):
+            self.controller._on_mute_all()
+        self.assertTrue(self.controller.participants[0].muted)
+        self.assertFalse(self.controller._self_transmit_muted)
+        self.assertFalse(self.controller._talk_break_intended)
 
 
 class TestAloneOnServerStatus(unittest.TestCase):

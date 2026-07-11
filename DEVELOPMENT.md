@@ -9,7 +9,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 | Python | 3.10+ | Download from https://www.python.org/downloads/ |
 | Git | Latest | https://git-scm.com/downloads |
 | Jamulus | 3.9+ | **Install separately for development** — free at [jamulus.io](https://jamulus.io). Downloadable release *builds* bundle Jamulus (macOS: zero-install nested app; Windows: bundled installer via the Setup Wizard — see `THIRD_PARTY_NOTICES.md`), but that bundling happens at PyInstaller build time and has no effect when running from source with `python webjam_qt_main.py`. |
-| VB-Cable | Latest | Optional, Windows only -- for audio routing between Jamulus and Webex |
+| VB-Cable | Latest | Optional, Windows only — advanced audience-bridge mode; not musician talkback |
 
 When installing Python on Windows, check **"Add python.exe to PATH"** during the installer.
 
@@ -18,7 +18,7 @@ When installing Python on Windows, check **"Add python.exe to PATH"** during the
 **From Cisco GitHub Enterprise:**
 
 ```bash
-git clone https://wwwin-github.cisco.com/jestory/WebJam.git
+git clone https://github.com/rupret007/webjam.git
 cd WebJam
 ```
 
@@ -72,7 +72,10 @@ python webjam_qt_main.py          # Qt Conductor UI (current)
 python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
-On first launch a setup wizard runs automatically to configure your Jamulus server, Webex URL, and audio routing. You can reopen it any time with **Ctrl+,** or the ⚙ Settings button in the left rail.
+On first launch a setup wizard runs automatically to configure the Jamulus
+server, Webex URL, Webex audio role, and optional supplemental local capture.
+Only audience-bridge mode scans for a loopback device. You can reopen Setup
+with **Ctrl+,** or the Settings button in the left rail.
 
 ## Run Tests
 
@@ -140,6 +143,8 @@ Override defaults without editing code:
 | `WEBJAM_JAMULUS_SERVER` | empty | Jamulus server hostname or IP |
 | `WEBJAM_JAMULUS_PORT` | `22124` | Jamulus server port |
 | `WEBJAM_WEBEX_URL` | empty | HTTPS `webex.com` meeting URL |
+| `WEBJAM_WEBEX_AUDIO_MODE` | `talkback` | `talkback`, `video_only`, or `audience_bridge` |
+| `WEBJAM_LOCAL_CAPTURE_ENABLED` | `false` | Enable supplemental local input capture independently of Webex mode |
 | `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
 | `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
 | `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |
@@ -161,7 +166,8 @@ VB/                        VB-Cable driver INFs (Windows audio routing)
 
 ## Windows-Specific Notes
 
-- **VB-Cable**: The Windows release build bundles VB-CABLE installers in `VB/`, but WebJam does not install the driver automatically. Pilot users install VB-CABLE separately, then rerun Ready Check.
+- **VB-Cable**: bundled installers support advanced audience-bridge mode only.
+  Normal musician talkback uses native Webex plus Jamulus and needs no virtual cable.
 - **Admin detection**: `utils/installer_helpers.py` uses `ctypes.windll` to check for admin privileges -- this only activates on Windows.
 - **SmartScreen**: Downloaded `.exe` files trigger a "Windows protected your PC" warning. Click "More info" then "Run anyway".
 

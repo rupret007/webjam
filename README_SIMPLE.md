@@ -1,6 +1,6 @@
 # WebJam — Quick Start for Your Band
 
-WebJam puts your band's **live audio (Jamulus)** and **video call (Webex)** in one window, with a shared notes canvas — so rehearsals start in seconds instead of juggling apps.
+WebJam coordinates your band's **music (Jamulus)**, **speech/video (native Webex)**, recording, and shared notes so rehearsals start with one clear workflow.
 
 This guide gets your whole band connected for the first time. It's written for the **Conductor** app (the main WebJam). Launch it with:
 
@@ -32,18 +32,11 @@ Unzip it and run the **WebJam** app inside. **The first launch will trigger a se
 Every band member installs WebJam and uses its bundled Jamulus client:
 
 1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** the Setup Wizard's Jamulus page has an "Install Jamulus now" button that runs the bundled installer for you. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
-2. **A virtual audio cable, only on the designated Webex bridge Mac** — this
-   feeds the full Jamulus mix into the video call.
-   - **Windows:** VB-CABLE — from [vb-audio.com](https://vb-audio.com), or use the installer bundled in WebJam's `VB/` folder (`VBCABLE_Setup_x64.exe`).
-   - **macOS:** BlackHole — free at [existential.audio/blackhole](https://existential.audio/blackhole).
-
-   WebJam detects this during setup, but detection is not routing. Before the
-   session, configure Jamulus and Webex as described below.
-   Other musicians use Jamulus for audio and keep Webex microphone/speaker
-   muted while playing; they do not need BlackHole merely to pass Ready Check.
-3. **WebJam** itself, plus a Webex account/app for the video side.
-
-> **Why the virtual cable?** Jamulus carries the low-latency music between players. The virtual cable feeds that combined sound into Webex as a "microphone," so anyone on the video call hears the band play. Without it, Webex only hears your computer's regular mic.
+2. **Native Webex**, preferably with a dedicated webcam/USB/headset speech mic.
+   The existing music interface is an acceptable push-to-talk fallback when
+   nobody is playing. Both applications send output to wired interface headphones.
+3. **WebJam** itself. BlackHole/VB-CABLE is needed only for the optional
+   advanced audience-broadcast role, not ordinary musician talkback.
 
 ---
 
@@ -65,25 +58,21 @@ The first time you open WebJam, a short setup wizard runs:
 1. **Welcome** — a quick overview; downloadable builds bundle Jamulus, so most people can just continue.
 2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave **Local Jamulus control port** at `22222`; WebJam assigns it to the client it launches so participant names and mixer controls work. It is not the band's server or recorder-control port. The Jamulus executable path is usually pre-filled (macOS: the bundled copy; Windows: click **"Install Jamulus now"** if it's blank and let the installer finish). If you need to point at a different install, browse to it — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
 3. **Webex Meeting** — paste the meeting link.
-4. **Audio Routing** — select whether this Mac is the Webex audio bridge. The
-   bridge Mac must have BlackHole/VB-CABLE; a Jamulus-only musician does not.
-   Detection confirms availability but does not configure routing.
+4. **Music and Talkback** — choose **Musician with talkback** for the normal
+   workflow, **Video only** to disconnect Webex audio, or the advanced
+   **Audience broadcast bridge**. Optionally enable supplemental local stems.
 5. **Configuration saved** — click Finish. WebJam opens the Conductor and runs **Ready Check**; fix anything it flags before your first jam.
 
 You can rerun this any time from **Settings** (`Ctrl+,`).
 
-### Echo-safe Webex routing for the pilot
+### Echo-safe Webex talkback for the pilot
 
-Use one designated Mac as the only Webex audio bridge. In **Audio MIDI
-Setup**, create a Multi-Output Device containing the physical
-headphones/interface and BlackHole. Set Jamulus output to that Multi-Output
-Device, Webex microphone to BlackHole, and Webex speaker to the physical
-output. Never select the Mac's real microphone in Webex during the jam.
-
-Other musicians keep all rehearsal audio in Jamulus. They may join Webex for
-video, but mute Webex microphone and speaker unless their audio-interface
-loopback has been separately verified. This prevents Webex from feeding a
-delayed copy of the band back into Jamulus.
+Both musicians choose **Musician with talkback**. Jamulus carries music;
+native Webex carries speech. Set Webex speaker to the wired interface, select
+the intended speech mic, enable **Mute me when I join**, use Standard macOS
+Mic Mode plus **Optimize for My Voice**, and hold Space only while speaking.
+Keep Webex muted while playing. BlackHole and `WebJam Bridge` are not in this
+signal path. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md).
 
 ---
 
@@ -92,9 +81,10 @@ delayed copy of the band back into Jamulus.
 The Conductor keeps the live actions at the top:
 
 1. **Start Audio** (gold) — starts Jamulus and connects to your band's server. Each member appears as a card as they join.
-2. **Join Video** (teal) — opens your Webex meeting.
+2. **Open Webex** (teal) — opens the meeting externally; finish joining there.
 3. Adjust each player's **fader / mute / solo** on their card to build *your own* monitor mix — it only changes what you hear, not what others hear.
-4. Click the same buttons again to **stop audio** / **leave video**.
+4. Use **Talk Break** between takes. It mutes only your Jamulus send; hold
+   Spacebar in Webex to speak. Release Spacebar before **Resume Music**.
 
 Use **Checks ▾** for Ready Check or Practice. The left rail contains only the
 working Live, Canvas, Takes, and Settings views.
@@ -119,7 +109,7 @@ review both headphone channels, and reveal the take in Finder.
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
 | `Ctrl+M` | Mute / unmute **all** |
-| `Ctrl+Shift+M` | Mute / unmute **yourself** (in both Jamulus *and* Webex) |
+| `Ctrl+Shift+M` | Start **Talk Break** / resume the Jamulus send; Webex is never changed |
 | `Ctrl+Shift+R` | Reset all faders to 0 dB |
 | `Ctrl+T` | Insert a timestamp in the notes canvas |
 | `Ctrl+,` | Open Settings |
@@ -141,16 +131,18 @@ Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test �
 Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private Jamulus server *on your own computer* and connects to it — if you can hear yourself and see your meter move, your audio setup works, full stop. Then:
 
 1. Everyone: **Start Audio** and confirm you see each other's cards and hear each other in Jamulus.
-2. One person: **Join Video** and confirm Webex hears the band (the virtual cable is working).
-3. Set and **save** your monitor mix (`Ctrl+S`).
+2. Both: **Open Webex**, join muted, and verify push-to-talk speech reaches the other interface headphones.
+3. Play with both Webex mics muted and confirm there is no delayed duplicate music.
+4. Set and **save** your monitor mix (`Ctrl+S`).
 
 ---
 
 ## Troubleshooting
 
 - **"Jamulus Not Found" when I click Start Audio** — WebJam can't find (or wasn't shipped with) a Jamulus install. Reopen Settings → Jamulus: on Windows click **"Install Jamulus now"** if it's offered, otherwise install from [jamulus.io](https://jamulus.io) and set the path.
-- **No one can hear the band in Webex** — detection alone is not enough. On the designated bridge Mac, confirm Jamulus outputs to the physical-output + BlackHole Multi-Output Device and Webex uses BlackHole as its microphone.
-- **"No audio routing device found" in setup** — install the virtual cable for your OS and relaunch.
+- **No Webex talkback** — confirm Webex uses the intended speech mic and the wired interface as speaker, then test temporary unmute by holding Spacebar.
+- **Delayed duplicate music** — mute Webex immediately. Webex is receiving an instrument/music input; select a dedicated speech mic and keep it muted while playing.
+- **"No audio routing device found" in setup** — this applies only to advanced audience-bridge mode; talkback does not require a virtual device.
 - **Can't connect to the server** — double-check the host and port with your band admin, and that everyone is pointed at the *same* server.
 - **Something's off and you want help** — press `Ctrl+Shift+D` to copy a diagnostics summary, or grab the log files: `~/.webjam.log` (WebJam) and `~/.webjam_jamulus.log` (Jamulus output).
 

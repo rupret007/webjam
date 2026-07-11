@@ -58,12 +58,19 @@ class ChannelInfo:
     is_local: bool = False
 
 
+@dataclass
+class _PendingCommand:
+    event: threading.Event
+    success: bool = False
+
+
 class JamulusRpcClient:
     """JSON-RPC 2.0 client (NDJSON over TCP) for a running Jamulus client."""
 
     JSONRPC_VERSION = "2.0"
     CONNECT_TIMEOUT_S = 1.0
     AUTH_TIMEOUT_S = 3.0
+    COMMAND_TIMEOUT_S = 1.0
     RECONNECT_WAIT_S = 2.0
     LEVEL_MAX = 9      # channelLevelList values are integers 0..9
     # Jamulus ERecorderState: 1=not initialised, 2=not enabled, 3=recording.
@@ -99,6 +106,7 @@ class JamulusRpcClient:
         self._send_lock = threading.Lock()  # serialises sendall on the socket
         self._request_counter = 0
         self._inflight: Dict[int, str] = {}      # request id -> method name
+        self._pending_commands: Dict[int, _PendingCommand] = {}
         self._clients: List[ChannelInfo] = []     # last-known participant list
         self._local_channel_id: int = -1
         # Heartbeat: monotonic time of the last successful RPC interaction.
@@ -122,6 +130,7 @@ class JamulusRpcClient:
         self._available = False
         self._authed = False
         self._sock = None
+        self._fail_pending_commands()
         with self._lock:
             self._request_counter = 0
             self._inflight.clear()
@@ -136,8 +145,12 @@ class JamulusRpcClient:
         self._authed = False
         self._local_channel_id = -1
         with self._lock:
+            pending = list(self._pending_commands.values())
+            self._pending_commands.clear()
             self._request_counter = 0
             self._inflight.clear()
+        for command in pending:
+            command.event.set()
         sock = self._sock
         self._sock = None
         if sock is not None:
@@ -184,8 +197,19 @@ class JamulusRpcClient:
         return self.set_channel_gain(channel_id, 0 if muted else 100)
 
     def set_self_muted(self, muted: bool) -> bool:
-        """Mute/unmute the local user globally (jamulusclient/setMuted)."""
-        return self._send("jamulusclient/setMuted", {"muted": bool(muted)}) is not None
+        """Mute/unmute globally and wait for Jamulus to acknowledge it."""
+        pending = _PendingCommand(event=threading.Event())
+        request_id = self._send(
+            "jamulusclient/setMuted", {"muted": bool(muted)}, pending=pending
+        )
+        if request_id is None:
+            return False
+        if not pending.event.wait(self.COMMAND_TIMEOUT_S):
+            with self._lock:
+                self._pending_commands.pop(request_id, None)
+                self._inflight.pop(request_id, None)
+            return False
+        return pending.success
 
     def send_chat_text(self, text: str) -> bool:
         """Send a chat message to the band (jamulusclient/sendChatText)."""
@@ -297,6 +321,7 @@ class JamulusRpcClient:
         finally:
             if self._sock is sock:
                 self._sock = None
+            self._fail_pending_commands()
             try:
                 sock.close()
             except Exception:  # noqa: BLE001
@@ -327,13 +352,21 @@ class JamulusRpcClient:
             self._request_counter += 1
             return self._request_counter
 
-    def _send(self, method: str, params: dict) -> Optional[int]:
+    def _send(
+        self,
+        method: str,
+        params: dict,
+        *,
+        pending: Optional[_PendingCommand] = None,
+    ) -> Optional[int]:
         sock = self._sock
         if sock is None:
             return None
         req_id = self._next_id()
         with self._lock:
             self._inflight[req_id] = method
+            if pending is not None:
+                self._pending_commands[req_id] = pending
         payload = json.dumps({
             "jsonrpc": self.JSONRPC_VERSION,
             "id": req_id,
@@ -347,8 +380,21 @@ class JamulusRpcClient:
             _logger.debug("RPC send %s failed: %s", method, exc)
             with self._lock:
                 self._inflight.pop(req_id, None)
+                failed = self._pending_commands.pop(req_id, None)
+            if failed is not None:
+                failed.event.set()
             return None
         return req_id
+
+    def _fail_pending_commands(self) -> None:
+        """Wake acknowledged-command callers when the RPC connection drops."""
+        with self._lock:
+            request_ids = list(self._pending_commands)
+            pending = [self._pending_commands.pop(req_id) for req_id in request_ids]
+            for req_id in request_ids:
+                self._inflight.pop(req_id, None)
+        for command in pending:
+            command.event.set()
 
     @staticmethod
     def _parse(line: str) -> Optional[dict]:
@@ -373,8 +419,13 @@ class JamulusRpcClient:
             self._handle_notification(method, obj.get("params") or {})
             return
         if "id" in obj and ("result" in obj or "error" in obj):
+            request_id = obj.get("id")
             with self._lock:
-                req_method = self._inflight.pop(obj.get("id"), None)
+                req_method = self._inflight.pop(request_id, None)
+                pending = self._pending_commands.pop(request_id, None)
+            if pending is not None:
+                pending.success = "error" not in obj and obj.get("result") == "ok"
+                pending.event.set()
             if "result" in obj:
                 self._handle_response(req_method, obj["result"])
 

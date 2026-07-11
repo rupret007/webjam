@@ -23,12 +23,20 @@ def webex_url_error(raw: str) -> str | None:
         return "paste your Webex meeting link in Settings"
     if " " in url or ".." in url:
         return "URL should not contain spaces or '..'"
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        return "Webex link is not a valid URL"
     if parsed.scheme != "https":
         return "Webex links must use https://"
     if not parsed.netloc:
         return "Webex link needs a domain"
-    host = (parsed.hostname or "").lower()
+    if parsed.username is not None or parsed.password is not None:
+        return "Webex links must not include a username or password"
+    if port is not None:
+        return "Webex links must not include a custom port"
     if "." not in host or host in {"localhost", "127.0.0.1"}:
         return "Webex link needs a real domain, not localhost"
     if not _host_is_webex(host):

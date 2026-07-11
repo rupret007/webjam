@@ -29,3 +29,16 @@ def test_rejects_non_https_and_non_webex_hosts():
 def test_rejects_spaces_and_dot_dot():
     assert webex_url_error("https://org webex.com/meet/band")
     assert webex_url_error("https://org..webex.com/meet/band")
+
+
+def test_rejects_userinfo_and_explicit_ports():
+    assert webex_url_error(
+        "https://user:secret@org.webex.com/meet/band"
+    ) == "Webex links must not include a username or password"
+    assert webex_url_error(
+        "https://org.webex.com:443/meet/band"
+    ) == "Webex links must not include a custom port"
+
+
+def test_malformed_port_is_reported_instead_of_raising():
+    assert webex_url_error("https://org.webex.com:notaport/meet/band")

@@ -18,7 +18,7 @@ import logging
 import threading
 from typing import Optional
 
-from PySide6.QtCore import QObject, QTimer, Qt
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
@@ -80,6 +80,12 @@ class ApplicationController(QObject):
         self._recorder_armed = False
 
         self._shutdown = False
+        # User intent is separate from a transient participant snapshot.  Keep
+        # Talk Break fail-closed across an automatic Jamulus reconnect.
+        self._talk_break_intended = False
+        # This is the global jamulusclient/setMuted state. Participant.muted is
+        # a different control: it only mutes that channel in the local mix.
+        self._self_transmit_muted = False
 
         self.bridge = BridgeService(
             jamulus_controller=self.jamulus,
@@ -152,12 +158,9 @@ class ApplicationController(QObject):
             self.window.participant_grid.tick_all_meters
         )
 
-        # Webex guest-token refresh: 1-minute poll. The embed widget's TTL
-        # is 1 hour, so checking every minute gives us plenty of margin to
-        # spot the 5-minute "near expiry" window without spamming.
+        # Retained as an inert compatibility attribute for extensions that
+        # inspect controller timers. Native Webex launch uses no guest token.
         self._token_refresh_timer = QTimer(self)
-        self._token_refresh_timer.setInterval(60_000)
-        self._token_refresh_timer.timeout.connect(self._on_token_refresh_tick)
 
         # Rebuilding the pulse scans the note text. Coalesce rapid typing
         # while retaining an immediate refresh before a brief is exported.
@@ -186,13 +189,6 @@ class ApplicationController(QObject):
             logger=LOGGER,
             metrics=self.metrics,
         )
-
-        # Wire Webex token-refresh metrics into the embed widget so we can
-        # measure how often long sessions actually need a refresh.
-        try:
-            self.window.webex_embed.on_refresh_metric = lambda key: self.metrics.increment(key)
-        except AttributeError:
-            pass  # older embed without the hook
 
         self._wire_signals()
         self._bootstrap_ui()
@@ -331,9 +327,9 @@ class ApplicationController(QObject):
         strip.practice_requested.connect(self._on_practice_requested)
         strip.record_requested.connect(self._on_record_requested)
         strip.ready_check_requested.connect(self._on_ready_check)
-        # Fallback button opens Webex in the system browser when embed unavailable
+        # Both launch affordances share URL validation and truthful state.
         self.window.webex_embed.fallback_button().clicked.connect(
-            lambda: self.bridge.launch_webex(manual=True)
+            self._on_join_video
         )
         self.window.close_requested.connect(self.shutdown)
         self.window.confirm_close = self.recording.confirm_quit
@@ -384,7 +380,7 @@ class ApplicationController(QObject):
         )
         self._apply_mode(mode)
         self.window.set_status_audio("Ready to launch")
-        self.window.set_status_video("Ready to join")
+        self.window.set_status_video("Not opened")
         self.window.set_status_latency("Not connected")
         self.window.set_status_routing("scanning…")
         self.session_health.reset_live_truth()
@@ -393,9 +389,8 @@ class ApplicationController(QObject):
         # Start the global meter decay tick (continuous; one timer for the
         # whole grid instead of one per LevelMeter).
         self._meter_tick_timer.start()
-        # Start the Webex guest-token refresh poll — no-op if no guest
-        # credentials configured (direct-URL mode).
-        self._token_refresh_timer.start()
+        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._load_notes()
         self._load_session_title()
         self._refresh_session_pulse()
@@ -406,11 +401,20 @@ class ApplicationController(QObject):
         self._refresh_session_pulse()
 
     def _sync_self_mute_button(self) -> None:
-        """Update the SessionStrip 'Mute Me' button to match local-user mute state."""
-        for p in self.participants.values():
-            if p.is_local:
-                self.window.session_strip.set_self_muted(p.muted)
-                return
+        """Render global transmit truth, never the local mixer-card mute."""
+        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        talkback_active = (
+            self._webex_audio_mode() == "talkback"
+            and self._talk_break_intended
+            and self._self_transmit_muted
+        )
+        shown_muted = self._self_transmit_muted
+        self.window.session_strip.set_self_muted(shown_muted)
+        self.window.webex_embed.set_talk_break_active(talkback_active)
+
+    def _webex_audio_mode(self) -> str:
+        mode = getattr(self.settings, "webex_audio_mode", "talkback")
+        return mode if mode in {"talkback", "video_only", "audience_bridge"} else "talkback"
 
     # ------------------------------------------------------------------
     # Real Jamulus participant callback (called from background thread)
@@ -471,7 +475,16 @@ class ApplicationController(QObject):
 
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
+        was_connected = self._jamulus_connected
+        if not jamulus_participants and was_connected and self._talk_break_intended:
+            # A reconnect loses proof of the Jamulus client's transmit state.
+            # Preserve the user's Talk Break intent, but never render TALK as
+            # confirmed until the new RPC session acknowledges setMuted.
+            self._self_transmit_muted = False
+            self._sync_self_mute_button()
         self.audio.apply_participants(jamulus_participants)
+        if self._jamulus_connected and self._talk_break_intended:
+            self._reapply_talk_break_after_reconnect()
 
     @staticmethod
     def _role_label(jp) -> str:
@@ -558,12 +571,8 @@ class ApplicationController(QObject):
         return self.bridge.jamulus_state in ("Running", "Already running")
 
     def _on_join_video(self) -> None:
-        """Toggle handler — joins the meeting if not joined, leaves if active."""
+        """Open the configured meeting externally without claiming join state."""
         from core.webex_url import normalize_webex_url, webex_url_error
-
-        if self._is_video_active():
-            self._leave_video()
-            return
 
         url = normalize_webex_url(self.settings.webex_url)
         if not url:
@@ -584,82 +593,35 @@ class ApplicationController(QObject):
             )
             return
 
-        self.window.set_status_video("Joining…")
-        self.window.session_strip.set_video_state("Joining…", enabled=False)
-        self.window.webex_embed.meeting_state_changed.connect(
-            self._on_webex_state, Qt.ConnectionType.UniqueConnection
-        )
-
-        issuer_id = self.settings.webex_guest_issuer_id
-        secret    = self.settings.webex_guest_issuer_secret
-        if issuer_id and secret:
-            self.window.webex_embed.load_meeting_with_guest_token(
-                url,
-                issuer_id=issuer_id,
-                secret_b64=secret,
-                display_name=self.settings.webex_display_name or "WebJam Guest",
-            )
-        else:
-            self.window.webex_embed.load_meeting(url)
+        self.webex.meeting_url = url
+        self.bridge.webex_state = "Opening…"
+        self.window.set_status_video("Opening…")
+        self.window.session_strip.set_video_state("Opening…", enabled=False)
+        self.window.webex_embed.set_launch_status("Opening…")
+        self.bridge.launch_webex(manual=True)
 
     def _is_video_active(self) -> bool:
-        return self.bridge.webex_state in (
-            "Opened in browser", "In Meeting", "Joining…",
-            "Video Active", "Lobby", "joining",
-        )
+        """Return whether an external launch is in progress or succeeded.
+
+        This deliberately does not mean "in a meeting"; native Webex does not
+        expose that truth to this local application.
+        """
+        return self.bridge.webex_state in ("Opening…", "Opened externally")
 
     def _leave_video(self) -> None:
-        """Leave the embedded Webex meeting and reset the UI."""
-        self.window.webex_embed.leave_meeting()
-        self.bridge.leave_webex()
-        self.window.flash_message("Left video meeting.")
+        """Compatibility entry point; WebJam cannot close external Webex."""
+        self.window.flash_message(
+            "Close or leave the meeting in Webex. WebJam does not control it.",
+            ms=5000,
+        )
 
     def _on_webex_state(self, state: str) -> None:
-        # status_label shown in the bar (descriptive); button_label shown on the
-        # primary button (action-oriented — "Leave Video" when joined, etc.)
-        # state_map entries: (status_label, button_label, enabled, joined)
-        state_map = {
-            "joining":  ("Joining…",      "Joining…",    False, True),
-            "ACTIVE":   ("In Meeting",    "Leave Video", True,  True),
-            "lobby":    ("Lobby",         "Leave Video", True,  True),
-            "ENDED":    ("Meeting ended", "Join Video",  True,  False),
-            "left":     ("Not opened",    "Join Video",  True,  False),
-            "error":    ("Webex error",   "Join Video",  True,  False),
-        }
-        status_label, button_label, enabled, joined = state_map.get(
-            state, (state.title(), "Leave Video", True, True)
-        )
-        self.window.set_status_video(status_label)
-        self.window.session_strip.set_video_state(button_label, enabled=enabled)
-        # Sync bridge.webex_state to a value that _is_video_active() recognises,
-        # so the toggle button does the right thing if the user clicks it again.
-        self.bridge.webex_state = status_label if joined else "Not opened"
+        """Ignore obsolete embedded-meeting callbacks.
 
-        # On error, restore the placeholder so the user can fall back to the
-        # browser without first clicking "Leave Video".
-        if state == "error":
-            self.window.webex_embed.leave_meeting()
-            self.window.flash_message(
-                "Webex couldn't load — try the 'Open video call in browser' button.",
-                ms=6000,
-            )
-
-        # In direct-URL mode the widget never sends a post-join state
-        # transition (no JS bridge); re-enable the button after 6 s so
-        # the user can leave or rejoin without restarting the app. Guard it
-        # with a token so a terminal state (error/ENDED/left) arriving inside
-        # those 6 s can't get overwritten with a stale "Leave Video".
-        self._webex_join_token = getattr(self, "_webex_join_token", 0) + 1
-        if state == "joining":
-            token = self._webex_join_token
-
-            def _reenable_if_still_joining():
-                if self._webex_join_token == token and self._is_video_active():
-                    self.window.session_strip.set_video_state(
-                        "Leave Video", enabled=True
-                    )
-
-            QTimer.singleShot(6_000, _reenable_if_still_joining)
+        Kept for one compatibility cycle so a late signal from an old widget
+        cannot overwrite the truthful external-launch state.
+        """
+        LOGGER.debug("Ignoring obsolete embedded Webex state: %s", state)
 
     # ------------------------------------------------------------------
     # Mixer card handlers → JamulusController
@@ -676,9 +638,6 @@ class ApplicationController(QObject):
         p = self.participants.get(channel_id)
         if p is not None:
             p.muted = muted
-            # Keep the strip's "Mute Me" button in sync if this was the local user.
-            if p.is_local:
-                self.window.session_strip.set_self_muted(muted)
         self._mix_dirty = True
         if self._jamulus_connected:
             self.jamulus.set_mute(channel_id, muted)
@@ -730,14 +689,21 @@ class ApplicationController(QObject):
         self.window.session_strip.set_audio_state(
             "Stop Audio" if jamulus_up else "Start Audio", enabled=True
         )
-        webex_open = self._is_video_active()
-        self.window.session_strip.set_video_state(
-            "Leave Video" if webex_open else "Join Video", enabled=True
-        )
+        if self.bridge.webex_state == "Opening…":
+            webex_label, enabled = "Opening…", False
+        elif self.bridge.webex_state == "Opened externally":
+            webex_label, enabled = "Open Again", True
+        else:
+            webex_label, enabled = "Open Webex", True
+        self.window.session_strip.set_video_state(webex_label, enabled=enabled)
+        try:
+            self.window.webex_embed.set_launch_status(self.bridge.webex_state)
+        except AttributeError:
+            pass
 
     def _show_actionable_error(self, title: str, *, what_failed: str,
                                 likely_cause: str, next_action: str,
-                                retry_callback=None) -> None:
+                                retry_callback=None, copy_text: str = "") -> None:
         from pathlib import Path
         # Mention both log files: WebJam's own log + Jamulus's stdout/stderr.
         # Including the Jamulus log only if it exists (avoids confusion when
@@ -763,6 +729,11 @@ class ApplicationController(QObject):
         settings_btn = box.addButton(
             "Open Settings", QMessageBox.ButtonRole.ActionRole
         )
+        copy_btn = None
+        if copy_text:
+            copy_btn = box.addButton(
+                "Copy Meeting Link", QMessageBox.ButtonRole.ActionRole
+            )
         diagnostics_btn = box.addButton(
             "Copy Diagnostics", QMessageBox.ButtonRole.ActionRole
         )
@@ -776,6 +747,9 @@ class ApplicationController(QObject):
                 LOGGER.exception("Retry callback failed")
         elif clicked is settings_btn:
             self._open_settings_wizard()
+        elif copy_btn is not None and clicked is copy_btn:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(copy_text)
         elif clicked is diagnostics_btn:
             self._on_export_diagnostics()
 
@@ -874,35 +848,13 @@ class ApplicationController(QObject):
         self.bridge.attempt_auto_reconnects()
 
     def _on_token_refresh_tick(self) -> None:
-        """Called every 60 s; ask the embedded Webex pane to refresh its
-        guest token if the existing one is approaching its 1-hour TTL.
-
-        No-op when guest-issuer credentials aren't configured (direct-URL
-        mode), or when no meeting has been joined yet.
-        """
-        issuer_id = self.settings.webex_guest_issuer_id
-        secret = self.settings.webex_guest_issuer_secret
-        if not issuer_id or not secret:
-            return
-        try:
-            self.window.webex_embed.maybe_refresh_token(
-                issuer_id=issuer_id,
-                secret_b64=secret,
-                display_name=self.settings.webex_display_name or "WebJam Guest",
-            )
-        except Exception:  # noqa: BLE001
-            LOGGER.debug("Token refresh tick failed", exc_info=True)
+        """Compatibility no-op: native Webex owns its authentication."""
 
     # ------------------------------------------------------------------
     # Save / Load mix (Ctrl+S / Ctrl+O)
     # ------------------------------------------------------------------
     def _on_mute_self(self) -> None:
-        """Toggle mute on the local user's channel.
-
-        Quick way for the conductor to silence themselves during a session
-        (e.g. answering a phone, talking off-mic) without finding their card
-        in the participant grid.
-        """
+        """Toggle only the local Jamulus send, never the Webex microphone."""
         local_channel_id: Optional[int] = None
         for cid, p in self.participants.items():
             if p.is_local:
@@ -913,57 +865,100 @@ class ApplicationController(QObject):
                 "Connect to Jamulus first — your channel isn't available yet.",
                 ms=4000,
             )
-            # Reset the button to unchecked since we didn't actually mute
-            self.window.session_strip.set_self_muted(False)
+            # Render only acknowledged global transmit state. Local mixer mute
+            # and retained Talk Break intent are not proof that send is muted.
+            self._sync_self_mute_button()
             self.session_health.mark_rpc_result(
                 "self-mute", False, "local channel not available"
             )
             return
         if not self._jamulus_connected:
             self.window.flash_message(
-                "Connect to Jamulus first — Mute Me needs the live RPC session.",
+                "Connect to Jamulus first — this control needs the live RPC session.",
                 ms=4000,
             )
-            self.window.session_strip.set_self_muted(False)
+            self._sync_self_mute_button()
             self.session_health.mark_rpc_result(
                 "self-mute", False, "Jamulus session not proven"
             )
             return
-        p = self.participants[local_channel_id]
-        old_muted = bool(p.muted)
-        new_muted = not p.muted
-        p.muted = new_muted
-        self._mix_dirty = True
+        new_muted = not self._self_transmit_muted
+        talkback = self._webex_audio_mode() == "talkback"
+
+        if talkback and not new_muted:
+            reply = QMessageBox.question(
+                self.window,
+                "Resume Music?",
+                "Release Spacebar and confirm your Webex microphone is muted.\n\n"
+                "Resume your Jamulus send?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                self.window.session_strip.set_self_muted(True)
+                return
+
         # Real self-mute: tell Jamulus to stop sending OUR audio to the band
         # (jamulusclient/setMuted).  Zeroing our own channel fader would only
         # mute us in our own monitor — the others would still hear us.
         if not self.jamulus.set_self_muted(new_muted):
-            p.muted = old_muted
             self.session_health.mark_rpc_result(
                 "self-mute", False, "Jamulus RPC rejected setMuted"
             )
-            self._push_participants_to_grid()
-            self.window.session_strip.set_self_muted(old_muted)
+            self._sync_self_mute_button()
+            if talkback:
+                action = "Talk Break" if new_muted else "Resume Music"
+            else:
+                action = "Mute Jamulus Send" if new_muted else "Unmute Jamulus Send"
             self.window.flash_message(
-                "Mute Me did not reach Jamulus — your mute state was not changed.",
+                f"{action} did not reach Jamulus — keep your Webex microphone "
+                "muted and try again.",
                 ms=6000,
             )
             return
+        self._self_transmit_muted = new_muted
+        self._talk_break_intended = bool(talkback and new_muted)
         self.session_health.mark_rpc_result("self-mute", True)
-        # Mirror mute state into the embedded Webex meeting if we're in one,
-        # so the conductor only has to hit one button to silence themselves
-        # in both audio and video.  No-op if Webex hasn't joined.  (We've
-        # already returned above if there's no local Jamulus channel, so this
-        # only needs to gate on the video being active.)
-        if self._is_video_active():
-            try:
-                self.window.webex_embed.mute_webex_self(new_muted)
-            except Exception:  # noqa: BLE001
-                LOGGER.debug("Webex mute sync failed", exc_info=True)
-        self._push_participants_to_grid()
-        self.window.session_strip.set_self_muted(new_muted)
+        self._sync_self_mute_button()
+        if talkback:
+            message = (
+                "TALK · Jamulus send muted — hold Space in Webex to speak."
+                if new_muted else
+                "PLAY · Jamulus send live — keep the Webex microphone muted."
+            )
+        else:
+            message = "Jamulus send muted." if new_muted else "Jamulus send live."
+        self.window.flash_message(message, ms=5000)
+
+    def _reapply_talk_break_after_reconnect(self) -> None:
+        """Fail closed when a reconnect returns while Talk Break is intended."""
+        if (
+            not self._talk_break_intended
+            or self._webex_audio_mode() != "talkback"
+            or not self._jamulus_connected
+            or self._self_transmit_muted
+        ):
+            return
+        local = next((p for p in self.participants.values() if p.is_local), None)
+        if local is None:
+            return
+        if self.jamulus.set_self_muted(True):
+            self._self_transmit_muted = True
+            self.session_health.mark_rpc_result("self-mute", True)
+            self._sync_self_mute_button()
+            self.window.flash_message(
+                "TALK restored after reconnect · Jamulus send is muted.", ms=5000
+            )
+            return
+        self.session_health.mark_rpc_result(
+            "self-mute", False, "could not restore Talk Break after reconnect"
+        )
+        self._self_transmit_muted = False
+        self._sync_self_mute_button()
         self.window.flash_message(
-            "You are muted." if new_muted else "You are unmuted.", ms=2500,
+            "Talk Break is not confirmed after reconnect — keep Webex muted. "
+            "WebJam will retry, or press Talk Break to retry now.",
+            ms=8000,
         )
 
     def _on_mute_all(self) -> None:
@@ -1107,6 +1102,11 @@ class ApplicationController(QObject):
         # in sync with the settings object used by the embedded pane.
         self.webex.meeting_url = self.settings.webex_url
         self.bridge.webex_controller = self.webex
+        if self._webex_audio_mode() != "talkback":
+            self._talk_break_intended = False
+        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
+        self._start_routing_scan()
 
         # JamulusController owns RPC, UDP fallback, and audio-engine settings.
         # Reconfigure in place so BridgeService, MixManager, and tests keep the
@@ -1180,7 +1180,7 @@ class ApplicationController(QObject):
                 self.settings.webex_url != old_webex_url
                 and self._is_video_active()
             ):
-                warnings.append("Leave Video and re-join to apply the new Webex URL.")
+                warnings.append("Press Open Again to use the new Webex URL.")
             if (
                 (self.settings.jamulus_server, self.settings.jamulus_port) != old_jamulus_server
                 and self._is_jamulus_running()
@@ -1194,7 +1194,7 @@ class ApplicationController(QObject):
                 )
             else:
                 self.window.flash_message(
-                    "Settings saved — take effect on next Start Audio / Join Video."
+                    "Settings saved — take effect on next Start Audio / Open Webex."
                 )
 
     def _open_take_deck(self) -> None:
@@ -1313,6 +1313,10 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     def _start_routing_scan(self) -> None:
         """Scan for VB-CABLE / BlackHole in a background thread."""
+        if self._webex_audio_mode() != "audience_bridge":
+            self.window.set_status_routing("Not required")
+            return
+
         def _scan() -> None:
             from core.audio_routing import AudioRoutingStatus, scan_loopback_devices
             try:
@@ -1334,6 +1338,9 @@ class ApplicationController(QObject):
         threading.Thread(target=_scan, daemon=True, name="routing-scan").start()
 
     def _apply_routing_status(self, status) -> None:
+        if self._webex_audio_mode() != "audience_bridge":
+            self.window.set_status_routing("Not required")
+            return
         if status.ok:
             label = f"{status.device_name} \u2713"
             self.window.set_status_routing(label)

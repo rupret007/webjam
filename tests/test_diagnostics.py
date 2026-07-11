@@ -56,7 +56,7 @@ class TestDiagnosticsExporter(unittest.TestCase):
 
     def test_build_summary_redacts_secret(self):
         settings = AppSettings()
-        settings.webex_guest_issuer_secret = "super-sensitive-secret-token-xyz"
+        settings.sentry_dsn = "super-sensitive-secret-token-xyz"
         out = _make_exporter(settings=settings).build_summary()
         self.assertNotIn("super-sensitive-secret-token-xyz", out)
         self.assertIn("[redacted]", out)

@@ -19,12 +19,9 @@ We're jamming on WebJam. One-time setup (~10 min):
    - macOS: right-click the app -> Open -> Open (once).
    - Windows: "More info" -> "Run anyway" (once).
 
-3. Install the virtual audio cable (the designated bridge feeds music into Webex):
-   - Windows: run VBCABLE_Setup_x64.exe from WebJam's VB/ folder.
-   - macOS: install BlackHole from https://existential.audio/blackhole
-   Jamulus itself is already bundled — nothing to install on macOS; on
-   Windows click "Install Jamulus now" in the wizard if prompted.
-   Detection confirms the cable exists; it does not configure device routing.
+3. Use wired interface headphones and a dedicated webcam/USB/headset speech
+   mic when possible. BlackHole/VB-CABLE is not required for musician talkback.
+   Jamulus itself is bundled; on Windows click "Install Jamulus now" if prompted.
 
 4. In the Setup Wizard, enter:
    - Jamulus server host: <FILL IN>
@@ -40,24 +37,24 @@ Questions? Reply here. Full walkthrough: README_SIMPLE.md
    the Setup Wizard's "Install Jamulus now" button). Only install it yourself
    from [jamulus.io](https://jamulus.io) for source/unbundled builds.
 2. Launch WebJam; complete Setup Wizard if prompted.
-3. Press **F2** (Ready Check) — resolve any red items (virtual cable, Jamulus path, server).
+3. Choose **Musician with talkback**, then press **F2**. Resolve automated
+   failures and manually VERIFY the native Webex device/mute settings.
 4. Optional: **Ctrl+P** Practice — confirm your meter moves when you play.
 
 ## Two-person Jamulus smoke
 
-1. Both musicians: **Launch Audio** — status should show **Connecting** then **Connected** with participant count.
+1. Both musicians: **Start Audio** — status should show **Connecting** then **Connected** with participant count.
 2. Confirm fader/mute changes in WebJam affect heard levels.
 3. One musician: **Stop Audio** — demo grid returns; other musician still connected on server.
 
 ## Video smoke
 
-1. On the designated Mac bridge, use a physical-output + BlackHole
-   Multi-Output Device for Jamulus, BlackHole as Webex microphone, and the
-   physical device as Webex speaker.
-2. Other musicians keep Webex microphone/speaker muted and use Jamulus for audio.
-3. **Join Video** — embedded Webex loads or browser fallback opens; confirm
-   the Mac carries the band mix without echo.
-4. **Leave Video** — embed clears; status returns to not joined.
+1. Both musicians set Webex speaker to their wired interface and microphone
+   to the intended speech mic. Enable mute-on-join and Optimize for My Voice.
+2. **Open Webex** — confirm WebJam reports only `Opened externally`.
+3. With Webex muted, play through Jamulus and require no delayed duplicate music.
+4. Use **Talk Break**, hold Spacebar in Webex, and confirm one clear speech path.
+5. Release Spacebar, confirm Webex is muted, then **Resume Music**.
 
 ## Record button (band server)
 

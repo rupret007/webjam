@@ -103,7 +103,8 @@ class TestFullSessionFlow(unittest.TestCase):
         with mock.patch.object(c.jamulus, "set_self_muted", return_value=True) as set_self_muted:
             c._on_mute_self()
         set_self_muted.assert_called_once_with(True)
-        self.assertTrue(c.participants[0].muted)
+        self.assertFalse(c.participants[0].muted)
+        self.assertTrue(c._self_transmit_muted)
 
         # 7. A bandmate leaves.
         c._apply_jamulus_participants([

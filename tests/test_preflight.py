@@ -15,6 +15,8 @@ def _settings(**over):
         jamulus_server="myband.example.com",
         jamulus_port=22124,
         webex_url="https://org.webex.com/meet/band",
+        webex_audio_mode="talkback",
+        local_capture_enabled=False,
     )
     base.update(over)
     return SimpleNamespace(**base)
@@ -32,11 +34,14 @@ class TestReadyCheck(unittest.TestCase):
     def test_all_good(self):
         with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
             s = _settings(jamulus_candidates=[jam.name])
-            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio), \
+                    mock.patch("core.preflight.sys.platform", "darwin"):
                 rep = preflight.run_ready_check(s)
-        self.assertTrue(rep.all_ok, rep.to_text())
+        self.assertTrue(rep.automated_ok, rep.to_text())
+        self.assertFalse(rep.all_ok)
+        self.assertEqual(rep.pending_manual_count, 6)
         self.assertIn("✓", rep.to_text())
-        self.assertIn("ready to jam", rep.to_text())
+        self.assertIn("confirm 6 Webex settings", rep.to_text())
 
     def test_jamulus_missing(self):
         s = _settings(jamulus_candidates=["/nope/Jamulus"])
@@ -62,20 +67,19 @@ class TestReadyCheck(unittest.TestCase):
                 rep = preflight.run_ready_check(s)
         self.assertFalse(rep.all_ok)
 
-    def test_audio_not_detected(self):
+    def test_talkback_does_not_scan_for_loopback_audio(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(jamulus_candidates=[jam.name])
-            with mock.patch("core.audio_routing.scan_loopback_devices", _bad_audio):
+            with mock.patch("core.audio_routing.scan_loopback_devices") as scan:
                 rep = preflight.run_ready_check(s)
-        item = next(i for i in rep.items if i.name == "Webex audio bridge")
-        self.assertFalse(item.ok)
-        self.assertFalse(item.required)
-        self.assertTrue(rep.all_ok)
+        scan.assert_not_called()
+        self.assertNotIn("Webex audio bridge", {i.name for i in rep.items})
+        self.assertTrue(rep.automated_ok)
 
     def test_bridge_mac_requires_virtual_device(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(
-                jamulus_candidates=[jam.name], webex_audio_bridge_enabled=True
+                jamulus_candidates=[jam.name], webex_audio_mode="audience_bridge"
             )
             with mock.patch("core.audio_routing.scan_loopback_devices", _bad_audio):
                 rep = preflight.run_ready_check(s)
@@ -98,12 +102,69 @@ class TestReadyCheck(unittest.TestCase):
                  mock.patch("core.audio_routing.list_input_devices", return_value=devices), \
                  mock.patch("sounddevice.check_input_settings", side_effect=ValueError("bad rate")):
                 rep = preflight.run_ready_check(s)
-        item = next(i for i in rep.items if i.name == "Meter input")
+        item = next(i for i in rep.items if i.name == "Meter and local recording input")
         self.assertFalse(item.ok)
         self.assertIn("48000", item.detail)
         # The detail must lead with guidance, not a raw exception.
         self.assertIn("Settings", item.detail)
         self.assertIn("bad rate", item.detail)
+
+    def test_local_capture_requires_two_channels_48k_and_writable_takes(self):
+        with tempfile.NamedTemporaryFile() as jam, tempfile.TemporaryDirectory() as takes:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                audio_input_device_index=-1,
+                audio_samplerate=48000,
+                local_capture_enabled=True,
+                takes_directory=takes,
+            )
+            with mock.patch("sounddevice.check_input_settings") as check:
+                rep = preflight.run_ready_check(s)
+        check.assert_called_once_with(device=None, channels=2, samplerate=48000)
+        capture = next(i for i in rep.items if i.name == "Local stem recording")
+        self.assertTrue(capture.ok)
+
+    def test_local_capture_rejects_non_48k_setting(self):
+        with tempfile.NamedTemporaryFile() as jam, tempfile.TemporaryDirectory() as takes:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                audio_samplerate=44100,
+                local_capture_enabled=True,
+                takes_directory=takes,
+            )
+            rep = preflight.run_ready_check(s)
+        item = next(
+            i for i in rep.items if i.name == "Meter and local recording input"
+        )
+        self.assertFalse(item.ok)
+        self.assertIn("48,000", item.detail)
+
+    def test_manual_check_matrix_matches_mode(self):
+        expected = {"talkback": 6, "video_only": 1, "audience_bridge": 5}
+        with tempfile.NamedTemporaryFile() as jam:
+            for mode, count in expected.items():
+                with self.subTest(mode=mode), mock.patch(
+                    "core.audio_routing.scan_loopback_devices", _ok_audio
+                ), mock.patch("core.preflight.sys.platform", "darwin"):
+                    rep = preflight.run_ready_check(_settings(
+                        jamulus_candidates=[jam.name], webex_audio_mode=mode
+                    ))
+                manual = [i for i in rep.items if i.manual_verification]
+                self.assertEqual(len(manual), count)
+                self.assertTrue(all(i.required and not i.ok for i in manual))
+
+    def test_non_macos_talkback_omits_macos_mic_mode(self):
+        with tempfile.NamedTemporaryFile() as jam, mock.patch(
+            "core.preflight.sys.platform", "win32"
+        ):
+            rep = preflight.run_ready_check(_settings(
+                jamulus_candidates=[jam.name], webex_audio_mode="talkback"
+            ))
+        manual_names = {
+            item.name for item in rep.items if item.manual_verification
+        }
+        self.assertEqual(len(manual_names), 5)
+        self.assertNotIn("Standard microphone mode", manual_names)
 
     def test_recorder_unreachable_detail_is_actionable(self):
         with tempfile.NamedTemporaryFile() as jam, \

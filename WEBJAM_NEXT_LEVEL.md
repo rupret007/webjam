@@ -1,7 +1,11 @@
 # WebJam — Taking It to the Next Level
 
 **Date:** 2026-06-29
-**Status:** Historical memo. v0.7.1 is already released; current next step is v0.7.2 Pilot Readiness and real-hardware pilot gates, not the v0.4.8 release plan below.
+**Status:** Historical memo. Its market comparison and protocol history remain
+useful, but current status lives in `README.md` and `MODERNIZATION_PLAN.md`.
+The v0.8.1 candidate uses native two-lane Webex talkback and still awaits the
+real-hardware pilot gates; do not treat the old release recommendations below
+as current work.
 An evaluation of what WebJam needs to become a tool a band actually relies on, with the audio engine assessed against the current open-source landscape — plus the headline fix implemented this round.
 
 ---
@@ -53,13 +57,16 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 - **Historical note:** this memo predated the v0.7.x releases. Signed/notarized builds still matter, but downloadable Windows x64, macOS ARM64, and macOS Intel x64 artifacts now exist.
 
 **P1 — leverage the now-correct API (concrete, high-value features the fix unlocks)**
-- **Global "Mute Me"** via `jamulusclient/setMuted` (true self-mute in Jamulus, not just fader-to-zero). The client method is now wired and ready to expose.
+- ✅ **Talk Break / Mute Jamulus Send** via `jamulusclient/setMuted` is shipped;
+  it deliberately never changes native Webex mute state.
 - **In-session chat** via `jamulusclient/sendChatText` + `chatTextReceived` → put it in the session canvas (low effort, high "we're together" value).
 - **Server-side recording** (for the band admin's server) via `jamulusserver/startRecording` / `getRecorderStatus` → one-click "record this rehearsal."
 
 **P2 — lower the setup barrier (the real adoption blocker)**
 - **Pluggable audio backend** abstraction, with **SonoBus** as a serverless option for bands without a Jamulus server.
-- **Bundled/auto-installed virtual audio cable** flow (the VB-CABLE installers are already in `VB/`).
+- **Advanced audience bridge:** bundled VB-CABLE installers lower Windows
+  setup friction, but ordinary musician talkback intentionally needs no
+  virtual cable.
 
 **P3 — the "shared artifact" vision (from VISION_AND_ROADMAP.md)**
 - One-click **session templates** ("Band Rehearsal"), in-session **rituals**, exportable **session brief**, recording timeline.
@@ -68,4 +75,6 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: treat v0.7.1 as closed-pilot-ready, ship v0.7.2 pilot-readiness hardening, then run the real-hardware gates from `FIRST_JAM.md` before Demo Deck Level 2.
+Current recommendation: use the v0.8.1 candidate privately, complete the
+two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the exact
+artifact passes the recording, reconnect, talkback, and soak gates.

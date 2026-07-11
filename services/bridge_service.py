@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from webex_integration import WebexLaunchState
+
 LOGGER = logging.getLogger("webjam.services.bridge")
 
 
@@ -93,15 +95,14 @@ PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
 
 class BridgeService:
     """
-    Service layer for managing external integrations: Jamulus and Webex.
-    Handles launching, monitoring, and reconnection logic.
+    Service layer for Jamulus lifecycle and truthful external Webex launch.
 
     # Lock invariants
     # ----------------
     # `_reconnect_lock` serialises *writes* to:
     #   - `self.jamulus_state`   (via `_set_jamulus_state`)
     #   - `self.jamulus_process` (assigned alongside the state in `_do_launch`)
-    #   - `self.jamulus_reconnect_inflight` / `webex_reconnect_inflight`
+    #   - `self.jamulus_reconnect_inflight`
     #
     # Reads are intentionally *not* under the lock. On CPython, attribute
     # reads of a single pointer-typed value (a `str` subclass like
@@ -138,18 +139,14 @@ class BridgeService:
         # State
         self.jamulus_process: Optional[subprocess.Popen] = None
         self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
-        self.webex_state = "Not opened"
+        self.webex_state = WebexLaunchState.NOT_OPENED.value
         
         self.jamulus_launch_intended = False
-        self.webex_launch_intended = False
         
         self.jamulus_reconnect_attempts = 0
-        self.webex_reconnect_attempts = 0
         self.jamulus_next_reconnect_at = 0.0
-        self.webex_next_reconnect_at = 0.0
         
         self.jamulus_reconnect_inflight = False
-        self.webex_reconnect_inflight = False
         self._reconnect_lock = threading.Lock()
         # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
         # cannot race the old process's port release.
@@ -664,6 +661,11 @@ class BridgeService:
         if not self.practice_mode or proc is None or proc.poll() is None:
             return False
         LOGGER.warning("Practice server exited — ending practice session")
+        # Publish the terminal state synchronously so the reconnect tick and UI
+        # cannot observe a dead practice server as still active while teardown
+        # continues on the worker below.
+        self.practice_mode = False
+        self.jamulus_launch_intended = False
         # stop_jamulus() blocks up to ~4s on proc.wait() joins; this runs on
         # the UI-thread reconnect tick, so do the teardown on a worker thread
         # to keep the GUI responsive.
@@ -724,106 +726,61 @@ class BridgeService:
             self.schedule_ui_callback(self.refresh_readiness)
             return terminated
 
-    def leave_webex(self) -> None:
-        """Disable Webex auto-reconnect and reset state to 'Not opened'.
-
-        For the embedded path this is paired with ``WebexEmbed.leave_meeting()``
-        which is called by the controller; for the browser-fallback path the
-        user must close the browser tab themselves (we have no handle on it).
-        """
-        self.webex_launch_intended = False
-        self.webex_reconnect_attempts = 0
-        self.webex_next_reconnect_at = 0.0
-        with self._reconnect_lock:
-            self.webex_reconnect_inflight = False
-        self.webex_state = "Not opened"
-        try:
-            # Best-effort: if the WebexController has a leave_meeting hook, use it
-            self.webex_controller.leave_meeting()
-        except Exception as exc:
-            LOGGER.debug("webex_controller.leave_meeting failed: %s", exc)
-        self.metrics_service.increment("metric_webex_leave")
-        self.schedule_ui_callback(self.refresh_readiness)
-
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
-        """Open the Webex meeting URL in the default browser."""
+        """Open Webex externally and report only the launch result.
+
+        ``reconnect`` remains in the signature for one compatibility cycle but
+        is intentionally ignored: WebJam cannot observe an external meeting
+        disconnect and therefore must not invent reconnection behavior.
+        """
         if self.shutdown_requested():
-            self.webex_reconnect_inflight = False
             return
             
         if manual:
-            self.webex_launch_intended = True
-            self.webex_reconnect_attempts = 0
-            self.webex_next_reconnect_at = 0.0
             self.metrics_service.increment("metric_webex_open_attempt")
             
-        banner_text = "Opening Webex..." if not reconnect else "Auto-reconnecting Webex..."
-        self.set_status_banner(banner_text, color="#ffcc00")
+        self.webex_state = WebexLaunchState.OPENING.value
+        self.set_status_banner("Opening Webex externally…", color="#ffcc00")
+        self.schedule_ui_callback(self.refresh_readiness)
 
         def _do_open() -> None:
             try:
                 if self.shutdown_requested():
-                    with self._reconnect_lock:
-                        self.webex_reconnect_inflight = False
+                    self.webex_state = WebexLaunchState.NOT_OPENED.value
                     return
 
-                # Retry logic
-                success = False
-                last_err = "Unknown"
-                for i in range(3):
-                    try:
-                        if self.webex_controller.join_meeting():
-                            success = True
-                            break
-                    except Exception as e:
-                        last_err = str(e)
-                    time.sleep(0.4)
-
-                if not success:
-                    raise RuntimeError(last_err)
+                if not self.webex_controller.join_meeting():
+                    raise RuntimeError(
+                        self.webex_controller.last_error or "external launch refused"
+                    )
 
                 if self.shutdown_requested():
-                    with self._reconnect_lock:
-                        self.webex_reconnect_inflight = False
+                    self.webex_state = WebexLaunchState.NOT_OPENED.value
                     return
 
-                self.webex_state = "Opened in browser"
-                self.webex_reconnect_attempts = 0
-                self.webex_next_reconnect_at = 0.0
-                with self._reconnect_lock:
-                    self.webex_reconnect_inflight = False
-                
-                if reconnect:
-                    self.metrics_service.increment("metric_webex_reconnect_success")
-                else:
-                    self.metrics_service.increment("metric_webex_open_success")
+                self.webex_state = WebexLaunchState.OPENED_EXTERNALLY.value
+                self.metrics_service.increment("metric_webex_open_success")
                     
                 self.schedule_ui_callback(self.refresh_readiness)
                 if manual:
                     self.schedule_ui_callback(
-                        lambda: self.set_status_banner("Webex opened in your browser — join the meeting there to connect with your band.")
+                        lambda: self.set_status_banner(
+                            "Webex opened externally — finish joining there."
+                        )
                     )
             except Exception as exc:
-                LOGGER.exception("Failed to open Webex: %s", exc)
-                self.webex_state = "Open failed"
-                with self._reconnect_lock:
-                    self.webex_reconnect_inflight = False
-                
-                if reconnect:
-                    self.metrics_service.increment("metric_webex_reconnect_failed")
-                    self.schedule_ui_callback(self.refresh_readiness)
-                    return
-                    
+                LOGGER.warning("External Webex launch failed: %s", type(exc).__name__)
+                self.webex_state = WebexLaunchState.OPEN_FAILED.value
                 self.metrics_service.increment("metric_webex_open_failed")
                 self.schedule_ui_callback(self.refresh_readiness)
-                exc_msg = str(exc)
                 self.schedule_ui_callback(
-                    lambda m=exc_msg: self.show_actionable_error(
+                    lambda: self.show_actionable_error(
                         "Webex Open Failed",
-                        what_failed=f"Webex URL could not be opened ({m}).",
+                        what_failed="The configured Webex meeting could not be opened.",
                         likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
                         next_action="Verify URL in diagnostics/setup wizard and retry.",
-                        retry_callback=lambda: self.launch_webex(manual=True)
+                        retry_callback=lambda: self.launch_webex(manual=True),
+                        copy_text=self.settings.webex_url,
                     )
                 )
 
@@ -839,7 +796,7 @@ class BridgeService:
         return min(delay, RECONNECT_MAX_DELAY_SECONDS)
 
     def attempt_auto_reconnects(self):
-        """Auto-reconnect tick — retries dropped Jamulus and Webex sessions.
+        """Auto-reconnect tick — retries only a dropped Jamulus process.
 
         Called every ~3 seconds from `ApplicationController._on_reconnect_tick`.
         Per service:
@@ -848,9 +805,6 @@ class BridgeService:
           Audio at some point and didn't click Stop), and the subprocess has
           died (`poll() is not None`), schedules a relaunch with exponential
           backoff (cap 5 attempts, 45s max delay).
-        - **Webex**: if `webex_launch_intended=True` and `webex_state` is
-          'Open failed' or 'Not opened', schedules a relaunch (same backoff).
-
         Reads the `auto_reconnect_enabled` repository setting; returns
         immediately if disabled.  Both retries set `*_inflight=True` to
         prevent double-fire while a relaunch worker thread is in flight.
@@ -870,7 +824,6 @@ class BridgeService:
 
         now = time.monotonic()
         self._attempt_auto_reconnect_jamulus(now)
-        self._attempt_auto_reconnect_webex(now)
 
     def _attempt_auto_reconnect_jamulus(self, now: float):
         with self._reconnect_lock:
@@ -901,36 +854,3 @@ class BridgeService:
             self.jamulus_reconnect_inflight = True
         self.metrics_service.increment("metric_jamulus_reconnect_attempt")
         self.launch_jamulus(manual=False, reconnect=True)
-
-    def _attempt_auto_reconnect_webex(self, now: float):
-        with self._reconnect_lock:
-            if not self.webex_launch_intended:
-                return
-
-            if self.webex_controller.is_connected:
-                self.webex_reconnect_attempts = 0
-                self.webex_next_reconnect_at = 0.0
-                self.webex_reconnect_inflight = False
-                return
-
-            if self.webex_reconnect_inflight:
-                return
-
-            if self.webex_state not in ("Open failed", "Not opened"):
-                # If it's already "Opened in browser", we usually don't auto-reconnect
-                # unless we have a way to detect the browser tab was closed.
-                return
-
-            RECONNECT_MAX_ATTEMPTS = 5
-
-            if self.webex_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
-                return
-
-            if now < self.webex_next_reconnect_at:
-                return
-
-            self.webex_reconnect_attempts += 1
-            self.webex_next_reconnect_at = now + self._reconnect_delay_seconds(self.webex_reconnect_attempts)
-            self.webex_reconnect_inflight = True
-        self.metrics_service.increment("metric_webex_reconnect_attempt")
-        self.launch_webex(manual=False, reconnect=True)

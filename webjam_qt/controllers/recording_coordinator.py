@@ -219,8 +219,8 @@ class RecordingCoordinator:
         ).start()
 
     def _start_local_capture(self) -> bool:
-        """Start isolated SSL capture on the designated host/bridge only."""
-        if not self._c.settings.webex_audio_bridge_enabled:
+        """Start optional isolated local-input capture independently of Webex."""
+        if not self._c.settings.local_capture_enabled:
             self._local_capture = None
             return True
         root = (self._c.settings.takes_directory or "").strip()
@@ -229,7 +229,10 @@ class RecordingCoordinator:
             self._c._show_actionable_error(
                 "Recording Preflight Failed",
                 what_failed="No writable Takes folder is configured for isolated host tracks.",
-                likely_cause="This Mac is the Webex bridge/host, so guitar and vocal isolation is required.",
+                likely_cause=(
+                    "Local input-stem recording is enabled, so WebJam needs a "
+                    "destination for the isolated tracks."
+                ),
                 next_action="Open Settings, choose the local Jamulus recording folder, then retry.",
                 retry_callback=self.on_record_requested,
             )

@@ -75,7 +75,7 @@ class TestCompanionApiWiring(_ControllerFixture):
         self.assertEqual(by_id[1]["fader_level"], 80)
 
     def test_diagnostics_callback_has_no_secret(self):
-        c = self._build(webex_guest_issuer_secret="TOPSECRET")
+        c = self._build(sentry_dsn="TOPSECRET")
         diag = c._companion_get_diagnostics()
         self.assertNotIn("TOPSECRET", " ".join(map(str, diag.values())))
         self.assertIn("jamulus_state", diag)

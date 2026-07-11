@@ -434,7 +434,7 @@ class TestLaunchWebexFailure(unittest.TestCase):
         bridge.launch_webex(manual=True, reconnect=False)
 
         self.assertEqual(bridge.webex_state, "Open failed")
-        self.assertEqual(bridge.webex_controller.join_meeting.call_count, 3)
+        self.assertEqual(bridge.webex_controller.join_meeting.call_count, 1)
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0], "Webex Open Failed"
@@ -443,58 +443,27 @@ class TestLaunchWebexFailure(unittest.TestCase):
             "metric_webex_open_failed"
         )
 
-    def test_reconnect_open_failure_stays_quiet(self, _thread, _sleep):
+    def test_legacy_reconnect_argument_does_not_hide_failure(self, _thread, _sleep):
         bridge = _make_bridge()
         bridge.webex_controller.join_meeting.side_effect = RuntimeError("boom")
 
         bridge.launch_webex(manual=False, reconnect=True)
 
         self.assertEqual(bridge.webex_state, "Open failed")
-        bridge.show_actionable_error.assert_not_called()
-        bridge.metrics_service.increment.assert_any_call(
-            "metric_webex_reconnect_failed"
-        )
+        bridge.show_actionable_error.assert_called_once()
+        bridge.metrics_service.increment.assert_any_call("metric_webex_open_failed")
 
 
 class TestWebexReconnectGating(unittest.TestCase):
-    def test_no_reconnect_while_opened_in_browser(self):
+    def test_periodic_reconnect_tick_never_reopens_external_webex(self):
         bridge = _make_bridge()
-        bridge.webex_launch_intended = True
-        bridge.webex_controller.is_connected = False
-        bridge.webex_state = "Opened in browser"
-        bridge.launch_webex = MagicMock()
-
-        bridge._attempt_auto_reconnect_webex(now=100.0)
-
-        bridge.launch_webex.assert_not_called()
-        self.assertEqual(bridge.webex_reconnect_attempts, 0)
-
-    def test_webex_reconnect_caps_at_5_attempts(self):
-        bridge = _make_bridge()
-        bridge.webex_launch_intended = True
-        bridge.webex_controller.is_connected = False
+        bridge.jamulus_launch_intended = False
         bridge.webex_state = "Open failed"
-        bridge.webex_reconnect_attempts = 5
         bridge.launch_webex = MagicMock()
 
-        bridge._attempt_auto_reconnect_webex(now=100.0)
+        bridge.attempt_auto_reconnects()
 
         bridge.launch_webex.assert_not_called()
-        self.assertEqual(bridge.webex_reconnect_attempts, 5)
-
-    def test_webex_reconnect_resets_when_connected(self):
-        bridge = _make_bridge()
-        bridge.webex_launch_intended = True
-        bridge.webex_controller.is_connected = True
-        bridge.webex_reconnect_attempts = 3
-        bridge.webex_next_reconnect_at = 99.0
-        bridge.webex_reconnect_inflight = True
-
-        bridge._attempt_auto_reconnect_webex(now=100.0)
-
-        self.assertEqual(bridge.webex_reconnect_attempts, 0)
-        self.assertEqual(bridge.webex_next_reconnect_at, 0.0)
-        self.assertFalse(bridge.webex_reconnect_inflight)
 
 
 if __name__ == "__main__":

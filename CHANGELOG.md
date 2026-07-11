@@ -6,6 +6,40 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.8.1] — Release candidate
 
+### Two-lane Webex talkback
+
+- WebJam now treats Jamulus music and native Webex speech as separate audio
+  lanes. New configurations default to **Musician with talkback**; **Video
+  only** and the advanced, mutually exclusive **Audience broadcast bridge**
+  remain explicit alternatives.
+- **Open Webex** now has a truthful external-launch lifecycle: Not opened,
+  Opening, Opened externally, or Open failed. WebJam never claims meeting
+  membership and does not inspect, mute, leave, or reconnect native Webex.
+- In talkback mode, the self-mute control is **Talk Break**. It opens the speech
+  lane only after Jamulus acknowledges that transmit is muted. **Resume Music**
+  defaults to cancel until the musician confirms Webex is muted; RPC failure
+  leaves the safer lane muted. Reconnect reapplies an active Talk Break.
+- Setup presents three accessible audio-role cards. Ready Check automates only
+  what WebJam can observe and labels native Webex device, mute, Mic Mode, and
+  Smart Audio confirmations as `VERIFY`; those confirmations reset on rerun.
+  BlackHole/VB-CABLE is scanned only for an audience bridge, never for normal
+  talkback or video-only use.
+- Supplemental local stem capture is now controlled independently by
+  `local_capture_enabled`. Its **Meter and local recording input**, 48 kHz
+  support, writable takes folder, recovery, and validation do not depend on the
+  selected Webex role.
+- Existing settings migrate without losing intent: legacy bridge-on becomes an
+  audience bridge with local capture enabled; bridge-off becomes video only;
+  brand-new profiles use talkback. The old environment variable remains a
+  one-release compatibility fallback behind `WEBJAM_WEBEX_AUDIO_MODE`.
+- Setup no longer collects or saves legacy Guest Issuer credentials. Webex
+  URLs reject user information and non-default ports, while logs and
+  diagnostics retain at most a trusted Webex hostname and redact meeting
+  paths, queries, and fragments.
+- Added [`WEBEX_AUDIO_MODES.md`](WEBEX_AUDIO_MODES.md) as the canonical signal-
+  flow and fail-safe guide. The closed pilot uses native Webex push-to-talk;
+  Browser SDK/OAuth automation remains deferred.
+
 ### Session Pulse and brief export
 
 - The Qt Session Canvas now presents a local, deterministic Session Pulse from
@@ -40,11 +74,11 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Take Deck adds persistent output-device selection, actionable device errors,
   take-health warnings, Finder reveal, and stereo headphone playback instead
   of sending the rough mono mix only to output channel 1.
-- Ready Check is non-blocking and rerunnable. Setup now distinguishes the one
-  Webex audio-bridge Mac from Jamulus-only musicians, so BlackHole/VB-CABLE is
-  required only where it is actually used. Dead Chat/Roles navigation and the
+- Ready Check is non-blocking and rerunnable. Setup distinguishes talkback,
+  video-only, and audience-bridge roles, so BlackHole/VB-CABLE is required only
+  for the advanced program-feed path. Dead Chat/Roles navigation and the
   duplicate Stage/Mixer distinction were removed; Ready and Practice now live
-  in an accessible Test menu.
+  in the accessible Checks menu.
 
 ### Recording integrity hardening
 

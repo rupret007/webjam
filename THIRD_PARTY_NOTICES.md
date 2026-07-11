@@ -57,6 +57,6 @@ installer.
 
 ## Webex
 
-WebJam integrates with Cisco Webex via an embedded browser view and the
-Webex Guest Issuer API. Webex itself is not bundled — it is a hosted
-service reached over the network.
+WebJam opens Cisco Webex externally for native speech/video. Webex itself is
+not bundled. The deprecated Guest Issuer flow is not used or configured by
+the current application; legacy source remains only for compatibility review.

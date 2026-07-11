@@ -152,7 +152,7 @@ class ConductorWindow(QMainWindow):
         self.session_strip.setAccessibleName("Session controls strip")
         self.side_rail.setAccessibleName("Navigation rail")
         self.participant_grid.setAccessibleName("Participant mixer grid")
-        self.webex_embed.setAccessibleName("Webex video conference pane")
+        self.webex_embed.setAccessibleName("Webex external launch and audio role")
         self.session_canvas.setAccessibleName("Session notes canvas")
 
         # --- Keyboard shortcuts
@@ -284,6 +284,8 @@ class ConductorWindow(QMainWindow):
             *self.side_rail._group.buttons(),
             self.participant_grid._empty_primary,
             self.participant_grid._empty_ready,
+            self.webex_embed.fallback_button(),
+            *self.session_canvas._toolbar_buttons,
             self.session_canvas._notes,
             self.session_canvas._chat_input,
         ]
@@ -303,7 +305,7 @@ class ConductorWindow(QMainWindow):
         mute_self_label = "⌃⇧M (literal Control)" if on_mac else "Ctrl+Shift+M"
         body = (
             f"<b>WebJam — Conductor UI</b> &nbsp;<i>v{__version__}</i><br>"
-            "<i>One window for band audio (Jamulus) + video (Webex).</i><br><br>"
+            "<i>Control band audio here and open native Webex for video and talkback.</i><br><br>"
             "<b>Keyboard shortcuts:</b><br>"
             "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
             "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state (default slot)<br>"
@@ -311,7 +313,7 @@ class ConductorWindow(QMainWindow):
             "&nbsp;&nbsp;<b>Ctrl+Shift+S</b> — Save Mix As... (named file)<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+O</b> — Load Mix... (pick a file)<br>"
             f"&nbsp;&nbsp;<b>{mute_all_label}</b> — Mute / unmute all<br>"
-            f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Mute / unmute yourself<br>"
+            f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Talk Break / Resume Music<br>"
             "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
             "&nbsp;&nbsp;<b>Ctrl+Shift+D</b> — Copy diagnostics to clipboard<br>"
@@ -328,9 +330,10 @@ class ConductorWindow(QMainWindow):
             "<b>Getting started:</b><br>"
             "0. New? Click <b>Practice</b> first — hear yourself solo, no internet needed.<br>"
             "1. Click <b>Start Audio</b> (gold button) to start Jamulus.<br>"
-            "2. Click <b>Join Video</b> (teal button) to open Webex.<br>"
+            "2. Click <b>Open Webex</b>, join muted, and use <b>Talk Break</b> "
+            "before holding Spacebar to speak.<br>"
             "3. Adjust faders as your band joins.<br>"
-            "4. Click the same buttons again to stop / leave.<br><br>"
+            "4. Leave Webex in its own app; WebJam only opens it.<br><br>"
             "<b>Troubleshooting — log files:</b><br>"
             "&nbsp;&nbsp;~/.webjam.log — WebJam diagnostics<br>"
             "&nbsp;&nbsp;~/.webjam_jamulus.log — Jamulus stdout/stderr<br><br>"

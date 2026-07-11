@@ -1,8 +1,7 @@
 """
 ApplicationController live-session path coverage (v0.4.9 hardening).
 
-Covers the previously untested Join/Leave Video flow, Webex state-machine
-transitions (_on_webex_state), the guest-token refresh tick, the Launch/Stop
+Covers the external Webex launch contract, ignored legacy embed callbacks, Launch/Stop
 Audio toggle (with confirmation dialog), the reconnect-tick crash banner,
 the side-rail view handler, the settings wizard round-trip, and the
 diagnostics exporter.  All headless (QT_QPA_PLATFORM=offscreen).
@@ -59,7 +58,7 @@ class _ControllerTestBase(unittest.TestCase):
         c.bridge.jamulus_state = "Not launched"
 
 
-class TestJoinLeaveVideo(_ControllerTestBase):
+class TestExternalWebexLaunch(_ControllerTestBase):
     def test_join_without_url_shows_actionable_error(self):
         c = self.controller
         c.settings.webex_url = ""
@@ -67,22 +66,21 @@ class TestJoinLeaveVideo(_ControllerTestBase):
         c._on_join_video()
         c._show_actionable_error.assert_called_once()
         self.assertEqual(c._show_actionable_error.call_args.args[0], "No Meeting URL")
-        c.window.webex_embed.load_meeting.assert_not_called()
-        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+        c.bridge.launch_webex = MagicMock()
+        c.bridge.launch_webex.assert_not_called()
 
-    def test_join_direct_url_loads_embed(self):
+    def test_valid_url_opens_externally(self):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/band"
-        c.settings.webex_guest_issuer_id = ""
-        c.settings.webex_guest_issuer_secret = ""
+        c.bridge.launch_webex = MagicMock()
         c._on_join_video()
-        c.window.webex_embed.load_meeting.assert_called_once_with(
-            "https://example.webex.com/meet/band"
-        )
-        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+        self.assertEqual(c.webex.meeting_url, "https://example.webex.com/meet/band")
+        c.bridge.launch_webex.assert_called_once_with(manual=True)
         c.window.session_strip.set_video_state.assert_called_with(
-            "Joining…", enabled=False
+            "Opening…", enabled=False
         )
+        c.window.webex_embed.set_launch_status.assert_called_with("Opening…")
+        c.window.webex_embed.load_meeting.assert_not_called()
 
     def test_join_invalid_webex_url_shows_actionable_error(self):
         c = self.controller
@@ -96,8 +94,8 @@ class TestJoinLeaveVideo(_ControllerTestBase):
             c._show_actionable_error.call_args.args[0],
             "Invalid Webex URL",
         )
-        c.window.webex_embed.load_meeting.assert_not_called()
-        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+        c.bridge.launch_webex = MagicMock()
+        c.bridge.launch_webex.assert_not_called()
 
     def test_join_non_webex_url_shows_actionable_error(self):
         c = self.controller
@@ -111,123 +109,35 @@ class TestJoinLeaveVideo(_ControllerTestBase):
             c._show_actionable_error.call_args.args[0],
             "Invalid Webex URL",
         )
-        c.window.webex_embed.load_meeting.assert_not_called()
-        c.window.webex_embed.load_meeting_with_guest_token.assert_not_called()
+        c.bridge.launch_webex = MagicMock()
+        c.bridge.launch_webex.assert_not_called()
 
-    def test_join_with_guest_creds_uses_token_path(self):
+    def test_open_again_launches_again_instead_of_claiming_leave(self):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/band"
-        c.settings.webex_guest_issuer_id = "issuer-123"
-        c.settings.webex_guest_issuer_secret = "c2VjcmV0"
-        c.settings.webex_display_name = "Jeff"
+        c.bridge.webex_state = "Opened externally"
+        c.bridge.launch_webex = MagicMock()
         c._on_join_video()
-        c.window.webex_embed.load_meeting_with_guest_token.assert_called_once_with(
-            "https://example.webex.com/meet/band",
-            issuer_id="issuer-123",
-            secret_b64="c2VjcmV0",
-            display_name="Jeff",
-        )
-        c.window.webex_embed.load_meeting.assert_not_called()
-        # Restore defaults for sibling tests
-        c.settings.webex_guest_issuer_id = ""
-        c.settings.webex_guest_issuer_secret = ""
+        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.window.webex_embed.leave_meeting.assert_not_called()
 
-    def test_join_while_active_leaves_instead(self):
+
+class TestTruthfulWebexState(_ControllerTestBase):
+    def test_obsolete_embed_state_is_ignored(self):
         c = self.controller
-        c.bridge.webex_state = "In Meeting"
-        c._on_join_video()
-        c.window.webex_embed.leave_meeting.assert_called_once()
-        c.window.webex_embed.load_meeting.assert_not_called()
-        self.assertEqual(c.bridge.webex_state, "Not opened")
-        self.assertFalse(c.bridge.webex_launch_intended)
-
-
-class TestWebexStateMachine(_ControllerTestBase):
-    def test_active_state(self):
-        c = self.controller
+        c.bridge.webex_state = "Opened externally"
         c._on_webex_state("ACTIVE")
-        c.window.set_status_video.assert_called_with("In Meeting")
+        self.assertEqual(c.bridge.webex_state, "Opened externally")
+        c.window.set_status_video.assert_not_called()
+
+    def test_readiness_uses_external_labels_only(self):
+        c = self.controller
+        c.bridge.webex_state = "Opened externally"
+        c._refresh_readiness()
+        c.window.set_status_video.assert_called_with("Opened externally")
         c.window.session_strip.set_video_state.assert_called_with(
-            "Leave Video", enabled=True
+            "Open Again", enabled=True
         )
-        self.assertEqual(c.bridge.webex_state, "In Meeting")
-        self.assertTrue(c._is_video_active())
-
-    def test_lobby_state(self):
-        c = self.controller
-        c._on_webex_state("lobby")
-        c.window.set_status_video.assert_called_with("Lobby")
-        self.assertEqual(c.bridge.webex_state, "Lobby")
-        self.assertTrue(c._is_video_active())
-
-    def test_ended_state_resets_toggle(self):
-        c = self.controller
-        c._on_webex_state("ENDED")
-        c.window.set_status_video.assert_called_with("Meeting ended")
-        c.window.session_strip.set_video_state.assert_called_with(
-            "Join Video", enabled=True
-        )
-        self.assertEqual(c.bridge.webex_state, "Not opened")
-        self.assertFalse(c._is_video_active())
-
-    def test_left_state_resets_toggle(self):
-        c = self.controller
-        c._on_webex_state("left")
-        self.assertEqual(c.bridge.webex_state, "Not opened")
-        self.assertFalse(c._is_video_active())
-
-    def test_error_state_restores_placeholder_and_flashes(self):
-        c = self.controller
-        c._on_webex_state("error")
-        c.window.webex_embed.leave_meeting.assert_called_once()
-        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("browser" in m for m in msgs), msgs)
-        self.assertEqual(c.bridge.webex_state, "Not opened")
-
-    def test_joining_state_disables_button(self):
-        c = self.controller
-        c._on_webex_state("joining")
-        c.window.session_strip.set_video_state.assert_called_with(
-            "Joining…", enabled=False
-        )
-        self.assertEqual(c.bridge.webex_state, "Joining…")
-        self.assertTrue(c._is_video_active())
-
-    def test_unknown_state_falls_back_to_title_case(self):
-        c = self.controller
-        c._on_webex_state("reconnecting")
-        c.window.set_status_video.assert_called_with("Reconnecting")
-        self.assertEqual(c.bridge.webex_state, "Reconnecting")
-
-
-class TestTokenRefreshTick(_ControllerTestBase):
-    def test_noop_without_guest_credentials(self):
-        c = self.controller
-        c.settings.webex_guest_issuer_id = ""
-        c.settings.webex_guest_issuer_secret = ""
-        c._on_token_refresh_tick()
-        c.window.webex_embed.maybe_refresh_token.assert_not_called()
-
-    def test_refresh_called_with_credentials(self):
-        c = self.controller
-        c.settings.webex_guest_issuer_id = "iss"
-        c.settings.webex_guest_issuer_secret = "sec"
-        c.settings.webex_display_name = "Jeff"
-        c._on_token_refresh_tick()
-        c.window.webex_embed.maybe_refresh_token.assert_called_once_with(
-            issuer_id="iss", secret_b64="sec", display_name="Jeff"
-        )
-        c.settings.webex_guest_issuer_id = ""
-        c.settings.webex_guest_issuer_secret = ""
-
-    def test_refresh_exception_is_swallowed(self):
-        c = self.controller
-        c.settings.webex_guest_issuer_id = "iss"
-        c.settings.webex_guest_issuer_secret = "sec"
-        c.window.webex_embed.maybe_refresh_token.side_effect = RuntimeError("boom")
-        c._on_token_refresh_tick()  # must not raise
-        c.settings.webex_guest_issuer_id = ""
-        c.settings.webex_guest_issuer_secret = ""
 
 
 class TestLaunchStopAudio(_ControllerTestBase):
@@ -440,14 +350,14 @@ class TestSettingsWizard(_ControllerTestBase):
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("Settings saved" in m for m in msgs), msgs)
 
-    def test_accepted_with_changed_webex_url_warns_when_video_active(self):
+    def test_accepted_with_changed_webex_url_warns_after_external_launch(self):
         c = self.controller
-        c.bridge.webex_state = "In Meeting"
+        c.bridge.webex_state = "Opened externally"
         fresh = AppSettings()
         fresh.webex_url = "https://example.webex.com/meet/other"
         self._run_wizard(accepted=True, new_settings=fresh)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("re-join" in m for m in msgs), msgs)
+        self.assertTrue(any("Open Again" in m for m in msgs), msgs)
 
     def test_accepted_with_changed_server_warns_when_audio_running(self):
         c = self.controller
@@ -489,6 +399,7 @@ class TestRoutingScanShutdownRace(unittest.TestCase):
         import time
 
         window, controller = _make_controller()
+        controller.settings.webex_audio_mode = "audience_bridge"
         controller._ui_invoker.invoke = MagicMock(
             side_effect=RuntimeError("Internal C++ object already deleted")
         )

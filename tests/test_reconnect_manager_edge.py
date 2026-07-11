@@ -89,7 +89,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge = _make_bridge()
         bridge.repository.get_setting.return_value = "0"  # disabled
         bridge.jamulus_launch_intended = True
-        bridge.webex_launch_intended = True
         launch_j = MagicMock()
         launch_w = MagicMock()
         bridge.launch_jamulus = launch_j
@@ -104,7 +103,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
     def test_auto_reconnect_skips_when_shutdown_requested(self):
         bridge = _make_bridge(shutdown_requested=True)
         bridge.jamulus_launch_intended = True
-        bridge.webex_launch_intended = True
         launch_j = MagicMock()
         launch_w = MagicMock()
         bridge.launch_jamulus = launch_j
@@ -154,26 +152,17 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self.assertFalse(bridge.jamulus_reconnect_inflight)
 
     # ------------------------------------------------------------------
-    # Webex reconnect logic
+    # External Webex is never auto-reconnected
     # ------------------------------------------------------------------
-    def test_auto_reconnect_webex_triggers_on_open_failed_state(self):
+    def test_auto_reconnect_tick_never_reopens_external_webex(self):
         bridge = _make_bridge()
-        bridge.webex_launch_intended = True
-        bridge.webex_controller.is_connected = False
         bridge.webex_state = "Open failed"
-        bridge.webex_reconnect_attempts = 0
-        bridge.webex_next_reconnect_at = 0.0
-        bridge.webex_reconnect_inflight = False
         launch_w = MagicMock()
         bridge.launch_webex = launch_w
 
-        bridge._attempt_auto_reconnect_webex(now=50.0)
+        bridge.attempt_auto_reconnects()
 
-        bridge.metrics_service.increment.assert_any_call("metric_webex_reconnect_attempt")
-        launch_w.assert_called_once_with(manual=False, reconnect=True)
-        self.assertEqual(bridge.webex_reconnect_attempts, 1)
-        self.assertGreater(bridge.webex_next_reconnect_at, 50.0)
-        self.assertTrue(bridge.webex_reconnect_inflight)
+        launch_w.assert_not_called()
 
     # ------------------------------------------------------------------
     # launch_jamulus / launch_webex public helpers
@@ -183,9 +172,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.jamulus_launch_intended = False
         bridge.jamulus_reconnect_attempts = 4
         bridge.jamulus_next_reconnect_at = 12.0
-        bridge.webex_launch_intended = False
-        bridge.webex_reconnect_attempts = 2
-        bridge.webex_next_reconnect_at = 14.0
 
         # Patch the internal thread to verify state before thread body runs.
         with patch("services.bridge_service.threading.Thread") as thread_cls:
@@ -201,9 +187,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
             thread_cls.return_value = MagicMock()
             bridge.launch_webex(manual=True, reconnect=False)
 
-        self.assertTrue(bridge.webex_launch_intended)
-        self.assertEqual(bridge.webex_reconnect_attempts, 0)
-        self.assertEqual(bridge.webex_next_reconnect_at, 0.0)
+        self.assertEqual(bridge.webex_state, "Opening…")
         bridge.metrics_service.increment.assert_any_call("metric_webex_open_attempt")
 
     @patch("services.bridge_service.subprocess.Popen")
@@ -248,8 +232,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_inflight = True
 
-        original_popen = popen_mock.side_effect
-
         def _popen_and_flag(*args, **kwargs):
             shutdown_flag["value"] = True
             return fake_proc
@@ -273,15 +255,10 @@ class TestReconnectManagerEdge(unittest.TestCase):
     def test_launch_webex_sets_opened_state_after_success(self, _thread_mock):
         bridge = _make_bridge()
         bridge.webex_controller.join_meeting.return_value = True
-        bridge.webex_reconnect_attempts = 2
-        bridge.webex_next_reconnect_at = 7.0
-        bridge.webex_reconnect_inflight = True
-
         bridge.launch_webex(manual=True, reconnect=False)
 
-        self.assertEqual(bridge.webex_state, "Opened in browser")
+        self.assertEqual(bridge.webex_state, "Opened externally")
         bridge.metrics_service.increment.assert_any_call("metric_webex_open_success")
-        self.assertFalse(bridge.webex_reconnect_inflight)
         self.assertNotIn(
             "metric_webex_open_failed",
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
@@ -296,7 +273,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge = _make_bridge()
         bridge.shutdown_requested = lambda: shutdown_flag["value"]
         bridge.webex_state = "Not opened"
-        bridge.webex_reconnect_inflight = True
 
         def _join_and_shutdown():
             shutdown_flag["value"] = True
@@ -312,7 +288,6 @@ class TestReconnectManagerEdge(unittest.TestCase):
             "metric_webex_open_success",
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
         )
-        self.assertFalse(bridge.webex_reconnect_inflight)
 
 
 class TestStopJamulus(unittest.TestCase):
@@ -367,34 +342,6 @@ class TestStopJamulus(unittest.TestCase):
         bridge.stop_jamulus()
 
         bridge.jamulus_controller.stop.assert_called_once()
-
-
-class TestLeaveWebex(unittest.TestCase):
-    """Tests for leave_webex (v0.4.4)."""
-
-    def test_leave_webex_clears_state_and_disables_reconnect(self):
-        bridge = _make_bridge()
-        bridge.webex_launch_intended = True
-        bridge.webex_state = "Opened in browser"
-        bridge.webex_reconnect_attempts = 2
-
-        bridge.leave_webex()
-
-        self.assertFalse(bridge.webex_launch_intended)
-        self.assertEqual(bridge.webex_state, "Not opened")
-        self.assertEqual(bridge.webex_reconnect_attempts, 0)
-        bridge.webex_controller.leave_meeting.assert_called_once()
-
-    def test_leave_webex_swallows_controller_errors(self):
-        """If webex_controller.leave_meeting raises, state is still reset."""
-        bridge = _make_bridge()
-        bridge.webex_state = "In Meeting"
-        bridge.webex_controller.leave_meeting.side_effect = RuntimeError("boom")
-
-        # Should not raise
-        bridge.leave_webex()
-
-        self.assertEqual(bridge.webex_state, "Not opened")
 
 
 class TestShutdownKillsJamulus(unittest.TestCase):

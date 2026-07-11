@@ -191,12 +191,15 @@ class RealAudioEngine:
                     "falling back to auto-detect", configured
                 )
 
-        # Auto-detect loopback device
-        self._routing = scan_loopback_devices()
-        if self._routing.ok and self._routing.loopback_device.has_input:
-            dev = self._routing.loopback_device
-            self._diagnostics.input_device = dev.name
-            return dev.index
+        # A virtual loopback is meaningful only for the advanced audience
+        # bridge. Talkback and video-only must respect the actual system
+        # default instead of silently metering BlackHole/VB-CABLE.
+        if getattr(self.settings, "webex_audio_mode", "talkback") == "audience_bridge":
+            self._routing = scan_loopback_devices()
+            if self._routing.ok and self._routing.loopback_device.has_input:
+                dev = self._routing.loopback_device
+                self._diagnostics.input_device = dev.name
+                return dev.index
 
         # Fall back to system default
         self._diagnostics.input_device = "system default"

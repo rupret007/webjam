@@ -80,7 +80,7 @@ GET http://127.0.0.1:8765/diagnostics
 {
   "diagnostics": {
     "jamulus_state": "Running",
-    "webex_state": "Embedded",
+    "webex_state": "Opened externally",
     "jamulus_connected": "True",
     "participant_count": "3",
     "jamulus_server": "jam.example.com:22124",
@@ -92,6 +92,10 @@ GET http://127.0.0.1:8765/diagnostics
   }
 }
 ```
+
+`webex_state` reports only WebJam's external-launch handoff. `Opened
+externally` does not mean WebJam observed a successful meeting join, and the
+API exposes no native Webex mute or participant control.
 
 ---
 

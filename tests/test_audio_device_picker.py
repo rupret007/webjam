@@ -143,8 +143,8 @@ class TestAudioEngineExplicitDeviceIndex(unittest.TestCase):
         mock_scan.assert_not_called()
         self.assertEqual(eng.diagnostics().input_device, "USB Audio Interface")
 
-    def test_audio_engine_falls_back_to_autoscan_when_default(self):
-        """audio_input_device_index = -1 keeps the existing auto-detect path."""
+    def test_audience_bridge_auto_detects_loopback_when_default(self):
+        """Audience bridge may auto-select its virtual input device."""
         import core.audio_engine as engine_mod
         from core.audio_engine import RealAudioEngine
         from core.audio_routing import AudioRoutingStatus, LoopbackDevice
@@ -158,7 +158,9 @@ class TestAudioEngineExplicitDeviceIndex(unittest.TestCase):
             loopback_device=loopback, all_devices=[loopback]
         )
 
-        settings = AppSettings(audio_input_device_index=-1)
+        settings = AppSettings(
+            audio_input_device_index=-1, webex_audio_mode="audience_bridge"
+        )
         eng = RealAudioEngine(settings)
 
         with patch.object(engine_mod, "sd", MagicMock()), \
@@ -168,6 +170,23 @@ class TestAudioEngineExplicitDeviceIndex(unittest.TestCase):
 
         self.assertEqual(result, 7)
         mock_scan.assert_called_once()
+
+    def test_talkback_system_default_does_not_auto_select_loopback(self):
+        import core.audio_engine as engine_mod
+        from core.audio_engine import RealAudioEngine
+
+        settings = AppSettings(
+            audio_input_device_index=-1, webex_audio_mode="talkback"
+        )
+        eng = RealAudioEngine(settings)
+
+        with patch.object(engine_mod, "sd", MagicMock()), \
+             patch("core.audio_routing.scan_loopback_devices") as mock_scan:
+            result = eng._resolve_device()
+
+        self.assertIsNone(result)
+        mock_scan.assert_not_called()
+        self.assertEqual(eng.diagnostics().input_device, "system default")
 
 
 if __name__ == "__main__":

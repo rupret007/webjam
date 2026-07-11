@@ -257,6 +257,35 @@ class TestSessionStrip(unittest.TestCase):
             self.assertLess(left.geometry().right(), right.geometry().left())
         s.close()
 
+    def test_long_live_states_remain_readable_at_supported_width(self):
+        s = self._strip()
+        s.set_webex_audio_mode("video_only")
+        s.set_self_muted(True)
+        s.set_recording_phase("validating", detail="WAITING FOR SERVER FILES…")
+        s.set_audio_state("Stop Audio")
+        s.set_video_state("Open Again")
+        s.resize(1100, s.STRIP_HEIGHT)
+        s.show()
+        _qapp().processEvents()
+
+        buttons = [
+            s._record_button,
+            s._test_button,
+            s._mute_self_button,
+            s._audio_button,
+            s._video_button,
+        ]
+        self.assertLessEqual(s.minimumSizeHint().width(), 1100)
+        for button in buttons:
+            self.assertGreaterEqual(button.width(), button.sizeHint().width())
+        self.assertGreaterEqual(
+            s._mode_picker.width(),
+            s._mode_picker.fontMetrics().horizontalAdvance(
+                s._mode_picker.currentText()
+            ) + 40,
+        )
+        s.close()
+
     def test_recording_validation_and_attention_states_are_explicit(self):
         s = self._strip()
         s.set_recording_phase("validating")
@@ -439,6 +468,39 @@ class TestConductorWindow(unittest.TestCase):
         w = self._window()
         self.assertGreaterEqual(w.minimumWidth(), 1100)
         self.assertGreaterEqual(w.minimumHeight(), 720)
+
+    def test_tab_order_follows_stage_then_webex_then_canvas(self):
+        from PySide6.QtCore import Qt
+
+        w = self._window()
+        w.show()
+        _qapp().processEvents()
+        current = w.session_strip._title_input
+        focusable = []
+        visited = set()
+        while current not in visited:
+            visited.add(current)
+            if (
+                current.focusPolicy() != Qt.FocusPolicy.NoFocus
+                and current.isVisibleTo(w)
+                and current.isEnabled()
+            ):
+                focusable.append(current)
+            current = current.nextInFocusChain()
+
+        self.assertLess(
+            focusable.index(w.participant_grid._empty_ready),
+            focusable.index(w.webex_embed.fallback_button()),
+        )
+        self.assertLess(
+            focusable.index(w.webex_embed.fallback_button()),
+            focusable.index(w.session_canvas._toolbar_buttons[0]),
+        )
+        self.assertLess(
+            focusable.index(w.session_canvas._toolbar_buttons[-1]),
+            focusable.index(w.session_canvas._notes),
+        )
+        w.close()
 
     def test_set_status_audio(self):
         w = self._window()

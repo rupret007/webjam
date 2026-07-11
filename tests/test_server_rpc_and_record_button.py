@@ -208,7 +208,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._server_recording = False
         c.recording.phase = c.recording.phase.__class__.IDLE
         c.recording._local_capture = None
-        c.settings.webex_audio_bridge_enabled = False
+        c.settings.local_capture_enabled = False
         c.settings.takes_directory = ""
         c.settings.server_rpc_secret_file = ""
         # A prior test may have left the button disabled mid-toggle.
@@ -263,9 +263,10 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertEqual(c.recording.phase.value, "error")
         c._show_actionable_error.assert_called_once()
 
-    def test_bridge_host_preflight_starts_isolated_capture(self):
+    def test_local_capture_starts_independently_of_talkback_mode(self):
         c = self.controller
-        c.settings.webex_audio_bridge_enabled = True
+        c.settings.webex_audio_mode = "talkback"
+        c.settings.local_capture_enabled = True
         c.settings.takes_directory = "/tmp/takes"
         fake_capture = MagicMock()
         with patch("core.local_capture.LocalInputCapture", return_value=fake_capture):
@@ -273,18 +274,27 @@ class TestRecordButtonWiring(unittest.TestCase):
         fake_capture.start.assert_called_once()
         self.assertIs(c.recording._local_capture, fake_capture)
         c.recording._local_capture = None
-        c.settings.webex_audio_bridge_enabled = False
+        c.settings.local_capture_enabled = False
 
-    def test_bridge_host_preflight_failure_blocks_server_start(self):
+    def test_local_capture_failure_blocks_server_start(self):
         c = self.controller
-        c.settings.webex_audio_bridge_enabled = True
+        c.settings.webex_audio_mode = "video_only"
+        c.settings.local_capture_enabled = True
         c.settings.takes_directory = "/tmp/takes"
         with patch("core.local_capture.LocalInputCapture",
                    side_effect=RuntimeError("device busy")):
             self.assertFalse(c.recording._start_local_capture())
         self.assertEqual(c.recording.phase.value, "error")
         c._show_actionable_error.assert_called_once()
-        c.settings.webex_audio_bridge_enabled = False
+        c.settings.local_capture_enabled = False
+
+    def test_audience_bridge_does_not_implicitly_enable_local_capture(self):
+        c = self.controller
+        c.settings.webex_audio_mode = "audience_bridge"
+        c.settings.local_capture_enabled = False
+        with patch("core.local_capture.LocalInputCapture") as capture_cls:
+            self.assertTrue(c.recording._start_local_capture())
+        capture_cls.assert_not_called()
 
     def test_worker_success_arms_button_and_flashes(self):
         c = self.controller

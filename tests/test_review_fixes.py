@@ -259,9 +259,9 @@ class TestDiagnosticsRedaction(unittest.TestCase):
         from core.redaction import REDACTED, redact_mapping
 
         s = AppSettings()
-        s.webex_guest_issuer_secret = "supersecret"
         # A future secret-named field must redact via the name convention.
         data = asdict(s)
+        data["webex_guest_issuer_secret"] = "supersecret"
         data["some_future_token"] = "leakme"
         redacted = redact_mapping(data)
 
@@ -273,7 +273,7 @@ class TestDiagnosticsRedaction(unittest.TestCase):
         from webjam_qt.controllers.diagnostics import DiagnosticsExporter
 
         s = AppSettings()
-        s.webex_guest_issuer_secret = "supersecret"
+        s.sentry_dsn = "supersecret"
         exporter = DiagnosticsExporter(
             settings=s,
             bridge=object(),
@@ -283,7 +283,7 @@ class TestDiagnosticsRedaction(unittest.TestCase):
 
         payload = exporter._sanitised_settings_json()
 
-        self.assertIn('"webex_guest_issuer_secret": "[redacted]"', payload)
+        self.assertIn('"sentry_dsn": "[redacted]"', payload)
         self.assertNotIn("supersecret", payload)
 
     def test_redact_text_handles_json_and_env_secret_names(self):
@@ -304,6 +304,42 @@ class TestDiagnosticsRedaction(unittest.TestCase):
         self.assertNotIn("tok123", redacted)
         self.assertNotIn("bearer-secret", redacted)
         self.assertIn('"safe": "visible"', redacted)
+
+    def test_redaction_keeps_only_webex_origin(self):
+        from core.redaction import redact_mapping, redact_text, redact_webex_url
+
+        meeting = "https://example.webex.com/meet/sample-room?token=private#lobby"
+        expected = "https://example.webex.com/[redacted]"
+        self.assertEqual(redact_webex_url(meeting), expected)
+        self.assertEqual(redact_mapping({"webex_url": meeting})["webex_url"], expected)
+        redacted = redact_text(f"Opening {meeting} for the band")
+        self.assertIn(expected, redacted)
+        self.assertNotIn("sample-room", redacted)
+        self.assertNotIn("private", redacted)
+
+    def test_redaction_rejects_non_webex_url_as_sensitive(self):
+        from core.redaction import redact_webex_url
+
+        self.assertEqual(
+            redact_webex_url("https://example.com/meet/private"), "[redacted]"
+        )
+
+    def test_webex_redaction_never_retains_userinfo_or_port(self):
+        from core.redaction import redact_text, redact_webex_url
+
+        redacted = redact_webex_url(
+            "https://user:secret@cisco.webex.com:8443/meet/private"
+        )
+        self.assertEqual(redacted, "https://cisco.webex.com/[redacted]")
+        self.assertNotIn("user", redacted)
+        self.assertNotIn("secret", redacted)
+        self.assertNotIn("8443", redacted)
+        log_line = redact_text(
+            "Opening https://user:secret@cisco.webex.com:8443/meet/private"
+        )
+        self.assertNotIn("user", log_line)
+        self.assertNotIn("secret", log_line)
+        self.assertNotIn("8443", log_line)
 
     def test_metrics_service_redacts_log_file_copy(self):
         from ui.services import MetricsService

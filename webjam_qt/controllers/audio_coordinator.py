@@ -137,7 +137,7 @@ class AudioCoordinator:
         if not self.connected:
             self.connected = True
             self._c.session_health.mark_rpc_result("participants", True)
-            self._c.jamulus.set_name(self._c.settings.webex_display_name)
+            self._c.jamulus.set_name(self._c.settings.musician_name)
             self._c.participants.clear()
             self._c._level_timer.start()
             self._c._restore_saved_mix()

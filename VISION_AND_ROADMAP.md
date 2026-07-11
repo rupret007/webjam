@@ -77,28 +77,44 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 - **Bundled Jamulus** — downloadable builds ship Jamulus itself: macOS is zero-install (unmodified, notarized `Jamulus.app` nested in the bundle), Windows offers an in-wizard "Install Jamulus now" button that runs the bundled official installer. Removes the "leave WebJam, find jamulus.io, download, come back" step for most users; the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who needs a different install. See `THIRD_PARTY_NOTICES.md`.
 
-### ✅ Shipped — v0.7.2 pilot readiness (2026-07-06)
+### ✅ Implemented — v0.8.1 release-candidate tree
 
 Everything below is live in the v0.8.1 release-candidate tree. v0.8.0 remains
 the latest published build at [Releases](https://github.com/rupret007/webjam/releases)
 until the physical pilot gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
-- **Setup Wizard** — 5-page first-run wizard (Jamulus server, Webex URL, audio routing detect, Done)
+- **Setup Wizard** — first-run Jamulus/Webex setup with explicit musician
+  talkback, video-only, and advanced audience-bridge roles; supplemental local
+  capture is configured independently
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
-- **Webex embed** — `QWebEngineView` pane with guest-token generation; direct-URL fallback
-- **Audio routing detect** — `core/audio_routing.py` auto-detects VB-CABLE / BlackHole / JACK / Loopback
+- **Native Webex handoff** — opens the configured room externally and reports
+  only launch truth; it never claims to inspect or control meeting membership,
+  devices, mute, leave, or reconnect state
+- **Two-lane talkback** — Jamulus remains the only music path; native Webex is
+  muted-by-default speech. Talk Break mutes Jamulus transmit only after RPC
+  acknowledgement, and Resume Music defaults to cancel until Webex mute is
+  manually confirmed
+- **Role-aware readiness** — native Webex selections are manual `VERIFY` rows;
+  `core/audio_routing.py` scans VB-CABLE / BlackHole / JACK / Loopback only for
+  advanced audience-bridge mode
+- **Independent local capture** — supplemental isolated input stems can be
+  enabled in any Webex mode and retain recovery, alignment, and take validation
 - **Session canvas** — shared notes, local Session Pulse, Markdown brief export, artifact types, review states (Draft→In review→Approved)
 - **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
 - **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration
 - **Three downloadable builds** — Windows x64, macOS ARM64, and macOS Intel x64
-- **CI/CD** — ruff, UX smoke, full pytest, real Jamulus integration, PyInstaller builds on tag push
+- **CI/CD** — Ruff, UX smoke, full pytest, real Jamulus integration, and
+  PyInstaller artifacts on every push; tag pushes additionally create drafts
 - **Accessibility** — `setAccessibleName` on all major panels, keyboard shortcuts, focus rings in QSS
 
 ### 🔜 Next — closed pilot gates
 
-- Clean-machine installs on Windows x64, macOS ARM64, and macOS Intel x64.
-- Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback on real hardware.
+- Clean-artifact startup inspection for Windows x64, macOS ARM64, and macOS
+  Intel x64, plus the planned two-Apple-Silicon-Mac physical pilot.
+- Ctrl+P real-audio smoke, concurrent Jamulus music plus native Webex speech,
+  Talk Break safety, Record, take retrieval, Logic import, Take Deck playback,
+  reconnect, and a 45–60 minute soak on the pilot hardware.
 - macOS code signing/notarization and Windows signing.
 - Architecture split after pilot-readiness fixes: audio/session, video, recording, settings, and companion API coordinators.
 
@@ -132,6 +148,7 @@ until the physical pilot gates pass.
 
 - `CREATIVE_MODES_MVP_SPEC.md` – Mode metadata, canvas, room context (already implemented).
 - `COHORT_VALIDATION_PLAYBOOK.md` – Pilot and validation.
+- `WEBEX_AUDIO_MODES.md` – Canonical music/talkback signal flows and safety rules.
 - `README.md` – User-facing roadmap and quick start.
 
 *WebJam – The app that knows we're making something together.*

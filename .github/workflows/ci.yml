@@ -213,6 +213,16 @@ jobs:
               "out/WebJam-${{ matrix.target }}.zip"
           fi
 
+      - name: Verify Windows version metadata
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        run: |
+          $expected = python -c "from webjam_qt import __version__; print(__version__)"
+          $actual = (Get-Item "dist\WebJam\WebJam.exe").VersionInfo.ProductVersion
+          if ($actual -ne $expected) {
+            throw "WebJam.exe ProductVersion '$actual' does not match '$expected'"
+          }
+
       - name: Sign Windows executable (optional)
         if: matrix.target == 'windows-x64'
         shell: pwsh

@@ -104,6 +104,7 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         self.controller.metrics = self._metrics_mock
         self.controller.window.flash_message = mock.MagicMock()
         self.controller.window.set_status_routing = mock.MagicMock()
+        self.controller.settings.webex_audio_mode = "talkback"
         # Reset session-started latch
         self.controller._jamulus_connected = False
         self.controller._reset_to_demo_state()
@@ -115,6 +116,7 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         )
 
     def test_apply_routing_status_ok_increments_blackhole_found(self) -> None:
+        self.controller.settings.webex_audio_mode = "audience_bridge"
         status = SimpleNamespace(
             ok=True,
             device_name="BlackHole 16ch",
@@ -125,6 +127,7 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         self.assertFalse(self._called("metric_audio_device_missing"))
 
     def test_apply_routing_status_not_ok_increments_missing(self) -> None:
+        self.controller.settings.webex_audio_mode = "audience_bridge"
         status = SimpleNamespace(
             ok=False,
             device_name="",
@@ -133,6 +136,23 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         self.controller._apply_routing_status(status)
         self.assertTrue(self._called("metric_audio_device_missing"))
         self.assertFalse(self._called("metric_audio_device_blackhole_found"))
+
+    def test_talkback_does_not_scan_or_warn_for_loopback(self) -> None:
+        with mock.patch("core.audio_routing.scan_loopback_devices") as scan:
+            self.controller._start_routing_scan()
+        scan.assert_not_called()
+        self.controller.window.set_status_routing.assert_called_with("Not required")
+        self.controller.window.flash_message.assert_not_called()
+
+    def test_late_loopback_result_is_ignored_after_switch_to_talkback(self) -> None:
+        status = SimpleNamespace(
+            ok=False,
+            device_name="",
+            install_hint="Install BlackHole",
+        )
+        self.controller._apply_routing_status(status)
+        self.controller.window.set_status_routing.assert_called_with("Not required")
+        self.assertFalse(self._called("metric_audio_device_missing"))
 
     def test_first_jamulus_participants_increments_session_started(self) -> None:
         # First arrival flips the latch and increments once.

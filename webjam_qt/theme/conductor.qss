@@ -370,8 +370,8 @@ QPushButton#GhostButton:disabled, QToolButton#GhostButton:disabled {
     border: 1px solid transparent;
 }
 
-/* When a ghost button is checkable and checked (e.g. 'Unmute Me' after
- * clicking Mute Me), paint it in the danger accent so the muted-self
+/* When a ghost button is checkable and checked (e.g. 'Resume Music' after
+ * starting a Talk Break), paint it in the danger accent so the muted-self
  * state is obvious at a glance. */
 QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
     background-color: ${COLOR_ACCENT_DANGER};
@@ -653,11 +653,19 @@ QFrame#ReadyCheckRow[result="pass"] {
     border-left: 4px solid ${COLOR_ACCENT_SUCCESS};
 }
 
-QLabel#ReadyCheckMark {
+QFrame#ReadyCheckRow[result="verify"] {
+    border-left: 4px solid ${COLOR_ACCENT_VIDEO};
+}
+
+QLabel#ReadyCheckMark, QCheckBox#ReadyCheckMark {
     min-width: 62px;
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_XS}px;
     font-weight: 700;
+}
+
+QCheckBox#ReadyCheckMark:focus {
+    color: ${COLOR_TEXT_PRIMARY};
 }
 
 QLabel#ReadyCheckName {

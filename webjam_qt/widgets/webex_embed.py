@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.webex_url import is_allowed_webex_url
+from core.redaction import redact_webex_url
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -144,8 +145,11 @@ class WebexEmbed(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("WebexEmbed")
-        self.setMinimumHeight(180)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Native Webex is the supported path. Keep this as a compact launch
+        # and guidance card rather than reserving stage space for a browser.
+        self.setMinimumHeight(112)
+        self.setMaximumHeight(156)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         # Optional telemetry hook: called with a metric key string when the
         # widget spawns a token-refresh worker (ATTEMPT) or the worker
@@ -164,6 +168,8 @@ class WebexEmbed(QFrame):
 
         self._pending_token: Optional[str] = None
         self._pending_url:   str = ""
+        self._audio_mode = "talkback"
+        self._talk_break_active = False
 
         # Unix timestamp of the most recent successful token acquisition.
         # Used by ``maybe_refresh_token`` to decide whether the embedded
@@ -315,8 +321,63 @@ class WebexEmbed(QFrame):
             return False
 
     def fallback_button(self) -> QPushButton:
-        """Return the 'Open Webex in browser' button on the placeholder."""
+        """Return the external Webex launch button on the status card."""
         return self._fallback_btn
+
+    def set_launch_status(self, status: str) -> None:
+        """Show external-launch truth without implying meeting membership."""
+        descriptions = {
+            "Not opened": "Webex has not been opened from WebJam yet.",
+            "Opening…": "Opening Webex externally…",
+            "Opened externally": (
+                "Webex opened externally. Finish joining and control the "
+                "meeting in Webex."
+            ),
+            "Open failed": "Webex could not be opened. Retry or check Settings.",
+        }
+        self._status_label.setText(descriptions.get(status, str(status)))
+        button_text = (
+            "Opening…" if status == "Opening…" else
+            "Open Again" if status == "Opened externally" else
+            "Open Webex"
+        )
+        self._fallback_btn.setText(button_text)
+        self._fallback_btn.setEnabled(status != "Opening…")
+        self._fallback_btn.setAccessibleName(f"{button_text} externally")
+
+    def set_audio_mode(self, mode: str) -> None:
+        """Render concise role guidance for the selected Webex audio mode."""
+        self._audio_mode = (
+            mode if mode in {"talkback", "video_only", "audience_bridge"}
+            else "talkback"
+        )
+        self._render_audio_guidance()
+
+    def set_talk_break_active(self, active: bool) -> None:
+        """Persist the PLAY/TALK safety state beside the Webex launcher."""
+        self._talk_break_active = bool(active)
+        self._render_audio_guidance()
+
+    def _render_audio_guidance(self) -> None:
+        titles = {
+            "talkback": "Webex talkback",
+            "video_only": "Webex video",
+            "audience_bridge": "Webex audience feed",
+        }
+        guidance = {
+            "talkback": (
+                "TALK · Jamulus send muted — hold Space in Webex to speak."
+                if self._talk_break_active else
+                "PLAY · Music stays in Jamulus — keep Webex muted."
+            ),
+            "video_only": "Join Webex without computer audio; music stays in Jamulus.",
+            "audience_bridge": (
+                "Advanced audience feed: musicians must disconnect Webex audio "
+                "to prevent delayed duplicate music."
+            ),
+        }
+        self._title_label.setText(titles[self._audio_mode])
+        self._mode_label.setText(guidance[self._audio_mode])
 
     # ------------------------------------------------------------------
     # Lazy WebEngine init
@@ -477,21 +538,6 @@ class WebexEmbed(QFrame):
                 LOGGER.debug("on_refresh_metric ATTEMPT hook failed", exc_info=True)
         threading.Thread(target=_worker, daemon=True, name="webex-token-refresh").start()
 
-    def mute_webex_self(self, muted: bool) -> None:
-        """Mute or unmute the local user inside the embedded Webex widget.
-
-        Calls into ``window.mute_self(muted)`` in webex_widget.html, which
-        wraps the Webex Meetings Widget audio-mute API.  Fails gracefully
-        if the page hasn't loaded yet (e.g. before joining) or the widget
-        isn't ready — the JS side has its own try/catch.
-        """
-        if self._page is None:
-            return
-        js_bool = "true" if muted else "false"
-        self._page.runJavaScript(
-            f"if (typeof window.mute_self === 'function') {{ window.mute_self({js_bool}); }}"
-        )
-
     @Slot(bool)
     def _on_view_load_finished(self, ok: bool) -> None:
         """QWebEngineView reports load completion — surface failures.
@@ -500,8 +546,7 @@ class WebexEmbed(QFrame):
         offline, blocked by Webex), the embedded view shows a Chromium
         error page.  Without this, the user has no easy way back to a
         functional state.  We emit an 'error' state so the controller can
-        restore the placeholder and reset the button to 'Join Video' —
-        the user can then click the 'Open video call in browser' fallback.
+        restore the status card so the user can retry the external launch.
         """
         if ok:
             return
@@ -510,7 +555,7 @@ class WebexEmbed(QFrame):
         url = self._view.url().toString() if self._view else ""
         if url in ("", "about:blank") or url.startswith("data:"):
             return
-        LOGGER.warning("WebexEmbed load failed for %s", url)
+        LOGGER.warning("WebexEmbed load failed for %s", redact_webex_url(url))
         self.meeting_state_changed.emit("error")
 
     @Slot()
@@ -535,29 +580,37 @@ class WebexEmbed(QFrame):
         frame = QWidget(self)
         frame.setObjectName("WebexPlaceholder")
 
-        title = QLabel("Your band's video call")
-        title.setObjectName("WebexEmbedTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._title_label = QLabel("Webex talkback")
+        self._title_label.setObjectName("WebexEmbedTitle")
+        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        subtitle = QLabel(
-            "Click \u201cJoin Video\u201d above\n"
-            "to start the video call with your band."
+        self._mode_label = QLabel(
+            "Music stays in Jamulus. Join Webex muted; hold Space only "
+            "during a Talk Break."
         )
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("BodyLabel")
+        self._mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._mode_label.setWordWrap(True)
+        self._mode_label.setObjectName("BodyLabel")
 
-        self._fallback_btn = QPushButton("Open video call in browser")
+        self._status_label = QLabel("Webex has not been opened from WebJam yet.")
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_label.setWordWrap(True)
+        self._status_label.setObjectName("BodyLabel")
+
+        self._fallback_btn = QPushButton("Open Webex")
         self._fallback_btn.setObjectName("GhostButton")
+        self._fallback_btn.setAccessibleName("Open Webex externally")
+        self._fallback_btn.setAccessibleDescription(
+            "Open the configured meeting in the native Webex app or browser."
+        )
 
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(Space.LG, Space.LG, Space.LG, Space.LG)
-        layout.setSpacing(Space.MD)
-        layout.addStretch(1)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
+        layout.setSpacing(Space.XS)
+        layout.addWidget(self._title_label)
+        layout.addWidget(self._mode_label)
+        layout.addWidget(self._status_label)
         layout.addWidget(
             self._fallback_btn, alignment=Qt.AlignmentFlag.AlignCenter
         )
-        layout.addStretch(1)
         return frame

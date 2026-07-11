@@ -5,7 +5,7 @@ so a future change couldn't silently regress it.  Covers:
 
 * WCAG AA contrast of the text tokens on their real backgrounds
 * the fader's keyboard-step + accessible-name attributes
-* "Mute Me" mirroring into the embedded Webex meeting (and only when in one)
+* Talk Break muting only the Jamulus send, never the Webex microphone
 * the macOS literal-Control shortcut bindings (Qt.MetaModifier branch)
 * the Webex placeholder auto-restore on a real load failure
 
@@ -93,9 +93,9 @@ class TestFaderAccessibility(unittest.TestCase):
 
 
 # ----------------------------------------------------------------------
-# Mute Me mirrors into the embedded Webex meeting
+# Talk Break is Jamulus-only
 # ----------------------------------------------------------------------
-class TestMuteSelfMirrorsToWebex(unittest.TestCase):
+class TestTalkBreakIsolation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from core.settings import AppSettings
@@ -120,36 +120,36 @@ class TestMuteSelfMirrorsToWebex(unittest.TestCase):
         c.participants.clear()
         c.participants[0] = local
         c._jamulus_connected = True
+        c._self_transmit_muted = False
+        c._talk_break_intended = False
         c.jamulus = mock.MagicMock()              # don't hit real RPC
         c._push_participants_to_grid = lambda: None
         return local
 
-    def test_mute_self_calls_webex_when_video_active(self):
+    def test_talk_break_never_controls_webex(self):
         local = self._install_local_participant()
-        self.controller.bridge.webex_state = "In Meeting"  # _is_video_active() True
-        with mock.patch.object(
-            self.controller.window.webex_embed, "mute_webex_self"
-        ) as mute_webex:
-            self.controller._on_mute_self()
-        self.assertTrue(local.muted)
-        mute_webex.assert_called_once_with(True)
+        self.controller.bridge.webex_state = "Opened externally"
+        self.controller._on_mute_self()
+        self.assertFalse(local.muted)
+        self.assertTrue(self.controller._self_transmit_muted)
+        self.assertFalse(
+            hasattr(self.controller.window.webex_embed, "mute_webex_self")
+        )
 
     def test_mute_self_uses_jamulus_global_setmuted(self):
-        """Mute Me must call the real global self-mute, not zero the local
+        """Talk Break must call the global self-mute, not the local fader
         channel fader (which would only mute us in our own monitor)."""
         self._install_local_participant()
         self.controller.bridge.webex_state = "Not opened"
         self.controller._on_mute_self()
         self.controller.jamulus.set_self_muted.assert_called_once_with(True)
 
-    def test_mute_self_skips_webex_when_not_in_meeting(self):
-        self._install_local_participant()
-        self.controller.bridge.webex_state = "Not opened"  # _is_video_active() False
-        with mock.patch.object(
-            self.controller.window.webex_embed, "mute_webex_self"
-        ) as mute_webex:
-            self.controller._on_mute_self()
-        mute_webex.assert_not_called()
+    def test_failed_talk_break_stays_in_play(self):
+        local = self._install_local_participant()
+        self.controller.jamulus.set_self_muted.return_value = False
+        self.controller._on_mute_self()
+        self.assertFalse(local.muted)
+        self.assertFalse(self.controller._talk_break_intended)
 
 
 # ----------------------------------------------------------------------
@@ -214,6 +214,19 @@ class TestWebexLoadFailureRestore(unittest.TestCase):
         embed._on_view_load_finished(False)
         self.assertIn("error", states)
 
+    def test_load_failure_log_redacts_meeting_destination(self):
+        embed = self._make_embed()
+        embed._view = mock.MagicMock()
+        embed._view.url.return_value.toString.return_value = (
+            "https://example.webex.com/meet/private-room?token=secret#lobby"
+        )
+        with self.assertLogs("webjam.qt.webex_embed", level="WARNING") as logs:
+            embed._on_view_load_finished(False)
+        output = "\n".join(logs.output)
+        self.assertIn("https://example.webex.com/[redacted]", output)
+        self.assertNotIn("private-room", output)
+        self.assertNotIn("secret", output)
+
     def test_blank_and_data_urls_do_not_emit_error(self):
         embed = self._make_embed()
         for url in ("", "about:blank", "data:text/html,foo"):
@@ -231,6 +244,31 @@ class TestWebexLoadFailureRestore(unittest.TestCase):
         embed.meeting_state_changed.connect(states.append)
         embed._on_view_load_finished(True)
         self.assertEqual(states, [])
+
+    def test_external_card_title_matches_audio_role(self):
+        embed = self._make_embed()
+        expected = {
+            "talkback": "Webex talkback",
+            "video_only": "Webex video",
+            "audience_bridge": "Webex audience feed",
+        }
+        for mode, title in expected.items():
+            embed.set_audio_mode(mode)
+            self.assertEqual(embed._title_label.text(), title)
+
+    def test_external_card_has_truthful_accessible_launch_name(self):
+        embed = self._make_embed()
+        embed.set_launch_status("Opened externally")
+        self.assertEqual(embed.fallback_button().text(), "Open Again")
+        self.assertEqual(
+            embed.fallback_button().accessibleName(), "Open Again externally"
+        )
+
+    def test_external_card_disables_launch_while_opening(self):
+        embed = self._make_embed()
+        embed.set_launch_status("Opening…")
+        self.assertEqual(embed.fallback_button().text(), "Opening…")
+        self.assertFalse(embed.fallback_button().isEnabled())
 
 
 if __name__ == "__main__":

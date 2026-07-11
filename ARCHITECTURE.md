@@ -1,10 +1,13 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-10 (v0.8.1 release candidate)
+> **Last updated:** 2026-07-11 (v0.8.1 release candidate)
 
 ## Overview
 
-WebJam is a creative-collaboration shell that orchestrates **Jamulus** (low-latency audio) and **Webex** (video) into a single window, with a shared session canvas for notes, artifacts, and mode-aware templates.
+WebJam is a creative-collaboration shell that orchestrates **Jamulus**
+(low-latency music) and launches native **Webex** (speech/video) alongside its
+Conductor window, with a shared session canvas for notes, artifacts, and
+mode-aware templates. WebJam does not embed or control the native meeting.
 
 The primary runtime is a **Qt/PySide6 Conductor UI**. A legacy Tkinter UI (`legacy/webjam_app_enhanced.py`) is quarantined for archive/fallback use and is not part of the pilot release path.
 
@@ -50,15 +53,15 @@ webjam_qt_main.py          ← entry point
 |--------|----------------|
 | `app.py` | `QApplication` bootstrap, font, stylesheet, setup-wizard gate |
 | `windows/conductor_window.py` | Main application window — `SessionStrip`, `ParticipantGrid`, `SideRail` |
-| `windows/setup_wizard.py` | 5-page first-run wizard: server, Webex URL, audio check |
+| `windows/setup_wizard.py` | First-run server, Webex URL, audio-role, and independent local-capture setup |
 | `widgets/participant_card.py` | Per-channel fader, pan, mute, solo, level meter |
 | `widgets/level_meter.py` | Animated RMS level meter widget |
 | `widgets/session_strip.py` | Top control bar: mode, title, launch buttons |
 | `widgets/side_rail.py` | Left workspace switcher plus Takes/Settings utility actions |
-| `widgets/webex_embed.py` | Lazy-init `QWebEngineView` for embedded Webex with browser fallback |
+| `widgets/webex_embed.py` | Compact native-Webex launch/status card; legacy embed code is inactive |
 | `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
 | `controllers/audio_coordinator.py` | Launch/Stop Audio, practice mode, participant grid transitions |
-| `controllers/video_coordinator.py` | Join/Leave Webex (first extraction step) |
+| `controllers/video_coordinator.py` | External Webex-launch compatibility wrapper; no meeting control |
 | `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, completion actions |
 | `session_state.py` | UI-only Live workspace truth for idle/connect/practice/reconnect/error states |
 | `windows/ready_check.py` | Non-blocking required/optional readiness report |
@@ -69,7 +72,7 @@ webjam_qt_main.py          ← entry point
 
 | Module | Responsibility |
 |--------|----------------|
-| `bridge_service.py` | Jamulus process management, Webex browser-open, auto-reconnect with exponential backoff |
+| `bridge_service.py` | Jamulus process/reconnect management and truthful external Webex launch |
 
 ### `jamulus_controller.py` — Mixer state
 
@@ -83,7 +86,12 @@ Since v0.4: `set_mute()` and `set_solo()` now use `_send_rpc_gain()` so mute/sol
 
 ### `webex_integration.py` — Webex
 
-Browser fallback controller for Webex meeting URLs. The main Conductor flow uses `widgets/webex_embed.py` first and falls back to this browser path when needed. Webex URLs must be HTTPS `webex.com`.
+External-launch controller for Webex meeting URLs. The compact
+`widgets/webex_embed.py` card presents instructions and launch truth, but does
+not host a meeting. The only public lifecycle is Not opened, Opening, Opened
+externally, or Open failed. Webex URLs must use HTTPS on a trusted `webex.com`
+host, without user information or a non-default port; meeting paths are
+redacted from logs and diagnostics.
 
 ### `legacy/ui/` — Tkinter service layer (legacy UI only)
 
@@ -125,7 +133,7 @@ the available files and blocks take approval with `Needs Attention`.
 | `take_library.py` | Take discovery, alignment, manifest evidence, and validation |
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
 | `templates.py` | Per-mode quick-start templates |
-| `audio_routing.py` | Loopback device detection (VB-CABLE, BlackHole, JACK) |
+| `audio_routing.py` | Loopback-device detection for advanced audience-bridge mode only |
 | `jamulus_protocol.py` | Low-level Jamulus UDP packet encode/decode |
 | `ui/services.py` / `MetricsService` | Local counters, session-brief export, diagnostics-bundle export |
 
@@ -195,7 +203,7 @@ JamulusController background thread
 
 | File | Contents |
 |------|---------|
-| `~/.webjam_config.json` | Server, port, Webex URL, log level, misc prefs |
+| `~/.webjam_config.json` | Server/ports, Webex URL and role, independent local-capture settings, misc prefs |
 | `~/.webjam_mix.json` | Anonymous local default mix (fader/mute/solo state) |
 | SQLite DB (path in settings) | Users, mixes, room context, canvas, audit |
 
@@ -207,6 +215,8 @@ JamulusController background thread
   the two-Mac Jamulus/Webex/recording/Take Deck soak and exact-artifact checks.
 - Downloadable builds bundle Jamulus (macOS: zero-install nested `Jamulus.app`; Windows: bundled installer the Setup Wizard can launch — see `THIRD_PARTY_NOTICES.md`); the first-run wizard still requires a resolvable executable path before setup can complete, and running from source needs Jamulus installed separately since the bundling only happens in the PyInstaller build.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
-- Webex embed is constrained to HTTPS `webex.com` URLs and mic/camera permissions only; some meetings may still require the browser fallback.
+- Native Webex is launched externally. WebJam cannot observe its participant,
+  device, microphone, video, leave, or reconnect state; Ready Check therefore
+  presents those selections as manual `VERIFY` items.
 - Listening profiles and deeper creative-mode workflows exist conceptually but are not first-class pilot workflows.
 - macOS code signing/notarization is not yet set up; downloaded `.app` requires manual Gatekeeper override.

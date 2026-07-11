@@ -20,13 +20,13 @@ download until the real-hardware pilot gates pass.
 | **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` is the entry point. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install, Windows offers an in-wizard installer (see `THIRD_PARTY_NOTICES.md`); running from source still requires installing it separately. |
-| **Webex integration** | ⚠️ **Embedded + browser fallback.** "Join Video" loads your Webex URL in the embedded `QWebEngineView`. Falls back to system browser if the embed fails. Guest-token flow optional (requires Webex developer account). |
+| **Webex integration** | ✅ **Native external launch.** WebJam opens the configured room in native Webex/default browser and truthfully reports only that it was opened. Musician talkback, video-only, and advanced audience-bridge roles are explicit; WebJam never stores Webex credentials or pretends to observe native meeting state. |
 | **Session canvas + Pulse** | ✅ **v0.8.1 candidate.** Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
-| **Audio routing** | ⚠️ **Detection only.** Setup finds VB-CABLE / BlackHole and links to installation help; users must still configure Jamulus, OS, and Webex device routing. |
+| **Audio routing** | ⚠️ **Guidance and detection.** Jamulus is the music path; native Webex can be a separate speech path. Only advanced audience-bridge mode scans for VB-CABLE/BlackHole. Users still select devices in Jamulus, macOS/Windows, and Webex. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md). |
 | **Builds** | ✅ Three release artifacts: Windows x64, macOS ARM64, and macOS Intel x64. |
 | **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today: WebJam is a **closed-pilot-ready Qt Conductor** — one window that launches Jamulus, embeds Webex, runs Ready Check, and gives you a live mixer for every participant. The Jamulus window still appears separately (downloadable builds bundle it — see `THIRD_PARTY_NOTICES.md` — a source checkout still needs it installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold, the video button is teal; the status bar shows “Connecting” until participant/RPC truth arrives. Click the audio button again to stop, the video button again to leave; the conductor's session title persists across launches.
+In practice today: WebJam is a **closed-pilot-ready Qt Conductor** — one window that launches Jamulus, opens native Webex, runs Ready Check, and gives you a live mixer for every participant. The Jamulus window still appears separately (downloadable builds bundle it — see `THIRD_PARTY_NOTICES.md` — a source checkout still needs it installed independently), but fader/mute/solo controls in WebJam drive it in real time. The audio button is gold and the Webex button is teal; the status bar shows “Connecting” until participant/RPC truth arrives. WebJam can stop the Jamulus process it launched, but it cannot inspect, mute, reconnect, or leave a native Webex meeting for you.
 
 Before widening the closed pilot or calling the release broadly ready, validate on real hardware: clean-machine Windows/macOS installs, Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback. Demo Deck Level 2 should wait until those pass.
 
@@ -70,7 +70,10 @@ App settings live in:
 Environment overrides:
 - `WEBJAM_JAMULUS_SERVER` — Jamulus server host
 - `WEBJAM_JAMULUS_PORT` — Jamulus port (default 22124)
+- `WEBJAM_MUSICIAN_NAME` — participant name shown through Jamulus
 - `WEBJAM_WEBEX_URL` — Webex meeting URL
+- `WEBJAM_WEBEX_AUDIO_MODE` — `talkback` (default), `video_only`, or `audience_bridge`
+- `WEBJAM_LOCAL_CAPTURE_ENABLED` — enable supplemental local stem capture independently of Webex mode
 - `WEBJAM_JAMULUS_CANDIDATES` — `;`-separated list of Jamulus executable paths
 
 ---
@@ -83,7 +86,7 @@ Environment overrides:
 | **Ctrl+S** | Save current mixer state to `~/.webjam_mix.json` |
 | **Ctrl+O** | Load and apply saved mix from `~/.webjam_mix.json` |
 | **Ctrl+M** | Mute all / Unmute all (toggles) |
-| **Ctrl+Shift+M** | Mute / unmute yourself (toggles) |
+| **Ctrl+Shift+M** | Talk Break / Resume Music in talkback mode; otherwise mute/unmute Jamulus send |
 | **Ctrl+T** | Insert timestamp heading into Session Canvas |
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
@@ -95,7 +98,7 @@ Environment overrides:
 | **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
-The session timer, mode picker, Record, Mute Me, Start Audio, and Join Video
+The session timer, mode picker, Record, Talk Break, Start Audio, and Open Webex
 controls are in the top strip; Ready Check and Practice are under **Checks ▾**.
 The left rail switches between the Live and Notes workspaces; Takes and
 Settings are utility actions that open their dedicated windows.
@@ -128,6 +131,7 @@ Additional reading:
 - [DEVELOPMENT.md](DEVELOPMENT.md) — dev environment setup
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [COMPANION_API.md](COMPANION_API.md) — localhost API for external tools
+- [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md) — safe Jamulus music, Webex talkback, and audience-bridge signal flows
 - [legacy/CODE_REVIEW_FINDINGS.md](legacy/CODE_REVIEW_FINDINGS.md) — archived Tkinter-era review (not current open issues)
 
 ---

@@ -8,6 +8,14 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
+WEBEX_AUDIO_MODES = ("talkback", "video_only", "audience_bridge")
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
 
 def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
@@ -22,13 +30,15 @@ def _coerce_settings_data(data: dict) -> None:
                 data[key] = defaults[key]
                 _logger.debug("Invalid %s in config; using default", key)
     # Boolean fields
-    for key in ("enable_sentry", "companion_api_enabled", "webex_audio_bridge_enabled"):
+    for key in ("enable_sentry", "companion_api_enabled", "local_capture_enabled"):
         if key in data:
-            v = data[key]
-            if isinstance(v, bool):
-                data[key] = v
-            else:
-                data[key] = str(v).strip().lower() in {"1", "true", "yes", "on"}
+            data[key] = _as_bool(data[key])
+    if "webex_audio_mode" in data:
+        mode = str(data["webex_audio_mode"] or "").strip().lower()
+        if mode not in WEBEX_AUDIO_MODES:
+            _logger.debug("Invalid webex_audio_mode in config; using talkback")
+            mode = defaults["webex_audio_mode"]
+        data["webex_audio_mode"] = mode
     # List of strings
     if "jamulus_candidates" in data:
         v = data["jamulus_candidates"]
@@ -42,7 +52,7 @@ def _coerce_settings_data(data: dict) -> None:
                 "server_rpc_secret_file", "takes_directory",
                 "take_playback_output_device",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
-                "webex_guest_issuer_id", "webex_guest_issuer_secret", "webex_display_name"):
+                "musician_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
             data[key] = str(data[key])
 
@@ -75,15 +85,15 @@ class AppSettings:
     audio_samplerate: int = 48000
     audio_latency: str = "low"
     audio_input_device_index: int = -1  # -1 means "system default / auto-detect"
-    webex_audio_bridge_enabled: bool = False
+    # Webex carries speech only by default; Jamulus remains the music path.
+    webex_audio_mode: str = "talkback"
+    # Supplemental isolated input capture is independent of the Webex role.
+    local_capture_enabled: bool = False
     enable_sentry: bool = False
     sentry_dsn: str = ""
     log_level: str = "INFO"
     log_file: str = str(Path.home() / ".webjam.log")
-    # Webex Guest Issuer (optional — from developer.webex.com)
-    webex_guest_issuer_id: str = ""
-    webex_guest_issuer_secret: str = ""
-    webex_display_name: str = "WebJam Guest"
+    musician_name: str = "WebJam Musician"
     # Companion API — optional localhost HTTP bridge for DAWs/editors/scripts.
     # Opt-in: starts on launch only when enabled and fastapi/uvicorn exist.
     companion_api_enabled: bool = False
@@ -99,19 +109,38 @@ class AppSettings:
     takes_directory: str = ""
     take_playback_output_device: str = ""
 
+    @property
+    def webex_audio_bridge_enabled(self) -> bool:
+        """Read-only compatibility view for one release cycle."""
+        return self.webex_audio_mode == "audience_bridge"
+
 
 def load_settings(settings_path: str | None = None) -> AppSettings:
     base = AppSettings()
     file_path = Path(settings_path or base.config_file)
     data = asdict(base)
 
+    loaded_data: dict = {}
     if file_path.exists():
         try:
             loaded = json.loads(file_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
+                loaded_data = loaded
                 data.update(loaded)
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
+
+    # Migrate the one-release legacy bridge flag before coercion.  Explicit
+    # new fields always win over their legacy-derived values.
+    if "webex_audio_mode" not in loaded_data and "webex_audio_bridge_enabled" in loaded_data:
+        legacy_bridge = _as_bool(loaded_data["webex_audio_bridge_enabled"])
+        data["webex_audio_mode"] = "audience_bridge" if legacy_bridge else "video_only"
+        if "local_capture_enabled" not in loaded_data:
+            data["local_capture_enabled"] = legacy_bridge
+    if "musician_name" not in loaded_data and "webex_display_name" in loaded_data:
+        legacy_name = str(loaded_data["webex_display_name"] or "").strip()
+        if legacy_name:
+            data["musician_name"] = legacy_name
 
     # Coerce types to prevent TypeError when constructing AppSettings
     _coerce_settings_data(data)
@@ -124,8 +153,9 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_SERVER_RPC_SECRET_FILE": "server_rpc_secret_file",
         "WEBJAM_TAKES_DIRECTORY": "takes_directory",
         "WEBJAM_TAKE_PLAYBACK_OUTPUT_DEVICE": "take_playback_output_device",
-        "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "webex_audio_bridge_enabled",
+        "WEBJAM_LOCAL_CAPTURE_ENABLED": "local_capture_enabled",
         "WEBJAM_WEBEX_URL": "webex_url",
+        "WEBJAM_MUSICIAN_NAME": "musician_name",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
         "WEBJAM_AUDIO_BLOCKSIZE": "audio_blocksize",
         "WEBJAM_AUDIO_SAMPLERATE": "audio_samplerate",
@@ -163,12 +193,30 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
             data[key] = parsed
-        elif key in {"enable_sentry", "companion_api_enabled", "webex_audio_bridge_enabled"}:
-            data[key] = raw.strip().lower() in {"1", "true", "yes", "on"}
+        elif key in {"enable_sentry", "companion_api_enabled", "local_capture_enabled"}:
+            data[key] = _as_bool(raw)
         elif key == "jamulus_candidates":
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
         else:
             data[key] = raw
+
+    # The new mode environment variable has precedence over the legacy bridge
+    # variable. An invalid new value is coerced to the safe talkback default;
+    # it must never fall through to a stale legacy bridge setting.
+    new_mode_env = os.getenv("WEBJAM_WEBEX_AUDIO_MODE")
+    legacy_bridge_env = os.getenv("WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED")
+    local_capture_env = os.getenv("WEBJAM_LOCAL_CAPTURE_ENABLED")
+    normalized_env_mode = str(new_mode_env or "").strip().lower()
+    if new_mode_env is not None:
+        # Presence of the new variable always wins.  Coercion below turns an
+        # invalid value into the safe talkback default instead of allowing a
+        # stale legacy bridge flag to select an unintended audio topology.
+        data["webex_audio_mode"] = normalized_env_mode
+    elif legacy_bridge_env is not None:
+        legacy_bridge = _as_bool(legacy_bridge_env)
+        data["webex_audio_mode"] = "audience_bridge" if legacy_bridge else "video_only"
+        if local_capture_env is None:
+            data["local_capture_enabled"] = legacy_bridge
 
     _coerce_settings_data(data)
     valid_keys = {f.name for f in AppSettings.__dataclass_fields__.values()}

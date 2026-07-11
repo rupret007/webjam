@@ -6,10 +6,11 @@ Maps common user questions to the **Qt Conductor** UI. Legacy Tkinter menu paths
 |-----------|-------------------|
 | First-time setup | Launch app → Setup Wizard; or side rail **Settings** / **Ctrl+,** |
 | Run Ready Check before a jam | **F2** |
-| Launch Jamulus audio | Session strip **Launch Audio** (gold button) |
+| Start Jamulus audio | Session strip **Start Audio** (gold button) |
 | Stop Jamulus audio | Session strip **Stop Audio** |
 | Practice alone (local server) | **Ctrl+P** or side rail Practice |
-| Join Webex video | Session strip **Join Video** (teal button) |
+| Open native Webex talkback/video | Session strip **Open Webex** (teal button) |
+| Pause music send for conversation | Session strip **Talk Break**, then hold Spacebar in Webex |
 | Save / load mix | **Ctrl+S** / **Ctrl+O** |
 | Export diagnostics for a bug report | **Ctrl+Shift+D** |
 | Keyboard shortcuts reference | **F1** |

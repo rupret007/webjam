@@ -12,8 +12,9 @@ Use this checklist before each UX-focused Qt Conductor release. The legacy Tkint
 
 ## Session Launch and Status Clarity
 
-- [ ] **Launch Audio** updates status and readiness labels.
-- [ ] **Join Video** updates status and readiness labels.
+- [ ] **Start Audio** updates status and readiness labels.
+- [ ] **Open Webex** reports only opening/opened-externally truth and offers Open Again.
+- [ ] Talk Break mutes only Jamulus; Resume Music defaults to cancel until Webex mute is confirmed.
 - [ ] Participant count updates when real Jamulus participants arrive.
 - [ ] Demo participants show **Preview** names before Jamulus connects.
 - [ ] Bottom status bar reflects Jamulus/Webex states and participant count.
@@ -21,7 +22,7 @@ Use this checklist before each UX-focused Qt Conductor release. The legacy Tkint
 ## Error Recovery
 
 - [ ] Jamulus missing-path flow shows actionable error dialog.
-- [ ] Webex open failure shows actionable error or browser fallback message.
+- [ ] Webex open failure offers Retry, Copy Meeting Link, and Open Settings.
 - [ ] Save mix failure shows actionable flash message.
 - [ ] Load mix failure shows actionable flash message.
 
