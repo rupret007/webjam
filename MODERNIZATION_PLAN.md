@@ -95,6 +95,41 @@
   modules, v0.8.1 metadata, QSS/Webex resources, and the verified official
   Jamulus payload; packaged startup and process cleanup pass.
 
+## Post-df0e623 recording-integrity round
+
+- Fixed the systematic alignment defect: local capture arms before the server
+  recorder starts, so isolated stems normally lead the server take, and the
+  previous `max(0, offset)` clamps silently discarded that negative offset in
+  the estimator, the manifest loader, and the player. Offsets are now signed
+  end-to-end; Take Deck plays negative-offset stems sample-aligned and labels
+  the trimmed lead-in. Regression tests cover leading/lagging stems, off-grid
+  offsets, stereo server tracks, unrelated audio, and negative-offset
+  playback and manifest round-trips.
+- Replaced raw stride-480 decimation (aliasing-prone) with a 100 Hz
+  block-mean envelope for the coarse search plus a bounded full-rate
+  refinement pass for sample accuracy. Confidence is now the refined
+  normalized correlation, so the 0.15 floor separates genuine matches from
+  unrelated audio by orders of magnitude.
+- Made the capture callback real-time safe (bounded queue + dedicated writer
+  thread; no disk I/O, logging, or shared finalization lock on the audio
+  thread) with deduplicated, counted, capped error accounting.
+- Enforced keep-all-recordings: failed attaches preserve audio in a visible
+  Recovered-local folder, attaches never overwrite existing take files, and
+  quitting mid-recording salvages the capture into a Recovered take. The
+  capture hand-off between validation worker, stop-failure handling, and
+  shutdown is lock-protected and finalization is idempotent.
+- Take Deck reuses manifest findings for finished takes instead of re-probing
+  audio on selection, labels `validating` manifests as "Checking…", warns on
+  Stop Audio during an active server recording, renders roster names as plain
+  text (markup-injection fix), and reconnect/README_SIMPLE copy now names the
+  real controls.
+- Validation for this round: 887 tests pass with the same 12 expected skips
+  plus 3 width subtests (19 new regression tests; warnings unchanged from the
+  audited baseline), scoped Ruff, compile checks, `pip check`,
+  `pip-audit`, offscreen UX smoke, `git diff --check`, clean ARM64 PyInstaller
+  build with bundle/version inspection, packaged offscreen startup, and
+  orphan-process check. Hardware gates below remain open and unclaimed.
+
 ## Remaining release gates
 
 1. Install BlackHole with administrator approval, restart the host, create and
@@ -120,6 +155,29 @@
 6. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
    exact validated commit as v0.8.1, inspect the draft release's exact
    artifacts, repeat the critical packaged workflow, then publish.
+
+## Post-pilot Session Copilot
+
+After the two-Mac pilot passes, add an optional live text coach without
+changing the Jamulus or recording path:
+
+- `Ask Copilot` is always user-triggered and previews the complete outbound
+  payload before transmission. Context is limited to explicitly selected
+  session title/mode, raw notes, deterministic Pulse, and optional participant
+  display names/session state; never send audio, takes, manifests, chat, file
+  paths, network addresses, diagnostics, logs, or credentials.
+- Suggestions render as plain text in a cancelable side panel. Nothing changes
+  the notes until the user inserts an individual item, which is prefixed
+  `Copilot suggestion:` to preserve provenance.
+- Use a provider-neutral typed coaching interface with an OpenAI Responses API
+  adapter first, strict structured output, `OPENAI_API_KEY` environment-only
+  credentials, `gpt-5.4-mini` default, and `WEBJAM_OPENAI_MODEL` override.
+- Do not enable tools, web search, file access, persistent provider threads,
+  automatic calls, audio analysis, repository edits, or autonomous actions.
+  WebJam must remain fully functional offline and without an API key.
+- CI uses a deterministic fake provider and never requires credentials or paid
+  network calls. Ship the Copilot disabled by default only after its privacy,
+  cancellation, stale-response, schema, prompt-injection, and UI gates pass.
 
 ## Intentionally unchanged
 

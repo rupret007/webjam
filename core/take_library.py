@@ -52,6 +52,10 @@ class TakeInfo:
     reaper_project: Optional[Path] = None
     validation_status: str = "unchecked"
     manifest_path: Optional[Path] = None
+    # Findings recorded at validation time, so reviewing a finished take
+    # never needs to re-probe its audio files.
+    manifest_errors: tuple[str, ...] = ()
+    manifest_warnings: tuple[str, ...] = ()
 
     @property
     def track_count(self) -> int:
@@ -219,52 +223,127 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
     )
 
 
+_LOCAL_STEM_PREFIXES = ("host-guitar", "host-vocal")
+_ENVELOPE_BLOCK = 480  # 10 ms at 48 kHz → a true 100 Hz amplitude envelope
+
+# Confidence is the normalized full-rate correlation at the refined lag: the
+# same performance through the local and server paths scores near 1.0 even
+# after the Opus codec, while unrelated audio stays near zero (≈0.01 for a
+# five-second window), so 0.15 is a conservative floor rather than a tuned
+# value.
+ALIGNMENT_CONFIDENCE_MIN = 0.15
+ALIGNMENT_METHOD = "envelope+refine-v2"
+
+
+def is_local_stem_name(name: str) -> bool:
+    """True for supplemental host stems (host-guitar*.wav / host-vocal*.wav)."""
+    lowered = name.lower()
+    return lowered.endswith(".wav") and lowered.startswith(_LOCAL_STEM_PREFIXES)
+
+
+def _envelope_100hz(signal):
+    """Rectified block-mean envelope, mean-subtracted for correlation.
+
+    Block averaging (unlike stride decimation) is alias-free, so the peak and
+    the confidence it feeds reflect real amplitude agreement.
+    """
+    import numpy as np
+
+    usable = (signal.size // _ENVELOPE_BLOCK) * _ENVELOPE_BLOCK
+    if usable == 0:
+        return np.zeros(0, dtype="float32")
+    env = np.abs(signal[:usable]).reshape(-1, _ENVELOPE_BLOCK).mean(axis=1)
+    return env - float(np.mean(env))
+
+
+def _refine_lag(server_sig, local_sig, coarse_lag: int, anchor: int) -> tuple[int, float]:
+    """Sample-accurate lag within ±one envelope block of the coarse peak.
+
+    Sweeps a bounded normalized correlation of the raw 48 kHz signals around
+    the loudest local passage, removing the 10 ms envelope quantization that
+    would otherwise land in the manifest offset.  Returns ``(lag, value)``;
+    the value doubles as the alignment confidence because raw-sample
+    correlation separates a genuine match from unrelated audio far more
+    sharply than the coarse envelope does.
+    """
+    import numpy as np
+
+    half = 48000 * 5 // 2
+    best_val = 0.0
+    best_lag = coarse_lag
+    for lag in range(coarse_lag - _ENVELOPE_BLOCK, coarse_lag + _ENVELOPE_BLOCK + 1):
+        start = max(0, anchor - half, -lag)
+        stop = min(len(local_sig), anchor + half, len(server_sig) - lag)
+        if stop - start < 4800:  # need at least 100 ms of overlap
+            continue
+        local_part = local_sig[start:stop]
+        server_part = server_sig[start + lag:stop + lag]
+        denom = float(np.linalg.norm(local_part) * np.linalg.norm(server_part))
+        if denom <= 0.0:
+            continue
+        value = abs(float(np.dot(local_part, server_part))) / denom
+        if value > best_val:
+            best_val = value
+            best_lag = lag
+    return best_lag, best_val
+
+
 def estimate_local_alignment(take_dir: str | Path) -> tuple[float, float]:
     """Estimate local-stem offset against the closest Jamulus server track.
 
-    Returns ``(offset_seconds, confidence)``.  Correlation is bounded to keep
-    post-record validation responsive and never runs on the audio thread.
+    Returns ``(offset_seconds, confidence)``.  The offset is signed: it is
+    negative when the local stems start before the server take, which is the
+    normal case because supplemental capture arms before the server recorder
+    acknowledges the RPC start.  Correlation is bounded to keep post-record
+    validation responsive and never runs on the audio thread.
     """
     path = Path(take_dir)
-    local = [path / "host-guitar.wav", path / "host-vocal.wav"]
-    server = [p for p in path.glob("*.wav") if p not in local]
-    if not all(p.is_file() for p in local) or not server:
+    wavs = sorted(p for p in path.glob("*.wav") if p.is_file())
+    local = [p for p in wavs if is_local_stem_name(p.name)]
+    server = [p for p in wavs if not is_local_stem_name(p.name)]
+    if len(local) < 2 or not server:
         return (0.0, 0.0)
     try:
         import numpy as np
         import soundfile as sf  # type: ignore
 
         limit = 48000 * 60
-        guitar, rate = sf.read(str(local[0]), frames=limit, dtype="float32")
-        vocal, vocal_rate = sf.read(str(local[1]), frames=limit, dtype="float32")
-        if rate != 48000 or vocal_rate != rate:
+        first, rate = sf.read(str(local[0]), frames=limit, dtype="float32")
+        second, second_rate = sf.read(str(local[1]), frames=limit, dtype="float32")
+        if rate != 48000 or second_rate != rate:
             return (0.0, 0.0)
-        local_mix = np.asarray(guitar)[:len(vocal)] + np.asarray(vocal)[:len(guitar)]
-        # A 100 Hz envelope-scale signal is sufficient for take alignment and
-        # keeps the bounded full correlation comfortably fast on pilot Macs.
-        stride = 480
-        local_mix = local_mix[::stride]
-        if local_mix.size < 256 or float(np.max(np.abs(local_mix))) < 1e-5:
+        length = min(len(first), len(second))
+        local_mix = np.asarray(first)[:length] + np.asarray(second)[:length]
+        if float(np.max(np.abs(local_mix))) < 1e-5:
             return (0.0, 0.0)
-        local_mix = local_mix - float(np.mean(local_mix))
-        best: tuple[float, int] = (0.0, 0)
+        local_env = _envelope_100hz(local_mix)
+        env_norm = float(np.linalg.norm(local_env))
+        if local_env.size < 256 or env_norm <= 0.0:
+            return (0.0, 0.0)
+        # Refine around the loudest local passage, not the take start, so a
+        # quiet count-in doesn't starve the fine correlation of signal.
+        anchor = int(np.argmax(np.abs(local_env))) * _ENVELOPE_BLOCK
+        best_confidence = 0.0
+        best_lag_samples = 0
         for candidate in server:
             audio, candidate_rate = sf.read(
                 str(candidate), frames=limit, dtype="float32", always_2d=True
             )
             if candidate_rate != rate or audio.size == 0:
                 continue
-            mono = np.mean(audio, axis=1)[::stride]
-            mono = mono - float(np.mean(mono))
-            correlation = np.correlate(mono, local_mix, mode="full")
-            index = int(np.argmax(np.abs(correlation)))
-            peak = float(abs(correlation[index]))
-            denom = float(np.linalg.norm(mono) * np.linalg.norm(local_mix))
-            confidence = peak / denom if denom > 0 else 0.0
-            lag = index - (len(local_mix) - 1)
-            if confidence > best[0]:
-                best = (confidence, lag)
-        return (max(0.0, best[1] * stride / rate), best[0])
+            mono = np.mean(audio, axis=1)
+            candidate_env = _envelope_100hz(mono)
+            denom = float(np.linalg.norm(candidate_env)) * env_norm
+            if candidate_env.size == 0 or denom <= 0.0:
+                continue
+            correlation = np.correlate(candidate_env, local_env, mode="full")
+            index = int(np.argmax(correlation))
+            coarse = (index - (len(local_env) - 1)) * _ENVELOPE_BLOCK
+            lag, confidence = _refine_lag(mono, local_mix, coarse, anchor)
+            if confidence > best_confidence:
+                best_lag_samples = lag
+                best_confidence = confidence
+        return (best_lag_samples / rate, best_confidence)
     except Exception:  # noqa: BLE001
         _logger.exception("Could not align isolated host stems")
         return (0.0, 0.0)
@@ -280,7 +359,6 @@ def write_take_manifest(
 
     path = Path(take_dir)
     offset_s, confidence = estimate_local_alignment(path)
-    local_files = {"host-guitar.wav", "host-vocal.wav"}
     # Write a preliminary manifest so load_take can classify supplemental files.
     manifest_path = path / "webjam-take.json"
     preliminary = {
@@ -294,12 +372,13 @@ def write_take_manifest(
             "duration_s": round(local_duration_s, 6),
             "offset_s": round(offset_s, 6),
             "alignment_confidence": round(confidence, 6),
+            "alignment_method": ALIGNMENT_METHOD,
             "errors": list(capture_errors),
         },
         "tracks": [
             {"filename": p.name,
-             "source": "local_ssl" if p.name in local_files else "jamulus_server",
-             "offset_s": round(offset_s, 6) if p.name in local_files else None}
+             "source": "local_ssl" if is_local_stem_name(p.name) else "jamulus_server",
+             "offset_s": round(offset_s, 6) if is_local_stem_name(p.name) else None}
             for p in sorted(path.glob("*.wav"))
         ],
     }
@@ -309,7 +388,7 @@ def write_take_manifest(
         required_local_stems=required_local_stems,
     )
     errors = list(result.errors) + list(capture_errors)
-    if required_local_stems and confidence < 0.15:
+    if required_local_stems and confidence < ALIGNMENT_CONFIDENCE_MIN:
         errors.append("Isolated host stems could not be aligned confidently.")
     take = result.take
     track_evidence = []
@@ -444,11 +523,19 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         tracks.append(TrackInfo(
             path=audio,
             name=_prettify(audio.stem),
-            offset_s=max(0.0, offset),
+            # Signed: local stems normally start before the server take, so a
+            # negative offset here is valid alignment, not an error.
+            offset_s=offset,
             duration_s=duration,
             samplerate=rate,
             source=str(evidence.get("source") or "jamulus_server"),
         ))
+
+    def _string_items(key: str) -> tuple[str, ...]:
+        value = manifest.get(key)
+        if not isinstance(value, list):
+            return ()
+        return tuple(item for item in value if isinstance(item, str))
 
     return TakeInfo(
         path=take_dir,
@@ -457,6 +544,8 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         reaper_project=reaper,
         validation_status=str(manifest.get("status") or "unchecked"),
         manifest_path=manifest_path,
+        manifest_errors=_string_items("errors"),
+        manifest_warnings=_string_items("warnings"),
     )
 
 

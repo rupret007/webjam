@@ -165,6 +165,65 @@ class TestTakeDeckPopulated(unittest.TestCase):
             deck.close()
 
 
+class TestTakeHealthPanel(unittest.TestCase):
+    """Selecting takes must not probe audio on the UI thread when a final
+    manifest exists, and must label transient 'validating' manifests."""
+
+    def _deck(self, root: str) -> TakeDeck:
+        return TakeDeck(root, player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+
+    def test_manifest_final_status_skips_reprobing(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as d:
+            take = _make_take_dir(Path(d), "take_A")
+            (take / "webjam-take.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "needs_attention",
+                "errors": ["Expected at least 3 tracks but found 2."],
+                "warnings": ["Bass.Wav appears silent."],
+                "tracks": [],
+            }), encoding="utf-8")
+            with mock.patch(
+                "webjam_qt.windows.take_deck.validate_take"
+            ) as probe:
+                deck = self._deck(d)
+                try:
+                    probe.assert_not_called()
+                    self.assertIn("Expected at least 3 tracks", deck._hint.text())
+                    self.assertIn("Warning: Bass.Wav appears silent.",
+                                  deck._hint.text())
+                    row = deck._take_list.item(0).text()
+                    self.assertIn("Needs Attention", row)
+                finally:
+                    deck.close()
+
+    def test_manifest_less_take_still_gets_probed(self):
+        with tempfile.TemporaryDirectory() as d:
+            _make_take_dir(Path(d), "take_A")
+            deck = self._deck(d)
+            try:
+                self.assertIn("2 tracks", deck._title.text())
+            finally:
+                deck.close()
+
+    def test_validating_status_is_labelled_checking(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as d:
+            take = _make_take_dir(Path(d), "take_A")
+            (take / "webjam-take.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "validating",
+                "tracks": [],
+            }), encoding="utf-8")
+            deck = self._deck(d)
+            try:
+                self.assertIn("Checking…", deck._take_list.item(0).text())
+            finally:
+                deck.close()
+
+
 class TestControllerOpensDeck(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

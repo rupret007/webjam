@@ -164,8 +164,11 @@ class TakePlayer:
                     )
             longest = 0
             for i, t in enumerate(getattr(take, "tracks", [])):
-                offset_frames = int(max(0.0, getattr(t, "offset_s", 0.0))
-                                    * self.samplerate)
+                # Offsets are signed: a negative offset means the track's file
+                # starts before the take timeline (normal for supplemental
+                # host stems) and playback skips that lead-in.
+                offset_s = float(getattr(t, "offset_s", 0.0) or 0.0)
+                offset_frames = int(offset_s * self.samplerate)
                 dur = getattr(t, "duration_s", 0.0) or 0.0
                 end = offset_frames + int(dur * self.samplerate)
                 longest = max(longest, end)
@@ -173,7 +176,7 @@ class TakePlayer:
                     channel_id=i,
                     name=getattr(t, "name", f"Track {i}"),
                     path=Path(getattr(t, "path")),
-                    offset_s=max(0.0, getattr(t, "offset_s", 0.0)),
+                    offset_s=offset_s,
                     source=str(getattr(t, "source", "jamulus_server")),
                 ))
             self._total_frames = longest

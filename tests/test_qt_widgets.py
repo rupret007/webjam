@@ -107,6 +107,28 @@ class TestParticipantCard(unittest.TestCase):
         card = ParticipantCard(self.pres)
         self.assertEqual(card._name_label.text(), "Alice")
 
+    def test_remote_names_render_as_plain_text_not_markup(self):
+        """Jamulus roster names are untrusted; markup in a name must render
+        literally instead of being interpreted as rich text."""
+        from PySide6.QtCore import Qt
+        from webjam_qt.widgets.participant_card import (
+            ParticipantCard,
+            ParticipantPresentation,
+        )
+        hostile = ParticipantPresentation(
+            channel_id=0, name="<b>Dave</b>", role="<img src='x'> Drums"
+        )
+        card = ParticipantCard(hostile)
+        self.assertEqual(card._name_label.textFormat(), Qt.TextFormat.PlainText)
+        self.assertEqual(card._role_label.textFormat(), Qt.TextFormat.PlainText)
+        self.assertEqual(card._name_label.text(), "<b>Dave</b>")
+        # Updates keep the guarantee.
+        card.update_presentation(ParticipantPresentation(
+            channel_id=0, name="<i>Eve</i>", role="Bass"
+        ))
+        self.assertEqual(card._name_label.text(), "<i>Eve</i>")
+        self.assertEqual(card._name_label.textFormat(), Qt.TextFormat.PlainText)
+
     def test_fader_changed_signal_emits(self):
         from webjam_qt.widgets.participant_card import ParticipantCard
         card = ParticipantCard(self.pres)

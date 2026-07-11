@@ -210,9 +210,8 @@ class ApplicationController(QObject):
         self._meter_tick_timer.stop()
         self._token_refresh_timer.stop()
         self._pulse_refresh_timer.stop()
-        if self.recording._local_capture is not None:
-            self.recording._local_capture.abort()
-            self.recording._local_capture = None
+        # Quitting mid-recording must keep the audio, not discard it.
+        self.recording.salvage_on_shutdown()
         self._save_notes()
         self._save_session_title()
         # Auto-save mix if user touched anything since last save AND we were
@@ -837,7 +836,7 @@ class ApplicationController(QObject):
                 SessionUiState.reconnect_failed()
             )
             self.window.flash_message(
-                "Couldn't reconnect to Jamulus after 5 tries — press Launch "
+                "Couldn't reconnect to Jamulus after 5 tries — press Start "
                 "Audio to try again.",
                 ms=8000,
             )

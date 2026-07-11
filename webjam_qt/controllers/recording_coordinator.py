@@ -58,6 +58,41 @@ class RecordingCoordinator:
         self.last_validation: TakeValidationResult | None = None
         self._completion_box = None
         self._local_capture = None
+        # The validation worker, toggle-failure handler, and shutdown salvage
+        # all hand off the capture; the lock makes the hand-off atomic so the
+        # stream is finalized exactly once.
+        self._capture_lock = threading.Lock()
+
+    def _take_local_capture(self):
+        """Atomically claim the active capture (or None)."""
+        with self._capture_lock:
+            capture = self._local_capture
+            self._local_capture = None
+            return capture
+
+    def salvage_on_shutdown(self) -> None:
+        """Preserve an in-flight capture instead of discarding it.
+
+        Quitting while recording or validating must keep the audio: stop the
+        stream into a recovery folder rather than aborting it away.
+        """
+        capture = self._take_local_capture()
+        if capture is None:
+            return
+        root = (self._c.settings.takes_directory or "").strip()
+        base = (
+            Path(root).expanduser() if root
+            else Path.home() / "Music" / "WebJam Recovered Takes"
+        )
+        recovered = base / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
+        try:
+            result = capture.stop_into(recovered)
+            LOGGER.info("Isolated host stems preserved in %s", recovered)
+            for error in result.errors:
+                LOGGER.warning("Shutdown capture salvage: %s", error)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not salvage isolated host stems on shutdown")
+            capture.abort()
 
     @property
     def snapshot(self) -> RecorderSnapshot:
@@ -156,7 +191,8 @@ class RecordingCoordinator:
                 blocksize=self._c.settings.audio_blocksize,
             )
             capture.start()
-            self._local_capture = capture
+            with self._capture_lock:
+                self._local_capture = capture
             return True
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Isolated host capture preflight failed: %s", exc)
@@ -243,9 +279,12 @@ class RecordingCoordinator:
             self._begin_take_validation()
 
     def apply_toggle_failure(self, message: str) -> None:
-        if not self._c._recorder_armed and self._local_capture is not None:
-            self._local_capture.abort()
-            self._local_capture = None
+        if not self._c._recorder_armed:
+            capture = self._take_local_capture()
+            if capture is not None:
+                # The server never started recording, so the stems have no
+                # matching take — abort discards only this pre-take audio.
+                capture.abort()
         self._c.session_health.mark_rpc_result("recorder", False, message)
         self._set_phase(RecorderPhase.ERROR)
         self._c._show_actionable_error(
@@ -297,10 +336,10 @@ class RecordingCoordinator:
             self._c.window.flash_message(
                 "Recording stopped, but no local Takes folder is configured.", ms=7000
             )
-            if self._local_capture is not None:
+            capture = self._take_local_capture()
+            if capture is not None:
                 recovered = Path.home() / "Music" / "WebJam Recovered Takes" / time.strftime("%Y%m%d-%H%M%S")
-                result = self._local_capture.stop_into(recovered)
-                self._local_capture = None
+                result = capture.stop_into(recovered)
                 self._c.window.flash_message(
                     f"Server take unavailable; isolated tracks preserved in {recovered}. "
                     f"{' '.join(result.errors)}", ms=10000,
@@ -321,15 +360,18 @@ class RecordingCoordinator:
             if take_dir is not None:
                 break
             time.sleep(0.25)
+        # Peek first (arm state), claim atomically only when attaching so a
+        # concurrent shutdown salvage can still preserve the audio while we
+        # are polling for the take directory.
         required_local = 1 if self._local_capture is not None else 0
         if take_dir is None:
             recovered = Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
             duration_s = 0.0
-            if self._local_capture is not None:
-                local_result = self._local_capture.stop_into(recovered)
-                self._local_capture = None
+            capture = self._take_local_capture()
+            if capture is not None:
+                local_result = capture.stop_into(recovered)
                 capture_errors = local_result.errors
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
@@ -356,9 +398,9 @@ class RecordingCoordinator:
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
             duration_s = 0.0
-            if self._local_capture is not None:
-                local_result = self._local_capture.stop_into(take_dir)
-                self._local_capture = None
+            capture = self._take_local_capture()
+            if capture is not None:
+                local_result = capture.stop_into(take_dir)
                 capture_errors = local_result.errors
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s

@@ -324,6 +324,51 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertIn("SSH tunnel", kwargs["what_failed"])
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
+    def test_shutdown_salvages_active_capture_into_recovery_folder(self):
+        """Quitting mid-recording must preserve the stems, never abort them."""
+        import tempfile
+        from pathlib import Path
+
+        c = self.controller
+        with tempfile.TemporaryDirectory() as d:
+            c.settings.takes_directory = d
+            fake_capture = MagicMock()
+            fake_capture.stop_into.return_value = SimpleNamespace(errors=())
+            c.recording._local_capture = fake_capture
+            c.recording.salvage_on_shutdown()
+            fake_capture.stop_into.assert_called_once()
+            dest = Path(fake_capture.stop_into.call_args.args[0])
+            self.assertEqual(dest.parent, Path(d))
+            self.assertTrue(dest.name.startswith("Recovered-"))
+            fake_capture.abort.assert_not_called()
+            self.assertIsNone(c.recording._local_capture)
+            # Idempotent: a second salvage (closeEvent + app.py both call
+            # shutdown) finds nothing to do.
+            c.recording.salvage_on_shutdown()
+            fake_capture.stop_into.assert_called_once()
+
+    def test_take_local_capture_hand_off_is_atomic(self):
+        """Validation worker and shutdown race for the capture; exactly one
+        side may finalize it."""
+        c = self.controller
+        for _ in range(50):
+            c.recording._local_capture = object()
+            barrier = threading.Barrier(2)
+            claimed = []
+
+            def worker():
+                barrier.wait()
+                claimed.append(c.recording._take_local_capture())
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            winners = [item for item in claimed if item is not None]
+            self.assertEqual(len(winners), 1)
+        self.assertIsNone(c.recording._local_capture)
+
     def test_worker_stop_path(self):
         c = self.controller
         c._recorder_armed = True

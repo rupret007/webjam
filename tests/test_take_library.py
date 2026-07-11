@@ -216,6 +216,116 @@ class TestTakeValidation(unittest.TestCase):
         self.assertAlmostEqual(offset, 0.5, delta=0.02)
         self.assertGreater(confidence, 0.9)
 
+    def test_alignment_recovers_negative_offset_when_local_leads(self):
+        """Local capture arms before the server recorder starts, so the local
+        stems normally lead the server take: the offset must come back
+        negative, not clamped to zero."""
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            rng = np.random.default_rng(11)
+            performance = rng.normal(0, 0.1, rate * 3).astype("float32")
+            lead_in = int(rate * 0.75)
+            guitar = np.concatenate(
+                (np.zeros(lead_in, dtype="float32"), performance)
+            )
+            vocal = np.zeros_like(guitar)
+            sf.write(take / "host-guitar.wav", guitar, rate)
+            sf.write(take / "host-vocal.wav", vocal, rate)
+            sf.write(take / "server-host.wav", performance, rate)
+            offset, confidence = estimate_local_alignment(take)
+        self.assertAlmostEqual(offset, -0.75, delta=0.02)
+        self.assertGreater(confidence, 0.9)
+
+    def test_alignment_is_sample_accurate_off_the_envelope_grid(self):
+        """An offset that is not a multiple of the 10 ms envelope block must
+        still be recovered to within a millisecond by the refinement pass."""
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            rng = np.random.default_rng(3)
+            guitar = np.zeros(rate * 5, dtype="float32")
+            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            vocal = np.zeros_like(guitar)
+            delay = 24_137  # ≈0.5028 s: deliberately off the 480-sample grid
+            server = np.concatenate((np.zeros(delay, dtype="float32"), guitar))
+            sf.write(take / "host-guitar.wav", guitar, rate)
+            sf.write(take / "host-vocal.wav", vocal, rate)
+            sf.write(take / "server-host.wav", server, rate)
+            offset, confidence = estimate_local_alignment(take)
+        self.assertAlmostEqual(offset, delay / rate, delta=0.001)
+        self.assertGreater(confidence, 0.9)
+
+    def test_alignment_reports_low_confidence_for_unrelated_audio(self):
+        """Uncorrelated program material must not manufacture confidence."""
+        import numpy as np
+        import soundfile as sf
+
+        from core.take_library import ALIGNMENT_CONFIDENCE_MIN
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            rng = np.random.default_rng(5)
+            guitar = rng.normal(0, 0.1, rate * 5).astype("float32")
+            vocal = np.zeros_like(guitar)
+            unrelated = rng.normal(0, 0.1, rate * 5).astype("float32")
+            sf.write(take / "host-guitar.wav", guitar, rate)
+            sf.write(take / "host-vocal.wav", vocal, rate)
+            sf.write(take / "server-host.wav", unrelated, rate)
+            _offset, confidence = estimate_local_alignment(take)
+        self.assertLess(confidence, ALIGNMENT_CONFIDENCE_MIN)
+
+    def test_alignment_handles_stereo_server_track(self):
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            rate = 48000
+            rng = np.random.default_rng(9)
+            guitar = np.zeros(rate * 5, dtype="float32")
+            guitar[rate:rate * 3] = rng.normal(0, 0.1, rate * 2)
+            vocal = np.zeros_like(guitar)
+            delayed = np.concatenate((np.zeros(rate // 4, dtype="float32"), guitar))
+            stereo = np.stack((delayed, delayed), axis=1)
+            sf.write(take / "host-guitar.wav", guitar, rate)
+            sf.write(take / "host-vocal.wav", vocal, rate)
+            sf.write(take / "server-host.wav", stereo, rate)
+            offset, confidence = estimate_local_alignment(take)
+        self.assertAlmostEqual(offset, 0.25, delta=0.02)
+        self.assertGreater(confidence, 0.9)
+
+    def test_load_take_round_trips_negative_manifest_offset(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "host-guitar.wav", seconds=0.1)
+            _write_wav(take / "server-host.wav", seconds=0.1)
+            (take / "webjam-take.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "complete",
+                "tracks": [
+                    {"filename": "host-guitar.wav", "source": "local_ssl",
+                     "offset_s": -1.25},
+                    {"filename": "server-host.wav",
+                     "source": "jamulus_server", "offset_s": None},
+                ],
+            }), encoding="utf-8")
+            loaded = load_take(take)
+        stem = next(t for t in loaded.tracks if t.source == "local_ssl")
+        self.assertAlmostEqual(stem.offset_s, -1.25)
+
     def test_snapshot_finds_new_take(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

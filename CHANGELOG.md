@@ -46,6 +46,41 @@ All notable improvements and features for the WebJam music collaboration platfor
   duplicate Stage/Mixer distinction were removed; Ready and Practice now live
   in an accessible Test menu.
 
+### Recording integrity hardening
+
+- Stem alignment offsets are now signed end-to-end. Local capture arms before
+  the server recorder starts, so isolated stems normally *lead* the server
+  take; the previous clamp forced those negative offsets to zero and every
+  supplemental stem played late by the recorder-start latency. Take Deck now
+  plays negative-offset stems sample-aligned and labels the trimmed lead-in.
+- Alignment correlation uses an alias-free 100 Hz block-mean envelope plus a
+  bounded full-rate refinement pass, replacing raw stride decimation. The
+  reported confidence is the refined normalized correlation (≈1.0 for a
+  genuine match, ≈0 for unrelated audio), making the 0.15 acceptance floor
+  meaningful. Manifests record `alignment_method: envelope+refine-v2`.
+- The supplemental-capture audio callback is real-time safe: it only copies
+  blocks into a bounded queue and a dedicated writer thread does all disk
+  writes. Device status flags and write errors are deduplicated, counted, and
+  capped, so a sustained fault can no longer grow an unbounded error list into
+  the manifest.
+- Partial recordings are always preserved: a failed stem attach moves the
+  audio to a visible `Recovered-local-…` folder instead of deleting it,
+  attaching never overwrites an existing take file (collisions get a
+  `-local` suffix), and quitting mid-recording salvages the capture into a
+  `Recovered-…` take instead of discarding it. Capture hand-off between the
+  validation worker, stop-failure handling, and shutdown is now atomic and
+  idempotent.
+- Take Deck reuses recorded manifest findings when reviewing a finished take
+  instead of re-probing every WAV, and shows transient `validating` manifests
+  as "Checking…" rather than "Unchecked".
+- Stopping audio while the band server is recording now warns that the server
+  keeps recording and points at ■ Stop Rec first.
+- Participant names and roles from the Jamulus roster render as plain text,
+  so markup in a remote musician's name can no longer be interpreted as rich
+  text in the mixer.
+- Reconnect guidance and README_SIMPLE now name the real controls
+  ("Start Audio", "Checks ▾") instead of stale labels.
+
 ---
 
 ## [0.8.0] — 2026-07-08

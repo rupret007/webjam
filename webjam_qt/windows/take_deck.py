@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_routing import list_output_devices
-from core.take_library import discover_takes, validate_take
+from core.take_library import TakeValidationResult, discover_takes, validate_take
 from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -203,6 +203,7 @@ class TakeDeck(QDialog):
             status = {
                 "complete": "Verified",
                 "needs_attention": "Needs Attention",
+                "validating": "Checking…",
             }.get(take.validation_status, "Unchecked")
             label = (
                 f"{take.name}  ·  {status}  ·  {take.track_count} tracks"
@@ -217,8 +218,6 @@ class TakeDeck(QDialog):
         take = self._takes[row]
         self._current = take
         self._player.load(take)
-        validation = validate_take(take.path)
-        self._title.setText(f"{take.name}  ·  {validation.summary}")
         self._console.set_participants([
             ParticipantPresentation(
                 channel_id=t.channel_id,
@@ -226,6 +225,7 @@ class TakeDeck(QDialog):
                 role=(
                     ("Isolated SSL input" if t.source == "local_ssl" else "Jamulus server track")
                     + (f" · starts {_fmt_time(t.offset_s)}" if t.offset_s > 0.5 else "")
+                    + (f" · trimmed {abs(t.offset_s):.2f}s lead-in" if t.offset_s < -0.05 else "")
                 ),
                 fader_level=100,
             )
@@ -238,6 +238,28 @@ class TakeDeck(QDialog):
         self._scrub.setValue(0)
         self._update_pos_label(0.0, self._player.duration_s)
         self._reveal_btn.setEnabled(True)
+        if take.validation_status in ("complete", "needs_attention") and take.manifest_path:
+            # Findings were recorded at validation time; reuse them instead
+            # of re-probing every WAV on the UI thread.
+            self._show_take_health(take, TakeValidationResult(
+                take, take.manifest_errors, take.manifest_warnings,
+                take.manifest_path,
+            ))
+        else:
+            # Legacy manifest-less take: probe it now. validate_take is
+            # bounded (header reads + three 4096-frame windows per track),
+            # so this stays interactive even for long takes.
+            try:
+                result = validate_take(take.path)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Take health check failed for %s", take.path)
+                result = TakeValidationResult(
+                    take, ("The take could not be checked — see ~/.webjam.log.",)
+                )
+            self._show_take_health(take, result)
+
+    def _show_take_health(self, take, validation: TakeValidationResult) -> None:
+        self._title.setText(f"{take.name}  ·  {validation.summary}")
         messages = list(validation.errors)
         messages.extend(f"Warning: {warning}" for warning in validation.warnings)
         self._hint.setText("\n".join(messages))

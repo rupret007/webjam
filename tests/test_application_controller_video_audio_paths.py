@@ -269,6 +269,36 @@ class TestLaunchStopAudio(_ControllerTestBase):
             c.window.participant_grid._empty_title.text(), "Ready when you are"
         )
 
+    def test_stop_warns_when_server_recording_is_active(self):
+        c = self.controller
+        c.bridge.jamulus_state = "Running"
+        c._jamulus_connected = True
+        c._server_recording = True
+        c.bridge.stop_jamulus = MagicMock()
+        try:
+            with patch(
+                "webjam_qt.controllers.application_controller.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.No,
+            ) as question:
+                c._on_launch_audio()
+            text = question.call_args.args[2]
+            self.assertIn("keeps recording", text)
+            self.assertIn("Stop Rec", text)
+            # Without an active recording the plain wording returns.
+            c._server_recording = False
+            c._recorder_armed = False
+            c.recording.phase = c.recording.phase.__class__.IDLE
+            with patch(
+                "webjam_qt.controllers.application_controller.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.No,
+            ) as question:
+                c._on_launch_audio()
+            self.assertNotIn("keeps recording", question.call_args.args[2])
+        finally:
+            c._server_recording = False
+            c._recorder_armed = False
+            c._jamulus_connected = False
+
     def test_stop_declined_makes_no_changes(self):
         c = self.controller
         c.bridge.jamulus_state = "Running"

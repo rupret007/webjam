@@ -65,9 +65,26 @@ class AudioCoordinator:
             self.reset_to_idle()
 
     def stop(self) -> None:
+        question = (
+            "Stop the Jamulus audio session?\n\n"
+            "You can restart it any time with the audio button."
+        )
+        snapshot = self._c.recording.snapshot
+        if snapshot.recording or snapshot.armed or snapshot.phase.value in (
+            "starting", "recording"
+        ):
+            # Stopping the client does not stop the band server's recorder —
+            # don't let the ● REC chip vanishing suggest otherwise.
+            question = (
+                "A recording is still running on the band server.\n\n"
+                "Stopping audio disconnects this computer but the server "
+                "keeps recording. Press ■ Stop Rec first to finish and "
+                "verify the take on this Mac.\n\n"
+                "Stop the Jamulus audio session anyway?"
+            )
         reply = QMessageBox.question(
             self._c.window, "Stop Audio?",
-            "Stop the Jamulus audio session?\n\nYou can restart it any time with the audio button.",
+            question,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

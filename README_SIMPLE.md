@@ -91,12 +91,12 @@ delayed copy of the band back into Jamulus.
 
 The Conductor keeps the live actions at the top:
 
-1. **Launch Audio** (gold) — starts Jamulus and connects to your band's server. Each member appears as a card as they join.
+1. **Start Audio** (gold) — starts Jamulus and connects to your band's server. Each member appears as a card as they join.
 2. **Join Video** (teal) — opens your Webex meeting.
 3. Adjust each player's **fader / mute / solo** on their card to build *your own* monitor mix — it only changes what you hear, not what others hear.
 4. Click the same buttons again to **stop audio** / **leave video**.
 
-Use **Test ▾** for Ready Check or Practice. The left rail contains only the
+Use **Checks ▾** for Ready Check or Practice. The left rail contains only the
 working Live, Canvas, Takes, and Settings views.
 
 When the host stops recording, WebJam verifies the newly created tracks and
@@ -115,7 +115,7 @@ review both headphone channels, and reveal the take in Finder.
 | `Ctrl+P` | **Practice solo pilot check** — private local server, hear yourself, no internet; include this in the real-hardware gate. |
 | `● Record` button | **Pilot/server-admin feature** — band-server multitrack recording after `server/README.md` setup; validate on real hardware before relying on it for a session. |
 | **Takes** (side rail) | **Pilot validation** — play back copied/downloaded take folders; include take retrieval + Take Deck playback in the real-hardware gate. |
-| `F2` / `Test → Ready Check` | Is my setup ready to jam? |
+| `F2` / `Checks → Ready Check` | Is my setup ready to jam? |
 | `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
 | `Ctrl+M` | Mute / unmute **all** |
@@ -140,7 +140,7 @@ Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test �
 
 Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private Jamulus server *on your own computer* and connects to it — if you can hear yourself and see your meter move, your audio setup works, full stop. Then:
 
-1. Everyone: **Launch Audio** and confirm you see each other's cards and hear each other in Jamulus.
+1. Everyone: **Start Audio** and confirm you see each other's cards and hear each other in Jamulus.
 2. One person: **Join Video** and confirm Webex hears the band (the virtual cable is working).
 3. Set and **save** your monitor mix (`Ctrl+S`).
 
@@ -148,7 +148,7 @@ Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private
 
 ## Troubleshooting
 
-- **"Jamulus Not Found" when I click Launch Audio** — WebJam can't find (or wasn't shipped with) a Jamulus install. Reopen Settings → Jamulus: on Windows click **"Install Jamulus now"** if it's offered, otherwise install from [jamulus.io](https://jamulus.io) and set the path.
+- **"Jamulus Not Found" when I click Start Audio** — WebJam can't find (or wasn't shipped with) a Jamulus install. Reopen Settings → Jamulus: on Windows click **"Install Jamulus now"** if it's offered, otherwise install from [jamulus.io](https://jamulus.io) and set the path.
 - **No one can hear the band in Webex** — detection alone is not enough. On the designated bridge Mac, confirm Jamulus outputs to the physical-output + BlackHole Multi-Output Device and Webex uses BlackHole as its microphone.
 - **"No audio routing device found" in setup** — install the virtual cable for your OS and relaunch.
 - **Can't connect to the server** — double-check the host and port with your band admin, and that everyone is pointed at the *same* server.

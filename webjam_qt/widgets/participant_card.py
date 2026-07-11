@@ -80,9 +80,13 @@ class ParticipantCard(QFrame):
         self._name_label = QLabel(presentation.name)
         self._name_label.setObjectName("ParticipantName")
         self._name_label.setAccessibleName("Participant name")
+        # Names/roles arrive from the Jamulus roster (other musicians —
+        # untrusted); QLabel's AutoText default would render them as HTML.
+        self._name_label.setTextFormat(Qt.TextFormat.PlainText)
         self._role_label = QLabel(presentation.role or self._default_role_label())
         self._role_label.setObjectName("ParticipantRole")
         self._role_label.setAccessibleName("Participant role")
+        self._role_label.setTextFormat(Qt.TextFormat.PlainText)
         self._fader_value = QLabel(self._format_fader(presentation.fader_level))
         self._fader_value.setObjectName("FaderValue")
         self._fader_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)

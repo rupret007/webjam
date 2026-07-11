@@ -200,6 +200,35 @@ class TestMixing(unittest.TestCase):
         # after the offset, audible
         self.assertGreater(np.abs(mixed[2200:2600]).max(), 0.1)
 
+    def test_negative_offset_skips_track_lead_in(self):
+        """A local stem that started before the take timeline (negative
+        offset) must play its file from -offset at take time zero — the
+        pre-roll is skipped, not replayed late."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "host-guitar.wav"
+            n_lead = int(0.25 * RATE)
+            n_body = int(0.5 * RATE)
+            samples = np.concatenate((
+                np.zeros(n_lead, dtype=np.float32),      # silent pre-roll
+                np.full(n_body, 0.4, dtype=np.float32),  # audible body
+            ))
+            ints = np.int16(np.clip(samples, -1, 1) * 32767)
+            with wave.open(str(p), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(RATE)
+                w.writeframes(struct.pack("<%dh" % len(ints), *ints.tolist()))
+            take = _Take(tracks=[_Track(path=p, name="host-guitar",
+                                        offset_s=-0.25, duration_s=0.75)])
+            player, mixed = self._render(take)
+        # With offset -0.25 the audible body lands at take time 0, so the
+        # very start of the mix is already audible …
+        self.assertGreater(np.abs(mixed[10:200]).max(), 0.1)
+        # … and the take is only the 0.5 s body long, not 0.75 s.
+        self.assertAlmostEqual(player.duration_s, 0.5, places=2)
+        # Nothing audible remains past the shortened end.
+        self.assertLess(np.abs(mixed[int(0.55 * RATE):]).max(initial=0.0), 0.01)
+
     def test_soft_clip_prevents_overflow(self):
         with tempfile.TemporaryDirectory() as d:
             take = _take_from(d, [
