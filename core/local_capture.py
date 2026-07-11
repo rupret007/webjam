@@ -150,4 +150,3 @@ class LocalInputCapture:
             self._writers.clear()
         if self._temp_dir is not None:
             shutil.rmtree(self._temp_dir, ignore_errors=True)
-
