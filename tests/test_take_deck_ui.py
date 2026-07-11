@@ -79,6 +79,23 @@ class TestTakeDeckEmpty(unittest.TestCase):
         finally:
             deck.close()
 
+    def test_empty_hint_mentions_recovered_folder_when_present(self):
+        with tempfile.TemporaryDirectory() as d, \
+                tempfile.TemporaryDirectory() as home:
+            (Path(home) / "Music" / "WebJam Recovered Takes").mkdir(parents=True)
+            with mock.patch(
+                "webjam_qt.windows.take_deck.Path.home",
+                return_value=Path(home),
+            ):
+                deck = TakeDeck(
+                    d, player=TakePlayer(samplerate=RATE, sink=_SilentSink())
+                )
+            try:
+                self.assertIn("No takes found", deck._hint.text())
+                self.assertIn("WebJam Recovered Takes", deck._hint.text())
+            finally:
+                deck.close()
+
 
 class TestTakeDeckPopulated(unittest.TestCase):
     def setUp(self):
@@ -197,6 +214,25 @@ class TestTakeHealthPanel(unittest.TestCase):
                     self.assertIn("Needs Attention", row)
                 finally:
                     deck.close()
+
+    def test_verified_take_with_warnings_shows_count(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as d:
+            take = _make_take_dir(Path(d), "take_A")
+            (take / "webjam-take.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "complete",
+                "errors": [],
+                "warnings": ["guitar.wav appears silent."],
+                "tracks": [],
+            }), encoding="utf-8")
+            deck = self._deck(d)
+            try:
+                row = deck._take_list.item(0).text()
+                self.assertIn("Verified · 1 warning", row)
+            finally:
+                deck.close()
 
     def test_manifest_less_take_still_gets_probed(self):
         with tempfile.TemporaryDirectory() as d:

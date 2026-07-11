@@ -69,10 +69,7 @@ class AudioCoordinator:
             "Stop the Jamulus audio session?\n\n"
             "You can restart it any time with the audio button."
         )
-        snapshot = self._c.recording.snapshot
-        if snapshot.recording or snapshot.armed or snapshot.phase.value in (
-            "starting", "recording"
-        ):
+        if self._c.recording.is_recording_active:
             # Stopping the client does not stop the band server's recorder —
             # don't let the ● REC chip vanishing suggest otherwise.
             question = (
@@ -99,9 +96,7 @@ class AudioCoordinator:
         ).start()
         self.connected = False
         self._c._level_timer.stop()
-        self._c._apply_recorder_state(False)
-        self._c._recorder_armed = False
-        self._c.window.session_strip.set_recording_state(False, enabled=True)
+        self._c.recording.on_audio_session_stopped()
         self.reset_to_idle()
         self._c._reconnect_banner_shown = False
         self._c._rpc_hang_banner_shown = False

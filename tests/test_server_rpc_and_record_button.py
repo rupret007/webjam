@@ -212,7 +212,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.settings.takes_directory = ""
         c.settings.server_rpc_secret_file = ""
         # A prior test may have left the button disabled mid-toggle.
-        self.window.session_strip.set_recording_state(False, enabled=True)
+        self.window.session_strip.set_recording_phase("idle")
         # The strip signal is wired to the real handler; with no secret file
         # configured it would open a MODAL error dialog and hang the suite —
         # mock it (tests that assert on it use this mock).
@@ -368,6 +368,233 @@ class TestRecordButtonWiring(unittest.TestCase):
             winners = [item for item in claimed if item is not None]
             self.assertEqual(len(winners), 1)
         self.assertIsNone(c.recording._local_capture)
+
+    def test_confirm_quit_idle_skips_dialog(self):
+        c = self.controller
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.QMessageBox"
+        ) as mbox:
+            self.assertTrue(c.recording.confirm_quit())
+        mbox.assert_not_called()
+
+    def test_confirm_quit_while_recording_defaults_to_cancel(self):
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        c.recording.phase = RecorderPhase.RECORDING
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.QMessageBox"
+        ) as mbox:
+            box = mbox.return_value
+            box.clickedButton.return_value = object()  # anything but Quit
+            self.assertFalse(c.recording.confirm_quit())
+            box.exec.assert_called_once()
+            box.setDefaultButton.assert_called_once()
+            # Quit clicked → the close proceeds.
+            box.clickedButton.return_value = box.addButton.return_value
+            self.assertTrue(c.recording.confirm_quit())
+        self.assertIn(
+            "keeps recording", mbox.return_value.setText.call_args.args[0]
+        )
+
+    def test_confirm_close_is_wired_to_confirm_quit(self):
+        self.assertEqual(
+            self.window.confirm_close, self.controller.recording.confirm_quit
+        )
+
+    def test_stop_audio_salvages_inflight_capture_and_resets_phase(self):
+        import tempfile
+        from pathlib import Path
+        from PySide6.QtWidgets import QMessageBox
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        with tempfile.TemporaryDirectory() as d:
+            c.settings.takes_directory = d
+            fake_capture = MagicMock()
+            fake_capture.stop_into.return_value = SimpleNamespace(errors=())
+            c.recording._local_capture = fake_capture
+            c.recording.phase = RecorderPhase.RECORDING
+            c._recorder_armed = True
+            c._server_recording = True
+            c.bridge.stop_jamulus = MagicMock()
+            with patch(
+                "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ):
+                c.audio.stop()
+            fake_capture.stop_into.assert_called_once()
+            dest = Path(fake_capture.stop_into.call_args.args[0])
+            self.assertEqual(dest.parent, Path(d))
+            self.assertTrue(dest.name.startswith("Recovered-"))
+            self.assertEqual(c.recording.phase.value, "idle")
+            self.assertFalse(c._recorder_armed)
+            self.assertFalse(c._server_recording)
+            strip = self.window.session_strip
+            self.assertTrue(strip._record_elapsed.isHidden())
+            self.assertEqual(strip._record_button.text(), "● Record")
+            msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
+            self.assertTrue(any("saved to" in m for m in msgs), msgs)
+
+    def test_stop_audio_during_validation_does_not_steal_capture(self):
+        from PySide6.QtWidgets import QMessageBox
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        fake_capture = MagicMock()
+        c.recording._local_capture = fake_capture
+        c.recording.phase = RecorderPhase.VALIDATING
+        c.bridge.stop_jamulus = MagicMock()
+        with patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            c.audio.stop()
+        fake_capture.stop_into.assert_not_called()
+        fake_capture.abort.assert_not_called()
+        self.assertIs(c.recording._local_capture, fake_capture)
+        self.assertEqual(c.recording.phase.value, "validating")
+
+    def test_stop_audio_clears_stale_take_verified_chip(self):
+        from PySide6.QtWidgets import QMessageBox
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        c.recording.phase = RecorderPhase.COMPLETE
+        self.window.session_strip.set_recording_phase("complete")
+        self.assertEqual(
+            self.window.session_strip._record_elapsed.text(), "TAKE VERIFIED"
+        )
+        c.bridge.stop_jamulus = MagicMock()
+        with patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            c.audio.stop()
+        self.assertEqual(c.recording.phase.value, "idle")
+        self.assertTrue(self.window.session_strip._record_elapsed.isHidden())
+
+    def test_no_takes_dir_recovery_uses_recovered_prefix(self):
+        from pathlib import Path
+
+        c = self.controller
+        fake_capture = MagicMock()
+        fake_capture.stop_into.return_value = SimpleNamespace(errors=())
+        c.recording._local_capture = fake_capture
+        c.settings.takes_directory = ""
+        try:
+            c.recording._begin_take_validation()
+            fake_capture.stop_into.assert_called_once()
+            dest = Path(fake_capture.stop_into.call_args.args[0])
+            self.assertTrue(dest.name.startswith("Recovered-"))
+            self.assertEqual(dest.parent.name, "WebJam Recovered Takes")
+            self.assertEqual(c.recording.phase.value, "needs_attention")
+        finally:
+            if c.recording._recovery_box is not None:
+                c.recording._recovery_box.close()
+                c.recording._recovery_box = None
+
+    def test_outside_takes_dir_recovery_opens_persistent_box(self):
+        c = self.controller
+        fake_capture = MagicMock()
+        fake_capture.stop_into.return_value = SimpleNamespace(errors=())
+        c.recording._local_capture = fake_capture
+        c.settings.takes_directory = ""
+        try:
+            c.recording._begin_take_validation()
+            box = c.recording._recovery_box
+            self.assertIsNotNone(box)
+            self.assertTrue(box.isVisible())  # open(), not exec(): non-blocking
+            self.assertIn("WebJam Recovered Takes", box.text())
+            self.assertIn("Take Deck", box.text())
+            labels = [button.text() for button in box.buttons()]
+            self.assertIn("Reveal in Finder", labels)
+        finally:
+            if c.recording._recovery_box is not None:
+                c.recording._recovery_box.close()
+                c.recording._recovery_box = None
+
+    def test_completion_copy_failure_states_folder_and_next_step(self):
+        c = self.controller
+        result = SimpleNamespace(
+            ok=False,
+            take=SimpleNamespace(path="/takes/Take01"),
+            errors=("Expected at least 3 tracks but found 2.",),
+            warnings=("guitar.wav appears silent.",),
+            summary="",
+        )
+        title, body = c.recording._completion_text(result)
+        self.assertEqual(title, "WebJam — Take needs attention")
+        self.assertIn("preserved", body)
+        self.assertIn("/takes/Take01", body)
+        self.assertIn("Expected at least 3 tracks but found 2.", body)
+        self.assertIn("guitar.wav appears silent.", body)
+        self.assertIn("Take Deck", body)
+
+    def test_completion_copy_no_take_points_to_ready_check(self):
+        c = self.controller
+        result = SimpleNamespace(
+            ok=False,
+            take=None,
+            errors=("No new Jamulus take folder appeared after recording stopped.",),
+            warnings=(),
+            summary="",
+        )
+        title, body = c.recording._completion_text(result)
+        self.assertEqual(title, "WebJam — Take needs attention")
+        self.assertIn("Ready Check", body)
+        self.assertNotIn("Saved to:", body)
+
+    def test_completion_copy_success_unchanged(self):
+        c = self.controller
+        result = SimpleNamespace(
+            ok=True, take=SimpleNamespace(path="/takes/Take01"),
+            errors=(), warnings=(), summary="2 tracks · 1:04 · 48 kHz",
+        )
+        title, body = c.recording._completion_text(result)
+        self.assertEqual(title, "WebJam — Recording complete")
+        self.assertIn("Take saved · 2 tracks · 1:04 · 48 kHz", body)
+
+    def test_validation_worker_posts_staged_progress(self):
+        import tempfile
+        from pathlib import Path
+
+        c = self.controller
+        strip = self.window.session_strip
+        details: list[str] = []
+        original = strip.set_recording_phase
+
+        def spy(phase, detail=""):
+            if phase == "validating" and detail:
+                details.append(detail)
+            original(phase, detail)
+
+        with tempfile.TemporaryDirectory() as d:
+            c.settings.takes_directory = d
+            fake_result = SimpleNamespace(
+                ok=True, take=SimpleNamespace(path=Path(d) / "Take01"),
+                errors=(), warnings=(), summary="1 track",
+            )
+            try:
+                with patch.object(strip, "set_recording_phase", side_effect=spy), \
+                     patch("webjam_qt.controllers.recording_coordinator."
+                           "find_changed_take", return_value=Path(d) / "Take01"), \
+                     patch("webjam_qt.controllers.recording_coordinator."
+                           "wait_for_take_files_stable", return_value=True), \
+                     patch("webjam_qt.controllers.recording_coordinator."
+                           "write_take_manifest", return_value=fake_result), \
+                     patch.object(c._ui_invoker, "invoke",
+                                  side_effect=lambda fn: fn()):
+                    c.recording._validate_take_worker()
+            finally:
+                if c.recording._completion_box is not None:
+                    c.recording._completion_box.close()
+                    c.recording._completion_box = None
+        self.assertEqual(
+            details,
+            ["WAITING FOR SERVER FILES…", "CHECKING TRACKS…",
+             "ALIGNING HOST TRACKS…"],
+        )
 
     def test_worker_stop_path(self):
         c = self.controller

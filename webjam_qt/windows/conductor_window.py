@@ -20,7 +20,7 @@ Wiring to services happens in ApplicationController.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
@@ -62,6 +62,8 @@ class ConductorWindow(QMainWindow):
         self.setWindowTitle(f"WebJam — Conductor (v{__version__})")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
         self.setMinimumSize(1100, 720)
+        # Controller-injected veto (e.g. "a recording is running — quit?").
+        self.confirm_close: Optional[Callable[[], bool]] = None
 
         # --- Central widgets
         self.session_strip = SessionStrip(
@@ -92,8 +94,10 @@ class ConductorWindow(QMainWindow):
         self.center_splitter.setStretchFactor(0, 3)
         self.center_splitter.setStretchFactor(1, 1)
         self.center_splitter.setSizes([int(self.DEFAULT_WIDTH * 0.72), int(self.DEFAULT_WIDTH * 0.28)])
-        self.center_splitter.setCollapsible(0, True)
-        self.center_splitter.setCollapsible(1, True)
+        # Never collapse a pane to zero — a hidden stage or canvas mid-jam
+        # looks like data loss and has no obvious restore affordance.
+        self.center_splitter.setCollapsible(0, False)
+        self.center_splitter.setCollapsible(1, False)
         self.center_splitter.setHandleWidth(1)
 
         body_container = QWidget()
@@ -388,5 +392,8 @@ class ConductorWindow(QMainWindow):
     # Qt overrides
     # ------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self.confirm_close is not None and not self.confirm_close():
+            event.ignore()
+            return
         self.close_requested.emit()
         super().closeEvent(event)

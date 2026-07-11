@@ -268,6 +268,17 @@ class TestSessionStrip(unittest.TestCase):
         self.assertTrue(s._record_button.isEnabled())
         self.assertEqual(s._record_elapsed.text(), "NEEDS ATTENTION")
 
+    def test_validating_detail_overrides_chip_and_default_survives(self):
+        s = self._strip()
+        s.set_recording_phase("validating", detail="WAITING FOR SERVER FILES…")
+        self.assertEqual(s._record_elapsed.text(), "WAITING FOR SERVER FILES…")
+        self.assertIn(
+            "Waiting for server files",
+            s._record_button.accessibleDescription(),
+        )
+        s.set_recording_phase("validating")
+        self.assertEqual(s._record_elapsed.text(), "CHECKING TRACKS…")
+
 
 # ---------------------------------------------------------------------------
 # ParticipantGrid
@@ -457,6 +468,31 @@ class TestConductorWindow(unittest.TestCase):
     def test_settings_shortcut_exists(self):
         w = self._window()
         self.assertIsNotNone(w._settings_shortcut)
+
+    def test_close_event_respects_confirm_close_veto(self):
+        w = self._window()
+        emitted = []
+        w.close_requested.connect(lambda: emitted.append(True))
+        w.confirm_close = lambda: False
+        w.show()
+        self.assertFalse(w.close())
+        self.assertEqual(emitted, [])
+        self.assertTrue(w.isVisible())
+        w.confirm_close = None
+        w.close()
+
+    def test_close_event_default_emits_close_requested(self):
+        w = self._window()
+        emitted = []
+        w.close_requested.connect(lambda: emitted.append(True))
+        w.show()
+        self.assertTrue(w.close())
+        self.assertEqual(emitted, [True])
+
+    def test_center_splitter_panes_are_not_collapsible(self):
+        w = self._window()
+        self.assertFalse(w.center_splitter.isCollapsible(0))
+        self.assertFalse(w.center_splitter.isCollapsible(1))
 
 
 if __name__ == "__main__":

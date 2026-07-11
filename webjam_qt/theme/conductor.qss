@@ -57,12 +57,6 @@ QMainWindow, QDialog {
     padding: 0 ${SPACE_MD}px;
 }
 
-#RecordDot {
-    color: ${COLOR_ACCENT_RECORD};
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 700;
-}
-
 #RecordElapsed {
     color: ${COLOR_ACCENT_RECORD};
     font-family: ${FONT_FAMILY_MONO};

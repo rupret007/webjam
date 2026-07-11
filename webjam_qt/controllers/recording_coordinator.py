@@ -57,6 +57,7 @@ class RecordingCoordinator:
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
         self._completion_box = None
+        self._recovery_box = None
         self._local_capture = None
         # The validation worker, toggle-failure handler, and shutdown salvage
         # all hand off the capture; the lock makes the hand-off atomic so the
@@ -70,15 +71,15 @@ class RecordingCoordinator:
             self._local_capture = None
             return capture
 
-    def salvage_on_shutdown(self) -> None:
+    def _salvage_capture(self) -> tuple[Path | None, tuple[str, ...]]:
         """Preserve an in-flight capture instead of discarding it.
 
-        Quitting while recording or validating must keep the audio: stop the
-        stream into a recovery folder rather than aborting it away.
+        Returns the recovery folder and any capture errors, or (None, ())
+        when there was no capture to claim or the salvage itself failed.
         """
         capture = self._take_local_capture()
         if capture is None:
-            return
+            return None, ()
         root = (self._c.settings.takes_directory or "").strip()
         base = (
             Path(root).expanduser() if root
@@ -89,10 +90,62 @@ class RecordingCoordinator:
             result = capture.stop_into(recovered)
             LOGGER.info("Isolated host stems preserved in %s", recovered)
             for error in result.errors:
-                LOGGER.warning("Shutdown capture salvage: %s", error)
+                LOGGER.warning("Capture salvage: %s", error)
+            return recovered, result.errors
         except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not salvage isolated host stems on shutdown")
+            LOGGER.exception("Could not salvage isolated host stems")
             capture.abort()
+            return None, ()
+
+    def salvage_on_shutdown(self) -> None:
+        """Quitting while recording must keep the audio, not abort it away."""
+        self._salvage_capture()
+
+    @property
+    def is_recording_active(self) -> bool:
+        """True while a recording is armed, rolling, or being armed."""
+        snap = self.snapshot
+        return snap.recording or snap.armed or self.phase in (
+            RecorderPhase.STARTING, RecorderPhase.RECORDING,
+        )
+
+    def confirm_quit(self) -> bool:
+        """Ask before quitting mid-recording; idle quits stay frictionless."""
+        if not self.is_recording_active:
+            return True
+        box = QMessageBox(self._c.window)
+        box.setWindowTitle("Quit WebJam?")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(
+            "A recording is still running.\n\n"
+            "Quitting disconnects this computer, but the band server keeps "
+            "recording until someone presses ■ Stop Rec. Your isolated local "
+            "tracks will be saved to a Recovered folder before WebJam quits.\n\n"
+            "Quit WebJam?"
+        )
+        quit_button = box.addButton("Quit", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_button = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(cancel_button)
+        box.exec()
+        return box.clickedButton() is quit_button
+
+    def on_audio_session_stopped(self) -> None:
+        """Stop Audio ends this Mac's part in any in-flight recording.
+
+        The band server keeps recording (the Stop Audio dialog says so); this
+        preserves the local isolated tracks and resets the recording UI so no
+        stale REC clock or take chip survives the disconnect.
+        """
+        if self.phase is RecorderPhase.VALIDATING:
+            # The validation worker owns the capture and will finish the take.
+            return
+        recovered, errors = self._salvage_capture()
+        self._c._recorder_armed = False
+        self._c._server_recording = False
+        self._c.window.set_status_recording(False)
+        self._set_phase(RecorderPhase.IDLE)
+        if recovered is not None:
+            self._notify_recovered(recovered, errors)
 
     @property
     def snapshot(self) -> RecorderSnapshot:
@@ -265,7 +318,6 @@ class RecordingCoordinator:
             # Authenticated status polling confirmed the recorder is enabled;
             # do not leave the UI hanging if a notification is delayed/lost.
             self._set_phase(RecorderPhase.RECORDING)
-            self._c.window.session_strip.set_recording_state(True, enabled=True)
             self._c.window.flash_message(
                 "Recording confirmed by the band server.",
                 ms=5000,
@@ -330,21 +382,67 @@ class RecordingCoordinator:
         self.phase = phase
         self._c.window.session_strip.set_recording_phase(phase.value)
 
+    def _is_inside_takes_dir(self, folder: Path) -> bool:
+        root = (self._c.settings.takes_directory or "").strip()
+        if not root:
+            return False
+        try:
+            folder.resolve().relative_to(Path(root).expanduser().resolve())
+            return True
+        except ValueError:
+            return False
+
+    def _notify_recovered(self, recovered: Path, errors: tuple[str, ...]) -> None:
+        """Tell the user where rescued tracks went — persistently if the
+        folder is outside the Takes folder, where the Take Deck can't list it."""
+        if self._is_inside_takes_dir(recovered):
+            self._c.window.flash_message(
+                f"Audio stopped. Your isolated local tracks were saved to "
+                f"{recovered.name} — open the Take Deck to review them.",
+                ms=8000,
+            )
+            return
+        box = QMessageBox(self._c.window)
+        box.setWindowTitle("WebJam — Tracks recovered")
+        box.setIcon(QMessageBox.Icon.Information)
+        details = [
+            "Recording stopped before a finished server take arrived, but "
+            "your isolated local tracks were saved.",
+            "",
+            f"Saved to:\n{recovered}",
+            "",
+            "This folder is outside your Takes folder, so it won't appear in "
+            "the Take Deck. Use Reveal in Finder to open it, and set a Takes "
+            "folder in Settings so future recordings land in one place.",
+        ]
+        if errors:
+            details.extend(["", "Problems noted:"])
+            details.extend(errors)
+        box.setText("\n".join(details))
+        reveal_button = box.addButton(
+            "Reveal in Finder", QMessageBox.ButtonRole.ActionRole
+        )
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+
+        def _clicked(button) -> None:
+            if button is reveal_button:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(recovered)))
+
+        box.buttonClicked.connect(_clicked)
+        box.finished.connect(lambda _result: setattr(self, "_recovery_box", None))
+        self._recovery_box = box
+        box.open()
+
     def _begin_take_validation(self) -> None:
         root = self._c.settings.takes_directory
         if not root:
             self._c.window.flash_message(
                 "Recording stopped, but no local Takes folder is configured.", ms=7000
             )
-            capture = self._take_local_capture()
-            if capture is not None:
-                recovered = Path.home() / "Music" / "WebJam Recovered Takes" / time.strftime("%Y%m%d-%H%M%S")
-                result = capture.stop_into(recovered)
-                self._c.window.flash_message(
-                    f"Server take unavailable; isolated tracks preserved in {recovered}. "
-                    f"{' '.join(result.errors)}", ms=10000,
-                )
+            recovered, errors = self._salvage_capture()
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
+            if recovered is not None:
+                self._notify_recovered(recovered, errors)
             return
         threading.Thread(
             target=self._validate_take_worker,
@@ -352,9 +450,18 @@ class RecordingCoordinator:
             name="take-validation",
         ).start()
 
+    def _post_validation_stage(self, text: str) -> None:
+        """Update the validating chip from the worker thread."""
+        self._c._ui_invoker.invoke(
+            lambda: self._c.window.session_strip.set_recording_phase(
+                "validating", detail=text
+            )
+        )
+
     def _validate_take_worker(self) -> None:
         root = self._c.settings.takes_directory
         take_dir = None
+        self._post_validation_stage("WAITING FOR SERVER FILES…")
         for _ in range(80):
             take_dir = find_changed_take(root, self._before_takes)
             if take_dir is not None:
@@ -377,6 +484,7 @@ class RecordingCoordinator:
                 duration_s = local_result.duration_s
             if recovered.is_dir():
                 from webjam_qt import __version__
+                self._post_validation_stage("ALIGNING HOST TRACKS…")
                 result = write_take_manifest(
                     recovered,
                     expected_tracks=self._expected_tracks,
@@ -404,10 +512,12 @@ class RecordingCoordinator:
                 capture_errors = local_result.errors
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
+            self._post_validation_stage("CHECKING TRACKS…")
             stable = wait_for_take_files_stable(take_dir, polls=20, interval_s=0.25)
             if not stable:
                 capture_errors = (*capture_errors, "Take files did not become stable in time.")
             from webjam_qt import __version__
+            self._post_validation_stage("ALIGNING HOST TRACKS…")
             result = write_take_manifest(
                 take_dir,
                 expected_tracks=self._expected_tracks,
@@ -436,16 +546,55 @@ class RecordingCoordinator:
             )
         self._open_completion_box(result)
 
+    @staticmethod
+    def _completion_text(result: TakeValidationResult) -> tuple[str, str]:
+        """Title and body for the completion box — pure, so tests can read it."""
+        if result.ok:
+            details = [f"Take saved · {result.summary}"]
+            details.extend(f"Warning: {warning}" for warning in result.warnings)
+            return "WebJam — Recording complete", "\n".join(details)
+        title = "WebJam — Take needs attention"
+        if result.take is not None:
+            details = [
+                "Your recording was preserved, but it did not pass every check.",
+                "",
+                f"Saved to: {result.take.path}",
+                "",
+                "What needs attention:",
+            ]
+            details.extend(f"• {error}" for error in result.errors)
+            if result.warnings:
+                details.extend(["", "Warnings:"])
+                details.extend(f"• {warning}" for warning in result.warnings)
+            details.extend([
+                "",
+                "The recorded tracks are still playable. Open the Take Deck to "
+                "hear what was captured, fix the issue above, then record a "
+                "short test take.",
+            ])
+        else:
+            details = [
+                "No completed take was found on this Mac.",
+                "",
+                "What went wrong:",
+            ]
+            details.extend(f"• {error}" for error in result.errors)
+            details.extend([
+                "",
+                "There is nothing to play back yet. Run Ready Check (F2) to "
+                "verify the band server's recorder, then record a short test "
+                "take.",
+            ])
+        return title, "\n".join(details)
+
     def _open_completion_box(self, result: TakeValidationResult) -> None:
+        title, body = self._completion_text(result)
         box = QMessageBox(self._c.window)
-        box.setWindowTitle("WebJam — Recording complete")
+        box.setWindowTitle(title)
         box.setIcon(
             QMessageBox.Icon.Information if result.ok else QMessageBox.Icon.Warning
         )
-        details = [f"Take saved · {result.summary}" if result.ok else "Take verification failed."]
-        details.extend(result.errors)
-        details.extend(f"Warning: {warning}" for warning in result.warnings)
-        box.setText("\n".join(details))
+        box.setText(body)
         open_button = box.addButton("Open Take Deck", QMessageBox.ButtonRole.ActionRole)
         reveal_button = None
         if result.take is not None:

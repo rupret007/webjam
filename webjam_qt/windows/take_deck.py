@@ -14,6 +14,7 @@ in the DAW (the take keeps its Reaper-project escape hatch).
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
@@ -179,11 +180,18 @@ class TakeDeck(QDialog):
         self._takes = discover_takes(self._takes_dir) if self._takes_dir else []
         self._take_list.clear()
         if not self._takes:
-            self._hint.setText(
+            hint = (
                 "No takes found yet. Press ● Record during a jam to capture "
                 "one (needs the band-server recorder — see server/README.md). "
                 f"Looking in: {self._takes_dir or '(no takes folder set)'}"
             )
+            recovered_root = Path.home() / "Music" / "WebJam Recovered Takes"
+            if recovered_root.is_dir():
+                hint += (
+                    " Tracks rescued from interrupted sessions are in "
+                    "~/Music/WebJam Recovered Takes."
+                )
+            self._hint.setText(hint)
             self._title.setText("Select a take")
             self._play_btn.setEnabled(False)
             self._stop_btn.setEnabled(False)
@@ -205,6 +213,10 @@ class TakeDeck(QDialog):
                 "needs_attention": "Needs Attention",
                 "validating": "Checking…",
             }.get(take.validation_status, "Unchecked")
+            if take.validation_status == "complete" and take.manifest_warnings:
+                count = len(take.manifest_warnings)
+                plural = "s" if count != 1 else ""
+                status = f"Verified · {count} warning{plural}"
             label = (
                 f"{take.name}  ·  {status}  ·  {take.track_count} tracks"
                 f"  ·  {_fmt_time(take.duration_s)}"

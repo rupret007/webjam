@@ -336,6 +336,7 @@ class ApplicationController(QObject):
             lambda: self.bridge.launch_webex(manual=True)
         )
         self.window.close_requested.connect(self.shutdown)
+        self.window.confirm_close = self.recording.confirm_quit
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
         self.window._settings_shortcut.activated.connect(self._open_settings_wizard)
         self.window.side_rail.view_changed.connect(self._on_rail_view_changed)

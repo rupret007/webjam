@@ -79,11 +79,6 @@ class SessionStrip(QFrame):
         self._subtitle = QLabel("")
         self._subtitle.setObjectName("SessionStripSubtitle")
 
-        self._record_dot = QLabel("●")
-        self._record_dot.setObjectName("RecordDot")
-        self._record_dot.setAccessibleName("Recording indicator")
-        self._record_dot.setVisible(False)
-
         self._record_elapsed = QLabel("REC 00:00")
         self._record_elapsed.setObjectName("RecordElapsed")
         self._record_elapsed.setAccessibleName("Recording elapsed time")
@@ -177,7 +172,6 @@ class SessionStrip(QFrame):
         title_block.addWidget(self._subtitle)
         layout.addLayout(title_block, stretch=1)
 
-        layout.addWidget(self._record_dot)
         layout.addWidget(self._record_elapsed)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._mode_picker)
@@ -203,9 +197,6 @@ class SessionStrip(QFrame):
     def stop_session_clock(self) -> None:
         self._clock.stop()
 
-    def set_recording(self, recording: bool) -> None:
-        self._record_dot.setVisible(recording)
-
     def set_audio_state(self, label: str, *, enabled: bool = True) -> None:
         self._audio_button.setText(label)
         self._audio_button.setEnabled(enabled)
@@ -222,13 +213,11 @@ class SessionStrip(QFrame):
             f"Webex video action. Current action: {label}."
         )
 
-    def set_recording_state(self, armed: bool, *, enabled: bool = True) -> None:
-        """Reflect band-server recorder state on the Record button."""
-        self._record_button.setText("■ Stop Rec" if armed else "● Record")
-        self._record_button.setEnabled(enabled)
+    def set_recording_phase(self, phase: str, detail: str = "") -> None:
+        """Render the recorder state machine without relying on transient banners.
 
-    def set_recording_phase(self, phase: str) -> None:
-        """Render the recorder state machine without relying on transient banners."""
+        ``detail`` refines the chip text during validation (staged progress).
+        """
         phase = str(phase or "idle").lower()
         if phase == "preflight":
             self._record_button.setText("Checking…")
@@ -262,9 +251,11 @@ class SessionStrip(QFrame):
             self._record_button.setText("Validating…")
             self._record_button.setEnabled(False)
             self._record_clock.stop()
-            self._record_elapsed.setText("CHECKING TRACKS…")
+            self._record_elapsed.setText(detail or "CHECKING TRACKS…")
             self._record_elapsed.setVisible(True)
             description = "WebJam is waiting for stable files and validating every track."
+            if detail:
+                description = f"WebJam is validating the take. {detail.capitalize()}"
         elif phase == "needs_attention":
             self._record_clock.stop()
             self._record_button.setText("● Record Again")
