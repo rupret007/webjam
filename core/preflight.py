@@ -162,18 +162,45 @@ def _check_selected_input(settings) -> CheckItem:
     return CheckItem(item_name, True, detail)
 
 
+def _ensure_takes_dir(settings) -> tuple[Path, str | None]:
+    """Resolve the Takes folder and report why it is unusable, if it is.
+
+    Hosted mode derives the Takes folder inside the sandboxed JamulusServer
+    container, which otherwise only materializes at Start Audio
+    (BridgeService.ensure_hosted_server). Ready Check may legitimately run
+    first, so in hosted mode create the folder here the same way Start Audio
+    would. A folder the user chose explicitly (non-hosted mode) is never
+    created: a typo must surface instead of being silently instantiated.
+    """
+    takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
+    if bool(getattr(settings, "host_server_enabled", False)) and not takes.is_dir():
+        try:
+            takes.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return takes, (
+                f"Takes folder doesn't exist and couldn't be created: {takes} "
+                f"(Details: {exc})"
+            )
+    if not takes.is_dir():
+        return takes, (
+            "configured Takes folder doesn't exist — pick an existing folder "
+            "in Settings"
+        )
+    if not os.access(takes, os.W_OK):
+        return takes, "configured Takes folder is not writable"
+    return takes, None
+
+
 def _check_local_capture(settings) -> CheckItem | None:
     if not bool(getattr(settings, "local_capture_enabled", False)):
         return None
-    takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
     if not str(getattr(settings, "takes_directory", "") or "").strip():
         return CheckItem(
             "Local stem recording", False, "choose a Takes folder in Settings"
         )
-    if not takes.is_dir() or not os.access(takes, os.W_OK):
-        return CheckItem(
-            "Local stem recording", False, "configured Takes folder is not writable"
-        )
+    takes, takes_error = _ensure_takes_dir(settings)
+    if takes_error:
+        return CheckItem("Local stem recording", False, takes_error)
     try:
         import soundfile  # noqa: F401
     except Exception as exc:  # noqa: BLE001
@@ -278,25 +305,28 @@ def _check_recorder(settings) -> CheckItem:
             return CheckItem("Host recorder", False, "server recorder is not initialised")
     except Exception as exc:  # noqa: BLE001
         if bool(getattr(settings, "host_server_enabled", False)):
+            # Expected before Start Audio: the hosted server (and its RPC
+            # secret) only exists once WebJam launches it. Self-correcting,
+            # so this must not block the jam as a required FIX.
             detail = (
                 "couldn't reach the band server's recorder — this Mac hosts "
                 "the server, and WebJam starts it with Start Audio. Press "
                 "Start Audio, then run Ready Check again. "
                 f"(Details: {exc})"
             )
-        else:
-            detail = (
-                "couldn't reach the band server's recorder — is the server "
-                "running? Same Mac: start it with server/start_macos_pilot.sh. "
-                "Remote Linux: check the SSH tunnel. Then verify the RPC port "
-                "and secret file and run Ready Check again. "
-                f"(Details: {exc})"
-            )
+            return CheckItem("Host recorder", False, detail, required=False)
+        detail = (
+            "couldn't reach the band server's recorder — is the server "
+            "running? Same Mac: start it with server/start_macos_pilot.sh. "
+            "Remote Linux: check the SSH tunnel. Then verify the RPC port "
+            "and secret file and run Ready Check again. "
+            f"(Details: {exc})"
+        )
         return CheckItem("Host recorder", False, detail)
 
-    takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
-    if not takes.is_dir() or not os.access(takes, os.W_OK):
-        return CheckItem("Host recorder", False, "local Takes folder is not writable")
+    takes, takes_error = _ensure_takes_dir(settings)
+    if takes_error:
+        return CheckItem("Host recorder", False, takes_error)
     return CheckItem(
         "Host recorder", True, f"ready · {status.get('recordingDirectory', takes)}"
     )

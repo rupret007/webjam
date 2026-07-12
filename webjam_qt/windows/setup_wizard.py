@@ -306,10 +306,24 @@ class _JamulusPage(QWizardPage):
 
         layout.addStretch(1)
 
-        self.registerField("jamulus_server*", self._host)
+        # Shown by validatePage() so a blocked Next always says why.
+        self._page_error = QLabel("")
+        self._page_error.setObjectName("WizardError")
+        self._page_error.setWordWrap(True)
+        self._page_error.setVisible(False)
+        layout.addWidget(self._page_error)
+        for editor in (self._host, self._musician_name, self._jamulus_path):
+            editor.textChanged.connect(self._hide_page_error)
+
+        # Deliberately NOT mandatory ("*") fields: Qt only treats a mandatory
+        # field as complete once its value changes from what it was at
+        # registration, so pre-filling them from saved settings leaves Next
+        # permanently disabled with no explanation. validatePage() is the
+        # single gate and reports failures through _page_error instead.
+        self.registerField("jamulus_server", self._host)
         self.registerField("jamulus_port",    self._port, "value")
         self.registerField("jamulus_rpc_port", self._rpc_port, "value")
-        self.registerField("musician_name*", self._musician_name)
+        self.registerField("musician_name", self._musician_name)
 
     def _install_bundled_jamulus(self) -> None:
         """Launch the bundled Jamulus installer and poll for completion.
@@ -394,11 +408,7 @@ class _JamulusPage(QWizardPage):
             return
         self._host_hint.setVisible(False)
 
-    def _resolved_jamulus_path(self) -> str:
-        explicit = self._jamulus_path.text().strip()
-        if explicit:
-            path = Path(explicit).expanduser()
-            return str(path) if path.exists() else ""
+    def _auto_detected_jamulus(self) -> str:
         checked: set[str] = set()
         for candidate in list(self._settings.jamulus_candidates) + list(
             AppSettings().jamulus_candidates
@@ -411,18 +421,60 @@ class _JamulusPage(QWizardPage):
         from services.bridge_service import _bundled_jamulus_candidate
         return _bundled_jamulus_candidate() or ""
 
+    def _resolved_jamulus_path(self) -> str:
+        explicit = self._jamulus_path.text().strip()
+        if explicit:
+            path = Path(explicit).expanduser()
+            return str(path) if path.exists() else ""
+        return self._auto_detected_jamulus()
+
+    def _hide_page_error(self, _text: str = "") -> None:
+        self._page_error.setVisible(False)
+
+    def _show_page_error(self, message: str) -> None:
+        self._page_error.setText(message)
+        self._page_error.setVisible(True)
+
     def validatePage(self) -> bool:
         host = self._host.text().strip()
         if not host:
+            self._show_page_error(
+                "Enter your band's server host — or tick “This Mac "
+                "hosts the band server”."
+            )
             self._host.setFocus()
             return False
         if not self._musician_name.text().strip():
+            self._show_page_error(
+                "Enter your musician name — it's shown to the other players."
+            )
             self._musician_name.setFocus()
             return False
         if not self._resolved_jamulus_path():
+            explicit = self._jamulus_path.text().strip()
+            if explicit:
+                # A saved path can go stale (moved install, macOS App
+                # Translocation). If detection finds a working copy, heal the
+                # field visibly instead of dead-ending the wizard.
+                detected = self._auto_detected_jamulus()
+                if detected:
+                    self._jamulus_path.setText(detected)
+                    self._hide_page_error()
+                    return True
+                self._show_page_error(
+                    f"Jamulus wasn't found at “{explicit}”. Check "
+                    "the path, click Browse…, or clear the field to use the "
+                    "auto-detected copy."
+                )
+            else:
+                self._show_page_error(
+                    "Jamulus isn't installed — click Browse… to point WebJam "
+                    "at it, or install it free from jamulus.io."
+                )
             self._jamulus_path.setFocus()
             self._jamulus_path.selectAll()
             return False
+        self._hide_page_error()
         return True
 
     def _on_host_server_toggled(self, checked: bool) -> None:
@@ -498,7 +550,10 @@ class _WebexPage(QWizardPage):
         ))
         layout.addStretch(1)
 
-        self.registerField("webex_url*", self._url)
+        # Not a mandatory ("*") field: a value pre-filled from saved settings
+        # would leave Next permanently disabled (Qt only counts a mandatory
+        # field as complete once it changes). validatePage() gates instead.
+        self.registerField("webex_url", self._url)
 
     @Slot(str)
     def _validate_url_live(self, text: str) -> None:
@@ -531,7 +586,10 @@ class _WebexPage(QWizardPage):
         url = normalize_webex_url(self._url.text())
         if url != self._url.text().strip():
             self._url.setText(url)
-        if webex_url_error(url):
+        error = webex_url_error(url)
+        if error:
+            self._url_hint.setText(error)
+            self._url_hint.setVisible(True)
             self._url.setFocus()
             self._url.selectAll()
             return False
@@ -963,6 +1021,12 @@ class SetupWizard(QWizard):
         if skip_welcome:
             # Start at Jamulus; users in-session don't need the welcome page.
             self.setStartId(_PageId.JAMULUS)
+
+        # Open tall enough for the densest page (Jamulus) instead of Qt's
+        # minimum, which clips its word-wrapped guidance labels. Bounded so
+        # small screens still fit; the user can resize freely.
+        hint = self.sizeHint()
+        self.resize(max(hint.width(), 640), min(max(hint.height(), 760), 840))
 
         self.accepted.connect(self._save_settings)
 

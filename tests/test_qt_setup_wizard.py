@@ -74,6 +74,17 @@ class TestJamulusPage(unittest.TestCase):
         page = _JamulusPage(AppSettings(jamulus_server=""))
         page._host.setText("")
         self.assertFalse(page.validatePage())
+        self.assertFalse(page._page_error.isHidden())
+        self.assertIn("host", page._page_error.text())
+
+    def test_page_error_hides_while_user_edits(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        page = _JamulusPage(AppSettings(jamulus_server=""))
+        page._host.setText("")
+        self.assertFalse(page.validatePage())
+        self.assertFalse(page._page_error.isHidden())
+        page._host.setText("myband.example.com")
+        self.assertTrue(page._page_error.isHidden())
 
     def test_filled_host_passes_validation(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
@@ -94,8 +105,25 @@ class TestJamulusPage(unittest.TestCase):
             page = _JamulusPage(AppSettings(
                 jamulus_server="192.168.1.10",
                 jamulus_candidates=["/nope/Jamulus"],
+                musician_name="Test Musician",
             ))
             self.assertFalse(page.validatePage())
+            self.assertFalse(page._page_error.isHidden())
+            self.assertIn("Jamulus", page._page_error.text())
+
+    def test_stale_explicit_path_heals_from_detection(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+                musician_name="Test Musician",
+            ))
+            # Simulate a stale saved path (moved install / App Translocation).
+            page._jamulus_path.setText("/gone/Translocated/Jamulus")
+            self.assertTrue(page.validatePage())
+            self.assertEqual(page._jamulus_path.text(), jam.name)
+            self.assertTrue(page._page_error.isHidden())
 
     def test_host_property_strips_whitespace(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
@@ -135,6 +163,8 @@ class TestJamulusPage(unittest.TestCase):
             self.assertIn("Jamulus", page._musician_name.accessibleName())
             page._musician_name.clear()
             self.assertFalse(page.validatePage())
+            self.assertFalse(page._page_error.isHidden())
+            self.assertIn("musician name", page._page_error.text())
 
     def test_generic_default_requires_a_real_participant_name(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
@@ -142,6 +172,51 @@ class TestJamulusPage(unittest.TestCase):
         page = _JamulusPage(AppSettings(musician_name="WebJam Musician"))
         self.assertEqual(page.musician_name, "")
         self.assertFalse(page.validatePage())
+        self.assertFalse(page._page_error.isHidden())
+
+    def test_prefilled_settings_keep_next_enabled_and_advance(self):
+        """Qt treats mandatory ('*') fields as incomplete until they CHANGE
+        from their registration value, so pre-filled settings used to leave
+        Next permanently disabled. Pin the non-mandatory + validatePage()
+        design: a valid saved config must advance on the first click."""
+        from PySide6.QtWidgets import QWizard
+        from webjam_qt.windows.setup_wizard import SetupWizard, _PageId
+
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            wizard = SetupWizard(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+                musician_name="Jeff",
+            ), skip_welcome=True)
+            wizard.show()
+            _qapp().processEvents()
+            next_button = wizard.button(QWizard.WizardButton.NextButton)
+            self.assertTrue(next_button.isEnabled())
+            self.assertTrue(wizard.currentPage().isComplete())
+            next_button.click()
+            _qapp().processEvents()
+            self.assertEqual(wizard.currentId(), _PageId.WEBEX)
+            wizard.close()
+
+    def test_blank_name_keeps_next_clickable_with_feedback(self):
+        from PySide6.QtWidgets import QWizard
+        from webjam_qt.windows.setup_wizard import SetupWizard, _PageId
+
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            wizard = SetupWizard(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+                musician_name="WebJam Musician",
+            ), skip_welcome=True)
+            wizard.show()
+            _qapp().processEvents()
+            next_button = wizard.button(QWizard.WizardButton.NextButton)
+            self.assertTrue(next_button.isEnabled())
+            next_button.click()
+            _qapp().processEvents()
+            self.assertEqual(wizard.currentId(), _PageId.JAMULUS)
+            self.assertTrue(wizard.currentPage()._page_error.isVisible())
+            wizard.close()
 
     def test_hosting_forces_same_mac_loopback(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
@@ -353,6 +428,9 @@ class TestWebexPage(unittest.TestCase):
         from webjam_qt.windows.setup_wizard import _WebexPage
         page = _WebexPage(AppSettings(webex_url="http://org.webex.com/meet/x"))
         self.assertFalse(page.validatePage())
+        # The refusal must say why, not just refocus the field.
+        self.assertFalse(page._url_hint.isHidden())
+        self.assertTrue(page._url_hint.text())
 
     def test_non_webex_url_fails(self):
         from webjam_qt.windows.setup_wizard import _WebexPage

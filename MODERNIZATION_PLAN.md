@@ -63,6 +63,19 @@
 
 ## Verification completed so far
 
+- Fixed the two hosted-mode first-run blockers found in hands-on testing:
+  Ready Check ran before Start Audio ever created the JamulusServer container,
+  so it false-FIXed the Takes folder ("not writable") and the recorder secret.
+  Ready Check now creates the hosted Takes folder itself and reports the
+  pre-Start-Audio recorder as an OPTIONAL warning. Separately fixed the
+  Settings wizard's permanently disabled Next: Qt mandatory ('*') fields only
+  count as complete once their value changes, so pre-filled saved settings
+  could never advance. Validation now runs on click with inline error copy
+  and heals stale Jamulus paths. Styled the wizard (pages, spin boxes,
+  chrome buttons, check/radio indicators), sized it to its densest page,
+  aligned Ready Check's action buttons with the shared styles, and switched
+  the default font from unbundled "Inter" to the platform UI font.
+
 - Replaced the clipped, expert-heavy five-page first-run wizard with a
   responsive two-step Host/Join dialog. Standard ports, bundled component
   discovery, talkback mode, and recording locations are derived; advanced

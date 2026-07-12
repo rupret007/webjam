@@ -184,6 +184,39 @@ class TestReadyCheck(unittest.TestCase):
         # The pilot topology is same-Mac: lead with "is the server running"
         # and name the start script before the remote-Linux SSH hint.
         self.assertIn("start_macos_pilot.sh", item.detail)
+        # A non-hosting Mac cannot self-correct at Start Audio, so an
+        # unreachable recorder stays a required FIX there.
+        self.assertTrue(item.required)
+
+    def test_missing_takes_folder_is_not_created_when_not_hosting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = f"{tmp}/no-such-takes"
+            s = _settings(
+                local_capture_enabled=True,
+                takes_directory=missing,
+            )
+            item = preflight._check_local_capture(s)
+            self.assertFalse(item.ok)
+            self.assertIn("doesn't exist", item.detail)
+            self.assertNotIn("not writable", item.detail)
+            self.assertFalse(preflight.Path(missing).exists())
+
+    def test_unwritable_takes_folder_keeps_not_writable_copy(self):
+        import os as _os
+        if _os.geteuid() == 0:
+            self.skipTest("root ignores directory permissions")
+        with tempfile.TemporaryDirectory() as tmp:
+            _os.chmod(tmp, 0o500)
+            try:
+                s = _settings(
+                    local_capture_enabled=True,
+                    takes_directory=tmp,
+                )
+                item = preflight._check_local_capture(s)
+            finally:
+                _os.chmod(tmp, 0o700)
+        self.assertFalse(item.ok)
+        self.assertIn("not writable", item.detail)
 
     def test_webex_missing(self):
         with tempfile.NamedTemporaryFile() as jam:

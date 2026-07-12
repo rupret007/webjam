@@ -446,6 +446,37 @@ class TestHostedPreflight(unittest.TestCase):
         self.assertFalse(item.ok)
         self.assertIn("Start Audio", item.detail)
         self.assertNotIn("start_macos_pilot.sh", item.detail)
+        # Expected pre-Start-Audio on a hosting Mac: the hosted server writes
+        # its own RPC secret at launch, so this must warn, not block.
+        self.assertFalse(item.required)
+
+    def test_hosted_takes_folder_is_created_by_ready_check(self):
+        from core import preflight
+        with tempfile.TemporaryDirectory() as tmp:
+            takes = Path(tmp) / "Container" / "WebJam Recordings"
+            s = SimpleNamespace(
+                local_capture_enabled=True,
+                takes_directory=str(takes),
+                host_server_enabled=True,
+            )
+            item = preflight._check_local_capture(s)
+            self.assertTrue(item.ok, item.detail)
+            self.assertTrue(takes.is_dir())
+
+    def test_hosted_takes_folder_creation_failure_is_honest(self):
+        from core import preflight
+        s = SimpleNamespace(
+            local_capture_enabled=True,
+            takes_directory="/nonexistent/webjam-takes",
+            host_server_enabled=True,
+        )
+        with patch("core.preflight.Path.mkdir",
+                   side_effect=OSError("Operation not permitted")):
+            item = preflight._check_local_capture(s)
+        self.assertFalse(item.ok)
+        self.assertIn("couldn't be created", item.detail)
+        self.assertIn("Operation not permitted", item.detail)
+        self.assertNotIn("not writable", item.detail)
 
 
 class TestHostedControllerFlows(unittest.TestCase):

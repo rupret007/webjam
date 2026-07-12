@@ -171,6 +171,31 @@ class TestReadyCheckShortcut(unittest.TestCase):
         self.assertIn("Required failure", rows[1].accessibleName())
         dialog.close()
 
+    def test_hosted_recorder_pre_start_audio_renders_as_warning_not_fix(self):
+        """Hosting Mac before Start Audio: recorder unreachable is expected
+        and must not block the jam with a required FIX row."""
+        from webjam_qt.windows.ready_check import ReadyCheckDialog
+        dialog = ReadyCheckDialog(lambda: AppSettings())
+        dialog.show()
+        _app.processEvents()
+        dialog._scan_id += 1
+        report = ReadyCheckReport(items=[
+            CheckItem("Jamulus", True, "found"),
+            CheckItem(
+                "Host recorder",
+                False,
+                "couldn't reach the band server's recorder — this Mac hosts "
+                "the server, and WebJam starts it with Start Audio.",
+                required=False,
+            ),
+        ])
+        dialog._apply_report((dialog._scan_id, report))
+        self.assertNotIn("Fix", dialog._summary.text())
+        self.assertIn("1 optional warning", dialog._summary.text())
+        rows = dialog._report_content.findChildren(QFrame, "ReadyCheckRow")
+        self.assertEqual([row.property("result") for row in rows], ["pass", "warn"])
+        dialog.close()
+
     def test_manual_verify_rows_update_summary_and_reset_on_rerun(self):
         from webjam_qt.windows.ready_check import ReadyCheckDialog
 

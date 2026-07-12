@@ -764,3 +764,147 @@ QLabel#FirstRunSignalFlow {
     font-size: ${FONT_SIZE_SM}px;
     font-weight: 600;
 }
+
+/* ── Settings wizard (SetupWizard QWizard pages) ─────────────────────── */
+QWizard, QWizardPage {
+    background-color: ${COLOR_BG_BASE};
+}
+
+QSpinBox {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    min-height: 24px;
+}
+
+QSpinBox:hover {
+    border-color: ${COLOR_BORDER_STRONG};
+}
+
+QSpinBox:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: transparent;
+    border: none;
+    width: 18px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QSpinBox::up-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid ${COLOR_TEXT_SECONDARY};
+    width: 0;
+    height: 0;
+}
+
+QSpinBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid ${COLOR_TEXT_SECONDARY};
+    width: 0;
+    height: 0;
+}
+
+/* Native wizard chrome buttons (Back / Next / Cancel / Finish). Scoped to
+ * QWizard so intentionally styled buttons elsewhere are untouched. */
+QWizard QPushButton {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px ${SPACE_LG}px;
+    min-height: 26px;
+    font-weight: 600;
+}
+
+QWizard QPushButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_MUTED};
+}
+
+QWizard QPushButton:pressed {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+QWizard QPushButton:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+QWizard QPushButton:default {
+    background-color: ${COLOR_ACCENT_VIDEO};
+    color: ${COLOR_TEXT_INVERSE};
+    border-color: ${COLOR_ACCENT_VIDEO};
+}
+
+QWizard QPushButton:default:hover {
+    background-color: #5FDCDC;
+}
+
+QWizard QPushButton:disabled {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QWizard QCheckBox {
+    color: ${COLOR_TEXT_PRIMARY};
+    spacing: ${SPACE_SM}px;
+}
+
+QWizard QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    background-color: ${COLOR_BG_INPUT};
+}
+
+QWizard QCheckBox::indicator:hover {
+    border-color: ${COLOR_BORDER_FOCUS};
+}
+
+QWizard QCheckBox::indicator:checked {
+    background-color: ${COLOR_ACCENT_VIDEO};
+    border-color: ${COLOR_ACCENT_VIDEO};
+}
+
+QWizard QRadioButton {
+    color: ${COLOR_TEXT_PRIMARY};
+    spacing: ${SPACE_SM}px;
+}
+
+QWizard QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: 8px;
+    background-color: ${COLOR_BG_INPUT};
+}
+
+QWizard QRadioButton::indicator:hover {
+    border-color: ${COLOR_BORDER_FOCUS};
+}
+
+QWizard QRadioButton::indicator:checked {
+    background-color: ${COLOR_ACCENT_VIDEO};
+    border: 4px solid ${COLOR_BG_INPUT};
+    outline: 1px solid ${COLOR_ACCENT_VIDEO};
+}
+
+QLabel#WizardError {
+    color: ${COLOR_ACCENT_WARN};
+    background: rgba(245, 176, 65, 0.08);
+    border: 1px solid rgba(245, 176, 65, 0.35);
+    border-radius: ${RADIUS_SM}px;
+    padding: 8px 10px;
+}

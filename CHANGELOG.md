@@ -6,6 +6,35 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.8.1] — Release candidate
 
+### Hosted-mode Ready Check truth and a working Settings wizard
+
+- **Ready Check no longer fails a fresh host before Start Audio.** In hosted
+  mode the Takes folder and the server RPC secret live in JamulusServer.app's
+  own container, which used to be created only at Start Audio — so the
+  auto-run Ready Check right after setup reported "Takes folder is not
+  writable" and a required Host recorder FIX. Ready Check now creates the
+  hosted Takes folder itself (exactly as Start Audio would), and the
+  unreachable-recorder result on a hosting Mac is an OPTIONAL warning with
+  the same "Press Start Audio, then run Ready Check again" guidance. Failure
+  copy now distinguishes "doesn't exist / couldn't be created" from a
+  genuinely unwritable folder.
+
+- **The Settings wizard's Next button works with saved settings.** Qt only
+  counts a mandatory wizard field as complete once its value *changes*, so
+  fields pre-filled from a saved config left Next permanently disabled with
+  no explanation. Validation now runs on click and reports exactly which
+  field blocked it in an inline message (host, musician name, Jamulus path,
+  or Webex URL). A saved Jamulus path that has gone stale (moved install,
+  macOS App Translocation) heals automatically when a working copy is
+  detected.
+
+- **The Settings wizard joined the dark theme.** Wizard pages, port
+  spinboxes, Back/Next/Cancel chrome buttons, checkboxes, and radio buttons
+  now use the studio design tokens; the wizard opens tall enough for its
+  densest page instead of clipping guidance text; Ready Check's action row
+  uses the shared button styles; and the app requests the real platform UI
+  font instead of the unbundled "Inter".
+
 ### All-in-one hosting and the lobby redesign
 
 - **First-run setup is now two focused, modern steps.** A dedicated responsive

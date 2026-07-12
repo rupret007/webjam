@@ -191,6 +191,10 @@ Before your first real rehearsal, run:
    - Ready Check verifies Jamulus/server/device settings and host recorder
      control. Webex device choices appear as manual `VERIFY` items because
      WebJam cannot inspect the native client.
+   - On a hosting Mac that hasn't pressed **Start Audio** yet, the Host
+     recorder row shows an `OPTIONAL` warning — the hosted server (and its
+     recorder secret) only exists once Start Audio launches it. Press Start
+     Audio, then rerun Ready Check to see it pass.
    - If it fails, use the dialog's **Open Settings** action or click **Settings** in the side rail.
 2. Click **Practice**, or press `Ctrl+P`.
    - This starts a private local Jamulus server so you can hear yourself and confirm meters move.

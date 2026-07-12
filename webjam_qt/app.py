@@ -6,7 +6,7 @@ import logging
 import sys
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from core.logging_config import configure_logging
@@ -25,7 +25,9 @@ def _configure_qt_attributes() -> None:
 
 
 def _configure_default_font(app: QApplication) -> None:
-    font = QFont("Inter")
+    # The platform UI font (SF Pro on macOS, Segoe UI on Windows) — asking
+    # for an unbundled family like "Inter" invites per-machine substitution.
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
     font.setPixelSize(13)
     app.setFont(font)
 
