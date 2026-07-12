@@ -36,6 +36,12 @@ All notable improvements and features for the WebJam music collaboration platfor
   dependency/vulnerability checks, UX smoke, and the 20-document link/security
   review. A clean ARM64 v0.8.1 bundle passes metadata/resource inspection,
   offscreen startup, TERM shutdown, and orphan-process checks.
+- Fixed the clean-download macOS Gatekeeper path: after CI nests the untouched,
+  notarized Jamulus app, it now refreshes only WebJam's outer ad-hoc resource
+  seal. CI verifies that the outer bundle is structurally valid and that
+  Jamulus retains the same upstream signed CDHash. This prevents a fresh
+  download from being reported as damaged while preserving Jamulus's
+  notarization.
 
 ### Two-lane Webex talkback
 

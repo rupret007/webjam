@@ -47,6 +47,12 @@ On the designated host, also require **Host & Start Audio**, authenticated RPC
 teardown, and clean owned-server shutdown. An already-running manual server
 may show `Server: External :22124` only after recorder authentication and must
 survive WebJam quit.
+For each macOS artifact, require `codesign --verify --strict` on the completed
+outer WebJam bundle and the nested Jamulus bundle. Confirm the nested Jamulus
+CDHash is unchanged across the outer shallow-sign step, then test a
+quarantined extraction: Gatekeeper may show the documented unsigned-pilot
+warning, but must never report a missing/invalid sealed resource or a damaged
+application.
 Windows x64 and Intel macOS still require clean-artifact startup inspection;
 they are not prerequisites for the private two-Mac pilot. Tag builds remain
 draft releases until the exact artifacts pass their declared gates.

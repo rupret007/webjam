@@ -90,6 +90,14 @@
 - The reliability/polish tree passes a clean ARM64 PyInstaller build, strict
   bundle verification, v0.8.1 plist/resource inspection, packaged offscreen
   startup, and termination without an orphan process.
+- A destructive clean-profile rehearsal exposed an artifact-only Gatekeeper
+  defect: CI added Jamulus after PyInstaller created WebJam's outer resource
+  seal. The build now shallow-signs only the completed outer WebJam bundle,
+  verifies that seal, and proves Jamulus's notarized CDHash is unchanged.
+  The corrected sequence passes a clean ARM64 rebuild, strict outer/nested
+  signature verification, packaged first-run startup with an isolated home,
+  and orphan-process cleanup. The replacement CI artifact must pass the same
+  quarantined clean-install gate before pilot use.
 - The recording candidate also passes known-offset alignment, atomic capture,
   device-busy cleanup, participant preflight, `pip check`, scoped Ruff,
   compile checks, UX smoke, `git diff --check`, and `pip-audit` with no known

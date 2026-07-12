@@ -188,9 +188,9 @@ jobs:
             # Nest the bundled Jamulus.app (unmodified, Apple-notarized) and
             # its license text into WebJam.app before zipping, so a fresh
             # install works with zero configuration. Jamulus.app is copied
-            # in as-is (never re-signed here) — see webjam.spec's header
-            # comment for why the eventual codesign step must NOT use
-            # --deep against this bundle.
+            # in as-is. Afterward, refresh only WebJam's outer ad-hoc seal;
+            # never use --deep, which would overwrite Jamulus's upstream
+            # Developer ID signature and invalidate its notarization ticket.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             cp licenses/JAMULUS_COPYING.txt \
@@ -203,10 +203,24 @@ jobs:
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
-            # Preserve and verify the upstream Jamulus signature before the
-            # unsigned private-pilot parent bundle is archived.
+            # PyInstaller signs the outer bundle before the CI-only Jamulus
+            # copy above. Refresh the shallow outer seal so Gatekeeper does
+            # not report the added resources as a damaged application.
+            jamulus_cdhash_before="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
+            codesign --force --sign - dist/WebJam.app
+            codesign --verify --strict dist/WebJam.app
+
+            # Prove that shallow signing preserved the upstream Jamulus
+            # signature byte-for-byte and that it remains valid.
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/Jamulus.app
+            jamulus_cdhash_after="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
+            test -n "$jamulus_cdhash_before"
+            test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \

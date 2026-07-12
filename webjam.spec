@@ -21,10 +21,10 @@
 #   Jamulus project itself. `codesign --deep` re-signs every nested bundle
 #   it finds, which would overwrite that existing Developer ID signature
 #   with your own and invalidate Jamulus's notarization ticket. If signing
-#   locally (CI does not currently automate macOS signing), either drop
-#   `--deep` and sign nested non-Apple binaries individually first
-#   (bottom-up), or re-`ditto` a fresh unsigned-by-you copy of Jamulus.app
-#   back in after your codesign step completes.
+#   locally, sign nested non-Apple binaries individually first (bottom-up),
+#   then sign only the outer WebJam.app without `--deep`. CI uses this shallow
+#   signing pattern to refresh WebJam's resource seal after adding Jamulus
+#   while preserving Jamulus's upstream signature and notarization ticket.
 #
 # Windows — sign after building:
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
@@ -214,7 +214,8 @@ if sys.platform == "darwin":
     # must be `ditto`'d in whole and unmodified (to preserve its Apple code
     # signature) *after* this BUNDLE() call produces dist/WebJam.app — see
     # the "Stage bundled Jamulus.app" + "Build desktop artifact" steps in
-    # .github/workflows/ci.yml.
+    # .github/workflows/ci.yml. That workflow then shallow-signs WebJam.app
+    # again so the added bundle is included in the outer resource seal.
     app = BUNDLE(
         coll,
         name="WebJam.app",
