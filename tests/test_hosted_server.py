@@ -321,7 +321,7 @@ class TestHostedControllerFlows(unittest.TestCase):
         c = self.controller
         c.audio.reset_to_idle()
         self.assertEqual(
-            self.window.participant_grid._empty_primary.text(),
+            self.window.participant_grid._empty_primary.text().replace("&&", "&"),
             "Host & Start Audio",
         )
         self.assertIn(

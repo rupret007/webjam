@@ -273,7 +273,8 @@ class ParticipantGrid(QScrollArea):
         self._empty_eyebrow.setText(state.replace("_", " ").upper())
         self._empty_title.setText(title)
         self._empty_message.setText(message)
-        self._empty_primary.setText(primary_text)
+        # Escape "&": QPushButton treats it as a mnemonic marker.
+        self._empty_primary.setText(primary_text.replace("&", "&&"))
         self._empty_primary.setEnabled(primary_enabled)
         self._empty_primary.setVisible(show_primary)
         self._empty_ready.setVisible(show_ready_check)
