@@ -35,7 +35,7 @@ def settings(tmp_path):
 
 
 def make_dialog(settings, *, client="/bundle/Jamulus", server="/bundle/Server"):
-    with patch(
+    with patch.object(sys, "platform", "darwin"), patch(
         "services.bridge_service._bundled_jamulus_candidate", return_value=client,
     ), patch(
         "services.bridge_service._bundled_jamulus_server_candidate",

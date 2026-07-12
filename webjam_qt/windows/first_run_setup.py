@@ -97,6 +97,7 @@ class FirstRunSetupDialog(QDialog):
         self._settings = settings or AppSettings()
         self._step = 0
         self._result: Optional[FirstRunSetupResult] = None
+        self._hosting_supported = sys.platform == "darwin"
         self._client_path = _find_client(self._settings)
         self._server_path, self._server_source = _find_server()
         self._installer_path = self._bundled_windows_installer()
@@ -202,7 +203,7 @@ class FirstRunSetupDialog(QDialog):
         )
         self._role_group.buttonToggled.connect(self._on_role_changed)
 
-        if sys.platform != "darwin":
+        if not self._hosting_supported:
             self._host_card.setEnabled(False)
             self._host_card.setDescription("Hosting is currently available on macOS.")
         elif not self._server_path:
@@ -391,7 +392,7 @@ class FirstRunSetupDialog(QDialog):
         if role is None or not self._name.text().strip() or not self._client_path:
             return False
         if role == "host":
-            return bool(sys.platform == "darwin" and self._server_path)
+            return bool(self._hosting_supported and self._server_path)
         try:
             parse_jamulus_endpoint(self._server_address.text())
         except JamulusEndpointError as exc:
@@ -536,4 +537,3 @@ class FirstRunSetupDialog(QDialog):
     @property
     def result(self) -> Optional[FirstRunSetupResult]:
         return self._result
-
