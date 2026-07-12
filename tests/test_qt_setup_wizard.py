@@ -151,9 +151,9 @@ class TestJamulusPage(unittest.TestCase):
                 jamulus_server="public.example.com",
                 host_server_enabled=True,
             ))
-        self.assertTrue(page.host_server_enabled)
-        self.assertEqual(page.host, "127.0.0.1")
-        self.assertFalse(page._host.isEnabled())
+            self.assertTrue(page.host_server_enabled)
+            self.assertEqual(page.host, "127.0.0.1")
+            self.assertFalse(page._host.isEnabled())
 
     def test_hosting_control_is_unavailable_off_macos(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
