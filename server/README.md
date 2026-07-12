@@ -8,6 +8,17 @@ started from a connected Jamulus client GUI or via JSON-RPC.
 
 ## macOS host + musician workstation (v0.8.1 pilot)
 
+**WebJam can now host the server for you.** Enable *"This Mac hosts the band
+server"* in Setup/Settings and press **Start Audio**: WebJam verifies
+JamulusServer.app 3.12.2, checks the ports, creates the protected RPC secret
+and recordings folder in the server app's container, starts the server with
+a `caffeinate` sleep assertion, and supervises it (a crashed server is
+restarted automatically). The server keeps running through Stop Audio and
+stops only when WebJam quits — quitting mid-recording first stops the
+recording cleanly. The manual Terminal procedure below remains the fallback
+and reference; if the script's server is already running, WebJam adopts it
+instead of starting a second one.
+
 Install both official Jamulus 3.12.2 apps from the macOS disk image:
 `/Applications/Jamulus.app` is the musician client and
 `/Applications/JamulusServer.app` is the dedicated server. The downloadable

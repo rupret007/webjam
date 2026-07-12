@@ -65,10 +65,21 @@ class AudioCoordinator:
             self.reset_to_idle()
 
     def stop(self) -> None:
+        hosting = bool(
+            getattr(self._c.settings, "host_server_enabled", False)
+            and self._c.bridge.hosted_server_alive()
+        )
         question = (
             "Stop the Jamulus audio session?\n\n"
             "You can restart it any time with the audio button."
         )
+        if hosting:
+            question = (
+                "Stop the Jamulus audio session?\n\n"
+                "Your band server keeps running — other musicians stay "
+                "connected. You can rejoin any time with the audio button; "
+                "the server stops only when WebJam quits."
+            )
         if self._c.recording.is_recording_active:
             # Stopping the client does not stop the band server's recorder —
             # don't let the ● REC chip vanishing suggest otherwise.
@@ -112,7 +123,12 @@ class AudioCoordinator:
         self._c.participants.clear()
         self._c._push_participants_to_grid()
         self._c.window.participant_grid.set_session_state(
-            SessionUiState.idle(server=self._c.bridge.effective_server())
+            SessionUiState.idle(
+                server=self._c.bridge.effective_server(),
+                hosting=bool(
+                    getattr(self._c.settings, "host_server_enabled", False)
+                ),
+            )
         )
 
     def reset_to_demo(self) -> None:

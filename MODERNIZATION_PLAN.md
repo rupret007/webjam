@@ -201,6 +201,25 @@
   CI run 29179609441 passed tests, real Jamulus integration, and all three
   desktop builds at `2b9e165`.
 
+## Lobby + in-app hosting round
+
+- Redesigned the disconnected workspace as a centered lobby: the session
+  card floats centered over the stage (it previously sat top-left inside the
+  flow layout), with display-size title, centered actions including a
+  first-class Practice Solo, and a server hint. The Webex launch card became
+  a slim bar and the STAGE header was removed.
+- Added in-app band-server hosting (`host_server_enabled`): BridgeService
+  supervises JamulusServer.app 3.12.2 with the exact validated flag set from
+  `server/start_macos_pilot.sh`, including version gate, UDP/TCP port
+  preflight, 0600 secret provisioning in the server container, a
+  caffeinate-per-pid sleep assertion, append-mode server log, adoption of an
+  externally started server, crash restart from the reconnect tick, and
+  strict decoupling from Stop Audio. Shutdown stops an active recording via
+  RPC before terminating the server; quit/stop dialogs are hosting-aware.
+- Hosting-only validation on real hardware remains open: a real
+  JamulusServer.app spawn under WebJam, Record over the supervised server,
+  and quit-while-recording finalization have not run on the host Mac yet.
+
 ## Remaining release gates
 
 1. On both musician Macs choose talkback mode, route Jamulus directly through

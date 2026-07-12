@@ -6,6 +6,26 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.8.1] — Release candidate
 
+### All-in-one hosting and the lobby redesign
+
+- **WebJam now hosts the band server.** Enable "This Mac hosts the band
+  server" in Setup and Start Audio verifies JamulusServer.app 3.12.2, checks
+  ports, provisions the protected recorder secret and recordings folder in
+  the server app's container, starts the server under a caffeinate sleep
+  assertion, waits for its control port, and then connects the client. A
+  crashed server is restarted automatically; an externally started server
+  (the Terminal script) is adopted, never duplicated. Stop Audio leaves the
+  server running for the band; quitting WebJam stops any recording cleanly
+  and then stops the server, and the quit dialog says so. The status bar
+  shows persistent "Server: Hosting" truth and Ready Check gains a hosted
+  band-server item with hosting-aware recorder guidance.
+- **The disconnected workspace is a real lobby.** The session card is
+  centered on the stage with a display-size title, one obvious primary
+  action (Start Audio, or Host & Start Audio when hosting), Practice Solo
+  and Ready Check beside it, and a quiet hint naming the server audio will
+  join. The Webex launch card is a slim bar, and the redundant STAGE header
+  is gone.
+
 ### Two-lane Webex talkback
 
 - WebJam now treats Jamulus music and native Webex speech as separate audio

@@ -277,15 +277,22 @@ def _check_recorder(settings) -> CheckItem:
         if not status.get("initialised", False):
             return CheckItem("Host recorder", False, "server recorder is not initialised")
     except Exception as exc:  # noqa: BLE001
-        return CheckItem(
-            "Host recorder",
-            False,
-            "couldn't reach the band server's recorder — is the server "
-            "running? Same Mac: start it with server/start_macos_pilot.sh. "
-            "Remote Linux: check the SSH tunnel. Then verify the RPC port "
-            "and secret file and run Ready Check again. "
-            f"(Details: {exc})",
-        )
+        if bool(getattr(settings, "host_server_enabled", False)):
+            detail = (
+                "couldn't reach the band server's recorder — this Mac hosts "
+                "the server, and WebJam starts it with Start Audio. Press "
+                "Start Audio, then run Ready Check again. "
+                f"(Details: {exc})"
+            )
+        else:
+            detail = (
+                "couldn't reach the band server's recorder — is the server "
+                "running? Same Mac: start it with server/start_macos_pilot.sh. "
+                "Remote Linux: check the SSH tunnel. Then verify the RPC port "
+                "and secret file and run Ready Check again. "
+                f"(Details: {exc})"
+            )
+        return CheckItem("Host recorder", False, detail)
 
     takes = Path(str(getattr(settings, "takes_directory", "") or "")).expanduser()
     if not takes.is_dir() or not os.access(takes, os.W_OK):
@@ -304,6 +311,28 @@ def _check_webex(settings) -> CheckItem:
     return CheckItem("Webex meeting set", False, error)
 
 
+def _check_hosted_server(settings) -> "CheckItem | None":
+    """When this Mac hosts the band server, verify the server app exists."""
+    if not bool(getattr(settings, "host_server_enabled", False)):
+        return None
+    binary = Path(
+        "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
+    )
+    if not binary.is_file():
+        return CheckItem(
+            "Band server (hosted)",
+            False,
+            "JamulusServer.app is not installed — install the dedicated "
+            "server from the official Jamulus 3.12.2 macOS disk image, or "
+            "turn off hosting in Settings.",
+        )
+    return CheckItem(
+        "Band server (hosted)",
+        True,
+        "JamulusServer.app found — WebJam starts it with Start Audio",
+    )
+
+
 def run_ready_check(settings) -> ReadyCheckReport:
     """Run all readiness checks against ``settings`` and return a report."""
     items = [
@@ -313,6 +342,9 @@ def run_ready_check(settings) -> ReadyCheckReport:
         _check_webex(settings),
         _check_recorder(settings),
     ]
+    hosted = _check_hosted_server(settings)
+    if hosted is not None:
+        items.insert(1, hosted)
     if str(getattr(settings, "webex_audio_mode", "talkback")) == "audience_bridge":
         items.insert(2, _check_audio_routing(settings))
     local_capture = _check_local_capture(settings)

@@ -195,6 +195,25 @@ class _JamulusPage(QWizardPage):
         )
         layout.addWidget(self._musician_name)
 
+        layout.addWidget(_section_label("Band server"))
+        self._host_server = QCheckBox(
+            "This Mac hosts the band server (requires JamulusServer.app 3.12.2)"
+        )
+        self._host_server.setChecked(
+            bool(getattr(settings, "host_server_enabled", False))
+        )
+        self._host_server.setAccessibleName("Host the band server on this Mac")
+        layout.addWidget(self._host_server)
+        host_note = QLabel(
+            "WebJam starts and supervises the server for you — it keeps "
+            "running through Stop Audio and stops when WebJam quits. "
+            "Recordings and the recorder secret live in the server app's "
+            "own container. Exactly one Mac in the band hosts."
+        )
+        host_note.setWordWrap(True)
+        host_note.setObjectName("BodyLabel")
+        layout.addWidget(host_note)
+
         layout.addWidget(_section_label("Jamulus executable"))
         # Pre-populate with first existing user/default candidate path...
         detected_path = ""
@@ -411,6 +430,10 @@ class _JamulusPage(QWizardPage):
     @property
     def musician_name(self) -> str:
         return self._musician_name.text().strip()
+
+    @property
+    def host_server_enabled(self) -> bool:
+        return self._host_server.isChecked()
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +953,7 @@ class SetupWizard(QWizard):
         cfg["jamulus_port"]               = self._jamulus.port
         cfg["jamulus_rpc_port"]           = self._jamulus.rpc_port
         cfg["musician_name"]              = self._jamulus.musician_name
+        cfg["host_server_enabled"]        = self._jamulus.host_server_enabled
         cfg["webex_url"]                  = self._webex.webex_url
         cfg["audio_input_device_index"]   = self._routing.device_index
         cfg["webex_audio_mode"]           = self._routing.audio_mode

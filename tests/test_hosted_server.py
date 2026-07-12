@@ -1,0 +1,372 @@
+"""
+In-app band-server hosting — BridgeService.ensure_hosted_server and friends.
+
+WebJam supervises the official JamulusServer.app (recording + loopback RPC)
+when settings.host_server_enabled is set, replacing the manual
+server/start_macos_pilot.sh Terminal step. No real processes are spawned.
+"""
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+def _make_bridge(tmp: str):
+    from services.bridge_service import BridgeService
+
+    settings = MagicMock()
+    settings.jamulus_server = "127.0.0.1"
+    settings.jamulus_port = 22124
+    settings.jamulus_rpc_port = 22222
+    settings.server_rpc_port = 22240
+    settings.server_rpc_secret_file = str(Path(tmp) / "rpc.secret")
+    settings.takes_directory = str(Path(tmp) / "Recordings")
+    settings.host_server_enabled = True
+    settings.jamulus_candidates = []
+    repository = MagicMock()
+    repository.get_setting.return_value = "1"
+    bridge = BridgeService(
+        jamulus_controller=MagicMock(),
+        webex_controller=MagicMock(),
+        metrics_service=MagicMock(),
+        repository=repository,
+        settings=settings,
+        ui_callbacks={
+            "set_status_banner": MagicMock(),
+            "refresh_readiness": MagicMock(),
+            "show_actionable_error": MagicMock(),
+            "show_message": MagicMock(),
+            "shutdown_requested": lambda: False,
+            "schedule_ui_callback": lambda f: f(),
+        },
+    )
+    bridge.find_jamulus_server = MagicMock(
+        return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
+    )
+    return bridge
+
+
+def _version_ok():
+    return SimpleNamespace(stdout="Jamulus, Version 3.12.2", stderr="")
+
+
+class TestEnsureHostedServer(unittest.TestCase):
+    def test_spawns_server_with_validated_flag_set_and_secret(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            fake_proc.pid = 4242
+            with patch("services.bridge_service.subprocess.run",
+                       return_value=_version_ok()), \
+                 patch("services.bridge_service.subprocess.Popen",
+                       return_value=fake_proc) as popen, \
+                 patch.object(bridge, "_port_free", return_value=True), \
+                 patch("socket.create_connection") as conn:
+                conn.return_value.__enter__ = MagicMock()
+                conn.return_value.__exit__ = MagicMock(return_value=False)
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertTrue(ok, detail)
+            cmd = popen.call_args_list[0].args[0]
+            self.assertIn("--nogui", cmd)
+            self.assertIn("--recording", cmd)
+            self.assertIn("--norecord", cmd)
+            self.assertIn("--jsonrpcbindip", cmd)
+            self.assertIn("127.0.0.1", cmd)
+            self.assertIn("--jsonrpcsecretfile", cmd)
+            self.assertIn("22124", cmd)
+            self.assertIn("22240", cmd)
+            secret = Path(tmp) / "rpc.secret"
+            self.assertTrue(secret.is_file())
+            self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+            self.assertTrue((Path(tmp) / "Recordings").is_dir())
+
+    def test_adopts_external_server_when_rpc_port_already_serving(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            with patch.object(bridge, "_port_free", return_value=False), \
+                 patch("services.bridge_service.subprocess.Popen") as popen:
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertTrue(ok)
+            self.assertIn("external", detail)
+            popen.assert_not_called()
+
+    def test_wrong_version_refuses_to_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            with patch.object(bridge, "_port_free", return_value=True), \
+                 patch("services.bridge_service.subprocess.run",
+                       return_value=SimpleNamespace(
+                           stdout="Jamulus, Version 3.13.0", stderr="")), \
+                 patch("services.bridge_service.subprocess.Popen") as popen:
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertFalse(ok)
+            self.assertIn("3.12.2", detail)
+            popen.assert_not_called()
+
+    def test_missing_server_app_is_actionable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            bridge.find_jamulus_server = MagicMock(return_value=None)
+            with patch.object(bridge, "_port_free", return_value=True):
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertFalse(ok)
+            self.assertIn("JamulusServer.app", detail)
+
+    def test_stop_jamulus_leaves_hosted_server_alive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            bridge.hosted_server_process = fake_proc
+            bridge.stop_jamulus()
+            fake_proc.terminate.assert_not_called()
+            self.assertTrue(bridge.hosted_server_alive())
+
+    def test_stop_hosted_server_terminates_server_and_caffeinate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            caff = MagicMock()
+            caff.poll.return_value = None
+            bridge.hosted_server_process = fake_proc
+            bridge._hosted_caffeinate_process = caff
+            bridge.stop_hosted_server()
+            fake_proc.terminate.assert_called_once()
+            caff.terminate.assert_called_once()
+            self.assertFalse(bridge.hosted_server_alive())
+            # Idempotent.
+            bridge.stop_hosted_server()
+            fake_proc.terminate.assert_called_once()
+
+    def test_dead_hosted_server_is_restarted_by_reconnect_tick(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            dead = MagicMock()
+            dead.poll.return_value = 1
+            bridge.hosted_server_process = dead
+            bridge.jamulus_launch_intended = True
+            with patch.object(bridge, "ensure_hosted_server",
+                              return_value=(True, "started")) as ensure, \
+                 patch("services.bridge_service.threading.Thread",
+                       side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
+                bridge._restart_hosted_server_if_died()
+            ensure.assert_called_once()
+            self.assertFalse(bridge._hosted_restart_inflight)
+
+    def test_no_restart_when_hosting_disabled_or_not_intended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            dead = MagicMock()
+            dead.poll.return_value = 1
+            bridge.hosted_server_process = dead
+            bridge.jamulus_launch_intended = False
+            with patch.object(bridge, "ensure_hosted_server") as ensure:
+                bridge._restart_hosted_server_if_died()
+            ensure.assert_not_called()
+
+
+class _Immediate:
+    def __init__(self, *args, target=None, daemon=None, name=None, **kwargs):
+        self._target = target
+
+    def start(self):
+        if self._target is not None:
+            self._target()
+
+
+class TestHostedSettings(unittest.TestCase):
+    def test_hosting_derives_container_defaults_when_unset(self):
+        import json
+        from core.settings import load_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            cfg.write_text(json.dumps({
+                "jamulus_server": "127.0.0.1",
+                "webex_url": "https://x.webex.com/meet/y",
+                "host_server_enabled": True,
+            }))
+            s = load_settings(str(cfg))
+            self.assertTrue(s.host_server_enabled)
+            self.assertIn("JamulusServer", s.server_rpc_secret_file)
+            self.assertIn("WebJam Recordings", s.takes_directory)
+
+    def test_hosting_respects_explicit_paths(self):
+        import json
+        from core.settings import load_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            cfg.write_text(json.dumps({
+                "jamulus_server": "127.0.0.1",
+                "host_server_enabled": True,
+                "server_rpc_secret_file": "/custom/secret",
+                "takes_directory": "/custom/takes",
+            }))
+            s = load_settings(str(cfg))
+            self.assertEqual(s.server_rpc_secret_file, "/custom/secret")
+            self.assertEqual(s.takes_directory, "/custom/takes")
+
+    def test_env_var_enables_hosting(self):
+        from core.settings import load_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"WEBJAM_HOST_SERVER_ENABLED": "1"}):
+                s = load_settings(str(Path(tmp) / "none.json"))
+            self.assertTrue(s.host_server_enabled)
+
+    def test_hosting_off_by_default(self):
+        from core.settings import AppSettings
+        self.assertFalse(AppSettings().host_server_enabled)
+
+
+class TestHostedPreflight(unittest.TestCase):
+    def test_hosted_check_fails_without_server_app(self):
+        from core import preflight
+        s = SimpleNamespace(host_server_enabled=True)
+        with patch.object(Path, "is_file", return_value=False):
+            item = preflight._check_hosted_server(s)
+        self.assertIsNotNone(item)
+        self.assertFalse(item.ok)
+        self.assertIn("JamulusServer.app", item.detail)
+
+    def test_hosted_check_absent_when_not_hosting(self):
+        from core import preflight
+        s = SimpleNamespace(host_server_enabled=False)
+        self.assertIsNone(preflight._check_hosted_server(s))
+
+    def test_recorder_failure_copy_points_to_start_audio_when_hosting(self):
+        from core import preflight
+        with tempfile.NamedTemporaryFile() as secret:
+            s = SimpleNamespace(
+                server_rpc_secret_file=secret.name,
+                server_rpc_port=22240,
+                takes_directory="",
+                host_server_enabled=True,
+            )
+            with patch("core.jamulus_server_rpc.read_secret_file",
+                       side_effect=OSError("connection refused")):
+                item = preflight._check_recorder(s)
+        self.assertFalse(item.ok)
+        self.assertIn("Start Audio", item.detail)
+        self.assertNotIn("start_macos_pilot.sh", item.detail)
+
+
+class TestHostedControllerFlows(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls._app = QApplication.instance() or QApplication([])
+        from core.settings import AppSettings
+        from webjam_qt.controllers.application_controller import (
+            ApplicationController,
+        )
+        from webjam_qt.windows.conductor_window import ConductorWindow
+        cls.window = ConductorWindow(
+            mode_entries=ApplicationController.mode_entries(),
+            initial_mode_key="music_jam",
+            initial_title="Host Test",
+        )
+        cls.controller = ApplicationController(cls.window, settings=AppSettings())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.controller.shutdown()
+
+    def setUp(self):
+        c = self.controller
+        c.window.flash_message = MagicMock()
+        c.settings.host_server_enabled = True
+        c.bridge.hosted_server_alive = MagicMock(return_value=True)
+
+    def tearDown(self):
+        self.controller.settings.host_server_enabled = False
+
+    def test_confirm_quit_while_hosting_says_session_ends_for_everyone(self):
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+        c = self.controller
+        c.recording.phase = RecorderPhase.RECORDING
+        try:
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.QMessageBox"
+            ) as mbox:
+                box = mbox.return_value
+                box.clickedButton.return_value = object()
+                self.assertFalse(c.recording.confirm_quit())
+            body = box.setText.call_args.args[0]
+            self.assertIn("hosting", body)
+            self.assertIn("ends the session for every", body)
+            self.assertNotIn("keeps recording", body)
+        finally:
+            c.recording.phase = RecorderPhase.IDLE
+
+    def test_stop_audio_while_hosting_says_server_keeps_running(self):
+        from PySide6.QtWidgets import QMessageBox
+        c = self.controller
+        c.bridge.stop_jamulus = MagicMock()
+        with patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ) as question:
+            c.audio.stop()
+        text = question.call_args.args[2]
+        self.assertIn("band server keeps running", text)
+
+    def test_idle_hero_offers_host_and_start(self):
+        c = self.controller
+        c.audio.reset_to_idle()
+        self.assertEqual(
+            self.window.participant_grid._empty_primary.text(),
+            "Host & Start Audio",
+        )
+        self.assertIn(
+            "hosts the band server",
+            self.window.participant_grid._empty_hint.text(),
+        )
+
+    def test_status_bar_shows_hosting_truth(self):
+        c = self.controller
+        c._refresh_readiness()
+        self.assertIn("Hosting", self.window._status_server.text())
+        self.assertFalse(self.window._status_server.isHidden())
+        c.settings.host_server_enabled = False
+        c._refresh_readiness()
+        self.assertTrue(self.window._status_server.isHidden())
+
+
+class TestHostedShutdown(unittest.TestCase):
+    def test_shutdown_stops_recording_then_hosted_server(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from core.settings import AppSettings
+        from webjam_qt.controllers.application_controller import (
+            ApplicationController,
+        )
+        from webjam_qt.windows.conductor_window import ConductorWindow
+        window = ConductorWindow(
+            mode_entries=ApplicationController.mode_entries(),
+            initial_mode_key="music_jam",
+            initial_title="Host Shutdown",
+        )
+        settings = AppSettings()
+        settings.host_server_enabled = True
+        controller = ApplicationController(window, settings=settings)
+        order: list[str] = []
+        controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+        controller.recording.stop_server_recording_for_shutdown = MagicMock(
+            side_effect=lambda: order.append("stop-recording")
+        )
+        controller.bridge.stop_hosted_server = MagicMock(
+            side_effect=lambda: order.append("stop-server")
+        )
+        controller.shutdown()
+        self.assertEqual(order, ["stop-recording", "stop-server"])
+
+
+if __name__ == "__main__":
+    unittest.main()

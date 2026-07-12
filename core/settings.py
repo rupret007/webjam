@@ -30,7 +30,8 @@ def _coerce_settings_data(data: dict) -> None:
                 data[key] = defaults[key]
                 _logger.debug("Invalid %s in config; using default", key)
     # Boolean fields
-    for key in ("enable_sentry", "companion_api_enabled", "local_capture_enabled"):
+    for key in ("enable_sentry", "companion_api_enabled", "local_capture_enabled",
+                "host_server_enabled"):
         if key in data:
             data[key] = _as_bool(data[key])
     if "webex_audio_mode" in data:
@@ -104,6 +105,10 @@ class AppSettings:
     # copy of the server's jsonrpc.secret. Empty = Record button unconfigured.
     server_rpc_port: int = 22240
     server_rpc_secret_file: str = ""
+    # This Mac hosts the band's Jamulus server: WebJam supervises the
+    # official JamulusServer.app (macOS) with recording + loopback RPC,
+    # replacing the manual server/start_macos_pilot.sh Terminal step.
+    host_server_enabled: bool = False
     # Take Deck: where recorded takes live locally (fetched from the band
     # server, e.g. scp'd into this folder). Empty = the Deck shows a hint.
     takes_directory: str = ""
@@ -154,6 +159,7 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_TAKES_DIRECTORY": "takes_directory",
         "WEBJAM_TAKE_PLAYBACK_OUTPUT_DEVICE": "take_playback_output_device",
         "WEBJAM_LOCAL_CAPTURE_ENABLED": "local_capture_enabled",
+        "WEBJAM_HOST_SERVER_ENABLED": "host_server_enabled",
         "WEBJAM_WEBEX_URL": "webex_url",
         "WEBJAM_MUSICIAN_NAME": "musician_name",
         "WEBJAM_JAMULUS_CANDIDATES": "jamulus_candidates",
@@ -193,7 +199,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
             data[key] = parsed
-        elif key in {"enable_sentry", "companion_api_enabled", "local_capture_enabled"}:
+        elif key in {"enable_sentry", "companion_api_enabled", "local_capture_enabled",
+                     "host_server_enabled"}:
             data[key] = _as_bool(raw)
         elif key == "jamulus_candidates":
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]
@@ -245,7 +252,37 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                         settings.companion_api_port)
         settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
+    if settings.host_server_enabled:
+        derived = {}
+        if not settings.server_rpc_secret_file.strip():
+            derived["server_rpc_secret_file"] = str(hosted_server_secret_path())
+        if not settings.takes_directory.strip():
+            derived["takes_directory"] = str(hosted_server_recordings_dir())
+        if derived:
+            settings = AppSettings(**{**asdict(settings), **derived})
+
     return settings
+
+
+def jamulus_server_container_documents() -> Path:
+    """The sandboxed JamulusServer.app writable Documents directory.
+
+    The official server bundle is sandboxed: recordings and its RPC secret
+    must live inside its container (Data/Music is only a symlink and is not
+    writable). Mirrors server/start_macos_pilot.sh.
+    """
+    return (
+        Path.home() / "Library" / "Containers"
+        / "app.jamulussoftware.JamulusServer" / "Data" / "Documents"
+    )
+
+
+def hosted_server_secret_path() -> Path:
+    return jamulus_server_container_documents() / "webjam_server_rpc.secret"
+
+
+def hosted_server_recordings_dir() -> Path:
+    return jamulus_server_container_documents() / "WebJam Recordings"
 
 
 def save_settings(settings: AppSettings) -> None:

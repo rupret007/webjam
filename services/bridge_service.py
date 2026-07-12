@@ -166,6 +166,17 @@ class BridgeService:
         self._jamulus_log_file: Optional[object] = None
         self._practice_log_file: Optional[object] = None
 
+        # Hosted band server: when settings.host_server_enabled, WebJam
+        # supervises the official JamulusServer.app (recording + loopback
+        # RPC) instead of the manual server/start_macos_pilot.sh Terminal
+        # step. Its lifecycle is deliberately decoupled from the client:
+        # Stop Audio never stops the band's server.
+        self.hosted_server_process: Optional[subprocess.Popen] = None
+        self._hosted_caffeinate_process: Optional[subprocess.Popen] = None
+        self._hosted_log_file: Optional[object] = None
+        self._hosted_lifecycle_lock = threading.Lock()
+        self._hosted_restart_inflight = False
+
     def _set_jamulus_state(self, state: "JamulusState | str") -> None:
         """Atomically update `jamulus_state` under `_reconnect_lock`.
 
@@ -397,6 +408,33 @@ class BridgeService:
                         with self._reconnect_lock:
                             self.jamulus_reconnect_inflight = False
                         return
+
+                    if (
+                        getattr(self.settings, "host_server_enabled", False)
+                        and not self.practice_mode
+                    ):
+                        hosted_ok, hosted_detail = self.ensure_hosted_server()
+                        if not hosted_ok:
+                            self._set_jamulus_state(JamulusState.STOPPED)
+                            with self._reconnect_lock:
+                                self.jamulus_reconnect_inflight = False
+                            self.show_actionable_error(
+                                "Band Server Could Not Start",
+                                what_failed=hosted_detail,
+                                likely_cause=(
+                                    "This Mac hosts the band server, and it "
+                                    "must be running before the client joins."
+                                ),
+                                next_action=(
+                                    "Fix the issue above, then press Start "
+                                    "Audio again. Hosting can be turned off "
+                                    "in Settings if another Mac runs the "
+                                    "server."
+                                ),
+                                retry_callback=None,
+                            )
+                            self.schedule_ui_callback(self.refresh_readiness)
+                            return
 
                     import secrets as _secrets
                     from core.file_io import atomic_write_text
@@ -679,6 +717,265 @@ class BridgeService:
         )
         return True
 
+    # ------------------------------------------------------------------
+    # Hosted band server (host_server_enabled)
+    # ------------------------------------------------------------------
+    JAMULUS_SERVER_BINARY = (
+        "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
+    )
+    HOSTED_SERVER_VERSION = "3.12.2"
+
+    def find_jamulus_server(self) -> Optional[str]:
+        """Locate the dedicated JamulusServer.app binary (macOS pilot)."""
+        candidate = Path(self.JAMULUS_SERVER_BINARY)
+        if candidate.is_file():
+            return str(candidate)
+        return None
+
+    def hosted_server_alive(self) -> bool:
+        proc = self.hosted_server_process
+        return proc is not None and proc.poll() is None
+
+    def _port_free(self, port: int, *, udp: bool = False) -> bool:
+        import socket
+        kind = socket.SOCK_DGRAM if udp else socket.SOCK_STREAM
+        sock = socket.socket(socket.AF_INET, kind)
+        try:
+            sock.bind(("0.0.0.0" if udp else "127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def ensure_hosted_server(self) -> tuple[bool, str]:
+        """Start (or adopt) the band server on this Mac. Returns (ok, detail).
+
+        Mirrors server/start_macos_pilot.sh: exact 3.12.2 version gate,
+        port preflight, 0600 secret, recordings in the server app's sandbox
+        container, and a caffeinate power assertion for the server's
+        lifetime so the host Mac cannot sleep mid-session.
+        """
+        with self._hosted_lifecycle_lock:
+            if self.hosted_server_alive():
+                return True, "already running"
+            rpc_port = int(self.settings.server_rpc_port)
+            udp_port = int(self.settings.jamulus_port)
+            if not self._port_free(rpc_port):
+                # A server is already listening (e.g. the manual Terminal
+                # script). Adopt it instead of fighting over the port.
+                LOGGER.info(
+                    "Hosted server: TCP %s already serving — adopting the "
+                    "external band server.", rpc_port,
+                )
+                return True, "external server already running"
+
+            binary = self.find_jamulus_server()
+            if not binary:
+                return False, (
+                    "JamulusServer.app 3.12.2 is not installed in "
+                    "/Applications. Install it from the official Jamulus "
+                    "3.12.2 macOS disk image, then press Start Audio again."
+                )
+            try:
+                probe = subprocess.run(
+                    [binary, "--version"], capture_output=True, text=True,
+                    timeout=10,
+                )
+                version_text = (probe.stdout or "") + (probe.stderr or "")
+            except Exception as exc:  # noqa: BLE001
+                return False, f"Could not read the server version: {exc}"
+            if f"Version {self.HOSTED_SERVER_VERSION}" not in version_text:
+                return False, (
+                    "The pilot requires JamulusServer.app "
+                    f"{self.HOSTED_SERVER_VERSION} exactly; the installed "
+                    "copy reports a different version."
+                )
+            if not self._port_free(udp_port, udp=True):
+                return False, (
+                    f"UDP port {udp_port} is already in use by another "
+                    "application. Quit it, then press Start Audio again."
+                )
+
+            from core.file_io import atomic_write_text
+            from core.settings import (
+                hosted_server_recordings_dir,
+                hosted_server_secret_path,
+            )
+            secret_path = Path(
+                (self.settings.server_rpc_secret_file or "").strip()
+                or hosted_server_secret_path()
+            ).expanduser()
+            recordings = Path(
+                (self.settings.takes_directory or "").strip()
+                or hosted_server_recordings_dir()
+            ).expanduser()
+            try:
+                recordings.mkdir(parents=True, exist_ok=True)
+                secret_path.parent.mkdir(parents=True, exist_ok=True)
+                if not secret_path.is_file() or not secret_path.stat().st_size:
+                    import secrets as _secrets
+                    atomic_write_text(
+                        secret_path, _secrets.token_hex(32) + "\n", mode=0o600,
+                    )
+            except OSError as exc:
+                return False, (
+                    f"Could not prepare the server secret/recordings: {exc}"
+                )
+
+            cmd = [
+                binary, "--nogui",
+                "--port", str(udp_port),
+                "--recording", str(recordings), "--norecord",
+                "--jsonrpcbindip", "127.0.0.1",
+                "--jsonrpcport", str(rpc_port),
+                "--jsonrpcsecretfile", str(secret_path),
+                "--welcomemessage", "WebJam private band server",
+            ]
+            stdout_dest = subprocess.DEVNULL
+            try:
+                log_dir = Path.home() / "Library" / "Logs" / "WebJam"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                self._close_hosted_log_file()
+                self._hosted_log_file = open(
+                    log_dir / "jamulus-server.log", "a", buffering=1,
+                )
+                stdout_dest = self._hosted_log_file
+            except OSError:
+                pass
+            try:
+                self.hosted_server_process = subprocess.Popen(
+                    cmd,
+                    stdout=stdout_dest,
+                    stderr=subprocess.STDOUT
+                    if stdout_dest is not subprocess.DEVNULL
+                    else subprocess.DEVNULL,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("Hosted band server failed to start")
+                return False, f"The band server could not start: {exc}"
+
+            self._start_hosted_caffeinate()
+
+            # Wait for the recorder RPC listener so the client (and the
+            # Record button) never race a half-started server.
+            import socket
+            deadline = time.monotonic() + 6.0
+            while time.monotonic() < deadline:
+                if not self.hosted_server_alive():
+                    return False, (
+                        "The band server exited immediately — see "
+                        "~/Library/Logs/WebJam/jamulus-server.log."
+                    )
+                try:
+                    with socket.create_connection(
+                        ("127.0.0.1", rpc_port), timeout=0.2
+                    ):
+                        LOGGER.info(
+                            "Hosted band server ready on UDP %s / RPC %s",
+                            udp_port, rpc_port,
+                        )
+                        self.metrics_service.increment("metric_host_server_started")
+                        return True, "started"
+                except OSError:
+                    time.sleep(0.15)
+            return False, (
+                "The band server started but its control port never became "
+                "ready — see ~/Library/Logs/WebJam/jamulus-server.log."
+            )
+
+    def _start_hosted_caffeinate(self) -> None:
+        """Hold a sleep assertion for exactly the server's lifetime."""
+        import sys
+        if sys.platform != "darwin" or not self.hosted_server_alive():
+            return
+        try:
+            self._hosted_caffeinate_process = subprocess.Popen(
+                ["/usr/bin/caffeinate", "-dimsu", "-w",
+                 str(self.hosted_server_process.pid)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("caffeinate unavailable: %s", exc)
+
+    def _close_hosted_log_file(self) -> None:
+        if self._hosted_log_file is not None:
+            try:
+                self._hosted_log_file.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._hosted_log_file = None
+
+    def stop_hosted_server(self) -> None:
+        """Terminate the hosted band server. Idempotent; quit-time only —
+        Stop Audio deliberately never calls this."""
+        with self._hosted_lifecycle_lock:
+            proc = self.hosted_server_process
+            self.hosted_server_process = None
+            if proc is not None and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3.0)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.warning("Failed to terminate hosted server: %s", exc)
+            caff = self._hosted_caffeinate_process
+            self._hosted_caffeinate_process = None
+            if caff is not None and caff.poll() is None:
+                try:
+                    caff.terminate()
+                except Exception:  # noqa: BLE001
+                    pass
+            self._close_hosted_log_file()
+
+    def _restart_hosted_server_if_died(self) -> None:
+        """Reconnect-tick supervision: revive a dead hosted server.
+
+        The client keeps running when only the server dies, so the normal
+        client-reconnect logic never fires; restart the server directly.
+        """
+        if not getattr(self.settings, "host_server_enabled", False):
+            return
+        if not self.jamulus_launch_intended:
+            return
+        proc = self.hosted_server_process
+        if proc is None or proc.poll() is None:
+            return
+        if self._hosted_restart_inflight:
+            return
+        self._hosted_restart_inflight = True
+        LOGGER.warning("Hosted band server died — restarting it")
+        self.schedule_ui_callback(
+            lambda: self.set_status_banner(
+                "Band server stopped unexpectedly — restarting it…",
+                color="#ffcc00",
+            )
+        )
+
+        def _restart() -> None:
+            try:
+                with self._hosted_lifecycle_lock:
+                    self.hosted_server_process = None
+                ok, detail = self.ensure_hosted_server()
+                if not ok:
+                    self.schedule_ui_callback(
+                        lambda: self.set_status_banner(
+                            f"Band server restart failed: {detail}",
+                            color="#ff6666",
+                        )
+                    )
+            finally:
+                self._hosted_restart_inflight = False
+
+        threading.Thread(
+            target=_restart, daemon=True, name="hosted-server-restart",
+        ).start()
+
     def stop_jamulus(self) -> bool:
         """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
 
@@ -821,6 +1118,7 @@ class BridgeService:
             
         if self._end_practice_if_server_died():
             return
+        self._restart_hosted_server_if_died()
 
         now = time.monotonic()
         self._attempt_auto_reconnect_jamulus(now)

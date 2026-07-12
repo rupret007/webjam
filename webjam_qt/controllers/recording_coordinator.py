@@ -109,30 +109,76 @@ class RecordingCoordinator:
             RecorderPhase.STARTING, RecorderPhase.RECORDING,
         )
 
+    def _hosting_server(self) -> bool:
+        """True when this Mac runs the band server under WebJam supervision."""
+        return bool(
+            getattr(self._c.settings, "host_server_enabled", False)
+            and self._c.bridge.hosted_server_alive()
+        )
+
     def confirm_quit(self) -> bool:
         """Ask before quitting mid-recording; idle quits stay frictionless."""
         if not self.is_recording_active:
             return True
+        if self._hosting_server():
+            body = (
+                "A recording is still running, and this Mac is hosting the "
+                "band server.\n\n"
+                "Quitting stops the recording AND ends the session for every "
+                "connected musician. WebJam will stop the recording cleanly "
+                "and save your isolated local tracks before it quits.\n\n"
+                "Quit WebJam?"
+            )
+        else:
+            body = (
+                "A recording is still running.\n\n"
+                "Quitting disconnects this computer, but the band server keeps "
+                "recording until someone presses ■ Stop Rec. Your isolated local "
+                "tracks will be saved to a Recovered folder before WebJam quits.\n\n"
+                "Quit WebJam?"
+            )
         box = QMessageBox(self._c.window)
         box.setWindowTitle("Quit WebJam?")
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setText(
-            "A recording is still running.\n\n"
-            "Quitting disconnects this computer, but the band server keeps "
-            "recording until someone presses ■ Stop Rec. Your isolated local "
-            "tracks will be saved to a Recovered folder before WebJam quits.\n\n"
-            "Quit WebJam?"
-        )
+        box.setText(body)
         quit_button = box.addButton("Quit", QMessageBox.ButtonRole.DestructiveRole)
         cancel_button = box.addButton(QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(cancel_button)
         box.exec()
         return box.clickedButton() is quit_button
 
+    def stop_server_recording_for_shutdown(self) -> None:
+        """Best-effort synchronous recorder stop before a hosted-server quit.
+
+        Quitting a hosting Mac takes the server down with it; stopping the
+        recording first lets the server finalize every musician's track
+        instead of truncating the take mid-write. Bounded by the RPC client's
+        short timeouts so shutdown can never hang.
+        """
+        if not (self._c._server_recording or self._c._recorder_armed):
+            return
+        secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
+        if not secret_file:
+            return
+        try:
+            from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+            secret = read_secret_file(secret_file)
+            rpc = JamulusServerRpc(
+                port=self._c.settings.server_rpc_port, secret=secret
+            )
+            rpc.CONNECT_TIMEOUT_S = 0.75
+            rpc.CALL_TIMEOUT_S = 1.5
+            with rpc:
+                rpc.stop_recording()
+            LOGGER.info("Hosted-server recording stopped for shutdown")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not stop hosted recording on shutdown")
+
     def on_audio_session_stopped(self) -> None:
         """Stop Audio ends this Mac's part in any in-flight recording.
 
-        The band server keeps recording (the Stop Audio dialog says so); this
+        The band server keeps recording — Stop Audio never stops the server,
+        even when this Mac hosts it (the Stop Audio dialog says so); this
         preserves the local isolated tracks and resets the recording UI so no
         stale REC clock or take chip survives the disconnect.
         """

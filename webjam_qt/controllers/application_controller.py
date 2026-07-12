@@ -224,6 +224,16 @@ class ApplicationController(QObject):
             self.bridge.stop_jamulus()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Jamulus shutdown failed")
+        # A hosted band server dies with WebJam: stop any recording cleanly
+        # first so the server finalizes every musician's track, then
+        # terminate the server itself.
+        if getattr(self.settings, "host_server_enabled", False):
+            try:
+                if self.bridge.hosted_server_alive():
+                    self.recording.stop_server_recording_for_shutdown()
+                self.bridge.stop_hosted_server()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Hosted server shutdown failed")
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
@@ -375,7 +385,10 @@ class ApplicationController(QObject):
         self.participants.clear()
         self._push_participants_to_grid()
         self.window.participant_grid.set_session_state(
-            SessionUiState.idle(server=self.bridge.effective_server())
+            SessionUiState.idle(
+                server=self.bridge.effective_server(),
+                hosting=bool(getattr(self.settings, "host_server_enabled", False)),
+            )
         )
 
         mode = get_mode_by_key_or_default(
@@ -687,6 +700,13 @@ class ApplicationController(QObject):
                 )
         else:
             self.session_health.reset_live_truth()
+        if getattr(self.settings, "host_server_enabled", False):
+            self.window.set_status_server(
+                f"Hosting :{self.settings.jamulus_port}"
+                if self.bridge.hosted_server_alive() else "not running"
+            )
+        else:
+            self.window.set_status_server("")
         self.audio.on_readiness_refresh(jamulus_up)
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)

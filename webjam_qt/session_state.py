@@ -27,13 +27,23 @@ class SessionUiState:
     hint: str = ""
 
     @classmethod
-    def idle(cls, server: str = "") -> "SessionUiState":
+    def idle(cls, server: str = "", hosting: bool = False) -> "SessionUiState":
+        if hosting:
+            hint = (
+                f"This Mac hosts the band server · audio joins {server}"
+                if server else "This Mac hosts the band server"
+            )
+        else:
+            hint = f"Audio joins {server}" if server else ""
         return cls(
             SessionPhase.NOT_CONNECTED,
             "Ready when you are",
+            "Start the session and your band joins you here."
+            if hosting else
             "Run a quick check, then start audio to join your band.",
+            primary_text="Host & Start Audio" if hosting else "Start Audio",
             show_practice=True,
-            hint=f"Audio joins {server}" if server else "",
+            hint=hint,
         )
 
     @classmethod

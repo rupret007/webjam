@@ -131,11 +131,20 @@ class ConductorWindow(QMainWindow):
         )
         self._status_recording.setVisible(False)
 
+        # Hosted band server truth — visible only when this Mac hosts it.
+        self._status_server = QLabel("Server: —")
+        self._status_server.setToolTip(
+            "This Mac is running the band's Jamulus server. It keeps running "
+            "through Stop Audio and stops only when WebJam quits."
+        )
+        self._status_server.setVisible(False)
+
         self._status_audio   = QLabel("Audio: —")
         self._status_video   = QLabel("Video: —")
         self._status_latency = QLabel("Session: —")
         self._status_routing = QLabel("Routing: checking…")
         self._status_bar.addPermanentWidget(self._status_recording)
+        self._status_bar.addPermanentWidget(self._status_server)
         self._status_bar.addPermanentWidget(self._status_audio)
         self._status_bar.addPermanentWidget(self._status_video)
         self._status_bar.addPermanentWidget(self._status_latency)
@@ -360,6 +369,11 @@ class ConductorWindow(QMainWindow):
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
         self._status_recording.setVisible(bool(active))
+
+    def set_status_server(self, text: str) -> None:
+        """Show hosted band-server truth; empty text hides the chip."""
+        self._status_server.setText(f"Server: {text}" if text else "Server: —")
+        self._status_server.setVisible(bool(text))
 
     def set_status_audio(self, text: str) -> None:
         self._status_audio.setText(f"Audio: {text}")
