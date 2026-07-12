@@ -14,7 +14,7 @@ from core.settings import load_settings
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.windows.conductor_window import ConductorWindow
-from webjam_qt.windows.setup_wizard import SetupWizard
+from webjam_qt.windows.first_run_setup import FirstRunSetupDialog
 
 
 def _configure_qt_attributes() -> None:
@@ -47,9 +47,9 @@ def run() -> int:
 
     # Show setup wizard on first run (no config file yet)
     run_ready_check_after_startup = False
-    if SetupWizard.should_show_on_startup(settings):
-        wizard = SetupWizard(settings)
-        if wizard.exec() == SetupWizard.DialogCode.Rejected:
+    if FirstRunSetupDialog.should_show_on_startup(settings):
+        wizard = FirstRunSetupDialog(settings)
+        if wizard.exec() == FirstRunSetupDialog.DialogCode.Rejected:
             return 0  # User cancelled — exit cleanly
         # Reload settings that the wizard just saved
         settings = load_settings()

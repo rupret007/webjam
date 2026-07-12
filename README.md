@@ -57,7 +57,7 @@ See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Nea
 git clone https://github.com/rupret007/webjam.git
 cd webjam
 pip install -r requirements.txt
-python webjam_qt_main.py  # First-run: a setup wizard will guide you through configuration
+python webjam_qt_main.py  # First run: two focused Host/Join setup steps, then Ready Check
 ```
 
 System requirements:

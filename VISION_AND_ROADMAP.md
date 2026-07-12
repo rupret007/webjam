@@ -84,9 +84,9 @@ the latest published build at [Releases](https://github.com/rupret007/webjam/rel
 until the physical pilot gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
-- **Setup Wizard** — first-run Jamulus/Webex setup with explicit musician
-  talkback, video-only, and advanced audience-bridge roles; supplemental local
-  capture is configured independently
+- **Focused first run** — two-step Host/Join, identity, Webex, and optional
+  capture. Talkback is the default; video-only and advanced audience-bridge
+  roles remain in Settings.
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
 - **Native Webex handoff** — opens the configured room externally and reports
   only launch truth; it never claims to inspect or control meeting membership,

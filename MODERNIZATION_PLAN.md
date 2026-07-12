@@ -63,6 +63,16 @@
 
 ## Verification completed so far
 
+- Replaced the clipped, expert-heavy five-page first-run wizard with a
+  responsive two-step Host/Join dialog. Standard ports, bundled component
+  discovery, talkback mode, and recording locations are derived; advanced
+  paths/routing remain in Settings. Endpoint parsing, keyboard/accessibility,
+  atomic persistence, failures, Ready Check transition, and 560/680/900 px
+  layouts have dedicated regression coverage.
+  Local validation passes 1,037 tests with 12 expected skips and six subtests,
+  all static/dependency/UX gates, responsive rendered-screen review, and a
+  clean ARM64 dual-Jamulus build with packaged startup and orphan cleanup.
+
 - The macOS artifact now includes both official Jamulus 3.12.2 application
   bundles, enabling a clean first-time host without a separate server install.
   Discovery prefers a compatible `/Applications` server and falls back to the

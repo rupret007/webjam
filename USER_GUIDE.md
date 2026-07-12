@@ -82,7 +82,7 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 
 2. **Install prerequisites**
    - Jamulus: downloadable builds bundle it — macOS is zero-install, Windows offers
-     an "Install Jamulus now" button on the Setup Wizard's Jamulus page. Only
+     an **Install Jamulus** action during first-run setup when needed. Only
      install it yourself from [jamulus.io](https://jamulus.io) if you're running
      from source, or your build predates bundling.
    - Talkback and video-only musicians need no virtual audio device. Install
@@ -106,26 +106,20 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 
 ### First Launch: Setup Wizard
 
-The first time you run WebJam, a Setup Wizard will open automatically. It has 5 steps:
+The first launch uses a compact two-step setup:
 
-1. **Welcome** — Overview of what WebJam does
-2. **Jamulus Server** — Ordinary musicians enter the shared server host/port.
-   The one designated macOS host selects **This Mac hosts the band server**;
-   WebJam then fixes that musician's connection to loopback. Downloadable
-   macOS builds include the official Jamulus client and `JamulusServer.app`
-   3.12.2; source runs may use an official copy in `/Applications`. Windows
-   offers **Install Jamulus now** for the client.
-   Leave local client RPC at 22222. Hosted recorder RPC is loopback-only 22240.
-3. **Webex Meeting** — Enter your Webex meeting link
-4. **Music and Talkback** — choose **Musician with talkback** (recommended),
-   **Video only**, or the advanced **Audience broadcast bridge**. Local stem
-   capture and its input device are configured independently.
-5. **Configuration saved** — Click Finish, then run Ready Check
+1. **Choose your setup** — explicitly choose **Host the band** or **Join a
+   band**, then enter your musician name. The host uses the included Jamulus
+   client/server and loopback defaults. A joining musician enters one server
+   address, optionally including its port.
+2. **Webex and recording** — enter the Webex meeting URL and optionally enable
+   an isolated local input stem and choose its device.
 
-Only audience-bridge mode scans for BlackHole/VB-CABLE. If that check fails,
-click "Show me how to set this up" for installation instructions.
-
-You can re-run the wizard any time by clicking the Settings button in the app.
+Normal first runs default to Jamulus music plus Webex talkback. Click **Finish
+Setup** and Ready Check opens automatically. Detailed ports, executable paths,
+video-only/audience-bridge modes, folders, and routing tools remain available
+from **Settings** (`Ctrl+,`). BlackHole/VB-CABLE is never part of normal
+talkback onboarding.
 
 ### Step 1: Test Your Audio
 

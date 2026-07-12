@@ -5,12 +5,14 @@ Use this checklist before each UX-focused Qt Conductor release. The legacy Tkint
 ## Install and First Run
 
 - [ ] Fresh install succeeds and `python webjam_qt_main.py` launches.
-- [ ] First run automatically opens the Qt Setup Wizard.
-- [ ] Setup Wizard preflight checks execute without crash.
-- [ ] Failing preflight checks show actionable guidance.
-- [ ] Setup Wizard can be re-opened from the side rail **Settings** or **Ctrl+,**.
-- [ ] macOS exposes the opt-in hosting checkbox; Windows/Linux do not offer an unsupported hosting control.
-- [ ] Enabling hosting locks the host musician's server target to `127.0.0.1`.
+- [ ] First run opens the two-step role-driven setup with no inherited state.
+- [ ] Host/Join cards, musician name, conditional join address, Webex URL, and
+      optional recording input fit at 560×520 with increased font size.
+- [ ] Host shows included Jamulus client/server status; Join asks for one endpoint.
+- [ ] Finishing setup opens Ready Check automatically; failures are actionable.
+- [ ] Detailed Setup can be reopened from **Settings** or **Ctrl+,**.
+- [ ] macOS offers hosting; unsupported platforms clearly disable it.
+- [ ] Host settings derive `127.0.0.1` and protected standard ports.
 
 ## Session Launch and Status Clarity
 

@@ -23,13 +23,11 @@ We're jamming on WebJam. One-time setup (~10 min):
    mic when possible. BlackHole/VB-CABLE is not required for musician talkback.
    Jamulus itself is bundled; on Windows click "Install Jamulus now" if prompted.
 
-4. In the Setup Wizard, enter:
-   - Jamulus server host: <FILL IN>
-   - Jamulus server port: 22124
-   - Webex link: <FILL IN>
-
-   Designated macOS host only: verify bundled JamulusServer.app 3.12.2 and select
-   "This Mac hosts the band server" instead of entering an external host.
+4. In first-run setup, choose **Host the band** or **Join a band**, enter the
+   musician name, and paste the Webex link. Joining musicians enter the single
+   server address supplied by the host; the default port is 22124. The
+   designated macOS host confirms the included server status and never enters
+   an external address.
 
 Questions? Reply here. Full walkthrough: README_SIMPLE.md
 ```
@@ -40,8 +38,8 @@ Questions? Reply here. Full walkthrough: README_SIMPLE.md
    the Setup Wizard's "Install Jamulus now" button). Only install it yourself
    from [jamulus.io](https://jamulus.io) for source/unbundled builds.
 2. Launch WebJam; complete Setup Wizard if prompted.
-3. Choose **Musician with talkback**, then press **F2**. Resolve automated
-   failures and manually VERIFY the native Webex device/mute settings.
+3. Setup defaults to musician talkback and opens Ready Check automatically.
+   Resolve automated failures and manually VERIFY native Webex settings.
 4. Optional: **Ctrl+P** Practice — confirm your meter moves when you play.
 
 ## Two-person Jamulus smoke

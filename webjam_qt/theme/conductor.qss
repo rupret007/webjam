@@ -680,3 +680,87 @@ QLabel#ReadyCheckDetail {
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_SM}px;
 }
+
+/* ── Focused first-run setup ─────────────────────────────────────────── */
+QDialog#FirstRunSetupDialog {
+    background: ${COLOR_BG_BASE};
+}
+
+QLabel#FirstRunTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: 700;
+}
+
+QLabel#FirstRunSubtitle {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+QLabel#FirstRunProgress {
+    color: ${COLOR_ACCENT_VIDEO};
+    background: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: 11px;
+    padding: 4px 10px;
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+}
+
+QCommandLinkButton#FirstRunRoleCard {
+    color: ${COLOR_TEXT_PRIMARY};
+    background: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: 10px 14px;
+    text-align: left;
+}
+
+QCommandLinkButton#FirstRunRoleCard:hover {
+    background: ${COLOR_BG_CARD};
+    border-color: ${COLOR_TEXT_MUTED};
+}
+
+QCommandLinkButton#FirstRunRoleCard:checked,
+QCommandLinkButton#FirstRunRoleCard:focus {
+    background: rgba(61, 211, 211, 0.10);
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QCommandLinkButton#FirstRunRoleCard:disabled {
+    color: ${COLOR_TEXT_MUTED};
+    background: ${COLOR_BG_INPUT};
+}
+
+QLabel#FirstRunFieldLabel {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+}
+
+QLabel#FirstRunBody {
+    color: ${COLOR_TEXT_SECONDARY};
+}
+
+QLabel#FirstRunStatus {
+    color: ${COLOR_TEXT_SECONDARY};
+    background: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+    padding: 8px 10px;
+}
+
+QLabel#FirstRunError {
+    color: ${COLOR_ACCENT_WARN};
+    min-height: 16px;
+}
+
+QLabel#FirstRunSignalFlow {
+    color: ${COLOR_TEXT_SECONDARY};
+    background: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+    padding: 12px;
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: 600;
+}

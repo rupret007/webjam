@@ -8,6 +8,13 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### All-in-one hosting and the lobby redesign
 
+- **First-run setup is now two focused, modern steps.** A dedicated responsive
+  dialog asks only Host/Join role, musician identity, the conditional join
+  endpoint, Webex URL, and optional local recording input. It defaults to
+  Jamulus music plus Webex talkback and opens Ready Check automatically.
+  Ports, executable paths, routing modes, folders, and public-server options
+  remain in the detailed in-app Settings flow.
+
 - **First-time macOS hosts are now self-contained.** ARM64 and Intel artifacts
   bundle the official, unmodified, notarized JamulusServer.app 3.12.2 beside
   the Jamulus client. Setup and Ready Check distinguish bundled and installed
@@ -36,7 +43,7 @@ All notable improvements and features for the WebJam music collaboration platfor
   JamulusServer.app 3.12.2 on Apple Silicon: UDP 22124 and loopback RPC 22240
   opened, the secret remained mode 0600, recorder status authenticated, Record
   armed/stopped successfully, and shutdown left no server/caffeinate orphan.
-- Final audit validation passes 985 tests with 12 expected skips and 6
+- Current local validation passes 1,037 tests with 12 expected skips and 6
   subtests, all 11 official-binary integration tests, Ruff, compile,
   dependency/vulnerability checks, UX smoke, and the 20-document link/security
   review. A clean ARM64 v0.8.1 bundle passes metadata/resource inspection,

@@ -223,7 +223,11 @@ JamulusController background thread
 
 - Closed-pilot-ready, not broad-release-ready; real-hardware gates still need
   the two-Mac Jamulus/Webex/recording/Take Deck soak and exact-artifact checks.
-- Downloadable builds bundle Jamulus (macOS: zero-install nested `Jamulus.app`; Windows: bundled installer the Setup Wizard can launch — see `THIRD_PARTY_NOTICES.md`); the first-run wizard still requires a resolvable executable path before setup can complete, and running from source needs Jamulus installed separately since the bundling only happens in the PyInstaller build.
+- Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
+  Windows: bundled client installer). `FirstRunSetupDialog` detects those
+  components and asks only for role/identity, join endpoint, Webex URL, and
+  optional capture. The detailed `SetupWizard` remains the in-app Settings
+  surface; source runs still require compatible Jamulus apps separately.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
 - Native Webex is launched externally. WebJam cannot observe its participant,
   device, microphone, video, leave, or reconnect state; Ready Check therefore

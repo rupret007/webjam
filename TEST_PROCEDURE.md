@@ -42,6 +42,9 @@ clean install/first launch, Ready Check including its manual Webex `VERIFY`
 rows, Ctrl+P real audio, two-person Jamulus, muted-by-default native Webex
 talkback, Talk Break fail-safe behavior, Session Pulse export, Record, take
 playback, Logic/WAV-stem inspection, reconnect, and a 45–60 minute soak.
+The clean first launch must use the responsive two-step Host/Join dialog at
+560×520 or larger, show no expert-only ports/paths/routing, persist privately,
+and open Ready Check immediately after Finish Setup.
 On the designated host, also require **Host & Start Audio**, authenticated RPC
 22240, `Server: Hosting :22124`, recorder start/stop, Stop Audio without server
 teardown, and clean owned-server shutdown. An already-running manual server

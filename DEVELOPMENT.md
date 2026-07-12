@@ -65,10 +65,10 @@ python webjam_qt_main.py          # Qt Conductor UI (current)
 python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
-On first launch a setup wizard runs automatically to configure the Jamulus
-server, Webex URL, Webex audio role, and optional supplemental local capture.
-Only audience-bridge mode scans for a loopback device. You can reopen Setup
-with **Ctrl+,** or the Settings button in the left rail.
+On first launch a two-step dialog asks only whether this Mac hosts or joins,
+the musician/server identity, the Webex URL, and optional local capture input.
+It defaults to talkback and opens Ready Check automatically. Detailed ports,
+paths, alternative Webex modes, and routing remain in **Settings** (`Ctrl+,`).
 
 Release artifacts bundle the official dedicated JamulusServer.app 3.12.2;
 source-run hosting uses the compatible app in `/Applications`. Use

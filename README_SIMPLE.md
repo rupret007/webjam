@@ -31,7 +31,7 @@ Unzip it and run the **WebJam** app inside. **The first launch will trigger a se
 
 Every band member installs WebJam and uses its bundled Jamulus client:
 
-1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** the Setup Wizard's Jamulus page has an "Install Jamulus now" button that runs the bundled installer for you. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
+1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** first-run setup offers **Install Jamulus** when needed. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
 2. **Native Webex**, preferably with a dedicated webcam/USB/headset speech mic.
    The existing music interface is an acceptable push-to-talk fallback when
    nobody is playing. Both applications send output to wired interface headphones.
@@ -59,23 +59,17 @@ Send the band the **Jamulus server host + port** and the **Webex link**. That's 
 
 ## First launch (each member)
 
-The first time you open WebJam, a short setup wizard runs:
+The first time you open WebJam, two focused steps appear:
 
-1. **Welcome** — a quick overview; downloadable builds bundle Jamulus, so most people can just continue.
-2. **Jamulus Server** — ordinary musicians enter the **host** and **port** the
-   band admin shared. The designated macOS host selects **This Mac hosts the
-   band server**; WebJam locks its connection to `127.0.0.1` and requires the
-   bundled official `JamulusServer.app` 3.12.2. Leave **Local
-   Jamulus control port** at `22222`; recorder control remains loopback-only
-   `22240`. The Jamulus *client* path is usually pre-filled (macOS: bundled;
-   Windows: use **Install Jamulus now** if offered).
-3. **Webex Meeting** — paste the meeting link.
-4. **Music and Talkback** — choose **Musician with talkback** for the normal
-   workflow, **Video only** to disconnect Webex audio, or the advanced
-   **Audience broadcast bridge**. Optionally enable supplemental local stems.
-5. **Configuration saved** — click Finish. WebJam opens the Conductor and runs **Ready Check**; fix anything it flags before your first jam.
+1. **Choose your setup** — select **Host the band** or **Join a band**, then
+   enter your musician name. A host uses the included server automatically;
+   a joining musician enters the single address shared by the host.
+2. **Webex and recording** — paste the meeting link and optionally select an
+   isolated local recording input.
 
-You can rerun this any time from **Settings** (`Ctrl+,`).
+Click **Finish Setup**. WebJam opens the lobby and runs **Ready Check**
+automatically. Ports, executable paths, alternative Webex modes, recording
+folders, and public-server options remain in **Settings** (`Ctrl+,`).
 
 ### Echo-safe Webex talkback for the pilot
 
