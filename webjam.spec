@@ -16,15 +16,16 @@
 #     --username your@apple.id --password @keychain:AC_PASSWORD \
 #     --file dist/WebJam.app
 #
-#   CAVEAT: dist/WebJam.app/Contents/Resources/Jamulus.app (bundled by CI,
+#   CAVEAT: the Jamulus client/server apps nested under Resources by CI
 #   see .github/workflows/ci.yml) is ALREADY signed and notarized by the
-#   Jamulus project itself. `codesign --deep` re-signs every nested bundle
+#   are already signed and notarized by the Jamulus project. `codesign --deep`
+#   re-signs every nested bundle
 #   it finds, which would overwrite that existing Developer ID signature
 #   with your own and invalidate Jamulus's notarization ticket. If signing
 #   locally, sign nested non-Apple binaries individually first (bottom-up),
 #   then sign only the outer WebJam.app without `--deep`. CI uses this shallow
 #   signing pattern to refresh WebJam's resource seal after adding Jamulus
-#   while preserving Jamulus's upstream signature and notarization ticket.
+#   while preserving both upstream signatures and notarization tickets.
 #
 # Windows — sign after building:
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
@@ -208,7 +209,7 @@ coll = COLLECT(
 )
 
 if sys.platform == "darwin":
-    # NOTE: the bundled Jamulus.app (macOS's zero-install Jamulus bundling —
+    # NOTE: the bundled Jamulus client/server apps (macOS zero-install —
     # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
     # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
     # must be `ditto`'d in whole and unmodified (to preserve its Apple code

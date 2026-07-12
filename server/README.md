@@ -22,10 +22,10 @@ The status bar then reads `Server: External :22124`. WebJam never terminates
 or stops recording on an adopted process when it quits. A server WebJam starts
 itself is reported as `Server: Hosting :22124` and is stopped on WebJam quit.
 
-Install both official Jamulus 3.12.2 apps from the macOS disk image:
-`/Applications/Jamulus.app` is the musician client and
-`/Applications/JamulusServer.app` is the dedicated server. The downloadable
-WebJam app bundles the client, but not the dedicated server. The Mac can run
+Downloadable WebJam builds include both official Jamulus 3.12.2 apps. Source
+checkouts and the manual fallback below use `/Applications/Jamulus.app` as the
+musician client and `/Applications/JamulusServer.app` as the dedicated server.
+The Mac can run
 the server and its own WebJam client simultaneously because the
 WebJam-launched client keeps JSON-RPC `22222`, while recorder control uses
 loopback-only `22240`.

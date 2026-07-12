@@ -21,8 +21,9 @@ For this pilot choose **Musician with talkback** on both Macs. BlackHole and
    muted while playing and no instrument is played while Space is held.
 4. Join Webex muted. Choose macOS **Standard** Mic Mode and Webex **Optimize for
    My Voice**. Do not use Music Mode for speech talkback.
-5. Install the official Jamulus 3.12.2 `JamulusServer.app` and enable
-   *"This Mac hosts the band server"* in WebJam's Setup — **Start Audio**
+5. In the downloadable macOS build, confirm Setup detects the bundled official
+   Jamulus 3.12.2 `JamulusServer.app`, then enable *"This Mac hosts the band
+   server"* — **Start Audio**
    then starts and supervises the server for you (the manual
    `server/start_macos_pilot.sh` remains the fallback). Verify:
 

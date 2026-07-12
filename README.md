@@ -20,7 +20,7 @@ download until the real-hardware pilot gates pass.
 | **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` is the entry point. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install, Windows offers an in-wizard installer (see `THIRD_PARTY_NOTICES.md`); running from source still requires installing it separately. |
-| **All-in-one band-server hosting** | ✅ **macOS v0.8.1 candidate.** The host can enable **This Mac hosts the band server** and use **Host & Start Audio**. WebJam verifies the separately installed official JamulusServer.app 3.12.2, binds recorder RPC to loopback, stores its 0600 secret/takes in the server sandbox, supervises the process, and keeps it alive through Stop Audio. An existing server is adopted only after authenticated recorder verification. The dedicated server app is not bundled. |
+| **All-in-one band-server hosting** | ✅ **macOS v0.8.1 candidate.** The host can enable **This Mac hosts the band server** and use **Host & Start Audio**. WebJam verifies its bundled official JamulusServer.app 3.12.2, binds recorder RPC to loopback, stores its 0600 secret/takes in the server sandbox, supervises the process, and keeps it alive through Stop Audio. An existing server is adopted only after authenticated recorder verification. |
 | **Webex integration** | ✅ **Native external launch.** WebJam opens the configured room in native Webex/default browser and truthfully reports only that it was opened. Musician talkback, video-only, and advanced audience-bridge roles are explicit; WebJam never stores Webex credentials or pretends to observe native meeting state. |
 | **Session canvas + Pulse** | ✅ **v0.8.1 candidate.** Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
 | **Audio routing** | ⚠️ **Guidance and detection.** Jamulus is the music path; native Webex can be a separate speech path. Only advanced audience-bridge mode scans for VB-CABLE/BlackHole. Users still select devices in Jamulus, macOS/Windows, and Webex. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md). |
@@ -65,8 +65,8 @@ System requirements:
 - Windows 10/11 or macOS 12+
 - Jamulus client installed separately (running from source doesn't bundle it —
   see `THIRD_PARTY_NOTICES.md` for how downloadable builds do) + Webex (web or desktop)
-- Hosting on macOS additionally requires the official dedicated
-  `/Applications/JamulusServer.app` 3.12.2; it is deliberately not bundled
+- Downloadable macOS builds include official Jamulus client/server 3.12.2;
+  source runs use compatible apps in `/Applications`
 - Broadband network with <30 ms latency to your Jamulus server
 
 ---

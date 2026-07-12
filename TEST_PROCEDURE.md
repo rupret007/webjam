@@ -49,7 +49,8 @@ may show `Server: External :22124` only after recorder authentication and must
 survive WebJam quit.
 For each macOS artifact, require `codesign --verify --strict` on the completed
 outer WebJam bundle and the nested Jamulus bundle. Confirm the nested Jamulus
-CDHash is unchanged across the outer shallow-sign step, then test a
+client and server CDHashes are unchanged across the outer shallow-sign step,
+then test a
 quarantined extraction: Gatekeeper may show the documented unsigned-pilot
 warning, but must never report a missing/invalid sealed resource or a damaged
 application.

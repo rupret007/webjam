@@ -65,7 +65,7 @@ The first time you open WebJam, a short setup wizard runs:
 2. **Jamulus Server** — ordinary musicians enter the **host** and **port** the
    band admin shared. The designated macOS host selects **This Mac hosts the
    band server**; WebJam locks its connection to `127.0.0.1` and requires the
-   separately installed official `JamulusServer.app` 3.12.2. Leave **Local
+   bundled official `JamulusServer.app` 3.12.2. Leave **Local
    Jamulus control port** at `22222`; recorder control remains loopback-only
    `22240`. The Jamulus *client* path is usually pre-filled (macOS: bundled;
    Windows: use **Install Jamulus now** if offered).

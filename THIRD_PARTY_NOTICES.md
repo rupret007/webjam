@@ -26,9 +26,9 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     WebJam launches it as a separate OS process and talks to it only over
     its public JSON-RPC/UDP interfaces — it is never linked against or
     merged into WebJam's own code.
-    The separate `JamulusServer.app` used by optional in-app band-server
-    hosting is **not bundled**; the designated host installs that official
-    app independently from the same Jamulus 3.12.2 disk image.
+    The same release's Apple-signed, notarized `JamulusServer.app` is nested
+    unmodified beside the client so a designated host needs no separate
+    install. WebJam launches each as an independent process.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so WebJam ships that unmodified installer inside
     its own install directory (`Jamulus/jamulus_3.12.2_win.exe`) and offers

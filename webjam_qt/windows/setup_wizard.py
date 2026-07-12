@@ -198,17 +198,22 @@ class _JamulusPage(QWizardPage):
 
         host_section = _section_label("Band server")
         layout.addWidget(host_section)
-        self._host_server = QCheckBox(
-            "This Mac hosts the band server (requires JamulusServer.app 3.12.2)"
-        )
+        self._host_server = QCheckBox("This Mac hosts the band server")
         hosting_supported = sys.platform == "darwin"
         self._host_server.setChecked(hosting_supported and bool(
             getattr(settings, "host_server_enabled", False)
         ))
         self._host_server.setAccessibleName("Host the band server on this Mac")
         layout.addWidget(self._host_server)
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        server_availability = (
+            "The downloadable macOS build includes JamulusServer.app 3.12.2. "
+            if _bundled_jamulus_server_candidate()
+            else "Source builds require official JamulusServer.app 3.12.2. "
+        )
         self._host_note = QLabel(
-            "A server WebJam starts stays up through Stop Audio and stops "
+            server_availability
+            + "A server WebJam starts stays up through Stop Audio and stops "
             "when WebJam quits. An authenticated manual server is adopted "
             "without WebJam taking ownership. "
             "Recordings and the recorder secret live in the server app's "

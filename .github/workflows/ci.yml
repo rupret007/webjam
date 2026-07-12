@@ -169,6 +169,7 @@ jobs:
           # own CI-friendly install docs).
           yes | hdiutil attach jamulus.dmg -nobrowse -mountpoint "$RUNNER_TEMP/jamulus_mnt"
           ditto "$RUNNER_TEMP/jamulus_mnt/Jamulus.app" "$RUNNER_TEMP/Jamulus.app"
+          ditto "$RUNNER_TEMP/jamulus_mnt/JamulusServer.app" "$RUNNER_TEMP/JamulusServer.app"
           hdiutil detach "$RUNNER_TEMP/jamulus_mnt" -force
 
       - name: Build desktop artifact
@@ -185,7 +186,7 @@ jobs:
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
           else
-            # Nest the bundled Jamulus.app (unmodified, Apple-notarized) and
+            # Nest Jamulus client/server (unmodified, Apple-notarized) and
             # its license text into WebJam.app before zipping, so a fresh
             # install works with zero configuration. Jamulus.app is copied
             # in as-is. Afterward, refresh only WebJam's outer ad-hoc seal;
@@ -193,12 +194,15 @@ jobs:
             # Developer ID signature and invalidate its notarization ticket.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
+            ditto "$RUNNER_TEMP/JamulusServer.app" \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app
             cp licenses/JAMULUS_COPYING.txt \
               dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/theme/conductor.qss
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/webex_widget.html
             test -x dist/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus
+            test -x dist/WebJam.app/Contents/Resources/JamulusServer.app/Contents/MacOS/JamulusServer
             expected_version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
@@ -209,6 +213,9 @@ jobs:
             jamulus_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            server_cdhash_before="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             codesign --force --sign - dist/WebJam.app
             codesign --verify --strict dist/WebJam.app
 
@@ -216,11 +223,18 @@ jobs:
             # signature byte-for-byte and that it remains valid.
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/Jamulus.app
+            codesign --verify --strict \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app
             jamulus_cdhash_after="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            server_cdhash_after="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             test -n "$jamulus_cdhash_before"
             test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
+            test -n "$server_cdhash_before"
+            test "$server_cdhash_before" = "$server_cdhash_after"
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \

@@ -11,7 +11,7 @@ failure you find solo is one you don't debug live with four people.
 **A. Pick a Jamulus server.** Three options:
 
 - *Weekend pilot / best all-in-one path:* on the designated macOS host,
-  install the official dedicated `JamulusServer.app` 3.12.2, enable **This Mac
+  verify the bundled official dedicated `JamulusServer.app` 3.12.2, enable **This Mac
   hosts the band server** in WebJam Setup, and use **Host & Start Audio**.
   WebJam provisions recorder control, supervises the server, and connects the
   host client over loopback. Follow [`server/README.md`](server/README.md).

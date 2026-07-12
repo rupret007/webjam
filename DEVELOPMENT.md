@@ -70,8 +70,8 @@ server, Webex URL, Webex audio role, and optional supplemental local capture.
 Only audience-bridge mode scans for a loopback device. You can reopen Setup
 with **Ctrl+,** or the Settings button in the left rail.
 
-Testing macOS in-app hosting additionally requires the official dedicated
-`/Applications/JamulusServer.app` 3.12.2. It is not bundled in WebJam. Use
+Release artifacts bundle the official dedicated JamulusServer.app 3.12.2;
+source-run hosting uses the compatible app in `/Applications`. Use
 `tests/test_hosted_server.py` for the ownership/adoption matrix; the manual
 hardware lifecycle in `TEST_PROCEDURE.md` must use the server app's sandbox
 container for its secret and recordings.

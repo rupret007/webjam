@@ -45,6 +45,26 @@ def _bundled_jamulus_candidate() -> Optional[str]:
     return str(candidate) if candidate.is_file() else None
 
 
+def _bundled_jamulus_server_candidate() -> Optional[str]:
+    """Return the dedicated server nested in a frozen macOS build.
+
+    Release artifacts copy the official, unmodified ``JamulusServer.app``
+    next to the bundled client.  Resolve from ``sys.executable`` so this also
+    works when Gatekeeper launches WebJam through App Translocation.
+    """
+    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return None
+    try:
+        macos_dir = Path(sys.executable).resolve().parent
+        candidate = (
+            macos_dir.parent / "Resources" / "JamulusServer.app"
+            / "Contents" / "MacOS" / "JamulusServer"
+        )
+    except OSError:
+        return None
+    return str(candidate) if candidate.is_file() else None
+
+
 def _bundled_jamulus_installer() -> Optional[str]:
     """Path to the bundled Jamulus Windows installer, if present.
 
@@ -738,12 +758,19 @@ class BridgeService:
     )
     HOSTED_SERVER_VERSION = "3.12.2"
 
-    def find_jamulus_server(self) -> Optional[str]:
-        """Locate the dedicated JamulusServer.app binary (macOS pilot)."""
+    def find_jamulus_server_with_source(self) -> tuple[Optional[str], str]:
+        """Locate the installed or bundled dedicated server and its source."""
         candidate = Path(self.JAMULUS_SERVER_BINARY)
         if candidate.is_file():
-            return str(candidate)
-        return None
+            return str(candidate), "installed"
+        bundled = _bundled_jamulus_server_candidate()
+        if bundled:
+            return bundled, "bundled"
+        return None, "missing"
+
+    def find_jamulus_server(self) -> Optional[str]:
+        """Locate the dedicated JamulusServer.app binary (macOS pilot)."""
+        return self.find_jamulus_server_with_source()[0]
 
     def hosted_server_owned(self) -> bool:
         """Whether WebJam owns a live server subprocess it may terminate."""
@@ -847,12 +874,13 @@ class BridgeService:
                 )
                 return True, "authenticated external server adopted"
 
-            binary = self.find_jamulus_server()
+            binary, server_source = self.find_jamulus_server_with_source()
             if not binary:
                 return False, (
-                    "JamulusServer.app 3.12.2 is not installed in "
-                    "/Applications. Install it from the official Jamulus "
-                    "3.12.2 macOS disk image, then press Start Audio again."
+                    "JamulusServer.app 3.12.2 is not available. Downloadable "
+                    "macOS builds include it; source builds can use the "
+                    "official app in /Applications. Reinstall WebJam or "
+                    "install the server, then press Start Audio again."
                 )
             try:
                 probe = subprocess.run(
@@ -953,11 +981,11 @@ class BridgeService:
                 verified, _reason = self._probe_hosted_server_rpc()
                 if verified:
                     LOGGER.info(
-                        "Hosted band server ready on UDP %s / RPC %s",
-                        udp_port, rpc_port,
+                        "Hosted band server (%s) ready on UDP %s / RPC %s",
+                        server_source, udp_port, rpc_port,
                     )
                     self.metrics_service.increment("metric_host_server_started")
-                    return True, "started"
+                    return True, f"started from {server_source} app"
                 time.sleep(0.15)
             self.stop_hosted_server()
             return False, (

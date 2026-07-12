@@ -28,7 +28,7 @@ We're jamming on WebJam. One-time setup (~10 min):
    - Jamulus server port: 22124
    - Webex link: <FILL IN>
 
-   Designated macOS host only: install JamulusServer.app 3.12.2 and select
+   Designated macOS host only: verify bundled JamulusServer.app 3.12.2 and select
    "This Mac hosts the band server" instead of entering an external host.
 
 Questions? Reply here. Full walkthrough: README_SIMPLE.md

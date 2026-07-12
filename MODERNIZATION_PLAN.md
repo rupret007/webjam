@@ -63,6 +63,12 @@
 
 ## Verification completed so far
 
+- The macOS artifact now includes both official Jamulus 3.12.2 application
+  bundles, enabling a clean first-time host without a separate server install.
+  Discovery prefers a compatible `/Applications` server and falls back to the
+  nested server, including under App Translocation. CI preserves and verifies
+  both upstream signatures/CDHashes while refreshing WebJam's outer seal.
+
 - Targeted parser, canvas/export, Pulse controller, debounce, and chat tests
   pass: 32 tests plus 3 width subtests.
 - Brief cancellation and write failure, stale-state fallback, safe plain-text

@@ -287,7 +287,7 @@ class TestBundledJamulusCandidate(unittest.TestCase):
         with patch.object(sys, "frozen", True, create=True), \
              patch.object(sys, "platform", "darwin"), \
              patch.object(sys, "executable",
-                           "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
+                          "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
              patch("pathlib.Path.is_file", return_value=True):
             result = _bundled_jamulus_candidate()
         self.assertEqual(
@@ -301,10 +301,67 @@ class TestBundledJamulusCandidate(unittest.TestCase):
         with patch.object(sys, "frozen", True, create=True), \
              patch.object(sys, "platform", "darwin"), \
              patch.object(sys, "executable",
-                           "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
+                          "/Applications/WebJam.app/Contents/MacOS/WebJam"), \
              patch("pathlib.Path.is_file", return_value=False):
             self.assertIsNone(_bundled_jamulus_candidate())
 
+
+class TestBundledJamulusServerCandidate(unittest.TestCase):
+    """macOS host bundling: the dedicated signed server travels with WebJam."""
+
+    def test_returns_none_when_not_frozen(self):
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        with patch.object(sys, "frozen", False, create=True):
+            self.assertIsNone(_bundled_jamulus_server_candidate())
+
+    def test_returns_none_on_non_macos(self):
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "win32"):
+            self.assertIsNone(_bundled_jamulus_server_candidate())
+
+    def test_returns_nested_server_when_present(self):
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"), \
+             patch.object(
+                 sys, "executable",
+                 "/Applications/WebJam.app/Contents/MacOS/WebJam",
+             ), patch("pathlib.Path.is_file", return_value=True):
+            result = _bundled_jamulus_server_candidate()
+        self.assertEqual(
+            result,
+            "/Applications/WebJam.app/Contents/Resources/JamulusServer.app"
+            "/Contents/MacOS/JamulusServer",
+        )
+
+    def test_app_translocation_path_is_resolved_relative_to_executable(self):
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        executable = (
+            "/private/var/folders/x/AppTranslocation/UUID/d/WebJam.app/"
+            "Contents/MacOS/WebJam"
+        )
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"), \
+             patch.object(sys, "executable", executable), \
+             patch("pathlib.Path.is_file", return_value=True):
+            result = _bundled_jamulus_server_candidate()
+        self.assertEqual(
+            result,
+            "/private/var/folders/x/AppTranslocation/UUID/d/WebJam.app/"
+            "Contents/Resources/JamulusServer.app/Contents/MacOS/"
+            "JamulusServer",
+        )
+
+    def test_returns_none_when_nested_server_missing(self):
+        from services.bridge_service import _bundled_jamulus_server_candidate
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "platform", "darwin"), \
+             patch.object(
+                 sys, "executable",
+                 "/Applications/WebJam.app/Contents/MacOS/WebJam",
+             ), patch("pathlib.Path.is_file", return_value=False):
+            self.assertIsNone(_bundled_jamulus_server_candidate())
 
 class TestBundledJamulusInstaller(unittest.TestCase):
     """Windows bundling: a Jamulus/ dir shipped next to WebJam.exe."""

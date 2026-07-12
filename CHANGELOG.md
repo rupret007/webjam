@@ -8,6 +8,11 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### All-in-one hosting and the lobby redesign
 
+- **First-time macOS hosts are now self-contained.** ARM64 and Intel artifacts
+  bundle the official, unmodified, notarized JamulusServer.app 3.12.2 beside
+  the Jamulus client. Setup and Ready Check distinguish bundled and installed
+  sources; source checkouts retain `/Applications` as a fallback.
+
 - **WebJam now hosts the band server.** Enable "This Mac hosts the band
   server" in Setup and Start Audio verifies JamulusServer.app 3.12.2, checks
   ports, provisions the protected recorder secret and recordings folder in

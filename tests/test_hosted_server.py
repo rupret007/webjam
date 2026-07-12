@@ -49,6 +49,10 @@ def _make_bridge(tmp: str):
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
+    bridge.find_jamulus_server_with_source = MagicMock(return_value=(
+        "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer",
+        "installed",
+    ))
     return bridge
 
 
@@ -282,6 +286,47 @@ class TestEnsureHostedServer(unittest.TestCase):
             self.assertEqual(bridge.effective_server(), "127.0.0.1:22124")
 
 
+class TestHostedServerDiscovery(unittest.TestCase):
+    def _real_discovery_bridge(self, tmp):
+        bridge = _make_bridge(tmp)
+        del bridge.find_jamulus_server_with_source
+        return bridge
+
+    def test_installed_server_precedes_bundled_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = self._real_discovery_bridge(tmp)
+            with patch.object(Path, "is_file", return_value=True), patch(
+                "services.bridge_service._bundled_jamulus_server_candidate",
+                return_value="/bundled/JamulusServer",
+            ) as bundled:
+                result = bridge.find_jamulus_server_with_source()
+            self.assertEqual(result, (
+                "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer",
+                "installed",
+            ))
+            bundled.assert_not_called()
+
+    def test_bundled_server_is_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = self._real_discovery_bridge(tmp)
+            with patch.object(Path, "is_file", return_value=False), patch(
+                "services.bridge_service._bundled_jamulus_server_candidate",
+                return_value="/bundled/JamulusServer",
+            ):
+                result = bridge.find_jamulus_server_with_source()
+            self.assertEqual(result, ("/bundled/JamulusServer", "bundled"))
+
+    def test_missing_server_is_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = self._real_discovery_bridge(tmp)
+            with patch.object(Path, "is_file", return_value=False), patch(
+                "services.bridge_service._bundled_jamulus_server_candidate",
+                return_value=None,
+            ):
+                result = bridge.find_jamulus_server_with_source()
+            self.assertEqual(result, (None, "missing"))
+
+
 class _Immediate:
     def __init__(self, *args, target=None, daemon=None, name=None, **kwargs):
         self._target = target
@@ -367,6 +412,19 @@ class TestHostedPreflight(unittest.TestCase):
             item = preflight._check_hosted_server(s)
         self.assertFalse(item.ok)
         self.assertIn("3.12.2", item.detail)
+
+    def test_hosted_check_accepts_and_labels_bundled_server(self):
+        from core import preflight
+        s = SimpleNamespace(host_server_enabled=True)
+        with patch("core.preflight.sys.platform", "darwin"), \
+             patch.object(Path, "is_file", return_value=False), \
+             patch(
+                 "services.bridge_service._bundled_jamulus_server_candidate",
+                 return_value="/WebJam/Resources/JamulusServer",
+             ), patch("subprocess.run", return_value=_version_ok()):
+            item = preflight._check_hosted_server(s)
+        self.assertTrue(item.ok)
+        self.assertIn("bundled", item.detail)
 
     def test_hosted_check_absent_when_not_hosting(self):
         from core import preflight

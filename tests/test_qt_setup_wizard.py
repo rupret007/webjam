@@ -155,6 +155,18 @@ class TestJamulusPage(unittest.TestCase):
             self.assertEqual(page.host, "127.0.0.1")
             self.assertFalse(page._host.isEnabled())
 
+    def test_hosting_copy_reports_bundled_server(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        with patch("webjam_qt.windows.setup_wizard.sys.platform", "darwin"), \
+             patch(
+                 "services.bridge_service._bundled_jamulus_server_candidate",
+                 return_value="/WebJam/Resources/JamulusServer",
+             ):
+            page = _JamulusPage(AppSettings(host_server_enabled=True))
+        self.assertIn("includes JamulusServer.app 3.12.2", page._host_note.text())
+        self.assertNotIn("requires JamulusServer", page._host_server.text())
+
     def test_hosting_control_is_unavailable_off_macos(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage
 

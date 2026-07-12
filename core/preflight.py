@@ -321,22 +321,28 @@ def _check_hosted_server(settings) -> "CheckItem | None":
             False,
             "in-app band-server hosting is currently supported only on macOS",
         )
-    binary = Path(
+    from services.bridge_service import _bundled_jamulus_server_candidate
+
+    installed = Path(
         "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
-    if not binary.is_file():
+    bundled = _bundled_jamulus_server_candidate()
+    installed_available = installed.is_file()
+    binary = str(installed) if installed_available else bundled
+    source = "installed" if installed_available else "bundled"
+    if not binary:
         return CheckItem(
             "Band server (hosted)",
             False,
-            "JamulusServer.app is not installed — install the dedicated "
-            "server from the official Jamulus 3.12.2 macOS disk image, or "
-            "turn off hosting in Settings.",
+            "JamulusServer.app is unavailable — reinstall the downloadable "
+            "WebJam build, install the official 3.12.2 server for a source "
+            "build, or turn off hosting in Settings.",
         )
     try:
         import subprocess
 
         probe = subprocess.run(
-            [str(binary), "--version"],
+            [binary, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -357,7 +363,8 @@ def _check_hosted_server(settings) -> "CheckItem | None":
     return CheckItem(
         "Band server (hosted)",
         True,
-        "JamulusServer.app 3.12.2 verified — WebJam starts it with Start Audio",
+        f"JamulusServer.app 3.12.2 verified ({source}) — WebJam starts it "
+        "with Start Audio",
     )
 
 

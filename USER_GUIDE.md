@@ -111,9 +111,10 @@ The first time you run WebJam, a Setup Wizard will open automatically. It has 5 
 1. **Welcome** — Overview of what WebJam does
 2. **Jamulus Server** — Ordinary musicians enter the shared server host/port.
    The one designated macOS host selects **This Mac hosts the band server**;
-   WebJam then fixes that musician's connection to loopback and requires the
-   separately installed official `JamulusServer.app` 3.12.2. The Jamulus
-   *client* path is bundled on macOS; Windows offers **Install Jamulus now**.
+   WebJam then fixes that musician's connection to loopback. Downloadable
+   macOS builds include the official Jamulus client and `JamulusServer.app`
+   3.12.2; source runs may use an official copy in `/Applications`. Windows
+   offers **Install Jamulus now** for the client.
    Leave local client RPC at 22222. Hosted recorder RPC is loopback-only 22240.
 3. **Webex Meeting** — Enter your Webex meeting link
 4. **Music and Talkback** — choose **Musician with talkback** (recommended),
