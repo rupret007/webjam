@@ -280,8 +280,10 @@ def _check_recorder(settings) -> CheckItem:
         return CheckItem(
             "Host recorder",
             False,
-            "couldn't reach the band server's recorder — check the SSH "
-            "tunnel, RPC port, and secret file, then run Ready Check again. "
+            "couldn't reach the band server's recorder — is the server "
+            "running? Same Mac: start it with server/start_macos_pilot.sh. "
+            "Remote Linux: check the SSH tunnel. Then verify the RPC port "
+            "and secret file and run Ready Check again. "
             f"(Details: {exc})",
         )
 

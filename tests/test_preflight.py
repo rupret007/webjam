@@ -181,6 +181,9 @@ class TestReadyCheck(unittest.TestCase):
         self.assertFalse(item.ok)
         self.assertIn("Ready Check", item.detail)
         self.assertIn("connection refused", item.detail)
+        # The pilot topology is same-Mac: lead with "is the server running"
+        # and name the start script before the remote-Linux SSH hint.
+        self.assertIn("start_macos_pilot.sh", item.detail)
 
     def test_webex_missing(self):
         with tempfile.NamedTemporaryFile() as jam:
