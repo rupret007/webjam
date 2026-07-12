@@ -23,13 +23,17 @@ class SessionUiState:
     primary_text: str = "Start Audio"
     primary_enabled: bool = True
     show_ready_check: bool = True
+    show_practice: bool = False
+    hint: str = ""
 
     @classmethod
-    def idle(cls) -> "SessionUiState":
+    def idle(cls, server: str = "") -> "SessionUiState":
         return cls(
             SessionPhase.NOT_CONNECTED,
             "Ready when you are",
             "Run a quick check, then start audio to join your band.",
+            show_practice=True,
+            hint=f"Audio joins {server}" if server else "",
         )
 
     @classmethod

@@ -82,18 +82,15 @@ class ConductorWindow(QMainWindow):
         stage_layout.setContentsMargins(0, 0, 0, 0)
         stage_layout.setSpacing(0)
 
-        stage_header = QLabel("STAGE")
-        stage_header.setObjectName("StageHeader")
-        stage_layout.addWidget(stage_header)
-        stage_layout.addWidget(self.participant_grid, stretch=3)
-        stage_layout.addWidget(self.webex_embed, stretch=2)
+        stage_layout.addWidget(self.participant_grid, stretch=1)
+        stage_layout.addWidget(self.webex_embed)
 
         self.center_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.center_splitter.addWidget(stage_container)
         self.center_splitter.addWidget(self.session_canvas)
         self.center_splitter.setStretchFactor(0, 3)
         self.center_splitter.setStretchFactor(1, 1)
-        self.center_splitter.setSizes([int(self.DEFAULT_WIDTH * 0.72), int(self.DEFAULT_WIDTH * 0.28)])
+        self.center_splitter.setSizes([int(self.DEFAULT_WIDTH * 0.76), int(self.DEFAULT_WIDTH * 0.24)])
         # Never collapse a pane to zero — a hidden stage or canvas mid-jam
         # looks like data loss and has no obvious restore affordance.
         self.center_splitter.setCollapsible(0, False)
@@ -283,6 +280,7 @@ class ConductorWindow(QMainWindow):
             strip._video_button,
             *self.side_rail._group.buttons(),
             self.participant_grid._empty_primary,
+            self.participant_grid._empty_practice,
             self.participant_grid._empty_ready,
             self.webex_embed.fallback_button(),
             *self.session_canvas._toolbar_buttons,

@@ -29,6 +29,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import QObject, QUrl, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -135,10 +136,10 @@ class WebexEmbed(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("WebexEmbed")
-        # Native Webex is the supported path. Keep this as a compact launch
-        # and guidance card rather than reserving stage space for a browser.
-        self.setMinimumHeight(112)
-        self.setMaximumHeight(156)
+        # Native Webex is the supported path. Keep this as a slim launch bar
+        # rather than reserving stage space for a browser.
+        self.setMinimumHeight(64)
+        self.setMaximumHeight(96)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         # Optional telemetry hook: called with a metric key string when the
@@ -575,20 +576,26 @@ class WebexEmbed(QFrame):
 
         self._title_label = QLabel("Webex talkback")
         self._title_label.setObjectName("WebexEmbedTitle")
-        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._title_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         self._mode_label = QLabel(
             "Music stays in Jamulus. Join Webex muted; hold Space only "
             "during a Talk Break."
         )
-        self._mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._mode_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         self._mode_label.setWordWrap(True)
         self._mode_label.setObjectName("BodyLabel")
 
         self._status_label = QLabel("Webex has not been opened from WebJam yet.")
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         self._status_label.setWordWrap(True)
-        self._status_label.setObjectName("BodyLabel")
+        self._status_label.setObjectName("WebexStatusLabel")
 
         self._fallback_btn = QPushButton("Open Webex")
         self._fallback_btn.setObjectName("GhostButton")
@@ -597,13 +604,19 @@ class WebexEmbed(QFrame):
             "Open the configured meeting in the native Webex app or browser."
         )
 
-        layout = QVBoxLayout(frame)
+        # Slim two-column bar: title + guidance/status stacked on the left,
+        # the launch button pinned right — the meeting itself lives in Webex.
+        text_column = QVBoxLayout()
+        text_column.setSpacing(0)
+        text_column.addWidget(self._title_label)
+        text_column.addWidget(self._mode_label)
+        text_column.addWidget(self._status_label)
+
+        layout = QHBoxLayout(frame)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
-        layout.setSpacing(Space.XS)
-        layout.addWidget(self._title_label)
-        layout.addWidget(self._mode_label)
-        layout.addWidget(self._status_label)
+        layout.setSpacing(Space.LG)
+        layout.addLayout(text_column, stretch=1)
         layout.addWidget(
-            self._fallback_btn, alignment=Qt.AlignmentFlag.AlignCenter
+            self._fallback_btn, alignment=Qt.AlignmentFlag.AlignVCenter
         )
         return frame

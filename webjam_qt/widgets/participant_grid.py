@@ -132,6 +132,7 @@ class ParticipantGrid(QScrollArea):
     solo_toggled  = Signal(int, bool)   # channel_id, solo
     ready_check_requested = Signal()
     start_audio_requested = Signal()
+    practice_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -153,49 +154,86 @@ class ParticipantGrid(QScrollArea):
         self.setWidget(container)
 
         self._cards: Dict[int, ParticipantCard] = {}
-        self._empty_state = self._build_empty_state(container)
-        self._flow.addWidget(self._empty_state)
+        # The hero lobby card floats centered over the (empty) stage rather
+        # than sitting in the flow layout, which packs children top-left.
+        self._empty_state = self._build_empty_state(self.viewport())
         self.set_session_state(SessionUiState.idle())
 
     def _build_empty_state(self, parent: QWidget) -> QFrame:
         state = QFrame(parent)
         state.setObjectName("StageEmptyState")
-        state.setMinimumSize(440, 250)
+        state.setMinimumWidth(560)
+        state.setMaximumWidth(680)
         state.setAccessibleName("Live session status")
 
         self._empty_eyebrow = QLabel("NOT CONNECTED")
         self._empty_eyebrow.setObjectName("StageEmptyEyebrow")
+        self._empty_eyebrow.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._empty_title = QLabel()
         self._empty_title.setObjectName("StageEmptyTitle")
         self._empty_title.setWordWrap(True)
+        self._empty_title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._empty_message = QLabel()
         self._empty_message.setObjectName("StageEmptyMessage")
         self._empty_message.setWordWrap(True)
+        self._empty_message.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self._empty_primary = QPushButton("Start Audio")
         self._empty_primary.setObjectName("AudioButton")
         self._empty_primary.setAccessibleName("Start Jamulus audio")
         self._empty_primary.clicked.connect(self.start_audio_requested.emit)
+        self._empty_practice = QPushButton("Practice Solo")
+        self._empty_practice.setObjectName("GhostButton")
+        self._empty_practice.setAccessibleName("Start a private practice session")
+        self._empty_practice.clicked.connect(self.practice_requested.emit)
         self._empty_ready = QPushButton("Run Ready Check")
         self._empty_ready.setObjectName("GhostButton")
         self._empty_ready.clicked.connect(self.ready_check_requested.emit)
 
         actions = QHBoxLayout()
         actions.setSpacing(Space.SM)
+        actions.addStretch(1)
         actions.addWidget(self._empty_primary)
+        actions.addWidget(self._empty_practice)
         actions.addWidget(self._empty_ready)
         actions.addStretch(1)
 
+        self._empty_hint = QLabel()
+        self._empty_hint.setObjectName("StageEmptyHint")
+        self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._empty_hint.setVisible(False)
+
         layout = QVBoxLayout(state)
-        layout.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.XL)
+        layout.setContentsMargins(Space.XXL, Space.XXL, Space.XXL, Space.XXL)
         layout.setSpacing(Space.MD)
-        layout.addStretch(1)
         layout.addWidget(self._empty_eyebrow)
         layout.addWidget(self._empty_title)
         layout.addWidget(self._empty_message)
+        layout.addSpacing(Space.SM)
         layout.addLayout(actions)
-        layout.addStretch(1)
+        layout.addWidget(self._empty_hint)
         return state
+
+    def _center_empty_state(self) -> None:
+        """Keep the hero card optically centered over the stage viewport."""
+        width = max(
+            self._empty_state.minimumWidth(),
+            min(self._empty_state.sizeHint().width(),
+                self._empty_state.maximumWidth()),
+        )
+        width = min(width, max(320, self.viewport().width() - 2 * Space.LG))
+        layout = self._empty_state.layout()
+        height = layout.heightForWidth(width) if layout is not None else -1
+        height = max(height, self._empty_state.minimumSizeHint().height())
+        x = max(Space.LG, (self.viewport().width() - width) // 2)
+        # Slightly above true center reads better in a tall stage.
+        y = max(Space.LG, int((self.viewport().height() - height) * 0.42))
+        self._empty_state.setGeometry(x, y, width, height)
+        self._empty_state.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._center_empty_state()
 
     # ------------------------------------------------------------------
     # Public API
@@ -215,6 +253,7 @@ class ParticipantGrid(QScrollArea):
             else:
                 self._add_card(presentation)
         self._empty_state.setVisible(not bool(incoming))
+        self._center_empty_state()
 
     def set_empty_state(
         self,
@@ -226,6 +265,8 @@ class ParticipantGrid(QScrollArea):
         primary_enabled: bool = True,
         show_primary: bool = True,
         show_ready_check: bool = True,
+        show_practice: bool = False,
+        hint: str = "",
     ) -> None:
         """Show persistent session truth when no real participants exist."""
         self._empty_state.setProperty("sessionState", state)
@@ -236,11 +277,15 @@ class ParticipantGrid(QScrollArea):
         self._empty_primary.setEnabled(primary_enabled)
         self._empty_primary.setVisible(show_primary)
         self._empty_ready.setVisible(show_ready_check)
+        self._empty_practice.setVisible(show_practice)
+        self._empty_hint.setText(hint)
+        self._empty_hint.setVisible(bool(hint))
         self._empty_state.setAccessibleDescription(f"{title}. {message}")
         self._empty_state.setVisible(not bool(self._cards))
         style = self._empty_state.style()
         style.unpolish(self._empty_state)
         style.polish(self._empty_state)
+        self._center_empty_state()
 
     def set_session_state(self, state: SessionUiState) -> None:
         """Render a centralized Live-workspace state snapshot."""
@@ -251,6 +296,8 @@ class ParticipantGrid(QScrollArea):
             primary_text=state.primary_text,
             primary_enabled=state.primary_enabled,
             show_ready_check=state.show_ready_check,
+            show_practice=state.show_practice,
+            hint=state.hint,
         )
 
     def update_level(self, channel_id: int, level: float) -> None:

@@ -344,6 +344,7 @@ class ApplicationController(QObject):
         grid.solo_toggled.connect(self._on_solo_toggled)
         grid.ready_check_requested.connect(self._on_ready_check)
         grid.start_audio_requested.connect(self._on_launch_audio)
+        grid.practice_requested.connect(self._on_practice_requested)
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -373,7 +374,9 @@ class ApplicationController(QObject):
     def _bootstrap_ui(self) -> None:
         self.participants.clear()
         self._push_participants_to_grid()
-        self.window.participant_grid.set_session_state(SessionUiState.idle())
+        self.window.participant_grid.set_session_state(
+            SessionUiState.idle(server=self.bridge.effective_server())
+        )
 
         mode = get_mode_by_key_or_default(
             self.window.session_strip.current_mode_key() or "music_jam"

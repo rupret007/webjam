@@ -115,18 +115,9 @@ QToolButton#SideRailButton:focus {
     background-color: ${COLOR_BG_BASE};
 }
 
-#StageHeader {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
-}
-
 #StageEmptyState {
     background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_LG}px;
 }
 
@@ -138,20 +129,27 @@ QToolButton#SideRailButton:focus {
 
 #StageEmptyEyebrow {
     color: ${COLOR_ACCENT_AUDIO};
-    font-size: ${FONT_SIZE_XS}px;
+    font-size: ${FONT_SIZE_SM}px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
 }
 
 #StageEmptyTitle {
     color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_XL}px;
+    font-size: ${FONT_SIZE_DISPLAY}px;
     font-weight: 700;
 }
 
 #StageEmptyMessage {
     color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_BASE}px;
+    font-size: ${FONT_SIZE_MD}px;
+}
+
+#StageEmptyHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    font-family: ${FONT_FAMILY_MONO};
+    padding-top: ${SPACE_SM}px;
 }
 
 /* ============================================================
@@ -470,9 +468,9 @@ QWidget#WebexPlaceholder {
 }
 
 #WebexEmbed {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px dashed ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_LG}px;
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
     color: ${COLOR_TEXT_SECONDARY};
 }
 
@@ -480,6 +478,11 @@ QWidget#WebexPlaceholder {
     color: ${COLOR_TEXT_PRIMARY};
     font-size: ${FONT_SIZE_MD}px;
     font-weight: 600;
+}
+
+#WebexStatusLabel {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
 }
 
 /* ============================================================

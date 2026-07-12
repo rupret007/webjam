@@ -111,7 +111,9 @@ class AudioCoordinator:
         self._c._talk_break_intended = False
         self._c.participants.clear()
         self._c._push_participants_to_grid()
-        self._c.window.participant_grid.set_session_state(SessionUiState.idle())
+        self._c.window.participant_grid.set_session_state(
+            SessionUiState.idle(server=self._c.bridge.effective_server())
+        )
 
     def reset_to_demo(self) -> None:
         """Compatibility alias retained for older extensions."""

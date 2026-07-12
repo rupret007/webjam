@@ -335,9 +335,47 @@ class TestParticipantGrid(unittest.TestCase):
         events = []
         g.start_audio_requested.connect(lambda: events.append("audio"))
         g.ready_check_requested.connect(lambda: events.append("ready"))
+        g.practice_requested.connect(lambda: events.append("practice"))
         g._empty_primary.click()
+        g._empty_practice.click()
         g._empty_ready.click()
-        self.assertEqual(events, ["audio", "ready"])
+        self.assertEqual(events, ["audio", "practice", "ready"])
+
+    def test_hero_lobby_is_centered_in_stage(self):
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        g = ParticipantGrid()
+        g.resize(1000, 640)
+        g.show()
+        _qapp().processEvents()
+        try:
+            geo = g._empty_state.geometry()
+            viewport_center = g.viewport().width() // 2
+            card_center = geo.x() + geo.width() // 2
+            self.assertLessEqual(abs(card_center - viewport_center), 40)
+            self.assertGreaterEqual(geo.width(), 560)
+            # Tall enough to show the whole lobby content, not a clipped strip.
+            self.assertGreaterEqual(
+                geo.height(), g._empty_state.minimumSizeHint().height()
+            )
+        finally:
+            g.close()
+
+    def test_hero_lobby_practice_and_hint_are_idle_only(self):
+        from webjam_qt.session_state import SessionUiState
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        g = ParticipantGrid()
+        g.set_session_state(SessionUiState.idle(server="192.168.1.20:22124"))
+        self.assertFalse(g._empty_practice.isHidden())
+        self.assertIn("192.168.1.20:22124", g._empty_hint.text())
+        self.assertFalse(g._empty_hint.isHidden())
+        g.set_session_state(SessionUiState.connecting("192.168.1.20:22124"))
+        self.assertTrue(g._empty_practice.isHidden())
+        self.assertTrue(g._empty_hint.isHidden())
+
+    def test_webex_bar_stays_slim(self):
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+        embed = WebexEmbed()
+        self.assertLessEqual(embed.maximumHeight(), 96)
 
     def test_set_participants_creates_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
