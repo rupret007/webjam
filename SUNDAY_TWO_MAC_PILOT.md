@@ -32,9 +32,12 @@ For this pilot choose **Musician with talkback** on both Macs. BlackHole and
    ```
 
    UDP must listen on 22124. Recorder RPC must listen only on
-   `127.0.0.1:22240`. Stop with Ctrl+C; never force-kill a recording server.
-6. Configure WebJam for `127.0.0.1:22124`, client RPC 22222, recorder RPC
-   22240, and the secret/take paths printed in `server/README.md`.
+   `127.0.0.1:22240`. For an in-app server, stop recording and quit WebJam for
+   clean shutdown; use Ctrl+C only with the manual fallback. Never force-kill
+   a recording server.
+6. Hosted mode automatically enforces `127.0.0.1:22124` and derives recorder
+   RPC 22240 plus the sandbox secret/take paths. Confirm them against
+   `server/README.md`; client RPC remains 22222.
 7. Enable supplemental local recording only if Ready Check proves the chosen
    **Meter and local recording input** can open at 48 kHz alongside Jamulus.
 

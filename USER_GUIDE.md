@@ -109,7 +109,12 @@ WebJam also shifts workspace balance by mode so mixer-heavy and canvas-heavy wor
 The first time you run WebJam, a Setup Wizard will open automatically. It has 5 steps:
 
 1. **Welcome** — Overview of what WebJam does
-2. **Jamulus Server** — Enter your band's server host/port and confirm the Jamulus executable path. On macOS, downloadable builds pre-fill this automatically with the bundled copy. On Windows, if nothing is found, an "Install Jamulus now" button launches the bundled installer and the path fills in automatically once it finishes. Setup can't complete until a valid path is resolved one way or another.
+2. **Jamulus Server** — Ordinary musicians enter the shared server host/port.
+   The one designated macOS host selects **This Mac hosts the band server**;
+   WebJam then fixes that musician's connection to loopback and requires the
+   separately installed official `JamulusServer.app` 3.12.2. The Jamulus
+   *client* path is bundled on macOS; Windows offers **Install Jamulus now**.
+   Leave local client RPC at 22222. Hosted recorder RPC is loopback-only 22240.
 3. **Webex Meeting** — Enter your Webex meeting link
 4. **Music and Talkback** — choose **Musician with talkback** (recommended),
    **Video only**, or the advanced **Audience broadcast bridge**. Local stem
@@ -159,9 +164,12 @@ Before joining a session:
    - The application window opens
 
 2. **Connect to Audio Server**
-   - Click **Start Audio** in the top bar
+   - Click **Start Audio** in the top bar; the designated host uses **Host &
+     Start Audio**, which verifies/starts the band server before its client
    - Jamulus connects to the server
    - Wait for other participants to appear
+   - On the host, the status bar must show `Server: Hosting :22124`. Stop Audio
+     disconnects only the host musician; the band server stays available.
 
 3. **Open Webex**
    - Click **Open Webex** in the top bar.
@@ -489,6 +497,17 @@ Video lag is okay! Remember:
 1. Open **Checks → Ready Check** and use **Open Settings** if Jamulus is missing.
 2. Confirm the Jamulus executable path is found.
 3. Retry **Start Audio** from the top bar.
+
+#### ❌ "Band Server Could Not Start"
+
+**On the designated macOS host:**
+1. Install the official dedicated `JamulusServer.app` 3.12.2 in `/Applications`.
+2. Confirm UDP 22124 and loopback TCP 22240 are free. Never forward either TCP
+   22222 or 22240 through the router.
+3. If a manual server already owns TCP 22240, its recorder secret must match
+   WebJam Settings before WebJam will adopt it.
+4. Review `~/Library/Logs/WebJam/jamulus-server.log`, then retry **Host & Start
+   Audio**. Full setup and listener checks are in `server/README.md`.
 
 #### ❌ "Webex Open Failed"
 

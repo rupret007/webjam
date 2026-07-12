@@ -26,6 +26,9 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -v
 # Real Jamulus integration
 WEBJAM_JAMULUS_BINARY=/path/to/jamulus-headless .venv/bin/python -m pytest tests/test_real_jamulus_integration.py -v
 
+# Hosted-server ownership/adoption/restart regression matrix
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_hosted_server.py -v
+
 # Frozen app smoke build
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
@@ -39,6 +42,11 @@ clean install/first launch, Ready Check including its manual Webex `VERIFY`
 rows, Ctrl+P real audio, two-person Jamulus, muted-by-default native Webex
 talkback, Talk Break fail-safe behavior, Session Pulse export, Record, take
 playback, Logic/WAV-stem inspection, reconnect, and a 45–60 minute soak.
+On the designated host, also require **Host & Start Audio**, authenticated RPC
+22240, `Server: Hosting :22124`, recorder start/stop, Stop Audio without server
+teardown, and clean owned-server shutdown. An already-running manual server
+may show `Server: External :22124` only after recorder authentication and must
+survive WebJam quit.
 Windows x64 and Intel macOS still require clean-artifact startup inspection;
 they are not prerequisites for the private two-Mac pilot. Tag builds remain
 draft releases until the exact artifacts pass their declared gates.

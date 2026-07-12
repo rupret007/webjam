@@ -53,7 +53,7 @@ webjam_qt_main.py          ← entry point
 |--------|----------------|
 | `app.py` | `QApplication` bootstrap, font, stylesheet, setup-wizard gate |
 | `windows/conductor_window.py` | Main application window — `SessionStrip`, `ParticipantGrid`, `SideRail` |
-| `windows/setup_wizard.py` | First-run server, Webex URL, audio-role, and independent local-capture setup |
+| `windows/setup_wizard.py` | First-run server, macOS in-app hosting, Webex URL, audio-role, and independent local-capture setup |
 | `widgets/participant_card.py` | Per-channel fader, pan, mute, solo, level meter |
 | `widgets/level_meter.py` | Animated RMS level meter widget |
 | `widgets/session_strip.py` | Top control bar: mode, title, launch buttons |
@@ -72,7 +72,7 @@ webjam_qt_main.py          ← entry point
 
 | Module | Responsibility |
 |--------|----------------|
-| `bridge_service.py` | Jamulus process/reconnect management and truthful external Webex launch |
+| `bridge_service.py` | Jamulus client/practice/hosted-server process ownership, reconnect/supervision, and truthful external Webex launch |
 
 ### `jamulus_controller.py` — Mixer state
 
@@ -106,8 +106,18 @@ The Qt Conductor uses `webjam_qt/controllers/mix_manager.py` and `jamulus_contro
 ### `server/` — Band-server recipe
 
 The pilot uses official `JamulusServer.app` 3.12.2 with recorder data in its
-real sandbox container. A remote Linux server remains available through the
-legacy-compatible recipe and SSH tunnel. Both use `core/jamulus_server_rpc.py`.
+real sandbox container. With `host_server_enabled`, `BridgeService` enforces a
+loopback client target, verifies the exact server version and port ownership,
+creates the 0600 recorder secret, starts the server and per-PID sleep assertion,
+authenticates recorder readiness, and supervises crashes independently of the
+musician client's reconnect preference. Stop Audio never stops the server.
+
+If TCP 22240 is already occupied, WebJam adopts the endpoint only after the
+configured secret authenticates and `getRecorderStatus` proves it is a
+Jamulus recorder. Adopted processes are reported as external and are never
+terminated—or have recording stopped—when WebJam quits. A remote Linux server
+remains available through the legacy-compatible recipe and SSH tunnel. Both
+paths use `core/jamulus_server_rpc.py`.
 
 ## Data Flow: Recording completion
 

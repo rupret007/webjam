@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -157,7 +158,7 @@ class _JamulusPage(QWizardPage):
         _hint = _body_label(
             "Don't have a server? Browse free public ones at "
             "<a href='https://explorer.jamulus.io'>explorer.jamulus.io</a> "
-            "or run your own locally (jamulus.io)."
+            "or, on macOS, let WebJam host one with the option below."
         )
         _hint.setOpenExternalLinks(True)
         _hint.setTextFormat(Qt.TextFormat.RichText)
@@ -195,24 +196,32 @@ class _JamulusPage(QWizardPage):
         )
         layout.addWidget(self._musician_name)
 
-        layout.addWidget(_section_label("Band server"))
+        host_section = _section_label("Band server")
+        layout.addWidget(host_section)
         self._host_server = QCheckBox(
             "This Mac hosts the band server (requires JamulusServer.app 3.12.2)"
         )
-        self._host_server.setChecked(
-            bool(getattr(settings, "host_server_enabled", False))
-        )
+        hosting_supported = sys.platform == "darwin"
+        self._host_server.setChecked(hosting_supported and bool(
+            getattr(settings, "host_server_enabled", False)
+        ))
         self._host_server.setAccessibleName("Host the band server on this Mac")
         layout.addWidget(self._host_server)
-        host_note = QLabel(
-            "WebJam starts and supervises the server for you — it keeps "
-            "running through Stop Audio and stops when WebJam quits. "
+        self._host_note = QLabel(
+            "A server WebJam starts stays up through Stop Audio and stops "
+            "when WebJam quits. An authenticated manual server is adopted "
+            "without WebJam taking ownership. "
             "Recordings and the recorder secret live in the server app's "
             "own container. Exactly one Mac in the band hosts."
         )
-        host_note.setWordWrap(True)
-        host_note.setObjectName("BodyLabel")
-        layout.addWidget(host_note)
+        self._host_note.setWordWrap(True)
+        self._host_note.setObjectName("BodyLabel")
+        layout.addWidget(self._host_note)
+        host_section.setVisible(hosting_supported)
+        self._host_server.setVisible(hosting_supported)
+        self._host_note.setVisible(hosting_supported)
+        self._host_server.toggled.connect(self._on_host_server_toggled)
+        self._on_host_server_toggled(self._host_server.isChecked())
 
         layout.addWidget(_section_label("Jamulus executable"))
         # Pre-populate with first existing user/default candidate path...
@@ -411,9 +420,18 @@ class _JamulusPage(QWizardPage):
             return False
         return True
 
+    def _on_host_server_toggled(self, checked: bool) -> None:
+        """Hosted mode is always a same-Mac loopback topology."""
+        if checked:
+            self._host.setText("127.0.0.1")
+            self._host.setEnabled(False)
+            self._host_hint.setVisible(False)
+        else:
+            self._host.setEnabled(True)
+
     @property
     def host(self) -> str:
-        return self._host.text().strip()
+        return "127.0.0.1" if self.host_server_enabled else self._host.text().strip()
 
     @property
     def port(self) -> int:
@@ -433,7 +451,7 @@ class _JamulusPage(QWizardPage):
 
     @property
     def host_server_enabled(self) -> bool:
-        return self._host_server.isChecked()
+        return sys.platform == "darwin" and self._host_server.isChecked()
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +977,14 @@ class SetupWizard(QWizard):
         cfg["webex_audio_mode"]           = self._routing.audio_mode
         cfg["local_capture_enabled"]       = self._routing.local_capture_enabled
         cfg["takes_directory"]             = self._routing.takes_directory
+        if cfg["host_server_enabled"]:
+            from core.settings import (
+                hosted_server_recordings_dir,
+                hosted_server_secret_path,
+            )
+            cfg["jamulus_server"] = "127.0.0.1"
+            cfg["server_rpc_secret_file"] = str(hosted_server_secret_path())
+            cfg["takes_directory"] = str(hosted_server_recordings_dir())
         # Guest Issuer authentication is deprecated by Webex and unsafe for a
         # local desktop client.  Omit legacy credentials on the next save.
         cfg.pop("webex_guest_issuer_id", None)

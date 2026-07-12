@@ -3,9 +3,9 @@
 **Date:** 2026-06-29
 **Status:** Historical memo. Its market comparison and protocol history remain
 useful, but current status lives in `README.md` and `MODERNIZATION_PLAN.md`.
-The v0.8.1 candidate uses native two-lane Webex talkback and still awaits the
-real-hardware pilot gates; do not treat the old release recommendations below
-as current work.
+The v0.8.1 candidate uses native two-lane Webex talkback and adds opt-in
+same-Mac JamulusServer hosting; it still awaits the full two-Mac hardware
+gates. Do not treat the old release recommendations below as current work.
 An evaluation of what WebJam needs to become a tool a band actually relies on, with the audio engine assessed against the current open-source landscape — plus the headline fix implemented this round.
 
 ---
@@ -63,6 +63,10 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 - **Server-side recording** (for the band admin's server) via `jamulusserver/startRecording` / `getRecorderStatus` → one-click "record this rehearsal."
 
 **P2 — lower the setup barrier (the real adoption blocker)**
+- ✅ **In-app macOS band-server hosting** now verifies and supervises the
+  official JamulusServer.app, provisions recorder control, and connects the
+  host client over loopback. A serverless backend remains a different future
+  option for users who cannot host or reach UDP 22124.
 - **Pluggable audio backend** abstraction, with **SonoBus** as a serverless option for bands without a Jamulus server.
 - **Advanced audience bridge:** bundled VB-CABLE installers lower Windows
   setup friction, but ordinary musician talkback intentionally needs no

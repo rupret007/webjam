@@ -143,6 +143,26 @@ class TestJamulusPage(unittest.TestCase):
         self.assertEqual(page.musician_name, "")
         self.assertFalse(page.validatePage())
 
+    def test_hosting_forces_same_mac_loopback(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        with patch("webjam_qt.windows.setup_wizard.sys.platform", "darwin"):
+            page = _JamulusPage(AppSettings(
+                jamulus_server="public.example.com",
+                host_server_enabled=True,
+            ))
+        self.assertTrue(page.host_server_enabled)
+        self.assertEqual(page.host, "127.0.0.1")
+        self.assertFalse(page._host.isEnabled())
+
+    def test_hosting_control_is_unavailable_off_macos(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        with patch("webjam_qt.windows.setup_wizard.sys.platform", "win32"):
+            page = _JamulusPage(AppSettings(host_server_enabled=True))
+            self.assertFalse(page.host_server_enabled)
+        self.assertTrue(page._host_server.isHidden())
+
 
 # ---------------------------------------------------------------------------
 # _JamulusPage — bundled Jamulus (macOS zero-install / Windows installer)

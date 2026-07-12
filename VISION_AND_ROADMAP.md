@@ -100,6 +100,9 @@ until the physical pilot gates pass.
   advanced audience-bridge mode
 - **Independent local capture** — supplemental isolated input stems can be
   enabled in any Webex mode and retain recovery, alignment, and take validation
+- **macOS all-in-one host** — a centered lobby can start/supervise the official
+  JamulusServer.app 3.12.2 before the host client joins. Stop Audio leaves the
+  server available; authenticated external servers are observed but not owned
 - **Session canvas** — shared notes, local Session Pulse, Markdown brief export, artifact types, review states (Draft→In review→Approved)
 - **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
 - **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration

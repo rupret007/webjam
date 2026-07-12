@@ -229,7 +229,7 @@ class ApplicationController(QObject):
         # terminate the server itself.
         if getattr(self.settings, "host_server_enabled", False):
             try:
-                if self.bridge.hosted_server_alive():
+                if self.bridge.hosted_server_owned():
                     self.recording.stop_server_recording_for_shutdown()
                 self.bridge.stop_hosted_server()
             except Exception:  # noqa: BLE001
@@ -701,10 +701,13 @@ class ApplicationController(QObject):
         else:
             self.session_health.reset_live_truth()
         if getattr(self.settings, "host_server_enabled", False):
-            self.window.set_status_server(
-                f"Hosting :{self.settings.jamulus_port}"
-                if self.bridge.hosted_server_alive() else "not running"
-            )
+            if self.bridge.hosted_server_owned():
+                server_state = f"Hosting :{self.settings.jamulus_port}"
+            elif self.bridge.hosted_server_adopted():
+                server_state = f"External :{self.settings.jamulus_port}"
+            else:
+                server_state = "not running"
+            self.window.set_status_server(server_state)
         else:
             self.window.set_status_server("")
         self.audio.on_readiness_refresh(jamulus_up)

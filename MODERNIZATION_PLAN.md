@@ -2,9 +2,10 @@
 
 ## Audited baseline
 
-- Source baseline is clean `origin/master` at `f023e56`: the untagged v0.8.1
-  pilot candidate. GitHub tests, real-Jamulus integration, and all three
-  desktop build jobs passed for that exact commit before this uncommitted round.
+- Source baseline for this final audit is clean `origin/master` at `12c2198`:
+  the untagged v0.8.1 lobby/in-app-hosting candidate. GitHub tests,
+  real-Jamulus integration, and all three desktop build jobs passed for that
+  exact commit before this hardening round.
 - Before Session Pulse, local validation passed 823 tests with 12 expected
   skips, Ruff, the offscreen UX gate, and a clean macOS PyInstaller build.
 - The older dirty checkout outside this repository remains
@@ -216,9 +217,29 @@
   externally started server, crash restart from the reconnect tick, and
   strict decoupling from Stop Audio. Shutdown stops an active recording via
   RPC before terminating the server; quit/stop dialogs are hosting-aware.
-- Hosting-only validation on real hardware remains open: a real
-  JamulusServer.app spawn under WebJam, Record over the supervised server,
-  and quit-while-recording finalization have not run on the host Mac yet.
+- Hardened ownership boundaries: the host client is forced to loopback;
+  external listeners are adopted only after secret authentication and
+  recorder verification; adopted servers are never stopped by WebJam; crash
+  recovery is independent of the client reconnect preference; readiness
+  timeout cleans up owned server/caffeinate processes; unsupported platforms
+  do not offer the hosting control.
+- The real installed JamulusServer.app 3.12.2 now passes the supervised
+  lifecycle on Apple Silicon: UDP 22124 plus loopback RPC 22240, 0600 secret,
+  recorder initialisation, Record start/stop acknowledgement, expected sandbox
+  take path, clean server termination, and no caffeinate orphan. Still open:
+  quit-while-recording finalisation with live participant WAVs and the full
+  two-Mac/Logic/soak gate.
+- Final local regression evidence for the hardened tree: 985 tests pass with
+  12 expected skips and 6 subtests; the only pytest warning is the existing
+  Starlette/httpx deprecation. Ruff, compile checks, `pip check`, `pip-audit`
+  with no known vulnerabilities, UX smoke, 20-document link/stale-term/secret
+  review, and `git diff --check` all pass. The official server binary also
+  passes all 11 real integration tests locally.
+- A clean ARM64 PyInstaller rebuild from the hardened tree produces an arm64
+  v0.8.1 bundle with matching plist versions, current microphone privacy copy,
+  no camera claim, required QSS/Webex resources, no missing first-party module,
+  valid local bundle seal, successful offscreen startup, clean TERM exit, and
+  no WebJam/JamulusServer/caffeinate orphan.
 
 ## Remaining release gates
 

@@ -110,10 +110,10 @@ class RecordingCoordinator:
         )
 
     def _hosting_server(self) -> bool:
-        """True when this Mac runs the band server under WebJam supervision."""
+        """True only when WebJam owns the server it will stop on quit."""
         return bool(
             getattr(self._c.settings, "host_server_enabled", False)
-            and self._c.bridge.hosted_server_alive()
+            and self._c.bridge.hosted_server_owned()
         )
 
     def confirm_quit(self) -> bool:

@@ -100,9 +100,9 @@ class AppSettings:
     companion_api_enabled: bool = False
     companion_api_port: int = 8765
     # Band-server RPC (the Record button). The server's JSON-RPC stays on
-    # its loopback; WebJam reaches it through an SSH tunnel terminating at
-    # 127.0.0.1:server_rpc_port. server_rpc_secret_file points at a local
-    # copy of the server's jsonrpc.secret. Empty = Record button unconfigured.
+    # loopback. A remote host uses an SSH tunnel terminating at
+    # 127.0.0.1:server_rpc_port; in hosted mode the server is on this Mac.
+    # server_rpc_secret_file points at the matching local secret.
     server_rpc_port: int = 22240
     server_rpc_secret_file: str = ""
     # This Mac hosts the band's Jamulus server: WebJam supervises the
@@ -253,13 +253,15 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
     if settings.host_server_enabled:
-        derived = {}
-        if not settings.server_rpc_secret_file.strip():
-            derived["server_rpc_secret_file"] = str(hosted_server_secret_path())
-        if not settings.takes_directory.strip():
-            derived["takes_directory"] = str(hosted_server_recordings_dir())
-        if derived:
-            settings = AppSettings(**{**asdict(settings), **derived})
+        # Hosting is an all-in-one local topology. Never let a stale public or
+        # LAN address make the host start a server here but connect its client
+        # somewhere else.
+        derived = {
+            "jamulus_server": "127.0.0.1",
+            "server_rpc_secret_file": str(hosted_server_secret_path()),
+            "takes_directory": str(hosted_server_recordings_dir()),
+        }
+        settings = AppSettings(**{**asdict(settings), **derived})
 
     return settings
 

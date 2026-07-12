@@ -8,13 +8,19 @@ failure you find solo is one you don't debug live with four people.
 
 ## Stage 0 — Band admin prep (once, ~1 hour)
 
-**A. Pick a Jamulus server.** Two options:
+**A. Pick a Jamulus server.** Three options:
 
-- *Fastest:* pick a public server near you from
+- *Weekend pilot / best all-in-one path:* on the designated macOS host,
+  install the official dedicated `JamulusServer.app` 3.12.2, enable **This Mac
+  hosts the band server** in WebJam Setup, and use **Host & Start Audio**.
+  WebJam provisions recorder control, supervises the server, and connects the
+  host client over loopback. Follow [`server/README.md`](server/README.md).
+- *Fastest without recording acceptance:* pick a public server near you from
   [explorer.jamulus.io](https://explorer.jamulus.io) (choose one with low
   ping and few people). Fine for a first test; anyone can join public
-  servers, so don't discuss secrets over it.
-- *Best for the band:* self-host with the ready-made recipe in
+  servers, so don't discuss secrets over it. A public server cannot prove the
+  host recording gate.
+- *Remote/private alternative:* self-host with the ready-made recipe in
   [`server/`](server/README.md) — one `docker compose up -d` on any $5/mo
   VPS gives you a private server **with multitrack recording armed**
   (every take = one WAV per musician + a ready-to-open Reaper project).
@@ -28,13 +34,13 @@ Any always-on URL works.
 
 ### v0.8.1 weekend topology: Mac mini host + Apple Silicon Mac drummer
 
-For this pilot, use the native macOS server command in
-[`server/README.md`](server/README.md), not the legacy Docker image. The Mac
-mini uses `127.0.0.1:22124`; the drummer tests both a direct Tailscale address
-and the home's public address on UDP 22124. Keep WebJam's client-control RPC on
-22222 and server recorder RPC on loopback-only 22240. Disable the Mac's VPN,
-reserve its LAN address, allow Jamulus through the firewall, and forward
-**UDP 22124 only**. Require Tailscale to report a direct peer path, not DERP.
+For this pilot, enable WebJam's in-app macOS hosting described in
+[`server/README.md`](server/README.md), not the legacy Docker image. The manual
+Terminal launcher is a fallback. The Mac mini uses `127.0.0.1:22124`; the
+drummer tests both a direct Tailscale address and the home's public address on
+UDP 22124. Keep WebJam's client-control RPC on 22222 and server recorder RPC on
+loopback-only 22240. Disable the Mac's VPN, reserve its LAN address, allow
+Jamulus through the firewall, and forward **UDP 22124 only**.
 
 Prove the public route from an external network and compare it with direct
 Tailscale for ten minutes. Use the lower-delay stable route. If direct UDP is
@@ -68,7 +74,9 @@ unbundled/source build.
 Work through this in order; note anything that deviates.
 
 1. **First-run wizard** appears (fresh installs are unconfigured on
-   purpose). Enter the server host/port from Stage 0, confirm the Jamulus
+   purpose). The designated macOS host selects **This Mac hosts the band
+   server** (which fixes its client host to `127.0.0.1`); other musicians
+   enter the shared external host/port. Confirm the Jamulus
    executable path (pre-filled on bundled builds — on Windows use "Install
    Jamulus now" if it's blank), paste the Webex link, choose **Musician with
    talkback**, and select supplemental local recording only when needed.
@@ -81,7 +89,9 @@ Work through this in order; note anything that deviates.
    yourself, and be able to move your fader and use Talk Break. If practice
    works, your whole local audio path is proven before any network enters
    the picture. Stop Audio ends it.
-4. **Start Audio.** The status bar should read `Connecting` first; within
+4. **Start Audio** (or **Host & Start Audio** on the host). The status bar
+   should read `Server: Hosting :22124` on the host and `Connecting` first;
+   within
    ~10 s it should change to `Connected (yourserver:22124)` and the truthful
    connecting state should be replaced by a single real card with **your
    name** ("1 participant · waiting for
@@ -98,9 +108,12 @@ Work through this in order; note anything that deviates.
 7. **Open Webex.** WebJam opens native Webex or the default browser and reports
    `Opened externally`. Finish joining there. This status does not claim that
    WebJam can see meeting membership or control Webex.
-8. **Stop Audio → Start Audio again.** Reconnect should work; no zombie
-   Jamulus processes left behind (check Activity Monitor).
-9. **Quit WebJam.** Jamulus should quit with it.
+8. **Stop Audio → Start Audio again.** On the designated host, Stop Audio must
+   leave `Server: Hosting :22124` visible so the other musician stays
+   connected. Reconnect should work; no zombie client processes remain.
+9. **Quit WebJam.** Its Jamulus client should quit. A server WebJam owns also
+   stops; an authenticated external/manual server that WebJam merely adopted
+   must remain running.
 
 **If anything fails:** hit `Ctrl+Shift+D` (copies a diagnostics summary to
 the clipboard) and paste it into a GitHub issue — or into a Claude session,

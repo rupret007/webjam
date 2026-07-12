@@ -44,7 +44,13 @@ Every band member installs WebJam and uses its bundled Jamulus client:
 
 One person (the "band admin") decides two things and shares them with everyone:
 
-1. **A Jamulus server** — either run your own (see jamulus.io) or pick a free public one from [explorer.jamulus.io](https://explorer.jamulus.io). Share the **server host** (e.g. `myband.example.com` or an IP) and **port** (usually `22124`).
+1. **A Jamulus server** — for the two-Mac pilot, install the official dedicated
+   `JamulusServer.app` 3.12.2 on one Mac, select **This Mac hosts the band
+   server** in Setup, and let WebJam run it. Alternatives are a separately
+   managed server or a public server from
+   [explorer.jamulus.io](https://explorer.jamulus.io). Share the host Mac's
+   Tailscale/public address and port `22124` with remote musicians; the host
+   itself always connects to `127.0.0.1`.
 2. **A Webex meeting link** — create a meeting and share the URL (e.g. `https://yourco.webex.com/meet/yourband`).
 
 Send the band the **Jamulus server host + port** and the **Webex link**. That's everything a member needs for the setup wizard.
@@ -56,7 +62,13 @@ Send the band the **Jamulus server host + port** and the **Webex link**. That's 
 The first time you open WebJam, a short setup wizard runs:
 
 1. **Welcome** — a quick overview; downloadable builds bundle Jamulus, so most people can just continue.
-2. **Jamulus Server** — enter the **host** and **port** your band admin shared. Leave **Local Jamulus control port** at `22222`; WebJam assigns it to the client it launches so participant names and mixer controls work. It is not the band's server or recorder-control port. The Jamulus executable path is usually pre-filled (macOS: the bundled copy; Windows: click **"Install Jamulus now"** if it's blank and let the installer finish). If you need to point at a different install, browse to it — macOS: `/Applications/Jamulus.app/Contents/MacOS/Jamulus`, Windows: `C:\Program Files\Jamulus\Jamulus.exe`.
+2. **Jamulus Server** — ordinary musicians enter the **host** and **port** the
+   band admin shared. The designated macOS host selects **This Mac hosts the
+   band server**; WebJam locks its connection to `127.0.0.1` and requires the
+   separately installed official `JamulusServer.app` 3.12.2. Leave **Local
+   Jamulus control port** at `22222`; recorder control remains loopback-only
+   `22240`. The Jamulus *client* path is usually pre-filled (macOS: bundled;
+   Windows: use **Install Jamulus now** if offered).
 3. **Webex Meeting** — paste the meeting link.
 4. **Music and Talkback** — choose **Musician with talkback** for the normal
    workflow, **Video only** to disconnect Webex audio, or the advanced
@@ -80,7 +92,10 @@ signal path. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md).
 
 The Conductor keeps the live actions at the top:
 
-1. **Start Audio** (gold) — starts Jamulus and connects to your band's server. Each member appears as a card as they join.
+1. **Start Audio** (gold) — starts Jamulus and connects to your band's server.
+   On the designated host this reads **Host & Start Audio** and starts/verifies
+   the server first. Each member appears as a card as they join. **Stop Audio**
+   disconnects the host musician but deliberately leaves the band server up.
 2. **Open Webex** (teal) — opens the meeting externally; finish joining there.
 3. Adjust each player's **fader / mute / solo** on their card to build *your own* monitor mix — it only changes what you hear, not what others hear.
 4. Use **Talk Break** between takes. It mutes only your Jamulus send; hold
@@ -130,7 +145,9 @@ Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test �
 
 Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private Jamulus server *on your own computer* and connects to it — if you can hear yourself and see your meter move, your audio setup works, full stop. Then:
 
-1. Everyone: **Start Audio** and confirm you see each other's cards and hear each other in Jamulus.
+1. The host selects **Host & Start Audio**; everyone else selects **Start
+   Audio**. Confirm the status bar reads `Server: Hosting :22124` on the host
+   and that both musicians see each other's cards and hear Jamulus.
 2. Both: **Open Webex**, join muted, and verify push-to-talk speech reaches the other interface headphones.
 3. Play with both Webex mics muted and confirm there is no delayed duplicate music.
 4. Set and **save** your monitor mix (`Ctrl+S`).
@@ -144,6 +161,11 @@ Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private
 - **Delayed duplicate music** — mute Webex immediately. Webex is receiving an instrument/music input; select a dedicated speech mic and keep it muted while playing.
 - **"No audio routing device found" in setup** — this applies only to advanced audience-bridge mode; talkback does not require a virtual device.
 - **Can't connect to the server** — double-check the host and port with your band admin, and that everyone is pointed at the *same* server.
+- **"Band Server Could Not Start" on the host** — install the dedicated
+  `JamulusServer.app` 3.12.2, keep UDP 22124 and loopback TCP 22240 free, then
+  retry. If TCP 22240 belongs to a manual server, WebJam adopts it only when
+  the configured secret authenticates its recorder. See `server/README.md` and
+  `~/Library/Logs/WebJam/jamulus-server.log`.
 - **Something's off and you want help** — press `Ctrl+Shift+D` to copy a diagnostics summary, or grab the log files: `~/.webjam.log` (WebJam) and `~/.webjam_jamulus.log` (Jamulus output).
 
 ---

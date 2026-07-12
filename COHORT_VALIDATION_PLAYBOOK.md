@@ -28,6 +28,9 @@ We're jamming on WebJam. One-time setup (~10 min):
    - Jamulus server port: 22124
    - Webex link: <FILL IN>
 
+   Designated macOS host only: install JamulusServer.app 3.12.2 and select
+   "This Mac hosts the band server" instead of entering an external host.
+
 Questions? Reply here. Full walkthrough: README_SIMPLE.md
 ```
 
@@ -43,9 +46,12 @@ Questions? Reply here. Full walkthrough: README_SIMPLE.md
 
 ## Two-person Jamulus smoke
 
-1. Both musicians: **Start Audio** — status should show **Connecting** then **Connected** with participant count.
+1. Designated host: **Host & Start Audio** and require `Server: Hosting :22124`.
+   Other musicians: **Start Audio**. Status should show **Connecting** then
+   **Connected** with participant count.
 2. Confirm fader/mute changes in WebJam affect heard levels.
-3. One musician: **Stop Audio** — demo grid returns; other musician still connected on server.
+3. Host musician: **Stop Audio** — the lobby returns but `Server: Hosting`
+   remains and the other musician stays connected. Rejoin with Start Audio.
 
 ## Video smoke
 
@@ -58,8 +64,9 @@ Questions? Reply here. Full walkthrough: README_SIMPLE.md
 
 ## Record button (band server)
 
-1. Follow `server/README.md` one-time setup. The same-Mac pilot uses recorder
-   RPC 22240 directly; a remote Linux server uses an SSH tunnel.
+1. Follow `server/README.md` one-time setup. The same-Mac host uses in-app
+   hosting and recorder RPC 22240 directly; a remote Linux server uses an SSH
+   tunnel.
 2. With audio connected, toggle **Record** — chip shows armed/recording state from server notifications.
 
 ## Post-session

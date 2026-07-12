@@ -15,14 +15,7 @@ When installing Python on Windows, check **"Add python.exe to PATH"** during the
 
 ## Clone the Repository
 
-**From Cisco GitHub Enterprise:**
-
-```bash
-git clone https://github.com/rupret007/webjam.git
-cd WebJam
-```
-
-**From public GitHub:**
+**From GitHub:**
 
 ```bash
 git clone https://github.com/rupret007/webjam.git
@@ -76,6 +69,12 @@ On first launch a setup wizard runs automatically to configure the Jamulus
 server, Webex URL, Webex audio role, and optional supplemental local capture.
 Only audience-bridge mode scans for a loopback device. You can reopen Setup
 with **Ctrl+,** or the Settings button in the left rail.
+
+Testing macOS in-app hosting additionally requires the official dedicated
+`/Applications/JamulusServer.app` 3.12.2. It is not bundled in WebJam. Use
+`tests/test_hosted_server.py` for the ownership/adoption matrix; the manual
+hardware lifecycle in `TEST_PROCEDURE.md` must use the server app's sandbox
+container for its secret and recordings.
 
 ## Run Tests
 

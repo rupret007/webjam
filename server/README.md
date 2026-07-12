@@ -17,7 +17,10 @@ restarted automatically). The server keeps running through Stop Audio and
 stops only when WebJam quits — quitting mid-recording first stops the
 recording cleanly. The manual Terminal procedure below remains the fallback
 and reference; if the script's server is already running, WebJam adopts it
-instead of starting a second one.
+only after the configured secret authenticates and the recorder API responds.
+The status bar then reads `Server: External :22124`. WebJam never terminates
+or stops recording on an adopted process when it quits. A server WebJam starts
+itself is reported as `Server: Hosting :22124` and is stopped on WebJam quit.
 
 Install both official Jamulus 3.12.2 apps from the macOS disk image:
 `/Applications/Jamulus.app` is the musician client and
@@ -76,13 +79,19 @@ forward TCP 22222 or 22240.
 
 Configure the host Mac's WebJam settings with:
 
-- Jamulus server: `127.0.0.1`, port `22124`
+- Enable **This Mac hosts the band server**. WebJam then enforces Jamulus
+  server `127.0.0.1`, port `22124`; stale LAN/public host values are ignored.
 - Local Jamulus control port: `22222`
 - `server_rpc_port`: `22240`
 - `server_rpc_secret_file`: the full path to
   `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/webjam_server_rpc.secret`
 - `takes_directory`: the full path to
   `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/WebJam Recordings`
+
+In-app hosting is macOS-only in v0.8.1. `JamulusServer.app` is a separate
+official application and is not inside the WebJam artifact; the nested
+`Jamulus.app` bundle is the musician client only. Ready Check verifies the
+dedicated server's exact version before the session.
 
 The remote musician does not receive the recorder secret. For the two-Mac
 pilot, test both the Mac mini's stable Tailscale address and the home's public

@@ -13,18 +13,29 @@ All notable improvements and features for the WebJam music collaboration platfor
   ports, provisions the protected recorder secret and recordings folder in
   the server app's container, starts the server under a caffeinate sleep
   assertion, waits for its control port, and then connects the client. A
-  crashed server is restarted automatically; an externally started server
-  (the Terminal script) is adopted, never duplicated. Stop Audio leaves the
-  server running for the band; quitting WebJam stops any recording cleanly
-  and then stops the server, and the quit dialog says so. The status bar
-  shows persistent "Server: Hosting" truth and Ready Check gains a hosted
-  band-server item with hosting-aware recorder guidance.
+  crashed server is restarted automatically even when client auto-reconnect
+  is disabled. An externally started server is adopted only after the
+  configured secret authenticates and its recorder API responds; it is shown
+  as `Server: External` and never terminated by WebJam. Stop Audio leaves the
+  server running for the band. Quitting stops/finalizes only a server WebJam
+  owns. The host client target is always loopback, unsupported platforms hide
+  hosting, startup timeout cleans up owned processes, and Ready Check verifies
+  the exact dedicated-server version.
 - **The disconnected workspace is a real lobby.** The session card is
   centered on the stage with a display-size title, one obvious primary
   action (Start Audio, or Host & Start Audio when hosting), Practice Solo
   and Ready Check beside it, and a quiet hint naming the server audio will
   join. The Webex launch card is a slim bar, and the redundant STAGE header
   is gone.
+- The in-app lifecycle was exercised against the installed official
+  JamulusServer.app 3.12.2 on Apple Silicon: UDP 22124 and loopback RPC 22240
+  opened, the secret remained mode 0600, recorder status authenticated, Record
+  armed/stopped successfully, and shutdown left no server/caffeinate orphan.
+- Final audit validation passes 985 tests with 12 expected skips and 6
+  subtests, all 11 official-binary integration tests, Ruff, compile,
+  dependency/vulnerability checks, UX smoke, and the 20-document link/security
+  review. A clean ARM64 v0.8.1 bundle passes metadata/resource inspection,
+  offscreen startup, TERM shutdown, and orphan-process checks.
 
 ### Two-lane Webex talkback
 

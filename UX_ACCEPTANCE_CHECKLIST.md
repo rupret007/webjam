@@ -9,6 +9,8 @@ Use this checklist before each UX-focused Qt Conductor release. The legacy Tkint
 - [ ] Setup Wizard preflight checks execute without crash.
 - [ ] Failing preflight checks show actionable guidance.
 - [ ] Setup Wizard can be re-opened from the side rail **Settings** or **Ctrl+,**.
+- [ ] macOS exposes the opt-in hosting checkbox; Windows/Linux do not offer an unsupported hosting control.
+- [ ] Enabling hosting locks the host musician's server target to `127.0.0.1`.
 
 ## Session Launch and Status Clarity
 
@@ -18,11 +20,15 @@ Use this checklist before each UX-focused Qt Conductor release. The legacy Tkint
 - [ ] Participant count updates when real Jamulus participants arrive.
 - [ ] Demo participants show **Preview** names before Jamulus connects.
 - [ ] Bottom status bar reflects Jamulus/Webex states and participant count.
+- [ ] Hosted lobby uses **Host & Start Audio**; owned and adopted servers show
+  distinct `Hosting` and `External` status, and Stop Audio leaves either up.
 
 ## Error Recovery
 
 - [ ] Jamulus missing-path flow shows actionable error dialog.
 - [ ] Webex open failure offers Retry, Copy Meeting Link, and Open Settings.
+- [ ] An unverified process on recorder TCP 22240 is rejected rather than
+  adopted; failed server readiness leaves no JamulusServer/caffeinate orphan.
 - [ ] Save mix failure shows actionable flash message.
 - [ ] Load mix failure shows actionable flash message.
 

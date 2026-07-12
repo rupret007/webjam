@@ -172,9 +172,13 @@ class BridgeService:
         # step. Its lifecycle is deliberately decoupled from the client:
         # Stop Audio never stops the band's server.
         self.hosted_server_process: Optional[subprocess.Popen] = None
+        # True only when WebJam authenticated an already-running external
+        # JamulusServer through the configured recorder secret. Adopted
+        # servers are observed, never terminated by WebJam.
+        self._hosted_server_adopted = False
         self._hosted_caffeinate_process: Optional[subprocess.Popen] = None
         self._hosted_log_file: Optional[object] = None
-        self._hosted_lifecycle_lock = threading.Lock()
+        self._hosted_lifecycle_lock = threading.RLock()
         self._hosted_restart_inflight = False
 
     def _set_jamulus_state(self, state: "JamulusState | str") -> None:
@@ -189,6 +193,10 @@ class BridgeService:
         value = state.value if isinstance(state, JamulusState) else state
         with self._reconnect_lock:
             self.jamulus_state = value
+
+    def _hosting_enabled(self) -> bool:
+        """Return the concrete persisted hosting flag, never truthy sentinels."""
+        return getattr(self.settings, "host_server_enabled", False) is True
 
     def _is_rpc_port_in_use(self) -> bool:
         """Return True if the configured Jamulus JSON-RPC port is already bound.
@@ -410,7 +418,7 @@ class BridgeService:
                         return
 
                     if (
-                        getattr(self.settings, "host_server_enabled", False)
+                        self._hosting_enabled()
                         and not self.practice_mode
                     ):
                         hosted_ok, hosted_detail = self.ensure_hosted_server()
@@ -586,6 +594,11 @@ class BridgeService:
         the local practice server when practicing, the band server otherwise."""
         if self.practice_mode:
             return f"127.0.0.1:{PRACTICE_PORT}"
+        if self._hosting_enabled():
+            # The hosting Mac must use loopback. A stale public/LAN address in
+            # an older profile would otherwise make the all-in-one action
+            # start a local server and connect its client somewhere else.
+            return f"127.0.0.1:{int(self.settings.jamulus_port)}"
         host = str(self.settings.jamulus_server or "").strip()
         port = int(self.settings.jamulus_port)
         if ":" in host:
@@ -732,9 +745,43 @@ class BridgeService:
             return str(candidate)
         return None
 
-    def hosted_server_alive(self) -> bool:
+    def hosted_server_owned(self) -> bool:
+        """Whether WebJam owns a live server subprocess it may terminate."""
         proc = self.hosted_server_process
         return proc is not None and proc.poll() is None
+
+    def hosted_server_adopted(self) -> bool:
+        """Whether an authenticated external server is currently adopted."""
+        return bool(self._hosted_server_adopted)
+
+    def hosted_server_alive(self) -> bool:
+        """Whether an owned or authenticated adopted server is available."""
+        return self.hosted_server_owned() or self.hosted_server_adopted()
+
+    def _probe_hosted_server_rpc(self) -> tuple[bool, str]:
+        """Authenticate and verify the configured endpoint is a recorder server."""
+        secret_path = str(
+            getattr(self.settings, "server_rpc_secret_file", "") or ""
+        ).strip()
+        if not secret_path:
+            return False, "the recorder secret is not configured"
+        try:
+            from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+
+            secret = read_secret_file(secret_path)
+            rpc = JamulusServerRpc(
+                port=int(self.settings.server_rpc_port), secret=secret
+            )
+            rpc.CONNECT_TIMEOUT_S = 0.5
+            rpc.CALL_TIMEOUT_S = 1.0
+            with rpc:
+                status = rpc.get_recorder_status()
+            if not status.get("initialised", False):
+                return False, "the recorder is not initialised"
+            return True, "ready"
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.debug("Hosted server RPC probe failed: %s", exc)
+            return False, "authentication or recorder verification failed"
 
     def _port_free(self, port: int, *, udp: bool = False) -> bool:
         import socket
@@ -760,18 +807,45 @@ class BridgeService:
         lifetime so the host Mac cannot sleep mid-session.
         """
         with self._hosted_lifecycle_lock:
-            if self.hosted_server_alive():
+            if self.hosted_server_owned():
                 return True, "already running"
+            if self._hosted_server_adopted:
+                verified, _reason = self._probe_hosted_server_rpc()
+                if verified:
+                    return True, "authenticated external server adopted"
+                self._hosted_server_adopted = False
+            # Clear a dead owned process plus its stale caffeinate/log handles
+            # before attempting a replacement.
+            if self.hosted_server_process is not None:
+                self.stop_hosted_server()
             rpc_port = int(self.settings.server_rpc_port)
             udp_port = int(self.settings.jamulus_port)
             if not self._port_free(rpc_port):
-                # A server is already listening (e.g. the manual Terminal
-                # script). Adopt it instead of fighting over the port.
+                # A server may already be listening (e.g. the manual Terminal
+                # script). Adopt it only after authenticating and exercising
+                # the recorder API; an arbitrary listener must never be
+                # presented as a healthy band server.
+                verified, reason = self._probe_hosted_server_rpc()
+                if not verified:
+                    return False, (
+                        f"TCP {rpc_port} is already in use, but WebJam could "
+                        "not verify a Jamulus recorder there ("
+                        f"{reason}). Stop the conflicting process or correct "
+                        "the recorder secret in Settings."
+                    )
+                if self._port_free(udp_port, udp=True):
+                    return False, (
+                        f"The recorder on TCP {rpc_port} authenticated, but "
+                        f"the expected Jamulus audio port UDP {udp_port} is "
+                        "not listening. Verify the manual server's --port "
+                        "setting before retrying."
+                    )
+                self._hosted_server_adopted = True
                 LOGGER.info(
-                    "Hosted server: TCP %s already serving — adopting the "
-                    "external band server.", rpc_port,
+                    "Hosted server: authenticated external server on TCP %s "
+                    "— adopting without taking process ownership.", rpc_port,
                 )
-                return True, "external server already running"
+                return True, "authenticated external server adopted"
 
             binary = self.find_jamulus_server()
             if not binary:
@@ -821,6 +895,10 @@ class BridgeService:
                     atomic_write_text(
                         secret_path, _secrets.token_hex(32) + "\n", mode=0o600,
                     )
+                # Correct an older/manual file with permissive mode before the
+                # server reads it. The recorder credential must remain local
+                # to this account even when it already existed.
+                secret_path.chmod(0o600)
             except OSError as exc:
                 return False, (
                     f"Could not prepare the server secret/recordings: {exc}"
@@ -856,35 +934,36 @@ class BridgeService:
                 )
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception("Hosted band server failed to start")
+                self._close_hosted_log_file()
                 return False, f"The band server could not start: {exc}"
 
+            self._hosted_server_adopted = False
             self._start_hosted_caffeinate()
 
             # Wait for the recorder RPC listener so the client (and the
             # Record button) never race a half-started server.
-            import socket
             deadline = time.monotonic() + 6.0
             while time.monotonic() < deadline:
-                if not self.hosted_server_alive():
+                if not self.hosted_server_owned():
+                    self.stop_hosted_server()
                     return False, (
                         "The band server exited immediately — see "
                         "~/Library/Logs/WebJam/jamulus-server.log."
                     )
-                try:
-                    with socket.create_connection(
-                        ("127.0.0.1", rpc_port), timeout=0.2
-                    ):
-                        LOGGER.info(
-                            "Hosted band server ready on UDP %s / RPC %s",
-                            udp_port, rpc_port,
-                        )
-                        self.metrics_service.increment("metric_host_server_started")
-                        return True, "started"
-                except OSError:
-                    time.sleep(0.15)
+                verified, _reason = self._probe_hosted_server_rpc()
+                if verified:
+                    LOGGER.info(
+                        "Hosted band server ready on UDP %s / RPC %s",
+                        udp_port, rpc_port,
+                    )
+                    self.metrics_service.increment("metric_host_server_started")
+                    return True, "started"
+                time.sleep(0.15)
+            self.stop_hosted_server()
             return False, (
                 "The band server started but its control port never became "
-                "ready — see ~/Library/Logs/WebJam/jamulus-server.log."
+                "authenticated and ready — see "
+                "~/Library/Logs/WebJam/jamulus-server.log."
             )
 
     def _start_hosted_caffeinate(self) -> None:
@@ -913,6 +992,9 @@ class BridgeService:
         """Terminate the hosted band server. Idempotent; quit-time only —
         Stop Audio deliberately never calls this."""
         with self._hosted_lifecycle_lock:
+            # Detach from an externally managed server without sending it a
+            # signal. Only the subprocess in hosted_server_process is owned.
+            self._hosted_server_adopted = False
             proc = self.hosted_server_process
             self.hosted_server_process = None
             if proc is not None and proc.poll() is None:
@@ -939,12 +1021,26 @@ class BridgeService:
         The client keeps running when only the server dies, so the normal
         client-reconnect logic never fires; restart the server directly.
         """
-        if not getattr(self.settings, "host_server_enabled", False):
+        if not self._hosting_enabled():
             return
         if not self.jamulus_launch_intended:
             return
+        lost_adopted_server = False
+        if self._hosted_server_adopted:
+            verified, _reason = self._probe_hosted_server_rpc()
+            if verified:
+                return
+            LOGGER.warning("Adopted hosted server is no longer reachable")
+            self._hosted_server_adopted = False
+            lost_adopted_server = True
         proc = self.hosted_server_process
-        if proc is None or proc.poll() is None:
+        if proc is not None and proc.poll() is None:
+            return
+        # Do not turn a user-correctable initial launch failure (missing app,
+        # bad version, port conflict) into a noisy retry every three seconds.
+        # Supervision starts only after an owned process existed or an adopted
+        # server was previously verified.
+        if proc is None and not lost_adopted_server:
             return
         if self._hosted_restart_inflight:
             return
@@ -1108,6 +1204,11 @@ class BridgeService:
         """
         if self.shutdown_requested():
             return
+
+        # Hosted-server supervision is a separate reliability promise from
+        # client auto-reconnect. Disabling client reconnect must not silently
+        # disable the band server's crash recovery.
+        self._restart_hosted_server_if_died()
         
         # Check if auto-reconnect is globally enabled in repository
         raw_auto_reconnect = self.repository.get_setting("auto_reconnect_enabled", "1")
@@ -1118,7 +1219,6 @@ class BridgeService:
             
         if self._end_practice_if_server_died():
             return
-        self._restart_hosted_server_if_died()
 
         now = time.monotonic()
         self._attempt_auto_reconnect_jamulus(now)

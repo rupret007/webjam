@@ -312,9 +312,15 @@ def _check_webex(settings) -> CheckItem:
 
 
 def _check_hosted_server(settings) -> "CheckItem | None":
-    """When this Mac hosts the band server, verify the server app exists."""
-    if not bool(getattr(settings, "host_server_enabled", False)):
+    """When this Mac hosts, verify the supported dedicated server binary."""
+    if getattr(settings, "host_server_enabled", False) is not True:
         return None
+    if sys.platform != "darwin":
+        return CheckItem(
+            "Band server (hosted)",
+            False,
+            "in-app band-server hosting is currently supported only on macOS",
+        )
     binary = Path(
         "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
@@ -326,10 +332,32 @@ def _check_hosted_server(settings) -> "CheckItem | None":
             "server from the official Jamulus 3.12.2 macOS disk image, or "
             "turn off hosting in Settings.",
         )
+    try:
+        import subprocess
+
+        probe = subprocess.run(
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        version_text = (probe.stdout or "") + (probe.stderr or "")
+    except Exception as exc:  # noqa: BLE001
+        return CheckItem(
+            "Band server (hosted)",
+            False,
+            f"couldn't verify JamulusServer.app version ({exc})",
+        )
+    if getattr(probe, "returncode", 0) != 0 or "Version 3.12.2" not in version_text:
+        return CheckItem(
+            "Band server (hosted)",
+            False,
+            "the closed pilot requires JamulusServer.app 3.12.2 exactly",
+        )
     return CheckItem(
         "Band server (hosted)",
         True,
-        "JamulusServer.app found — WebJam starts it with Start Audio",
+        "JamulusServer.app 3.12.2 verified — WebJam starts it with Start Audio",
     )
 
 

@@ -68,9 +68,8 @@ class TestEnsureHostedServer(unittest.TestCase):
                  patch("services.bridge_service.subprocess.Popen",
                        return_value=fake_proc) as popen, \
                  patch.object(bridge, "_port_free", return_value=True), \
-                 patch("socket.create_connection") as conn:
-                conn.return_value.__enter__ = MagicMock()
-                conn.return_value.__exit__ = MagicMock(return_value=False)
+                 patch.object(bridge, "_probe_hosted_server_rpc",
+                              return_value=(True, "ready")):
                 ok, detail = bridge.ensure_hosted_server()
             self.assertTrue(ok, detail)
             cmd = popen.call_args_list[0].args[0]
@@ -91,11 +90,64 @@ class TestEnsureHostedServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = _make_bridge(tmp)
             with patch.object(bridge, "_port_free", return_value=False), \
+                 patch.object(bridge, "_probe_hosted_server_rpc",
+                              return_value=(True, "ready")), \
                  patch("services.bridge_service.subprocess.Popen") as popen:
                 ok, detail = bridge.ensure_hosted_server()
             self.assertTrue(ok)
-            self.assertIn("external", detail)
+            self.assertIn("adopted", detail)
+            self.assertTrue(bridge.hosted_server_adopted())
+            self.assertTrue(bridge.hosted_server_alive())
+            self.assertFalse(bridge.hosted_server_owned())
             popen.assert_not_called()
+
+    def test_refuses_unverified_listener_instead_of_blind_adoption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            with patch.object(bridge, "_port_free", return_value=False), \
+                 patch.object(
+                     bridge, "_probe_hosted_server_rpc",
+                     return_value=(False, "authentication failed"),
+                 ), patch("services.bridge_service.subprocess.Popen") as popen:
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertFalse(ok)
+            self.assertIn("could not verify", detail)
+            self.assertFalse(bridge.hosted_server_alive())
+            popen.assert_not_called()
+
+    def test_refuses_recorder_when_expected_audio_udp_port_is_free(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            with patch.object(
+                bridge, "_port_free", side_effect=[False, True]
+            ), patch.object(
+                bridge, "_probe_hosted_server_rpc", return_value=(True, "ready")
+            ):
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertFalse(ok)
+            self.assertIn("UDP 22124", detail)
+            self.assertFalse(bridge.hosted_server_adopted())
+
+    def test_existing_secret_permissions_are_hardened(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            secret = Path(tmp) / "rpc.secret"
+            secret.write_text("existing-secret\n", encoding="utf-8")
+            secret.chmod(0o644)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            fake_proc.pid = 4242
+            with patch("services.bridge_service.subprocess.run",
+                       return_value=_version_ok()), \
+                 patch("services.bridge_service.subprocess.Popen",
+                       return_value=fake_proc), \
+                 patch.object(bridge, "_port_free", return_value=True), \
+                 patch.object(bridge, "_probe_hosted_server_rpc",
+                              return_value=(True, "ready")):
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertTrue(ok, detail)
+            self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+            bridge.stop_hosted_server()
 
     def test_wrong_version_refuses_to_host(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,6 +198,36 @@ class TestEnsureHostedServer(unittest.TestCase):
             bridge.stop_hosted_server()
             fake_proc.terminate.assert_called_once()
 
+    def test_stop_hosted_server_only_detaches_an_adopted_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            bridge._hosted_server_adopted = True
+            bridge.stop_hosted_server()
+            self.assertFalse(bridge.hosted_server_alive())
+
+    def test_rpc_readiness_timeout_cleans_up_spawned_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            fake_proc.pid = 4242
+            with patch("services.bridge_service.subprocess.run",
+                       return_value=_version_ok()), \
+                 patch("services.bridge_service.subprocess.Popen",
+                       return_value=fake_proc), \
+                 patch.object(bridge, "_port_free", return_value=True), \
+                 patch.object(bridge, "_probe_hosted_server_rpc",
+                              return_value=(False, "not ready")), \
+                 patch.object(bridge, "_start_hosted_caffeinate"), \
+                 patch("services.bridge_service.time.monotonic",
+                       side_effect=[0.0, 0.0, 7.0]), \
+                 patch("services.bridge_service.time.sleep"):
+                ok, detail = bridge.ensure_hosted_server()
+            self.assertFalse(ok)
+            self.assertIn("never became", detail)
+            fake_proc.terminate.assert_called_once()
+            self.assertFalse(bridge.hosted_server_alive())
+
     def test_dead_hosted_server_is_restarted_by_reconnect_tick(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = _make_bridge(tmp)
@@ -172,6 +254,33 @@ class TestEnsureHostedServer(unittest.TestCase):
                 bridge._restart_hosted_server_if_died()
             ensure.assert_not_called()
 
+    def test_no_supervision_loop_after_initial_start_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            bridge.jamulus_launch_intended = True
+            bridge.hosted_server_process = None
+            with patch.object(bridge, "ensure_hosted_server") as ensure:
+                bridge._restart_hosted_server_if_died()
+            ensure.assert_not_called()
+
+    def test_hosted_restart_runs_even_when_client_auto_reconnect_is_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            bridge.repository.get_setting.return_value = "0"
+            bridge.jamulus_launch_intended = True
+            dead = MagicMock()
+            dead.poll.return_value = 1
+            bridge.hosted_server_process = dead
+            with patch.object(bridge, "_restart_hosted_server_if_died") as restart:
+                bridge.attempt_auto_reconnects()
+            restart.assert_called_once()
+
+    def test_hosted_effective_server_is_always_loopback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            bridge.settings.jamulus_server = "public.example.com"
+            self.assertEqual(bridge.effective_server(), "127.0.0.1:22124")
+
 
 class _Immediate:
     def __init__(self, *args, target=None, daemon=None, name=None, **kwargs):
@@ -195,10 +304,11 @@ class TestHostedSettings(unittest.TestCase):
             }))
             s = load_settings(str(cfg))
             self.assertTrue(s.host_server_enabled)
+            self.assertEqual(s.jamulus_server, "127.0.0.1")
             self.assertIn("JamulusServer", s.server_rpc_secret_file)
             self.assertIn("WebJam Recordings", s.takes_directory)
 
-    def test_hosting_respects_explicit_paths(self):
+    def test_hosting_replaces_incompatible_explicit_paths_with_container_paths(self):
         import json
         from core.settings import load_settings
         with tempfile.TemporaryDirectory() as tmp:
@@ -210,8 +320,10 @@ class TestHostedSettings(unittest.TestCase):
                 "takes_directory": "/custom/takes",
             }))
             s = load_settings(str(cfg))
-            self.assertEqual(s.server_rpc_secret_file, "/custom/secret")
-            self.assertEqual(s.takes_directory, "/custom/takes")
+            self.assertIn("JamulusServer", s.server_rpc_secret_file)
+            self.assertIn("WebJam Recordings", s.takes_directory)
+            self.assertNotEqual(s.server_rpc_secret_file, "/custom/secret")
+            self.assertNotEqual(s.takes_directory, "/custom/takes")
 
     def test_env_var_enables_hosting(self):
         from core.settings import load_settings
@@ -229,11 +341,32 @@ class TestHostedPreflight(unittest.TestCase):
     def test_hosted_check_fails_without_server_app(self):
         from core import preflight
         s = SimpleNamespace(host_server_enabled=True)
-        with patch.object(Path, "is_file", return_value=False):
+        with patch("core.preflight.sys.platform", "darwin"), \
+             patch.object(Path, "is_file", return_value=False):
             item = preflight._check_hosted_server(s)
         self.assertIsNotNone(item)
         self.assertFalse(item.ok)
         self.assertIn("JamulusServer.app", item.detail)
+
+    def test_hosted_check_rejects_unsupported_platform(self):
+        from core import preflight
+        s = SimpleNamespace(host_server_enabled=True)
+        with patch("core.preflight.sys.platform", "win32"):
+            item = preflight._check_hosted_server(s)
+        self.assertFalse(item.ok)
+        self.assertIn("only on macOS", item.detail)
+
+    def test_hosted_check_verifies_exact_server_version(self):
+        from core import preflight
+        s = SimpleNamespace(host_server_enabled=True)
+        with patch("core.preflight.sys.platform", "darwin"), \
+             patch.object(Path, "is_file", return_value=True), \
+             patch("subprocess.run", return_value=SimpleNamespace(
+                 stdout="Jamulus, Version 3.13.0", stderr=""
+             )):
+            item = preflight._check_hosted_server(s)
+        self.assertFalse(item.ok)
+        self.assertIn("3.12.2", item.detail)
 
     def test_hosted_check_absent_when_not_hosting(self):
         from core import preflight
@@ -283,6 +416,8 @@ class TestHostedControllerFlows(unittest.TestCase):
         c.window.flash_message = MagicMock()
         c.settings.host_server_enabled = True
         c.bridge.hosted_server_alive = MagicMock(return_value=True)
+        c.bridge.hosted_server_owned = MagicMock(return_value=True)
+        c.bridge.hosted_server_adopted = MagicMock(return_value=False)
 
     def tearDown(self):
         self.controller.settings.host_server_enabled = False
@@ -358,6 +493,7 @@ class TestHostedShutdown(unittest.TestCase):
         controller = ApplicationController(window, settings=settings)
         order: list[str] = []
         controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+        controller.bridge.hosted_server_owned = MagicMock(return_value=True)
         controller.recording.stop_server_recording_for_shutdown = MagicMock(
             side_effect=lambda: order.append("stop-recording")
         )
