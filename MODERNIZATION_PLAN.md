@@ -176,6 +176,31 @@
   resources. The packaged app starts offscreen and exits on TERM without an
   orphan WebJam or Qt WebEngine process. Hardware evidence remains required.
 
+## Talk Break fail-closed hardening round
+
+- An independent review of the two-lane surface found one fail-open path:
+  Stop Audio during a Talk Break preserved the confirmed-mute flags, so the
+  next Start Audio rendered "Resume Music"/TALK while the fresh Jamulus
+  client transmitted live, and the reconnect reapply guard then refused to
+  re-mute because the stale flag claimed the send was already muted. Session
+  teardown (`reset_to_idle`) now clears both transmit flags, and the
+  reconnect proof-loss reset applies in every Webex role instead of only
+  talkback. Two regression tests pin the stop-then-start and non-talkback
+  reconnect cases.
+- Corrected the reconnect-failure banner ("WebJam will retry" promised a
+  timer that does not exist), moved the launch card's external-launch truth
+  from the accessible name to the accessible description (screen readers no
+  longer hear "Opening… externally"), added the Ctrl+Shift+M shortcut to the
+  Talk Break tooltip, and rewrote `webex_embed.py`'s stale module docstring
+  to describe the launch card and mark the retained WebEngine machinery as
+  unreachable legacy.
+- Validation: 950 tests with 12 expected skips and 6 subtests (warnings
+  unchanged), Ruff, compile checks, `pip check`, `pip-audit`, UX smoke,
+  `git diff --check`, clean ARM64 PyInstaller build with version/resource
+  inspection, and packaged offscreen startup/TERM with no orphan process.
+  CI run 29179609441 passed tests, real Jamulus integration, and all three
+  desktop builds at `2b9e165`.
+
 ## Remaining release gates
 
 1. On both musician Macs choose talkback mode, route Jamulus directly through

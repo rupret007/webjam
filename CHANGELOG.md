@@ -19,6 +19,13 @@ All notable improvements and features for the WebJam music collaboration platfor
   lane only after Jamulus acknowledges that transmit is muted. **Resume Music**
   defaults to cancel until the musician confirms Webex is muted; RPC failure
   leaves the safer lane muted. Reconnect reapplies an active Talk Break.
+- Transmit-mute state fails closed everywhere: Stop Audio clears Talk Break
+  entirely (a relaunched Jamulus client always starts unmuted, so stale TALK
+  could otherwise hide a live send), a crash-reconnect clears any confirmed
+  mute in every Webex role until the new session re-acknowledges it, and the
+  reconnect-failure banner now says exactly what to do — press Talk Break to
+  retry. The Talk Break tooltip names its Ctrl+Shift+M shortcut and the
+  launch card reads correctly to screen readers.
 - Setup presents three accessible audio-role cards. Ready Check automates only
   what WebJam can observe and labels native Webex device, mute, Mic Mode, and
   Smart Audio confirmations as `VERIFY`; those confirmations reset on rerun.
