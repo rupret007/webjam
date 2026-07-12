@@ -261,6 +261,50 @@ class TestMuteSelf(unittest.TestCase):
             self.controller._reapply_talk_break_after_reconnect()
         rpc.assert_not_called()
 
+    def test_stop_audio_during_talk_break_clears_transmit_state(self):
+        """Stop Audio ends the muted client; a relaunch is always unmuted.
+
+        Carrying TALK/muted forward would fail open: the strip would show
+        "Resume Music" while a freshly started Jamulus client transmits live.
+        """
+        self.controller._jamulus_connected = True
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
+        self.controller.bridge.jamulus_state = "Running"
+        self.controller.bridge.stop_jamulus = mock.Mock()
+        with mock.patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.controller.audio.stop()
+        self.assertFalse(self.controller._self_transmit_muted)
+        self.assertFalse(self.controller._talk_break_intended)
+        self.assertEqual(
+            self.window.session_strip._mute_self_button.text(), "Talk Break"
+        )
+        self.assertFalse(self.window.session_strip._mute_self_button.isChecked())
+        # A later Start Audio must not silently re-apply the dead Talk Break.
+        self.controller._jamulus_connected = True
+        with mock.patch.object(self.controller.jamulus, "set_self_muted") as rpc:
+            self.controller._reapply_talk_break_after_reconnect()
+        rpc.assert_not_called()
+
+    def test_reconnect_clears_stale_muted_send_in_non_talkback_modes(self):
+        """A crash-reconnect loses transmit proof in every Webex mode, not
+        just talkback — the fresh client starts unmuted."""
+        self.controller.settings.webex_audio_mode = "video_only"
+        try:
+            self.controller._jamulus_connected = True
+            self.controller._self_transmit_muted = True
+            self.controller._talk_break_intended = False
+            self.controller._apply_jamulus_participants([])
+            self.assertFalse(self.controller._self_transmit_muted)
+            self.assertFalse(
+                self.window.session_strip._mute_self_button.isChecked()
+            )
+        finally:
+            self.controller.settings.webex_audio_mode = "talkback"
+
     def test_mute_self_rpc_failure_reverts_button_and_participant(self):
         self.controller._jamulus_connected = True
         with mock.patch.object(

@@ -1,30 +1,20 @@
 """
-WebexEmbed — embedded Webex meeting pane.
+WebexEmbed — the Webex launch card in the live workspace.
 
-Integrates the Webex Meetings Widget inside a QWebEngineView so the meeting
-lives inside WebJam rather than opening a separate browser tab.
+The pilot path never embeds the meeting: WebJam opens the configured Webex
+room externally (native app or default browser) and renders only truthful
+launch state ("Not opened", "Opening…", "Opened externally", "Open failed")
+plus role-aware audio guidance and the persistent PLAY/TALK safety chip.
+WebJam cannot inspect or control the external meeting; joining, microphone,
+speaker, and mute all live in Webex itself (see WEBEX_AUDIO_MODES.md).
 
-Two join modes, chosen automatically based on AppSettings:
-
-  Guest-widget mode  — when ``webex_guest_issuer_id`` and
-                       ``webex_guest_issuer_secret`` are both non-empty.
-                       Generates a guest JWT, exchanges it for an API access
-                       token, then loads a local HTML page running the Webex
-                       Meetings Widget. The user appears as a named guest with
-                       no Webex login required.
-
-  Direct-URL mode    — fallback (and default). Loads ``settings.webex_url``
-                       directly in the WebEngine view using a Chrome
-                       user-agent. The Webex web client handles auth via the
-                       browser session stored in the persistent profile.
-
-Camera and microphone permission requests are granted only for trusted Webex
-origins. Screen-capture and notification requests are denied by default. The
-view uses a named persistent profile (``webjam_webex``) so cookies and
-local-storage survive restarts.
-
-WebEngine objects are created lazily on first ``load_meeting()`` call so the
-Chromium subprocess is only started when the user actually joins a meeting.
+The legacy embedded-meeting machinery below (guest-token widget and
+direct-URL modes in a QWebEngineView) is retained for compatibility only.
+It is not reachable from the product UI: ``load_meeting`` and
+``load_meeting_with_guest_token`` have no production callers, and the Guest
+Issuer application type it depends on has been removed by Webex for new
+apps. WebEngine objects are created lazily so the Chromium subprocess never
+starts unless that legacy path is explicitly invoked.
 """
 
 from __future__ import annotations
@@ -343,7 +333,10 @@ class WebexEmbed(QFrame):
         )
         self._fallback_btn.setText(button_text)
         self._fallback_btn.setEnabled(status != "Opening…")
-        self._fallback_btn.setAccessibleName(f"{button_text} externally")
+        self._fallback_btn.setAccessibleName(button_text)
+        self._fallback_btn.setAccessibleDescription(
+            descriptions.get(status, str(status))
+        )
 
     def set_audio_mode(self, mode: str) -> None:
         """Render concise role guidance for the selected Webex audio mode."""

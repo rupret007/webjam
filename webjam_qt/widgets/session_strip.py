@@ -151,7 +151,8 @@ class SessionStrip(QFrame):
         self._mute_self_button.setAccessibleName("Start a talk break")
         self._mute_self_button.setToolTip(
             "Mute your Jamulus send before using Webex push-to-talk.\n"
-            "This control never changes the Webex microphone."
+            "This control never changes the Webex microphone.\n"
+            "Shortcut: Ctrl+Shift+M (the literal Control key on macOS)."
         )
         self._mute_self_button.clicked.connect(self.mute_self_requested.emit)
 

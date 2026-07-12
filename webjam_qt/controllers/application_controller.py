@@ -476,10 +476,11 @@ class ApplicationController(QObject):
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
         was_connected = self._jamulus_connected
-        if not jamulus_participants and was_connected and self._talk_break_intended:
-            # A reconnect loses proof of the Jamulus client's transmit state.
-            # Preserve the user's Talk Break intent, but never render TALK as
-            # confirmed until the new RPC session acknowledges setMuted.
+        if not jamulus_participants and was_connected and self._self_transmit_muted:
+            # A reconnect loses proof of the Jamulus client's transmit state
+            # in every Webex mode. Preserve any Talk Break intent, but never
+            # render the send as muted until the new RPC session acknowledges
+            # setMuted.
             self._self_transmit_muted = False
             self._sync_self_mute_button()
         self.audio.apply_participants(jamulus_participants)
@@ -956,8 +957,8 @@ class ApplicationController(QObject):
         self._self_transmit_muted = False
         self._sync_self_mute_button()
         self.window.flash_message(
-            "Talk Break is not confirmed after reconnect — keep Webex muted. "
-            "WebJam will retry, or press Talk Break to retry now.",
+            "Talk Break is not confirmed after reconnect — keep Webex muted "
+            "and press Talk Break to retry.",
             ms=8000,
         )
 

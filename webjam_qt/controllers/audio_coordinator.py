@@ -104,6 +104,11 @@ class AudioCoordinator:
 
     def reset_to_idle(self) -> None:
         self._c.session_health.reset_live_truth()
+        # The session is over, so any confirmed transmit-mute died with the
+        # Jamulus client.  A relaunched client always starts unmuted; carrying
+        # TALK/muted state forward would render a fail-open lie.
+        self._c._self_transmit_muted = False
+        self._c._talk_break_intended = False
         self._c.participants.clear()
         self._c._push_participants_to_grid()
         self._c.window.participant_grid.set_session_state(SessionUiState.idle())
