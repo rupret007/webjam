@@ -197,9 +197,14 @@ chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
 codesign --force --sign - dist/WebJam.app/Contents/MacOS/webjam-fabric
 shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
   | awk '{print $1}' \
-  > dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+  > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
 codesign --force --sign - dist/WebJam.app
 ```
+
+The macOS manifest is bundle data under `Contents/Resources`; putting a text
+manifest in `Contents/MacOS` makes strict code-signature verification treat it
+as an unsigned executable. Windows keeps the manifest beside the executable in
+its flat PyInstaller directory.
 
 A release artifact must also stage and verify the pinned Jamulus apps, refresh
 the outer macOS signature, run the packaged sidecar smoke check, and verify

@@ -71,7 +71,7 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("go mod verify", CI)
         self.assertIn("webjam-fabric.exe", CI)
         self.assertIn("Contents/MacOS/webjam-fabric", CI)
-        self.assertIn("webjam-fabric.sha256", CI)
+        self.assertIn("Contents/Resources/webjam-fabric.sha256", CI)
         self.assertIn("buildID=$build_id", CI)
         self.assertIn("codesign --force --sign -", CI)
         self.assertIn('"type":"shutdown"', CI)

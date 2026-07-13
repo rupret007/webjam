@@ -194,12 +194,21 @@ def test_frozen_sidecar_is_resolved_beside_main_executable(monkeypatch) -> None:
         )
 
 
+def test_macos_frozen_manifest_is_sealed_as_bundle_data(monkeypatch) -> None:
+    monkeypatch.setattr(native.sys, "platform", "darwin")
+    binary = Path("/App/WebJam.app/Contents/MacOS/webjam-fabric")
+    assert native._transport_manifest_path(binary) == Path(
+        "/App/WebJam.app/Contents/Resources/webjam-fabric.sha256"
+    )
+
+
 def test_frozen_integrity_manifest_is_mandatory_and_canonical(
     tmp_path, monkeypatch
 ) -> None:
     binary = tmp_path / "webjam-fabric"
     binary.write_bytes(b"binary")
     monkeypatch.setattr(native.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(native.sys, "platform", "linux")
 
     with pytest.raises(Exception, match="verify"):
         native._integrity_options(binary)
@@ -208,3 +217,43 @@ def test_frozen_integrity_manifest_is_mandatory_and_canonical(
     options = native._integrity_options(binary)
     assert options["expected_sha256"] == "a" * 64
     assert options["require_platform_signature"] is True
+
+
+def test_frozen_macos_integrity_rejects_non_bundle_layout(
+    tmp_path, monkeypatch
+) -> None:
+    binary = tmp_path / "webjam-fabric"
+    binary.write_bytes(b"binary")
+    (tmp_path / "webjam-fabric.sha256").write_text(
+        "a" * 64 + "\n", encoding="ascii"
+    )
+    monkeypatch.setattr(native.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(native.sys, "platform", "darwin")
+
+    with pytest.raises(Exception, match="verify"):
+        native._integrity_options(binary)
+
+
+def test_frozen_macos_integrity_uses_resources_manifest(
+    tmp_path, monkeypatch
+) -> None:
+    binary = tmp_path / "WebJam.app" / "Contents" / "MacOS" / "webjam-fabric"
+    manifest = (
+        tmp_path
+        / "WebJam.app"
+        / "Contents"
+        / "Resources"
+        / "webjam-fabric.sha256"
+    )
+    binary.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True)
+    binary.write_bytes(b"binary")
+    manifest.write_text("b" * 64 + "\n", encoding="ascii")
+    (binary.parent / "webjam-fabric.sha256").write_text(
+        "a" * 64 + "\n", encoding="ascii"
+    )
+    monkeypatch.setattr(native.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(native.sys, "platform", "darwin")
+
+    options = native._integrity_options(binary)
+    assert options["expected_sha256"] == "b" * 64

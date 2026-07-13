@@ -79,12 +79,32 @@ def _expected_build_id() -> str:
     return value
 
 
+def _transport_manifest_path(binary: Path) -> Path:
+    """Return the signed-bundle data path for the transport hash manifest."""
+
+    # macOS treats every item in Contents/MacOS as executable code during
+    # strict verification.  Keep the signed binary there, but seal its hash as
+    # ordinary bundle data under Contents/Resources.  Windows keeps the
+    # manifest beside the executable in the flat PyInstaller directory.
+    if (
+        sys.platform == "darwin"
+        and binary.parent.name == "MacOS"
+        and binary.parent.parent.name == "Contents"
+    ):
+        return binary.parent.parent / "Resources" / "webjam-fabric.sha256"
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        raise TransportProcessError(
+            "WebJam could not verify its secure transport build."
+        )
+    return binary.parent / "webjam-fabric.sha256"
+
+
 def _integrity_options(binary: Path) -> dict[str, object]:
     """Return mandatory signed-bundle integrity checks for frozen builds."""
 
     if not getattr(sys, "frozen", False):
         return {}
-    manifest = binary.parent / "webjam-fabric.sha256"
+    manifest = _transport_manifest_path(binary)
     try:
         encoded = manifest.read_bytes()
     except OSError as exc:

@@ -426,7 +426,7 @@ jobs:
               dist/WebJam.app/Contents/MacOS/webjam-fabric
             shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}' \
-              > dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+              > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
             build_id="$(git rev-parse HEAD)"
             expected_machine="arm64"
             if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
@@ -434,7 +434,7 @@ jobs:
             fi
             python tests/support/verify_packaged_transport.py \
               --binary dist/WebJam.app/Contents/MacOS/webjam-fabric \
-              --manifest dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256 \
+              --manifest dist/WebJam.app/Contents/Resources/webjam-fabric.sha256 \
               --build-id "$build_id" \
               --machine "$expected_machine"
             ! codesign -d --entitlements :- \
@@ -445,7 +445,7 @@ jobs:
               | grep -q 'com.apple.security.app-sandbox'
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
-            test -s dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+            test -s dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
             printf '%s\n' \
               '{"version":1,"id":1,"type":"hello"}' \
               '{"version":1,"id":2,"type":"shutdown"}' \
@@ -499,7 +499,7 @@ jobs:
             test "$fabric_cdhash_before" = "$fabric_cdhash_after"
             test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}')" = \
-              "$(tr -d '\n' < dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256)"
+              "$(tr -d '\n' < dist/WebJam.app/Contents/Resources/webjam-fabric.sha256)"
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \
@@ -510,7 +510,7 @@ jobs:
             codesign --verify --deep --strict "$fresh_dir/WebJam.app"
             python tests/support/verify_packaged_transport.py \
               --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
-              --manifest "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric.sha256" \
+              --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
               --machine "$expected_machine"
           fi
