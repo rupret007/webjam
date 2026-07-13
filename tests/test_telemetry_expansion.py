@@ -141,7 +141,7 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         with mock.patch("core.audio_routing.scan_loopback_devices") as scan:
             self.controller._start_routing_scan()
         scan.assert_not_called()
-        self.controller.window.set_status_routing.assert_called_with("Not required")
+        self.controller.window.set_status_routing.assert_called_with("")
         self.controller.window.flash_message.assert_not_called()
 
     def test_late_loopback_result_is_ignored_after_switch_to_talkback(self) -> None:

@@ -39,7 +39,8 @@ class TestLevels(unittest.TestCase):
     def test_unknown_channel_falls_back_to_global_mix(self):
         eng = RealAudioEngine(_settings())
         eng.set_level_override(-1, 0.3)   # global mix
-        self.assertEqual(eng.get_level(42), 0.3)  # unknown -> global
+        self.assertEqual(eng.get_level(42), 0.0)  # never clone local input to a remote
+        self.assertEqual(eng.get_level(-1), 0.3)
 
     def test_clear_overrides(self):
         eng = RealAudioEngine(_settings())
@@ -96,21 +97,19 @@ class TestResolveDevice(unittest.TestCase):
         self.assertEqual(eng.diagnostics().input_device, "system default")
 
 
-class TestSyntheticFallback(unittest.TestCase):
-    def test_start_uses_synthetic_when_no_sounddevice(self):
-        # In this environment sd is None (PortAudio missing) -> synthetic path.
+class TestUnavailableMeterFallback(unittest.TestCase):
+    def test_missing_sounddevice_never_fabricates_meter_activity(self):
         with mock.patch.object(ae, "sd", None):
             eng = RealAudioEngine(_settings())
             eng.start()
             try:
-                deadline = time.monotonic() + 1.0
-                while time.monotonic() < deadline and eng.get_level(-1) == 0.0:
-                    time.sleep(0.02)
+                self.assertEqual(eng.get_level(-1), 0.0)
             finally:
                 eng.stop()
-        self.assertEqual(eng.diagnostics().backend, "synthetic")
+        self.assertEqual(eng.diagnostics().backend, "unavailable")
+        self.assertFalse(eng.diagnostics().active)
         self.assertFalse(eng.running)
-        self.assertTrue(0.0 <= eng.get_level(-1) <= 1.0)
+        self.assertEqual(eng.get_level(-1), 0.0)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ Notifications consumed:
 Caller never touches the socket: it registers ``on_participants_changed`` /
 ``on_levels`` callbacks and calls ``set_channel_gain`` / ``set_channel_mute``.
 When the RPC server isn't reachable (Jamulus not started, old version, auth not
-ready) every call silently no-ops so the UDP fallback and demo data take over.
+ready) every call silently no-ops so startup can wait for authoritative data.
 """
 
 from __future__ import annotations
@@ -40,11 +40,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from core.settings import jamulus_client_rpc_secret_path
+
 _logger = logging.getLogger("webjam.jamulus_rpc")
 
 # Shared secret file: bridge_service writes it and launches Jamulus with
 # --jsonrpcsecretfile pointing here; this client reads it to authenticate.
-DEFAULT_SECRET_PATH = Path.home() / ".webjam_jsonrpc_secret"
+# On macOS the official Jamulus.app is sandboxed, so the file must live in
+# Jamulus's own container rather than directly under the user's home folder.
+DEFAULT_SECRET_PATH = jamulus_client_rpc_secret_path()
 
 
 @dataclass
@@ -109,6 +113,10 @@ class JamulusRpcClient:
         self._pending_commands: Dict[int, _PendingCommand] = {}
         self._clients: List[ChannelInfo] = []     # last-known participant list
         self._local_channel_id: int = -1
+        # Jamulus 3.12.2's real getChannelInfo response describes this client
+        # but does not include its server-assigned channel id.  Keep the
+        # profile so we can identify the one matching getClientList row.
+        self._local_profile: dict[str, str] = {}
         # Heartbeat: monotonic time of the last successful RPC interaction.
         # Stays 0.0 until the first success; reset on (re)start.
         self._last_activity_at: float = 0.0
@@ -129,6 +137,8 @@ class JamulusRpcClient:
         self._last_activity_at = 0.0
         self._available = False
         self._authed = False
+        self._local_channel_id = -1
+        self._local_profile = {}
         self._sock = None
         self._fail_pending_commands()
         with self._lock:
@@ -144,6 +154,7 @@ class JamulusRpcClient:
         self._available = False
         self._authed = False
         self._local_channel_id = -1
+        self._local_profile = {}
         with self._lock:
             pending = list(self._pending_commands.values())
             self._pending_commands.clear()
@@ -434,7 +445,7 @@ class JamulusRpcClient:
     # ------------------------------------------------------------------
     def _handle_response(self, method: Optional[str], result) -> None:
         if method == "jamulusclient/getChannelInfo" and isinstance(result, dict):
-            self._set_local_id(result.get("id"))
+            self._set_local_channel_info(result)
         elif method == "jamulusclient/getClientList" and isinstance(result, dict):
             self._update_clients(result.get("clients"))
 
@@ -447,14 +458,69 @@ class JamulusRpcClient:
             self._emit_chat(params.get("chatText"))
         elif method == "jamulusclient/connected":
             self._set_local_id(params.get("id"))
-            # ask for a fresh list now that we're connected
+            # Jamulus 3.12.2 does not include an id in getChannelInfo or in
+            # every connected notification.  Refresh both halves so profile
+            # matching can recover local identity after a reconnect.
+            self._send("jamulusclient/getChannelInfo", {})
             self._send("jamulusclient/getClientList", {})
         elif method == "jamulusclient/disconnected":
+            self._local_channel_id = -1
             self._update_clients([])
         elif method == "jamulusclient/recorderState":
             self._emit_recorder_state(params.get("state"))
 
-    def _set_local_id(self, value) -> None:
+    @staticmethod
+    def _identity_value(value) -> str:
+        return str(value or "").strip().casefold()
+
+    def _set_local_channel_info(self, info: dict) -> None:
+        """Remember the local profile and resolve its roster row.
+
+        The production Jamulus 3.12.2 response contains name/profile fields
+        but no channel id.  Older releases and test doubles may still include
+        an id, so retain that faster path while supporting the real shape.
+        """
+        self._local_profile = {
+            "name": self._identity_value(info.get("name")),
+            "instrument": self._identity_value(info.get("instrument")),
+            "skill_level": self._identity_value(info.get("skillLevel")),
+            "country": self._identity_value(info.get("country")),
+            "city": self._identity_value(info.get("city")),
+        }
+        self._set_local_id(info.get("id"))
+        if self._local_channel_id < 0:
+            inferred = self._infer_local_channel_id()
+            if inferred is not None:
+                self._set_local_id(inferred)
+
+    def _infer_local_channel_id(self) -> Optional[int]:
+        """Return the sole roster row matching getChannelInfo, if any."""
+        profile = self._local_profile
+        local_name = profile.get("name", "")
+        if not local_name or not self._clients:
+            return None
+
+        named = [
+            client for client in self._clients
+            if self._identity_value(client.name) == local_name
+        ]
+        if len(named) == 1:
+            return named[0].channel_id
+
+        # Duplicate display names are possible.  Only choose one when all
+        # available profile fields make the match unique; never guess.
+        fields = ("instrument", "skill_level", "country", "city")
+        exact = [
+            client for client in named
+            if all(
+                self._identity_value(getattr(client, field))
+                == profile.get(field, "")
+                for field in fields
+            )
+        ]
+        return exact[0].channel_id if len(exact) == 1 else None
+
+    def _set_local_id(self, value, *, notify: bool = True) -> None:
         try:
             cid = int(value)
         except (TypeError, ValueError):
@@ -462,8 +528,21 @@ class JamulusRpcClient:
         if cid >= 0:
             self._local_channel_id = cid
             # Re-tag cached clients' is_local if we learned our id late.
+            changed = False
             for c in self._clients:
-                c.is_local = (c.channel_id == cid)
+                is_local = c.channel_id == cid
+                if c.is_local != is_local:
+                    c.is_local = is_local
+                    changed = True
+            # getClientList and getChannelInfo are independent RPC replies.
+            # If the list arrived first, the UI already saw every row as
+            # remote; publish the corrected list immediately instead of
+            # waiting for another server event.
+            if notify and changed and self._on_participants_changed:
+                try:
+                    self._on_participants_changed(list(self._clients))
+                except Exception as exc:  # noqa: BLE001
+                    _logger.debug("local participant callback error: %s", exc)
 
     def _update_clients(self, raw_clients) -> None:
         if not isinstance(raw_clients, list):
@@ -479,13 +558,17 @@ class JamulusRpcClient:
             clients.append(ChannelInfo(
                 channel_id=cid,
                 name=str(entry.get("name", "") or f"Participant {cid}"),
-                instrument=str(entry.get("instrument", "")),
-                skill_level=str(entry.get("skillLevel", "")),
-                country=str(entry.get("country", "")),
-                city=str(entry.get("city", "")),
+                instrument=str(entry.get("instrument") or ""),
+                skill_level=str(entry.get("skillLevel") or ""),
+                country=str(entry.get("country") or ""),
+                city=str(entry.get("city") or ""),
                 is_local=(cid == self._local_channel_id),
             ))
         self._clients = clients
+        if self._local_channel_id < 0:
+            inferred = self._infer_local_channel_id()
+            if inferred is not None:
+                self._set_local_id(inferred, notify=False)
         if self._on_participants_changed:
             try:
                 self._on_participants_changed(list(clients))

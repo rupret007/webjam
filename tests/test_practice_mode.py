@@ -222,7 +222,7 @@ class TestConductorPracticeEntry(unittest.TestCase):
         c._on_practice_requested()
         c.bridge.launch_practice_session.assert_not_called()
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("Stop Audio first" in m for m in msgs), msgs)
+        self.assertTrue(any("End the current session" in m for m in msgs), msgs)
 
     def test_failed_start_restores_button(self):
         c = self.controller
@@ -230,7 +230,7 @@ class TestConductorPracticeEntry(unittest.TestCase):
         c.window.session_strip.set_audio_state = MagicMock()
         c._on_practice_requested()
         c.window.session_strip.set_audio_state.assert_called_with(
-            "Start Audio", enabled=True
+            "Start Session", enabled=True
         )
 
     def test_strip_button_emits_signal(self):
@@ -250,7 +250,7 @@ class TestConductorPracticeEntry(unittest.TestCase):
             c._refresh_readiness()
             text = self.window._status_audio.text()
             self.assertIn("Practice", text)
-            self.assertIn("127.0.0.1", text)
+            self.assertNotIn("127.0.0.1", text)
         finally:
             c.bridge.practice_mode = False
 

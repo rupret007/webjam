@@ -6,21 +6,23 @@ musician gets their own track, and every take lands as a ready-to-open
 setup used by WebJam's pilot **● Record** button; recordings can also be
 started from a connected Jamulus client GUI or via JSON-RPC.
 
-## macOS host + musician workstation (v0.8.1 pilot)
+## macOS host + musician workstation (v0.9.0 pilot)
 
-**WebJam can now host the server for you.** Enable *"This Mac hosts the band
-server"* in Setup/Settings and press **Start Audio**: WebJam verifies
-JamulusServer.app 3.12.2, checks the ports, creates the protected RPC secret
-and recordings folder in the server app's container, starts the server with
-a `caffeinate` sleep assertion, and supervises it (a crashed server is
-restarted automatically). The server keeps running through Stop Audio and
-stops only when WebJam quits — quitting mid-recording first stops the
-recording cleanly. The manual Terminal procedure below remains the fallback
-and reference; if the script's server is already running, WebJam adopts it
-only after the configured secret authenticates and the recorder API responds.
-The status bar then reads `Server: External :22124`. WebJam never terminates
-or stops recording on an adopted process when it quits. A server WebJam starts
-itself is reported as `Server: Hosting :22124` and is stopped on WebJam quit.
+**WebJam hosts the server automatically.** In the packaged macOS app, choose
+**Host a Jam**. WebJam verifies the prepared JamulusServer 3.12.2 app, checks
+the required listeners, creates the protected RPC secret and recordings folder
+under `~/Library/Application Support/WebJam/`, starts the server with a
+`caffeinate` sleep assertion, and connects the local client. The invitation is
+not enabled until the hosted service is alive.
+
+The host uses **End Session** to stop and save an active take, disconnect the
+client, stop the server WebJam owns, and release the sleep assertion. A guest's
+**Leave Jam** stops only that guest client. The manual Terminal procedure below
+is a developer fallback and protocol reference, not a musician setup step.
+
+If the fallback script's server is already running, WebJam can adopt it only
+after the configured secret authenticates and the recorder API responds.
+WebJam never terminates or stops recording on an adopted process when it quits.
 
 Downloadable WebJam builds include both official Jamulus 3.12.2 apps. Source
 checkouts and the manual fallback below use `/Applications/Jamulus.app` as the
@@ -30,10 +32,12 @@ the server and its own WebJam client simultaneously because the
 WebJam-launched client keeps JSON-RPC `22222`, while recorder control uses
 loopback-only `22240`.
 
-Both official apps are sandboxed. In particular, the server cannot write to
-an arbitrary `~/Music` directory when launched from Terminal. Keep the RPC
-secret and takes in the server app's real `Data/Documents` container as shown
-below; `Data/Music` is only a symlink back to `~/Music` and is not suitable.
+The official apps used by the manual fallback are sandboxed. In particular,
+the server cannot write to an arbitrary `~/Music` directory when launched
+from Terminal. Keep the manual fallback's RPC secret and takes in the server
+app's real `Data/Documents` container as shown below. Downloadable WebJam
+builds prepare their nested copies for unattended orchestration and instead
+use WebJam's own Application Support directory.
 
 In a dedicated Terminal window, run:
 
@@ -77,37 +81,35 @@ a DHCP reservation, disable its VPN during the pilot, allow Jamulus through
 the macOS firewall, and forward **UDP 22124 only** from the router. Never
 forward TCP 22222 or 22240.
 
-Configure the host Mac's WebJam settings with:
+For source/developer runs, configure the host Mac's stored settings with:
 
 - Enable **This Mac hosts the band server**. WebJam then enforces Jamulus
   server `127.0.0.1`, port `22124`; stale LAN/public host values are ignored.
 - Local Jamulus control port: `22222`
 - `server_rpc_port`: `22240`
-- `server_rpc_secret_file`: the full path to
-  `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/webjam_server_rpc.secret`
-- `takes_directory`: the full path to
-  `~/Library/Containers/app.jamulussoftware.JamulusServer/Data/Documents/WebJam Recordings`
+- `server_rpc_secret_file`: packaged builds derive
+  `~/Library/Application Support/WebJam/JamulusServer/webjam_server_rpc.secret`
+- `takes_directory`: packaged builds derive
+  `~/Library/Application Support/WebJam/JamulusServer/Recordings`
 
-In-app hosting is macOS-only in v0.8.1. `JamulusServer.app` is a separate
-official application and is not inside the WebJam artifact; the nested
-`Jamulus.app` bundle is the musician client only. Ready Check verifies the
-dedicated server's exact version before the session.
+The manual `/Applications/JamulusServer.app` fallback continues to use the
+sandbox-container paths shown in the script above.
 
-The remote musician does not receive the recorder secret. For the two-Mac
-pilot, test both the Mac mini's stable Tailscale address and the home's public
-address on UDP 22124. Require `tailscale ping` to report a direct path rather
-than DERP. For the public path, prove access from a genuinely external network.
-Use whichever route has lower stable delay and no recurring dropout. If direct
-UDP fails because of CGNAT or router restrictions, retain a direct Tailscale
-path or approve a private VPS; a public Jamulus server cannot pass the local
-recording gate.
+One-click in-app hosting is macOS-only in the v0.9.0 private pilot.
+Downloadable macOS artifacts contain prepared nested client and server apps;
+the launch path verifies the dedicated server before publishing the invite.
+
+The remote musician does not receive the recorder secret. Tonight's v0.9.0
+pilot uses two Macs on the same local network; internet, VPN, NAT, and router
+traversal are not part of the claim. Remote/private server work remains an
+advanced path to validate separately after the same-LAN artifact passes.
 
 ## Docker on a Linux VPS (legacy-compatible option)
 
 The checked-in Compose recipe remains pinned to a third-party Jamulus 3.9.0
 image for reproducibility. It is compatible with the current RPC contract but
-is **not** the v0.8.1 weekend validation path; that path uses the official
-3.12.2 macOS binary above. Do not silently change the image digest.
+is **not** the v0.9.0 test-night validation path; that path uses the prepared
+official 3.12.2 macOS binary above. Do not silently change the image digest.
 
 ```bash
 # 1. Get these files onto the server
@@ -125,8 +127,9 @@ image cannot change your band server unexpectedly. Review and intentionally
 update `server/docker-compose.yml` when you want to upgrade Jamulus.
 
 Open **UDP 22124** in your VPS firewall/security group. Your band's server
-address is the VPS IP (or a DNS name you point at it), port `22124` — put
-that in WebJam's setup wizard.
+address is the VPS IP (or a DNS name you point at it), port `22124`. This is an
+advanced source/developer topology; the v0.9.0 Join screen intentionally
+accepts only a complete invitation generated by the host.
 
 ## Official package on Ubuntu/Debian
 
@@ -146,8 +149,8 @@ jamulus-headless --server --nogui --port 22124 \
 ## Recording
 
 - `--recording <dir> --norecord` = the recorder is *ready but idle*; nothing
-  is taped until someone starts it. WebJam shows a red **● REC** chip to
-  every member whenever the recorder is rolling.
+  is taped until someone starts it. WebJam reports recording with text,
+  elapsed time, and the active Record control rather than relying on color.
 - Start/stop today: via JSON-RPC (`jamulusserver/startRecording` /
   `stopRecording`) or by any client GUI's Edit menu if enabled.
 - Each take becomes `recordings/<timestamp>/` containing one WAV per
@@ -178,9 +181,9 @@ For the same-Mac setup above, do not open an SSH tunnel: the server already
 listens on loopback port 22240.
 
 Now the **● Record** button in the Conductor arms/stops the multitrack
-recorder for the whole band; everyone sees the red ● REC chip while tape
-rolls. Every take lands in `recordings/` as one WAV per musician + a
-Reaper `.rpp`.
+recorder for the whole band; recording state and elapsed time remain visible
+while tape rolls. Every take lands in `recordings/` as one WAV per musician +
+a Reaper `.rpp`.
 
 ## Security notes
 

@@ -137,6 +137,23 @@ class TestDiscoverTakes(unittest.TestCase):
 
 
 class TestTakeValidation(unittest.TestCase):
+    def test_manifest_uses_live_musician_names_for_server_tracks(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "____-127_0_0_1_50000-0-1.wav", seconds=0.1)
+            result = write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                participant_names={0: "Jeff — Guitar"},
+                session_title="Sunday Rehearsal",
+            )
+        self.assertIsNotNone(result.take)
+        self.assertEqual(result.take.tracks[0].name, "Jeff — Guitar")
+        self.assertEqual(result.take.session_title, "Sunday Rehearsal")
+        self.assertEqual(result.take.display_name, "Sunday Rehearsal")
+
     def test_reports_expected_track_shortfall_and_silence(self):
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "take"

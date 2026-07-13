@@ -59,7 +59,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 | Idea | Description | Phase |
 |------|-------------|-------|
-| **Cohort & mode analytics** | Privacy-respecting dashboards: which modes are used, do Setup Wizard sessions last longer, which templates win. (Build on existing metrics.) | 2 |
+| **Cohort & mode analytics** | Privacy-respecting dashboards: which modes are used, where Host/Join sessions stall, which templates win. (Build on existing metrics.) | 2 |
 | **Community room templates** | Users can publish/share templates; small gallery so best practices spread without building every workflow. | 3 |
 | **Accessibility as differentiator** | Double down on high contrast, scalable UI, keyboard flow, screen-reader-friendly structure; say it clearly in positioning. | 1 |
 
@@ -73,15 +73,38 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
+### ✅ Implemented — v0.9.0 test-night candidate (2026-07-13)
+
+- **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
+  opens one invitation field. The bundled server/client start automatically in
+  the normal macOS flow.
+- **Distinct visual identity** — near-black surfaces, white type, and official
+  burnt orange (`#BF5700`) replace the previous purple/teal control palette.
+  The launch graphic is original, lightweight, static, and purpose-driven.
+- **Meeting-style live hierarchy** — responsive musician tiles and one bottom
+  control bar for Copy Invite, Record, More, and role-aware End Session or
+  Leave Jam.
+- **Lifecycle truth** — permission, connecting, interrupted, unavailable,
+  offline, ending/leaving, recoverable, and fatal states have plain-language
+  next actions. A running process is not treated as proof of connection.
+- **Accessibility and narrow-window support** — visible focus, task-ordered
+  keyboard navigation, accessible descriptions/announcements, state meaning
+  beyond color, and a 760×600 live-session floor.
+- **Tonight's boundary** — private Apple Silicon two-Mac same-LAN artifact;
+  physical audio, reconnect, Studio multitrack, Logic import, and cleanup are
+  still required before widening the pilot.
+
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
 - **Bundled Jamulus** — downloadable builds ship Jamulus itself: macOS is zero-install (unmodified, notarized `Jamulus.app` nested in the bundle), Windows offers an in-wizard "Install Jamulus now" button that runs the bundled official installer. Removes the "leave WebJam, find jamulus.io, download, come back" step for most users; the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who needs a different install. See `THIRD_PARTY_NOTICES.md`.
 
-### ✅ Implemented — v0.8.1 release-candidate tree
+### Historical implementation checkpoint — v0.8.1
 
-Everything below is live in the v0.8.1 release-candidate tree. v0.8.0 remains
-the latest published build at [Releases](https://github.com/rupret007/webjam/releases)
-until the physical pilot gates pass.
+Everything below entered the source tree during the v0.8.1 release-candidate
+work. It is retained as implementation history; current status is the v0.9.0
+section above. v0.8.0 remains the latest published build at
+[Releases](https://github.com/rupret007/webjam/releases) until the physical
+pilot gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Focused first run** — two-step Host/Join, identity, Webex, and optional
@@ -113,11 +136,12 @@ until the physical pilot gates pass.
 
 ### 🔜 Next — closed pilot gates
 
-- Clean-artifact startup inspection for Windows x64, macOS ARM64, and macOS
-  Intel x64, plus the planned two-Apple-Silicon-Mac physical pilot.
-- Ctrl+P real-audio smoke, concurrent Jamulus music plus native Webex speech,
-  Talk Break safety, Record, take retrieval, Logic import, Take Deck playback,
-  reconnect, and a 45–60 minute soak on the pilot hardware.
+- Exact v0.9.0 artifact startup/resource/signature inspection and the planned
+  two-Apple-Silicon-Mac same-LAN physical pilot.
+- Host/link/paste/deep-link paths, real bidirectional audio, one server track
+  per musician, Studio stereo playback, aligned Logic-package import,
+  reconnection truth, role-aware
+  End/Leave, and a 45–60 minute soak on the pilot hardware.
 - macOS code signing/notarization and Windows signing.
 - Architecture split after pilot-readiness fixes: audio/session, video, recording, settings, and companion API coordinators.
 

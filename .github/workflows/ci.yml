@@ -146,7 +146,8 @@ jobs:
       # Bundling Jamulus removes the "leave WebJam, go find jamulus.io,
       # download, come back" detour for most users. Both platforms bundle
       # the same pinned version already used by integration-jamulus above,
-      # unmodified, per the "mere aggregation" terms in THIRD_PARTY_NOTICES.md.
+      # from the pinned upstream release, per THIRD_PARTY_NOTICES.md. macOS
+      # replaces only their code signatures after staging (see below).
       - name: Stage bundled Jamulus installer (Windows)
         if: matrix.target == 'windows-x64'
         shell: bash
@@ -186,18 +187,27 @@ jobs:
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
           else
-            # Nest Jamulus client/server (unmodified, Apple-notarized) and
-            # its license text into WebJam.app before zipping, so a fresh
-            # install works with zero configuration. Jamulus.app is copied
-            # in as-is. Afterward, refresh only WebJam's outer ad-hoc seal;
-            # never use --deep, which would overwrite Jamulus's upstream
-            # Developer ID signature and invalidate its notarization ticket.
+            # Nest the pinned upstream Jamulus client/server and license.
+            # Upstream enables App Sandbox, which prevents WebJam from safely
+            # provisioning command-line RPC secrets/recordings for these
+            # child processes. Re-sign the nested apps ad hoc without that
+            # entitlement; executable/framework contents remain upstream.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             ditto "$RUNNER_TEMP/JamulusServer.app" \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
             cp licenses/JAMULUS_COPYING.txt \
               dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
+            codesign --force --deep --sign - \
+              dist/WebJam.app/Contents/Resources/Jamulus.app
+            codesign --force --deep --sign - \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app
+            ! codesign -d --entitlements :- \
+              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
+              | grep -q 'com.apple.security.app-sandbox'
+            ! codesign -d --entitlements :- \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
+              | grep -q 'com.apple.security.app-sandbox'
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/theme/conductor.qss
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/webex_widget.html
@@ -219,8 +229,7 @@ jobs:
             codesign --force --sign - dist/WebJam.app
             codesign --verify --strict dist/WebJam.app
 
-            # Prove that shallow signing preserved the upstream Jamulus
-            # signature byte-for-byte and that it remains valid.
+            # Prove outer signing preserved the prepared nested signatures.
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/Jamulus.app
             codesign --verify --strict \

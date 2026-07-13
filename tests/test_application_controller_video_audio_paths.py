@@ -166,8 +166,13 @@ class TestLaunchStopAudio(_ControllerTestBase):
             c._on_launch_audio()
         # Worker thread runs bridge.stop_jamulus — wait briefly for it.
         for _ in range(50):
+            QApplication.processEvents()
             if stop_called.called:
-                break
+                # The worker queues the final UI reset immediately after the
+                # service stop; give that queued callback a chance to run.
+                QApplication.processEvents()
+                if not c._reconnect_banner_shown:
+                    break
             import time
             time.sleep(0.02)
         self.assertTrue(stop_called.called)
@@ -192,8 +197,9 @@ class TestLaunchStopAudio(_ControllerTestBase):
             ) as question:
                 c._on_launch_audio()
             text = question.call_args.args[2]
-            self.assertIn("keeps recording", text)
-            self.assertIn("Stop Rec", text)
+            self.assertIn("host's recording will keep running", text)
+            self.assertIn("Only this Mac will disconnect", text)
+            self.assertIn("Leave this jam", text)
             # Without an active recording the plain wording returns.
             c._server_recording = False
             c._recorder_armed = False
@@ -243,7 +249,7 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         c._on_reconnect_tick()
         self.assertTrue(c._reconnect_banner_shown)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("auto-reconnecting" in m for m in msgs), msgs)
+        self.assertTrue(any("reconnecting" in m for m in msgs), msgs)
         c.window.set_status_audio.assert_called_with("Reconnecting…")
         c.bridge.attempt_auto_reconnects.assert_called_once()
 
@@ -259,7 +265,7 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertFalse(any("auto-reconnecting" in m for m in msgs), msgs)
 
-    def test_reconnect_success_clears_banner(self):
+    def test_process_restart_is_not_success_until_local_connection_is_proven(self):
         c = self.controller
         alive = MagicMock()
         alive.poll.return_value = None
@@ -268,9 +274,19 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         c.bridge.jamulus_state = "Running"
         c._reconnect_banner_shown = True
         c._on_reconnect_tick()
+        self.assertTrue(c._reconnect_banner_shown)
+        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
+        self.assertFalse(any("reconnected" in m for m in msgs), msgs)
+
+        # Process existence is implementation truth; the local participant /
+        # RPC path is the musician-facing connection proof.
+        c._jamulus_connected = True
+        c.jamulus.rpc_client.last_activity_age = MagicMock(return_value=0.0)
+        c._on_reconnect_tick()
         self.assertFalse(c._reconnect_banner_shown)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("reconnected" in m for m in msgs), msgs)
+        c._jamulus_connected = False
 
 
 class TestRailViewChanges(_ControllerTestBase):
@@ -311,7 +327,7 @@ class TestSettingsWizard(_ControllerTestBase):
         c = self.controller
         wizard = MagicMock()
         with patch(
-            "webjam_qt.windows.setup_wizard.SetupWizard"
+            "webjam_qt.windows.simple_settings.SimpleSettingsDialog"
         ) as wizard_cls, patch(
             "core.settings.load_settings",
             return_value=new_settings or AppSettings(),
@@ -366,7 +382,7 @@ class TestSettingsWizard(_ControllerTestBase):
         fresh.jamulus_server = "other.example.com"
         self._run_wizard(accepted=True, new_settings=fresh)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("re-launch" in m for m in msgs), msgs)
+        self.assertTrue(any("restart the session" in m for m in msgs), msgs)
 
 
 class TestExportDiagnostics(_ControllerTestBase):
@@ -390,31 +406,14 @@ class TestExportDiagnostics(_ControllerTestBase):
 
 
 class TestRoutingScanShutdownRace(unittest.TestCase):
-    def test_scan_survives_invoker_destroyed_mid_scan(self):
-        """If the app shuts down while the routing scan is in flight, the
-        Qt invoker may already be deleted when the scan finishes.  The scan
-        thread must swallow that RuntimeError instead of dying with a
-        traceback (regression: noisy 'Internal C++ object already deleted')."""
-        import threading
-        import time
-
+    def test_routing_is_automatic_and_starts_no_scan_thread(self):
         window, controller = _make_controller()
         controller.settings.webex_audio_mode = "audience_bridge"
-        controller._ui_invoker.invoke = MagicMock(
-            side_effect=RuntimeError("Internal C++ object already deleted")
-        )
-        with self.assertLogs("webjam.qt.application_controller", level="DEBUG") as logs:
+        controller.window.set_status_routing = MagicMock()
+        with patch("core.audio_routing.scan_loopback_devices") as scan:
             controller._start_routing_scan()
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline and any(
-                t.name == "routing-scan" and t.is_alive()
-                for t in threading.enumerate()
-            ):
-                time.sleep(0.02)
-        self.assertTrue(
-            any("routing status dropped" in line for line in logs.output),
-            logs.output,
-        )
+        scan.assert_not_called()
+        controller.window.set_status_routing.assert_called_with("")
         controller.shutdown()
 
 

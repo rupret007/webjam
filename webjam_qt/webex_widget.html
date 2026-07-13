@@ -10,7 +10,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
-    body { background: #0B0E14; color: #E8EAF0; font-family: "Inter", "Segoe UI", sans-serif; }
+    body { background: #080808; color: #FFFFFF; font-family: "Inter", "Segoe UI", sans-serif; }
 
     /* Loading / error states */
     #status-overlay {
@@ -20,13 +20,16 @@
     }
     #status-overlay.hidden { display: none; }
     .spinner {
-      width: 36px; height: 36px; border: 3px solid #1D2332;
-      border-top-color: #3DD3D3; border-radius: 50%;
+      width: 36px; height: 36px; border: 3px solid #2C2C2C;
+      border-top-color: #BF5700; border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #status-text { font-size: 14px; color: #B0B8D0; }
-    #error-detail { font-size: 12px; color: #E8435B; display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
+    #status-text { font-size: 14px; color: #D0D0D0; }
+    #error-detail { font-size: 12px; color: #FFFFFF; display: none; }
 
     /* Meeting widget container */
     #webex-container {

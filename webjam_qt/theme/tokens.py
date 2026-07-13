@@ -9,44 +9,53 @@ from __future__ import annotations
 
 
 class Color:
-    # Base surfaces — dark studio
-    BG_BASE = "#0B0E14"         # window background
-    BG_PANEL = "#141922"        # side rail, canvas, status bar
-    BG_CARD = "#1D2332"         # participant card
-    BG_CARD_HOVER = "#242B3E"
-    BG_INPUT = "#0F131C"
+    # WebJam uses one brand accent: The University of Texas at Austin's
+    # official burnt orange.  Every other color is a neutral.  Keeping state
+    # in words, icons, and shape (rather than adding "success green" or
+    # "danger red") makes the interface calmer and keeps it understandable
+    # for people who cannot distinguish status colors.
+
+    # Base surfaces
+    BG_BASE = "#080808"         # window background
+    BG_PANEL = "#101010"        # header, rails, status surfaces
+    BG_CARD = "#181818"         # participant card
+    BG_CARD_HOVER = "#222222"
+    BG_INPUT = "#0D0D0D"
 
     # Borders
-    BORDER_SUBTLE = "#242A3A"
-    BORDER_STRONG = "#363D50"
-    BORDER_FOCUS = "#3DD3D3"
+    BORDER_SUBTLE = "#2C2C2C"
+    BORDER_STRONG = "#666666"
+    BORDER_FOCUS = "#BF5700"
 
     # Text
-    TEXT_PRIMARY = "#E8ECF4"
-    TEXT_SECONDARY = "#A0AEC6"   # bumped from #9AA4B8 for AA contrast safety margin on BG_CARD
-    TEXT_MUTED = "#828FA6"       # 4.80:1 on BG_CARD — clears WCAG AA (#5F6B85 was 2.93:1; #7A8AA0 was 4.46:1, just under)
-    TEXT_INVERSE = "#0B0E14"
+    TEXT_PRIMARY = "#FFFFFF"
+    TEXT_SECONDARY = "#D0D0D0"
+    TEXT_MUTED = "#A0A0A0"
+    TEXT_INVERSE = "#FFFFFF"
 
     # Accents
-    ACCENT_VIDEO = "#3DD3D3"    # Webex teal — video presence
-    ACCENT_AUDIO = "#F5B041"    # Jamulus gold — audio presence
-    ACCENT_RECORD = "#E8435B"   # record red, clipping
-    ACCENT_SUCCESS = "#3DD968"
-    ACCENT_WARN = "#F5B041"
-    ACCENT_DANGER = "#E8435B"
+    ACCENT_PRIMARY = "#BF5700"  # official UT Austin burnt orange
+    ACCENT_HOVER = "#A94F00"
+    ACCENT_PRESSED = "#8F3E00"
+    ACCENT_VIDEO = ACCENT_PRIMARY
+    ACCENT_AUDIO = ACCENT_PRIMARY
+    ACCENT_RECORD = ACCENT_PRIMARY
+    ACCENT_SUCCESS = ACCENT_PRIMARY
+    ACCENT_WARN = ACCENT_PRIMARY
+    ACCENT_DANGER = ACCENT_PRIMARY
 
     # Meters (gradient stops)
-    METER_GREEN = "#3DD968"
-    METER_YELLOW = "#F5B041"
-    METER_RED = "#E8435B"
+    METER_GREEN = "#A0A0A0"
+    METER_YELLOW = ACCENT_PRIMARY
+    METER_RED = "#FFFFFF"
 
     # Latency classes
-    LATENCY_GOOD = "#3DD968"    # <30ms
-    LATENCY_FAIR = "#F5B041"    # 30-60ms
-    LATENCY_POOR = "#E8435B"    # >60ms
+    LATENCY_GOOD = "#D0D0D0"    # <30ms
+    LATENCY_FAIR = ACCENT_PRIMARY  # 30-60ms
+    LATENCY_POOR = "#FFFFFF"     # >60ms; text also names the state
 
     # Overlays
-    OVERLAY_DIM = "rgba(11, 14, 20, 0.75)"
+    OVERLAY_DIM = "rgba(0, 0, 0, 0.78)"
 
 
 class Space:
@@ -67,10 +76,11 @@ class Radius:
 
 
 class Font:
-    # System-font fallback chain — Inter is NOT bundled, so it's listed last
-    # as an aspirational option.  Real defaults: Segoe UI on Windows,
-    # -apple-system on macOS, sans-serif elsewhere.
-    FAMILY_SANS = "-apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, Inter, sans-serif"
+    # Inter ships with the app (webjam_qt/theme/fonts, loaded in
+    # app._configure_default_font); the rest of the chain is the fallback
+    # for a missing/corrupt bundle: Segoe UI on Windows, -apple-system on
+    # macOS, sans-serif elsewhere.
+    FAMILY_SANS = "'Inter', -apple-system, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif"
     FAMILY_MONO = "'SF Mono', 'JetBrains Mono', 'Consolas', 'Courier New', monospace"
 
     SIZE_XS = 10

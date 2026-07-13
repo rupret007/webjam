@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import py_compile
-import sys
 
 
 ROOT = Path(__file__).resolve().parent
@@ -37,25 +36,68 @@ def main() -> int:
     repo_file = ROOT / "storage" / "repository.py"
     checklist_file = ROOT / "UX_ACCEPTANCE_CHECKLIST.md"
     help_map_file = ROOT / "HELP_ROUTING_MAP.md"
+    launch_file = ROOT / "webjam_qt" / "windows" / "launch_dialog.py"
+    session_state_file = ROOT / "webjam_qt" / "session_state.py"
+    permission_file = ROOT / "webjam_qt" / "platform_permissions.py"
+    invite_file = ROOT / "core" / "network_invite.py"
+    take_export_file = ROOT / "core" / "take_export.py"
+    tokens_file = ROOT / "webjam_qt" / "theme" / "tokens.py"
+    studio_file = ROOT / "webjam_qt" / "widgets" / "recording_studio.py"
+    recording_setup_file = ROOT / "webjam_qt" / "windows" / "recording_setup.py"
+    recording_guide = ROOT / "RECORDING_AND_LOGIC.md"
 
-    for required in (app_file, repo_file, checklist_file, help_map_file):
+    for required in (
+        app_file,
+        repo_file,
+        checklist_file,
+        help_map_file,
+        launch_file,
+        session_state_file,
+        permission_file,
+        invite_file,
+        take_export_file,
+        tokens_file,
+        studio_file,
+        recording_setup_file,
+        recording_guide,
+    ):
         require_file(required, failures)
 
     # Ensure Qt entry point delegates to the Conductor UI.
     require_contains(app_file, "from webjam_qt.app import run", failures)
 
-    # Ensure checklist still covers release validation.
+    # Ensure the current simple-session checklist cannot silently regress to
+    # the legacy setup/start-audio flow.
     for marker in (
-        "Install and First Run",
-        "Session Launch and Status Clarity",
-        "Error Recovery",
-        "Regression and Validation",
+        "Launch: understandable in five seconds",
+        "Host and invitation",
+        "Permission and error states",
+        "End, leave, and cleanup truth",
+        "Release validation",
     ):
         require_contains(checklist_file, marker, failures)
 
     require_contains(repo_file, "def increment_setting", failures)
+    require_contains(launch_file, "Host a Jam", failures)
+    require_contains(launch_file, "Join a Jam", failures)
+    require_contains(session_state_file, "PERMISSION_DENIED", failures)
+    require_contains(tokens_file, '#BF5700', failures)
+    require_contains(studio_file, "Export for Logic", failures)
+    require_contains(take_export_file, "all_stems_start_at_zero", failures)
+    require_contains(recording_guide, "never rewrite the original recorder WAVs", failures)
 
-    for target in (app_file, repo_file):
+    for target in (
+        app_file,
+        repo_file,
+        launch_file,
+        session_state_file,
+        permission_file,
+        invite_file,
+        take_export_file,
+        tokens_file,
+        studio_file,
+        recording_setup_file,
+    ):
         require_compiles(target, failures)
 
     if failures:

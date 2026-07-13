@@ -69,7 +69,13 @@ class _FakeJamulus:
             ok = (obj.get("params") or {}).get("secret") == self.secret
             self._reply({"jsonrpc": "2.0", "id": rid, "result": "ok" if ok else "bad"})
         elif method == "jamulusclient/getChannelInfo":
-            self._reply({"jsonrpc": "2.0", "id": rid, "result": {"id": 0, "name": "Me"}})
+            # Real Jamulus 3.12.2 describes the local profile but omits its
+            # server-assigned id.  The client must reconcile this with the
+            # matching getClientList row.
+            self._reply({"jsonrpc": "2.0", "id": rid, "result": {
+                "name": "Me", "instrument": "Bass", "skillLevel": None,
+                "country": None, "city": None,
+            }})
         elif method == "jamulusclient/getClientList":
             self._reply({"jsonrpc": "2.0", "id": rid, "result": {"clients": self.clients}})
         elif method and method.startswith("jamulusclient/set"):

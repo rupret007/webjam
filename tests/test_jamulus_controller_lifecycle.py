@@ -18,6 +18,7 @@ from jamulus_controller import JamulusController
 
 def _make_controller() -> JamulusController:
     c = JamulusController(host="127.0.0.1", port=22124, rpc_port=22222)
+    c.settings.host_server_enabled = False
     c.rpc_client = MagicMock()
     c.rpc_client.available = False
     c.protocol = MagicMock()
@@ -55,6 +56,18 @@ class TestStartStopLifecycle(unittest.TestCase):
             self.assertEqual(c.rpc_client.start.call_count, 1)
         finally:
             c.stop()
+
+    def test_rpc_and_udp_start_before_optional_audio_meter(self):
+        c = _make_controller()
+        order = []
+        c.rpc_client.start.side_effect = lambda: order.append("rpc")
+        c.protocol.start_receiving.side_effect = lambda: order.append("udp")
+        c.audio_engine.start.side_effect = lambda: order.append("meter")
+        try:
+            c.start()
+        finally:
+            c.stop()
+        self.assertEqual(order[:3], ["rpc", "udp", "meter"])
 
     def test_stop_preserves_registered_callbacks_for_relaunch(self):
         c = _make_controller()
@@ -112,6 +125,15 @@ class TestUnconfiguredHostFallback(unittest.TestCase):
     def test_real_host_is_kept(self):
         c = JamulusController(host="band.example.com", port=22124, rpc_port=22222)
         self.assertEqual(c.host, "band.example.com")
+
+    def test_legacy_udp_monitor_is_dormant_in_product(self):
+        """The monitor registers as a phantom musician when enabled."""
+        c = JamulusController(host="127.0.0.1", port=22124, rpc_port=22222)
+        self.assertFalse(c.protocol.enabled)
+        c.protocol.start_receiving()
+        self.assertFalse(c.protocol._running)
+        self.assertIsNone(c.protocol._sock)
+        self.assertIsNone(c.protocol._rx_thread)
 
 
 class TestRpcCallbackRouting(unittest.TestCase):
@@ -212,6 +234,64 @@ class TestCheckParticipantsNormalization(unittest.TestCase):
         c.rpc_client.available = True
         c._check_participants()
         c.protocol.request_clients.assert_not_called()
+
+    def test_hosted_server_roster_is_truth_when_client_rpc_stalls(self):
+        c = _make_controller()
+        c.settings.host_server_enabled = True
+        c.settings.server_rpc_secret_file = "/tmp/host.secret"
+        c.settings.server_rpc_port = 22240
+        c.settings.musician_name = "Jeff"
+        rpc = MagicMock()
+        rpc.get_clients.return_value = {
+            "connections": 2,
+            "clients": [
+                {"id": 0, "name": "", "address": "127.0.0.1:50000"},
+                {"id": 4, "name": "Ann", "address": "192.0.2.4:50001"},
+            ],
+        }
+        rpc_class = MagicMock()
+        rpc_class.return_value.__enter__.return_value = rpc
+        with (
+            patch("core.jamulus_server_rpc.read_secret_file", return_value="secret"),
+            patch("core.jamulus_server_rpc.JamulusServerRpc", rpc_class),
+        ):
+            c._check_participants()
+
+        self.assertEqual(set(c.participants), {0, 4})
+        self.assertEqual(c.participants[0].name, "Jeff")
+        self.assertTrue(c.participants[0].is_local)
+        self.assertEqual(c.participants[4].name, "Ann")
+        self.assertFalse(c.participants[4].is_local)
+        c.protocol.request_clients.assert_not_called()
+        rpc_class.assert_called_once_with(port=22240, secret="secret")
+
+    def test_successful_empty_hosted_roster_clears_stale_participants(self):
+        c = _make_controller()
+        c.settings.host_server_enabled = True
+        c.settings.server_rpc_secret_file = "/tmp/host.secret"
+        c.add_participant("Gone", 7)
+        rpc = MagicMock()
+        rpc.get_clients.return_value = {"connections": 0, "clients": []}
+        rpc_class = MagicMock()
+        rpc_class.return_value.__enter__.return_value = rpc
+        with (
+            patch("core.jamulus_server_rpc.read_secret_file", return_value="secret"),
+            patch("core.jamulus_server_rpc.JamulusServerRpc", rpc_class),
+        ):
+            c._check_participants()
+        self.assertEqual(c.participants, {})
+
+    def test_hosted_roster_failure_falls_back_to_udp(self):
+        c = _make_controller()
+        c.settings.host_server_enabled = True
+        c.settings.server_rpc_secret_file = "/tmp/missing.secret"
+        c.protocol.request_clients.return_value = {3: "UDP Musician"}
+        with patch(
+            "core.jamulus_server_rpc.read_secret_file",
+            side_effect=OSError("missing"),
+        ):
+            c._check_participants()
+        self.assertEqual(c.participants[3].name, "UDP Musician")
 
 
 class TestRpcConvenienceWrappers(unittest.TestCase):

@@ -78,17 +78,61 @@ class TestEmitLevels(unittest.TestCase):
 
 class TestLocalId(unittest.TestCase):
     def test_valid_sets_and_retags(self):
-        c, _ = _client()
+        c, seen = _client()
         c._update_clients([{"id": 4, "name": "X"}])
+        self.assertFalse(seen["participants"][-1][0].is_local)
         c._set_local_id(4)
         self.assertEqual(c._get_local_channel_id(), 4)
         self.assertTrue(c._clients[0].is_local)
+        self.assertTrue(seen["participants"][-1][0].is_local)
+        self.assertEqual(len(seen["participants"]), 2)
 
     def test_malformed_does_not_raise(self):
         c, _ = _client()
         c._set_local_id("bogus")   # must not raise
         c._set_local_id(None)
         self.assertEqual(c._get_local_channel_id(), -1)
+
+    def test_real_312_channel_info_shape_matches_roster_without_id(self):
+        c, seen = _client()
+        c._handle_response("jamulusclient/getChannelInfo", {
+            "city": "",
+            "country": "United States",
+            "instrument": "None",
+            "name": "Jeff Story",
+            "skillLevel": None,
+        })
+        c._handle_response("jamulusclient/getClientList", {"clients": [
+            {"id": 0, "name": "Jeff Story", "instrument": "None",
+             "skillLevel": None, "country": "United States", "city": ""},
+            {"id": 1, "name": "Taylor", "instrument": "Drums"},
+        ]})
+        self.assertEqual(c._get_local_channel_id(), 0)
+        self.assertTrue(seen["participants"][-1][0].is_local)
+        self.assertFalse(seen["participants"][-1][1].is_local)
+
+    def test_real_channel_info_retags_when_list_arrives_first(self):
+        c, seen = _client()
+        c._update_clients([{"id": 7, "name": "Jeff Story"}])
+        self.assertFalse(seen["participants"][-1][0].is_local)
+        c._handle_response("jamulusclient/getChannelInfo", {
+            "name": "Jeff Story", "instrument": None, "skillLevel": None,
+            "country": None, "city": None,
+        })
+        self.assertEqual(c._get_local_channel_id(), 7)
+        self.assertTrue(seen["participants"][-1][0].is_local)
+
+    def test_duplicate_identical_profiles_are_not_guessed(self):
+        c, seen = _client()
+        c._handle_response("jamulusclient/getChannelInfo", {
+            "name": "Alex", "instrument": "Guitar",
+        })
+        c._update_clients([
+            {"id": 2, "name": "Alex", "instrument": "Guitar"},
+            {"id": 5, "name": "Alex", "instrument": "Guitar"},
+        ])
+        self.assertEqual(c._get_local_channel_id(), -1)
+        self.assertFalse(any(person.is_local for person in seen["participants"][-1]))
 
 
 class TestGetChannelClientsCache(unittest.TestCase):

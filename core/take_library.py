@@ -56,6 +56,7 @@ class TakeInfo:
     # never needs to re-probe its audio files.
     manifest_errors: tuple[str, ...] = ()
     manifest_warnings: tuple[str, ...] = ()
+    session_title: str = ""
 
     @property
     def track_count(self) -> int:
@@ -65,6 +66,11 @@ class TakeInfo:
     def duration_s(self) -> float:
         """Wall-clock length of the take: the latest track end."""
         return max((t.end_s for t in self.tracks), default=0.0)
+
+    @property
+    def display_name(self) -> str:
+        """Musician-facing name, falling back to the recorder folder name."""
+        return self.session_title.strip() or self.name
 
 
 @dataclass(frozen=True)
@@ -241,6 +247,12 @@ def is_local_stem_name(name: str) -> bool:
     return lowered.endswith(".wav") and lowered.startswith(_LOCAL_STEM_PREFIXES)
 
 
+def server_track_channel_id(filename: str) -> Optional[int]:
+    """Extract Jamulus's channel id from its ``...-id-channels.wav`` name."""
+    match = re.search(r"-(\d+)-\d+\.[A-Za-z0-9]+$", str(filename))
+    return int(match.group(1)) if match else None
+
+
 def _envelope_100hz(signal):
     """Rectified block-mean envelope, mean-subtracted for correlation.
 
@@ -353,6 +365,8 @@ def write_take_manifest(
     take_dir: str | Path, *, expected_tracks: int, required_local_stems: int,
     local_started_utc: str = "", local_duration_s: float = 0.0,
     capture_errors: tuple[str, ...] = (), app_version: str = "",
+    participant_names: Optional[dict[int, str]] = None,
+    session_title: str = "",
 ) -> TakeValidationResult:
     """Validate a take and atomically persist a secret-free evidence manifest."""
     from core.file_io import atomic_write_text
@@ -364,6 +378,7 @@ def write_take_manifest(
     preliminary = {
         "schema_version": 1,
         "app_version": app_version,
+        "session_title": str(session_title or "").strip(),
         "status": "validating",
         "expected_server_tracks": expected_tracks,
         "required_local_stems": required_local_stems,
@@ -377,6 +392,10 @@ def write_take_manifest(
         },
         "tracks": [
             {"filename": p.name,
+             "name": (
+                 (participant_names or {}).get(server_track_channel_id(p.name))
+                 if not is_local_stem_name(p.name) else None
+             ),
              "source": "local_ssl" if is_local_stem_name(p.name) else "jamulus_server",
              "offset_s": round(offset_s, 6) if is_local_stem_name(p.name) else None}
             for p in sorted(path.glob("*.wav"))
@@ -522,7 +541,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
             offset = float(manifest_offset)
         tracks.append(TrackInfo(
             path=audio,
-            name=_prettify(audio.stem),
+            name=str(evidence.get("name") or _prettify(audio.stem)),
             # Signed: local stems normally start before the server take, so a
             # negative offset here is valid alignment, not an error.
             offset_s=offset,
@@ -546,6 +565,7 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         manifest_path=manifest_path,
         manifest_errors=_string_items("errors"),
         manifest_warnings=_string_items("warnings"),
+        session_title=str(manifest.get("session_title") or "").strip(),
     )
 
 

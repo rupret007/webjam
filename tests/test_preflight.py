@@ -52,6 +52,16 @@ class TestReadyCheck(unittest.TestCase):
         self.assertFalse(item.ok)
         self.assertIn("jamulus.io", item.detail)
 
+    def test_bundled_jamulus_satisfies_ready_check_without_persisted_path(self):
+        s = _settings(jamulus_candidates=[])
+        with mock.patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus",
+        ):
+            item = preflight._check_jamulus_executable(s)
+        self.assertTrue(item.ok)
+        self.assertIn("WebJam.app", item.detail)
+
     def test_bad_server(self):
         with tempfile.NamedTemporaryFile() as jam:
             for bad in ("", "has space", None):

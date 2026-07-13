@@ -75,6 +75,16 @@ class TestDemoToRealTransition(unittest.TestCase):
         ):
             self.controller._stop_audio()
 
+        # End Session now preserves recorder truth until its background
+        # worker has finalized the take and stopped owned services. Process
+        # the queued UI completion before asserting the disconnected view.
+        for _ in range(100):
+            QApplication.processEvents()
+            if not self.controller.audio.stopping:
+                break
+            import time
+            time.sleep(0.01)
+
         # Truthful disconnected state restored; no fake mixer cards.
         self.assertFalse(self.controller._jamulus_connected)
         self.assertEqual(self.controller.participants, {})

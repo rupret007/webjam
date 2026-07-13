@@ -1,105 +1,168 @@
-# Sunday two-Mac pilot checklist
+# Tonight's two-Mac pilot
 
-This is the private v0.8.1 acceptance gate. Both musicians use Apple Silicon
-Macs, wired headphones, Ethernet, and 48 kHz audio. Jamulus carries music;
-native Webex carries muted-by-default speech talkback. Do not tag or publish a
-release before this checklist passes.
+This is the physical acceptance gate for the private macOS v0.9.0 test build.
+The goal is deliberately small:
 
-Read [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md) before configuring devices.
-For this pilot choose **Musician with talkback** on both Macs. BlackHole and
-`WebJam Bridge` are not in the live signal path.
+> Host → Copy Invite → open or paste → Play → Record → End Session
 
-## Host Mac: SSL 2+, server, and talkback
+Do not publish or call the build release-ready until the checks below have
+passed with the exact ZIP being handed to the musicians.
 
-1. Connect guitar to SSL input 1 in instrument mode and the dynamic vocal mic
-   to input 2 in microphone mode. Keep 48 V phantom power off.
-2. In Jamulus select SSL 2+ for input and output, **Mono-in/Stereo-out**, and
-   the intended input mapping. Start at the 128-sample Default buffer; try the
-   64-sample Preferred buffer only after the stable path passes.
-3. In Webex select SSL 2+ as speaker. Prefer a separate webcam, USB, or headset
-   mic for talkback. The SSL mic is an acceptable fallback only if Webex stays
-   muted while playing and no instrument is played while Space is held.
-4. Join Webex muted. Choose macOS **Standard** Mic Mode and Webex **Optimize for
-   My Voice**. Do not use Music Mode for speech talkback.
-5. In the downloadable macOS build, confirm Setup detects the bundled official
-   Jamulus 3.12.2 `JamulusServer.app`, then enable *"This Mac hosts the band
-   server"* — **Start Audio**
-   then starts and supervises the server for you (the manual
-   `server/start_macos_pilot.sh` remains the fallback). Verify:
+## Pilot boundary
 
-   ```bash
-   lsof -nP -iUDP:22124
-   lsof -nP -iTCP:22240 -sTCP:LISTEN
-   ```
+- Use two Apple Silicon Macs on the same home or studio network. For the
+  simplest test, put both on the same Wi-Fi. This build does not provide
+  internet, VPN, NAT, or router traversal.
+- Use wired headphones on both Macs. Do not monitor through speakers.
+- Before opening WebJam, select the intended audio interface as the macOS Sound
+  input and output. The host can use the SSL 2+; the drummer can use the TD-27
+  in VENDOR USB-audio mode at 48 kHz. If TD-27 USB audio is unreliable, use its
+  analog master outputs through a known-good interface.
+- The test ZIP is ad-hoc signed, not notarized. Extract it, then Control-click
+  **WebJam.app** → **Open** on first launch. If macOS still blocks it, use
+  System Settings → Privacy & Security → Open Anyway. A “damaged” or
+  “incomplete” warning is a packaging failure, not an expected warning.
+- Webex or another conversation app is optional and stays outside the core
+  music test. If used, keep its microphone muted while playing so it cannot
+  create delayed duplicate music.
 
-   UDP must listen on 22124. Recorder RPC must listen only on
-   `127.0.0.1:22240`. For an in-app server, stop recording and quit WebJam for
-   clean shutdown; use Ctrl+C only with the manual fallback. Never force-kill
-   a recording server.
-6. Hosted mode automatically enforces `127.0.0.1:22124` and derives recorder
-   RPC 22240 plus the sandbox secret/take paths. Confirm them against
-   `server/README.md`; client RPC remains 22222.
-7. Enable supplemental local recording only if Ready Check proves the chosen
-   **Meter and local recording input** can open at 48 kHz alongside Jamulus.
+Record the exact ZIP filename and SHA-256 here:
 
-## Drummer Mac: Roland TD-27 and talkback
+- Artifact: `WebJam-v0.9.0-TEST-NIGHT-macos-arm64.zip`
+- SHA-256: `9d8476167191c99ad311fcb2a33bd3b9aa1e4aacd9ce8043ddd3386864dc49e5`
+- Host Mac / macOS: ____________________
+- Drummer Mac / macOS: ____________________
 
-1. Install Roland TD-27 driver 1.0.2 for macOS Sonoma 14 or later.
-2. Set **SYSTEM → USB AUDIO → Driver Mode → VENDOR**, then restart the module
-   and Mac as Roland directs.
-3. Confirm macOS exposes TD-27 audio input and output—not MIDI alone—and set
-   both to 48 kHz.
-4. In Jamulus choose TD-27 input/output, master stereo channels, and
-   **Mono-in/Stereo-out**. Start at the 128-sample Default buffer.
-5. In Webex use the Mac microphone or a dedicated headset/USB mic for speech
-   and TD-27 as speaker if it returns computer audio to wired headphones.
-6. Join Webex muted with Standard Mic Mode and Optimize for My Voice. Hold
-   Space only for conversation. BlackHole is not required.
+## 1. Clean launch
 
-## Network and solo gates
+- [ ] Delete or replace every older **WebJam.app** on both Macs, then copy the
+  v0.9.0 app into `/Applications`. Do not leave a second older copy in
+  Downloads; macOS could otherwise send an invitation to the wrong app.
+- [ ] Launch the new app once from `/Applications` and confirm the live window
+  title reports **v0.9.0** before testing invitation links.
+- [ ] Open WebJam on each Mac. The first screen shows only **Host a Jam** and
+  **Join a Jam** as primary choices.
+- [ ] The interface is black, white, and restrained burnt orange. Purple, teal,
+  red danger styling, neon glow, and competing launch controls are absent.
+- [ ] There is no setup wizard, Ready Check, server-address field, port field,
+  executable picker, or visible second music-client window.
+- [ ] If macOS asks for microphone access, WebJam first explains why, then
+  macOS asks. Allow it. On one Mac, optionally prove the denied path: WebJam
+  shows **Microphone access is off**, opens the correct System Settings pane,
+  and offers **Try Again** after returning.
+- [ ] If macOS asks whether the host may accept incoming network connections,
+  click **Allow**. Turn off VPN software for this same-network pilot.
+- [ ] Resize the launch window and live session down to 760×600. Text, cards,
+  status, and Copy Invite / Record / More / End-or-Leave remain usable without
+  horizontal clipping.
 
-1. Invite the drummer's Mac to Tailscale. `tailscale ping` must report a direct
-   path, not DERP.
-2. Reserve the host LAN address and forward router **UDP 22124 only**. Never
-   forward TCP 22222 or 22240. Keep the VPN disconnected.
-3. Test the public route from a genuinely external network.
-4. Compare Tailscale and direct UDP for ten minutes each. Use the route with no
-   recurring crackle/dropout and the lower stable Jamulus delay.
-5. On each Mac, complete Setup in talkback mode, run F2 Ready Check, manually
-   confirm every Webex `VERIFY` row, run Ctrl+P Practice, and prove meters,
-   headphones, Talk Break, Resume Music, and clean shutdown.
-6. In a one-person rehearsal, verify Webex push-to-talk from a phone or second
-   device using headphones. Instruments must not leak into Webex while playing.
+Evidence or failure notes: ________________________________________________
 
-## Sunday acceptance test
+## 2. Host and invite
 
-1. Start the server and verify UDP 22124 plus loopback-only TCP 22240.
-2. Connect both Macs; require real participant cards within about ten seconds.
-3. Confirm guitar, vocal, and drums through Jamulus without clipping or a lost
-   channel. Confirm each musician hears their own Jamulus server return.
-4. Test per-listener faders, mute, solo, Talk Break, Resume Music, mix
-   save/restore, and chat. Talk Break must mute Jamulus only, never Webex.
-5. Join native Webex on both Macs. Keep both Webex microphones muted during ten
-   minutes of playing; require no delayed duplicate music or echo.
-6. Each musician holds Space and speaks between takes. Speech must be clear in
-   Webex. Release Space before selecting Resume Music.
-7. Briefly interrupt the drummer's network and verify Jamulus and Webex recover
-   independently without stale participant state.
-8. Exercise structured notes, Session Pulse, notes export, and brief export.
-9. Record at least 60 seconds through recorder RPC 22240. Require the expected
-   track count, duration, 48 kHz rate, and no missing/unreadable track. If local
-   capture is enabled, require its stems and manifest evidence independently of
-   the selected Webex mode.
-10. Play the take in Take Deck and import the WAVs into Logic. Confirm duration,
-    alignment, and audibility; the optional `.rpp` file belongs to Reaper.
-11. Continue for 45–60 minutes, collect redacted diagnostics, review logs, stop
-    cleanly, and check for orphan Jamulus processes.
+- [ ] On the host, click **Host a Jam** once. Do not configure anything else.
+- [ ] The HUD moves from **Starting your jam** to **Ready to share**. It must
+  not show an invitation before the hosted service is alive.
+- [ ] Click **Copy Invite**. The clipboard contains one `webjam://join?...`
+  link. It contains the session name and network destination, but no password,
+  secret, filesystem path, or musician-private data.
+- [ ] Send that complete link to the drummer without editing it.
 
-A network route passes only when it has no persistent crackle/dropout for ten
-minutes and both musicians consider it playable. Prefer delay below 30 ms;
-recurring dropouts or roughly 45 ms-plus delay blocks that configuration.
+Evidence or failure notes: ________________________________________________
 
-If TD-27 USB audio fails after the official driver and VENDOR mode, use analog
-master outputs through a separate interface. If speech or music appears in both
-Jamulus and Webex, mute Webex first and return to the documented talkback path.
-Never redesign routing during a recording.
+## 3. Join and play
+
+Test both supported invitation paths, one at a time:
+
+- [ ] With WebJam closed on the drummer Mac, open the invitation link. WebJam
+  launches and joins that jam.
+- [ ] Click **Leave Jam** on the drummer Mac, confirm the host is still running,
+  reopen WebJam, choose **Join a Jam**, paste the same link into the single
+  field, and click **Join Jam**.
+- [ ] Within about 30 seconds both named participant cards appear. The host HUD
+  reports the bandmate connection and the drummer HUD reports the joined state.
+- [ ] Play guitar, vocal, and drums in turn. Both musicians hear the intended
+  music return without sustained crackle, clipping, echo, or a delayed copy.
+- [ ] Adjust a bandmate fader on one Mac and confirm it changes only that
+  listener's monitor mix.
+- [ ] Use **Mute Monitor** on the local card and confirm it changes only what
+  that musician hears; it must not imply or cause outgoing transmit mute.
+
+Meter truth matters:
+
+- [ ] A local meter moves only when WebJam observes input on that Mac.
+- [ ] A remote meter moves only when WebJam observes band audio for that
+  participant; local input is never copied onto remote cards as a placeholder.
+- [ ] Treat a moving meter as observed signal, not proof that the other
+  musician heard it. Confirm audibility with the other musician out loud.
+
+Evidence or failure notes: ________________________________________________
+
+## 4. Studio two-track take
+
+- [ ] On the host, open **More → Multitrack Studio**. Both musicians
+  have distinct lanes.
+- [ ] Click **Record**, play together for at least 60 seconds, then stop. Wait
+  for validation to finish before ending the session or quitting.
+- [ ] The completed take appears in the Studio library and plays in WebJam.
+  Select SSL 2+ as the output, scrub the waveform, and exercise gain, pan,
+  mute, and solo on both lanes.
+- [ ] Reveal the take and confirm there are two isolated, readable, non-empty
+  musician WAVs—one for each participant—and a take manifest. Record the take
+  folder name: ____________________
+- [ ] Press **Export for Logic** and require numbered 24-bit stems of identical
+  length, `WebJam Rough Mix.wav`, import instructions, and the export manifest.
+- [ ] Import every numbered stem together at `0:00` in a new 48 kHz Logic
+  project. Confirm duration, alignment, and the expected musician on each
+  track. Do not import the rough mix as another stem. The optional `.rpp` file
+  is for Reaper and is not a Logic project. Follow
+  [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+
+Evidence or failure notes: ________________________________________________
+
+## 5. Reconnect
+
+- [ ] While both are connected and not recording, disable Wi-Fi on the drummer
+  Mac for 5–10 seconds, then restore it.
+- [ ] WebJam shows reconnection truthfully—no stale “ready” claim—and restores
+  both participant cards and audible music without relaunching the host.
+- [ ] If the attempt reaches the 30-second limit, it stops spinning and offers
+  one **Try Again** action with same-network guidance. Restore the network,
+  click it once, and confirm recovery.
+
+Evidence or failure notes: ________________________________________________
+
+## 6. End Session and cleanup
+
+- [ ] If recording, let WebJam stop, save, and validate the take first.
+- [ ] On the drummer Mac, click **Leave Jam** and confirm the dialog says only
+  this Mac will disconnect. **Leaving…** remains until cleanup finishes; the
+  host remains ready and can copy the same invite again.
+- [ ] Rejoin the drummer before the host-ending check.
+- [ ] Click **End Session** on the host and confirm the warning that the jam
+  ends for everyone.
+- [ ] **Ending…** remains visible until recording/client/server cleanup really
+  completes. A failure must not be replaced by an ended success message.
+- [ ] The host returns to an ended state; the joined Mac no longer pretends it
+  is connected.
+- [ ] Quit both apps. Activity Monitor shows no WebJam-owned background music
+  client, dedicated server, or `caffeinate` process left behind.
+- [ ] Reopen WebJam. It again starts at the two-choice Host/Join screen, and a
+  new host session can be created without a port-in-use error.
+
+Evidence or failure notes: ________________________________________________
+
+## Pass decision
+
+The pilot passes only if both musicians consider the music playable, both
+invitation paths work, readiness/meters remain honest, the two isolated tracks
+survive a Logic import, reconnect recovers (automatically or through the one
+retry), and End Session leaves no owned processes behind.
+
+- Result: PASS / FAIL
+- Blocking defect: _______________________________________________________
+- Logs/take copied before retrying: YES / NO
+
+If anything fails, preserve the take and use **More →
+Troubleshooting** before changing devices, network topology, or app settings.
+Change one variable at a time and rerun the failed section.

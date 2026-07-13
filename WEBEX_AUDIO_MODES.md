@@ -67,8 +67,9 @@ mix-minus system if both are required in a future production.
 **Record a supplemental local input stem** is independent of all three Webex
 modes. When enabled, **Meter and local recording input** chooses the device
 WebJam opens for local meters and isolated local capture. It does not configure
-Jamulus or Webex. Run Ready Check to confirm 48 kHz support and recording-path
-access before relying on it.
+Jamulus or Webex. Open **More → Troubleshooting** and run its detailed check to
+confirm 48 kHz support and recording-path access before relying on it. This
+report is secondary in v0.9.0; it is not part of Host or Join.
 
 ## Safety rules
 

@@ -96,7 +96,15 @@ class CapturingSink:
         self.stopped = True
 
     def mixed(self) -> np.ndarray:
-        return np.concatenate(self.blocks) if self.blocks else np.zeros(0)
+        stereo = self.stereo()
+        return stereo[:, 0] if stereo.size else np.zeros(0)
+
+    def stereo(self) -> np.ndarray:
+        return (
+            np.concatenate(self.blocks)
+            if self.blocks
+            else np.zeros((0, 2), dtype=np.float32)
+        )
 
 
 def _take_from(tmp: str, specs):
@@ -190,6 +198,18 @@ class TestMixing(unittest.TestCase):
             _, mixed = self._render(
                 take, mutate=lambda p: p.set_gain(0, 0.5))
         self.assertAlmostEqual(float(mixed[100]), 0.2, delta=0.05)
+
+    def test_pan_places_a_mono_track_in_the_stereo_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = _take_from(d, [("a.wav", 0.5, 0.4, 0.0)])
+            sink = CapturingSink()
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=sink)
+            player.load(take)
+            player.set_pan(0, -1.0)
+            player.play()
+            stereo = sink.stereo()
+        self.assertAlmostEqual(float(stereo[100, 0]), 0.4, delta=0.05)
+        self.assertAlmostEqual(float(stereo[100, 1]), 0.0, delta=0.01)
 
     def test_offset_track_is_silent_before_start(self):
         with tempfile.TemporaryDirectory() as d:
@@ -331,6 +351,39 @@ class TestSoundDeviceStereoSink(unittest.TestCase):
         self.assertEqual(captured["channels"], 2)
         self.assertEqual(captured["device"], "SSL 2+")
         np.testing.assert_array_equal(captured["out"][:, 0], captured["out"][:, 1])
+
+    def test_preserves_a_stereo_mix(self):
+        captured = {}
+
+        class _Stream:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def start(self):
+                out = np.zeros((3, 2), dtype=np.float32)
+                captured["callback"](out, 3, None, None)
+                captured["out"] = out
+
+            def stop(self):
+                pass
+
+            def close(self):
+                pass
+
+        expected = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]], dtype=np.float32)
+        fake = SimpleNamespace(OutputStream=lambda **kwargs: _Stream(**kwargs))
+        with patch.dict(sys.modules, {"sounddevice": fake}):
+            sink = SoundDeviceSink("SSL 2+")
+            sink.start(48000, 128, lambda _frames: expected)
+            sink.stop()
+        np.testing.assert_array_equal(captured["out"], expected)
+
+    def test_output_device_can_change_only_for_the_builtin_sink(self):
+        player = TakePlayer(sink=SoundDeviceSink())
+        self.assertTrue(player.set_output_device("SSL 2+"))
+        self.assertEqual(player.output_device_name, "SSL 2+")
+        injected = TakePlayer(sink=CapturingSink())
+        self.assertFalse(injected.set_output_device("SSL 2+"))
 
 
 if __name__ == "__main__":

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import math
 import threading
-import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -30,26 +28,26 @@ _MAX_LEVEL_ENTRIES = 1024
 
 @dataclass
 class AudioDiagnostics:
-    backend: str = "synthetic"
+    backend: str = "unavailable"
     samplerate: int = 48000
     blocksize: int = 0
     latency_mode: str = "low"
     input_device: str = "default"
     active: bool = False
-    message: str = "synthetic fallback enabled"
+    message: str = "local metering unavailable"
 
 
 class RealAudioEngine:
     """
-    Real-time metering engine with deterministic fallback.
+    Real-time metering engine with an honest silent fallback.
 
     On ``start()``:
       1. Scans for a virtual loopback device (VB-CABLE / BlackHole) and opens
          it as the input stream if found.  Loopback metering gives accurate
          per-mix levels reflecting the Jamulus output.
       2. Falls back to the system default input device if no loopback is found.
-      3. Falls back to deterministic synthetic pulses if sounddevice / numpy
-         are unavailable or the stream fails to open.
+      3. Reports metering as unavailable if sounddevice / numpy are unavailable
+         or the stream fails to open. It never fabricates audio activity.
 
     Per-channel level overrides (from JSON-RPC or UDP) are stored via
     ``set_level_override()`` and returned by ``get_level()`` for any channel
@@ -72,7 +70,6 @@ class RealAudioEngine:
         self._stream = None
         self._levels: Dict[int, AudioLevel] = {}
         self._lock = threading.Lock()
-        self._phase = 0.0
         self._diagnostics = AudioDiagnostics(
             samplerate=settings.audio_samplerate,
             blocksize=settings.audio_blocksize,
@@ -109,10 +106,13 @@ class RealAudioEngine:
                 self.logger.info("Audio engine started — device: %s", dev_name)
                 return
             except Exception as exc:  # pragma: no cover - hardware-dependent
-                self.logger.warning("Falling back to synthetic metering: %s", exc)
+                self.logger.warning("Local metering unavailable: %s", exc)
 
-        self._thread = threading.Thread(target=self._synthetic_loop, daemon=True)
-        self._thread.start()
+        self._diagnostics.backend = "unavailable"
+        self._diagnostics.active = False
+        self._diagnostics.message = (
+            "local meter unavailable; WebJam will use confirmed band levels only"
+        )
 
     def stop(self) -> None:
         self.running = False
@@ -130,7 +130,12 @@ class RealAudioEngine:
         with self._lock:
             if channel_id in self._levels:
                 return self._levels[channel_id].rms
-            return self._levels.get(-1, AudioLevel(channel_id=-1)).rms
+            return 0.0
+
+    def has_level_override(self, channel_id: int) -> bool:
+        """Whether Jamulus supplied a real level for this exact channel."""
+        with self._lock:
+            return channel_id in self._levels
 
     def set_level_override(self, channel_id: int, value: float) -> None:
         with self._lock:
@@ -214,18 +219,3 @@ class RealAudioEngine:
         level = AudioLevel(channel_id=-1, rms=rms, peak=peak, clipped=peak >= 0.99)
         with self._lock:
             self._levels[-1] = level
-
-    def _synthetic_loop(self) -> None:
-        self._diagnostics.backend = "synthetic"
-        self._diagnostics.active = True
-        self._diagnostics.message = "deterministic fallback metering active"
-        while self.running:
-            self._phase += 0.15
-            synthetic = (math.sin(self._phase) + 1.0) / 2.0
-            rms = max(0.0, min(1.0, synthetic * 0.35))
-            peak = max(0.0, min(1.0, rms + 0.1))
-            with self._lock:
-                self._levels[-1] = AudioLevel(
-                    channel_id=-1, rms=rms, peak=peak, clipped=peak > 0.95
-                )
-            time.sleep(0.05)

@@ -245,12 +245,8 @@ class BridgeService:
     def find_jamulus(self):
         """Find Jamulus installation.
 
-        Checks user-configured candidates first, then falls back to the
-        AppSettings default candidates so that a config file written before
-        macOS/Linux paths were added still works, and finally falls back to
-        the copy of Jamulus bundled inside WebJam's own app on macOS (see
-        `_bundled_jamulus_candidate`) so a fresh install works with zero
-        configuration.
+        Frozen macOS builds prefer their known-good bundled client. Source
+        runs check user-configured candidates, then AppSettings defaults.
         """
         from core.settings import AppSettings
         checked: set[str] = set()
@@ -260,6 +256,10 @@ class BridgeService:
             if candidate.is_file():
                 return str(candidate)
             return None
+
+        bundled = _bundled_jamulus_candidate()
+        if bundled:
+            return bundled
 
         for path in self.settings.jamulus_candidates:
             if path not in checked:
@@ -274,8 +274,7 @@ class BridgeService:
                 resolved = _resolve(path)
                 if resolved:
                     return resolved
-        # Last resort: the copy bundled inside WebJam's own app (macOS only).
-        return _bundled_jamulus_candidate()
+        return None
 
     def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
         """Launch the Jamulus client subprocess and connect to the band's server.
@@ -331,12 +330,12 @@ class BridgeService:
                 return
             self.metrics_service.increment("metric_jamulus_launch_failed")
             self.show_actionable_error(
-                "No Jamulus Server Configured",
-                what_failed="WebJam doesn't know which Jamulus server to connect to.",
-                likely_cause="The setup wizard was skipped, or the config file was edited.",
+                "This jam needs a new invite",
+                what_failed="WebJam doesn’t have a band session to join.",
+                likely_cause="The saved invitation is missing or incomplete.",
                 next_action=(
-                    "Open Settings (Ctrl+, or the gear in the side rail) and enter "
-                    "your band's Jamulus server address, then press Launch Audio again."
+                    "Close WebJam, open it again, and choose Host a Jam or paste "
+                    "a fresh invitation from your host."
                 ),
                 retry_callback=None,
             )
@@ -362,14 +361,10 @@ class BridgeService:
             self._set_jamulus_state(JamulusState.NOT_FOUND)
             self.schedule_ui_callback(self.refresh_readiness)
             self.show_actionable_error(
-                "Jamulus Not Found",
-                what_failed="WebJam could not locate the Jamulus executable.",
-                likely_cause="Jamulus is not installed or is in a non-default location.",
-                next_action=(
-                    "Download Jamulus (free) from https://jamulus.io and install it. "
-                    "If it's already installed in a custom location, open Settings (Ctrl+,) "
-                    "and set the Jamulus executable path."
-                ),
+                "A music component is missing",
+                what_failed="WebJam couldn’t start the band audio on this Mac.",
+                likely_cause="The WebJam installation is incomplete.",
+                next_action="Reinstall the latest WebJam build, then try again.",
                 retry_callback=None,
             )
             return
@@ -401,17 +396,13 @@ class BridgeService:
                 self.metrics_service.increment("metric_jamulus_port_conflict")
                 self.schedule_ui_callback(self.refresh_readiness)
                 self.show_actionable_error(
-                    "Jamulus Port In Use",
-                    what_failed=f"Port {port} (Jamulus JSON-RPC) is already in use on this machine.",
+                    "Another audio session is open",
+                    what_failed="WebJam can’t start a second music connection on this Mac.",
                     likely_cause=(
-                        "Another WebJam instance is already running, or a previous "
-                        "Jamulus process didn't shut down cleanly."
+                        "Another WebJam window is open, or the last session is "
+                        "still finishing."
                     ),
-                    next_action=(
-                        "Close any other WebJam instances and quit any running Jamulus, "
-                        "then retry. To use a different port, set the "
-                        "WEBJAM_JAMULUS_RPC_PORT environment variable."
-                    ),
+                    next_action="Close the other WebJam window, wait a moment, then try again.",
                     retry_callback=lambda: self.launch_jamulus(manual=True),
                 )
             else:
@@ -422,16 +413,29 @@ class BridgeService:
                 )
             return
 
-        banner_text = "Launching Jamulus..." if not reconnect else "Auto-reconnecting Jamulus..."
+        banner_text = "Starting your band audio…" if not reconnect else "Reconnecting band audio…"
         if self.practice_mode:
             banner_text = "Starting practice session..."
-        self.set_status_banner(banner_text, color="#ffcc00")
+        self.set_status_banner(banner_text, color="#BF5700")
 
         server = self.effective_server()
 
         def _do_launch() -> None:
             with self._jamulus_lifecycle_lock:
                 try:
+                    # A second click/deep-link can queue another launch while
+                    # the first worker is still starting. Re-check only after
+                    # acquiring the lifecycle lock so two clients can never be
+                    # spawned and one silently lose process ownership.
+                    if (
+                        self.jamulus_process is not None
+                        and self.jamulus_process.poll() is None
+                    ):
+                        self._set_jamulus_state(JamulusState.ALREADY)
+                        with self._reconnect_lock:
+                            self.jamulus_reconnect_inflight = False
+                        self.schedule_ui_callback(self.refresh_readiness)
+                        return
                     if self.shutdown_requested():
                         with self._reconnect_lock:
                             self.jamulus_reconnect_inflight = False
@@ -443,23 +447,24 @@ class BridgeService:
                     ):
                         hosted_ok, hosted_detail = self.ensure_hosted_server()
                         if not hosted_ok:
+                            LOGGER.error("Hosted server could not start: %s", hosted_detail)
                             self._set_jamulus_state(JamulusState.STOPPED)
                             with self._reconnect_lock:
                                 self.jamulus_reconnect_inflight = False
-                            self.show_actionable_error(
-                                "Band Server Could Not Start",
-                                what_failed=hosted_detail,
-                                likely_cause=(
-                                    "This Mac hosts the band server, and it "
-                                    "must be running before the client joins."
-                                ),
-                                next_action=(
-                                    "Fix the issue above, then press Start "
-                                    "Audio again. Hosting can be turned off "
-                                    "in Settings if another Mac runs the "
-                                    "server."
-                                ),
-                                retry_callback=None,
+                            self.schedule_ui_callback(
+                                lambda: self.show_actionable_error(
+                                    "This jam couldn’t start",
+                                    what_failed="This Mac couldn’t create the band session.",
+                                    likely_cause=(
+                                        "Another session may still be open, or a required "
+                                        "audio component may be unavailable."
+                                    ),
+                                    next_action=(
+                                        "Close any other WebJam window, wait a moment, "
+                                        "then try hosting again."
+                                    ),
+                                    retry_callback=None,
+                                )
                             )
                             self.schedule_ui_callback(self.refresh_readiness)
                             return
@@ -485,7 +490,17 @@ class BridgeService:
 
                     cmd = [
                         jamulus_path,
+                        # The music engine is infrastructure, not a second app
+                        # the musician must operate.
+                        "--nogui",
                         "--connect", server,
+                        # Set identity before the Qt/RPC event loop starts so
+                        # server-side multitrack filenames stay human-readable
+                        # even if the client's control channel starts slowly.
+                        "--clientname", str(
+                            getattr(self.settings, "musician_name", "WebJam Musician")
+                            or "WebJam Musician"
+                        ),
                         "--jsonrpcport", str(self.settings.jamulus_rpc_port),
                         *jsonrpc_secret_args,
                     ]
@@ -524,6 +539,18 @@ class BridgeService:
                                 raise
                             time.sleep(0.5)
 
+                    # Popen only proves the executable was found.  Jamulus can
+                    # still exit immediately (for example when its sandbox
+                    # cannot read the RPC secret).  Do not publish Running or
+                    # a success metric until it survives the startup boundary.
+                    time.sleep(0.4)
+                    return_code = proc.poll() if proc is not None else -1
+                    if return_code is not None:
+                        raise RuntimeError(
+                            "Jamulus exited during startup "
+                            f"(code {return_code}); see ~/.webjam_jamulus.log"
+                        )
+
                     if self.shutdown_requested():
                         if proc:
                             proc.terminate()
@@ -555,10 +582,7 @@ class BridgeService:
 
                     self.schedule_ui_callback(self.refresh_readiness)
                     if manual:
-                        msg = (
-                            f"Jamulus launched — connecting to {server}. "
-                            "Participants will appear shortly."
-                        )
+                        msg = "Band audio started — connecting everyone now."
                         self.schedule_ui_callback(
                             lambda m=msg: self.set_status_banner(m)
                         )
@@ -587,13 +611,16 @@ class BridgeService:
                         self._terminate_practice_server()
                         self.practice_mode = False
                     self.schedule_ui_callback(self.refresh_readiness)
-                    exc_msg = str(exc)
+                    LOGGER.debug("Music connection launch detail: %s", exc)
                     self.schedule_ui_callback(
-                        lambda m=exc_msg: self.show_actionable_error(
-                            "Jamulus Launch Failed",
-                            what_failed=f"Jamulus could not start ({m}).",
-                            likely_cause="Invalid path, blocked launch, missing dependency, or transient process startup failure.",
-                            next_action="Open diagnostics, verify path/server, then retry.",
+                        lambda: self.show_actionable_error(
+                            "Band audio couldn’t start",
+                            what_failed="WebJam couldn’t open the music connection.",
+                            likely_cause=(
+                                "A required component may be blocked, incomplete, or "
+                                "still closing from the last session."
+                            ),
+                            next_action="Wait a moment, then choose Try Again.",
                             retry_callback=lambda: self.launch_jamulus(manual=True)
                         )
                     )
@@ -710,10 +737,10 @@ class BridgeService:
                 pass
             self._practice_log_file = None
 
-    def _terminate_practice_server(self) -> None:
-        """Terminate the private local practice server if running. Idempotent."""
+    def _terminate_practice_server(self) -> bool:
+        """Terminate the private server and report confirmed cleanup."""
         proc = self.practice_server_process
-        self.practice_server_process = None
+        stopped = True
         if proc is not None and proc.poll() is None:
             try:
                 proc.terminate()
@@ -721,9 +748,14 @@ class BridgeService:
                     proc.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                    proc.wait(timeout=2.0)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("Failed to terminate practice server: %s", exc)
-        self._close_practice_log_file()
+                stopped = False
+        if stopped:
+            self.practice_server_process = None
+            self._close_practice_log_file()
+        return stopped
 
     def _end_practice_if_server_died(self) -> bool:
         """Reconnect-tick guard: if the local practice server died, end the
@@ -760,12 +792,12 @@ class BridgeService:
 
     def find_jamulus_server_with_source(self) -> tuple[Optional[str], str]:
         """Locate the installed or bundled dedicated server and its source."""
-        candidate = Path(self.JAMULUS_SERVER_BINARY)
-        if candidate.is_file():
-            return str(candidate), "installed"
         bundled = _bundled_jamulus_server_candidate()
         if bundled:
             return bundled, "bundled"
+        candidate = Path(self.JAMULUS_SERVER_BINARY)
+        if candidate.is_file():
+            return str(candidate), "installed"
         return None, "missing"
 
     def find_jamulus_server(self) -> Optional[str]:
@@ -1016,15 +1048,14 @@ class BridgeService:
                 pass
             self._hosted_log_file = None
 
-    def stop_hosted_server(self) -> None:
-        """Terminate the hosted band server. Idempotent; quit-time only —
-        Stop Audio deliberately never calls this."""
+    def stop_hosted_server(self) -> bool:
+        """Terminate an owned server and report whether it is confirmed stopped."""
         with self._hosted_lifecycle_lock:
             # Detach from an externally managed server without sending it a
             # signal. Only the subprocess in hosted_server_process is owned.
             self._hosted_server_adopted = False
             proc = self.hosted_server_process
-            self.hosted_server_process = None
+            stopped = True
             if proc is not None and proc.poll() is None:
                 try:
                     proc.terminate()
@@ -1032,16 +1063,22 @@ class BridgeService:
                         proc.wait(timeout=3.0)
                     except subprocess.TimeoutExpired:
                         proc.kill()
+                        proc.wait(timeout=2.0)
                 except Exception as exc:  # noqa: BLE001
                     LOGGER.warning("Failed to terminate hosted server: %s", exc)
+                    stopped = False
+            if stopped:
+                self.hosted_server_process = None
             caff = self._hosted_caffeinate_process
-            self._hosted_caffeinate_process = None
-            if caff is not None and caff.poll() is None:
-                try:
-                    caff.terminate()
-                except Exception:  # noqa: BLE001
-                    pass
-            self._close_hosted_log_file()
+            if stopped:
+                self._hosted_caffeinate_process = None
+                if caff is not None and caff.poll() is None:
+                    try:
+                        caff.terminate()
+                    except Exception:  # noqa: BLE001
+                        pass
+                self._close_hosted_log_file()
+            return stopped
 
     def _restart_hosted_server_if_died(self) -> None:
         """Reconnect-tick supervision: revive a dead hosted server.
@@ -1077,7 +1114,7 @@ class BridgeService:
         self.schedule_ui_callback(
             lambda: self.set_status_banner(
                 "Band server stopped unexpectedly — restarting it…",
-                color="#ffcc00",
+                color="#BF5700",
             )
         )
 
@@ -1087,10 +1124,11 @@ class BridgeService:
                     self.hosted_server_process = None
                 ok, detail = self.ensure_hosted_server()
                 if not ok:
+                    LOGGER.error("Hosted server restart failed: %s", detail)
                     self.schedule_ui_callback(
                         lambda: self.set_status_banner(
-                            f"Band server restart failed: {detail}",
-                            color="#ff6666",
+                            "The band session couldn’t restart. Close WebJam and open it again.",
+                            color="#BF5700",
                         )
                     )
             finally:
@@ -1103,10 +1141,9 @@ class BridgeService:
     def stop_jamulus(self) -> bool:
         """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
 
-        Returns True if a process was actually terminated, False if Jamulus
-        was not running.  After calling this, ``jamulus_state`` becomes
-        ``"Stopped"`` and the auto-reconnect logic is disabled (because
-        ``jamulus_launch_intended`` is set to False).
+        Returns True only when monitoring and the subprocess are confirmed
+        stopped (including an already-stopped subprocess). A failed process
+        remains owned so the UI cannot claim cleanup succeeded.
         """
         with self._jamulus_lifecycle_lock:
             # Disable any pending reconnect attempts — user explicitly asked to stop
@@ -1116,14 +1153,16 @@ class BridgeService:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
 
-            # Stop monitoring (RPC + UDP) so we don't keep polling a dead process
+            # Stop transport monitoring so we don't keep polling a dead process.
+            monitoring_stopped = True
             try:
                 self.jamulus_controller.stop()
             except Exception as exc:
                 LOGGER.warning("JamulusController.stop() failed: %s", exc)
+                monitoring_stopped = False
 
-            terminated = False
             proc = self.jamulus_process
+            process_stopped = True
             if proc is not None and proc.poll() is None:
                 try:
                     proc.terminate()
@@ -1131,21 +1170,28 @@ class BridgeService:
                         proc.wait(timeout=2.0)
                     except subprocess.TimeoutExpired:
                         proc.kill()
-                    terminated = True
+                        proc.wait(timeout=2.0)
                 except Exception as exc:
                     LOGGER.warning("Failed to terminate Jamulus: %s", exc)
+                    process_stopped = False
 
             with self._reconnect_lock:
-                self.jamulus_process = None
-                self.jamulus_state = JamulusState.STOPPED.value
+                if process_stopped:
+                    self.jamulus_process = None
 
-            self._close_jamulus_log_file()
-            self._terminate_practice_server()
+            if self.jamulus_process is None:
+                self._close_jamulus_log_file()
+            practice_stopped = self._terminate_practice_server()
             self.practice_mode = False
+            stopped = monitoring_stopped and process_stopped and practice_stopped
+            with self._reconnect_lock:
+                self.jamulus_state = (
+                    JamulusState.STOPPED.value if stopped else "Stop failed"
+                )
 
             self.metrics_service.increment("metric_jamulus_stop")
             self.schedule_ui_callback(self.refresh_readiness)
-            return terminated
+            return stopped
 
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
         """Open Webex externally and report only the launch result.
@@ -1161,7 +1207,7 @@ class BridgeService:
             self.metrics_service.increment("metric_webex_open_attempt")
             
         self.webex_state = WebexLaunchState.OPENING.value
-        self.set_status_banner("Opening Webex externally…", color="#ffcc00")
+        self.set_status_banner("Opening Webex externally…", color="#BF5700")
         self.schedule_ui_callback(self.refresh_readiness)
 
         def _do_open() -> None:

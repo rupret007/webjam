@@ -1,11 +1,16 @@
 # WebJam modernization plan
 
+> Historical implementation log through the pre-v0.9 work. For the current
+> Host/Join flow, release state, and acceptance gates, use `README.md`,
+> `CHANGELOG.md`, `UX_ACCEPTANCE_CHECKLIST.md`, and `TEST_PROCEDURE.md`.
+
 ## Audited baseline
 
-- Source baseline for this final audit is clean `origin/master` at `12c2198`:
-  the untagged v0.8.1 lobby/in-app-hosting candidate. GitHub tests,
-  real-Jamulus integration, and all three desktop build jobs passed for that
-  exact commit before this hardening round.
+- Source baseline for this final audit is `origin/master` at `ad3b7ef`: the
+  last pushed private-pilot candidate before the uncommitted v0.9 Host/Join,
+  session-workspace, and Studio work. The existing modernization tree was
+  preserved and audited in place; no reset, rebase, or discarded change was
+  used.
 - Before Session Pulse, local validation passed 823 tests with 12 expected
   skips, Ruff, the offscreen UX gate, and a clean macOS PyInstaller build.
 - The older dirty checkout outside this repository remains
@@ -62,6 +67,13 @@
   distinguishes verified/attention/legacy takes and server/local tracks.
 
 ## Verification completed so far
+
+- Shipped the "Violet Hour" visual identity: full token-palette replacement
+  (violet surfaces, electric-violet primary, amber audio, neon-rose danger,
+  mint success) with all WCAG AA contrast pins passing, gradient depth on
+  the stage/strip/cards/Pulse, QPainter side-rail icons, participant avatar
+  initials, first-time styling for menus/tooltips/message boxes/Take Deck,
+  and bundled Inter 4.1 (OFL, attributed) with graceful font fallback.
 
 - Fixed the two hosted-mode first-run blockers found in hands-on testing:
   Ready Check ran before Start Audio ever created the JamulusServer container,
@@ -278,32 +290,68 @@
   valid local bundle seal, successful offscreen startup, clean TERM exit, and
   no WebJam/JamulusServer/caffeinate orphan.
 
+## v0.9.0 Studio and Logic handoff round
+
+- Completed the unfinished integrated Multitrack Studio rather than adding a
+  second recording surface. Studio now honors the persisted wired output,
+  plays a real stereo bus, and adds non-destructive pan alongside gain, mute,
+  solo, waveform transport, and scrub.
+- Corrected a data-loss-risk regression in the simplified settings migration:
+  an explicitly enabled two-input host capture and its selected device now
+  survive application reload and edits to unrelated musician preferences.
+  Legacy bridge-only state still cannot silently arm local recording. A
+  focused **Recording Setup** dialog lives inside Studio, keeps Host/Join
+  onboarding simple, and prevents guests from enabling host-only capture.
+- Added an atomic Logic/DAW interchange path instead of attempting to write
+  proprietary `.logicx` files. **Export for Logic** streams each signed-offset
+  source to a zero-based, equal-length 24-bit PCM stem, preserves channel
+  layout and source files, creates a stereo rough mix from current mix state,
+  and records instructions plus a secret-free evidence manifest. Negative
+  local pre-roll is trimmed; positive offsets become leading silence.
+- Take manifests now retain the user-visible session title in addition to
+  roster-derived track names, and Studio displays that title without renaming
+  or mutating the server's take directory.
+- Added focused coverage for signed alignment, 24-bit output, equal-length
+  stems, rough-mix gain/pan/mute/solo, mixed-rate rejection, repeated-export
+  non-overwrite, source immutability, stereo playback, device persistence,
+  host-only capture setup, and session-title round trips. Canonical workflow:
+  `RECORDING_AND_LOGIC.md`.
+- Final source validation passes 1,157 tests with 12 expected platform skips
+  and six subtests. Scoped Ruff, compile checks, `pip check`, `pip-audit` (no
+  known vulnerabilities), UX smoke, 22-document relative-link validation,
+  secret/private-network scan, and `git diff --check` all pass. The only pytest
+  warning remains the audited Starlette/httpx deprecation; the three Qt
+  WebEngine profile notices occur at process teardown and are unchanged.
+- A clean local Apple Silicon PyInstaller build produces an arm64 v0.9.0
+  bundle with Inter/QSS/Webex resources and prepared official Jamulus 3.12.2
+  client/server apps. Outer and nested seals verify independently and outer
+  signing preserves both nested CDHashes. An isolated frozen Host lifecycle
+  starts both bundled apps, proves UDP 22124 plus loopback RPC 22222/22240,
+  follows the same close path as an affirmative musician confirmation, releases
+  every port, and leaves no WebJam or Jamulus process. The exact post-push CI
+  artifacts and two-Mac hardware gates remain open until recorded below.
+
 ## Remaining release gates
 
-1. On both musician Macs choose talkback mode, route Jamulus directly through
-   the wired music interface, select a dedicated Webex speech mic when
-   possible, and pass F2 Ready Check plus every manual Webex `VERIFY` item.
-2. On the drummer's Apple Silicon Mac, install Roland's TD-27 driver, select
-   VENDOR mode, verify 48 kHz USB audio, install the exact ARM64 candidate, and
-   pass Ready Check/Practice over Ethernet and wired headphones. BlackHole is
-   not part of the talkback path.
-3. Invite the drummer to Tailscale and prove a direct peer path. Reserve the
-   host LAN address, forward UDP 22124 only, prove the public path externally,
-   and compare both routes for ten stable minutes. Never expose TCP 22222 or
-   22240.
-4. On the host, prove that SSL 2+ can be opened concurrently by Jamulus and
-   WebJam supplemental capture. Require separate audible guitar/vocal WAVs,
-   confident manifest alignment, Verified Take Deck status, and aligned Logic
-   import. Any isolated-stem failure preserves the server take but blocks the
-   recording gate.
-5. Complete the full two-Mac gate: audio/latency, participant truth,
-   fader/mute/solo/Talk Break, saved mix, chat, echo-free Webex talkback,
-   reconnect,
-   Pulse/exports, server recording, non-empty per-player WAVs, Take Deck,
-   Logic import, diagnostics, process cleanup, and a 45–60 minute soak.
-6. Keep the CI artifact private for Sunday. If the closed pilot passes, tag the
-   exact validated commit as v0.8.1, inspect the draft release's exact
-   artifacts, repeat the critical packaged workflow, then publish.
+1. Put both Apple Silicon Macs on the same local network, install the exact
+   versioned candidate ZIP, then prove the complete **Host a Jam → Copy Invite
+   → Join a Jam → Play** path. Tonight does not claim VPN, internet, NAT
+   traversal, port forwarding, Windows, or Intel support.
+2. With wired interfaces/headphones at 48 kHz, prove real bidirectional audio,
+   truthful local/remote meters, participant identity, mix controls, optional
+   Webex talkback, and recovery after a forced disconnect. The app must never
+   substitute a process or animated meter for acoustic proof.
+3. Record a named two-musician take. Require one non-empty server WAV per
+   musician, any explicitly enabled host input stems, verified Studio status,
+   stereo playback, and an **Export for Logic** package whose numbered,
+   equal-length 24-bit stems import together at `0:00`. Any capture, validation,
+   or export failure preserves the source audio but blocks this gate.
+4. End and relaunch the jam, then confirm no owned WebJam, Jamulus,
+   JamulusServer, or `caffeinate` process remains and the ports are reusable.
+   Finish with a 45–60 minute same-LAN soak using the exact artifact.
+5. Keep the candidate private. If the closed pilot passes, tag the exact
+   validated commit as v0.9.0, inspect the draft release artifacts, repeat the
+   critical packaged workflow, then decide whether to widen distribution.
 
 ## Post-pilot Session Copilot
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from webjam_qt.theme.rail_icons import make_rail_icon
 from webjam_qt.theme.tokens import Space
 
 
@@ -41,7 +42,7 @@ class SideRail(QFrame):
     DEFAULT_ITEMS: tuple[RailItem, ...] = (
         RailItem(key="stage", label="Live", glyph="LIVE"),
         RailItem(key="canvas", label="Notes", glyph="NOTE"),
-        RailItem(key="takes", label="Takes", glyph="TAKE", utility=True),
+        RailItem(key="takes", label="Studio", glyph="TAKE"),
         RailItem(key="settings", label="Settings", glyph="SET", utility=True),
     )
 
@@ -74,7 +75,15 @@ class SideRail(QFrame):
             button.setObjectName("SideRailButton")
             button.setText(item.label)
             button.setCheckable(True)
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            icon = make_rail_icon(item.key)
+            if icon.isNull():
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            else:
+                button.setIcon(icon)
+                button.setIconSize(QSize(20, 20))
+                button.setToolButtonStyle(
+                    Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+                )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setProperty("railKey", item.key)
             button.setProperty("utility", "true" if item.utility else "false")

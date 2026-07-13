@@ -25,21 +25,27 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QStackedWidget,
     QSplitter,
     QStatusBar,
     QVBoxLayout,
     QWidget,
 )
 
+from webjam_qt.theme import Color
+from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets import (
     ParticipantGrid,
     SessionCanvas,
     SessionStrip,
     SideRail,
     WebexEmbed,
+    RecordingStudio,
+    SessionHud,
 )
 
 
@@ -59,9 +65,12 @@ class ConductorWindow(QMainWindow):
     ) -> None:
         super().__init__(parent)
         from webjam_qt import __version__
-        self.setWindowTitle(f"WebJam — Conductor (v{__version__})")
+        self.setWindowTitle(f"WebJam — Band Session (v{__version__})")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
-        self.setMinimumSize(1100, 720)
+        # The meeting surface remains usable on an 800×600 display and in a
+        # narrow side-by-side desktop window. Child layouts own adaptation;
+        # the shell must not impose a wide-screen gate.
+        self.setMinimumSize(760, 600)
         # Controller-injected veto (e.g. "a recording is running — quit?").
         self.confirm_close: Optional[Callable[[], bool]] = None
 
@@ -71,10 +80,42 @@ class ConductorWindow(QMainWindow):
             initial_mode_key=initial_mode_key,
             initial_title=initial_title,
         )
+        self.session_hud = SessionHud()
         self.side_rail = SideRail()
         self.participant_grid = ParticipantGrid()
         self.webex_embed = WebexEmbed()
         self.session_canvas = SessionCanvas()
+        self.recording_studio = RecordingStudio()
+        # Video, notes, Studio, and Settings are session tools.  They remain
+        # available from one menu without competing with the live session.
+        self.side_rail.setVisible(False)
+        self.webex_embed.setVisible(False)
+        self.session_canvas.setVisible(False)
+
+        # Familiar meeting controls live in one predictable bottom rail. The
+        # widgets remain owned by SessionStrip so all existing controller
+        # signals and state methods continue to have a single source of truth.
+        self.session_controls = QFrame()
+        self.session_controls.setObjectName("SessionControlBar")
+        self.session_controls.setAccessibleName("Session controls")
+        self.session_controls.setFixedHeight(72)
+        controls_layout = QHBoxLayout(self.session_controls)
+        controls_layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
+        controls_layout.setSpacing(Space.SM)
+        controls_layout.addStretch(1)
+        self.session_strip._invite_button.setText("Copy Invite")
+        self.session_strip._invite_button.setAccessibleName("Copy invite link")
+        controls_layout.addWidget(self.session_strip._invite_button)
+        controls_layout.addWidget(self.session_strip._mute_self_button)
+        controls_layout.addWidget(self.session_strip._record_elapsed)
+        controls_layout.addWidget(self.session_strip._record_button)
+        self.session_strip._tools_button.setText("More")
+        self.session_strip._tools_button.setAccessibleName("More session options")
+        controls_layout.addWidget(self.session_strip._tools_button)
+        controls_layout.addSpacing(Space.MD)
+        self.session_strip._audio_button.setProperty("destructive", "true")
+        controls_layout.addWidget(self.session_strip._audio_button)
+        controls_layout.addStretch(1)
 
         # Stage combines participant grid + webex embed vertically
         stage_container = QWidget()
@@ -97,19 +138,27 @@ class ConductorWindow(QMainWindow):
         self.center_splitter.setCollapsible(1, False)
         self.center_splitter.setHandleWidth(1)
 
+        self.workspace_stack = QStackedWidget()
+        self.workspace_stack.setObjectName("WorkspaceStack")
+        self.workspace_stack.addWidget(self.center_splitter)
+        self.workspace_stack.addWidget(self.recording_studio)
+        self.workspace_stack.setCurrentWidget(self.center_splitter)
+
         body_container = QWidget()
         body_layout = QHBoxLayout(body_container)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
         body_layout.addWidget(self.side_rail)
-        body_layout.addWidget(self.center_splitter, stretch=1)
+        body_layout.addWidget(self.workspace_stack, stretch=1)
 
         central = QWidget()
         central_layout = QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.session_strip)
+        central_layout.addWidget(self.session_hud)
         central_layout.addWidget(body_container, stretch=1)
+        central_layout.addWidget(self.session_controls)
 
         self.setCentralWidget(central)
 
@@ -120,10 +169,10 @@ class ConductorWindow(QMainWindow):
         # Server-recording indicator — hidden until the server's recorder
         # is actually rolling (Jamulus multitrack recording, one track per
         # musician). Deliberately loud: the whole band should know.
-        self._status_recording = QLabel("● REC")
+        self._status_recording = QLabel("● REC", self._status_bar)
         self._status_recording.setObjectName("StatusRecording")
         self._status_recording.setStyleSheet(
-            "color: #E5484D; font-weight: 700; letter-spacing: 1px;"
+            f"color: {Color.ACCENT_RECORD}; font-weight: 700; letter-spacing: 1px;"
         )
         self._status_recording.setToolTip(
             "The Jamulus server is recording this session — every musician "
@@ -132,24 +181,24 @@ class ConductorWindow(QMainWindow):
         self._status_recording.setVisible(False)
 
         # Hosted band server truth — visible only when this Mac hosts it.
-        self._status_server = QLabel("Server: —")
+        self._status_server = QLabel("Server: —", self._status_bar)
         self._status_server.setToolTip(
             "This Mac is running the band's Jamulus server. It keeps running "
             "through Stop Audio and stops only when WebJam quits."
         )
         self._status_server.setVisible(False)
 
-        self._status_audio   = QLabel("Audio: —")
-        self._status_video   = QLabel("Video: —")
-        self._status_latency = QLabel("Session: —")
-        self._status_routing = QLabel("Routing: checking…")
+        self._status_audio   = QLabel("Audio: —", self._status_bar)
+        self._status_video   = QLabel("Video: —", self._status_bar)
+        self._status_latency = QLabel("Session: —", self._status_bar)
+        self._status_routing = QLabel("", self._status_bar)
+        self._status_audio.setVisible(False)
+        self._status_video.setVisible(False)
+        self._status_latency.setVisible(False)
+        self._status_routing.setVisible(False)
         self._status_bar.addPermanentWidget(self._status_recording)
-        self._status_bar.addPermanentWidget(self._status_server)
-        self._status_bar.addPermanentWidget(self._status_audio)
-        self._status_bar.addPermanentWidget(self._status_video)
-        self._status_bar.addPermanentWidget(self._status_latency)
-        self._status_bar.addPermanentWidget(self._status_routing)
-        self._status_bar.showMessage("Ready")
+        self._status_bar.clearMessage()
+        self._status_bar.setVisible(False)
         # Reset any temporary flash_message() color once its timed message
         # clears (QStatusBar emits messageChanged with an empty string).
         self._status_bar.messageChanged.connect(self._on_status_message_changed)
@@ -160,9 +209,11 @@ class ConductorWindow(QMainWindow):
         self.participant_grid.setAccessibleName("Participant mixer grid")
         self.webex_embed.setAccessibleName("Webex external launch and audio role")
         self.session_canvas.setAccessibleName("Session notes canvas")
+        self.recording_studio.setAccessibleName("Multitrack recording studio")
 
         # --- Keyboard shortcuts
         self._setup_shortcuts()
+        self.participant_grid.participants_changed.connect(self._setup_tab_order)
         self._setup_tab_order()
 
     def _setup_shortcuts(self) -> None:
@@ -281,70 +332,40 @@ class ConductorWindow(QMainWindow):
         strip = self.session_strip
         order = [
             strip._title_input,
-            strip._mode_picker,
-            strip._record_button,
-            strip._test_button,
-            strip._mute_self_button,
-            strip._audio_button,
-            strip._video_button,
-            *self.side_rail._group.buttons(),
+            self.session_hud._action,
             self.participant_grid._empty_primary,
-            self.participant_grid._empty_practice,
-            self.participant_grid._empty_ready,
-            self.webex_embed.fallback_button(),
-            *self.session_canvas._toolbar_buttons,
-            self.session_canvas._notes,
-            self.session_canvas._chat_input,
         ]
+        for card in self.participant_grid.cards():
+            order.extend([card._fader, card._mute_button, card._solo_button])
+        order.extend(
+            [
+                strip._invite_button,
+                strip._record_button,
+                strip._tools_button,
+                strip._audio_button,
+            ]
+        )
         for current, following in zip(order, order[1:]):
             QWidget.setTabOrder(current, following)
 
     def _show_help(self) -> None:
-        """Display a keyboard-shortcut and getting-started reference."""
+        """Display the same short workflow the live screen presents."""
         from PySide6.QtWidgets import QMessageBox
         from webjam_qt import __version__
-        import sys
-        # On macOS, our mute shortcuts use the literal Control key (not Cmd)
-        # to avoid clashing with Cmd+M = system minimize.  Other platforms
-        # use the standard Ctrl+M / Ctrl+Shift+M bindings.
-        on_mac = sys.platform == "darwin"
-        mute_all_label = "⌃M (literal Control, not Cmd)" if on_mac else "Ctrl+M"
-        mute_self_label = "⌃⇧M (literal Control)" if on_mac else "Ctrl+Shift+M"
         body = (
-            f"<b>WebJam — Conductor UI</b> &nbsp;<i>v{__version__}</i><br>"
-            "<i>Control band audio here and open native Webex for video and talkback.</i><br><br>"
-            "<b>Keyboard shortcuts:</b><br>"
-            "&nbsp;&nbsp;<b>Ctrl+L</b> — Focus session title<br>"
-            "&nbsp;&nbsp;<b>Ctrl+S</b> — Save mixer state (default slot)<br>"
-            "&nbsp;&nbsp;<b>Ctrl+O</b> — Load mixer state (default slot)<br>"
-            "&nbsp;&nbsp;<b>Ctrl+Shift+S</b> — Save Mix As... (named file)<br>"
-            "&nbsp;&nbsp;<b>Ctrl+Shift+O</b> — Load Mix... (pick a file)<br>"
-            f"&nbsp;&nbsp;<b>{mute_all_label}</b> — Mute / unmute all<br>"
-            f"&nbsp;&nbsp;<b>{mute_self_label}</b> — Talk Break / Resume Music<br>"
-            "&nbsp;&nbsp;<b>Ctrl+T</b> — Insert timestamp in canvas<br>"
-            "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
-            "&nbsp;&nbsp;<b>Ctrl+Shift+D</b> — Copy diagnostics to clipboard<br>"
-            "&nbsp;&nbsp;<b>F2</b> — Ready Check (is my setup ready to jam?)<br>"
-            "&nbsp;&nbsp;<b>Ctrl+1 / Ctrl+2 / Ctrl+3</b> — Live / Notes / Takes<br>"
-            "&nbsp;&nbsp;<b>Ctrl+P</b> — Practice solo (private local server)<br>"
-            "&nbsp;&nbsp;<b>● Record</b> — band-server multitrack recording (see server/README)<br>"
-            "&nbsp;&nbsp;<b>Takes</b> (side rail) — play back & mix your recorded takes<br>"
-            "&nbsp;&nbsp;<b>Ctrl+,</b> — Open Settings<br>"
-            "&nbsp;&nbsp;<b>F11</b> — Toggle fullscreen<br>"
-            "&nbsp;&nbsp;<b>Esc</b> — Exit fullscreen<br>"
-            "&nbsp;&nbsp;<b>F1</b> — Show this help<br>"
-            "&nbsp;&nbsp;<b>Double-click fader</b> — Reset to 0 dB<br><br>"
-            "<b>Getting started:</b><br>"
-            "0. New? Click <b>Practice</b> first — hear yourself solo, no internet needed.<br>"
-            "1. Click <b>Start Audio</b> (gold button) to start Jamulus.<br>"
-            "2. Click <b>Open Webex</b>, join muted, and use <b>Talk Break</b> "
-            "before holding Spacebar to speak.<br>"
-            "3. Adjust faders as your band joins.<br>"
-            "4. Leave Webex in its own app; WebJam only opens it.<br><br>"
-            "<b>Troubleshooting — log files:</b><br>"
-            "&nbsp;&nbsp;~/.webjam.log — WebJam diagnostics<br>"
-            "&nbsp;&nbsp;~/.webjam_jamulus.log — Jamulus stdout/stderr<br><br>"
-            "<a href='https://github.com/rupret007/webjam'>github.com/rupret007/webjam</a>"
+            f"<b>WebJam v{__version__}</b><br>"
+            "<i>Host. Share. Join. Play.</i><br><br>"
+            "<b>1.</b> Choose <b>Host a Jam</b> or <b>Join a Jam</b>.<br>"
+            "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
+            "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
+            "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
+            "<b>5.</b> Use <b>More → Multitrack Studio</b> to review a take.<br>"
+            "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
+            "<b>Useful shortcuts</b><br>"
+            "F2 — Troubleshooting<br>"
+            "Ctrl+1 / Ctrl+2 / Ctrl+3 — Live / Notes / Studio<br>"
+            "Ctrl+Shift+R — Reset every fader to 0 dB<br>"
+            "F11 / Esc — Enter / leave full screen"
         )
         box = QMessageBox(self)
         box.setWindowTitle("WebJam Help")
@@ -369,11 +390,18 @@ class ConductorWindow(QMainWindow):
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
         self._status_recording.setVisible(bool(active))
+        if active:
+            self._status_bar.setVisible(True)
+        elif not self._status_bar.currentMessage():
+            self._status_bar.setVisible(False)
 
     def set_status_server(self, text: str) -> None:
-        """Show hosted band-server truth; empty text hides the chip."""
-        self._status_server.setText(f"Server: {text}" if text else "Server: —")
-        self._status_server.setVisible(bool(text))
+        """Retain hosted-server text for diagnostics, not the live surface."""
+        self._status_server.setText(f"Band: {text}" if text else "Band: —")
+        # SessionHud already owns this truth. Keeping the legacy label hidden
+        # avoids duplicate chrome and, because it is parented, can never turn
+        # into a stray top-level macOS window.
+        self._status_server.setVisible(False)
 
     def set_status_audio(self, text: str) -> None:
         self._status_audio.setText(f"Audio: {text}")
@@ -385,23 +413,27 @@ class ConductorWindow(QMainWindow):
         self._status_latency.setText(f"Session: {text}")
 
     def set_status_routing(self, text: str) -> None:
-        self._status_routing.setText(f"Routing: {text}")
+        # Routing is automatic and intentionally absent from the musician UI.
+        self._status_routing.setText(str(text or ""))
 
     def flash_message(self, text: str, *, ms: int = 4000, color: str | None = None) -> None:
         """Show a temporary status-bar message, optionally tinted.
 
-        ``color`` (any value accepted by Qt stylesheets, e.g. ``"#ffcc00"``)
+        ``color`` accepts any Qt stylesheet color value.
         highlights attention-worthy banners (reconnect warnings, etc.). The
         tint is cleared automatically once the message times out or is
         replaced — see ``_on_status_message_changed``.
         """
         self._status_bar.setStyleSheet(f"QStatusBar{{color: {color};}}" if color else "")
+        self._status_bar.setVisible(True)
         self._status_bar.showMessage(text, ms)
 
     def _on_status_message_changed(self, text: str) -> None:
         """Clear any flash_message() color tint once its message clears."""
         if not text:
             self._status_bar.setStyleSheet("")
+            if not self._status_recording.isVisible():
+                self._status_bar.setVisible(False)
 
     # ------------------------------------------------------------------
     # Qt overrides

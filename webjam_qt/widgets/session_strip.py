@@ -44,8 +44,10 @@ class SessionStrip(QFrame):
     practice_requested = Signal()       # start a solo practice session
     record_requested = Signal()         # toggle band-server multitrack recording
     ready_check_requested = Signal()    # run the pre-jam readiness report
+    invite_requested = Signal()         # copy the host address for bandmates
+    tool_requested = Signal(str)        # progressive-disclosure destination
 
-    STRIP_HEIGHT = 72
+    STRIP_HEIGHT = 60
 
     def __init__(
         self,
@@ -76,12 +78,16 @@ class SessionStrip(QFrame):
         # safety-critical live actions readable at the supported 1100px
         # window minimum.
         self._title_input.setMinimumWidth(128)
+        self._title_input.setMaximumWidth(420)
         self._title_input.editingFinished.connect(
             lambda: self.session_title_changed.emit(self._title_input.text().strip())
         )
 
         self._subtitle = QLabel("")
         self._subtitle.setObjectName("SessionStripSubtitle")
+        # Creative-mode metadata still persists for notes/exports, but it is
+        # not a decision a musician needs in the primary rehearsal header.
+        self._subtitle.setVisible(False)
 
         self._record_elapsed = QLabel("REC 00:00")
         self._record_elapsed.setObjectName("RecordElapsed")
@@ -107,15 +113,16 @@ class SessionStrip(QFrame):
                 self._mode_picker.setCurrentIndex(idx)
         self._mode_picker.currentIndexChanged.connect(self._on_mode_index_changed)
         self._sync_subtitle()
+        self._mode_picker.setVisible(False)
 
-        self._audio_button = QPushButton("Start Audio")
+        self._audio_button = QPushButton("Start Session")
         self._audio_button.setObjectName("AudioButton")
-        self._audio_button.setAccessibleName("Launch or stop Jamulus audio")
+        self._audio_button.setAccessibleName("Start or end the band session")
         self._audio_button.setToolTip(
-            "Launch Jamulus and connect to the band's server.\n"
-            "Click again to stop. Audio settings live in Settings (Ctrl+,)."
+            "Start or end the band's live music session. WebJam handles the engine."
         )
         self._audio_button.clicked.connect(self.launch_audio_requested.emit)
+        self._audio_button.setVisible(False)
 
         self._record_button = QPushButton("● Record")
         self._record_button.setObjectName("GhostButton")
@@ -123,9 +130,8 @@ class SessionStrip(QFrame):
             "Start or stop band-server multitrack recording"
         )
         self._record_button.setToolTip(
-            "Record the session on the band server: every musician gets\n"
-            "their own track plus a ready-to-open Reaper project.\n"
-            "Needs the band-server RPC set up once — see server/README.md."
+            "Record one synchronized track per connected musician.\n"
+            "Open Studio to see the tracks, waveforms, and playback mix."
         )
         self._record_button.clicked.connect(self.record_requested.emit)
 
@@ -144,6 +150,9 @@ class SessionStrip(QFrame):
         self._practice_action.triggered.connect(self.practice_requested.emit)
         test_menu.addAction(self._practice_action)
         self._test_button.setMenu(test_menu)
+        # Diagnostics remain available through F2, but the everyday workflow
+        # should not look like a checklist musicians must operate.
+        self._test_button.setVisible(False)
 
         self._mute_self_button = QPushButton("Talk Break")
         self._mute_self_button.setObjectName("GhostButton")
@@ -155,6 +164,7 @@ class SessionStrip(QFrame):
             "Shortcut: Ctrl+Shift+M (the literal Control key on macOS)."
         )
         self._mute_self_button.clicked.connect(self.mute_self_requested.emit)
+        self._mute_self_button.setVisible(False)
 
         self._video_button = QPushButton("Open Webex")
         self._video_button.setObjectName("PrimaryButton")
@@ -164,6 +174,52 @@ class SessionStrip(QFrame):
             "WebJam cannot inspect or control the external meeting."
         )
         self._video_button.clicked.connect(self.join_video_requested.emit)
+        self._video_button.setVisible(False)
+
+        self._invite_button = QPushButton("Copy Invite")
+        self._invite_button.setObjectName("GhostButton")
+        self._invite_button.setAccessibleName("Copy band invite")
+        self._invite_button.setToolTip(
+            "Copy one complete link to send to a bandmate."
+        )
+        self._invite_button.clicked.connect(self.invite_requested.emit)
+        self._invite_button.setVisible(False)
+
+        self._tools_button = QToolButton()
+        self._tools_button.setText("More")
+        self._tools_button.setObjectName("GhostButton")
+        self._tools_button.setAccessibleName("More session options")
+        self._tools_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
+        )
+        tools_menu = QMenu(self._tools_button)
+        live_action = QAction("Live Session", tools_menu)
+        live_action.triggered.connect(lambda: self.tool_requested.emit("stage"))
+        notes_action = QAction("Session Notes", tools_menu)
+        notes_action.triggered.connect(lambda: self.tool_requested.emit("canvas"))
+        studio_action = QAction("Multitrack Studio", tools_menu)
+        studio_action.triggered.connect(lambda: self.tool_requested.emit("takes"))
+        tools_menu.addAction(live_action)
+        tools_menu.addAction(notes_action)
+        tools_menu.addAction(studio_action)
+        tools_menu.addSeparator()
+        self._video_action = QAction("Add Video or Conversation", tools_menu)
+        self._video_action.triggered.connect(self.join_video_requested.emit)
+        tools_menu.addAction(self._video_action)
+        self._talk_action = QAction("Talk Break", tools_menu)
+        self._talk_action.triggered.connect(self.mute_self_requested.emit)
+        self._talk_action.setVisible(False)
+        tools_menu.addAction(self._talk_action)
+        tools_menu.addSeparator()
+        settings_action = QAction("Settings", tools_menu)
+        settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
+        tools_menu.addAction(settings_action)
+        diagnostics_action = QAction("Troubleshooting", tools_menu)
+        diagnostics_action.triggered.connect(
+            lambda: self.tool_requested.emit("diagnostics")
+        )
+        tools_menu.addAction(diagnostics_action)
+        self._tools_button.setMenu(tools_menu)
 
         # --- Layout
         layout = QHBoxLayout(self)
@@ -183,12 +239,12 @@ class SessionStrip(QFrame):
 
         layout.addWidget(self._record_elapsed)
         layout.addWidget(self._timer_label)
-        layout.addWidget(self._mode_picker)
         layout.addWidget(self._record_button)
-        layout.addWidget(self._test_button)
         layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
+        layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
+        layout.addWidget(self._tools_button)
 
         # --- Timer
         self._clock = QTimer(self)
@@ -206,12 +262,22 @@ class SessionStrip(QFrame):
     def stop_session_clock(self) -> None:
         self._clock.stop()
 
+    def reset_session_clock(self) -> None:
+        self._clock.stop()
+        self._elapsed_seconds = 0
+        self._update_timer_label()
+
     def set_audio_state(self, label: str, *, enabled: bool = True) -> None:
         self._audio_button.setText(label)
         self._audio_button.setEnabled(enabled)
+        # Start/retry lives in the focused stage card. The header owns only
+        # the in-session End action, avoiding duplicate primary buttons.
+        self._audio_button.setVisible(
+            label in {"End Session", "Leave Jam", "Ending…", "Leaving…", "Stopping…"}
+        )
         self._audio_button.setAccessibleName(label)
         self._audio_button.setAccessibleDescription(
-            f"Jamulus audio action. Current action: {label}."
+            f"Band session action. Current action: {label}."
         )
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
@@ -221,6 +287,23 @@ class SessionStrip(QFrame):
         self._video_button.setAccessibleDescription(
             f"Webex video action. Current action: {label}."
         )
+        menu_label = (
+            "Open Video or Conversation"
+            if label in {"Open Webex", "Open Again"}
+            else label
+        )
+        self._video_action.setText(menu_label)
+        self._video_action.setEnabled(enabled)
+
+    def set_video_configured(self, configured: bool) -> None:
+        if not configured:
+            self._video_action.setText("Add Video or Conversation")
+
+    def set_talkback_available(self, available: bool) -> None:
+        self._talk_action.setVisible(bool(available))
+
+    def set_tools_enabled(self, enabled: bool) -> None:
+        self._tools_button.setEnabled(bool(enabled))
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
         """Render the recorder state machine without relying on transient banners.
@@ -249,6 +332,15 @@ class SessionStrip(QFrame):
                 self._record_clock.start()
             self._record_elapsed.setVisible(True)
             description = "Recording is active. Activate to stop and verify the take."
+        elif phase == "stop_failed":
+            self._record_button.setText("■ Try Stop Again")
+            self._record_button.setEnabled(True)
+            if not self._record_clock.isActive():
+                self._record_clock.start()
+            self._record_elapsed.setVisible(True)
+            description = (
+                "The server may still be recording. Activate to try stopping again."
+            )
         elif phase == "stopping":
             self._record_button.setText("Stopping…")
             self._record_button.setEnabled(False)
@@ -295,6 +387,16 @@ class SessionStrip(QFrame):
         self._record_button.setAccessibleName(self._record_button.text())
         self._record_button.setAccessibleDescription(description)
 
+    def set_recording_available(self, available: bool) -> None:
+        """Only the host owns the synchronized take; joiners are recorded there."""
+        self._record_button.setVisible(bool(available))
+        self._record_elapsed.setVisible(
+            bool(available) and self._record_elapsed.isVisible()
+        )
+
+    def set_invite_available(self, available: bool) -> None:
+        self._invite_button.setVisible(bool(available))
+
     def set_webex_audio_mode(self, mode: str) -> None:
         """Apply role-specific wording to the Jamulus transmit control."""
         self._webex_audio_mode = (
@@ -310,26 +412,28 @@ class SessionStrip(QFrame):
         talkback = self._webex_audio_mode == "talkback"
         if talkback:
             label = "Resume Music" if muted else "Talk Break"
-            accessible = "Resume Jamulus music" if muted else "Start a talk break"
+            accessible = "Resume music" if muted else "Start a talk break"
             description = (
-                "Jamulus send is muted. Release Spacebar and make sure Webex is "
+                "Music send is muted. Release Spacebar and make sure Webex is "
                 "muted before resuming music."
                 if muted else
-                "Mute Jamulus send before holding Spacebar to talk in Webex. "
+                "Mute the music send before holding Spacebar to talk in Webex. "
                 "This control never changes the Webex microphone."
             )
         else:
-            label = "Unmute Jamulus Send" if muted else "Mute Jamulus Send"
+            label = "Unmute Music Send" if muted else "Mute Music Send"
             accessible = label
             description = (
-                "Your Jamulus send is muted."
-                if muted else "Your Jamulus send is audible."
+                "Your music send is muted."
+                if muted else "Your music send is audible."
             )
         self._mute_self_button.setText(label)
         self._mute_self_button.setEnabled(enabled)
         self._mute_self_button.setAccessibleName(accessible)
         self._mute_self_button.setAccessibleDescription(description)
         self._mute_self_button.setToolTip(description)
+        self._talk_action.setText(label)
+        self._talk_action.setEnabled(enabled)
         self._mute_self_button.blockSignals(False)
 
     def current_mode_key(self) -> str:
@@ -337,6 +441,9 @@ class SessionStrip(QFrame):
 
     def current_title(self) -> str:
         return self._title_input.text().strip()
+
+    def set_session_title(self, title: str) -> None:
+        self._title_input.setText(str(title or "Band Rehearsal"))
 
     def focus_title(self) -> None:
         """Focus and select the session title field (keyboard shortcut target)."""

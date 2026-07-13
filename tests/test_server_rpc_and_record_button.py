@@ -11,11 +11,14 @@ import json
 import os
 import socket
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from core.jamulus_server_rpc import (  # noqa: E402
     JamulusServerRpc,
@@ -232,12 +235,15 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._show_actionable_error.assert_called_once()
         self.assertEqual(
             c._show_actionable_error.call_args.args[0],
-            "Record Button Not Set Up",
+            "Recording Is Available On The Host",
+        )
+        self.assertNotIn(
+            "RPC",
+            c._show_actionable_error.call_args.kwargs["next_action"],
         )
         kwargs = c._show_actionable_error.call_args.kwargs
-        self.assertIn("jsonrpc.secret", kwargs["next_action"])
-        self.assertIn("Same Mac", kwargs["next_action"])
-        self.assertIn("ssh -N -L", kwargs["next_action"])
+        self.assertIn("host", kwargs["next_action"].lower())
+        self.assertIn("Studio", kwargs["next_action"])
 
     def test_configured_spawns_worker_toward_armed(self):
         c = self.controller
@@ -296,8 +302,75 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertTrue(c.recording._start_local_capture())
         capture_cls.assert_not_called()
 
+    def test_shutdown_stop_requires_recorder_acknowledgement(self):
+        c = self.controller
+        c._server_recording = True
+        c._recorder_armed = True
+        c.settings.server_rpc_secret_file = "/tmp/server.secret"
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.stop_recording.return_value = False
+        with patch(
+            "core.jamulus_server_rpc.JamulusServerRpc", return_value=fake_rpc
+        ), patch(
+            "core.jamulus_server_rpc.read_secret_file", return_value="secret"
+        ):
+            self.assertFalse(c.recording.stop_server_recording_for_shutdown())
+        fake_rpc.get_recorder_status.assert_not_called()
+        self.assertTrue(c._server_recording)
+        self.assertTrue(c._recorder_armed)
+        c._server_recording = False
+        c._recorder_armed = False
+
+    def test_shutdown_stop_requires_disabled_recorder_state(self):
+        c = self.controller
+        c._server_recording = True
+        c._recorder_armed = True
+        c.settings.server_rpc_secret_file = "/tmp/server.secret"
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.stop_recording.return_value = True
+        fake_rpc.get_recorder_status.return_value = {"enabled": True}
+        with patch(
+            "core.jamulus_server_rpc.JamulusServerRpc", return_value=fake_rpc
+        ), patch(
+            "core.jamulus_server_rpc.read_secret_file", return_value="secret"
+        ), patch(
+            "webjam_qt.controllers.recording_coordinator.time.monotonic",
+            side_effect=[10.0, 10.0, 14.0],
+        ), patch(
+            "webjam_qt.controllers.recording_coordinator.time.sleep"
+        ):
+            self.assertFalse(c.recording.stop_server_recording_for_shutdown())
+        fake_rpc.get_recorder_status.assert_called_once()
+        self.assertTrue(c._server_recording)
+        self.assertTrue(c._recorder_armed)
+        c._server_recording = False
+        c._recorder_armed = False
+
+    def test_validation_exception_becomes_needs_attention_instead_of_sticking(self):
+        c = self.controller
+        c.settings.takes_directory = ""
+        with patch.object(
+            c.recording,
+            "_build_take_validation",
+            side_effect=OSError("disk full / private/path"),
+        ), patch.object(
+            c._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        ):
+            c.recording._validate_take_worker()
+        self.assertEqual(c.recording.phase.value, "needs_attention")
+        self.assertIn(
+            "couldn't finish verifying",
+            self.window.recording_studio._hint.text(),
+        )
+        self.assertNotIn("private/path", self.window.recording_studio._hint.text())
+
     def test_worker_success_arms_button_and_flashes(self):
         c = self.controller
+        self.window.workspace_stack.setCurrentWidget(self.window.center_splitter)
         fake_rpc = MagicMock()
         fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
         fake_rpc.__exit__ = MagicMock(return_value=None)
@@ -313,6 +386,10 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertTrue(c._recorder_armed)
         self.assertEqual(
             self.window.session_strip._record_button.text(), "■ Stop Rec"
+        )
+        self.assertIs(
+            self.window.workspace_stack.currentWidget(),
+            self.window.center_splitter,
         )
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("confirmed" in m for m in msgs), msgs)
@@ -333,6 +410,30 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertEqual(args[0], "Recording Could Not Start")
         self.assertIn("SSH tunnel", kwargs["what_failed"])
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
+
+    def test_stop_failure_stays_visibly_recording_and_retries_stop(self):
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording.phase = RecorderPhase.STOPPING
+        self.window.session_strip.set_recording_phase("recording")
+        c.recording.apply_toggle_failure("Recorder did not answer")
+
+        self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "■ Try Stop Again"
+        )
+        self.assertTrue(self.window.session_strip._record_clock.isActive())
+        self.assertIn("STILL RECORDING", self.window.recording_studio._phase.text())
+        _args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
+
+        c._recorder_armed = False
+        c._server_recording = False
+        c.recording.phase = RecorderPhase.IDLE
+        self.window.session_strip.set_recording_phase("idle")
 
     def test_shutdown_salvages_active_capture_into_recovery_folder(self):
         """Quitting mid-recording must preserve the stems, never abort them."""
@@ -407,9 +508,9 @@ class TestRecordButtonWiring(unittest.TestCase):
             "keeps recording", mbox.return_value.setText.call_args.args[0]
         )
 
-    def test_confirm_close_is_wired_to_confirm_quit(self):
+    def test_confirm_close_is_wired_to_role_aware_close_guard(self):
         self.assertEqual(
-            self.window.confirm_close, self.controller.recording.confirm_quit
+            self.window.confirm_close, self.controller._confirm_close
         )
 
     def test_stop_audio_salvages_inflight_capture_and_resets_phase(self):
@@ -433,6 +534,11 @@ class TestRecordButtonWiring(unittest.TestCase):
                 return_value=QMessageBox.StandardButton.Yes,
             ):
                 c.audio.stop()
+            for _ in range(100):
+                QApplication.processEvents()
+                if fake_capture.stop_into.called:
+                    break
+                time.sleep(0.01)
             fake_capture.stop_into.assert_called_once()
             dest = Path(fake_capture.stop_into.call_args.args[0])
             self.assertEqual(dest.parent, Path(d))
@@ -481,6 +587,11 @@ class TestRecordButtonWiring(unittest.TestCase):
             return_value=QMessageBox.StandardButton.Yes,
         ):
             c.audio.stop()
+        for _ in range(100):
+            QApplication.processEvents()
+            if c.recording.phase is RecorderPhase.IDLE:
+                break
+            time.sleep(0.01)
         self.assertEqual(c.recording.phase.value, "idle")
         self.assertTrue(self.window.session_strip._record_elapsed.isHidden())
 

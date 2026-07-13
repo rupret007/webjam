@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from typing import Dict, Iterable, Optional
 
+from PySide6 import QtGui
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -92,29 +95,78 @@ class _FlowLayout(QLayout):
         effective = rect.adjusted(
             margins.left(), margins.top(), -margins.right(), -margins.bottom()
         )
-        x = effective.x()
+        items = [item for item in self._items if item.widget() is not None]
+        count = len(items)
+        if count == 0:
+            return margins.top() + margins.bottom()
+
+        # Equal-view meeting geometry: fewer musicians become larger, while
+        # a small band settles into a predictable balanced grid.
+        if count == 1:
+            target_columns, max_width, max_height = 1, 780, 440
+        elif count == 2:
+            target_columns, max_width, max_height = 2, 620, 390
+        elif count <= 4:
+            target_columns, max_width, max_height = 2, 560, 320
+        elif count <= 6:
+            target_columns, max_width, max_height = 3, 440, 280
+        else:
+            target_columns = max(3, math.ceil(math.sqrt(count)))
+            max_width, max_height = 400, 260
+
+        available_width = max(1, effective.width())
+        # Never force a 3-column meeting layout into a window that can only
+        # show two complete people.  Horizontal scrolling is deliberately
+        # disabled, so the column count must follow the actual viewport.
+        minimum_tile_width = ParticipantCard.CARD_MIN_WIDTH
+        columns_that_fit = max(
+            1,
+            (available_width + self._h_space)
+            // (minimum_tile_width + self._h_space),
+        )
+        columns = min(target_columns, columns_that_fit)
+        rows = math.ceil(count / columns)
+        cell_width = max(
+            1,
+            (available_width - self._h_space * (columns - 1)) // columns,
+        )
+        tile_width = max(minimum_tile_width, min(max_width, cell_width))
+        preferred_height = max(ParticipantCard.CARD_MIN_HEIGHT, int(tile_width * 0.58))
+        if effective.height() > 0:
+            cell_height = max(
+                1,
+                (effective.height() - self._v_space * (rows - 1)) // rows,
+            )
+            tile_height = max(
+                ParticipantCard.CARD_MIN_HEIGHT,
+                min(max_height, preferred_height, cell_height),
+            )
+        else:
+            tile_height = max(
+                ParticipantCard.CARD_MIN_HEIGHT,
+                min(max_height, preferred_height),
+            )
+
+        grid_height = rows * tile_height + self._v_space * (rows - 1)
         y = effective.y()
-        row_height = 0
+        if effective.height() > grid_height:
+            y += (effective.height() - grid_height) // 2
 
-        for item in self._items:
-            widget = item.widget()
-            if widget is None:
-                continue
-            item_size = item.sizeHint()
-            next_x = x + item_size.width() + self._h_space
-            if next_x - self._h_space > effective.right() and row_height > 0:
-                x = effective.x()
-                y = y + row_height + self._v_space
-                next_x = x + item_size.width() + self._h_space
-                row_height = 0
+        index = 0
+        for _row in range(rows):
+            row_count = min(columns, count - index)
+            row_width = row_count * tile_width + self._h_space * (row_count - 1)
+            x = effective.x() + max(0, (effective.width() - row_width) // 2)
+            for _column in range(row_count):
+                if not test_only:
+                    items[index].setGeometry(
+                        QRect(QPoint(x, y), QSize(tile_width, tile_height))
+                    )
+                x += tile_width + self._h_space
+                index += 1
+            y += tile_height + self._v_space
 
-            if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), item_size))
-
-            x = next_x
-            row_height = max(row_height, item_size.height())
-
-        return y + row_height - rect.y() + margins.bottom()
+        return grid_height + margins.top() + margins.bottom()
 
 
 class ParticipantGrid(QScrollArea):
@@ -133,6 +185,8 @@ class ParticipantGrid(QScrollArea):
     ready_check_requested = Signal()
     start_audio_requested = Signal()
     practice_requested = Signal()
+    microphone_settings_requested = Signal()
+    participants_changed = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -162,8 +216,8 @@ class ParticipantGrid(QScrollArea):
     def _build_empty_state(self, parent: QWidget) -> QFrame:
         state = QFrame(parent)
         state.setObjectName("StageEmptyState")
-        state.setMinimumWidth(560)
-        state.setMaximumWidth(680)
+        state.setMinimumWidth(320)
+        state.setMaximumWidth(620)
         state.setAccessibleName("Live session status")
 
         self._empty_eyebrow = QLabel("NOT CONNECTED")
@@ -178,10 +232,11 @@ class ParticipantGrid(QScrollArea):
         self._empty_message.setWordWrap(True)
         self._empty_message.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        self._empty_primary = QPushButton("Start Audio")
+        self._empty_primary = QPushButton("Start Session")
         self._empty_primary.setObjectName("AudioButton")
-        self._empty_primary.setAccessibleName("Start Jamulus audio")
-        self._empty_primary.clicked.connect(self.start_audio_requested.emit)
+        self._empty_primary.setAccessibleName("Start the band session")
+        self._empty_primary_action = "start"
+        self._empty_primary.clicked.connect(self._on_empty_primary)
         self._empty_practice = QPushButton("Practice Solo")
         self._empty_practice.setObjectName("GhostButton")
         self._empty_practice.setAccessibleName("Start a private practice session")
@@ -216,10 +271,12 @@ class ParticipantGrid(QScrollArea):
 
     def _center_empty_state(self) -> None:
         """Keep the hero card optically centered over the stage viewport."""
+        # A comfortably readable hero on desktop that shrinks with the actual
+        # viewport instead of imposing a fixed app-wide minimum width.
+        responsive_target = max(360, int(self.viewport().width() * 0.56))
         width = max(
             self._empty_state.minimumWidth(),
-            min(self._empty_state.sizeHint().width(),
-                self._empty_state.maximumWidth()),
+            min(responsive_target, self._empty_state.maximumWidth()),
         )
         width = min(width, max(320, self.viewport().width() - 2 * Space.LG))
         layout = self._empty_state.layout()
@@ -240,6 +297,10 @@ class ParticipantGrid(QScrollArea):
     # ------------------------------------------------------------------
     def set_participants(self, participants: Iterable[ParticipantPresentation]) -> None:
         incoming = {p.channel_id: p for p in participants}
+        previous_names = {
+            channel_id: card._presentation.name
+            for channel_id, card in self._cards.items()
+        }
 
         # Remove cards not in the new set
         for channel_id in list(self._cards.keys()):
@@ -254,6 +315,22 @@ class ParticipantGrid(QScrollArea):
                 self._add_card(presentation)
         self._empty_state.setVisible(not bool(incoming))
         self._center_empty_state()
+        self.setAccessibleDescription(
+            f"{len(incoming)} musician{'s' if len(incoming) != 1 else ''} connected."
+        )
+        joined = [
+            item.name for channel_id, item in incoming.items()
+            if channel_id not in previous_names
+        ]
+        left = [
+            name for channel_id, name in previous_names.items()
+            if channel_id not in incoming
+        ]
+        messages = [f"{name} joined the jam." for name in joined]
+        messages.extend(f"{name} left the jam." for name in left)
+        if messages and self.isVisible():
+            self._announce(" ".join(messages))
+        self.participants_changed.emit()
 
     def set_empty_state(
         self,
@@ -261,22 +338,35 @@ class ParticipantGrid(QScrollArea):
         title: str,
         message: str,
         *,
-        primary_text: str = "Start Audio",
+        primary_text: str = "Start Session",
         primary_enabled: bool = True,
         show_primary: bool = True,
         show_ready_check: bool = True,
         show_practice: bool = False,
         hint: str = "",
+        primary_action: str = "start",
     ) -> None:
         """Show persistent session truth when no real participants exist."""
         self._empty_state.setProperty("sessionState", state)
-        self._empty_eyebrow.setText(state.replace("_", " ").upper())
+        phase_labels = {
+            "not_connected": "READY",
+            "connecting": "STARTING",
+            "practice": "PRIVATE PRACTICE",
+            "reconnecting": "RECONNECTING",
+            "error": "NEEDS ATTENTION",
+            "ending": "ENDING",
+            "ended": "ENDED",
+        }
+        self._empty_eyebrow.setText(
+            phase_labels.get(state, state.replace("_", " ").upper())
+        )
         self._empty_title.setText(title)
         self._empty_message.setText(message)
         # Escape "&": QPushButton treats it as a mnemonic marker.
         self._empty_primary.setText(primary_text.replace("&", "&&"))
         self._empty_primary.setEnabled(primary_enabled)
         self._empty_primary.setVisible(show_primary)
+        self._empty_primary_action = str(primary_action or "start")
         self._empty_ready.setVisible(show_ready_check)
         self._empty_practice.setVisible(show_practice)
         self._empty_hint.setText(hint)
@@ -299,6 +389,7 @@ class ParticipantGrid(QScrollArea):
             show_ready_check=state.show_ready_check,
             show_practice=state.show_practice,
             hint=state.hint,
+            primary_action=state.primary_action,
         )
 
     def update_level(self, channel_id: int, level: float) -> None:
@@ -318,6 +409,25 @@ class ParticipantGrid(QScrollArea):
 
     def cards(self) -> list[ParticipantCard]:
         return list(self._cards.values())
+
+    def _on_empty_primary(self) -> None:
+        if self._empty_primary_action == "microphone_settings":
+            self.microphone_settings_requested.emit()
+        else:
+            self.start_audio_requested.emit()
+
+    def _announce(self, message: str) -> None:
+        event_type = getattr(QtGui, "QAccessibleAnnouncementEvent", None)
+        try:
+            if event_type is not None:
+                QAccessible.updateAccessibility(event_type(self, message))
+            else:
+                self.setAccessibleDescription(message)
+                QAccessible.updateAccessibility(
+                    QAccessibleEvent(self, QAccessible.Event.DescriptionChanged)
+                )
+        except (RuntimeError, TypeError):
+            pass
 
     # ------------------------------------------------------------------
     # Internals

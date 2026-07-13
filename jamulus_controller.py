@@ -52,8 +52,8 @@ class JamulusController:
         # "").  The UDP protocol adapter validates host as non-empty, and the
         # controller must still construct so the app can start and walk the
         # user through the wizard — fall back to loopback.  Launching is
-        # separately guarded in BridgeService, and the UDP fallback is only
-        # consulted after a (guarded) launch, so the placeholder is inert.
+        # separately guarded in BridgeService. The legacy UDP adapter remains
+        # dormant in the product, so the placeholder is inert.
         self.host = (host or "").strip() or "127.0.0.1"
         self.port = port
         self.rpc_port = rpc_port
@@ -81,11 +81,15 @@ class JamulusController:
             on_recorder_state=self._on_rpc_recorder_state,
         )
 
-        # Secondary integration: UDP protocol (all versions)
+        # The legacy UDP monitor registers itself with the server as another
+        # musician.  Keep it dormant in the product: the bundled Jamulus
+        # 3.12.2 client exposes the authoritative roster, levels, mixer, chat,
+        # and mute controls through authenticated JSON-RPC.  The adapter stays
+        # available for its isolated protocol tests and explicit legacy use.
         self.protocol = JamulusProtocolAdapter(
             self.host,
             self.port,
-            enabled=True,  # enabled — proper packet format is now implemented
+            enabled=False,
             on_participants_changed=self._on_udp_participants,
             on_levels=self._on_udp_levels,
         )
@@ -151,16 +155,21 @@ class JamulusController:
             setter(cached)
         
     def start(self):
-        """Start monitoring Jamulus via JSON-RPC (primary) and UDP (fallback)."""
+        """Start authoritative Jamulus monitoring and the local audio meter."""
         if self.running:
             return
 
-        self.audio_engine.start()
+        # Participant/mixer truth is the critical path. Some CoreAudio drivers
+        # block while Jamulus already owns the interface; start RPC and the
+        # monitor before the optional local meter so device contention can
+        # never prevent the session from becoming connected. start_receiving
+        # is intentionally a no-op for the dormant legacy adapter.
         self.rpc_client.start()
         self.protocol.start_receiving()
         self.running = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
+        self.audio_engine.start()
 
     def stop(self):
         """Stop all monitoring and release per-channel level cache."""
@@ -282,6 +291,18 @@ class JamulusController:
         if self.rpc_client.available:
             return
 
+        # A hosted server has its own authenticated roster API.  Prefer that
+        # truth over the best-effort UDP parser while the Jamulus client's RPC
+        # is still starting (or if CoreAudio temporarily stalls its Qt event
+        # loop).  The audio connection itself can already be live in that
+        # situation, and leaving WebJam on a permanent "Connecting" overlay
+        # would hide a healthy, recordable session from the host.
+        hosted_participants = self._hosted_server_participants()
+        if hosted_participants is not None:
+            self._on_rpc_participants(hosted_participants)
+            self.last_error = ""
+            return
+
         protocol_participants = self.protocol.request_clients()
         if protocol_participants is None:
             return
@@ -305,6 +326,63 @@ class JamulusController:
 
         self._state.apply_udp_clients_payload(normalized)
         self.last_error = ""
+
+    def _hosted_server_participants(self) -> Optional[list[dict]]:
+        """Return the local hosted server roster, or ``None`` if unavailable.
+
+        An empty list is a successful poll with no connected musicians.  This
+        fallback is deliberately limited to hosted mode: a remote-server RPC
+        tunnel may be configured only for recording and must not silently
+        replace the local client's authoritative mixer-channel metadata.
+        """
+        settings = getattr(self, "settings", None)
+        if not getattr(settings, "host_server_enabled", False):
+            return None
+        secret_file = str(
+            getattr(settings, "server_rpc_secret_file", "") or ""
+        ).strip()
+        if not secret_file:
+            return None
+
+        try:
+            from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+
+            secret = read_secret_file(secret_file)
+            with JamulusServerRpc(
+                port=int(getattr(settings, "server_rpc_port", 22240)),
+                secret=secret,
+            ) as rpc:
+                payload = rpc.get_clients()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("Hosted server roster unavailable: %s", exc)
+            return None
+
+        clients = payload.get("clients", [])
+        if not isinstance(clients, list):
+            return None
+
+        participants: list[dict] = []
+        local_name = str(getattr(settings, "musician_name", "") or "").strip()
+        for client in clients:
+            if not isinstance(client, dict):
+                continue
+            try:
+                channel_id = int(client.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if channel_id < 0:
+                continue
+            address = str(client.get("address", "") or "")
+            is_local = address.startswith("127.0.0.1:") or address.startswith("[::1]:")
+            name = str(client.get("name", "") or "").strip()
+            if not name and is_local:
+                name = local_name
+            participants.append({
+                "channel_id": channel_id,
+                "name": name or f"Participant {channel_id}",
+                "is_local": is_local,
+            })
+        return participants
     
     def add_participant(self, name: str, channel_id: int = None) -> JamulusParticipant:
         """Manually add a participant (for testing or manual setup)."""
@@ -410,7 +488,12 @@ class JamulusController:
             pass
     
     def _apply_mixer_setting(self, channel_id: int, notify: bool = True):
-        """Apply mixer settings to Jamulus via protocol adapter and audio engine."""
+        """Apply one monitor-mix setting without inventing meter activity.
+
+        Level overrides are reserved for actual RPC/UDP level telemetry.  A
+        fader position is gain, not sound; feeding it into the meter would let
+        a silent fader move promote the session to ``Ready to play``.
+        """
         with self._participants_lock:
             participant = self.participants.get(channel_id)
             if not participant:
@@ -418,9 +501,6 @@ class JamulusController:
             fader_level = participant.fader_level
             pan = participant.pan
             muted = participant.muted
-            effective_level = fader_level / 100.0
-            if muted:
-                effective_level = 0.0
 
         self.protocol.apply_mixer(
             channel_id=channel_id,
@@ -428,7 +508,6 @@ class JamulusController:
             pan=pan,
             muted=muted,
         )
-        self.audio_engine.set_level_override(channel_id, effective_level)
         if notify:
             self._notify_callbacks()
     

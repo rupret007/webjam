@@ -69,6 +69,15 @@ class TestTextContrastTokens(unittest.TestCase):
         ratio = _contrast(self.c.TEXT_PRIMARY, self.c.BG_PANEL)
         self.assertGreaterEqual(ratio, self.AA, f"TEXT_PRIMARY on BG_PANEL = {ratio:.2f}:1")
 
+    def test_inverse_labels_pass_AA_on_filled_accent_buttons(self):
+        """Filled buttons (Start Audio, Open Webex, MUTE-active) render
+        TEXT_INVERSE on accent backgrounds."""
+        for accent in ("ACCENT_VIDEO", "ACCENT_AUDIO", "ACCENT_DANGER"):
+            ratio = _contrast(self.c.TEXT_INVERSE, getattr(self.c, accent))
+            self.assertGreaterEqual(
+                ratio, self.AA, f"TEXT_INVERSE on {accent} = {ratio:.2f}:1"
+            )
+
 
 # ----------------------------------------------------------------------
 # Accessibility — fader keyboard step + accessible name

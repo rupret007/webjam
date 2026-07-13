@@ -46,6 +46,7 @@ class ApplicationController(QObject):
 
     _LEVEL_POLL_MS = 100   # how often to push meter updates to the grid
     _METER_TICK_MS = 40    # global LevelMeter decay tick (was per-meter)
+    _CONNECTION_TIMEOUT_MS = 30_000
 
     def __init__(
         self,
@@ -138,6 +139,8 @@ class ApplicationController(QObject):
         # AND _jamulus_connected (so we don't overwrite a real saved mix
         # with stale disconnected state).
         self._mix_dirty = False
+        self._local_audio_seen = False
+        self._remote_audio_seen = False
 
         # Timers
         self._level_timer = QTimer(self)
@@ -168,6 +171,11 @@ class ApplicationController(QObject):
         self._pulse_refresh_timer.setSingleShot(True)
         self._pulse_refresh_timer.setInterval(200)
         self._pulse_refresh_timer.timeout.connect(self._refresh_session_pulse)
+
+        self._connection_timer = QTimer(self)
+        self._connection_timer.setSingleShot(True)
+        self._connection_timer.setInterval(self._CONNECTION_TIMEOUT_MS)
+        self._connection_timer.timeout.connect(self._on_connection_timeout)
 
         # Register real participant callback
         self.jamulus.register_callback(self._on_jamulus_participants)
@@ -206,6 +214,8 @@ class ApplicationController(QObject):
         self._meter_tick_timer.stop()
         self._token_refresh_timer.stop()
         self._pulse_refresh_timer.stop()
+        self._connection_timer.stop()
+        self.window.recording_studio.shutdown()
         # Quitting mid-recording must keep the audio, not discard it.
         self.recording.salvage_on_shutdown()
         self._save_notes()
@@ -218,19 +228,35 @@ class ApplicationController(QObject):
                 self._on_save_mix()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Auto-save mix on shutdown failed")
-        # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
-        # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
-        try:
-            self.bridge.stop_jamulus()
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Jamulus shutdown failed")
         # A hosted band server dies with WebJam: stop any recording cleanly
         # first so the server finalizes every musician's track, then
-        # terminate the server itself.
-        if getattr(self.settings, "host_server_enabled", False):
+        # terminate the server itself. Ownership—not the latest role setting—
+        # decides cleanup, so changing Host to Join can never leak a process.
+        hosted_server_alive = self.bridge.hosted_server_alive()
+        hosted_recording_safe = True
+        if hosted_server_alive:
             try:
                 if self.bridge.hosted_server_owned():
-                    self.recording.stop_server_recording_for_shutdown()
+                    hosted_recording_safe = bool(
+                        self.recording.stop_server_recording_for_shutdown()
+                    )
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Hosted recording shutdown failed")
+                hosted_recording_safe = False
+        if hosted_server_alive and not hosted_recording_safe:
+            LOGGER.critical(
+                "Leaving hosted services running because recording finalization "
+                "could not be confirmed"
+            )
+        # Terminate the Jamulus subprocess so it doesn't outlive WebJam.
+        # bridge.stop_jamulus() also calls jamulus_controller.stop() internally.
+        if not hosted_server_alive or hosted_recording_safe:
+            try:
+                self.bridge.stop_jamulus()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Jamulus shutdown failed")
+        if hosted_server_alive and hosted_recording_safe:
+            try:
                 self.bridge.stop_hosted_server()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Hosted server shutdown failed")
@@ -248,6 +274,61 @@ class ApplicationController(QObject):
             self.api_bridge.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Companion API stop failed")
+
+    def _confirm_close(self) -> bool:
+        """Never let a live jam disappear from a close-button accident."""
+        studio = getattr(self.window, "recording_studio", None)
+        if bool(getattr(studio, "export_in_progress", False)):
+            QMessageBox.information(
+                self.window,
+                "Logic export still running",
+                "Wait for ‘Logic export ready’ before quitting WebJam. "
+                "Your original take is safe.",
+            )
+            return False
+        recording_was_active = self.recording.is_recording_active
+        take_in_progress = bool(
+            getattr(self.recording, "take_in_progress", recording_was_active)
+        )
+        hosting_owned = bool(
+            getattr(self.settings, "host_server_enabled", False)
+            and getattr(self.bridge, "hosted_server_owned", lambda: False)()
+        )
+        if take_in_progress and hosting_owned:
+            QMessageBox.information(
+                self.window,
+                "Finish the take first",
+                (
+                    "Press Stop Rec, then wait for ‘Take saved’ before quitting WebJam. "
+                    if recording_was_active
+                    else "Wait for ‘Take saved’ before quitting WebJam. "
+                )
+                + "This keeps every musician's track complete and verified.",
+            )
+            return False
+        if not self.recording.confirm_quit():
+            return False
+        if recording_was_active:
+            # The recording dialog already explained the full shutdown impact.
+            return True
+        active = self._is_jamulus_running() or self.bridge.hosted_server_alive()
+        if not active:
+            return True
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        title = "End jam and quit?" if hosting else "Leave jam and quit?"
+        body = (
+            "Quitting WebJam ends this jam for every connected musician."
+            if hosting
+            else "Quitting WebJam disconnects you; the band can keep playing."
+        )
+        reply = QMessageBox.question(
+            self.window,
+            title,
+            body,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     # ------------------------------------------------------------------
     # Companion API (optional localhost bridge for DAWs/editors/scripts)
@@ -337,12 +418,16 @@ class ApplicationController(QObject):
         strip.practice_requested.connect(self._on_practice_requested)
         strip.record_requested.connect(self._on_record_requested)
         strip.ready_check_requested.connect(self._on_ready_check)
+        strip.invite_requested.connect(self._copy_band_invite)
+        strip.tool_requested.connect(self._on_rail_view_changed)
+        self.window.session_hud.invite_requested.connect(self._copy_band_invite)
+        self.window.session_hud.retry_requested.connect(self._retry_session)
         # Both launch affordances share URL validation and truthful state.
         self.window.webex_embed.fallback_button().clicked.connect(
             self._on_join_video
         )
         self.window.close_requested.connect(self.shutdown)
-        self.window.confirm_close = self.recording.confirm_quit
+        self.window.confirm_close = self._confirm_close
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
         self.window._settings_shortcut.activated.connect(self._open_settings_wizard)
         self.window.side_rail.view_changed.connect(self._on_rail_view_changed)
@@ -355,6 +440,9 @@ class ApplicationController(QObject):
         grid.ready_check_requested.connect(self._on_ready_check)
         grid.start_audio_requested.connect(self._on_launch_audio)
         grid.practice_requested.connect(self._on_practice_requested)
+        grid.microphone_settings_requested.connect(
+            self._open_microphone_settings
+        )
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -378,6 +466,16 @@ class ApplicationController(QObject):
         self.window.session_canvas.brief_export_requested.connect(
             self._refresh_session_pulse
         )
+        studio = self.window.recording_studio
+        studio.record_requested.connect(self._on_record_requested)
+        studio.return_live_requested.connect(
+            lambda: self.window.side_rail.trigger("stage")
+        )
+        studio.live_fader_changed.connect(self._on_fader_changed)
+        studio.live_mute_toggled.connect(self._on_mute_toggled)
+        studio.live_solo_toggled.connect(self._on_solo_toggled)
+        studio.output_device_changed.connect(self._save_take_playback_output)
+        studio.recording_setup_requested.connect(self._open_recording_setup)
         # Reset all faders shortcut (Ctrl+Shift+R)
         self.window._reset_faders_shortcut.activated.connect(self._on_reset_all_faders)
 
@@ -398,18 +496,40 @@ class ApplicationController(QObject):
         self.window.set_status_audio("Ready to launch")
         self.window.set_status_video("Not opened")
         self.window.set_status_latency("Not connected")
-        self.window.set_status_routing("scanning…")
+        self.window.set_status_routing("")
         self.session_health.reset_live_truth()
         self.session_health.mark_process(self.bridge.jamulus_state)
-        self.window.session_strip.start_session_clock()
+        self.window.session_strip.reset_session_clock()
         # Start the global meter decay tick (continuous; one timer for the
         # whole grid instead of one per LevelMeter).
         self._meter_tick_timer.start()
         self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        self.window.session_strip.set_video_configured(
+            bool(str(self.settings.webex_url or "").strip())
+        )
+        self.window.session_strip.set_talkback_available(False)
+        self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
+        self.window.recording_studio.set_takes_directory(
+            self.settings.takes_directory
+        )
+        self.window.recording_studio.set_output_device(
+            self.settings.take_playback_output_device
+        )
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        # Recording, video, talkback, notes, and settings live behind Session
+        # Tools.  The live header keeps only the one action needed now.
+        self.window.session_strip.set_recording_available(False)
+        self.window.session_strip.set_invite_available(False)
+        self.window.recording_studio.set_can_record(
+            hosting,
+            "The host controls recording; your audio is captured there as its own track."
+            if not hosting else "",
+        )
         self._load_notes()
         self._load_session_title()
         self._refresh_session_pulse()
+        self._update_session_hud()
 
     def _push_participants_to_grid(self) -> None:
         self.window.participant_grid.set_participants(self.participants.values())
@@ -500,23 +620,50 @@ class ApplicationController(QObject):
             self._self_transmit_muted = False
             self._sync_self_mute_button()
         self.audio.apply_participants(jamulus_participants)
+        self.window.recording_studio.set_live_participants(
+            self.participants.values()
+        )
+        self._update_session_hud()
         if self._jamulus_connected and self._talk_break_intended:
             self._reapply_talk_break_after_reconnect()
 
     @staticmethod
+    def _is_local_participant(person) -> bool:
+        """Return one consistent local-person answer during RPC startup."""
+        # Modern transport objects carry explicit truth. Only old fixtures or
+        # extensions without the field use the historical channel-0 fallback;
+        # treating every remote channel 0 as local would mask a failed host
+        # connection when guests remain on the server.
+        if hasattr(person, "is_local"):
+            return bool(getattr(person, "is_local"))
+        return getattr(person, "channel_id", -1) == 0
+
+    @staticmethod
+    def _profile_label(value) -> str:
+        """Hide Jamulus's empty-profile sentinel strings from musicians."""
+        text = str(value or "").strip()
+        if text.lower() in {"none", "null", "unknown", "n/a", "-"}:
+            return ""
+        return text
+
+    @staticmethod
     def _role_label(jp) -> str:
         bits: list[str] = []
-        # Use the RPC-resolved is_local flag; fall back to channel 0 heuristic
-        if getattr(jp, "is_local", False) or getattr(jp, "channel_id", -1) == 0:
+        # Use the same classification as readiness and tile presentation.
+        if ApplicationController._is_local_participant(jp):
             bits.append("You")
-        instrument = getattr(jp, "instrument", "") or ""
+        instrument = ApplicationController._profile_label(
+            getattr(jp, "instrument", "")
+        )
         if instrument:
             bits.append(instrument.title())
         if not bits:
             bits.append("Musician")
         # Skill badge from the musician's Jamulus profile (stage view v2).
-        skill = (getattr(jp, "skill_level", "") or "").strip()
-        if skill and skill.lower() != "null":
+        skill = ApplicationController._profile_label(
+            getattr(jp, "skill_level", "")
+        )
+        if skill:
             bits.append(skill.title())
         return " · ".join(bits)
 
@@ -531,9 +678,41 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001
             source = "unknown"
         self.session_health.mark_levels(source)
-        for channel_id in self.participants:
-            level = self.jamulus.audio_engine.get_level(channel_id)
+        studio_levels: dict[int, float] = {}
+        truth_changed = False
+        engine = self.jamulus.audio_engine
+        for channel_id, person in self.participants.items():
+            has_channel_level = engine.has_level_override(channel_id)
+            level = engine.get_level(channel_id)
+            is_local = self._is_local_participant(person)
+            if is_local and not has_channel_level:
+                # The hardware stream is local input truth only. Never paint a
+                # musician's microphone level onto every remote participant.
+                # It may still differ from the input selected by Jamulus, so
+                # show it on the local card without promoting session readiness.
+                level = engine.get_level(-1)
             self.window.participant_grid.update_level(channel_id, level)
+            studio_levels[channel_id] = level
+            if level > 0.01 and has_channel_level:
+                if is_local and not self._local_audio_seen:
+                    self._local_audio_seen = True
+                    truth_changed = True
+                elif not is_local and not self._remote_audio_seen:
+                    self._remote_audio_seen = True
+                    truth_changed = True
+        self.window.recording_studio.set_live_levels(studio_levels)
+        if truth_changed:
+            self._update_session_hud()
+
+    def _connected_audio_detail(self, count: int) -> str:
+        prefix = f"{count} musician{'s' if count != 1 else ''} connected"
+        if self._local_audio_seen and self._remote_audio_seen:
+            return f"{prefix} · Your input and band audio are detected."
+        if self._local_audio_seen:
+            return f"{prefix} · Your input is detected."
+        if self._remote_audio_seen:
+            return f"{prefix} · Band audio detected; play a note to check your input."
+        return f"{prefix} · Play a note to check your input."
 
     # ------------------------------------------------------------------
     # Session strip handlers
@@ -554,7 +733,10 @@ class ApplicationController(QObject):
         self._refresh_session_pulse()
 
     def _apply_mode(self, mode) -> None:
-        self.window.flash_message(mode.quick_help, ms=6000)
+        # Modes remain as compatibility metadata, but the hidden selector
+        # must not inject infrastructure-heavy instructions into the simple
+        # session surface.
+        LOGGER.debug("Session mode active: %s", mode.label)
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
@@ -563,6 +745,388 @@ class ApplicationController(QObject):
     def _on_record_requested(self) -> None:
         """Compatibility entry point; RecordingCoordinator owns the lifecycle."""
         self.recording.on_record_requested()
+
+    def _copy_band_invite(self) -> None:
+        """Copy one complete invitation; never make a musician parse it."""
+        from PySide6.QtWidgets import QApplication
+        invite_url = self._current_invite_url()
+        if not invite_url:
+            self._update_session_hud()
+            self.window.flash_message(
+                "Connect this Mac to Wi-Fi, then try again.",
+                ms=6000,
+            )
+            return
+        QApplication.clipboard().setText(invite_url)
+        self.window.flash_message(
+            "Invite link copied — send it to your bandmate.",
+            ms=7000,
+        )
+
+    def accept_invite_url(self, value: str) -> bool:
+        """Join an OS-delivered invite, including while WebJam is open."""
+        from core.network_invite import InviteLinkError, parse_invite_link
+
+        try:
+            invite = parse_invite_link(value)
+        except InviteLinkError as exc:
+            self.window.flash_message(str(exc), ms=6000)
+            return False
+
+        busy = bool(
+            self._is_jamulus_running() or self.bridge.hosted_server_alive()
+        )
+        if (
+            busy
+            and bool(
+                getattr(
+                    self.recording,
+                    "take_in_progress",
+                    self.recording.is_recording_active,
+                )
+            )
+            and self.bridge.hosted_server_owned()
+        ):
+            QMessageBox.information(
+                self.window,
+                "Finish the take first",
+                "Stop the recording if it is still running, then wait for ‘Take "
+                "saved’ before joining another jam. Your current tracks will stay "
+                "protected.",
+            )
+            return False
+        if busy:
+            reply = QMessageBox.question(
+                self.window,
+                "Join this jam?",
+                "WebJam will safely end your current jam, then join the new one.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+            self.audio.stopping = True
+            self.window.session_strip.set_audio_state("Switching…", enabled=False)
+
+        self.window.session_hud.set_state(
+            "Joining your jam…",
+            "WebJam is switching the band connection safely."
+            if busy else "WebJam is connecting your music.",
+        )
+
+        def _apply_and_launch() -> None:
+            from core.settings import load_settings, save_settings
+            from webjam_qt.windows.launch_dialog import apply_join_invite
+
+            old_settings = self.settings
+            settings_path = self.settings.config_file
+            new_settings = load_settings(settings_path)
+            apply_join_invite(new_settings, invite)
+            try:
+                save_settings(new_settings)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not save incoming invitation")
+                self.window.flash_message(
+                    "WebJam couldn't use that invite yet. Try opening it again.",
+                    ms=7000,
+                )
+                return
+            self.settings = load_settings(settings_path)
+            if busy:
+                # The worker has finalized the old host recording and stopped
+                # its services. Clear local recorder/Studio truth only now;
+                # doing this before the RPC stop can race and truncate a take.
+                self.recording.on_audio_session_stopped()
+                self.window.session_strip.reset_session_clock()
+            self._reconfigure_services_after_settings(old_settings)
+            self.window.session_strip.set_session_title(invite.session_name)
+            self._save_session_title()
+            self.window.recording_studio.set_takes_directory(
+                self.settings.takes_directory
+            )
+            self.window.recording_studio.set_output_device(
+                self.settings.take_playback_output_device
+            )
+            self.window.recording_studio.set_can_record(
+                False,
+                "The host controls recording; your track is captured there.",
+            )
+            self.window.session_strip.set_recording_available(False)
+            self.window.session_strip.set_invite_available(False)
+            self.audio.connected = False
+            self.audio.stopping = False
+            self.audio.ended_by_user = False
+            self.audio.reset_to_idle()
+            self._on_launch_audio()
+
+        if not busy:
+            _apply_and_launch()
+            return True
+
+        def _switch_worker() -> None:
+            cleanup_ok = True
+            try:
+                if self.bridge.hosted_server_owned():
+                    cleanup_ok = bool(
+                        self.recording.stop_server_recording_for_shutdown()
+                    )
+                if not cleanup_ok:
+                    raise RuntimeError(
+                        "Hosted recording finalization was not confirmed"
+                    )
+                cleanup_ok = bool(self.bridge.stop_jamulus()) and cleanup_ok
+                if self.bridge.hosted_server_alive():
+                    cleanup_ok = bool(self.bridge.stop_hosted_server()) and cleanup_ok
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not safely leave the current jam")
+                cleanup_ok = False
+            if cleanup_ok:
+                self._ui_invoker.invoke(_apply_and_launch)
+                return
+
+            def _show_switch_failure() -> None:
+                self.audio.stopping = False
+                self.audio.ended_by_user = False
+                self.window.participant_grid.set_session_state(
+                    SessionUiState.stop_failed()
+                )
+                self.window.session_hud.set_state(
+                    "WebJam couldn’t switch jams safely",
+                    "Close WebJam, then open the new invitation again.",
+                )
+                self.window.session_strip.set_audio_state(
+                    "Close WebJam", enabled=False
+                )
+
+            self._ui_invoker.invoke(_show_switch_failure)
+
+        threading.Thread(
+            target=_switch_worker,
+            daemon=True,
+            name="webjam-invite-switch",
+        ).start()
+        return True
+
+    def _retry_session(self) -> None:
+        if self._is_jamulus_running():
+            # A running host may only be missing its Wi-Fi address. Re-evaluate
+            # that truth in place instead of pretending the audio must restart.
+            self._update_session_hud()
+            if self._current_invite_url():
+                self.window.flash_message("The invite is ready to copy.")
+            else:
+                self.window.flash_message(
+                    "WebJam still can’t see the band network. Check Wi-Fi and try again."
+                )
+            return
+        self._on_launch_audio()
+
+    def _on_connection_timeout(self) -> None:
+        """Turn an endless spinner into one plain recovery action."""
+        if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
+            return
+        self.audio.connection_timed_out = True
+        self.window.participant_grid.set_session_state(
+            self._connection_failure_state()
+        )
+        self.window.session_hud.set_state(
+            "Something needs attention",
+            "WebJam is getting ready to try again.",
+        )
+        self.window.session_strip.set_tools_enabled(True)
+        threading.Thread(
+            target=self.bridge.stop_jamulus,
+            daemon=True,
+            name="webjam-connect-timeout",
+        ).start()
+
+    def _connection_failure_state(self) -> SessionUiState:
+        if bool(getattr(self.settings, "host_server_enabled", False)):
+            return SessionUiState.host_start_failed()
+        return SessionUiState.session_unavailable()
+
+    def _current_invite_url(self) -> str:
+        """Return the host's public, non-secret invitation URL when usable."""
+        if not bool(getattr(self.settings, "host_server_enabled", False)):
+            return ""
+        if not self.bridge.hosted_server_alive():
+            return ""
+        from core.network_invite import create_invite_link, local_band_address
+
+        address = local_band_address()
+        if not address:
+            return ""
+        try:
+            return create_invite_link(
+                address,
+                port=self.settings.jamulus_port,
+                session_name=(
+                    self.window.session_strip.current_title()
+                    or "Band Rehearsal"
+                ),
+            )
+        except ValueError:
+            return ""
+
+    def _update_session_hud(self) -> None:
+        """Render one musician-friendly summary from real lifecycle facts."""
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        connected = bool(self._jamulus_connected)
+        participants = list(self.participants.values())
+        invite_url = self._current_invite_url() if hosting else ""
+        self.window.session_strip.set_invite_available(bool(invite_url))
+        self.window.session_strip.set_recording_available(hosting and connected)
+        if self.audio.stopping:
+            self.window.session_hud.set_state(
+                "Ending this jam…" if hosting else "Leaving the jam…",
+                (
+                    "WebJam is safely finishing recordings and disconnecting everyone."
+                    if hosting
+                    else "WebJam is disconnecting your audio safely."
+                ),
+            )
+            return
+        if self.audio.ended_by_user:
+            self.window.session_hud.set_state(
+                "Jam ended" if hosting else "You left the jam",
+                (
+                    "Start again whenever your band is ready."
+                    if hosting
+                    else "The band can keep playing without you."
+                ),
+            )
+            return
+        from webjam_qt.platform_permissions import microphone_permission_status
+
+        if (
+            not connected
+            and microphone_permission_status() in {"denied", "restricted"}
+        ):
+            self.window.session_hud.set_state(
+                "Microphone access is off",
+                "Open System Settings below, allow access, then return to WebJam.",
+            )
+            return
+        if self.audio.connection_timed_out:
+            self.window.session_hud.set_state(
+                "Something needs attention",
+                "Make sure you’re on the same Wi-Fi, then use Try Again below.",
+                action_visible=False,
+            )
+            return
+        if self.audio.recovering:
+            self.window.session_hud.set_state(
+                "Connection interrupted",
+                "WebJam is reconnecting automatically. Your mix is safe.",
+            )
+            return
+        if (
+            not connected
+            and not self.bridge.jamulus_launch_intended
+            and self.bridge.jamulus_state in {"Not launched", "Not running"}
+        ):
+            self.window.session_hud.set_state(
+                "Ready when you are",
+                "WebJam will handle the connection automatically.",
+            )
+            return
+        if hosting:
+            if (
+                not connected
+                and self.bridge.jamulus_state
+                in {"Stopped", "Launch failed", "Not found", "Port in use"}
+            ):
+                self.window.session_hud.set_state(
+                    "Something needs attention",
+                    "This Mac couldn’t join the jam. Use Try Again below.",
+                    action_visible=False,
+                )
+                return
+            server_ready = self.bridge.hosted_server_alive()
+            if not server_ready:
+                stopped = self.bridge.jamulus_state in {
+                    "Stopped", "Launch failed", "Not found", "Port in use"
+                }
+                if stopped:
+                    self.window.session_hud.set_state(
+                        "Something needs attention",
+                        "Use Try Again below to start the jam again.",
+                        action_visible=False,
+                    )
+                else:
+                    self.window.session_hud.set_state(
+                        "Starting your jam…",
+                        "WebJam is getting the band audio ready.",
+                    )
+                return
+            if not invite_url:
+                self.window.session_hud.set_state(
+                    "Something needs attention",
+                    "Connect this Mac to Wi-Fi, then try again.",
+                    action_text="Try Again",
+                    action_visible=True,
+                    action_kind="retry",
+                )
+                return
+            bandmates = sum(
+                1 for person in participants
+                if not self._is_local_participant(person)
+            )
+            if bandmates and not connected:
+                self.window.session_hud.set_state(
+                    "Connecting your audio…",
+                    "A bandmate is here. WebJam is reconnecting this Mac.",
+                    invite_url=invite_url,
+                    action_visible=False,
+                )
+            elif bandmates:
+                total = len(participants)
+                self.window.session_hud.set_state(
+                    "Ready to play" if self._local_audio_seen else "Bandmate connected",
+                    self._connected_audio_detail(total),
+                    invite_url=invite_url,
+                    action_visible=False,
+                    ready=self._local_audio_seen,
+                )
+            else:
+                detail = (
+                    (
+                        "Your input is detected. Invite a bandmate on the same Wi-Fi."
+                        if self._local_audio_seen else
+                        "Play a note to check your input, then invite your bandmate."
+                    )
+                    if connected else
+                    "Share this link with a bandmate on the same Wi-Fi."
+                )
+                self.window.session_hud.set_state(
+                    "Ready to share",
+                    detail,
+                    invite_url=invite_url,
+                    action_visible=False,
+                    ready=connected and self._local_audio_seen,
+                )
+            return
+
+        if connected:
+            count = len(participants)
+            self.window.session_hud.set_state(
+                "You’re ready" if self._local_audio_seen else "You’re connected",
+                self._connected_audio_detail(count),
+                ready=self._local_audio_seen,
+            )
+        elif self.bridge.jamulus_state in {
+            "Stopped", "Launch failed", "Not found", "Port in use"
+        }:
+            self.window.session_hud.set_state(
+                "Something needs attention",
+                "Use Try Again below to join the jam again.",
+                action_visible=False,
+            )
+        else:
+            self.window.session_hud.set_state(
+                "Joining your jam…",
+                "WebJam is connecting your music.",
+            )
 
     def _record_toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         self.recording.toggle_worker(target_armed, secret_file)
@@ -575,6 +1139,30 @@ class ApplicationController(QObject):
 
     def _on_practice_requested(self) -> None:
         self.audio.on_practice_requested()
+
+    def _open_microphone_settings(self) -> None:
+        """Open the only advanced surface needed to recover a TCC denial."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        opened = QDesktopServices.openUrl(
+            QUrl(
+                "x-apple.systempreferences:com.apple.preference.security"
+                "?Privacy_Microphone"
+            )
+        )
+        self.window.participant_grid.set_session_state(
+            SessionUiState.permission_retry()
+        )
+        self.window.session_hud.set_state(
+            "Allow microphone access, then return",
+            "When WebJam is enabled in System Settings, choose Try Again below.",
+        )
+        if not opened:
+            self.window.flash_message(
+                "Open System Settings → Privacy & Security → Microphone.",
+                ms=7000,
+            )
 
     def _stop_audio(self) -> None:
         """Confirm with the user, then stop Jamulus and reset UI state."""
@@ -678,6 +1266,7 @@ class ApplicationController(QObject):
         # the "Running" wording out of the UI until participant/RPC truth has
         # arrived; the button can still offer Stop Audio for a live subprocess.
         jamulus_up = self.bridge.jamulus_state in ("Running", "Already running")
+        terminal_states = {"Stopped", "Launch failed", "Not found", "Port in use"}
         rpc = getattr(self.jamulus, "rpc_client", None)
         self.session_health.mark_process(
             self.bridge.jamulus_state,
@@ -685,36 +1274,71 @@ class ApplicationController(QObject):
         )
         audio_state = self.bridge.jamulus_state
         if jamulus_up:
-            server = self.bridge.effective_server()
             if self.bridge.practice_mode:
                 audio_state = (
-                    f"Practice connected ({server})"
+                    "Practice live"
                     if self._jamulus_connected
-                    else f"Practice connecting ({server})"
+                    else "Practice starting…"
                 )
             else:
                 audio_state = (
-                    f"Connected ({server})"
+                    "Connected"
                     if self._jamulus_connected
-                    else f"Connecting ({server})"
+                    else "Connecting…"
                 )
         else:
             self.session_health.reset_live_truth()
+            if self.bridge.jamulus_state in terminal_states:
+                self._connection_timer.stop()
         if getattr(self.settings, "host_server_enabled", False):
             if self.bridge.hosted_server_owned():
-                server_state = f"Hosting :{self.settings.jamulus_port}"
+                server_state = "Hosting"
             elif self.bridge.hosted_server_adopted():
-                server_state = f"External :{self.settings.jamulus_port}"
+                server_state = "Connected"
             else:
                 server_state = "not running"
             self.window.set_status_server(server_state)
         else:
             self.window.set_status_server("")
         self.audio.on_readiness_refresh(jamulus_up)
+        if (
+            not jamulus_up
+            and self.bridge.jamulus_state in terminal_states
+            and not self.audio.ended_by_user
+            and not self.audio.stopping
+        ):
+            self.audio.recovering = False
+            from webjam_qt.platform_permissions import microphone_permission_status
+
+            state = (
+                SessionUiState.permission_denied()
+                if microphone_permission_status() in {"denied", "restricted"}
+                else self._connection_failure_state()
+            )
+            self.window.participant_grid.set_session_state(
+                state
+            )
+        # Settings and Troubleshooting remain available precisely when a
+        # connection is slow or failed.
+        self.window.session_strip.set_tools_enabled(True)
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
+        if jamulus_up:
+            audio_action = (
+                "End Session"
+                if bool(getattr(self.settings, "host_server_enabled", False))
+                else "Leave Jam"
+            )
+        elif self.audio.stopping:
+            audio_action = (
+                "Ending…"
+                if bool(getattr(self.settings, "host_server_enabled", False))
+                else "Leaving…"
+            )
+        else:
+            audio_action = "Start Session"
         self.window.session_strip.set_audio_state(
-            "Stop Audio" if jamulus_up else "Start Audio", enabled=True
+            audio_action, enabled=not self.audio.stopping
         )
         if self.bridge.webex_state == "Opening…":
             webex_label, enabled = "Opening…", False
@@ -723,47 +1347,51 @@ class ApplicationController(QObject):
         else:
             webex_label, enabled = "Open Webex", True
         self.window.session_strip.set_video_state(webex_label, enabled=enabled)
+        self.window.session_strip.set_video_configured(
+            bool(str(self.settings.webex_url or "").strip())
+        )
+        self.window.session_strip.set_talkback_available(
+            self.bridge.webex_state == "Opened externally"
+        )
         try:
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
         except AttributeError:
             pass
+        self._update_session_hud()
 
     def _show_actionable_error(self, title: str, *, what_failed: str,
                                 likely_cause: str, next_action: str,
                                 retry_callback=None, copy_text: str = "") -> None:
         from pathlib import Path
-        # Mention both log files: WebJam's own log + Jamulus's stdout/stderr.
-        # Including the Jamulus log only if it exists (avoids confusion when
-        # Jamulus never launched, e.g. "Not Found" errors).
+        # Keep infrastructure out of the first layer. Qt's built-in Details
+        # disclosure retains the diagnosis and logs for support without
+        # turning a recoverable failure into a control panel.
         log_lines = [f"  {self.settings.log_file}  (WebJam)"]
         jamulus_log = Path.home() / ".webjam_jamulus.log"
         if jamulus_log.exists():
             log_lines.append(f"  {jamulus_log}  (Jamulus output)")
-        body = (
-            f"{what_failed}\n\nLikely cause: {likely_cause}\n\n"
-            f"Next action: {next_action}\n\n"
-            f"For details, see the log file"
-            f"{'s' if len(log_lines) > 1 else ''}:\n"
-            + "\n".join(log_lines)
-        )
         box = QMessageBox(self.window)
-        box.setWindowTitle(title)
-        box.setText(body)
+        box.setWindowTitle("Something needs attention")
+        box.setText(what_failed)
+        box.setInformativeText(next_action)
+        box.setDetailedText(
+            f"{title}\n\nLikely cause: {likely_cause}\n\n"
+            f"Logs:\n" + "\n".join(log_lines)
+        )
         box.setIcon(QMessageBox.Icon.Warning)
         retry_btn = None
-        if retry_callback:
-            retry_btn = box.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
-        settings_btn = box.addButton(
-            "Open Settings", QMessageBox.ButtonRole.ActionRole
-        )
+        settings_btn = None
         copy_btn = None
-        if copy_text:
+        if retry_callback:
+            retry_btn = box.addButton("Try Again", QMessageBox.ButtonRole.AcceptRole)
+        elif "settings" in str(next_action).lower():
+            settings_btn = box.addButton(
+                "Open Settings", QMessageBox.ButtonRole.AcceptRole
+            )
+        elif copy_text:
             copy_btn = box.addButton(
                 "Copy Meeting Link", QMessageBox.ButtonRole.ActionRole
             )
-        diagnostics_btn = box.addButton(
-            "Copy Diagnostics", QMessageBox.ButtonRole.ActionRole
-        )
         box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         clicked = box.clickedButton()
@@ -772,13 +1400,11 @@ class ApplicationController(QObject):
                 retry_callback()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Retry callback failed")
-        elif clicked is settings_btn:
+        elif settings_btn is not None and clicked is settings_btn:
             self._open_settings_wizard()
         elif copy_btn is not None and clicked is copy_btn:
             from PySide6.QtWidgets import QApplication
             QApplication.clipboard().setText(copy_text)
-        elif clicked is diagnostics_btn:
-            self._on_export_diagnostics()
 
     def _show_message(self, title: str, message: str) -> None:
         QMessageBox.information(self.window, title, message)
@@ -803,24 +1429,30 @@ class ApplicationController(QObject):
         ):
             attempts = self.bridge.jamulus_reconnect_attempts + 1
             self.window.flash_message(
-                f"Jamulus disconnected — auto-reconnecting (attempt {attempts}/5)…",
+                f"Band audio disconnected — reconnecting (attempt {attempts}/5)…",
                 ms=5000,
             )
             self.window.set_status_audio("Reconnecting…")
+            self.audio.recovering = True
+            self._local_audio_seen = False
+            self._remote_audio_seen = False
             self.participants.clear()
             self._push_participants_to_grid()
             self.window.participant_grid.set_session_state(
                 SessionUiState.reconnecting(attempts)
             )
+            self._connection_timer.start()
             self._reconnect_banner_shown = True
         elif (
             self.bridge.jamulus_state in ("Running", "Already running")
             and self._reconnect_banner_shown
+            and self._jamulus_connected
         ):
-            # Reconnect succeeded — clear the flag so we'd flash again on next crash.
+            # A process restart is not success. Proven roster/RPC truth is.
             self._reconnect_banner_shown = False
             self._reconnect_gave_up = False
-            self.window.flash_message("Jamulus reconnected.", ms=3000)
+            self.audio.recovering = False
+            self.window.flash_message("Band audio reconnected.", ms=3000)
         elif (
             self.bridge.jamulus_launch_intended
             and proc is not None
@@ -833,13 +1465,12 @@ class ApplicationController(QObject):
             # forever (which the crash branch above would otherwise leave up).
             self._reconnect_gave_up = True
             self.window.set_status_audio("Not connected")
-            self.window.session_strip.set_audio_state("Start Audio", enabled=True)
+            self.window.session_strip.set_audio_state("Start Session", enabled=True)
             self.window.participant_grid.set_session_state(
                 SessionUiState.reconnect_failed()
             )
             self.window.flash_message(
-                "Couldn't reconnect to Jamulus after 5 tries — press Start "
-                "Audio to try again.",
+                "Couldn't reconnect after 5 tries — press Start Session to try again.",
                 ms=8000,
             )
 
@@ -858,19 +1489,33 @@ class ApplicationController(QObject):
                 age = 0.0
             if age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
                 self.window.flash_message(
-                    f"Jamulus stopped responding ({int(age)}s of silence). "
-                    f"Try Stop Audio + Start Audio if it persists.",
+                    f"The music engine stopped responding ({int(age)}s of silence). "
+                    "WebJam is preparing a safe retry.",
                     ms=8000,
                 )
                 self.window.set_status_audio("Not responding")
                 self._rpc_hang_banner_shown = True
+                self.audio.connected = False
+                self.audio.recovering = True
+                self._local_audio_seen = False
+                self._remote_audio_seen = False
+                self.participants.clear()
+                self._push_participants_to_grid()
+                self.window.participant_grid.set_session_state(
+                    SessionUiState.reconnecting()
+                )
+                self.window.session_hud.set_state(
+                    "Connection interrupted",
+                    "The music engine stopped responding. WebJam is preparing a safe retry.",
+                )
+                self._connection_timer.start()
                 try:
                     self.metrics.increment("metric_jamulus_hang_detected")
                 except Exception:  # noqa: BLE001
                     LOGGER.debug("hang metric failed", exc_info=True)
             elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
                 self._rpc_hang_banner_shown = False
-                self.window.flash_message("Jamulus is responding again.", ms=3000)
+                self.window.flash_message("The music engine is responding again.", ms=3000)
 
         self.bridge.attempt_auto_reconnects()
 
@@ -889,7 +1534,7 @@ class ApplicationController(QObject):
                 break
         if local_channel_id is None:
             self.window.flash_message(
-                "Connect to Jamulus first — your channel isn't available yet.",
+                "Start the session first — your music track isn't available yet.",
                 ms=4000,
             )
             # Render only acknowledged global transmit state. Local mixer mute
@@ -901,7 +1546,7 @@ class ApplicationController(QObject):
             return
         if not self._jamulus_connected:
             self.window.flash_message(
-                "Connect to Jamulus first — this control needs the live RPC session.",
+                "Start the session first — this control needs your live music track.",
                 ms=4000,
             )
             self._sync_self_mute_button()
@@ -917,7 +1562,7 @@ class ApplicationController(QObject):
                 self.window,
                 "Resume Music?",
                 "Release Spacebar and confirm your Webex microphone is muted.\n\n"
-                "Resume your Jamulus send?",
+                "Resume sending music to the band?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -936,9 +1581,9 @@ class ApplicationController(QObject):
             if talkback:
                 action = "Talk Break" if new_muted else "Resume Music"
             else:
-                action = "Mute Jamulus Send" if new_muted else "Unmute Jamulus Send"
+                action = "Mute Music Send" if new_muted else "Unmute Music Send"
             self.window.flash_message(
-                f"{action} did not reach Jamulus — keep your Webex microphone "
+                f"{action} did not reach the music engine — keep your Webex microphone "
                 "muted and try again.",
                 ms=6000,
             )
@@ -949,12 +1594,12 @@ class ApplicationController(QObject):
         self._sync_self_mute_button()
         if talkback:
             message = (
-                "TALK · Jamulus send muted — hold Space in Webex to speak."
+                "TALK · music send muted — hold Space in Webex to speak."
                 if new_muted else
-                "PLAY · Jamulus send live — keep the Webex microphone muted."
+                "PLAY · music send live — keep the Webex microphone muted."
             )
         else:
-            message = "Jamulus send muted." if new_muted else "Jamulus send live."
+            message = "Music send muted." if new_muted else "Music send live."
         self.window.flash_message(message, ms=5000)
 
     def _reapply_talk_break_after_reconnect(self) -> None:
@@ -974,7 +1619,7 @@ class ApplicationController(QObject):
             self.session_health.mark_rpc_result("self-mute", True)
             self._sync_self_mute_button()
             self.window.flash_message(
-                "TALK restored after reconnect · Jamulus send is muted.", ms=5000
+                "Talk break restored after reconnect · music send is muted.", ms=5000
             )
             return
         self.session_health.mark_rpc_result(
@@ -1132,10 +1777,14 @@ class ApplicationController(QObject):
         if self._webex_audio_mode() != "talkback":
             self._talk_break_intended = False
         self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        self.window.session_strip.set_video_configured(
+            bool(str(self.settings.webex_url or "").strip())
+        )
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._start_routing_scan()
 
-        # JamulusController owns RPC, UDP fallback, and audio-engine settings.
+        # JamulusController owns RPC, its dormant legacy adapter, and the
+        # audio-engine settings.
         # Reconfigure in place so BridgeService, MixManager, and tests keep the
         # same object identity while still seeing the new target.
         self.jamulus.settings = self.settings
@@ -1187,18 +1836,31 @@ class ApplicationController(QObject):
             self.start_companion_api()
 
     def _open_settings_wizard(self) -> None:
-        from webjam_qt.windows.setup_wizard import SetupWizard
+        from webjam_qt.windows.simple_settings import SimpleSettingsDialog
         # Snapshot relevant fields before the wizard so we can detect changes.
         old_settings = self.settings
         old_webex_url = self.settings.webex_url
         old_jamulus_server = (self.settings.jamulus_server, self.settings.jamulus_port)
         # In-session reopen — skip the welcome page since the user already
         # knows what WebJam is and is here to change a specific setting.
-        wizard = SetupWizard(self.settings, parent=self.window, skip_welcome=True)
-        if wizard.exec() == SetupWizard.DialogCode.Accepted:
+        wizard = SimpleSettingsDialog(self.settings, parent=self.window)
+        if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
-            self.settings = load_settings()
+            self.settings = load_settings(self.settings.config_file)
             self._reconfigure_services_after_settings(old_settings)
+            self.window.recording_studio.set_takes_directory(
+                self.settings.takes_directory
+            )
+            self.window.recording_studio.set_output_device(
+                self.settings.take_playback_output_device
+            )
+            hosting = bool(getattr(self.settings, "host_server_enabled", False))
+            self.window.recording_studio.set_can_record(
+                hosting,
+                "The host controls recording; your audio is captured there as its own track."
+                if not hosting else "",
+            )
+            self._update_session_hud()
 
             # Build a context-aware confirmation message so the user knows
             # whether they need to take any action for the change to apply.
@@ -1212,7 +1874,7 @@ class ApplicationController(QObject):
                 (self.settings.jamulus_server, self.settings.jamulus_port) != old_jamulus_server
                 and self._is_jamulus_running()
             ):
-                warnings.append("Stop Audio and re-launch to connect to the new Jamulus server.")
+                warnings.append("End and restart the session to use the new band host.")
 
             if warnings:
                 self.window.flash_message(
@@ -1221,25 +1883,30 @@ class ApplicationController(QObject):
                 )
             else:
                 self.window.flash_message(
-                    "Settings saved — take effect on next Start Audio / Open Webex."
+                    "Settings saved — they take effect next time you start the session."
                 )
 
     def _open_take_deck(self) -> None:
-        """Open (or re-focus) the Take Deck — review & mix recorded takes."""
-        from webjam_qt.windows.take_deck import TakeDeck
-        existing = getattr(self, "_take_deck", None)
-        if existing is not None and existing.isVisible():
-            existing.raise_()
-            existing.activateWindow()
+        """Compatibility entry point: reveal the integrated Studio workspace."""
+        self.window.side_rail.set_active_key("takes")
+        self._on_rail_view_changed("takes")
+
+    def _open_recording_setup(self) -> None:
+        """Open the focused Studio preferences without exposing RPC plumbing."""
+        from webjam_qt.windows.recording_setup import RecordingSetupDialog
+
+        dialog = RecordingSetupDialog(self.settings, parent=self.window)
+        if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
-        deck = TakeDeck(
-            self.settings.takes_directory,
-            parent=self.window,
-            output_device_name=self.settings.take_playback_output_device,
-            on_output_device_changed=self._save_take_playback_output,
+        self.window.recording_studio.set_output_device(
+            self.settings.take_playback_output_device
         )
-        self._take_deck = deck
-        deck.show()
+        capture = bool(self.settings.local_capture_enabled)
+        self.window.flash_message(
+            "Recording setup saved · isolated host inputs "
+            + ("will be added to the next take." if capture else "are off."),
+            ms=7000,
+        )
 
     def _save_take_playback_output(self, device_name: str) -> None:
         self.settings.take_playback_output_device = str(device_name or "")
@@ -1258,26 +1925,40 @@ class ApplicationController(QObject):
         total = sum(splitter.sizes()) or self.window.DEFAULT_WIDTH
 
         # Keys that represent actual view changes (persist selection)
-        _CONTENT_KEYS = frozenset({"stage", "canvas"})
+        _CONTENT_KEYS = frozenset({"stage", "canvas", "takes"})
 
-        if key == "settings":
+        if key == "diagnostics":
+            self._on_ready_check()
+        elif key == "settings":
             # Restore rail to the previous content view before opening wizard
             prev = getattr(self, "_last_content_key", "stage")
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
             self._last_content_key = key
+            self.window.session_strip.set_recording_available(
+                key != "takes"
+                and bool(getattr(self.settings, "host_server_enabled", False))
+                and bool(self._jamulus_connected)
+            )
             if key == "stage":
-                # Live view: participant grid takes most of the space
-                splitter.setSizes([int(total * 0.72), int(total * 0.28)])
+                self.window.workspace_stack.setCurrentWidget(
+                    self.window.center_splitter
+                )
+                self.window.session_canvas.setVisible(False)
+                splitter.setSizes([total, 0])
             elif key == "canvas":
+                self.window.workspace_stack.setCurrentWidget(
+                    self.window.center_splitter
+                )
+                self.window.session_canvas.setVisible(True)
                 # Canvas: expand the notes panel
                 splitter.setSizes([int(total * 0.28), int(total * 0.72)])
-        elif key == "takes":
-            # Restore the previous content view and open the Take Deck dialog.
-            prev = getattr(self, "_last_content_key", "stage")
-            self.window.side_rail.set_active_key(prev)
-            self._open_take_deck()
+            elif key == "takes":
+                self.window.recording_studio.reload()
+                self.window.workspace_stack.setCurrentWidget(
+                    self.window.recording_studio
+                )
 
     # ------------------------------------------------------------------
     # Session notes persistence
@@ -1339,10 +2020,9 @@ class ApplicationController(QObject):
     # Audio routing detection (Phase 5)
     # ------------------------------------------------------------------
     def _start_routing_scan(self) -> None:
-        """Scan for VB-CABLE / BlackHole in a background thread."""
-        if self._webex_audio_mode() != "audience_bridge":
-            self.window.set_status_routing("Not required")
-            return
+        """Routing is automatic; keep infrastructure out of the main UI."""
+        self.window.set_status_routing("")
+        return
 
         def _scan() -> None:
             from core.audio_routing import AudioRoutingStatus, scan_loopback_devices

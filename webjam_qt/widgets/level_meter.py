@@ -1,4 +1,4 @@
-"""LevelMeter — a horizontal audio level bar with green→yellow→red gradient.
+"""LevelMeter — a horizontal audio level bar in the WebJam palette.
 
 Decay is driven externally by ApplicationController via :meth:`tick_decay`.
 
@@ -25,9 +25,8 @@ class LevelMeter(QWidget):
     """
     Paints a level bar from 0..1.
 
-    - Green up to ~0.7
-    - Yellow 0.7..0.9
-    - Red above 0.9
+    The fill moves from neutral gray to burnt orange to white. The meter's
+    length carries the level, so its meaning never depends on hue alone.
 
     Decay is driven externally by ApplicationController via :meth:`tick_decay`,
     unless ``external_tick=False`` is passed (legacy self-driving mode).
@@ -49,7 +48,8 @@ class LevelMeter(QWidget):
         self.setFixedHeight(height)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
         self.setAccessibleName("Audio level meter")
-        self.setAccessibleDescription("Shows real-time audio level from 0 to 100 percent")
+        self.setAccessibleDescription("Audio level: quiet")
+        self._accessible_band = "quiet"
 
         self._external_tick = external_tick
         if external_tick:
@@ -68,6 +68,10 @@ class LevelMeter(QWidget):
         self._level = level
         if level > self._peak:
             self._peak = level
+        band = "high" if level >= 0.85 else "signal present" if level >= 0.05 else "quiet"
+        if band != self._accessible_band:
+            self._accessible_band = band
+            self.setAccessibleDescription(f"Audio level: {band}")
         self.update()
 
     def tick_decay(self) -> None:

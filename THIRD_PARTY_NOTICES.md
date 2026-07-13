@@ -4,9 +4,24 @@ WebJam's own code is MIT-licensed (see `LICENSE`). This file covers
 third-party software that WebJam **bundles** (ships inside its own
 installers/artifacts) rather than merely depending on at build time.
 
+## Inter typeface
+
+WebJam bundles the [Inter](https://rsms.me/inter/) typeface — source at
+[rsms/inter](https://github.com/rsms/inter) — as the app's UI font on
+every platform.
+
+- **Version bundled:** `4.1` ([release](https://github.com/rsms/inter/releases/tag/v4.1))
+- **Files:** `Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf`,
+  `Inter-Bold.ttf`, shipped unmodified at `webjam_qt/theme/fonts/` inside
+  every WebJam build.
+- **License:** SIL Open Font License 1.1, which permits bundling and
+  redistribution with software. The full license text is included verbatim
+  at [`licenses/INTER_OFL.txt`](licenses/INTER_OFL.txt). The font is not
+  modified and keeps its Reserved Font Name "Inter".
+
 ## Jamulus
 
-WebJam bundles the official, unmodified [Jamulus](https://jamulus.io)
+WebJam bundles the official [Jamulus](https://jamulus.io)
 client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftware/jamulus)
 — to remove the "go install Jamulus yourself" step for most users.
 
@@ -20,31 +35,32 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
   `WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/`; Windows:
   `Jamulus/` next to the bundled installer).
 - **How it's bundled, per platform:**
-  - **macOS:** the Apple-signed, notarized `Jamulus.app` published in
-    Jamulus's own release `.dmg` is extracted at build time, completely
-    unmodified, and nested inside `WebJam.app/Contents/Resources/Jamulus.app`.
+  - **macOS:** `Jamulus.app` from Jamulus's official release `.dmg` is
+    nested inside `WebJam.app/Contents/Resources/Jamulus.app`. WebJam's build
+    replaces the nested app's code signature with an ad-hoc signature that
+    omits App Sandbox; this lets WebJam provision private, loopback-only
+    JSON-RPC credentials without asking musicians for Full Disk Access. The
+    upstream executable and framework contents are otherwise unchanged.
     WebJam launches it as a separate OS process and talks to it only over
     its public JSON-RPC/UDP interfaces — it is never linked against or
     merged into WebJam's own code.
-    The same release's Apple-signed, notarized `JamulusServer.app` is nested
-    unmodified beside the client so a designated host needs no separate
-    install. WebJam launches each as an independent process.
+    `JamulusServer.app` from the same release is prepared the same way and
+    nested beside the client so a designated host needs no separate install.
+    WebJam launches each as an independent process.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so WebJam ships that unmodified installer inside
     its own install directory (`Jamulus/jamulus_3.12.2_win.exe`) and offers
     an "Install Jamulus now" button in the Setup Wizard that simply runs it.
-- **Why this doesn't require relicensing WebJam:** Redistributing an
-  unmodified third-party binary that is invoked as a separate process
+- **Why this doesn't require relicensing WebJam:** Redistributing a
+  third-party binary that is invoked as a separate process
   (never statically or dynamically linked into WebJam's own executable)
   is "mere aggregation" under GPL §2 — it does not bring WebJam's own
   code under the GPL. WebJam communicates with the Jamulus process
   exclusively via `subprocess.Popen` plus its public JSON-RPC/UDP
   protocols, the same way it would talk to a separately-installed copy.
-- **Escape hatch:** the bundled copy is only ever used as a *fallback*
-  candidate. Users (or admins) can still point WebJam at any other
-  Jamulus install via the Setup Wizard's Browse button or the
-  `WEBJAM_JAMULUS_CANDIDATES` environment variable — bundling never
-  removes that override.
+- **Escape hatch:** source runs can use an installed/custom Jamulus path.
+  Frozen macOS builds deliberately prefer their prepared, pinned bundled copy
+  so an incompatible installed version cannot silently replace it.
 - **Staying current:** because the bundled copy's version is pinned to
   WebJam's own release cadence, a security or bug fix released upstream
   by the Jamulus project won't reach bundled-copy users until the next

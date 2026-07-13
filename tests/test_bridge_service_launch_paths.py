@@ -74,7 +74,8 @@ class TestLaunchJamulusNotFound(unittest.TestCase):
         self.assertFalse(bridge.jamulus_reconnect_inflight)
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
-            bridge.show_actionable_error.call_args.args[0], "Jamulus Not Found"
+            bridge.show_actionable_error.call_args.args[0],
+            "A music component is missing",
         )
         bridge.metrics_service.increment.assert_any_call(
             "metric_jamulus_launch_failed"
@@ -112,7 +113,7 @@ class TestLaunchJamulusNoServerConfigured(unittest.TestCase):
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0],
-            "No Jamulus Server Configured",
+            "This jam needs a new invite",
         )
         bridge.metrics_service.increment.assert_any_call(
             "metric_jamulus_launch_failed"
@@ -193,7 +194,7 @@ class TestLaunchJamulusFailure(unittest.TestCase):
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0],
-            "Jamulus Launch Failed",
+            "Band audio couldn’t start",
         )
         bridge.metrics_service.increment.assert_any_call(
             "metric_jamulus_launch_failed"
@@ -246,12 +247,34 @@ class TestLaunchCommandContract(unittest.TestCase):
         cmd = self._launch_and_capture_cmd(bridge)
 
         self.assertEqual(cmd[0], "/usr/bin/jamulus")
+        self.assertIn("--nogui", cmd)
         self.assertIn("--connect", cmd)
         self.assertIn("contract-probe.example.com:22124", cmd)
         self.assertIn("--jsonrpcport", cmd)
         self.assertIn("22222", cmd)
         self.assertIn("--jsonrpcsecretfile", cmd)
+        from core.jamulus_rpc_client import DEFAULT_SECRET_PATH
+        secret_index = cmd.index("--jsonrpcsecretfile") + 1
+        self.assertEqual(cmd[secret_index], str(DEFAULT_SECRET_PATH))
         self.assertEqual(bridge.jamulus_state, "Running")
+
+    def test_immediate_client_exit_is_not_reported_as_running(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "early-exit.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        proc = MagicMock()
+        proc.poll.return_value = 64
+
+        with patch("services.bridge_service.subprocess.Popen", return_value=proc), \
+             patch("services.bridge_service.time.sleep"):
+            bridge.launch_jamulus(manual=True, reconnect=False)
+
+        self.assertEqual(bridge.jamulus_state, "Launch failed")
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_jamulus_launch_failed"
+        )
+        bridge.show_actionable_error.assert_called_once()
 
     def test_secret_write_failure_fails_closed_without_launch(self, _thread):
         bridge = _make_bridge()
@@ -266,6 +289,44 @@ class TestLaunchCommandContract(unittest.TestCase):
         self.assertEqual(cmd, [])
         self.assertEqual(bridge.jamulus_state, "Launch failed")
         bridge.show_actionable_error.assert_called_once()
+
+    def test_two_queued_launch_workers_spawn_only_one_client(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "double-launch.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        queued = []
+
+        class _QueuedThread:
+            def __init__(self, *args, target=None, **kwargs):
+                self._target = target
+
+            def start(self):
+                queued.append(self._target)
+
+        process = MagicMock()
+        process.poll.return_value = None
+        with patch(
+            "services.bridge_service.threading.Thread", _QueuedThread
+        ), patch(
+            "services.bridge_service.subprocess.Popen", return_value=process
+        ) as popen, patch(
+            "services.bridge_service.time.sleep"
+        ), patch(
+            "core.file_io.atomic_write_text"
+        ):
+            bridge.launch_jamulus(manual=True)
+            bridge.launch_jamulus(manual=True)
+            launch_workers = list(queued)
+            self.assertEqual(len(launch_workers), 2)
+            launch_workers[0]()
+            launch_workers[1]()
+
+        own_calls = [
+            call for call in popen.call_args_list
+            if "double-launch.example.com:22124" in call.args[0]
+        ]
+        self.assertEqual(len(own_calls), 1)
 
 
 class TestBundledJamulusCandidate(unittest.TestCase):

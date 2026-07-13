@@ -62,25 +62,30 @@ def _body(text: str, *, name: str = "FirstRunBody") -> QLabel:
 
 
 def _find_client(settings: AppSettings) -> Optional[str]:
+    from services.bridge_service import _bundled_jamulus_candidate
+    bundled = _bundled_jamulus_candidate()
+    if bundled:
+        return bundled
     for candidate in settings.jamulus_candidates:
         try:
             if Path(candidate).expanduser().is_file():
                 return str(Path(candidate).expanduser())
         except OSError:
             continue
-    from services.bridge_service import _bundled_jamulus_candidate
-    return _bundled_jamulus_candidate()
+    return None
 
 
 def _find_server() -> tuple[Optional[str], str]:
+    from services.bridge_service import _bundled_jamulus_server_candidate
+    bundled = _bundled_jamulus_server_candidate()
+    if bundled:
+        return bundled, "bundled"
     installed = Path(
         "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
     if installed.is_file():
         return str(installed), "installed"
-    from services.bridge_service import _bundled_jamulus_server_candidate
-    bundled = _bundled_jamulus_server_candidate()
-    return (bundled, "bundled") if bundled else (None, "missing")
+    return None, "missing"
 
 
 class FirstRunSetupDialog(QDialog):
@@ -99,6 +104,11 @@ class FirstRunSetupDialog(QDialog):
         self._result: Optional[FirstRunSetupResult] = None
         self._hosting_supported = sys.platform == "darwin"
         self._client_path = _find_client(self._settings)
+        from services.bridge_service import _bundled_jamulus_candidate
+        self._client_is_bundled = (
+            bool(self._client_path)
+            and self._client_path == _bundled_jamulus_candidate()
+        )
         self._server_path, self._server_source = _find_server()
         self._installer_path = self._bundled_windows_installer()
 
@@ -153,6 +163,12 @@ class FirstRunSetupDialog(QDialog):
         root.addLayout(footer)
 
         self._back.hide()
+        # The downloadable macOS build is self-contained. Default to hosting
+        # so the common path needs only a name and one Continue click.
+        if self._hosting_supported and self._server_path and self._client_path:
+            self._host_card.setChecked(True)
+        else:
+            self._join_card.setChecked(True)
         self._refresh_role_details()
         self._refresh_navigation()
         self.setTabOrder(self._host_card, self._join_card)
@@ -236,6 +252,7 @@ class FirstRunSetupDialog(QDialog):
         self._server_address.textChanged.connect(self._on_server_text_changed)
         self._server_error = _body("", name="FirstRunError")
         self._server_error.setAccessibleName("Band server address error")
+        self._server_error.setVisible(False)
         layout.addWidget(self._server_label)
         layout.addWidget(self._server_address)
         layout.addWidget(self._server_error)
@@ -262,6 +279,7 @@ class FirstRunSetupDialog(QDialog):
         self._webex_url.textChanged.connect(self._on_webex_text_changed)
         self._webex_error = _body("", name="FirstRunError")
         self._webex_error.setAccessibleName("Webex meeting URL error")
+        self._webex_error.setVisible(False)
         layout.addWidget(url_label)
         layout.addWidget(self._webex_url)
         layout.addWidget(self._webex_error)
@@ -278,6 +296,7 @@ class FirstRunSetupDialog(QDialog):
         self._capture.setChecked(False)
         self._capture.toggled.connect(self._on_capture_toggled)
         layout.addWidget(self._capture)
+        self._capture.setVisible(False)
 
         self._device_label = QLabel("Recording input")
         self._device_label.setObjectName("FirstRunFieldLabel")
@@ -289,10 +308,13 @@ class FirstRunSetupDialog(QDialog):
         layout.addWidget(self._device_label)
         layout.addWidget(self._device)
         layout.addWidget(self._capture_error)
+        self._device_label.setVisible(False)
+        self._device.setVisible(False)
+        self._capture_error.setVisible(False)
 
         next_note = _body(
-            "Ready Check opens next to verify your audio device, Webex settings, "
-            "and band server before sound starts.",
+            "That’s it. WebJam creates the band server, synchronized track "
+            "folder, and recorder automatically. The video room is optional.",
             name="FirstRunStatus",
         )
         layout.addWidget(next_note)
@@ -325,8 +347,9 @@ class FirstRunSetupDialog(QDialog):
 
     def _refresh_role_details(self) -> None:
         joining = self._selected_role() == "join"
-        for widget in (self._server_label, self._server_address, self._server_error):
+        for widget in (self._server_label, self._server_address):
             widget.setVisible(joining)
+        self._server_error.setVisible(joining and bool(self._server_error.text()))
         if self._selected_role() == "host":
             if self._server_path and self._client_path:
                 self._component_status.setText(
@@ -349,18 +372,21 @@ class FirstRunSetupDialog(QDialog):
 
     def _on_server_text_changed(self, _text: str) -> None:
         self._server_error.clear()
+        self._server_error.setVisible(False)
         self._refresh_navigation()
 
     def _on_webex_text_changed(self, _text: str) -> None:
         self._webex_error.clear()
+        self._webex_error.setVisible(False)
         self._refresh_navigation()
 
     def _on_capture_toggled(self, checked: bool) -> None:
-        if checked and not self._device.count():
-            self._populate_devices()
-        self._device_label.setVisible(checked)
-        self._device.setVisible(checked)
-        self._capture_error.setVisible(checked)
+        # Supplemental capture is a legacy expert path. The normal recorder
+        # already captures this musician through Jamulus as a separate track.
+        self._capture.setChecked(False)
+        self._device_label.setVisible(False)
+        self._device.setVisible(False)
+        self._capture_error.setVisible(False)
         self._refresh_navigation()
 
     def _populate_devices(self) -> None:
@@ -398,18 +424,17 @@ class FirstRunSetupDialog(QDialog):
         except JamulusEndpointError as exc:
             if show_error and self._server_address.text().strip():
                 self._server_error.setText(str(exc))
+                self._server_error.setVisible(True)
             return False
         return True
 
     def _webex_page_valid(self, *, show_error: bool = False) -> bool:
         url = normalize_webex_url(self._webex_url.text())
-        error = webex_url_error(url)
-        capture_valid = not self._capture.isChecked() or (
-            self._device.isEnabled() and self._device.currentData() is not None
-        )
+        error = webex_url_error(url) if url else None
         if show_error and error:
             self._webex_error.setText(error)
-        return error is None and capture_valid
+            self._webex_error.setVisible(True)
+        return error is None
 
     def _refresh_navigation(self, *_args) -> None:
         if not hasattr(self, "_primary"):
@@ -427,9 +452,9 @@ class FirstRunSetupDialog(QDialog):
         self._pages.setCurrentIndex(step)
         second = step == 1
         self._back.setVisible(second)
-        self._title.setText("Webex and recording" if second else "Choose your setup")
+        self._title.setText("Optional video room" if second else "Choose your setup")
         self._subtitle.setText(
-            "Add your talk room and optional local stem."
+            "Paste a Webex room if the band uses one, or finish without it."
             if second else "Tell WebJam what this Mac will do."
         )
         self._progress.setText(f"{step + 1} of 2")
@@ -463,15 +488,14 @@ class FirstRunSetupDialog(QDialog):
         else:
             endpoint = parse_jamulus_endpoint(self._server_address.text())
             host, port = endpoint.host, endpoint.port
-        device = self._device.currentData() if self._capture.isChecked() else -1
         return FirstRunSetupResult(
             role=role or "join",
             musician_name=self._name.text().strip(),
             jamulus_host=host,
             jamulus_port=port,
             webex_url=normalize_webex_url(self._webex_url.text()),
-            local_capture_enabled=self._capture.isChecked(),
-            audio_input_device_index=int(device if device is not None else -1),
+            local_capture_enabled=False,
+            audio_input_device_index=-1,
         )
 
     def _save(self, result: FirstRunSetupResult) -> bool:
@@ -493,7 +517,7 @@ class FirstRunSetupDialog(QDialog):
             cfg["takes_directory"] = str(hosted_server_recordings_dir())
         elif result.local_capture_enabled and not cfg.get("takes_directory"):
             cfg["takes_directory"] = str(Path.home() / "Music" / "WebJam Recordings")
-        if self._client_path:
+        if self._client_path and not self._client_is_bundled:
             existing = list(cfg.get("jamulus_candidates") or [])
             cfg["jamulus_candidates"] = [self._client_path] + [
                 value for value in existing if value != self._client_path
@@ -516,6 +540,7 @@ class FirstRunSetupDialog(QDialog):
             self._webex_error.setText(
                 "WebJam couldn't save setup. Check folder permissions and try again."
             )
+            self._webex_error.setVisible(True)
             return False
 
     def _launch_windows_installer(self) -> None:

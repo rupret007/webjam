@@ -209,6 +209,18 @@ class TestEnsureHostedServer(unittest.TestCase):
             bridge.stop_hosted_server()
             self.assertFalse(bridge.hosted_server_alive())
 
+    def test_stop_hosted_server_retains_process_when_termination_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            fake_proc.terminate.side_effect = OSError("not permitted")
+            bridge.hosted_server_process = fake_proc
+
+            self.assertFalse(bridge.stop_hosted_server())
+            self.assertIs(bridge.hosted_server_process, fake_proc)
+            self.assertTrue(bridge.hosted_server_alive())
+
     def test_rpc_readiness_timeout_cleans_up_spawned_server(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = _make_bridge(tmp)
@@ -292,7 +304,7 @@ class TestHostedServerDiscovery(unittest.TestCase):
         del bridge.find_jamulus_server_with_source
         return bridge
 
-    def test_installed_server_precedes_bundled_server(self):
+    def test_bundled_server_precedes_installed_server(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = self._real_discovery_bridge(tmp)
             with patch.object(Path, "is_file", return_value=True), patch(
@@ -300,11 +312,8 @@ class TestHostedServerDiscovery(unittest.TestCase):
                 return_value="/bundled/JamulusServer",
             ) as bundled:
                 result = bridge.find_jamulus_server_with_source()
-            self.assertEqual(result, (
-                "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer",
-                "installed",
-            ))
-            bundled.assert_not_called()
+            self.assertEqual(result, ("/bundled/JamulusServer", "bundled"))
+            bundled.assert_called_once()
 
     def test_bundled_server_is_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -529,7 +538,7 @@ class TestHostedControllerFlows(unittest.TestCase):
         finally:
             c.recording.phase = RecorderPhase.IDLE
 
-    def test_stop_audio_while_hosting_says_server_keeps_running(self):
+    def test_end_jam_explains_that_hosted_session_stops(self):
         from PySide6.QtWidgets import QMessageBox
         c = self.controller
         c.bridge.stop_jamulus = MagicMock()
@@ -539,17 +548,118 @@ class TestHostedControllerFlows(unittest.TestCase):
         ) as question:
             c.audio.stop()
         text = question.call_args.args[2]
-        self.assertIn("band server keeps running", text)
+        self.assertIn("End this jam for everyone", text)
+        self.assertIn("finish any recording", text)
+
+    def test_end_jam_requires_the_host_to_finish_recording_first(self):
+        c = self.controller
+        c._server_recording = True
+        c._recorder_armed = True
+        with patch.object(
+            c.recording, "stop_server_recording_for_shutdown"
+        ) as recorder_stop, patch.object(
+            c.bridge, "stop_jamulus"
+        ) as client_stop, patch.object(
+            c.bridge, "stop_hosted_server"
+        ) as server_stop, patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.information"
+        ) as information, patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.question"
+        ) as question:
+            c.audio.stop()
+        information.assert_called_once()
+        question.assert_not_called()
+        recorder_stop.assert_not_called()
+        client_stop.assert_not_called()
+        server_stop.assert_not_called()
+        c._server_recording = False
+        c._recorder_armed = False
+
+    def test_unconfirmed_recorder_stop_preserves_running_services(self):
+        c = self.controller
+        with patch.object(
+            c.recording, "stop_server_recording_for_shutdown", return_value=False
+        ), patch.object(c.bridge, "stop_jamulus") as client_stop, patch.object(
+            c.bridge, "stop_hosted_server"
+        ) as server_stop, patch.object(
+            c._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        ):
+            c.audio._stop_session_services(True)
+        client_stop.assert_not_called()
+        server_stop.assert_not_called()
+        self.assertEqual(
+            self.window.participant_grid._empty_title.text(),
+            "WebJam couldn’t finish cleanly",
+        )
+
+    def test_joiner_leaves_without_claiming_to_stop_the_hosts_recording(self):
+        from PySide6.QtWidgets import QMessageBox
+
+        c = self.controller
+        c.settings.host_server_enabled = False
+        c._server_recording = True
+        c._recorder_armed = True
+        with patch(
+            "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ) as question:
+            c.audio.stop()
+        text = question.call_args.args[2]
+        self.assertIn("host's recording will keep running", text)
+        self.assertIn("Only this Mac", text)
+        c._server_recording = False
+        c._recorder_armed = False
+        c.settings.host_server_enabled = True
+
+    def test_end_jam_does_not_claim_success_when_client_cleanup_fails(self):
+        from PySide6.QtWidgets import QMessageBox
+
+        c = self.controller
+
+        class _ImmediateThread:
+            def __init__(self, *positional, target=None, args=(), **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        with (
+            patch.object(
+                c.recording, "stop_server_recording_for_shutdown", return_value=True
+            ),
+            patch.object(c.recording, "on_audio_session_stopped") as reset_recording,
+            patch.object(c.bridge, "stop_jamulus", return_value=False),
+            patch.object(c.bridge, "stop_hosted_server", return_value=True),
+            patch.object(c._ui_invoker, "invoke", side_effect=lambda callback: callback()),
+            patch(
+                "webjam_qt.controllers.audio_coordinator.threading.Thread",
+                _ImmediateThread,
+            ),
+            patch(
+                "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+        ):
+            c.audio.stop()
+
+        self.assertEqual(
+            self.window.participant_grid._empty_title.text(),
+            "WebJam couldn’t finish cleanly",
+        )
+        self.assertFalse(c.audio.stopping)
+        self.assertFalse(c.audio.ended_by_user)
+        reset_recording.assert_not_called()
 
     def test_idle_hero_offers_host_and_start(self):
         c = self.controller
         c.audio.reset_to_idle()
         self.assertEqual(
             self.window.participant_grid._empty_primary.text().replace("&&", "&"),
-            "Host & Start Audio",
+            "Start Session",
         )
         self.assertIn(
-            "hosts the band server",
+            "Multitrack recording is ready",
             self.window.participant_grid._empty_hint.text(),
         )
 
@@ -557,7 +667,9 @@ class TestHostedControllerFlows(unittest.TestCase):
         c = self.controller
         c._refresh_readiness()
         self.assertIn("Hosting", self.window._status_server.text())
-        self.assertFalse(self.window._status_server.isHidden())
+        self.assertTrue(self.window._status_server.isHidden())
+        self.assertIs(self.window._status_server.parentWidget(), self.window._status_bar)
+        self.assertFalse(self.window._status_server.isWindow())
         c.settings.host_server_enabled = False
         c._refresh_readiness()
         self.assertTrue(self.window._status_server.isHidden())
@@ -584,7 +696,7 @@ class TestHostedShutdown(unittest.TestCase):
         controller.bridge.hosted_server_alive = MagicMock(return_value=True)
         controller.bridge.hosted_server_owned = MagicMock(return_value=True)
         controller.recording.stop_server_recording_for_shutdown = MagicMock(
-            side_effect=lambda: order.append("stop-recording")
+            side_effect=lambda: order.append("stop-recording") or True
         )
         controller.bridge.stop_hosted_server = MagicMock(
             side_effect=lambda: order.append("stop-server")

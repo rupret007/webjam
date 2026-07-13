@@ -360,13 +360,15 @@ class TestParticipantGrid(unittest.TestCase):
         finally:
             g.close()
 
-    def test_hero_lobby_practice_and_hint_are_idle_only(self):
+    def test_hero_lobby_has_one_primary_action_and_no_endpoint(self):
         from webjam_qt.session_state import SessionUiState
         from webjam_qt.widgets.participant_grid import ParticipantGrid
         g = ParticipantGrid()
         g.set_session_state(SessionUiState.idle(server="192.168.1.20:22124"))
-        self.assertFalse(g._empty_practice.isHidden())
-        self.assertIn("192.168.1.20:22124", g._empty_hint.text())
+        self.assertTrue(g._empty_practice.isHidden())
+        self.assertTrue(g._empty_ready.isHidden())
+        self.assertNotIn("192.168.1.20:22124", g._empty_hint.text())
+        self.assertIn("separate tracks", g._empty_hint.text())
         self.assertFalse(g._empty_hint.isHidden())
         g.set_session_state(SessionUiState.connecting("192.168.1.20:22124"))
         self.assertTrue(g._empty_practice.isHidden())
@@ -388,6 +390,49 @@ class TestParticipantGrid(unittest.TestCase):
         g.set_participants(participants)
         self.assertEqual(len(g._cards), 2)
         self.assertTrue(g._empty_state.isHidden())
+
+    def test_one_participant_is_large_and_centered(self):
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        from webjam_qt.widgets.participant_card import ParticipantPresentation
+        g = ParticipantGrid()
+        g.resize(1200, 700)
+        g.set_participants([ParticipantPresentation(channel_id=0, name="Alice")])
+        g.show()
+        _qapp().processEvents()
+        try:
+            card = g.cards()[0]
+            viewport_center = g.viewport().rect().center()
+            self.assertLessEqual(abs(card.geometry().center().x() - viewport_center.x()), 24)
+            self.assertLessEqual(abs(card.geometry().center().y() - viewport_center.y()), 24)
+            self.assertGreaterEqual(card.width(), 700)
+            self.assertGreaterEqual(card.height(), 400)
+        finally:
+            g.close()
+
+    def test_six_participants_form_balanced_centered_grid(self):
+        from webjam_qt.widgets.participant_grid import ParticipantGrid
+        from webjam_qt.widgets.participant_card import ParticipantPresentation
+        g = ParticipantGrid()
+        g.resize(1200, 700)
+        g.set_participants([
+            ParticipantPresentation(channel_id=i, name=f"Person {i}")
+            for i in range(6)
+        ])
+        g.show()
+        _qapp().processEvents()
+        try:
+            geometries = [card.geometry() for card in g.cards()]
+            self.assertEqual(len({rect.y() for rect in geometries}), 2)
+            self.assertEqual(len({rect.x() for rect in geometries}), 3)
+            self.assertEqual(len({(rect.width(), rect.height()) for rect in geometries}), 1)
+            union = geometries[0]
+            for rect in geometries[1:]:
+                union = union.united(rect)
+            self.assertLessEqual(
+                abs(union.center().x() - g.viewport().rect().center().x()), 24
+            )
+        finally:
+            g.close()
 
     def test_set_participants_replaces_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -461,7 +506,8 @@ class TestSideRail(unittest.TestCase):
         r = SideRail()
         buttons = {btn.property("railKey"): btn for btn in r._group.buttons()}
         self.assertEqual(buttons["canvas"].text(), "Notes")
-        self.assertEqual(buttons["takes"].property("utility"), "true")
+        self.assertEqual(buttons["takes"].property("utility"), "false")
+        self.assertEqual(buttons["takes"].text(), "Studio")
         self.assertEqual(buttons["settings"].accessibleName(), "Open Settings")
 
     def test_trigger_uses_normal_signal_path(self):
@@ -498,16 +544,19 @@ class TestConductorWindow(unittest.TestCase):
     def test_window_title(self):
         w = self._window()
         # Title now includes the WebJam version string (v0.4.4 etc.)
-        self.assertTrue(w.windowTitle().startswith("WebJam — Conductor"))
+        self.assertTrue(w.windowTitle().startswith("WebJam — Band Session"))
         from webjam_qt import __version__
         self.assertIn(__version__, w.windowTitle())
 
-    def test_minimum_size(self):
+    def test_supported_narrow_minimum_size(self):
         w = self._window()
-        self.assertGreaterEqual(w.minimumWidth(), 1100)
-        self.assertGreaterEqual(w.minimumHeight(), 720)
+        # The live surface must remain usable beside another app on an
+        # 800x600 display.  A wide minimum silently reintroduces the old
+        # desktop-only clipping bug even if the default size stays generous.
+        self.assertLessEqual(w.minimumWidth(), 760)
+        self.assertLessEqual(w.minimumHeight(), 600)
 
-    def test_tab_order_follows_stage_then_webex_then_canvas(self):
+    def test_hidden_session_tools_are_not_in_initial_focus_chain(self):
         from PySide6.QtCore import Qt
 
         w = self._window()
@@ -526,24 +575,47 @@ class TestConductorWindow(unittest.TestCase):
                 focusable.append(current)
             current = current.nextInFocusChain()
 
-        self.assertLess(
-            focusable.index(w.participant_grid._empty_ready),
-            focusable.index(w.webex_embed.fallback_button()),
-        )
-        self.assertLess(
-            focusable.index(w.webex_embed.fallback_button()),
-            focusable.index(w.session_canvas._toolbar_buttons[0]),
-        )
-        self.assertLess(
-            focusable.index(w.session_canvas._toolbar_buttons[-1]),
-            focusable.index(w.session_canvas._notes),
-        )
+        self.assertIn(w.session_strip._title_input, focusable)
+        self.assertIn(w.session_strip._tools_button, focusable)
+        self.assertIn(w.participant_grid._empty_primary, focusable)
+        self.assertNotIn(w.webex_embed.fallback_button(), focusable)
+        self.assertNotIn(w.session_canvas._toolbar_buttons[0], focusable)
+        self.assertNotIn(w.session_canvas._notes, focusable)
         w.close()
 
     def test_set_status_audio(self):
         w = self._window()
         w.set_status_audio("Connected")
         self.assertIn("Connected", w._status_audio.text())
+
+    def test_meeting_controls_are_bottom_aligned_and_end_is_destructive(self):
+        w = self._window()
+        w.resize(1200, 800)
+        w.show()
+        _qapp().processEvents()
+        try:
+            self.assertGreater(
+                w.session_controls.geometry().top(),
+                w.centralWidget().height() // 2,
+            )
+            self.assertEqual(
+                w.session_strip._audio_button.property("destructive"), "true"
+            )
+            self.assertEqual(w.session_strip._tools_button.text(), "More")
+        finally:
+            w.close()
+
+    def test_hosting_status_never_becomes_a_floating_window(self):
+        w = self._window()
+        w.show()
+        w.set_status_server("Hosting")
+        _qapp().processEvents()
+        try:
+            self.assertIs(w._status_server.parentWidget(), w._status_bar)
+            self.assertFalse(w._status_server.isWindow())
+            self.assertFalse(w._status_server.isVisible())
+        finally:
+            w.close()
 
     def test_set_status_video(self):
         w = self._window()

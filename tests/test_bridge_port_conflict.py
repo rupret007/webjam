@@ -93,10 +93,11 @@ class TestLaunchAbortsOnPortConflict(unittest.TestCase):
 
             # Thread for _do_launch must NOT have been started.
             thread_cls.assert_not_called()
-            # Actionable error was raised with the port-conflict title.
+            # The musician sees the cause without RPC/port vocabulary.
             bridge.show_actionable_error.assert_called_once()
             args, kwargs = bridge.show_actionable_error.call_args
-            self.assertEqual(args[0], "Jamulus Port In Use")
+            self.assertEqual(args[0], "Another audio session is open")
+            self.assertNotIn("port", kwargs["what_failed"].lower())
             self.assertEqual(bridge.jamulus_state, "Port in use")
             bridge.metrics_service.increment.assert_any_call(
                 "metric_jamulus_port_conflict"

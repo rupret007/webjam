@@ -1,13 +1,14 @@
 /*
- * Conductor stylesheet.
+ * WebJam — one calm, high-contrast system.
  *
- * Tokens are substituted at load time by qss_loader.py.
- * Reference: ${COLOR_BG_BASE}, ${SPACE_MD}, ${RADIUS_MD}, etc.
+ * The only chromatic color is official Longhorn burnt orange.  State is
+ * always named in text or controls; color reinforces it but never carries it.
+ * Tokens are substituted by qss_loader.py at startup.
  */
 
-/* ============================================================
- * Global
- * ============================================================ */
+/* -------------------------------------------------------------------------
+ * Foundations
+ * ---------------------------------------------------------------------- */
 QWidget {
     background-color: ${COLOR_BG_BASE};
     color: ${COLOR_TEXT_PRIMARY};
@@ -15,61 +16,1000 @@ QWidget {
     font-size: ${FONT_SIZE_BASE}px;
 }
 
+QMainWindow, QDialog, QWizard, QWizardPage {
+    background-color: ${COLOR_BG_BASE};
+}
+
 QLabel {
     background-color: transparent;
 }
 
-QMainWindow, QDialog {
-    background-color: ${COLOR_BG_BASE};
+QLabel:disabled, QPushButton:disabled, QToolButton:disabled,
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {
+    color: ${COLOR_TEXT_MUTED};
 }
 
-/* ============================================================
- * Session Strip (top bar)
- * ============================================================ */
+QPushButton, QToolButton {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    min-height: 32px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QPushButton:hover, QToolButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton:focus, QToolButton:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+    outline: none;
+}
+
+QPushButton:pressed, QToolButton:pressed {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+QPushButton:disabled, QToolButton:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    min-height: 28px;
+    selection-background-color: ${COLOR_ACCENT_PRIMARY};
+    selection-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover,
+QComboBox:hover, QSpinBox:hover {
+    border-color: ${COLOR_TEXT_MUTED};
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
+QComboBox:focus, QSpinBox:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    selection-background-color: ${COLOR_ACCENT_PRIMARY};
+    selection-color: ${COLOR_TEXT_PRIMARY};
+    padding: ${SPACE_XS}px;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: transparent;
+    border: none;
+    width: 20px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QCheckBox, QRadioButton {
+    color: ${COLOR_TEXT_PRIMARY};
+    spacing: ${SPACE_SM}px;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    background-color: ${COLOR_BG_INPUT};
+}
+
+QCheckBox::indicator {
+    border-radius: ${RADIUS_SM}px;
+}
+
+QRadioButton::indicator {
+    border-radius: 9px;
+}
+
+QCheckBox::indicator:hover, QRadioButton::indicator:hover,
+QCheckBox:focus, QRadioButton:focus {
+    border-color: ${COLOR_BORDER_FOCUS};
+}
+
+QCheckBox::indicator:checked {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+QRadioButton::indicator:checked {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border: 4px solid ${COLOR_BG_INPUT};
+    outline: 1px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+/* -------------------------------------------------------------------------
+ * Buttons
+ * ---------------------------------------------------------------------- */
+QPushButton#PrimaryButton, QPushButton#AudioButton {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    min-height: 34px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#PrimaryButton:hover, QPushButton#AudioButton:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+    border-color: ${COLOR_ACCENT_HOVER};
+}
+
+QPushButton#PrimaryButton:pressed, QPushButton#AudioButton:pressed {
+    background-color: ${COLOR_ACCENT_PRESSED};
+    border-color: ${COLOR_ACCENT_PRESSED};
+}
+
+QPushButton#PrimaryButton:focus, QPushButton#AudioButton:focus {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#PrimaryButton:disabled, QPushButton#AudioButton:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#GhostButton, QToolButton#GhostButton {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+}
+
+QPushButton#GhostButton:hover, QToolButton#GhostButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#GhostButton:focus, QToolButton#GhostButton:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+/* -------------------------------------------------------------------------
+ * Session header and meeting controls
+ * ---------------------------------------------------------------------- */
 #SessionStrip {
     background-color: ${COLOR_BG_PANEL};
     border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
 }
 
 #SessionStripLogo {
-    color: ${COLOR_ACCENT_VIDEO};
+    color: ${COLOR_ACCENT_PRIMARY};
     font-size: ${FONT_SIZE_LG}px;
-    font-weight: 700;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.06em;
     padding: 0 ${SPACE_SM}px;
 }
 
 #SessionStripTitle {
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 600;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 2px 0;
+    min-height: 24px;
     color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SessionStripTitle:focus {
+    border: none;
+    border-bottom: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
 #SessionStripSubtitle {
-    font-size: ${FONT_SIZE_SM}px;
     color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
 }
 
 #SessionTimer {
+    color: ${COLOR_TEXT_SECONDARY};
     font-family: ${FONT_FAMILY_MONO};
-    font-size: ${FONT_SIZE_LG}px;
-    font-weight: 500;
-    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_MEDIUM};
     padding: 0 ${SPACE_MD}px;
 }
 
 #RecordElapsed {
-    color: ${COLOR_ACCENT_RECORD};
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: 4px 8px;
     font-family: ${FONT_FAMILY_MONO};
     font-size: ${FONT_SIZE_SM}px;
-    font-weight: 700;
-    padding: 3px 7px;
-    border: 1px solid ${COLOR_ACCENT_RECORD};
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SessionControlBar {
+    background-color: ${COLOR_BG_PANEL};
+    border-top: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#SessionControlBar QPushButton#GhostButton,
+#SessionControlBar QToolButton#GhostButton {
+    border-radius: 20px;
+    min-height: 40px;
+    padding: 0 18px;
+}
+
+#SessionControlBar QPushButton#AudioButton[destructive="true"] {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: 20px;
+    min-height: 38px;
+    padding: 0 20px;
+}
+
+#SessionControlBar QPushButton#AudioButton[destructive="true"]:hover {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+#SessionControlBar QPushButton#AudioButton[destructive="true"]:focus {
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+/* -------------------------------------------------------------------------
+ * Live stage and people
+ * ---------------------------------------------------------------------- */
+#Stage {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#StageEmptyState {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_LG}px;
+}
+
+#StageEmptyState[sessionState="connecting"],
+#StageEmptyState[sessionState="reconnecting"],
+#StageEmptyState[sessionState="practice"],
+#StageEmptyState[sessionState="permission_required"],
+#StageEmptyState[sessionState="permission_denied"],
+#StageEmptyState[sessionState="error"] {
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#StageEmptyEyebrow {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.12em;
+}
+
+#StageEmptyTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_DISPLAY}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StageEmptyMessage {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_MD}px;
+}
+
+#StageEmptyHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
+#ParticipantCard {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_LG}px;
+}
+
+#ParticipantCard[connected="false"] {
+    border: 2px dashed ${COLOR_BORDER_STRONG};
+}
+
+#ParticipantCard[local="true"] {
+    border: 2px solid ${COLOR_TEXT_MUTED};
+}
+
+#ParticipantCard[speaking="true"],
+#ParticipantCard[local="true"][speaking="true"] {
+    border: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#ParticipantCard[muted="true"],
+#ParticipantCard[muted="true"] #ParticipantCardBody {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+#ParticipantCard[muted="true"] #ParticipantName,
+#ParticipantCard[muted="true"] #ParticipantRole {
+    color: ${COLOR_TEXT_MUTED};
+}
+
+#VideoTile {
+    background-color: ${COLOR_BG_PANEL};
+    border-top-left-radius: ${RADIUS_LG}px;
+    border-top-right-radius: ${RADIUS_LG}px;
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ParticipantCardBody {
+    background-color: ${COLOR_BG_CARD};
+    border-bottom-left-radius: ${RADIUS_LG}px;
+    border-bottom-right-radius: ${RADIUS_LG}px;
+}
+
+QLabel#ParticipantAvatar {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+    border-radius: 32px;
+    font-size: 18px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#ParticipantName {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#ParticipantRole, #FaderValue, QLabel#BodyLabel, #VideoPlaceholder {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#FaderValue {
+    font-family: ${FONT_FAMILY_MONO};
+}
+
+QPushButton#PillButton {
+    min-height: 32px;
+    border-radius: 17px;
+    padding: 0 ${SPACE_LG}px;
+}
+
+QPushButton#PillButton[state="active-mute"] {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+QPushButton#PillButton[state="active-solo"] {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+QPushButton#PillButton:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+/* -------------------------------------------------------------------------
+ * Sliders and meters
+ * ---------------------------------------------------------------------- */
+QSlider {
+    min-height: 28px;
+}
+
+QSlider::groove:horizontal {
+    border: none;
+    height: 6px;
+    background-color: ${COLOR_BORDER_STRONG};
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    width: 18px;
+    height: 18px;
+    margin: -6px 0;
+    border-radius: 9px;
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QSlider::handle:horizontal:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+}
+
+QSlider:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
     border-radius: ${RADIUS_SM}px;
 }
 
-/* ============================================================
- * Side Rail (left)
- * ============================================================ */
+/* -------------------------------------------------------------------------
+ * Session truth, notes, and optional tools
+ * ---------------------------------------------------------------------- */
+#SessionHud {
+    background-color: ${COLOR_BG_PANEL};
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+    min-height: 56px;
+}
+
+#SessionHud[ready="true"] {
+    border-bottom: 2px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#SessionHudStatus {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SessionHudDetail {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SessionInviteLink {
+    color: ${COLOR_TEXT_SECONDARY};
+    background-color: ${COLOR_BG_INPUT};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SessionCanvas {
+    background-color: ${COLOR_BG_PANEL};
+    border-left: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#CanvasHeader {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.08em;
+    padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
+}
+
+#CanvasNotes {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+}
+
+QLineEdit#CanvasChatInput {
+    border-radius: ${RADIUS_PILL}px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+}
+
+#SessionPulse {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    margin: 0 ${SPACE_MD}px;
+}
+
+#PulseHeader, #PulseSignals {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#PulseStage, #PulseNext, #PulseSummary {
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+#PulseStage, #PulseNext {
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#WebexEmbed {
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#WebexPlaceholder {
+    background-color: transparent;
+}
+
+#WebexEmbedTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#WebexStatusLabel {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Host / Join launch
+ * ---------------------------------------------------------------------- */
+#LaunchDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#JamSignalGraphic {
+    background-color: transparent;
+}
+
+#LaunchLogo {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-size: 18px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.18em;
+}
+
+#LaunchTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: 36px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#LaunchSubtitle {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_MD}px;
+}
+
+#LaunchHelper {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+    padding-top: ${SPACE_XS}px;
+}
+
+QPushButton#LaunchPrimary {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 52px;
+    padding: 0 ${SPACE_XL}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#LaunchPrimary:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+    border-color: ${COLOR_ACCENT_HOVER};
+}
+
+QPushButton#LaunchPrimary:pressed {
+    background-color: ${COLOR_ACCENT_PRESSED};
+    border-color: ${COLOR_ACCENT_PRESSED};
+}
+
+QPushButton#LaunchPrimary:focus {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#LaunchPrimary:disabled {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_MUTED};
+    border-color: ${COLOR_BORDER_SUBTLE};
+}
+
+QPushButton#LaunchSecondary {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 52px;
+    padding: 0 ${SPACE_XL}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QPushButton#LaunchSecondary:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#LaunchSecondary:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+#LaunchInviteInput {
+    min-height: 46px;
+    padding: 0 ${SPACE_LG}px;
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#LaunchError {
+    color: ${COLOR_TEXT_PRIMARY};
+    min-height: 20px;
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Ready Check and settings
+ * ---------------------------------------------------------------------- */
+#ReadySummary {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#ReadySummary[result="pass"], #ReadySummary[result="fail"] {
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+#ReadyCheckRow {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-left: 4px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#ReadyCheckRow:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+#ReadyCheckMark {
+    min-width: 62px;
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#ReadyCheckName {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#ReadyCheckDetail {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SimpleSettingsDialog, #RecordingSetupDialog, #FirstRunSetupDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#SimpleSettingsTitle, #FirstRunTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SimpleSettingsSubtitle, #FirstRunSubtitle {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#SimpleSettingsRole, #FirstRunStatus, #FirstRunSignalFlow,
+#SimpleSettingsNote {
+    color: ${COLOR_TEXT_SECONDARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+}
+
+#SimpleSettingsFieldLabel, #FirstRunFieldLabel {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QLabel#SimpleSettingsError, QLabel#FirstRunError, QLabel#WizardError {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+}
+
+#FirstRunProgress {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QCommandLinkButton#FirstRunRoleCard, QCommandLinkButton#SimpleRoleCard {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    text-align: left;
+}
+
+QCommandLinkButton#FirstRunRoleCard:hover,
+QCommandLinkButton#SimpleRoleCard:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QCommandLinkButton#FirstRunRoleCard:checked,
+QCommandLinkButton#FirstRunRoleCard:focus,
+QCommandLinkButton#SimpleRoleCard:checked,
+QCommandLinkButton#SimpleRoleCard:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+QWizard QPushButton:default, QMessageBox QPushButton:default {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+/* -------------------------------------------------------------------------
+ * Multitrack Studio
+ * ---------------------------------------------------------------------- */
+#RecordingStudio {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#StudioEyebrow {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.14em;
+}
+
+#StudioTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: 28px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioSubtitle, #StudioTrackDetail, #StudioPosition {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#StudioPhase {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#StudioRecordButton {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 36px;
+    padding: ${SPACE_SM}px ${SPACE_LG}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#StudioRecordButton:hover {
+    background-color: ${COLOR_ACCENT_HOVER};
+}
+
+QPushButton#StudioRecordButton:focus {
+    border: 2px solid ${COLOR_TEXT_PRIMARY};
+}
+
+#StudioLibrary, #StudioEditor {
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#StudioSectionTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioTakeList {
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px;
+    outline: none;
+}
+
+#StudioTakeList::item {
+    color: ${COLOR_TEXT_SECONDARY};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px;
+    margin: 2px;
+}
+
+#StudioTakeList::item:selected {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#StudioTrackScroll {
+    background-color: transparent;
+}
+
+#StudioTrackLane {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#StudioTrackHeader {
+    background-color: ${COLOR_BG_PANEL};
+    border: none;
+    border-radius: ${RADIUS_SM}px;
+}
+
+#StudioTrackName {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_BASE}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QPushButton#StudioMuteButton, QPushButton#StudioSoloButton {
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    padding: 0;
+    border-radius: ${RADIUS_SM}px;
+}
+
+QPushButton#StudioMuteButton:checked,
+QPushButton#StudioSoloButton:checked {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
+}
+
+#StudioRuler {
+    color: ${COLOR_TEXT_MUTED};
+    background-color: ${COLOR_BG_INPUT};
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+    padding: ${SPACE_XS}px ${SPACE_SM}px;
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
+#StudioHint {
+    color: ${COLOR_TEXT_SECONDARY};
+    background-color: ${COLOR_BG_CARD};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px;
+}
+
+#StudioPanValue {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
+QComboBox#StudioOutputPicker {
+    min-width: 140px;
+    max-width: 220px;
+}
+
+/* -------------------------------------------------------------------------
+ * Lists, menus, tooltips, status, and legacy Take Deck
+ * ---------------------------------------------------------------------- */
+QListWidget {
+    background-color: ${COLOR_BG_INPUT};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px;
+}
+
+QListWidget::item {
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+QListWidget::item:selected {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QListWidget::item:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QMenu {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_XS}px;
+}
+
+QMenu::item {
+    background-color: transparent;
+    padding: ${SPACE_SM}px ${SPACE_XL}px ${SPACE_SM}px ${SPACE_MD}px;
+    border-radius: ${RADIUS_SM}px;
+}
+
+QMenu::item:selected {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+QMenu::item:disabled {
+    color: ${COLOR_TEXT_MUTED};
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: ${COLOR_BORDER_SUBTLE};
+    margin: ${SPACE_XS}px ${SPACE_SM}px;
+}
+
+QToolTip {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    padding: ${SPACE_XS}px ${SPACE_SM}px;
+}
+
+QStatusBar {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_SECONDARY};
+    border-top: 1px solid ${COLOR_BORDER_SUBTLE};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+#TakeDeck {
+    background-color: ${COLOR_BG_BASE};
+}
+
+QListWidget#TakeList {
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+}
+
+QLabel#TakeTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QLabel#TakeHint {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
+ * Navigation and scrollbars
+ * ---------------------------------------------------------------------- */
 #SideRail {
     background-color: ${COLOR_BG_PANEL};
     border-right: 1px solid ${COLOR_BORDER_SUBTLE};
@@ -93,444 +1033,14 @@ QToolButton#SideRailButton:hover {
 
 QToolButton#SideRailButton:checked {
     background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_ACCENT_VIDEO};
-    border-left: 2px solid ${COLOR_ACCENT_VIDEO};
-}
-
-QToolButton#SideRailButton[utility="true"] {
-    color: ${COLOR_TEXT_MUTED};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
 }
 
 QToolButton#SideRailButton:focus {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 2px solid ${COLOR_ACCENT_VIDEO};   /* was 1px — too subtle for keyboard nav */
-    outline: none;
+    border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
-/* ============================================================
- * Participant Grid / Stage
- * ============================================================ */
-#Stage {
-    background-color: ${COLOR_BG_BASE};
-}
-
-#StageEmptyState {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_LG}px;
-}
-
-#StageEmptyState[sessionState="connecting"],
-#StageEmptyState[sessionState="reconnecting"],
-#StageEmptyState[sessionState="practice"] {
-    border: 1px solid ${COLOR_ACCENT_AUDIO};
-}
-
-#StageEmptyEyebrow {
-    color: ${COLOR_ACCENT_AUDIO};
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-}
-
-#StageEmptyTitle {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_DISPLAY}px;
-    font-weight: 700;
-}
-
-#StageEmptyMessage {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_MD}px;
-}
-
-#StageEmptyHint {
-    color: ${COLOR_TEXT_MUTED};
-    font-size: ${FONT_SIZE_SM}px;
-    font-family: ${FONT_FAMILY_MONO};
-    padding-top: ${SPACE_SM}px;
-}
-
-/* ============================================================
- * Participant Card
- * ============================================================ */
-#ParticipantCard {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_LG}px;
-}
-
-#ParticipantCard[connected="false"] {
-    border: 1px dashed ${COLOR_BORDER_STRONG};
-}
-
-#ParticipantCard[muted="true"] {
-    background-color: ${COLOR_BG_INPUT};   /* slightly darker than card bg → visually fades */
-}
-
-#ParticipantCard[muted="true"] #ParticipantName,
-#ParticipantCard[muted="true"] #ParticipantRole {
-    color: ${COLOR_TEXT_MUTED};
-}
-
-#ParticipantCard[local="true"] {
-    border: 1px solid ${COLOR_ACCENT_AUDIO};  /* gold highlight — this is you */
-}
-
-#ParticipantCard[speaking="true"] {
-    border: 2px solid ${COLOR_ACCENT_AUDIO};
-}
-
-#ParticipantCard[local="true"][speaking="true"] {
-    border: 2px solid ${COLOR_ACCENT_AUDIO};
-}
-
-/* Thin accent bar at the top of each participant card.
- * Per-channel video isn't implemented yet; the bar is purely visual.
- * When per-channel video lands, the tile will grow back into a video
- * surface and the rounded corners can be enlarged again. */
-#VideoTile {
-    background-color: ${COLOR_ACCENT_VIDEO};
-    border-top-left-radius: ${RADIUS_LG}px;
-    border-top-right-radius: ${RADIUS_LG}px;
-}
-
-#ParticipantCard[local="true"] #VideoTile {
-    background-color: ${COLOR_ACCENT_AUDIO};  /* gold accent for the local user */
-}
-
-#VideoPlaceholder {
-    color: ${COLOR_TEXT_MUTED};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-#ParticipantName {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 600;
-}
-
-#ParticipantRole {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-#FaderValue {
-    font-family: ${FONT_FAMILY_MONO};
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-QLabel#BodyLabel {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-/* ============================================================
- * Mute / Solo pills
- * ============================================================ */
-QPushButton#PillButton {
-    background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_SECONDARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_PILL}px;
-    padding: ${SPACE_XS}px ${SPACE_MD}px;
-    font-weight: 600;
-    font-size: ${FONT_SIZE_SM}px;
-    min-height: 22px;
-}
-
-QPushButton#PillButton:hover {
-    background-color: ${COLOR_BG_CARD_HOVER};
-    color: ${COLOR_TEXT_PRIMARY};
-}
-
-QPushButton#PillButton[state="active-mute"] {
-    background-color: ${COLOR_ACCENT_DANGER};
-    color: ${COLOR_TEXT_INVERSE};
-    border: 1px solid ${COLOR_ACCENT_DANGER};
-}
-
-QPushButton#PillButton[state="active-solo"] {
-    background-color: ${COLOR_ACCENT_AUDIO};
-    color: ${COLOR_TEXT_INVERSE};
-    border: 1px solid ${COLOR_ACCENT_AUDIO};
-}
-
-QPushButton#PillButton:focus {
-    background-color: ${COLOR_BG_CARD_HOVER};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
-    outline: none;
-}
-
-QPushButton#PillButton[state="active-mute"]:focus {
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
-    outline: none;
-}
-
-QPushButton#PillButton[state="active-solo"]:focus {
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
-    outline: none;
-}
-
-QPushButton#PillButton:disabled {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_MUTED};
-    border: 1px solid transparent;
-}
-
-/* ============================================================
- * Primary buttons (Launch Jamulus / Join Webex)
- * ============================================================ */
-QPushButton#PrimaryButton {
-    background-color: ${COLOR_ACCENT_VIDEO};
-    color: ${COLOR_TEXT_INVERSE};
-    border: none;
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_SM}px ${SPACE_LG}px;
-    font-weight: 600;
-    font-size: ${FONT_SIZE_BASE}px;
-}
-
-QPushButton#PrimaryButton:hover {
-    background-color: #5EE5E5;
-}
-
-QPushButton#PrimaryButton:focus {
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
-    outline: none;
-}
-
-QPushButton#PrimaryButton:pressed {
-    background-color: #2DB5B5;
-}
-
-QPushButton#PrimaryButton:disabled {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_MUTED};
-    border: 1px solid transparent;
-}
-
-QPushButton#AudioButton {
-    background-color: ${COLOR_ACCENT_AUDIO};
-    color: ${COLOR_TEXT_INVERSE};
-    border: none;
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_SM}px ${SPACE_LG}px;
-    font-weight: 600;
-    font-size: ${FONT_SIZE_BASE}px;
-}
-
-QPushButton#AudioButton:hover {
-    background-color: #F7BD62;
-}
-
-QPushButton#AudioButton:focus {
-    border: 1px solid ${COLOR_ACCENT_AUDIO};
-    outline: none;
-}
-
-QPushButton#AudioButton:pressed {
-    background-color: #C8800A;
-}
-
-QPushButton#AudioButton:disabled {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_MUTED};
-    border: 1px solid transparent;
-}
-
-QPushButton#GhostButton, QToolButton#GhostButton {
-    background-color: transparent;
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_SM}px ${SPACE_LG}px;
-    font-weight: 500;
-}
-
-QPushButton#GhostButton:hover, QToolButton#GhostButton:hover {
-    background-color: ${COLOR_BG_CARD};
-    border-color: ${COLOR_ACCENT_VIDEO};
-}
-
-QPushButton#GhostButton:focus, QToolButton#GhostButton:focus {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_ACCENT_VIDEO};
-    outline: none;
-}
-
-QPushButton#GhostButton:disabled, QToolButton#GhostButton:disabled {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_MUTED};
-    border: 1px solid transparent;
-}
-
-/* When a ghost button is checkable and checked (e.g. 'Resume Music' after
- * starting a Talk Break), paint it in the danger accent so the muted-self
- * state is obvious at a glance. */
-QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
-    background-color: ${COLOR_ACCENT_DANGER};
-    color: ${COLOR_TEXT_INVERSE};
-    border: 1px solid ${COLOR_ACCENT_DANGER};
-}
-
-QPushButton#GhostButton:checked:hover, QToolButton#GhostButton:checked:hover {
-    background-color: #F26A7F;
-}
-
-/* ============================================================
- * Status Bar
- * ============================================================ */
-QStatusBar {
-    background-color: ${COLOR_BG_PANEL};
-    color: ${COLOR_TEXT_SECONDARY};
-    border-top: 1px solid ${COLOR_BORDER_SUBTLE};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-QStatusBar::item {
-    border: none;
-}
-
-/* ============================================================
- * Faders (QSlider)
- * ============================================================ */
-QSlider::groove:horizontal {
-    border: none;
-    height: 6px;
-    background: ${COLOR_BG_INPUT};
-    border-radius: 3px;
-}
-
-QSlider::handle:horizontal {
-    background: ${COLOR_ACCENT_AUDIO};
-    width: 16px;
-    height: 16px;
-    margin: -5px 0;
-    border-radius: 8px;
-    border: 2px solid ${COLOR_BG_CARD};
-}
-
-QSlider::handle:horizontal:hover {
-    background: #F7BD62;
-}
-
-QSlider::handle:horizontal:focus {
-    border: 2px solid ${COLOR_ACCENT_AUDIO};
-}
-
-QSlider::sub-page:horizontal {
-    background: ${COLOR_ACCENT_AUDIO};
-    border-radius: 3px;
-}
-
-/* ============================================================
- * Session Canvas (right-side notes panel)
- * ============================================================ */
-#SessionCanvas {
-    background-color: ${COLOR_BG_PANEL};
-    border-left: 1px solid ${COLOR_BORDER_SUBTLE};
-}
-
-#CanvasHeader {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: ${SPACE_MD}px ${SPACE_LG}px ${SPACE_SM}px ${SPACE_LG}px;
-}
-
-#CanvasNotes {
-    background-color: ${COLOR_BG_INPUT};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_MD}px;
-    color: ${COLOR_TEXT_PRIMARY};
-    font-family: ${FONT_FAMILY_SANS};
-    font-size: ${FONT_SIZE_BASE}px;
-    selection-background-color: ${COLOR_ACCENT_VIDEO};
-    selection-color: ${COLOR_TEXT_INVERSE};
-}
-
-#CanvasNotes:focus {
-    border: 1px solid ${COLOR_BORDER_FOCUS};
-}
-
-/* ============================================================
- * Webex placeholder pane (Phase 3 will replace with QWebEngineView)
- * ============================================================ */
-QWidget#WebexPlaceholder {
-    background: transparent;
-}
-
-#WebexEmbed {
-    background-color: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    color: ${COLOR_TEXT_SECONDARY};
-}
-
-#WebexEmbedTitle {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 600;
-}
-
-#WebexStatusLabel {
-    color: ${COLOR_TEXT_MUTED};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-/* ============================================================
- * Misc — ComboBox, LineEdit
- * ============================================================ */
-QComboBox {
-    background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_XS}px ${SPACE_MD}px;
-    min-height: 24px;
-}
-
-QComboBox:hover {
-    border-color: ${COLOR_BORDER_STRONG};
-}
-
-QComboBox::drop-down {
-    border: none;
-    width: 20px;
-}
-
-QComboBox QAbstractItemView {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_MD}px;
-    selection-background-color: ${COLOR_ACCENT_VIDEO};
-    selection-color: ${COLOR_TEXT_INVERSE};
-    padding: ${SPACE_XS}px;
-}
-
-QLineEdit {
-    background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_XS}px ${SPACE_MD}px;
-}
-
-QLineEdit:focus {
-    border: 1px solid ${COLOR_BORDER_FOCUS};
-}
-
-/* ============================================================
- * Scrollbars — subtle, dark
- * ============================================================ */
 QScrollBar:vertical {
     background-color: transparent;
     width: 10px;
@@ -547,11 +1057,9 @@ QScrollBar::handle:vertical:hover {
     background-color: ${COLOR_TEXT_MUTED};
 }
 
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical,
-QScrollBar::add-page:vertical,
-QScrollBar::sub-page:vertical {
-    background: none;
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background-color: transparent;
     height: 0;
 }
 
@@ -566,345 +1074,8 @@ QScrollBar::handle:horizontal {
     min-width: 30px;
 }
 
-QScrollBar::add-line:horizontal,
-QScrollBar::sub-line:horizontal,
-QScrollBar::add-page:horizontal,
-QScrollBar::sub-page:horizontal {
-    background: none;
-    width: 0;
-}
-
-/* ============================================================
- * Session Pulse — local note-derived session structure
- * ============================================================ */
-QFrame#SessionPulse {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    margin: 0 ${SPACE_MD}px;
-}
-
-QLabel#PulseHeader {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_XS}px;
-    font-weight: 600;
-}
-
-QLabel#PulseStage {
-    color: ${COLOR_ACCENT_AUDIO};
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 700;
-}
-
-QLabel#PulseSummary {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-QLabel#PulseNext {
-    color: ${COLOR_ACCENT_VIDEO};
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-}
-
-QLabel#PulseSignals {
-    color: ${COLOR_TEXT_MUTED};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-/* ============================================================
- * Ready Check — structured pre-jam results
- * ============================================================ */
-QLabel#ReadySummary {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_MD}px;
-    font-size: ${FONT_SIZE_MD}px;
-    font-weight: 700;
-}
-
-QLabel#ReadySummary[result="pass"] {
-    border-color: ${COLOR_ACCENT_SUCCESS};
-    color: ${COLOR_ACCENT_SUCCESS};
-}
-
-QLabel#ReadySummary[result="fail"] {
-    border-color: ${COLOR_ACCENT_DANGER};
-    color: ${COLOR_TEXT_PRIMARY};
-}
-
-QFrame#ReadyCheckRow {
-    background-color: ${COLOR_BG_CARD};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-}
-
-QFrame#ReadyCheckRow:focus {
-    border: 2px solid ${COLOR_BORDER_FOCUS};
-}
-
-QFrame#ReadyCheckRow[result="fail"] {
-    border-left: 4px solid ${COLOR_ACCENT_DANGER};
-}
-
-QFrame#ReadyCheckRow[result="warn"] {
-    border-left: 4px solid ${COLOR_ACCENT_WARN};
-}
-
-QFrame#ReadyCheckRow[result="pass"] {
-    border-left: 4px solid ${COLOR_ACCENT_SUCCESS};
-}
-
-QFrame#ReadyCheckRow[result="verify"] {
-    border-left: 4px solid ${COLOR_ACCENT_VIDEO};
-}
-
-QLabel#ReadyCheckMark, QCheckBox#ReadyCheckMark {
-    min-width: 62px;
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_XS}px;
-    font-weight: 700;
-}
-
-QCheckBox#ReadyCheckMark:focus {
-    color: ${COLOR_TEXT_PRIMARY};
-}
-
-QLabel#ReadyCheckName {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-weight: 600;
-}
-
-QLabel#ReadyCheckDetail {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
-/* ── Focused first-run setup ─────────────────────────────────────────── */
-QDialog#FirstRunSetupDialog {
-    background: ${COLOR_BG_BASE};
-}
-
-QLabel#FirstRunTitle {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_XL}px;
-    font-weight: 700;
-}
-
-QLabel#FirstRunSubtitle {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_BASE}px;
-}
-
-QLabel#FirstRunProgress {
-    color: ${COLOR_ACCENT_VIDEO};
-    background: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: 11px;
-    padding: 4px 10px;
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-}
-
-QCommandLinkButton#FirstRunRoleCard {
-    color: ${COLOR_TEXT_PRIMARY};
-    background: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_MD}px;
-    padding: 10px 14px;
-    text-align: left;
-}
-
-QCommandLinkButton#FirstRunRoleCard:hover {
-    background: ${COLOR_BG_CARD};
-    border-color: ${COLOR_TEXT_MUTED};
-}
-
-QCommandLinkButton#FirstRunRoleCard:checked,
-QCommandLinkButton#FirstRunRoleCard:focus {
-    background: rgba(61, 211, 211, 0.10);
-    border: 2px solid ${COLOR_BORDER_FOCUS};
-}
-
-QCommandLinkButton#FirstRunRoleCard:disabled {
-    color: ${COLOR_TEXT_MUTED};
-    background: ${COLOR_BG_INPUT};
-}
-
-QLabel#FirstRunFieldLabel {
-    color: ${COLOR_TEXT_PRIMARY};
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-}
-
-QLabel#FirstRunBody {
-    color: ${COLOR_TEXT_SECONDARY};
-}
-
-QLabel#FirstRunStatus {
-    color: ${COLOR_TEXT_SECONDARY};
-    background: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_SM}px;
-    padding: 8px 10px;
-}
-
-QLabel#FirstRunError {
-    color: ${COLOR_ACCENT_WARN};
-    min-height: 16px;
-}
-
-QLabel#FirstRunSignalFlow {
-    color: ${COLOR_TEXT_SECONDARY};
-    background: ${COLOR_BG_PANEL};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_SM}px;
-    padding: 12px;
-    font-size: ${FONT_SIZE_SM}px;
-    font-weight: 600;
-}
-
-/* ── Settings wizard (SetupWizard QWizard pages) ─────────────────────── */
-QWizard, QWizardPage {
-    background-color: ${COLOR_BG_BASE};
-}
-
-QSpinBox {
-    background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_XS}px ${SPACE_MD}px;
-    min-height: 24px;
-}
-
-QSpinBox:hover {
-    border-color: ${COLOR_BORDER_STRONG};
-}
-
-QSpinBox:focus {
-    border: 1px solid ${COLOR_BORDER_FOCUS};
-}
-
-QSpinBox::up-button, QSpinBox::down-button {
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background-color: transparent;
-    border: none;
-    width: 18px;
-}
-
-QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-    background-color: ${COLOR_BG_CARD_HOVER};
-}
-
-QSpinBox::up-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid ${COLOR_TEXT_SECONDARY};
     width: 0;
-    height: 0;
-}
-
-QSpinBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid ${COLOR_TEXT_SECONDARY};
-    width: 0;
-    height: 0;
-}
-
-/* Native wizard chrome buttons (Back / Next / Cancel / Finish). Scoped to
- * QWizard so intentionally styled buttons elsewhere are untouched. */
-QWizard QPushButton {
-    background-color: ${COLOR_BG_CARD};
-    color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_MD}px;
-    padding: ${SPACE_XS}px ${SPACE_LG}px;
-    min-height: 26px;
-    font-weight: 600;
-}
-
-QWizard QPushButton:hover {
-    background-color: ${COLOR_BG_CARD_HOVER};
-    border-color: ${COLOR_TEXT_MUTED};
-}
-
-QWizard QPushButton:pressed {
-    background-color: ${COLOR_BG_PANEL};
-}
-
-QWizard QPushButton:focus {
-    border: 1px solid ${COLOR_BORDER_FOCUS};
-}
-
-QWizard QPushButton:default {
-    background-color: ${COLOR_ACCENT_VIDEO};
-    color: ${COLOR_TEXT_INVERSE};
-    border-color: ${COLOR_ACCENT_VIDEO};
-}
-
-QWizard QPushButton:default:hover {
-    background-color: #5FDCDC;
-}
-
-QWizard QPushButton:disabled {
-    background-color: ${COLOR_BG_INPUT};
-    color: ${COLOR_TEXT_MUTED};
-    border-color: ${COLOR_BORDER_SUBTLE};
-}
-
-QWizard QCheckBox {
-    color: ${COLOR_TEXT_PRIMARY};
-    spacing: ${SPACE_SM}px;
-}
-
-QWizard QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: ${RADIUS_SM}px;
-    background-color: ${COLOR_BG_INPUT};
-}
-
-QWizard QCheckBox::indicator:hover {
-    border-color: ${COLOR_BORDER_FOCUS};
-}
-
-QWizard QCheckBox::indicator:checked {
-    background-color: ${COLOR_ACCENT_VIDEO};
-    border-color: ${COLOR_ACCENT_VIDEO};
-}
-
-QWizard QRadioButton {
-    color: ${COLOR_TEXT_PRIMARY};
-    spacing: ${SPACE_SM}px;
-}
-
-QWizard QRadioButton::indicator {
-    width: 16px;
-    height: 16px;
-    border: 1px solid ${COLOR_BORDER_STRONG};
-    border-radius: 8px;
-    background-color: ${COLOR_BG_INPUT};
-}
-
-QWizard QRadioButton::indicator:hover {
-    border-color: ${COLOR_BORDER_FOCUS};
-}
-
-QWizard QRadioButton::indicator:checked {
-    background-color: ${COLOR_ACCENT_VIDEO};
-    border: 4px solid ${COLOR_BG_INPUT};
-    outline: 1px solid ${COLOR_ACCENT_VIDEO};
-}
-
-QLabel#WizardError {
-    color: ${COLOR_ACCENT_WARN};
-    background: rgba(245, 176, 65, 0.08);
-    border: 1px solid rgba(245, 176, 65, 0.35);
-    border-radius: ${RADIUS_SM}px;
-    padding: 8px 10px;
 }

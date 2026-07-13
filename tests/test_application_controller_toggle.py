@@ -73,16 +73,29 @@ class TestToggleButtonState(unittest.TestCase):
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._audio_button.text(), "Start Audio"
+            self.window.session_strip._audio_button.text(), "Start Session"
         )
 
-    def test_audio_button_says_stop_when_running(self):
+    def test_audio_button_says_leave_for_a_guest_when_running(self):
+        self.controller.settings.host_server_enabled = False
         self.controller.bridge.jamulus_state = "Running"
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._audio_button.text(), "Stop Audio"
+            self.window.session_strip._audio_button.text(), "Leave Jam"
         )
+
+    def test_audio_button_says_end_for_the_host_when_running(self):
+        self.controller.settings.host_server_enabled = True
+        try:
+            self.controller.bridge.jamulus_state = "Running"
+            self.controller.bridge.webex_state = "Not opened"
+            self.controller._refresh_readiness()
+            self.assertEqual(
+                self.window.session_strip._audio_button.text(), "End Session"
+            )
+        finally:
+            self.controller.settings.host_server_enabled = False
 
     def test_video_button_says_open_when_not_active(self):
         self.controller.bridge.jamulus_state = "Not launched"
@@ -100,7 +113,7 @@ class TestToggleButtonState(unittest.TestCase):
             self.window.session_strip._video_button.text(), "Open Again"
         )
 
-    def test_status_audio_includes_server_when_running(self):
+    def test_status_audio_hides_technical_endpoint_when_running(self):
         self.controller.bridge.jamulus_state = "Running"
         self.controller.bridge.webex_state = "Not opened"
         self.controller._jamulus_connected = False
@@ -108,8 +121,7 @@ class TestToggleButtonState(unittest.TestCase):
         # Status bar should avoid "Running" until participant/RPC truth arrives.
         text = self.window._status_audio.text()
         self.assertIn("Connecting", text)
-        self.assertIn(":", text)  # server:port separator
-        self.assertIn(str(self.controller.settings.jamulus_port), text)
+        self.assertNotIn(str(self.controller.settings.jamulus_port), text)
 
 
 class TestMuteSelf(unittest.TestCase):

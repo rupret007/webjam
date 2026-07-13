@@ -4,166 +4,186 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [0.8.1] — Release candidate
+## [0.9.0] — 2026-07-13 test-night candidate
 
-### Hosted-mode Ready Check truth and a working Settings wizard
+### A simpler first five seconds
 
-- **Ready Check no longer fails a fresh host before Start Audio.** In hosted
-  mode the Takes folder and the server RPC secret live in JamulusServer.app's
-  own container, which used to be created only at Start Audio — so the
-  auto-run Ready Check right after setup reported "Takes folder is not
-  writable" and a required Host recorder FIX. Ready Check now creates the
-  hosted Takes folder itself (exactly as Start Audio would), and the
-  unreachable-recorder result on a hosting Mac is an OPTIONAL warning with
-  the same "Press Start Audio, then run Ready Check again" guidance. Failure
-  copy now distinguishes "doesn't exist / couldn't be created" from a
-  genuinely unwritable folder.
+- **Open WebJam. Choose Host or Join. Start playing.** The launch window is now
+  one calm, responsive decision instead of a configuration surface. **Host a
+  Jam** is the unmistakable primary action; **Join a Jam** opens one paste-ready
+  invitation field with one Join action. Duplicate clicks are ignored while an
+  operation is being submitted.
+- An original, lightweight shared-signal graphic gives the launch screen a
+  recognizable WebJam identity without delaying access, faking progress, or
+  introducing motion that must be disabled.
+- The normal path still starts the bundled server and music client
+  automatically. Ports, process paths, recorder credentials, and routing
+  internals remain outside the musician experience.
 
-- **The Settings wizard's Next button works with saved settings.** Qt only
-  counts a mandatory wizard field as complete once its value *changes*, so
-  fields pre-filled from a saved config left Next permanently disabled with
-  no explanation. Validation now runs on click and reports exactly which
-  field blocked it in an inline message (host, musician name, Jamulus path,
-  or Webex URL). A saved Jamulus path that has gone stale (moved install,
-  macOS App Translocation) heals automatically when a working copy is
-  detected.
+### Black, white, and burnt orange
 
-- **The Settings wizard joined the dark theme.** Wizard pages, port
-  spinboxes, Back/Next/Cancel chrome buttons, checkboxes, and radio buttons
-  now use the studio design tokens; the wizard opens tall enough for its
-  densest page instead of clipping guidance text; Ready Check's action row
-  uses the shared button styles; and the app requests the real platform UI
-  font instead of the unbundled "Inter".
+- The entire Qt interface now uses a restrained near-black and white system
+  with burnt orange (`#BF5700`) reserved for primary actions, focus, and
+  meaningful emphasis. Purple, teal, neon glow, busy gradients, and the old
+  color-coded control clutter are gone.
+- Reusable tokens now govern surfaces, text hierarchy, borders, focus,
+  semantic states, meters, buttons, inputs, dialogs, menus, tooltips, empty
+  states, and recording surfaces. State meaning is always expressed in words
+  or control labels, never by color alone.
+- The live window adopts a familiar meeting hierarchy without copying Webex
+  assets: a restrained header, a dominant musician stage, responsive tiles,
+  one status surface, and one bottom control bar.
 
-### All-in-one hosting and the lobby redesign
+### Truthful live-session controls and recovery
 
-- **First-run setup is now two focused, modern steps.** A dedicated responsive
-  dialog asks only Host/Join role, musician identity, the conditional join
-  endpoint, Webex URL, and optional local recording input. It defaults to
-  Jamulus music plus Webex talkback and opens Ready Check automatically.
-  Ports, executable paths, routing modes, folders, and public-server options
-  remain in the detailed in-app Settings flow.
+- The bottom bar keeps only **Copy Invite**, **Record**, **More**, and the
+  role-aware session action. A host sees **End Session** because it ends the jam
+  for everyone; a bandmate sees **Leave Jam** because it disconnects only that
+  Mac. **Ending…** and **Leaving…** remain visible until owned-process cleanup
+  actually finishes.
+- Connection recovery no longer treats a running process as proof of a live
+  session. An interruption clears stale participant/audio truth, announces the
+  recovery state, and returns to connected only after real local session
+  evidence. A timed-out attempt presents one recovery action instead of
+  competing Retry buttons.
+- Invalid invitations, unavailable sessions, offline networks, microphone
+  permission requirements and denials, recoverable failures, and fatal startup
+  failures use plain-language states with a next action. Technical detail stays
+  in logs or **More → Troubleshooting**.
+- Ending a hosted jam and leaving a joined jam have distinct confirmations.
+  Active recording is stopped and saved first; cleanup failure is reported
+  instead of being replaced by a false success state.
 
-- **First-time macOS hosts are now self-contained.** ARM64 and Intel artifacts
-  bundle the official, unmodified, notarized JamulusServer.app 3.12.2 beside
-  the Jamulus client. Setup and Ready Check distinguish bundled and installed
-  sources; source checkouts retain `/Applications` as a fallback.
+### Responsive and accessible by construction
 
-- **WebJam now hosts the band server.** Enable "This Mac hosts the band
-  server" in Setup and Start Audio verifies JamulusServer.app 3.12.2, checks
-  ports, provisions the protected recorder secret and recordings folder in
-  the server app's container, starts the server under a caffeinate sleep
-  assertion, waits for its control port, and then connects the client. A
-  crashed server is restarted automatically even when client auto-reconnect
-  is disabled. An externally started server is adopted only after the
-  configured secret authenticates and its recorder API responds; it is shown
-  as `Server: External` and never terminated by WebJam. Stop Audio leaves the
-  server running for the band. Quitting stops/finalizes only a server WebJam
-  owns. The host client target is always loopback, unsupported platforms hide
-  hosting, startup timeout cleans up owned processes, and Ready Check verifies
-  the exact dedicated-server version.
-- **The disconnected workspace is a real lobby.** The session card is
-  centered on the stage with a display-size title, one obvious primary
-  action (Start Audio, or Host & Start Audio when hosting), Practice Solo
-  and Ready Check beside it, and a quiet hint naming the server audio will
-  join. The Webex launch card is a slim bar, and the redundant STAGE header
-  is gone.
-- The in-app lifecycle was exercised against the installed official
-  JamulusServer.app 3.12.2 on Apple Silicon: UDP 22124 and loopback RPC 22240
-  opened, the secret remained mode 0600, recorder status authenticated, Record
-  armed/stopped successfully, and shutdown left no server/caffeinate orphan.
-- Current local validation passes 1,037 tests with 12 expected skips and 6
-  subtests, all 11 official-binary integration tests, Ruff, compile,
-  dependency/vulnerability checks, UX smoke, and the 20-document link/security
-  review. A clean ARM64 v0.8.1 bundle passes metadata/resource inspection,
-  offscreen startup, TERM shutdown, and orphan-process checks.
-- Fixed the clean-download macOS Gatekeeper path: after CI nests the untouched,
-  notarized Jamulus app, it now refreshes only WebJam's outer ad-hoc resource
-  seal. CI verifies that the outer bundle is structurally valid and that
-  Jamulus retains the same upstream signed CDHash. This prevents a fresh
-  download from being reported as damaged while preserving Jamulus's
-  notarization.
+- The main session remains usable at 760×600. Participant tiles reflow from a
+  focus tile to balanced multi-column layouts based on the actual viewport,
+  and the four essential bottom controls remain visible in a narrow window.
+- Keyboard order follows the task: title, participant mix controls, Copy
+  Invite, Record, More, then End/Leave. Focus is visibly distinct, interactive
+  targets are larger, controls have accessible names and descriptions, and
+  changing connection/participant states are announced to assistive
+  technology.
+- Local mute is now described as **Mute Monitor** so it cannot be mistaken for
+  muting the musician's outgoing audio. Permission and validation recovery do
+  not rely on color.
 
-### Two-lane Webex talkback
+### Multitrack Studio and Logic handoff
 
-- WebJam now treats Jamulus music and native Webex speech as separate audio
-  lanes. New configurations default to **Musician with talkback**; **Video
-  only** and the advanced, mutually exclusive **Audience broadcast bridge**
-  remain explicit alternatives.
-- **Open Webex** now has a truthful external-launch lifecycle: Not opened,
-  Opening, Opened externally, or Open failed. WebJam never claims meeting
-  membership and does not inspect, mute, leave, or reconnect native Webex.
-- In talkback mode, the self-mute control is **Talk Break**. It opens the speech
-  lane only after Jamulus acknowledges that transmit is muted. **Resume Music**
-  defaults to cancel until the musician confirms Webex is muted; RPC failure
-  leaves the safer lane muted. Reconnect reapplies an active Talk Break.
-- Transmit-mute state fails closed everywhere: Stop Audio clears Talk Break
-  entirely (a relaunched Jamulus client always starts unmuted, so stale TALK
-  could otherwise hide a live send), a crash-reconnect clears any confirmed
-  mute in every Webex role until the new session re-acknowledges it, and the
-  reconnect-failure banner now says exactly what to do — press Talk Break to
-  retry. The Talk Break tooltip names its Ctrl+Shift+M shortcut and the
-  launch card reads correctly to screen readers.
-- Setup presents three accessible audio-role cards. Ready Check automates only
-  what WebJam can observe and labels native Webex device, mute, Mic Mode, and
-  Smart Audio confirmations as `VERIFY`; those confirmations reset on rerun.
-  BlackHole/VB-CABLE is scanned only for an audience bridge, never for normal
-  talkback or video-only use.
-- Supplemental local stem capture is now controlled independently by
-  `local_capture_enabled`. Its **Meter and local recording input**, 48 kHz
-  support, writable takes folder, recovery, and validation do not depend on the
-  selected Webex role.
-- Existing settings migrate without losing intent: legacy bridge-on becomes an
-  audience bridge with local capture enabled; bridge-off becomes video only;
-  brand-new profiles use talkback. The old environment variable remains a
-  one-release compatibility fallback behind `WEBJAM_WEBEX_AUDIO_MODE`.
-- Setup no longer collects or saves legacy Guest Issuer credentials. Webex
-  URLs reject user information and non-default ports, while logs and
-  diagnostics retain at most a trusted Webex hostname and redact meeting
-  paths, queries, and fragments.
-- Added [`WEBEX_AUDIO_MODES.md`](WEBEX_AUDIO_MODES.md) as the canonical signal-
-  flow and fail-safe guide. The closed pilot uses native Webex push-to-talk;
-  Browser SDK/OAuth automation remains deferred.
+- **Recording is a musician-facing Studio, not a toolbar switch.** More →
+  Multitrack Studio shows one lane per participant, a single Record action,
+  live recording state, a take library, waveforms, transport/scrub, selectable
+  stereo output, gain, pan, mute, and solo. Recording starts without pulling
+  the host away from the simple live room.
+- A hosted take keeps the server's isolated WAV for each musician and maps
+  channel filenames to participant names plus the session title in the take
+  manifest.
+- **Export for Logic is aligned, atomic, and non-destructive.** It creates one
+  numbered, musician-named 24-bit PCM WAV per track, padding or trimming every
+  signed source offset onto a shared zero-based timeline. All stems have the
+  same length, so they can be dragged into Logic together at `0:00` without
+  manual offset math. A stereo rough mix reflects the current gain/pan/mute/
+  solo state, while instructions and `webjam-logic-export.json` preserve the
+  handoff evidence. Original recorder files are never modified and repeated
+  exports never overwrite an earlier package. Unverified audio cannot be
+  presented or exported as Logic-ready.
+- **Recording Setup lives in Studio.** The first-run Host/Join experience stays
+  focused, while the host can choose Studio's wired playback output and
+  optionally capture interface inputs 1 and 2 as separate 24-bit/48 kHz stems.
+  Explicit capture settings persist across host launches. Joining musicians
+  cannot arm host-only local capture.
+- Recording has explicit starting, recording, stopping, validating, complete,
+  and needs-attention states. Partial recordings are preserved on attach or
+  shutdown failure instead of being silently deleted.
 
-### Session Pulse and brief export
+### Test-night boundary
 
-- The Qt Session Canvas now presents a local, deterministic Session Pulse from
-  the active mode, title, confirmed participants, and captured notes. It
-  surfaces decisions, owned actions, blockers, questions, references, and the
-  next checkpoint without sending session content to a network service.
-- **Export… → Session brief…** exports a Markdown handoff through the existing atomic-write
-  path. The brief includes the structured pulse and the raw notes, so no
-  session context is discarded.
-- Pulse content is rendered as plain text; preview cards are never presented
-  as real attendees, and a brief is rebuilt immediately before export.
-- A single responsive Export menu replaces the clipping notes/brief button
-  pair at the supported 280 px canvas width. Cancellation and write failures
-  are covered, and a failed Pulse refresh discards stale derived data while
-  preserving raw notes.
-- Setup now distinguishes the local Jamulus client RPC port (22222) from the
-  band recorder RPC port (22240), and routing copy no longer claims that
-  detecting BlackHole/VB-CABLE configures Jamulus or Webex.
-- Release CI verifies the packaged executable, UI resources, version, and
-  bundled Jamulus payload on every platform. Tagged builds create a draft
-  GitHub release until physical pilot gates pass.
-- Corrected the native macOS recording-server path after physical validation:
-  use the official dedicated `JamulusServer.app`, with its secret and takes in
-  real sandbox container storage rather than `~/Music`. The checked-in pilot
-  launcher verifies version/ports and keeps recorder RPC loopback-only. Record
-  setup and connection errors now distinguish this same-Mac path from an SSH
-  tunnel to a remote Linux server.
-- Recording now has explicit starting/recording/stopping/error states, elapsed
-  time, duplicate-click protection, and post-stop verification of the new
-  take's expected tracks, readability, duration, sample rate, and sampled
-  signal. Completion can open Take Deck or reveal the take in Finder.
-- Take Deck adds persistent output-device selection, actionable device errors,
-  take-health warnings, Finder reveal, and stereo headphone playback instead
-  of sending the rough mono mix only to output channel 1.
-- Ready Check is non-blocking and rerunnable. Setup distinguishes talkback,
-  video-only, and audience-bridge roles, so BlackHole/VB-CABLE is required only
-  for the advanced program-feed path. Dead Chat/Roles navigation and the
-  duplicate Stage/Mixer distinction were removed; Ready and Practice now live
-  in the accessible Checks menu.
+- v0.9.0 is a new private test artifact and must not overwrite or be confused
+  with the earlier v0.8.2 ZIP. The exact packaged app still must pass the
+  source, frozen-runtime, two-Mac audio, reconnect, multitrack, and cleanup
+  gates in [`TEST_PROCEDURE.md`](TEST_PROCEDURE.md) and
+  [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
+- The same-LAN invitation boundary remains intentional for tonight. Internet,
+  VPN, NAT traversal, Windows, and Intel macOS are not part of the v0.9.0
+  private-pilot claim.
+
+---
+
+## [0.8.2] — 2026-07-12 test-night candidate
+
+### Host → Share → Join → Play
+
+- **Every launch starts with two choices: Host a Jam or Join a Jam.** There is
+  no setup wizard, Ready Check, server-address form, port picker, device-path
+  field, or routing decision in the normal path.
+- **Hosting is one click on the macOS test build.** WebJam selects safe
+  defaults, starts its bundled dedicated server and background music client,
+  and publishes the invitation only after the hosted service is actually
+  alive.
+- **Invitations are links, not network configuration.** Copy Invite produces a
+  versioned `webjam://join?...` link containing only the host, port, and session
+  name. A bandmate can open that link or paste it into the single Join field.
+  Cold-start and already-running deep links use the same strict parser; malformed
+  or ambiguous links, unsafe addresses, credentials, fragments, and unexpected
+  parameters are rejected.
+- **The session HUD says what WebJam knows.** It distinguishes starting,
+  ready-to-share, connected, timed-out, and ended states. A local input meter
+  means WebJam observed signal on this Mac; a remote meter means band audio was
+  observed. Neither meter is presented as proof that the other musician heard
+  the signal. A 30-second join timeout ends the unproductive attempt and offers
+  one clear Try Again action.
+- **End Session owns cleanup.** The host path stops and saves an active take,
+  then stops the local client and the server WebJam started. A joined Mac stops
+  its client. Shutdown follows the same ownership-aware order.
+
+### Progressive session workspace
+
+- The connected workspace keeps the invitation, readiness, participant cards,
+  and **End Session** visible. Notes, Studio, optional video/conversation,
+  Talk Break, Settings, and Troubleshooting live under one **More**
+  menu instead of competing with the core path.
+- Settings is now a small preferences dialog for the musician name and optional
+  conversation link. It does not duplicate host/join or expose internal ports,
+  secrets, executable paths, or recording folders.
+- Webex/video is optional. When used, WebJam only launches the external
+  conversation and reports that action; it does not claim meeting membership
+  or control native Webex devices.
+
+### Familiar meeting stage and packaged-runtime reliability
+
+- The live session now follows the familiar Webex meeting hierarchy: a light
+  header, dominant neutral stage, large automatically centered musician tiles,
+  one compact readiness line, and a persistent bottom bar for Copy Invite,
+  Record, More, and the red End Session action. One musician gets a large
+  focus tile; two to six musicians form a balanced equal-view grid.
+- Raw network links no longer occupy the live stage, and legacy hosted-server
+  text can no longer become a stray top-level macOS window. Inter 4.1 remains
+  bundled under the SIL Open Font License, with a platform-font fallback.
+- The packaged app keeps private control secrets and multitrack takes in
+  writable Application Support storage. Its official Jamulus client now runs
+  headlessly, so musicians do not have to operate or dismiss a second audio
+  application window.
+- The bundled server and client were exercised together on isolated test ports:
+  the server reported a real connected client, the client accepted a musician
+  name over authenticated control, both stopped cleanly, and the test ports
+  were released. Physical two-Mac audio, reconnect, and recording remain the
+  release-candidate acceptance gate described in
+  [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
+- The legacy UDP monitor is dormant in the product build. Enabling it made the
+  Jamulus server count WebJam's monitor socket as another musician; the bundled
+  3.12.2 client's authenticated interface already provides the authoritative
+  roster, levels, mixer controls, chat, and mute state without that phantom
+  connection.
+- Local identity now follows the real Jamulus 3.12.2 control response. That
+  response describes the local profile without returning a channel id, so
+  WebJam reconciles it with the roster instead of mislabeling the host as a
+  bandmate and timing out a healthy session. A remote-only roster can no
+  longer produce a misleading “Bandmate connected” banner while this Mac is
+  still reconnecting.
+- The private macOS test artifact is ad-hoc signed and intentionally not
+  notarized. The first launch may require Control-click → Open. The pilot is
+  limited to two Macs on the same local network; it does not claim internet or
+  NAT traversal.
 
 ### Recording integrity hardening
 
@@ -192,15 +212,19 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Take Deck reuses recorded manifest findings when reviewing a finished take
   instead of re-probing every WAV, and shows transient `validating` manifests
   as "Checking…" rather than "Unchecked".
-- Stopping audio while the band server is recording now warns that the server
-  keeps recording and points at ■ Stop Rec first.
+- Ending a hosted session while recording now stops and saves the take before
+  the client and owned server are shut down.
 - Participant names and roles from the Jamulus roster render as plain text,
   so markup in a remote musician's name can no longer be interpreted as rich
   text in the mixer.
-- Reconnect guidance and README_SIMPLE now name the real controls
-  ("Start Audio", "Checks ▾") instead of stale labels.
+- Reconnect guidance now stays in the session HUD and offers one clear
+  **Try Again** action after a timed-out attempt.
 
 ---
+
+> Entries below v0.8.2 preserve earlier implementation history. References to
+> Setup, Ready Check, raw endpoints, Start/Stop Audio, or a visible Jamulus
+> window are not instructions for the current build.
 
 ## [0.8.0] — 2026-07-08
 
@@ -211,6 +235,11 @@ detour for most users. Both platforms bundle the same pinned Jamulus
 version (`3.12.2` / tag `r3_12_2`) already used by the `integration-jamulus`
 CI job, unmodified, under GPL/AGPL "mere aggregation" terms — see the new
 `THIRD_PARTY_NOTICES.md` for the full licensing rationale.
+
+> Packaging note: 0.8.1 supersedes the original macOS signature-preservation
+> approach below. The current test build prepares the same upstream app
+> contents with ad-hoc, non-sandboxed signatures as documented above and in
+> `THIRD_PARTY_NOTICES.md`.
 
 - **macOS: zero-install.** CI downloads and checksum-verifies the official,
   Apple-signed and notarized `jamulus_3.12.2_mac.dmg`, extracts the

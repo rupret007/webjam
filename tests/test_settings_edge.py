@@ -5,7 +5,9 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
+import core.settings as settings_module
 from core.settings import (
     AppSettings,
     _coerce_settings_data,
@@ -27,11 +29,55 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertFalse(s.webex_audio_bridge_enabled)
         self.assertEqual(s.take_playback_output_device, "")
 
+    def test_macos_client_rpc_secret_lives_in_jamulus_sandbox(self):
+        from core.settings import jamulus_client_rpc_secret_path
+        with patch("core.settings.sys.platform", "darwin"), patch(
+            "core.settings.Path.home", return_value=Path("/Users/tester")
+        ):
+            path = jamulus_client_rpc_secret_path()
+        self.assertEqual(
+            path,
+            Path("/Users/tester/Library/Containers/"
+                 "app.jamulussoftware.Jamulus/Data/Documents/"
+                 "webjam_client_rpc.secret"),
+        )
+
+    def test_frozen_macos_runtime_paths_are_owned_by_webjam(self):
+        from core.settings import (
+            hosted_server_recordings_dir,
+            hosted_server_secret_path,
+            jamulus_client_rpc_secret_path,
+        )
+        with patch("core.settings.sys.platform", "darwin"), patch.object(
+            settings_module.sys, "frozen", True, create=True,
+        ), patch("core.settings.Path.home", return_value=Path("/Users/tester")):
+            client_secret = jamulus_client_rpc_secret_path()
+            server_secret = hosted_server_secret_path()
+            recordings = hosted_server_recordings_dir()
+        support = Path("/Users/tester/Library/Application Support/WebJam")
+        self.assertEqual(
+            client_secret,
+            support / "JamulusClient" / "webjam_client_rpc.secret",
+        )
+        self.assertEqual(
+            server_secret,
+            support / "JamulusServer" / "webjam_server_rpc.secret",
+        )
+        self.assertEqual(recordings, support / "JamulusServer" / "Recordings")
+
+    def test_non_macos_client_rpc_secret_keeps_legacy_location(self):
+        from core.settings import jamulus_client_rpc_secret_path
+        with patch("core.settings.sys.platform", "linux"), patch(
+            "core.settings.Path.home", return_value=Path("/home/tester")
+        ):
+            path = jamulus_client_rpc_secret_path()
+        self.assertEqual(path, Path("/home/tester/.webjam_jsonrpc_secret"))
+
     def test_load_nonexistent_file_returns_defaults(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
         self.assertEqual(s.jamulus_port, 22124)
 
-    def test_new_pilot_preferences_round_trip(self):
+    def test_explicit_recording_preferences_survive_simple_mode_migration(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "settings.json")
             original = AppSettings(
@@ -42,8 +88,8 @@ class TestSettingsDefaults(unittest.TestCase):
             )
             save_settings(original)
             loaded = load_settings(path)
-        self.assertTrue(loaded.webex_audio_bridge_enabled)
-        self.assertEqual(loaded.webex_audio_mode, "audience_bridge")
+        self.assertFalse(loaded.webex_audio_bridge_enabled)
+        self.assertEqual(loaded.webex_audio_mode, "talkback")
         self.assertTrue(loaded.local_capture_enabled)
         self.assertEqual(loaded.take_playback_output_device, "SSL 2+")
 
@@ -54,20 +100,20 @@ class TestSettingsDefaults(unittest.TestCase):
             saved = json.loads(open(path, encoding="utf-8").read())
         self.assertNotIn("webex_audio_bridge_enabled", saved)
 
-    def test_legacy_bridge_true_migrates_mode_and_capture(self):
+    def test_legacy_bridge_true_migrates_to_simple_topology(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
             json.dump({"webex_audio_bridge_enabled": True}, config)
             config.flush()
             loaded = load_settings(config.name)
-        self.assertEqual(loaded.webex_audio_mode, "audience_bridge")
-        self.assertTrue(loaded.local_capture_enabled)
+        self.assertEqual(loaded.webex_audio_mode, "talkback")
+        self.assertFalse(loaded.local_capture_enabled)
 
-    def test_legacy_bridge_false_preserves_video_only_behavior(self):
+    def test_legacy_bridge_false_migrates_to_simple_topology(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
             json.dump({"webex_audio_bridge_enabled": False}, config)
             config.flush()
             loaded = load_settings(config.name)
-        self.assertEqual(loaded.webex_audio_mode, "video_only")
+        self.assertEqual(loaded.webex_audio_mode, "talkback")
         self.assertFalse(loaded.local_capture_enabled)
 
     def test_new_fields_take_precedence_over_legacy_file_value(self):
@@ -244,10 +290,10 @@ class TestSettingsEnvOverrides(unittest.TestCase):
     @patch.dict(os.environ, {
         "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
     })
-    def test_legacy_bridge_environment_migrates_mode_and_capture(self):
+    def test_legacy_bridge_environment_is_not_a_user_facing_backdoor(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
-        self.assertEqual(s.webex_audio_mode, "audience_bridge")
-        self.assertTrue(s.local_capture_enabled)
+        self.assertEqual(s.webex_audio_mode, "talkback")
+        self.assertFalse(s.local_capture_enabled)
 
     @patch.dict(os.environ, {
         "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
@@ -271,10 +317,18 @@ class TestSettingsEnvOverrides(unittest.TestCase):
         "WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED": "true",
         "WEBJAM_LOCAL_CAPTURE_ENABLED": "false",
     })
-    def test_explicit_local_capture_environment_overrides_legacy_derived_value(self):
+    def test_explicit_local_capture_environment_does_not_restore_legacy_bridge(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
-        self.assertEqual(s.webex_audio_mode, "audience_bridge")
+        self.assertEqual(s.webex_audio_mode, "talkback")
         self.assertFalse(s.local_capture_enabled)
+
+    @patch.dict(os.environ, {
+        "WEBJAM_LOCAL_CAPTURE_ENABLED": "true",
+    })
+    def test_explicit_local_capture_environment_is_preserved(self):
+        s = load_settings("/tmp/nonexistent_webjam_config_test.json")
+        self.assertEqual(s.webex_audio_mode, "talkback")
+        self.assertTrue(s.local_capture_enabled)
 
 
 class TestCoerceSettingsData(unittest.TestCase):

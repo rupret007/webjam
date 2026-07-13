@@ -16,16 +16,11 @@
 #     --username your@apple.id --password @keychain:AC_PASSWORD \
 #     --file dist/WebJam.app
 #
-#   CAVEAT: the Jamulus client/server apps nested under Resources by CI
-#   see .github/workflows/ci.yml) is ALREADY signed and notarized by the
-#   are already signed and notarized by the Jamulus project. `codesign --deep`
-#   re-signs every nested bundle
-#   it finds, which would overwrite that existing Developer ID signature
-#   with your own and invalidate Jamulus's notarization ticket. If signing
-#   locally, sign nested non-Apple binaries individually first (bottom-up),
-#   then sign only the outer WebJam.app without `--deep`. CI uses this shallow
-#   signing pattern to refresh WebJam's resource seal after adding Jamulus
-#   while preserving both upstream signatures and notarization tickets.
+#   CAVEAT: CI stages the official Jamulus client/server apps under Resources,
+#   then deep ad-hoc signs each nested app without the upstream App Sandbox
+#   entitlement so WebJam can provision their command-line RPC files. Sign the
+#   nested bundles first (bottom-up), then sign only the outer WebJam.app
+#   without `--deep`; see .github/workflows/ci.yml and THIRD_PARTY_NOTICES.md.
 #
 # Windows — sign after building:
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
@@ -124,6 +119,9 @@ a = Analysis(
     datas=[
         # QSS stylesheet and theme assets
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
+        # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
+        (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
+        (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
         # Webex widget HTML template
         (str(ROOT / "webjam_qt" / "webex_widget.html"), "webjam_qt"),
         *_extra_datas,
@@ -147,8 +145,11 @@ a = Analysis(
         "api.local_bridge",
         "core.take_library",
         "core.take_player",
+        "core.take_export",
         "core.jamulus_server_rpc",
         "webjam_qt.windows.take_deck",
+        "webjam_qt.widgets.recording_studio",
+        "webjam_qt.windows.recording_setup",
         "soundfile",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",
@@ -212,11 +213,9 @@ if sys.platform == "darwin":
     # NOTE: the bundled Jamulus client/server apps (macOS zero-install —
     # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
     # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
-    # must be `ditto`'d in whole and unmodified (to preserve its Apple code
-    # signature) *after* this BUNDLE() call produces dist/WebJam.app — see
-    # the "Stage bundled Jamulus.app" + "Build desktop artifact" steps in
-    # .github/workflows/ci.yml. That workflow then shallow-signs WebJam.app
-    # again so the added bundle is included in the outer resource seal.
+    # must be staged with `ditto` after this call produces dist/WebJam.app.
+    # CI then prepares each nested signature as documented above and finally
+    # shallow-signs WebJam.app so the added resources enter its outer seal.
     app = BUNDLE(
         coll,
         name="WebJam.app",
@@ -224,10 +223,23 @@ if sys.platform == "darwin":
         bundle_identifier="com.webjam.app",
         info_plist={
             "NSMicrophoneUsageDescription":
-                "WebJam uses the selected input for metering and optional local recording.",
+                "WebJam uses your microphone or audio interface so your "
+                "bandmates can hear you, and to show your input level or "
+                "record when you choose.",
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "12.0",
+            # The bundled Jamulus 3.12.2 client/server declare macOS 13.
+            # Match that real floor so Finder never offers a launch that the
+            # background music engine cannot complete.
+            "LSMinimumSystemVersion": "13.0",
             "CFBundleShortVersionString": VERSION,
             "CFBundleVersion": VERSION,
+            "LSMultipleInstancesProhibited": True,
+            "CFBundleURLTypes": [
+                {
+                    "CFBundleURLName": "com.webjam.invite",
+                    "CFBundleTypeRole": "Viewer",
+                    "CFBundleURLSchemes": ["webjam"],
+                }
+            ],
         },
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
@@ -252,6 +253,24 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
                         settings.companion_api_port)
         settings = AppSettings(**{**asdict(settings), "companion_api_port": 8765})
 
+    # The musician-facing product has one default conversation topology:
+    # Jamulus carries the band and native Webex is optional talkback.  Preserve
+    # the independent local-capture preference—Studio owns that recording
+    # choice and silently disabling it would lose the host's isolated stems.
+    simple_defaults = {}
+    if "WEBJAM_WEBEX_AUDIO_MODE" not in os.environ:
+        simple_defaults["webex_audio_mode"] = "talkback"
+    if (
+        "local_capture_enabled" not in loaded_data
+        and "WEBJAM_LOCAL_CAPTURE_ENABLED" not in os.environ
+    ):
+        # Do not let the retired bridge flag silently arm a new local audio
+        # recording. An explicit modern preference or environment override is
+        # preserved; absent that, capture stays safely off.
+        simple_defaults["local_capture_enabled"] = False
+    if simple_defaults:
+        settings = AppSettings(**{**asdict(settings), **simple_defaults})
+
     if settings.host_server_enabled:
         # Hosting is an all-in-one local topology. Never let a stale public or
         # LAN address make the host start a server here but connect its client
@@ -279,11 +298,48 @@ def jamulus_server_container_documents() -> Path:
     )
 
 
+def jamulus_client_container_documents() -> Path:
+    """Writable Documents directory for the sandboxed Jamulus client.
+
+    The official macOS Jamulus.app has App Sandbox enabled.  A secret in the
+    user's bare home directory is visible to WebJam but not to Jamulus, which
+    makes Jamulus exit immediately when launched with --jsonrpcsecretfile.
+    """
+    return (
+        Path.home() / "Library" / "Containers"
+        / "app.jamulussoftware.Jamulus" / "Data" / "Documents"
+    )
+
+
+def webjam_application_support_dir() -> Path:
+    """Private runtime data owned by the packaged WebJam application."""
+    return Path.home() / "Library" / "Application Support" / "WebJam"
+
+
+def jamulus_client_rpc_secret_path() -> Path:
+    """Cross-platform location shared by Jamulus and JamulusRpcClient."""
+    if sys.platform == "darwin":
+        if getattr(sys, "frozen", False):
+            return (
+                webjam_application_support_dir()
+                / "JamulusClient" / "webjam_client_rpc.secret"
+            )
+        return jamulus_client_container_documents() / "webjam_client_rpc.secret"
+    return Path.home() / ".webjam_jsonrpc_secret"
+
+
 def hosted_server_secret_path() -> Path:
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        return (
+            webjam_application_support_dir()
+            / "JamulusServer" / "webjam_server_rpc.secret"
+        )
     return jamulus_server_container_documents() / "webjam_server_rpc.secret"
 
 
 def hosted_server_recordings_dir() -> Path:
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        return webjam_application_support_dir() / "JamulusServer" / "Recordings"
     return jamulus_server_container_documents() / "WebJam Recordings"
 
 

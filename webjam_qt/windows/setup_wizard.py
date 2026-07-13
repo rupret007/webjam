@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 
 from core.settings import AppSettings, load_settings
 from core.webex_url import normalize_webex_url, webex_url_error
-from webjam_qt.theme.tokens import Font, Space
+from webjam_qt.theme.tokens import Color, Font, Space
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
 
@@ -118,8 +118,8 @@ class _WelcomePage(QWizardPage):
         notice.setTextFormat(Qt.TextFormat.RichText)
         notice.setWordWrap(True)
         notice.setStyleSheet(
-            "QLabel { background: rgba(120, 170, 255, 0.10); "
-            "border: 1px solid rgba(120, 170, 255, 0.35); "
+            f"QLabel {{ background: {Color.BG_CARD}; "
+            f"border: 1px solid {Color.ACCENT_PRIMARY}; "
             "border-radius: 6px; padding: 10px; }"
         )
         layout.addWidget(notice)

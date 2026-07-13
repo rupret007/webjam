@@ -169,10 +169,12 @@ class TestJamulusControllerEdge(unittest.TestCase):
 
     def test_serialize_mix_returns_expected_participant_payload(self):
         self.controller.add_participant("A", 0)
+        self.controller.audio_engine.level_overrides.clear()
         self.controller.set_fader_level(0, 82)
         payload = self.controller.serialize_mix()
         self.assertEqual(payload["participants"][0]["channel_id"], 0)
         self.assertEqual(payload["participants"][0]["fader_level"], 82)
+        self.assertEqual(self.controller.audio_engine.level_overrides, {})
 
     def test_apply_mix_data_updates_existing_participants_only(self):
         self.controller.add_participant("A", 0)

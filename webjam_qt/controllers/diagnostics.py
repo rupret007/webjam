@@ -81,16 +81,23 @@ class DiagnosticsExporter:
 
         log_path = Path.home() / ".webjam.log"
         jamulus_log = Path.home() / ".webjam_jamulus.log"
+        server_log = Path.home() / "Library" / "Logs" / "WebJam" / "jamulus-server.log"
         lines.append("## Log files")
         lines.append(f"- `{log_path}` (WebJam)")
-        lines.append(f"- `{jamulus_log}` (Jamulus stdout/stderr)")
+        lines.append(f"- `{jamulus_log}` (Jamulus client stdout/stderr)")
+        lines.append(f"- `{server_log}` (Jamulus server stdout/stderr)")
         lines.append("")
 
-        lines.append(f"## Last {_LOG_TAIL_LINES} lines of `~/.webjam.log`")
-        lines.append("```")
-        lines.extend(self._tail_log(log_path))
-        lines.append("```")
-        lines.append("")
+        for label, path in (
+            ("~/.webjam.log", log_path),
+            ("~/.webjam_jamulus.log", jamulus_log),
+            ("~/Library/Logs/WebJam/jamulus-server.log", server_log),
+        ):
+            lines.append(f"## Last {_LOG_TAIL_LINES} lines of `{label}`")
+            lines.append("```")
+            lines.extend(self._tail_log(path))
+            lines.append("```")
+            lines.append("")
 
         lines.append("## Settings (sanitised)")
         lines.append("```json")

@@ -5,7 +5,7 @@ import os
 import stat
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication
 
 from core.settings import AppSettings
 from webjam_qt.windows.first_run_setup import FirstRunSetupDialog
+from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
 
 @pytest.fixture(scope="module")
@@ -126,27 +127,22 @@ def test_second_step_is_compact_and_defaults_to_talkback(qapp, settings):
     assert dialog._device.isHidden()
 
 
-def test_capture_reveals_device_only_when_enabled(qapp, settings):
+def test_supplemental_capture_is_removed_from_simple_setup(qapp, settings):
     dialog = make_dialog(settings)
     choose_host(dialog)
     dialog._primary.click()
-    with patch("core.audio_routing.list_input_devices", return_value=[
-        {"name": "SSL 2+", "channels": 2, "index": 7},
-    ]):
-        dialog._capture.click()
-    assert not dialog._device.isHidden()
-    assert dialog._device.count() == 2
-    assert dialog._device.itemData(0) == -1
+    assert dialog._capture.isHidden()
+    assert dialog._device.isHidden()
+    assert not dialog._capture.isChecked()
 
 
-def test_capture_blocks_when_no_input_exists(qapp, settings):
+def test_optional_video_can_be_left_blank(qapp, settings):
     dialog = make_dialog(settings)
     choose_host(dialog)
     dialog._primary.click()
-    with patch("core.audio_routing.list_input_devices", return_value=[]):
-        dialog._capture.click()
-    assert not dialog._primary.isEnabled()
-    assert "Connect an audio input" in dialog._capture_error.text()
+    assert dialog._webex_url.text() == ""
+    assert dialog._primary.isEnabled()
+    assert dialog._webex_error.isHidden()
 
 
 def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
@@ -164,6 +160,7 @@ def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
     assert data["webex_audio_mode"] == "talkback"
     assert data["local_capture_enabled"] is False
     assert "JamulusServer" in data["server_rpc_secret_file"]
+    assert "/bundle/Jamulus" not in data["jamulus_candidates"]
     assert stat.S_IMODE(Path(settings.config_file).stat().st_mode) == 0o600
 
 
@@ -188,6 +185,7 @@ def test_save_failure_stays_open_with_actionable_error(qapp, settings):
         dialog._primary.click()
     assert dialog.result is None
     assert "couldn't save" in dialog._webex_error.text()
+    assert not dialog._webex_error.isHidden()
     assert not Path(settings.config_file).exists()
 
 
@@ -212,40 +210,69 @@ def test_geometry_has_no_clipping_at_supported_sizes(qapp, settings, size):
     assert dialog._primary.geometry().bottom() <= dialog.contentsRect().bottom()
     assert dialog._host_card.geometry().right() <= dialog._pages.width()
     dialog._primary.click()
-    with patch("core.audio_routing.list_input_devices", return_value=[
-        {"name": "Very long SSL audio interface name for geometry validation", "channels": 32, "index": 9},
-    ]):
-        dialog._capture.click()
     qapp.processEvents()
-    assert dialog._device.geometry().right() <= dialog._pages.width()
+    assert dialog._device.isHidden()
     assert not dialog.grab().isNull()
     dialog.close()
 
 
-def test_startup_schedules_ready_check_after_first_run(qapp):
+def test_startup_always_asks_host_or_join_then_starts_audio(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/missing/config.json")
     saved = AppSettings(config_file="/saved/config.json")
-    wizard = MagicMock()
-    wizard.exec.return_value = FirstRunSetupDialog.DialogCode.Accepted
+    launcher = MagicMock()
+    launcher.exec.return_value = SimpleSettingsDialog.DialogCode.Accepted
+    launcher.selected_role = "host"
+    launcher.session_name = "Band Rehearsal"
     qt_app = MagicMock()
     qt_app.exec.return_value = 0
     controller = MagicMock()
+    window = MagicMock()
     with patch.object(app_module, "load_settings", side_effect=[initial, saved]), \
          patch.object(
-             app_module.FirstRunSetupDialog,
-             "should_show_on_startup",
-             return_value=True,
-         ), patch.object(
-             app_module, "FirstRunSetupDialog", return_value=wizard,
-         ) as wizard_class, patch.object(
+             app_module, "LaunchDialog", return_value=launcher,
+         ) as launcher_class, patch.object(
              app_module.QApplication, "instance", return_value=qt_app,
          ), patch.object(app_module, "load_stylesheet", return_value=""), \
-         patch.object(app_module, "ConductorWindow", return_value=MagicMock()), \
+         patch.object(app_module, "ConductorWindow", return_value=window), \
          patch.object(
              app_module, "ApplicationController", return_value=controller,
          ), patch.object(app_module.QTimer, "singleShot") as single_shot:
         assert app_module.run() == 0
-    wizard_class.assert_called_once_with(initial)
-    single_shot.assert_called_once_with(0, controller._on_ready_check)
+    launcher_class.assert_called_once_with(initial, initial_invite_url="")
+    qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
+    single_shot.assert_called_once_with(0, controller._on_launch_audio)
+
+
+def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):
+    from webjam_qt import app as app_module
+
+    settings = AppSettings(config_file="/configured.json")
+    qt_app = MagicMock()
+    qt_app.exec.return_value = 0
+    controller = MagicMock()
+    window = MagicMock()
+    with patch.dict(os.environ, {
+             "WEBJAM_SMOKE_AUTOSTART_AUDIO": "1",
+             "WEBJAM_SMOKE_EXIT_MS": "15000",
+         }), \
+         patch.object(app_module, "load_settings", return_value=settings), \
+         patch.object(Path, "exists", return_value=True), \
+         patch.object(app_module, "LaunchDialog") as launcher_class, \
+         patch.object(app_module.QApplication, "instance", return_value=qt_app), \
+         patch.object(app_module, "load_stylesheet", return_value=""), \
+         patch.object(app_module, "ConductorWindow", return_value=window), \
+         patch.object(
+             app_module, "ApplicationController", return_value=controller,
+         ), patch.object(app_module.QTimer, "singleShot") as single_shot:
+        assert app_module.run() == 0
+    launcher_class.assert_not_called()
+    qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
+    assert len(single_shot.call_args_list) == 2
+    assert single_shot.call_args_list[0] == call(0, controller._on_launch_audio)
+    assert single_shot.call_args_list[1].args[0] == 15000
+    single_shot.call_args_list[1].args[1]()
+    assert window.confirm_close() is True
+    window.close.assert_called_once_with()
+    qt_app.quit.assert_not_called()

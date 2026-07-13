@@ -1,171 +1,117 @@
-# WebJam — Quick Start for Your Band
+# WebJam — Quick Start
 
-WebJam coordinates your band's **music (Jamulus)**, **speech/video (native Webex)**, recording, and shared notes so rehearsals start with one clear workflow.
+WebJam is designed around four words:
 
-This guide gets your whole band connected for the first time. It's written for the **Conductor** app (the main WebJam). Launch it with:
+**Host. Share. Join. Play.**
 
-```
-python webjam_qt_main.py
-```
+Musicians do not configure servers, ports, recording folders, virtual audio
+devices, or routing modes. WebJam starts the bundled music engine, chooses the
+safe defaults, and keeps the technical details out of the rehearsal.
 
-(or open the downloaded **WebJam** app if you're using a release build).
+The v0.9.0 app is deliberately spare: a black and white session with burnt
+orange reserved for the next important action. Host and Join are the only
+choices at launch.
 
----
+## What you need
 
-## Downloading WebJam (and getting past the security warnings)
+- A Mac running macOS 13 or newer for the current host build
+- Wired headphones and an audio interface
+- Both musicians on the same Wi-Fi for the test-night invite flow
+- The WebJam app on both Macs
 
-Grab the newest release from **[github.com/rupret007/webjam/releases](https://github.com/rupret007/webjam/releases)**:
+The downloadable macOS build already contains the Jamulus client and server.
+BlackHole, VB-CABLE, and Webex are not required to start playing.
 
-- **Windows:** `WebJam-windows-x64.zip`
-- **Mac (Apple Silicon — M1/M2/M3/M4):** `WebJam-macos-arm64.zip`
-- **Mac (Intel, 2020 or earlier):** `WebJam-macos-x64.zip`
+## Host
 
-Unzip it and run the **WebJam** app inside. **The first launch will trigger a security warning — this is expected.** WebJam isn't code-signed yet (that requires a paid developer certificate), so your OS flags it like any app from an "unidentified developer." It's the same file the build robot published on GitHub; here's how to open it:
+1. Open WebJam.
+2. Click **Host a Jam**.
+3. If macOS asks for microphone access, allow it. If access was previously
+   denied, use WebJam's **Open System Settings** action, allow access, return,
+   and choose **Try Again**.
+4. Wait for **Ready to share**.
+5. Click **Copy Invite** and send that link to your bandmate.
 
-- **macOS:** don't double-click the first time. **Right-click (or Ctrl-click) the app → Open → Open.** You only have to do this once. If macOS says the app "is damaged," clear the download quarantine flag instead: open Terminal and run `xattr -dr com.apple.quarantine /path/to/WebJam.app`
-- **Windows:** when SmartScreen shows "Windows protected your PC," click **More info → Run anyway.** Once, then it remembers.
+WebJam starts the server and music engine in the background. The invite looks
+like `webjam://join?...`; it contains the connection, so nobody copies an IP
+address or port.
 
----
+## Join
 
-## What each person needs (once)
+Preferred:
 
-Every band member installs WebJam and uses its bundled Jamulus client:
+1. Open the host's invite link.
+2. WebJam launches, fills in the connection, and joins automatically.
 
-1. **Jamulus** — the live-audio engine. WebJam's downloadable builds bundle it: on **macOS** it's zero-install (nothing to do — WebJam finds its own bundled copy automatically); on **Windows** first-run setup offers **Install Jamulus** when needed. Only grab it yourself from [jamulus.io](https://jamulus.io) if you're building/running from source.
-2. **Native Webex**, preferably with a dedicated webcam/USB/headset speech mic.
-   The existing music interface is an acceptable push-to-talk fallback when
-   nobody is playing. Both applications send output to wired interface headphones.
-3. **WebJam** itself. BlackHole/VB-CABLE is needed only for the optional
-   advanced audience-broadcast role, not ordinary musician talkback.
+Manual fallback:
 
----
+1. Open WebJam and click **Join a Jam**.
+2. Paste the invite link.
+3. Click **Join Jam**.
 
-## Band admin: set this up once and share it
+## Know when it is working
 
-One person (the "band admin") decides two things and shares them with everyone:
+The readiness strip uses plain language:
 
-1. **A Jamulus server** — for the two-Mac pilot, install the official dedicated
-   `JamulusServer.app` 3.12.2 on one Mac, select **This Mac hosts the band
-   server** in Setup, and let WebJam run it. Alternatives are a separately
-   managed server or a public server from
-   [explorer.jamulus.io](https://explorer.jamulus.io). Share the host Mac's
-   Tailscale/public address and port `22124` with remote musicians; the host
-   itself always connects to `127.0.0.1`.
-2. **A Webex meeting link** — create a meeting and share the URL (e.g. `https://yourco.webex.com/meet/yourband`).
+- **Starting your jam** — WebJam is starting the host services.
+- **Ready to share** — the host server is ready and the invite can be sent.
+- **You’re connected** — the app reached the band; play a note to verify input.
+- **You’re ready** — a real input signal was detected.
+- **Bandmate connected** — another musician joined.
+- **Connection interrupted** — WebJam is reconnecting and is not claiming the
+  stale session is ready.
+- **Something needs attention** — follow the single recommended action.
 
-Send the band the **Jamulus server host + port** and the **Webex link**. That's everything a member needs for the setup wizard.
+Participant cards show the real levels WebJam can observe. If metering is not
+available, WebJam stays silent; it does not animate a fake signal.
 
----
+## Record a multitrack take
 
-## First launch (each member)
+The host can click **Record** in the bottom control bar. The host server records
+one synchronized track per connected musician. Open **More → Multitrack
+Studio** to see live lanes and completed takes with waveform playback,
+scrubbing, selectable headphone output, gain, pan, mute, and solo.
 
-The first time you open WebJam, two focused steps appear:
+In Studio, **Recording Setup** can optionally add the host interface's first
+two inputs as separate 24-bit stems. This is useful for guitar on input 1 and
+vocal on input 2; it is not required for the normal per-musician recording.
 
-1. **Choose your setup** — select **Host the band** or **Join a band**, then
-   enter your musician name. A host uses the included server automatically;
-   a joining musician enters the single address shared by the host.
-2. **Webex and recording** — paste the meeting link and optionally select an
-   isolated local recording input.
+After a take verifies, select it and press **Export for Logic**. WebJam writes
+new numbered 24-bit stems that all start at `0:00` and have the same length,
+plus a stereo rough mix and import instructions. Drag the numbered stems into
+Logic together. The original recorder files remain unchanged. See
+[`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
-Click **Finish Setup**. WebJam opens the lobby and runs **Ready Check**
-automatically. Ports, executable paths, alternative Webex modes, recording
-folders, and public-server options remain in **Settings** (`Ctrl+,`).
+Joining musicians do not configure recording. Their audio becomes a separate
+track on the host automatically.
 
-### Echo-safe Webex talkback for the pilot
+## Optional tools
 
-Both musicians choose **Musician with talkback**. Jamulus carries music;
-native Webex carries speech. Set Webex speaker to the wired interface, select
-the intended speech mic, enable **Mute me when I join**, use Standard macOS
-Mic Mode plus **Optimize for My Voice**, and hold Space only while speaking.
-Keep Webex muted while playing. BlackHole and `WebJam Bridge` are not in this
-signal path. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md).
+Everything that is not required to play is under **More**:
 
----
+- Session Notes
+- Multitrack Studio
+- Add Video or Conversation
+- Settings (name and optional conversation link only)
+- Troubleshooting
 
-## In a session
+Webex is optional and opens externally. If the band uses it for conversation,
+keep its microphone muted while playing to avoid delayed duplicate music.
 
-The Conductor keeps the live actions at the top:
+## End the jam
 
-1. **Start Audio** (gold) — starts Jamulus and connects to your band's server.
-   On the designated host this reads **Host & Start Audio** and starts/verifies
-   the server first. Each member appears as a card as they join. **Stop Audio**
-   disconnects the host musician but deliberately leaves the band server up.
-2. **Open Webex** (teal) — opens the meeting externally; finish joining there.
-3. Adjust each player's **fader / mute / solo** on their card to build *your own* monitor mix — it only changes what you hear, not what others hear.
-4. Use **Talk Break** between takes. It mutes only your Jamulus send; hold
-   Spacebar in Webex to speak. Release Spacebar before **Resume Music**.
+The host clicks **End Session**; a joined musician clicks **Leave Jam**. The
+different labels are intentional: the host action ends the jam for everyone,
+while Leave Jam disconnects only that Mac. WebJam keeps **Ending…** or
+**Leaving…** visible until cleanup finishes. On the host, it safely stops and
+saves an active take before stopping the client, hosted server, and sleep
+assertion. Closing WebJam uses the same role-aware confirmation and cleanup.
 
-Use **Checks ▾** for Ready Check or Practice. The left rail contains only the
-working Live, Canvas, Takes, and Settings views.
+## If joining fails
 
-When the host stops recording, WebJam verifies the newly created tracks and
-shows track count, duration, sample rate, and any missing/silent-track warning.
-**Takes** opens Take Deck, where you can choose the physical playback output,
-review both headphone channels, and reveal the take in Finder.
+Make sure both Macs are on the same Wi-Fi, then click **Try Again**. The current
+invite is a local-network flow; a home router, firewall, or guest Wi-Fi that
+isolates devices can prevent the two Macs from reaching each other.
 
-**Save your mix** so you don't rebuild it every time: `Ctrl+S` saves, `Ctrl+O` restores. WebJam also auto-restores your last mix when the band reconnects.
-
----
-
-## Keyboard shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+P` | **Practice solo pilot check** — private local server, hear yourself, no internet; include this in the real-hardware gate. |
-| `● Record` button | **Pilot/server-admin feature** — band-server multitrack recording after `server/README.md` setup; validate on real hardware before relying on it for a session. |
-| **Takes** (side rail) | **Pilot validation** — play back copied/downloaded take folders; include take retrieval + Take Deck playback in the real-hardware gate. |
-| `F2` / `Checks → Ready Check` | Is my setup ready to jam? |
-| `Ctrl+S` / `Ctrl+O` | Save / load your mixer state (default slot) |
-| `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save Mix As… / Load a named mix file |
-| `Ctrl+M` | Mute / unmute **all** |
-| `Ctrl+Shift+M` | Start **Talk Break** / resume the Jamulus send; Webex is never changed |
-| `Ctrl+Shift+R` | Reset all faders to 0 dB |
-| `Ctrl+T` | Insert a timestamp in the notes canvas |
-| `Ctrl+,` | Open Settings |
-| `Ctrl+Shift+D` | Copy diagnostics to clipboard (for support) |
-| `F1` | Help |
-| `F11` / `Esc` | Fullscreen on / off |
-| Double-click a fader | Reset that channel to 0 dB |
-
-> **On macOS**, the mute shortcuts use the literal **Control** key (shown as `⌃M` / `⌃⇧M`), not Cmd — so they don't clash with Cmd+M (minimize).
-
----
-
-## Planning the band's first session?
-
-Follow **[FIRST_JAM.md](FIRST_JAM.md)** — a staged runbook (solo smoke test → two-person test → full band) with a failure playbook.
-
-## Before your first real jam — a 60-second check
-
-Fastest confidence builder: press **Ctrl+P** (Practice). WebJam starts a private Jamulus server *on your own computer* and connects to it — if you can hear yourself and see your meter move, your audio setup works, full stop. Then:
-
-1. The host selects **Host & Start Audio**; everyone else selects **Start
-   Audio**. Confirm the status bar reads `Server: Hosting :22124` on the host
-   and that both musicians see each other's cards and hear Jamulus.
-2. Both: **Open Webex**, join muted, and verify push-to-talk speech reaches the other interface headphones.
-3. Play with both Webex mics muted and confirm there is no delayed duplicate music.
-4. Set and **save** your monitor mix (`Ctrl+S`).
-
----
-
-## Troubleshooting
-
-- **"Jamulus Not Found" when I click Start Audio** — WebJam can't find (or wasn't shipped with) a Jamulus install. Reopen Settings → Jamulus: on Windows click **"Install Jamulus now"** if it's offered, otherwise install from [jamulus.io](https://jamulus.io) and set the path.
-- **No Webex talkback** — confirm Webex uses the intended speech mic and the wired interface as speaker, then test temporary unmute by holding Spacebar.
-- **Delayed duplicate music** — mute Webex immediately. Webex is receiving an instrument/music input; select a dedicated speech mic and keep it muted while playing.
-- **"No audio routing device found" in setup** — this applies only to advanced audience-bridge mode; talkback does not require a virtual device.
-- **Can't connect to the server** — double-check the host and port with your band admin, and that everyone is pointed at the *same* server.
-- **"Band Server Could Not Start" on the host** — install the dedicated
-  `JamulusServer.app` 3.12.2, keep UDP 22124 and loopback TCP 22240 free, then
-  retry. If TCP 22240 belongs to a manual server, WebJam adopts it only when
-  the configured secret authenticates its recorder. See `server/README.md` and
-  `~/Library/Logs/WebJam/jamulus-server.log`.
-- **Something's off and you want help** — press `Ctrl+Shift+D` to copy a diagnostics summary, or grab the log files: `~/.webjam.log` (WebJam) and `~/.webjam_jamulus.log` (Jamulus output).
-
----
-
-## For tinkerers
-
-WebJam exposes an optional read-only **Companion API** on `http://127.0.0.1:8765` (participants, session state) for DAWs/editors/scripts — see `COMPANION_API.md`. It is off by default; enable it only if you need an external tool to read session state.
-
-Questions or bugs: [github.com/rupret007/webjam](https://github.com/rupret007/webjam).
+For test-night installation and acceptance steps, see
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).

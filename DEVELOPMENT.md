@@ -8,7 +8,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 |------|---------|-------|
 | Python | 3.10+ | Download from https://www.python.org/downloads/ |
 | Git | Latest | https://git-scm.com/downloads |
-| Jamulus | 3.9+ | **Install separately for development** — free at [jamulus.io](https://jamulus.io). Downloadable release *builds* bundle Jamulus (macOS: zero-install nested app; Windows: bundled installer via the Setup Wizard — see `THIRD_PARTY_NOTICES.md`), but that bundling happens at PyInstaller build time and has no effect when running from source with `python webjam_qt_main.py`. |
+| Jamulus | 3.9+ | **Install separately for development** — free at [jamulus.io](https://jamulus.io). Downloadable release *builds* supply Jamulus (the current private macOS build contains prepared client/server apps; earlier Windows builds supplied the official installer — see `THIRD_PARTY_NOTICES.md`), but packaging has no effect when running from source with `python webjam_qt_main.py`. |
 | VB-Cable | Latest | Optional, Windows only — advanced audience-bridge mode; not musician talkback |
 
 When installing Python on Windows, check **"Add python.exe to PATH"** during the installer.
@@ -65,16 +65,23 @@ python webjam_qt_main.py          # Qt Conductor UI (current)
 python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
-On first launch a two-step dialog asks only whether this Mac hosts or joins,
-the musician/server identity, the Webex URL, and optional local capture input.
-It defaults to talkback and opens Ready Check automatically. Detailed ports,
-paths, alternative Webex modes, and routing remain in **Settings** (`Ctrl+,`).
+Every launch begins with the responsive **Host a Jam** / **Join a Jam** dialog.
+Host derives the standard service settings and starts the server/client without
+a setup form. Join accepts one strict `webjam://` invitation. Ordinary Settings
+contains only the displayed musician name and optional conversation URL;
+technical readiness detail is secondary under **More → Troubleshooting**.
 
-Release artifacts bundle the official dedicated JamulusServer.app 3.12.2;
-source-run hosting uses the compatible app in `/Applications`. Use
-`tests/test_hosted_server.py` for the ownership/adoption matrix; the manual
-hardware lifecycle in `TEST_PROCEDURE.md` must use the server app's sandbox
-container for its secret and recordings.
+The current UI contract is documented in
+[`UX_ACCEPTANCE_CHECKLIST.md`](UX_ACCEPTANCE_CHECKLIST.md). When adding a state,
+keep one primary action, use plain musician-facing copy, preserve the
+black/white/burnt-orange token system, and add keyboard/accessibility coverage.
+
+Release artifacts bundle prepared Jamulus client/server apps 3.12.2 and keep
+their runtime data under `~/Library/Application Support/WebJam/`; source-run
+hosting uses the compatible sandboxed app in `/Applications`. Use
+`tests/test_hosted_server.py` for the ownership/adoption matrix. The manual
+hardware lifecycle in `TEST_PROCEDURE.md` still uses the official server
+app's sandbox container for its secret and recordings.
 
 ## Run Tests
 
@@ -110,17 +117,18 @@ on a dirty PR, and it blocks the build / release jobs that follow.
 
 ### Running the UX smoke gate
 
-`ux_smoke_test.py` boots the Qt Conductor window headlessly and asserts
-the shell wires up without raising. It runs in CI between lint and the
-test suite (the `test` job's "Run UX smoke gate" step):
+`ux_smoke_test.py` is a fast static UX-contract check: it compiles the current
+Python entry points and checks the expected launch/session copy and assets. It
+does not boot Qt. The pytest suite performs the real offscreen widget and
+controller checks. The static smoke runs in CI between lint and pytest (the
+`test` job's "Run UX smoke gate" step):
 
 ```bash
 python3 ux_smoke_test.py
 ```
 
-On macOS / Linux this needs a working Qt platform plugin — set
-`QT_QPA_PLATFORM=offscreen` in the environment if you don't have a
-display attached (the CI workflow does the same).
+Set `QT_QPA_PLATFORM=offscreen` for the pytest UI suite when no display is
+available (the CI workflow does the same).
 
 ## Build a Standalone Executable
 

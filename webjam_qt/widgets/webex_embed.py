@@ -360,11 +360,11 @@ class WebexEmbed(QFrame):
         }
         guidance = {
             "talkback": (
-                "TALK · Jamulus send muted — hold Space in Webex to speak."
+                "TALK · music send muted — hold Space in Webex to speak."
                 if self._talk_break_active else
-                "PLAY · Music stays in Jamulus — keep Webex muted."
+                "PLAY · music stays in WebJam — keep Webex muted."
             ),
-            "video_only": "Join Webex without computer audio; music stays in Jamulus.",
+            "video_only": "Join Webex without computer audio; music stays in WebJam.",
             "audience_bridge": (
                 "Advanced audience feed: musicians must disconnect Webex audio "
                 "to prevent delayed duplicate music."
@@ -581,7 +581,7 @@ class WebexEmbed(QFrame):
         )
 
         self._mode_label = QLabel(
-            "Music stays in Jamulus. Join Webex muted; hold Space only "
+            "Music stays in WebJam. Join Webex muted; hold Space only "
             "during a Talk Break."
         )
         self._mode_label.setAlignment(

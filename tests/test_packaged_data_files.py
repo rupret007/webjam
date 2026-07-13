@@ -40,6 +40,8 @@ class TestPackagedDataFiles(unittest.TestCase):
     def test_spec_bundles_the_runtime_data_files(self):
         self.assertIn("conductor.qss", SPEC)
         self.assertIn("webex_widget.html", SPEC)
+        self.assertIn("INTER_OFL.txt", SPEC)
+        self.assertTrue((ROOT / "licenses" / "INTER_OFL.txt").is_file())
 
     def test_spec_version_tracks_package_version(self):
         # The macOS bundle version must not be hardcoded/stale.
@@ -47,6 +49,16 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("CFBundleShortVersionString", SPEC)
         m = re.search(r'__version__\s*=\s*"([^"]+)"', (PKG / "__init__.py").read_text())
         self.assertIsNotNone(m)
+
+    def test_microphone_permission_copy_explains_the_bandmate_benefit(self):
+        self.assertIn("NSMicrophoneUsageDescription", SPEC)
+        self.assertIn("bandmates can hear you", SPEC)
+        self.assertNotIn("optional local recording.\"", SPEC)
+
+    def test_spec_keeps_late_studio_modules_in_the_frozen_archive(self):
+        self.assertIn('"core.take_export"', SPEC)
+        self.assertIn('"webjam_qt.widgets.recording_studio"', SPEC)
+        self.assertIn('"webjam_qt.windows.recording_setup"', SPEC)
 
 
 if __name__ == "__main__":

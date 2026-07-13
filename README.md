@@ -1,6 +1,8 @@
 # WebJam
 
-A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio) and **Webex** (video) into a single session, with a shared canvas for notes and artifacts.
+A musician-facing rehearsal and multitrack recording app built around one
+flow: **Host. Share. Join. Play.** WebJam runs Jamulus as a background engine;
+video, notes, and Studio remain optional session tools.
 
 > See [Current State](#current-state) for what works today and [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for what's planned next.
 >
@@ -10,33 +12,35 @@ A creative-collaboration shell that orchestrates **Jamulus** (low-latency audio)
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-07-12): the source
-tree is the **v0.8.1 release candidate**; v0.8.0 remains the latest published
+Being honest about where this app is **right now** (2026-07-13): the source
+tree is the **v0.9.0 test-night candidate**; v0.8.0 remains the latest published
 download until the real-hardware pilot gates pass.
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. Full suite is 800+ tests plus real-Jamulus integration (see `CHANGELOG.md` for the exact current count). |
-| **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` is the entry point. Downloadable builds at [Releases](https://github.com/rupret007/webjam/releases). |
+| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. The release gate runs the full automated suite plus packaged-runtime and two-Mac physical checks. |
+| **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` opens a black, white, and burnt-orange Host/Join experience with a responsive meeting-style stage. Downloadable builds remain at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
-| **Jamulus integration** | ✅ **JSON-RPC (matching shipping Jamulus 3.9–3.12) + UDP fallback.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and 0–9 level meters, and incoming chat all over authenticated newline-delimited JSON-RPC on TCP (Jamulus is launched with `--jsonrpcsecretfile`). Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install, Windows offers an in-wizard installer (see `THIRD_PARTY_NOTICES.md`); running from source still requires installing it separately. |
-| **All-in-one band-server hosting** | ✅ **macOS v0.8.1 candidate.** The host can enable **This Mac hosts the band server** and use **Host & Start Audio**. WebJam verifies its bundled official JamulusServer.app 3.12.2, binds recorder RPC to loopback, stores its 0600 secret/takes in the server sandbox, supervises the process, and keeps it alive through Stop Audio. An existing server is adopted only after authenticated recorder verification. |
-| **Webex integration** | ✅ **Native external launch.** WebJam opens the configured room in native Webex/default browser and truthfully reports only that it was opened. Musician talkback, video-only, and advanced audience-bridge roles are explicit; WebJam never stores Webex credentials or pretends to observe native meeting state. |
-| **Session canvas + Pulse** | ✅ **v0.8.1 candidate.** Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
-| **Audio routing** | ⚠️ **Guidance and detection.** Jamulus is the music path; native Webex can be a separate speech path. Only advanced audience-bridge mode scans for VB-CABLE/BlackHole. Users still select devices in Jamulus, macOS/Windows, and Webex. See [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md). |
-| **Builds** | ✅ Three release artifacts: Windows x64, macOS ARM64, and macOS Intel x64. |
+| **Jamulus integration** | ✅ **Authenticated JSON-RPC with the bundled Jamulus 3.12.2.** Faders (`setFaderLevel`), real self-mute (`setMuted`), per-channel mute, live participant list and honest 0–9 level meters, and incoming chat all use the client’s authenticated local interface. Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install; running from source still requires installing Jamulus separately (see `THIRD_PARTY_NOTICES.md`). |
+| **Host → Share → Join** | ✅ **macOS v0.9.0 candidate.** Launch shows only **Host a Jam** and **Join a Jam**. Hosting derives and starts every server/client default automatically. A strict, non-secret `webjam://join?...` invitation is available only after server readiness; clicking or pasting it configures and starts the guest. |
+| **All-in-one band-server hosting** | ✅ WebJam verifies the bundled JamulusServer.app 3.12.2, binds recorder RPC to loopback, stores its mode-0600 secret/takes under Application Support, supervises both processes, and cleans up recording, client, server, and `caffeinate` on End Session or quit. |
+| **Multitrack Studio** | ✅ The host records one synchronized server track per musician. Studio adds live armed lanes, take history, waveforms, stereo output selection, scrub/playback, gain, pan, mute, and solo. **Export for Logic** produces equal-length, zero-aligned 24-bit stems, a stereo rough mix, instructions, and an evidence manifest without changing the source take. |
+| **Webex integration** | ✅ **Optional external launch.** Video/conversation is absent from startup and lives under More. WebJam opens a configured room in native Webex/default browser and truthfully reports only that it opened. |
+| **Session canvas + Pulse** | ✅ **v0.9.0 candidate.** Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
+| **Audio defaults and truth** | ✅ Jamulus runs headlessly with the system/default interface. WebJam never requires a virtual device for ordinary rehearsal and never fabricates meter motion. Roster presence proves connection; observed levels separately prove input activity. |
+| **Builds** | ✅ CI targets Windows x64, macOS ARM64, and macOS Intel x64. The private v0.9.0 test-night handoff is Apple Silicon only. |
 | **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today: WebJam is a **closed-pilot-ready Qt Conductor** — its
-centered lobby launches or hosts the Jamulus session, opens native Webex, runs
-Ready Check, and gives you a live mixer for every participant. The Jamulus
-client window still appears separately, but fader/mute/solo controls in WebJam
-drive it in real time. On the designated macOS host, Stop Audio disconnects
-only that musician while the supervised band server stays available; quitting
-WebJam stops only a server process WebJam owns. WebJam cannot inspect, mute,
-reconnect, or leave a native Webex meeting for you.
+In practice today: the **v0.9.0 test-night candidate** takes a musician from two
+launch choices to a hosted or joined rehearsal without a setup form. Jamulus client
+and server processes stay in the background. The live window shows aggregate
+readiness, one clear invite action, real band members, and one More menu. The
+same-LAN invitation flow is implemented; remote NAT traversal is not
+claimed.
 
-Before widening the closed pilot or calling the release broadly ready, validate on real hardware: clean-machine Windows/macOS installs, Ctrl+P real-audio smoke, two-person Jamulus, Record button, take retrieval, and Take Deck playback. Demo Deck Level 2 should wait until those pass.
+Before widening the closed pilot, validate the exact artifact on two Macs:
+link launch, bidirectional physical audio, a named two-musician take, Studio
+playback, aligned Logic export/import, reconnect, and owned-process cleanup.
 
 ---
 
@@ -44,10 +48,10 @@ Before widening the closed pilot or calling the release broadly ready, validate 
 
 See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Near-term engineering phases:
 
-1. **Pilot gates** — real-audio Ctrl+P, two-person Jamulus, Record, take retrieval, Take Deck playback
+1. **Pilot gates** — two-Mac invite link, real bidirectional audio, Studio take, exact-artifact Logic import
 2. **Supportability** — signed/notarized builds, diagnostics redaction, recording retention guidance
 3. **Architecture cleanup** — split `ApplicationController` into session/audio/video/recording/settings/API coordinators
-4. **Post-pilot expansion** — Demo Deck Level 2, overdub/export, richer creative modes
+4. **Post-pilot expansion** — overdub workflows, deeper editing, broader DAW handoffs, richer creative modes
 
 ---
 
@@ -57,14 +61,14 @@ See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Nea
 git clone https://github.com/rupret007/webjam.git
 cd webjam
 pip install -r requirements.txt
-python webjam_qt_main.py  # First run: two focused Host/Join setup steps, then Ready Check
+python webjam_qt_main.py  # Choose Host a Jam or Join a Jam
 ```
 
 System requirements:
 - Python 3.10+
-- Windows 10/11 or macOS 12+
-- Jamulus client installed separately (running from source doesn't bundle it —
-  see `THIRD_PARTY_NOTICES.md` for how downloadable builds do) + Webex (web or desktop)
+- Windows 10/11 or macOS 13+
+- Jamulus client installed separately when running from source (downloadable
+  macOS builds bundle it)
 - Downloadable macOS builds include official Jamulus client/server 3.12.2;
   source runs use compatible apps in `/Applications`
 - Broadband network with <30 ms latency to your Jamulus server
@@ -73,7 +77,7 @@ System requirements:
 
 ## Configuration
 
-App settings live in:
+Normal musicians do not edit configuration. Developer/runtime state lives in:
 - **Config:** `~/.webjam_config.json`
 - **Mix:** `~/.webjam_mix.json` (anonymous/local fallback)
 
@@ -101,20 +105,21 @@ Environment overrides:
 | **Ctrl+T** | Insert timestamp heading into Session Canvas |
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
-| **Ctrl+,** | Open Settings wizard |
-| **F2 / Checks → Ready Check** | Run Ready Check before a jam |
-| **Ctrl+1 / Ctrl+2 / Ctrl+3** | Open Live / Notes / Takes |
+| **Ctrl+,** | Open name / optional conversation preferences |
+| **F2** | Open secondary troubleshooting |
+| **Ctrl+1 / Ctrl+2 / Ctrl+3** | Open Live / Notes / Studio |
 | **F11** | Toggle fullscreen |
 | **Escape** | Exit fullscreen |
 | **F1** | Show in-app help (shortcut & getting-started reference) |
 | **Double-click fader** | Reset to 0 dB (unity gain) |
 
-The session timer, mode picker, Record, Talk Break, Start Audio, and Open Webex
-controls are in the top strip; the disconnected lobby also exposes the primary
-**Start Audio** / **Host & Start Audio** action. Ready Check and Practice are
-under **Checks ▾**.
-The left rail switches between the Live and Notes workspaces; Takes and
-Settings are utility actions that open their dedicated windows.
+The primary session surface follows a familiar meeting layout: a restrained
+header, one readiness surface, large responsive musician tiles, and one bottom
+control bar for **Copy Invite**, **Record**, **More**, and the role-aware
+**End Session** or **Leave Jam** action. Notes, Studio, video/conversation,
+Settings, and troubleshooting are under **More**. The visual system uses
+near-black surfaces, white text, and burnt orange (`#BF5700`) for deliberate
+emphasis—no purple or teal.
 Session notes are saved to `~/.webjam_notes.md` and restored automatically.
 
 ---
@@ -127,7 +132,7 @@ webjam/
 ├── webjam_qt/               # Qt application (windows, widgets, controllers)
 ├── legacy/                  # Quarantined Tkinter app, admin RBAC, old tests
 ├── server/                  # Native macOS + Linux band-server runbooks
-├── jamulus_controller.py    # Mixer state + RPC/UDP integration
+├── jamulus_controller.py    # Mixer state + authenticated RPC integration
 ├── core/                    # Settings, modes, protocol, metrics, take library
 ├── services/                # BridgeService (Jamulus/Webex process lifecycle)
 ├── storage/                 # SQLite repository (users, mixes, room context)
@@ -145,6 +150,7 @@ Additional reading:
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [COMPANION_API.md](COMPANION_API.md) — localhost API for external tools
 - [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md) — safe Jamulus music, Webex talkback, and audience-bridge signal flows
+- [RECORDING_AND_LOGIC.md](RECORDING_AND_LOGIC.md) — take integrity, Studio mixing, isolated host inputs, and the aligned Logic handoff
 - [legacy/CODE_REVIEW_FINDINGS.md](legacy/CODE_REVIEW_FINDINGS.md) — archived Tkinter-era review (not current open issues)
 
 ---
@@ -165,8 +171,9 @@ VB-CABLE) under their own licenses — see `THIRD_PARTY_NOTICES.md`.
 
 ## Acknowledgments
 
-- **Jamulus** — open-source low-latency audio. WebJam bundles an
-  unmodified, official copy (macOS: zero-install nested app; Windows:
-  bundled installer) — see `THIRD_PARTY_NOTICES.md` for licensing detail.
+- **Jamulus** — open-source low-latency audio. WebJam bundles the official
+  release (macOS: prepared zero-install nested apps; Windows: unmodified
+  installer) — see `THIRD_PARTY_NOTICES.md` for exact signature and licensing
+  details.
 - **Webex** — video conferencing
 - **VB-Audio Software** — virtual audio cable

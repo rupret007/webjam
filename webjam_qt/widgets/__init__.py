@@ -5,6 +5,9 @@ from webjam_qt.widgets.participant_grid import ParticipantGrid
 from webjam_qt.widgets.session_canvas import SessionCanvas
 from webjam_qt.widgets.webex_embed import WebexEmbed
 from webjam_qt.widgets.level_meter import LevelMeter
+from webjam_qt.widgets.recording_studio import RecordingStudio
+from webjam_qt.widgets.session_hud import SessionHud
+from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
 
 __all__ = [
     "SessionStrip",
@@ -14,4 +17,7 @@ __all__ = [
     "SessionCanvas",
     "WebexEmbed",
     "LevelMeter",
+    "RecordingStudio",
+    "SessionHud",
+    "JamSignalGraphic",
 ]

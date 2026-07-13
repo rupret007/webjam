@@ -3,9 +3,9 @@
 **Date:** 2026-06-29
 **Status:** Historical memo. Its market comparison and protocol history remain
 useful, but current status lives in `README.md` and `MODERNIZATION_PLAN.md`.
-The v0.8.1 candidate uses native two-lane Webex talkback and adds opt-in
-same-Mac JamulusServer hosting; it still awaits the full two-Mac hardware
-gates. Do not treat the old release recommendations below as current work.
+The memo predates the current v0.9.0 Host/Join experience, automatic same-Mac
+hosting, responsive black/white/burnt-orange interface, and integrated Studio.
+Do not treat the old release recommendations below as current work.
 An evaluation of what WebJam needs to become a tool a band actually relies on, with the audio engine assessed against the current open-source landscape — plus the headline fix implemented this round.
 
 ---
@@ -60,7 +60,9 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 - ✅ **Talk Break / Mute Jamulus Send** via `jamulusclient/setMuted` is shipped;
   it deliberately never changes native Webex mute state.
 - **In-session chat** via `jamulusclient/sendChatText` + `chatTextReceived` → put it in the session canvas (low effort, high "we're together" value).
-- **Server-side recording** (for the band admin's server) via `jamulusserver/startRecording` / `getRecorderStatus` → one-click "record this rehearsal."
+- ✅ **Server-side recording and Studio** via `jamulusserver/startRecording` /
+  `getRecorderStatus`, with verified per-musician takes, non-destructive stereo
+  review, and an aligned 24-bit Logic export.
 
 **P2 — lower the setup barrier (the real adoption blocker)**
 - ✅ **In-app macOS band-server hosting** now verifies and supervises the
@@ -79,6 +81,7 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: use the v0.8.1 candidate privately, complete the
-two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the exact
-artifact passes the recording, reconnect, talkback, and soak gates.
+Current recommendation: use the distinct v0.9.0 candidate privately, complete
+the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the
+exact artifact passes audio, recording, reconnect, role-aware cleanup, and soak
+gates.

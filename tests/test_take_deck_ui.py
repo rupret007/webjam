@@ -277,27 +277,23 @@ class TestControllerOpensDeck(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        deck = getattr(cls.controller, "_take_deck", None)
-        if deck is not None:
-            deck.close()
         cls.controller.shutdown()
 
-    def test_takes_rail_key_opens_deck(self):
-        from unittest.mock import MagicMock
+    def test_takes_rail_key_opens_integrated_studio(self):
         c = self.controller
-        c.window.side_rail.set_active_key = MagicMock()
-        c._open_take_deck = MagicMock()
         c._on_rail_view_changed("takes")
-        c._open_take_deck.assert_called_once()
-        # rail restored to previous content view, not left on "takes"
-        c.window.side_rail.set_active_key.assert_called_once()
+        self.assertIs(
+            c.window.workspace_stack.currentWidget(),
+            c.window.recording_studio,
+        )
 
-    def test_open_take_deck_creates_dialog(self):
+    def test_compatibility_open_take_deck_reveals_studio(self):
         c = self.controller
-        c.settings.takes_directory = ""
         c._open_take_deck()
-        self.assertIsNotNone(c._take_deck)
-        c._take_deck.close()
+        self.assertIs(
+            c.window.workspace_stack.currentWidget(),
+            c.window.recording_studio,
+        )
 
 
 if __name__ == "__main__":

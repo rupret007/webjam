@@ -80,6 +80,10 @@ class ReadyCheckReport:
 
 
 def _check_jamulus_executable(settings) -> CheckItem:
+    from services.bridge_service import _bundled_jamulus_candidate
+    bundled = _bundled_jamulus_candidate()
+    if bundled:
+        return CheckItem("Jamulus installed", True, bundled)
     candidates = list(getattr(settings, "jamulus_candidates", []) or [])
     found = next(
         (c for c in candidates if c and Path(str(c)).expanduser().exists()), None

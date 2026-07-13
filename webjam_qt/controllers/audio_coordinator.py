@@ -28,25 +28,70 @@ class AudioCoordinator:
         self._c = controller
         self.connected = False
         self.stopping = False
+        self.ended_by_user = False
+        self.connection_timed_out = False
+        self.recovering = False
+        self.permission_explained = False
 
     def on_launch_toggle(self) -> None:
         if self._c._is_jamulus_running():
             self.stop()
         else:
+            from webjam_qt.platform_permissions import microphone_permission_status
+
+            permission = microphone_permission_status()
+            if permission == "not_determined" and not self.permission_explained:
+                self.permission_explained = True
+                self._c.window.participant_grid.set_session_state(
+                    SessionUiState.permission_required()
+                )
+                self._c.window.session_hud.set_state(
+                    "Microphone access is needed",
+                    "Your band needs to hear your instrument. Choose Continue to use the macOS prompt.",
+                )
+                self._c.window.session_strip.set_tools_enabled(True)
+                return
+            if permission in {"denied", "restricted"}:
+                self._c.window.participant_grid.set_session_state(
+                    SessionUiState.permission_denied()
+                )
+                self._c.window.session_hud.set_state(
+                    "Microphone access is off",
+                    "Open System Settings below, allow access, then return to WebJam.",
+                )
+                self._c.window.session_strip.set_tools_enabled(True)
+                return
+            self.ended_by_user = False
+            self.connection_timed_out = False
+            self.recovering = False
+            self._c._local_audio_seen = False
+            self._c._remote_audio_seen = False
             self._c._reconnect_banner_shown = False
             self._c._rpc_hang_banner_shown = False
             self._c._reconnect_gave_up = False
             self._c.window.set_status_audio("Launching…")
+            self._c.window.session_strip.set_tools_enabled(True)
             self._c.window.session_strip.set_audio_state("Launching…", enabled=False)
             self._c.window.participant_grid.set_session_state(
                 SessionUiState.connecting(self._c.bridge.effective_server())
             )
+            if bool(getattr(self._c.settings, "host_server_enabled", False)):
+                self._c.window.session_hud.set_state(
+                    "Starting your jam…",
+                    "WebJam is getting the band audio ready.",
+                )
+            else:
+                self._c.window.session_hud.set_state(
+                    "Joining your jam…",
+                    "WebJam is connecting you to the band.",
+                )
             self._c.bridge.launch_jamulus(manual=True)
+            self._c._connection_timer.start()
 
     def on_practice_requested(self) -> None:
         if self._c._is_jamulus_running():
             self._c.window.flash_message(
-                "Stop Audio first, then press Practice for a solo session.",
+                "End the current session first, then start a solo practice.",
                 ms=4000,
             )
             return
@@ -55,43 +100,49 @@ class AudioCoordinator:
         self._c.window.participant_grid.set_session_state(SessionUiState.practice())
         self._c.window.flash_message(
             "Practice mode: private server on this computer — play and hear "
-            "yourself, no internet needed. Stop Audio ends it.",
+            "yourself, no internet needed. End Session stops it.",
             ms=6000,
         )
         started = self._c.bridge.launch_practice_session()
         if not started:
-            self._c.window.session_strip.set_audio_state("Start Audio", enabled=True)
+            self._c.window.session_strip.set_audio_state("Start Session", enabled=True)
             self._c.window.set_status_audio("Ready to launch")
             self.reset_to_idle()
 
     def stop(self) -> None:
-        hosting = bool(
-            getattr(self._c.settings, "host_server_enabled", False)
-            and self._c.bridge.hosted_server_alive()
+        hosting = bool(getattr(self._c.settings, "host_server_enabled", False))
+        recording_active = self._c.recording.is_recording_active
+        take_in_progress = bool(
+            getattr(self._c.recording, "take_in_progress", recording_active)
         )
+        if hosting and take_in_progress:
+            QMessageBox.information(
+                self._c.window,
+                "Finish the take first",
+                (
+                    "Press Stop Rec, then wait for ‘Take saved’ before ending the jam. "
+                    if recording_active
+                    else "Wait for ‘Take saved’ before ending the jam. "
+                )
+                + "This keeps every musician's track complete and verified.",
+            )
+            return
         question = (
-            "Stop the Jamulus audio session?\n\n"
-            "You can restart it any time with the audio button."
+            "Leave this jam?\n\n"
+            "The host and other musicians will stay connected."
         )
         if hosting:
             question = (
-                "Stop the Jamulus audio session?\n\n"
-                "Your band server keeps running — other musicians stay "
-                "connected. You can rejoin any time with the audio button; "
-                "the server stops only when WebJam quits."
+                "End this jam for everyone?\n\n"
+                "WebJam will safely finish any recording and stop the hosted session."
             )
-        if self._c.recording.is_recording_active:
-            # Stopping the client does not stop the band server's recorder —
-            # don't let the ● REC chip vanishing suggest otherwise.
+        if recording_active:
             question = (
-                "A recording is still running on the band server.\n\n"
-                "Stopping audio disconnects this computer but the server "
-                "keeps recording. Press ■ Stop Rec first to finish and "
-                "verify the take on this Mac.\n\n"
-                "Stop the Jamulus audio session anyway?"
+                "Leave this jam?\n\nThe host's recording will keep running. "
+                "Only this Mac will disconnect."
             )
         reply = QMessageBox.question(
-            self._c.window, "Stop Audio?",
+            self._c.window, "End Jam?" if hosting else "Leave Jam?",
             question,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -99,19 +150,108 @@ class AudioCoordinator:
         if reply != QMessageBox.StandardButton.Yes:
             return
         self.stopping = True
-        self._c.window.set_status_audio("Stopping…")
+        self.ended_by_user = True
+        self.recovering = False
+        self._c.window.set_status_audio("Ending…" if hosting else "Leaving…")
         self._c.window.set_status_latency("Not connected")
-        self._c.window.session_strip.set_audio_state("Stopping…", enabled=False)
+        self._c.window.session_strip.set_audio_state(
+            "Ending…" if hosting else "Leaving…", enabled=False
+        )
+        self._c.participants.clear()
+        self._c._push_participants_to_grid()
+        self._c.window.participant_grid.set_session_state(
+            SessionUiState.ending(hosting=hosting)
+        )
+        self._c.window.session_hud.set_state(
+            "Ending this jam…" if hosting else "Leaving the jam…",
+            (
+                "WebJam is safely finishing recordings and disconnecting everyone."
+                if hosting
+                else "WebJam is disconnecting your audio safely."
+            ),
+        )
         threading.Thread(
-            target=self._c.bridge.stop_jamulus, daemon=True, name="jamulus-stop",
+            target=self._stop_session_services,
+            args=(hosting,),
+            daemon=True,
+            name="webjam-session-stop",
         ).start()
         self.connected = False
+        self._c._local_audio_seen = False
+        self._c._remote_audio_seen = False
         self._c._level_timer.stop()
+        self._c._connection_timer.stop()
+        # A fresh client always starts unmuted. Clear this safety state now,
+        # but leave recorder flags intact until the worker has asked the host
+        # server to finalize every track.
+        self._c._self_transmit_muted = False
+        self._c._talk_break_intended = False
+        self._c._sync_self_mute_button()
+
+    def _finish_session_stop_ui(self, error: str = "") -> None:
+        """Finalize local/UI state after recorder, client, and server stop."""
+        self._c.window.session_strip.reset_session_clock()
+        self._c.window.session_strip.set_tools_enabled(True)
+        self.stopping = False
+        if error:
+            self.ended_by_user = False
+            self._c.window.participant_grid.set_session_state(
+                SessionUiState.stop_failed()
+            )
+            self._c.window.session_hud.set_state(
+                "WebJam couldn’t finish cleanly",
+                "The current jam is still protected. Try ending or leaving again.",
+            )
+            self._c.window.session_strip.set_audio_state(
+                "Try End Session"
+                if bool(getattr(self._c.settings, "host_server_enabled", False))
+                else "Try Leave Jam",
+                enabled=True,
+            )
+            self._c.window.flash_message(error, ms=8000)
+            return
         self._c.recording.on_audio_session_stopped()
         self.reset_to_idle()
         self._c._reconnect_banner_shown = False
         self._c._rpc_hang_banner_shown = False
         self._c._reconnect_gave_up = False
+
+    def _stop_session_services(self, hosting: bool) -> None:
+        """Stop in data-safe order without freezing the Qt event loop."""
+        failures: list[str] = []
+        if hosting:
+            try:
+                recording_stopped = (
+                    self._c.recording.stop_server_recording_for_shutdown()
+                )
+                if not recording_stopped:
+                    failures.append("The recording may still be finishing.")
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not finish hosted recording during End Jam")
+                failures.append("The recording may still be finishing.")
+            if failures:
+                error = " ".join(failures)
+                self._c._ui_invoker.invoke(
+                    lambda message=error: self._finish_session_stop_ui(message)
+                )
+                return
+        try:
+            if not self._c.bridge.stop_jamulus():
+                failures.append("The local music connection did not stop cleanly.")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not stop the local music connection")
+            failures.append("The local music connection did not stop cleanly.")
+        if hosting:
+            try:
+                if not self._c.bridge.stop_hosted_server():
+                    failures.append("The hosted jam did not stop cleanly.")
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not stop the hosted band server")
+                failures.append("The hosted jam did not stop cleanly.")
+        error = " ".join(failures)
+        self._c._ui_invoker.invoke(
+            lambda message=error: self._finish_session_stop_ui(message)
+        )
 
     def reset_to_idle(self) -> None:
         self._c.session_health.reset_live_truth()
@@ -120,6 +260,7 @@ class AudioCoordinator:
         # TALK/muted state forward would render a fail-open lie.
         self._c._self_transmit_muted = False
         self._c._talk_break_intended = False
+        self.recovering = False
         self._c.participants.clear()
         self._c._push_participants_to_grid()
         self._c.window.participant_grid.set_session_state(
@@ -130,6 +271,7 @@ class AudioCoordinator:
                 ),
             )
         )
+        self._c._update_session_hud()
 
     def reset_to_demo(self) -> None:
         """Compatibility alias retained for older extensions."""
@@ -141,6 +283,9 @@ class AudioCoordinator:
         if not jamulus_participants:
             if self.connected:
                 self.connected = False
+                self.recovering = True
+                self._c._local_audio_seen = False
+                self._c._remote_audio_seen = False
                 self._c._level_timer.stop()
                 self._c.window.set_status_latency("Not connected")
                 self._c.window.set_status_audio("Connecting…")
@@ -149,7 +294,29 @@ class AudioCoordinator:
                 self._c.window.participant_grid.set_session_state(
                     SessionUiState.reconnecting()
                 )
+                if self._c.bridge.jamulus_launch_intended:
+                    self._c._connection_timer.start()
             return
+        hosting = bool(getattr(self._c.settings, "host_server_enabled", False))
+        local_session_proven = not hosting or any(
+            self._c._is_local_participant(person)
+            for person in jamulus_participants
+        )
+        if not local_session_proven and self.connected:
+            # The hosted server may still report guests after this Mac's
+            # client/audio path has failed. Keep their cards visible, but do
+            # not call the host connected or cancel its recovery timeout.
+            self.connected = False
+            self._c._local_audio_seen = False
+            self._c._level_timer.stop()
+            if self._c.bridge.jamulus_launch_intended:
+                self._c._connection_timer.start()
+        elif (
+            not local_session_proven
+            and self._c.bridge.jamulus_launch_intended
+            and not self._c._connection_timer.isActive()
+        ):
+            self._c._connection_timer.start()
         rpc = getattr(self._c.jamulus, "rpc_client", None)
         self._c.session_health.mark_process(
             self._c.bridge.jamulus_state,
@@ -157,8 +324,13 @@ class AudioCoordinator:
         )
         self._c.session_health.mark_participants(len(jamulus_participants))
 
-        if not self.connected:
+        if not self.connected and local_session_proven:
             self.connected = True
+            self.recovering = False
+            self.connection_timed_out = False
+            self._c._connection_timer.stop()
+            self._c.window.session_strip.start_session_clock()
+            self._c.window.session_strip.set_tools_enabled(True)
             self._c.session_health.mark_rpc_result("participants", True)
             self._c.jamulus.set_name(self._c.settings.musician_name)
             self._c.participants.clear()
@@ -169,26 +341,26 @@ class AudioCoordinator:
             except Exception:  # noqa: BLE001
                 LOGGER.debug("metric_session_started increment failed", exc_info=True)
             if self._c.bridge.practice_mode:
-                self._c.window.set_status_audio(
-                    f"Practice connected ({self._c.bridge.effective_server()})"
-                )
+                self._c.window.set_status_audio("Practice live")
                 self._c.window.flash_message(
                     "Practice session live — you're on a private local server. "
                     "Play something and watch your meter.",
                     ms=5000,
                 )
             else:
-                self._c.window.set_status_audio(
-                    f"Connected ({self._c.bridge.effective_server()})"
-                )
+                self._c.window.set_status_audio("Connected")
                 self._c.window.flash_message(
-                    f"Connected to {self._c.settings.jamulus_server}. "
-                    "Waiting for band members…",
+                    "Connected. Waiting for band members…",
                     ms=4000,
                 )
 
         n = len(jamulus_participants)
-        if n == 1:
+        if not local_session_proven:
+            self._c.window.set_status_latency(
+                f"{n} on server · this Mac is still connecting"
+            )
+            self._c.window.set_status_audio("Connecting…")
+        elif n == 1:
             self._c.window.set_status_latency("1 participant · waiting for others")
         else:
             self._c.window.set_status_latency(f"{n} participants")
@@ -199,6 +371,7 @@ class AudioCoordinator:
                 del self._c.participants[cid]
 
         for jp in jamulus_participants:
+            is_local = self._c._is_local_participant(jp)
             existing = self._c.participants.get(jp.channel_id)
             if existing is None:
                 self._c.participants[jp.channel_id] = ParticipantPresentation(
@@ -209,12 +382,12 @@ class AudioCoordinator:
                     muted=jp.muted,
                     solo=jp.solo,
                     is_connected=jp.is_connected,
-                    is_local=getattr(jp, "is_local", jp.channel_id == 0),
+                    is_local=is_local,
                 )
             else:
                 existing.name = jp.name
                 existing.is_connected = jp.is_connected
-                existing.is_local = getattr(jp, "is_local", jp.channel_id == 0)
+                existing.is_local = is_local
                 new_role = self._c._role_label(jp)
                 if new_role != existing.role:
                     existing.role = new_role
@@ -222,5 +395,5 @@ class AudioCoordinator:
         self._c._push_participants_to_grid()
 
     def on_readiness_refresh(self, jamulus_up: bool) -> None:
-        if not jamulus_up:
+        if not jamulus_up and not self.ended_by_user:
             self.stopping = False

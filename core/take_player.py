@@ -3,9 +3,9 @@ TakePlayer — multitrack playback engine for the Take Deck.
 
 Plays back a recorded take: each track is a streaming file reader, mixed on
 a numpy bus with per-track gain / mute / solo and per-track start offsets,
-into a single output stream. This is the "review the jam" heart of the Demo
-Deck — it deliberately does NOT edit, trim, or apply effects (that's the
-DAW's job; the take always keeps its Reaper-project escape hatch).
+into a stereo output stream. This is the "review the jam" heart of Studio:
+it deliberately keeps every mix move non-destructive so the verified source
+files remain ready for a DAW handoff.
 
 Testability
 -----------
@@ -45,6 +45,7 @@ class TrackState:
     offset_s: float = 0.0
     source: str = "jamulus_server"
     gain: float = 1.0        # 0..~1.27 (fader/100)
+    pan: float = 0.0         # -1.0 left .. 0 centre .. +1.0 right
     muted: bool = False
     solo: bool = False
     level: float = 0.0       # last block RMS, 0..1 (for meters)
@@ -57,8 +58,7 @@ class OutputSink(Protocol):
 
     def start(self, samplerate: int, blocksize: int,
               pull: Callable[[int], np.ndarray]) -> None:
-        """Begin playback. ``pull(n)`` returns the next ``n`` mono frames as
-        a float32 array (may be shorter than n at end-of-take)."""
+        """Begin playback. ``pull(n)`` returns the next ``n`` stereo frames."""
         ...
 
     def stop(self) -> None:
@@ -82,10 +82,15 @@ class SoundDeviceSink:
             count = min(block.shape[0], frames)
             outdata[:] = 0.0
             if count:
-                # The Take Deck mix is mono by design, but headphone playback
-                # must reach both ears instead of only interface channel 1.
-                outdata[:count, 0] = block[:count]
-                outdata[:count, 1] = block[:count]
+                if block.ndim == 1:
+                    # Backwards-compatible for a custom/legacy pull source.
+                    outdata[:count, 0] = block[:count]
+                    outdata[:count, 1] = block[:count]
+                elif block.shape[1] == 1:
+                    outdata[:count, 0] = block[:count, 0]
+                    outdata[:count, 1] = block[:count, 0]
+                else:
+                    outdata[:count, :2] = block[:count, :2]
 
         self._stream = sd.OutputStream(
             samplerate=samplerate, blocksize=blocksize,
@@ -198,6 +203,22 @@ class TakePlayer:
     def is_playing(self) -> bool:
         return self._playing
 
+    @property
+    def output_device_name(self) -> str:
+        return str(getattr(self._sink, "device_name", "") or "")
+
+    def set_output_device(self, device_name: str) -> bool:
+        """Select a playback device when using WebJam's sounddevice sink.
+
+        Returns ``False`` for injected/custom sinks so tests and integrations
+        never have their output object silently replaced.
+        """
+        if not isinstance(self._sink, SoundDeviceSink):
+            return False
+        self.stop()
+        self._sink.device_name = str(device_name or "")
+        return True
+
     # -- mixer controls (live) -------------------------------------------
     def set_gain(self, channel_id: int, gain: float) -> None:
         with self._lock:
@@ -210,6 +231,12 @@ class TakePlayer:
             for t in self._tracks:
                 if t.channel_id == channel_id:
                     t.muted = bool(muted)
+
+    def set_pan(self, channel_id: int, pan: float) -> None:
+        with self._lock:
+            for t in self._tracks:
+                if t.channel_id == channel_id:
+                    t.pan = max(-1.0, min(1.0, float(pan)))
 
     def set_solo(self, channel_id: int, solo: bool) -> None:
         with self._lock:
@@ -281,11 +308,12 @@ class TakePlayer:
             t._eof = False
 
     def _read_track_block(self, t: TrackState, start: int, n: int) -> np.ndarray:
-        """Return n mono frames from track ``t`` for absolute take-timeline
+        """Return n source-channel frames for absolute take-timeline
         window [start, start+n), honouring the track's offset. Silence where
         the track isn't sounding (before its offset or past its end)."""
-        out = np.zeros(n, dtype=np.float32)
         reader = t._reader
+        channels = max(1, int(getattr(reader, "channels", 1) or 1))
+        out = np.zeros((n, channels), dtype=np.float32)
         if reader is None:
             return out
         offset_frames = int(t.offset_s * self.samplerate)
@@ -307,26 +335,41 @@ class TakePlayer:
             return out
         if data.shape[0] == 0:
             return out
-        mono = data.mean(axis=1)                  # downmix channels
-        out[dest_start:dest_start + mono.shape[0]] = mono
+        out[dest_start:dest_start + data.shape[0], :data.shape[1]] = data
         return out
+
+    @staticmethod
+    def _pan_block(block: np.ndarray, pan: float) -> np.ndarray:
+        """Return a stereo block using mono pan or stereo balance."""
+        value = max(-1.0, min(1.0, float(pan)))
+        if block.shape[1] == 1:
+            mono = block[:, 0]
+            left = mono * (1.0 - max(0.0, value))
+            right = mono * (1.0 + min(0.0, value))
+            return np.column_stack((left, right))
+        stereo = block[:, :2].copy()
+        if value < 0:
+            stereo[:, 1] *= 1.0 + value
+        elif value > 0:
+            stereo[:, 0] *= 1.0 - value
+        return stereo
 
     def _pull(self, frames: int) -> np.ndarray:
         """Mix the next ``frames`` frames. Called from the audio thread."""
         with self._lock:
             if not self._tracks or self._pos_frames >= self._total_frames:
                 self._finish_if_needed()
-                return np.zeros(frames, dtype=np.float32)
+                return np.zeros((frames, 2), dtype=np.float32)
 
             start = self._pos_frames
             any_solo = any(t.solo for t in self._tracks)
-            mix = np.zeros(frames, dtype=np.float32)
+            mix = np.zeros((frames, 2), dtype=np.float32)
             levels: Dict[int, float] = {}
             for t in self._tracks:
                 audible = (not t.muted) and (t.solo or not any_solo)
                 block = self._read_track_block(t, start, frames)
                 if audible and t.gain > 0.0:
-                    contribution = block * t.gain
+                    contribution = self._pan_block(block, t.pan) * t.gain
                     mix += contribution
                     rms = float(np.sqrt(np.mean(np.square(contribution)))) \
                         if frames else 0.0

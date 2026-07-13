@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QMessageBox
 from core.take_library import (
     TakeValidationResult,
     find_changed_take,
+    load_take,
     snapshot_take_directories,
     write_take_manifest,
     wait_for_take_files_stable,
@@ -36,6 +37,7 @@ class RecorderPhase(str, Enum):
     VALIDATING = "validating"
     COMPLETE = "complete"
     NEEDS_ATTENTION = "needs_attention"
+    STOP_FAILED = "stop_failed"
     ERROR = "error"
 
 
@@ -54,6 +56,8 @@ class RecordingCoordinator:
         self.phase = RecorderPhase.IDLE
         self._before_takes: dict[Path, int] = {}
         self._expected_tracks = 0
+        self._track_names: dict[int, str] = {}
+        self._session_title = ""
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
         self._completion_box = None
@@ -106,7 +110,17 @@ class RecordingCoordinator:
         """True while a recording is armed, rolling, or being armed."""
         snap = self.snapshot
         return snap.recording or snap.armed or self.phase in (
-            RecorderPhase.STARTING, RecorderPhase.RECORDING,
+            RecorderPhase.STARTING,
+            RecorderPhase.RECORDING,
+            RecorderPhase.STOP_FAILED,
+        )
+
+    @property
+    def take_in_progress(self) -> bool:
+        """True until a requested take has either finished validation or failed."""
+        return self.is_recording_active or self.phase in (
+            RecorderPhase.STOPPING,
+            RecorderPhase.VALIDATING,
         )
 
     def _hosting_server(self) -> bool:
@@ -147,8 +161,8 @@ class RecordingCoordinator:
         box.exec()
         return box.clickedButton() is quit_button
 
-    def stop_server_recording_for_shutdown(self) -> None:
-        """Best-effort synchronous recorder stop before a hosted-server quit.
+    def stop_server_recording_for_shutdown(self) -> bool:
+        """Synchronously stop recording and report whether tracks finalized.
 
         Quitting a hosting Mac takes the server down with it; stopping the
         recording first lets the server finalize every musician's track
@@ -156,10 +170,11 @@ class RecordingCoordinator:
         short timeouts so shutdown can never hang.
         """
         if not (self._c._server_recording or self._c._recorder_armed):
-            return
+            return True
         secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
         if not secret_file:
-            return
+            LOGGER.error("Hosted recording is active but no recorder secret is configured")
+            return False
         try:
             from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
             secret = read_secret_file(secret_file)
@@ -169,10 +184,25 @@ class RecordingCoordinator:
             rpc.CONNECT_TIMEOUT_S = 0.75
             rpc.CALL_TIMEOUT_S = 1.5
             with rpc:
-                rpc.stop_recording()
-            LOGGER.info("Hosted-server recording stopped for shutdown")
+                if not rpc.stop_recording():
+                    LOGGER.error("Hosted recorder did not acknowledge stop")
+                    return False
+                deadline = time.monotonic() + 3.0
+                while time.monotonic() < deadline:
+                    if not bool(rpc.get_recorder_status()["enabled"]):
+                        self._c._recorder_armed = False
+                        self._c._server_recording = False
+                        self._c.window.set_status_recording(False)
+                        LOGGER.info(
+                            "Hosted-server recording stopped and confirmed"
+                        )
+                        return True
+                    time.sleep(0.1)
+            LOGGER.error("Hosted recorder stayed enabled after stop request")
+            return False
         except Exception:  # noqa: BLE001
             LOGGER.exception("Could not stop hosted recording on shutdown")
+            return False
 
     def on_audio_session_stopped(self) -> None:
         """Stop Audio ends this Mac's part in any in-flight recording.
@@ -205,17 +235,15 @@ class RecordingCoordinator:
         secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
         if not secret_file:
             self._c._show_actionable_error(
-                "Record Button Not Set Up",
-                what_failed="WebJam doesn't have access to your band server's recorder yet.",
-                likely_cause="The band-server RPC hasn't been configured on this machine.",
+                "Recording Is Available On The Host",
+                what_failed="This Mac is not the band's recording host.",
+                likely_cause=(
+                    "The host owns the synchronized multitrack files so every "
+                    "musician is captured in one take."
+                ),
                 next_action=(
-                    "One-time setup (see server/README.md in the WebJam repo):\n"
-                    "1. Same Mac: install/start JamulusServer.app and use its "
-                    "container secret path; no SSH tunnel is needed.\n"
-                    "2. Remote Linux: copy jsonrpc.secret here and open:  ssh -N -L "
-                    f"{self._c.settings.server_rpc_port}:127.0.0.1:22222 you@your-server\n"
-                    "3. Set server_rpc_secret_file to that local path in "
-                    "~/.webjam_config.json (or via the environment variable)."
+                    "Ask the host to press Record Take in Studio. Your audio "
+                    "will appear there automatically as its own track."
                 ),
             )
             return
@@ -242,8 +270,8 @@ class RecordingCoordinator:
                         "not arrived from Jamulus."
                     ),
                     next_action=(
-                        "Start Audio, wait for the real participant card, verify input "
-                        "meters, then press Record again."
+                        "Start Session, wait for the musician track to appear, "
+                        "then press Record Take again."
                     ),
                     retry_callback=self.on_record_requested,
                 )
@@ -252,6 +280,15 @@ class RecordingCoordinator:
                 self._c.settings.takes_directory
             )
             self._expected_tracks = len(real_participants)
+            self._track_names = {
+                int(getattr(participant, "channel_id", index)): str(
+                    getattr(participant, "name", None)
+                    or getattr(participant, "role", None)
+                    or f"Musician {index + 1}"
+                )
+                for index, participant in enumerate(real_participants)
+            }
+            self._session_title = self._c.window.session_strip.current_title()
             if not self._start_local_capture():
                 return
             self._set_phase(RecorderPhase.STARTING)
@@ -304,12 +341,13 @@ class RecordingCoordinator:
                 "Recording Preflight Failed",
                 what_failed=str(exc),
                 likely_cause=(
-                    "SSL 2+ is unavailable, is not selected, is not at 48 kHz, "
+                    "The selected interface is unavailable, is not at 48 kHz, "
                     "or another application prevented two-channel capture."
                 ),
                 next_action=(
-                    "Keep Jamulus running, verify SSL inputs 1–2 at 48 kHz in "
-                    "Ready Check, then retry. No server recording was started."
+                    "Keep Jamulus running, verify the selected interface inputs "
+                    "1–2 at 48 kHz in Ready Check, then retry. No server recording "
+                    "was started."
                 ),
                 retry_callback=self.on_record_requested,
             )
@@ -386,8 +424,11 @@ class RecordingCoordinator:
                 # The server never started recording, so the stems have no
                 # matching take — abort discards only this pre-take audio.
                 capture.abort()
+        still_armed = bool(self._c._recorder_armed or self._c._server_recording)
         self._c.session_health.mark_rpc_result("recorder", False, message)
-        self._set_phase(RecorderPhase.ERROR)
+        self._set_phase(
+            RecorderPhase.STOP_FAILED if still_armed else RecorderPhase.ERROR
+        )
         self._c._show_actionable_error(
             "Recording Could Not Start" if not self._c._recorder_armed
             else "Recording Could Not Stop",
@@ -397,8 +438,10 @@ class RecordingCoordinator:
                 "JamulusServer is not ready."
             ),
             next_action=(
-                "Run Ready Check and verify the host recorder, then retry. "
-                "Do not close the server while a recording may still be active."
+                "The server may still be recording. Try Stop Again now."
+                if still_armed else
+                "End the session, start it again, and retry. WebJam will rebuild the "
+                "recording connection automatically."
             ),
             retry_callback=self.on_record_requested,
         )
@@ -430,6 +473,7 @@ class RecordingCoordinator:
     def _set_phase(self, phase: RecorderPhase) -> None:
         self.phase = phase
         self._c.window.session_strip.set_recording_phase(phase.value)
+        self._c.window.recording_studio.set_recording_phase(phase.value)
 
     def _is_inside_takes_dir(self, folder: Path) -> bool:
         root = (self._c.settings.takes_directory or "").strip()
@@ -502,12 +546,42 @@ class RecordingCoordinator:
     def _post_validation_stage(self, text: str) -> None:
         """Update the validating chip from the worker thread."""
         self._c._ui_invoker.invoke(
-            lambda: self._c.window.session_strip.set_recording_phase(
-                "validating", detail=text
+            lambda: (
+                self._c.window.session_strip.set_recording_phase(
+                    "validating", detail=text
+                ),
+                self._c.window.recording_studio.set_recording_phase(
+                    "validating", detail=text
+                ),
             )
         )
 
     def _validate_take_worker(self) -> None:
+        """Never leave the recorder UI stuck if validation itself fails."""
+        try:
+            result = self._build_take_validation()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Take validation failed unexpectedly")
+            candidate = find_changed_take(
+                self._c.settings.takes_directory, self._before_takes
+            )
+            recovered, capture_errors = self._salvage_capture()
+            candidate = candidate or recovered
+            take = load_take(candidate) if candidate is not None else None
+            result = TakeValidationResult(
+                take,
+                (
+                    "WebJam couldn't finish verifying this take. The source audio "
+                    "was preserved; check free disk space and folder access, then "
+                    "review the take before using it.",
+                    *capture_errors,
+                ),
+            )
+        self._c._ui_invoker.invoke(
+            lambda: self._show_validation_result(result)
+        )
+
+    def _build_take_validation(self) -> TakeValidationResult:
         root = self._c.settings.takes_directory
         take_dir = None
         self._post_validation_stage("WAITING FOR SERVER FILES…")
@@ -545,6 +619,8 @@ class RecordingCoordinator:
                         *capture_errors,
                     ),
                     app_version=__version__,
+                    participant_names=self._track_names,
+                    session_title=self._session_title,
                 )
             else:
                 result = TakeValidationResult(
@@ -575,10 +651,10 @@ class RecordingCoordinator:
                 local_duration_s=duration_s,
                 capture_errors=capture_errors,
                 app_version=__version__,
+                participant_names=self._track_names,
+                session_title=self._session_title,
             )
-        self._c._ui_invoker.invoke(
-            lambda: self._show_validation_result(result)
-        )
+        return result
 
     def _show_validation_result(self, result: TakeValidationResult) -> None:
         self.last_validation = result
@@ -593,7 +669,10 @@ class RecordingCoordinator:
             self._c.window.flash_message(
                 f"Take saved · {result.summary}{suffix}", ms=10000
             )
-        self._open_completion_box(result)
+        self._c.window.recording_studio.on_take_completed(
+            result.take.path if result.take else None,
+            result,
+        )
 
     @staticmethod
     def _completion_text(result: TakeValidationResult) -> tuple[str, str]:

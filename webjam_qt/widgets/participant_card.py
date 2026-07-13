@@ -62,7 +62,7 @@ class ParticipantCard(QFrame):
     solo_toggled = Signal(int, bool)    # channel_id, solo
 
     CARD_MIN_WIDTH = 260
-    CARD_MIN_HEIGHT = 150  # was 220 — video tile is now a thin accent bar
+    CARD_MIN_HEIGHT = 228
 
     def __init__(
         self,
@@ -73,9 +73,15 @@ class ParticipantCard(QFrame):
         self.setObjectName("ParticipantCard")
         self.setMinimumSize(self.CARD_MIN_WIDTH, self.CARD_MIN_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setAccessibleName(presentation.name)
 
         self._presentation = presentation
 
+        self._avatar_label = QLabel(self._initials(presentation.name))
+        self._avatar_label.setObjectName("ParticipantAvatar")
+        self._avatar_label.setFixedSize(64, 64)
+        self._avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._avatar_label.setTextFormat(Qt.TextFormat.PlainText)
         self._video_tile = self._build_video_tile()
         self._name_label = QLabel(presentation.name)
         self._name_label.setObjectName("ParticipantName")
@@ -115,7 +121,7 @@ class ParticipantCard(QFrame):
         # Double-click resets fader to 0 dB (level 100 = unity gain)
         self._fader.mouseDoubleClickEvent = lambda _: self._reset_fader()
 
-        self._mute_button = QPushButton("MUTE")
+        self._mute_button = QPushButton("Mute")
         self._mute_button.setObjectName("PillButton")
         self._mute_button.setCheckable(True)
         self._mute_button.setChecked(presentation.muted)
@@ -123,7 +129,7 @@ class ParticipantCard(QFrame):
         self._mute_button.clicked.connect(self._on_mute_clicked)
         self._apply_mute_state(presentation.muted)
 
-        self._solo_button = QPushButton("SOLO")
+        self._solo_button = QPushButton("Solo")
         self._solo_button.setObjectName("PillButton")
         self._solo_button.setCheckable(True)
         self._solo_button.setChecked(presentation.solo)
@@ -134,12 +140,14 @@ class ParticipantCard(QFrame):
         self._compose_layout()
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
+        self._update_accessibility()
 
     # ------------------------------------------------------------------
     # Public API — called by ApplicationController to push state down
     # ------------------------------------------------------------------
     def update_presentation(self, presentation: ParticipantPresentation) -> None:
         self._presentation = presentation
+        self._avatar_label.setText(self._initials(presentation.name))
         self._name_label.setText(presentation.name)
         self._role_label.setText(presentation.role or self._default_role_label())
         self._fader_value.setText(self._format_fader(presentation.fader_level))
@@ -157,9 +165,11 @@ class ParticipantCard(QFrame):
         self._level_meter.set_level(presentation.audio_level)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
+        self._sync_mute_label()
+        self._update_accessibility()
         # Refresh accessible names to track the (possibly renamed) participant
         self._fader.setAccessibleName(f"Volume fader for {presentation.name} (decibels)")
-        self._mute_button.setAccessibleName(f"Mute {presentation.name}")
+        self._sync_mute_label()
         self._solo_button.setAccessibleName(f"Solo {presentation.name}")
 
     def set_audio_level(self, level: float) -> None:
@@ -180,18 +190,20 @@ class ParticipantCard(QFrame):
     # Construction helpers
     # ------------------------------------------------------------------
     def _build_video_tile(self) -> QWidget:
-        """Thin accent bar at the top of the card.
-
-        Per-channel video isn't implemented yet (Webex video shows in the
-        embedded view below the stage, not per-card), so this is just a
-        visual accent that distinguishes the card top.  When per-channel
-        video lands in a future phase, this will grow into a real video
-        rendering surface.
-        """
+        """Audio-only meeting surface with one centered musician avatar."""
         tile = QFrame()
         tile.setObjectName("VideoTile")
-        tile.setFixedHeight(6)  # accent bar, not a video surface
-        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        tile.setMinimumHeight(96)
+        tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout = QVBoxLayout(tile)
+        layout.setContentsMargins(Space.MD, Space.SM, Space.MD, Space.SM)
+        layout.addStretch(1)
+        avatar_row = QHBoxLayout()
+        avatar_row.addStretch(1)
+        avatar_row.addWidget(self._avatar_label)
+        avatar_row.addStretch(1)
+        layout.addLayout(avatar_row)
+        layout.addStretch(1)
         return tile
 
     def _compose_layout(self) -> None:
@@ -199,13 +211,14 @@ class ParticipantCard(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Thin accent bar at top — fixed height, no stretch
-        outer.addWidget(self._video_tile)
+        # The musician, not the mixer chrome, owns most of the tile.
+        outer.addWidget(self._video_tile, stretch=1)
 
         body = QWidget(self)
+        body.setObjectName("ParticipantCardBody")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
-        body_layout.setSpacing(Space.SM)
+        body_layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
+        body_layout.setSpacing(Space.XS)
 
         # Name + role
         identity_row = QHBoxLayout()
@@ -254,12 +267,15 @@ class ParticipantCard(QFrame):
         muted = self._mute_button.isChecked()
         self._presentation.muted = muted
         self._apply_mute_state(muted)
+        self._sync_mute_label()
+        self._update_accessibility()
         self.mute_toggled.emit(self._presentation.channel_id, muted)
 
     def _on_solo_clicked(self) -> None:
         solo = self._solo_button.isChecked()
         self._presentation.solo = solo
         self._apply_solo_state(solo)
+        self._update_accessibility()
         self.solo_toggled.emit(self._presentation.channel_id, solo)
 
     # ------------------------------------------------------------------
@@ -271,6 +287,7 @@ class ParticipantCard(QFrame):
         # Reflect mute on the card itself so QSS can fade the muted card.
         self.setProperty("muted", "true" if muted else "false")
         self._repolish(self)
+        self._sync_mute_label()
 
     def _apply_solo_state(self, solo: bool) -> None:
         self._solo_button.setProperty("state", "active-solo" if solo else "")
@@ -283,6 +300,30 @@ class ParticipantCard(QFrame):
     def _apply_local_state(self, is_local: bool) -> None:
         self.setProperty("local", "true" if is_local else "false")
         self._repolish(self)
+        self._sync_mute_label()
+
+    def _sync_mute_label(self) -> None:
+        """Make the local monitor control distinct from band transmit mute."""
+        muted = bool(self._presentation.muted)
+        name = self._presentation.name
+        if self._presentation.is_local:
+            text = "Unmute Monitor" if muted else "Mute Monitor"
+            accessible = f"{text} for {name}; this changes only what you hear"
+        else:
+            text = "Unmute" if muted else "Mute"
+            accessible = f"{text} {name} in your monitor mix"
+        self._mute_button.setText(text)
+        self._mute_button.setAccessibleName(accessible)
+
+    def _update_accessibility(self) -> None:
+        status = "connected" if self._presentation.is_connected else "disconnected"
+        mix = "muted in your monitor" if self._presentation.muted else "audible"
+        solo = ", soloed" if self._presentation.solo else ""
+        role = self._presentation.role or self._default_role_label()
+        self.setAccessibleName(self._presentation.name)
+        self.setAccessibleDescription(
+            f"{role}. {status}. {mix}{solo}."
+        )
 
     def _refresh_speaking_state(self, level: float) -> None:
         speaking = level > 0.15 and not self._presentation.muted
@@ -300,6 +341,15 @@ class ParticipantCard(QFrame):
         else:
             bits.append("Audio only")
         return " · ".join(bits)
+
+    @staticmethod
+    def _initials(name: str) -> str:
+        parts = [p for p in name.split() if p]
+        if not parts:
+            return "?"
+        if len(parts) == 1:
+            return parts[0][:2].upper()
+        return (parts[0][0] + parts[-1][0]).upper()
 
     @staticmethod
     def _format_fader(level: int) -> str:

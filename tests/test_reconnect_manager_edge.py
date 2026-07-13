@@ -197,6 +197,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self, _thread_mock, popen_mock
     ):
         fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
         popen_mock.return_value = fake_proc
         bridge = _make_bridge()
         bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
@@ -222,6 +223,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self, _thread_mock, popen_mock
     ):
         fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
         popen_mock.return_value = fake_proc
 
         # Signal shutdown immediately after Popen starts
@@ -311,14 +313,14 @@ class TestStopJamulus(unittest.TestCase):
         # Auto-reconnect must be disabled so the next tick doesn't immediately relaunch
         self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
 
-    def test_stop_jamulus_returns_false_when_not_running(self):
+    def test_stop_jamulus_is_successful_when_already_not_running(self):
         bridge = _make_bridge()
         bridge.jamulus_process = None
         bridge.jamulus_launch_intended = False
 
         result = bridge.stop_jamulus()
 
-        self.assertFalse(result)
+        self.assertTrue(result)
         self.assertEqual(bridge.jamulus_state, "Stopped")
 
     def test_stop_jamulus_force_kills_when_terminate_times_out(self):
@@ -332,6 +334,19 @@ class TestStopJamulus(unittest.TestCase):
 
         proc.terminate.assert_called_once()
         proc.kill.assert_called_once()
+
+    def test_stop_jamulus_keeps_ownership_when_process_refuses_to_stop(self):
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.terminate.side_effect = OSError("not permitted")
+        bridge.jamulus_process = proc
+
+        result = bridge.stop_jamulus()
+
+        self.assertFalse(result)
+        self.assertIs(bridge.jamulus_process, proc)
+        self.assertEqual(bridge.jamulus_state, "Stop failed")
 
     def test_stop_jamulus_calls_controller_stop_to_halt_monitoring(self):
         bridge = _make_bridge()
@@ -370,7 +385,7 @@ class TestShutdownKillsJamulus(unittest.TestCase):
 
         result = bridge.stop_jamulus()
 
-        self.assertFalse(result)
+        self.assertTrue(result)
         proc.terminate.assert_not_called()
         self.assertIsNone(bridge.jamulus_process)
         self.assertEqual(bridge.jamulus_state, "Stopped")
