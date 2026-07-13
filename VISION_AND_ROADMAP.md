@@ -109,9 +109,10 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
 - **Tonight's boundary** — private Apple Silicon two-Mac same-LAN candidate.
-  Native one-hour longevity, exact-package runtime, physical audio/reconnect/
-  guest-original delivery, Logic import, and cleanup remain explicit gates; no
-  automated result fills those physical fields.
+  Exact-source native one-hour longevity and fresh-package runtime pass.
+  Physical audio/reconnect/guest-original delivery, Logic import, and observed
+  cleanup remain explicit gates; no automated result fills those physical
+  fields.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 

@@ -256,9 +256,9 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot candidate, not broad-release-ready; native one-hour longevity,
-  exact-package runtime, two-Mac audio/reconnect/originals, Studio, and Logic
-  checks remain release evidence gates until recorded.
+- Closed-pilot candidate, not broad-release-ready. Exact-source native one-hour
+  longevity and fresh-package runtime pass. Two-Mac audio/reconnect/originals,
+  human Studio checks, and Logic import remain physical evidence gates.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
   Windows CI artifacts supply the official client installer). v0.10.0's private
   physical pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one

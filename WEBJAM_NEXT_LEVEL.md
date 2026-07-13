@@ -84,5 +84,5 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 Current recommendation: use the distinct v0.10.0 candidate privately, complete
 the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the
-exact artifact passes audio, recording, reconnect, role-aware cleanup, native
-one-hour longevity, and Logic import gates.
+exact artifact passes physical audio, recording, reconnect, role-aware cleanup,
+and Logic import gates. Exact-source native one-hour longevity already passes.

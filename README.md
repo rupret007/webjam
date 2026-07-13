@@ -15,8 +15,8 @@ background engine; video, notes, and Studio remain optional session tools.
 Being honest about where this app is **right now** (2026-07-13): the source
 tree is the private **v0.10.0 certification candidate**; v0.8.0 remains the
 latest published download. The fresh v0.10.0 ZIP is built and integrity
-checked; the native one-hour run, two-Mac acoustic test, and Logic Pro import
-are not complete yet.
+checked, and the exact source passed the native one-hour run. The two-Mac
+acoustic test and Logic Pro import are still **NOT RUN**.
 
 | Area | Status |
 |---|---|
@@ -33,8 +33,8 @@ are not complete yet.
 | **Webex integration** | ✅ **Optional external launch.** Video/conversation is absent from startup and lives under More. WebJam opens a configured room in native Webex/default browser and truthfully reports only that it opened. |
 | **Session canvas + Pulse** | ✅ Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
 | **Audio defaults and truth** | ⚠️ Jamulus runs headlessly using its own saved/default hardware route. WebJam does not inspect or choose that PCM device. Its local meter/isolated recorder opens a separate PortAudio/Core Audio stream, so only a musician hearing both directions proves the live route. Roster presence proves connection; observed levels prove only the source they actually measure. |
-| **Certification evidence** | ⚠️ Real Jamulus 3.12.2/JACK two-client transport, server stems, Studio/export traversal, reconnect rehearsal, and cleanup have automated evidence. A local Docker ARM longevity attempt failed after 667.201 seconds on a material decoded outage; a native Ubuntu 3,600-second run is pending. Two-Mac audibility and Logic Pro import remain **NOT RUN**. |
-| **Builds** | ⚠️ CI targets Windows x64, macOS ARM64, and macOS Intel x64. The fresh private Apple Silicon artifact is `WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip`, SHA-256 `ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8`; strict/deep ad-hoc signature verification, fresh extraction, and packaged Host lifecycle pass. It is not Developer ID signed or notarized. The native one-hour result remains a gate. Do not reuse the preserved v0.9.0 handoff. |
+| **Certification evidence** | ⚠️ GitHub Actions run [`29269188463`](https://github.com/rupret007/webjam/actions/runs/29269188463) passed the exact-source native Ubuntu Jamulus 3.12.2/JACK certification: 3,602.851 seconds of measured transport, 396 cycles, three recording/restart cycles, forced reconnect in 34.526 seconds, zero decoded dropout windows, bounded resources/xruns, 12 WAV stems, and zero cleanup errors. The earlier 667.201-second Docker ARM failure remains preserved evidence, not a pass. Two-Mac audibility and Logic Pro import remain **NOT RUN**. |
+| **Builds** | ⚠️ CI passes Windows x64, macOS ARM64, and macOS Intel x64 for source `8ee89081802fe5998f71299c4755b21ae5218cb9`. The fresh private Apple Silicon artifact is `WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip`, SHA-256 `f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411`; strict/deep ad-hoc signature verification, fresh extraction, and two packaged Host lifecycle runs pass. It is not Developer ID signed or notarized. Do not reuse the preserved v0.9.0 handoff. |
 | **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
 In practice today: the **v0.10.0 source candidate** takes a musician from two
@@ -55,7 +55,7 @@ playback, aligned Logic export/import, reconnect, and owned-process cleanup.
 
 See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Near-term engineering phases:
 
-1. **Certification gates** — native 3,600-second run, fresh v0.10.0 artifact, two-Mac bidirectional audio/outage/originals, and exact-package Logic import
+1. **Certification gates** — two-Mac bidirectional audio/outage/originals and exact-package Logic import using the verified v0.10.0 artifact
 2. **Distribution** — signing/notarization and a published artifact only after the private gates pass
 3. **Architecture cleanup** — continue splitting `ApplicationController` into session/audio/video/recording/settings/API coordinators
 4. **Post-pilot expansion** — encrypted/routable transfer design, overdub workflows, deeper editing, broader DAW handoffs, and richer creative modes

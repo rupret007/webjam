@@ -90,9 +90,11 @@ All notable improvements and features for the WebJam music collaboration platfor
   gates. At this changelog entry, bidirectional acoustic audibility and Logic
   import remain **NOT RUN**. The fresh private Apple Silicon ZIP is
   `WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-  `ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8`;
-  its fresh-extracted Host lifecycle passes and the native one-hour result
-  remains a gate.
+  `f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411`,
+  built from `8ee89081802fe5998f71299c4755b21ae5218cb9`. Its fresh-extracted
+  Host lifecycle passes twice. GitHub Actions run `29269188463` passed the
+  exact-source 3,600-second native Jamulus/JACK certification with reconnect,
+  recording cycles, bounded resources/xruns, and zero cleanup errors.
 
 ---
 

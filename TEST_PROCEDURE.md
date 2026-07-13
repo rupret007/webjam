@@ -113,11 +113,12 @@ Do not overwrite the preserved v0.9.0 ZIP. Record these values only after the
 v0.10.0 ZIP is final:
 
 ```text
-Source commit:          f4d04c7d6151295e4098428f2d1a9e2d7e5a0853
+Source commit:          8ee89081802fe5998f71299c4755b21ae5218cb9
 Artifact filename:      WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
 Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
-SHA-256:                ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8
-Fresh extraction path:  /tmp/webjam-v010-fresh/WebJam.app
+SHA-256:                f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411
+Fresh extraction path:  /tmp/webjam-v010-final-install.gOTCiQ/WebJam.app
+Installed test app:      /Applications/WebJam.app
 ```
 
 Inspect that exact fresh extraction:
@@ -210,7 +211,9 @@ ready to advance beyond the test only after both musicians and Logic Pro pass
 the physical worksheet. Preserve failed takes, local originals, exports,
 reports, and the support bundle before changing a device, network, or build.
 Do not merge or push this candidate to the default branch until the native
-at-least-60-minute report passes every threshold.
+at-least-60-minute report passes every threshold. GitHub Actions run
+`29269188463` satisfies that source-handoff gate for commit `8ee8908`; this does
+not satisfy the separate two-Mac or Logic Pro worksheet.
 
 The retired 2024 harness remains in
 [`legacy/TEST_PROCEDURE_2024.md`](legacy/TEST_PROCEDURE_2024.md) for history.

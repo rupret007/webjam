@@ -71,9 +71,14 @@ evidence.
 - Native Ubuntu at-least-60-minute workflow: initial run `29261331713` was
   deliberately **CANCELLED as insufficient** after packaged smoke exposed a
   release-blocking Host UI freeze in source `6ebc883`. Replacement GitHub
-  Actions run `29262915880` is dispatched against fixed source `f4d04c7`.
+  Actions run `29262915880` was also deliberately **CANCELLED as
+  insufficient** after about ten minutes because later recovery fixes changed
+  the candidate. Exact-source run `29269188463` passed against
+  `8ee89081802fe5998f71299c4755b21ae5218cb9`: 3,602.851 seconds of measured
+  transport, 396 cycles, three recording/restart cycles, forced reconnect,
+  bounded resources/xruns, 12 WAV stems, and zero cleanup errors.
 
-These remain gates even when every deterministic and real-JACK test passes.
+The five physical items above remain gates; the native pass does not fill them.
 
 ## Vertical-slice checklist
 
@@ -119,8 +124,9 @@ These remain gates even when every deterministic and real-JACK test passes.
   unless the requested signal duration is at least 3,600 seconds.
 - [x] Record the failed local Docker ARM soak without treating its clean first
   72 cycles or clean shutdown as a longevity pass.
-- [ ] Record replacement native Ubuntu at-least-60-minute workflow
-  `29262915880`, dispatched against fixed source `f4d04c7`.
+- [x] Record exact-source native Ubuntu at-least-60-minute workflow
+  `29269188463` against `8ee8908`; preserve `29261331713` and `29262915880`
+  as **CANCELLED/INSUFFICIENT** and do not count them.
 - [ ] Repeat the critical route/acoustic proof on two physical Macs.
 
 ### 4. Permanent Band Check
@@ -217,7 +223,9 @@ server tracks, not an independently captured acoustic/live-output feed.
   restart, client disconnect/reconnect, resource sampling, finalized WAVs, and
   zero-owned-process cleanup.
 - [x] Preserve and record the failed 667.201-second local Docker ARM soak.
-- [ ] Record fixed-source native Ubuntu replacement workflow `29262915880`.
+- [x] Record exact-source native Ubuntu workflow `29269188463`; its
+  machine-readable report passed every one-hour signal, recorder, reconnect,
+  resource, xrun, and cleanup assertion.
 - [ ] Finish the remaining packaged/physical matrix: device removal and
   reappearance, microphone permission, full/low disk, invalid directory,
   sleep/wake, firewall, output failure, host restart, and UI close races.
@@ -233,7 +241,8 @@ server tracks, not an independently captured acoustic/live-output feed.
 - [x] Maintain a concise physical worksheet at
   [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md).
 - [ ] Complete the worksheet on two Macs and attach its evidence.
-- [ ] Do not mark this goal complete while required evidence is missing.
+- [x] Keep all unavailable physical evidence explicitly **NOT RUN** and do not
+  call the candidate physically certified or release-ready before it exists.
 
 ### 10. Product identity and visual restraint
 
@@ -257,9 +266,9 @@ server tracks, not an independently captured acoustic/live-output feed.
 | Alignment | Offset/drift/rate/gap fixtures and non-destructive transforms pass focused tests | Real musician material pending |
 | Logic handoff | Complete schema-v2 package, reports, analyses, and checksum behavior pass focused tests | Logic Pro import **NOT RUN** |
 | Diagnostics | Immutable allowlist preview/saved-ZIP parity, separate sanitized clipboard summary, and adversarial redaction pass | Fresh packaged-button check pending |
-| Long session | Short 65.677-second rehearsal passed; local Docker ARM soak failed at 667.201 seconds with a material decoded outage | Initial fixed-commit-invalidated CI run was cancelled; replacement native Ubuntu run `29262915880` is pending; neither short/failed/cancelled run counts |
+| Long session | Exact-source native run `29269188463` passed 3,602.851 measured seconds, 396 cycles, three recording/restart cycles, reconnect, signal/resource/xrun gates, and zero cleanup errors | Local Docker ARM failure and cancelled runs remain preserved but do not count; physical long-session review remains separate |
 | Physical two-Mac | Worksheet is ready | **NOT RUN** |
-| New candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, bundled client/server authenticated lifecycle, normal Qt close, and cleanup pass at source `f4d04c7` | Human Band Check/Join/recording/Studio/support matrix remains physical work |
+| New candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, two bundled client/server authenticated lifecycles, normal Qt close, and cleanup pass at source `8ee8908` | Human Band Check/Join/recording/Studio/support matrix remains physical work |
 
 ## Defect log
 
@@ -281,9 +290,9 @@ server tracks, not an independently captured acoustic/live-output feed.
 | AUD-013 | Critical | Resolved deterministically | Support export is allowlist-first, private, recursively redacted, and parity-tested across preview/saved ZIP; the separate clipboard summary is sanitized. |
 | AUD-014 | High | Resolved deterministically | Alignment covers multiple anchors, signed offset, drift, rates, gaps, residuals, and manual restoration. |
 | AUD-015 | High | Resolved in source | Schema-v2 Logic package contains aligned selectable stems, references, musical metadata, reports, analysis, source manifest, and checksums. Physical Logic is **NOT RUN**. |
-| AUD-016 | High | Open after failed soak | Short rehearsal passed, but local Docker ARM longevity failed at cycle 73 with 35/105 silent 20-ms windows. The initial CI attempt was cancelled after a separate package blocker; fixed-source native 3,600-second run `29262915880` is pending. |
+| AUD-016 | High | Resolved by exact-source native evidence | The local Docker ARM failure remains preserved. Runs `29261331713` and `29262915880` were cancelled and do not count. Run `29269188463` passed 3,602.851 measured seconds with zero decoded dropout windows, bounded resources/xruns, forced reconnect, recorder cycles, and clean shutdown. |
 | AUD-017 | Critical scope limit | Accepted for trusted private pilot only | Peer recording control/transfer is authenticated same-LAN HTTP bound to RFC1918 IPv4. There is no TLS, IPv6, Internet, VPN, NAT traversal, upload quota, or rate limiting. Treat invites as private credentials and do not use this plane with untrusted users/hostile LANs. |
-| AUD-018 | High | Open physical/longevity gate | The integrated full suite, fresh-package integrity, and full packaged Host/client cleanup gates pass. Native longevity and two-Mac certification remain open. |
+| AUD-018 | High | Open physical gate | The integrated full suite, fresh-package integrity, two packaged Host/client cleanup runs, and native longevity gate pass. Two-Mac certification and Logic Pro import remain open. |
 | AUD-019 | Critical | Resolved and packaged | Packaged Host could freeze its UI in reverse DNS while binding the private peer service. `f4d04c7` bypasses `HTTPServer` name lookup, has a regression that fails on `getfqdn`, and completes the full frozen Host lifecycle normally. |
 
 ## Architecture truth
@@ -452,7 +461,7 @@ brand mark/assets/UI/package-focused suite
 Ruff / compile / git diff --check for reported slices
   passed
 final post-integration full suite
-  1304 passed, 17 skipped, 1 warning, 6 subtests passed in 51.50 s
+  1350 passed, 17 skipped, 1 warning, 6 subtests passed in 58.71 s
 production Ruff (webjam_qt core ui services api)
   passed
 compileall, UX smoke, workflow YAML, and git diff --check
@@ -514,6 +523,42 @@ cleanup
 The bounded xrun rate and clean cleanup do not override the decoded-signal
 failure. This run is preserved as a real defect result, not a partial pass.
 
+### 2026-07-13 — exact-source native one-hour certification
+
+```text
+GitHub Actions run
+  29269188463; workflow_dispatch; source 8ee89081802fe5998f71299c4755b21ae5218cb9
+evidence artifact
+  jamulus-jack-soak-29269188463-1
+  JSON SHA-256 f2a31871d2b8ca9ca711e3ca3666d5be8b330f1224fbc1cfaebea39520bed82a
+  pytest-log SHA-256 7f6ac1ffeed285f10b4efa632456c774ebe92986065058bbc67a337b113d741a
+result
+  success=true; requested_duration_s=3600.0
+  actual_soak_duration_s=3602.851449585; wall_duration_s=3614.719
+transport and signal
+  396 measured cycles; 122 raw JACK xruns; 0.033862/s against 10.0/s ceiling
+  decoded dropout-window maximums 0 and 0
+  minimum cross rejection 50.032956 dB and 51.650763 dB
+recording
+  3 completed cycles; 3 recorder restarts
+  12 WAVs / 24 total artifacts / 20,823,596 bytes
+reconnect
+  forced at 1192.449 s; both stable names returned in 34.526 s
+resources
+  FD growth 0 for jackd/server/both clients against an 8-FD ceiling
+  RSS growth: jackd 0 KiB; server 148 KiB; clients 0/0 KiB
+  configured RSS-growth ceiling 65,536 KiB
+cleanup
+  no errors; jackd/server/both clients exited with code 0
+  allowed live processes, occupied ports, and private JACK servers: 0
+```
+
+The report and pytest log are the always-uploaded evidence from the successful
+workflow, not a local reconstruction. The full run also passed source tests,
+real-Jamulus integration, and macOS ARM64, macOS x64, and Windows x64 builds.
+Runs `29261331713` and `29262915880` remain **CANCELLED/INSUFFICIENT** and are
+not counted as longevity evidence.
+
 ### 2026-07-13 — packaged reverse-DNS defect and fixed candidate
 
 The first v0.10.0 package from `6ebc883` was rejected after an eight-second
@@ -525,19 +570,23 @@ address. It was not a microphone-permission wait.
 Commit `f4d04c7d6151295e4098428f2d1a9e2d7e5a0853` now binds through
 `TCPServer.server_bind()`, preserves numeric bound-address metadata, and has a
 regression that fails if construction calls `socket.getfqdn()`. The adjacent
-transfer suites passed 30 tests and the final integrated suite passed 1,304.
+transfer suites passed 30 tests and the integrated suite at that historical
+checkpoint passed 1,304. Later recovery and truthfulness fixes are included in
+the final source `8ee8908`, whose integrated suite passed 1,350.
 
 GitHub Actions run `29261331713` against the rejected source was deliberately
 cancelled after about five minutes. Its source test, real-Jamulus integration,
 and macOS ARM build happened to pass, but the cancelled run is not longevity or
-cross-platform evidence and will not be counted. Fixed-source replacement run
-`29262915880` is dispatched and must complete.
+cross-platform evidence and will not be counted. Replacement run `29262915880`
+was cancelled after about ten minutes because later fixes changed the source;
+it is also **CANCELLED/INSUFFICIENT**. Exact-source run `29269188463` passed the
+full one-hour certification and every non-release CI job.
 
-The fixed, fresh-extracted package completed the normal eight-second Host
-lifecycle with exit 0 and no forced termination. Bundled Jamulus client/server
-3.12.2, UDP, both authenticated RPC listeners, and `caffeinate` were observed;
-the Qt close timer fired; zero audio files were created; no child processes or
-ports remained.
+The final fresh-extracted package completed two normal 20-second Host
+lifecycles with exit 0 and no forced termination. Bundled Jamulus client/server
+3.12.2, UDP, both authenticated RPC listeners, one connected client, and
+`caffeinate` were observed in each run; the Qt close timer fired; zero audio
+files were created; no child processes or ports remained.
 
 ## New-candidate artifact handoff
 
@@ -545,36 +594,33 @@ Do not copy the preserved v0.9.0 values into these fields.
 
 ```text
 Candidate version:       0.10.0
-Source commit:           f4d04c7d6151295e4098428f2d1a9e2d7e5a0853
+Source commit:           8ee89081802fe5998f71299c4755b21ae5218cb9
 Artifact filename:       WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
 Artifact absolute path:  /Users/jeffstory/Documents/WebJam 2/WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
-SHA-256:                 ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8
+SHA-256:                 f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411
 Codesign result:         PASS; strict/deep ad-hoc outer + nested Jamulus/JamulusServer; not Developer ID/notarized
-Fresh extraction path:   /tmp/webjam-v010-fresh/WebJam.app; strict/deep PASS
-Packaged smoke result:   PASS; fresh ZIP, normal 8 s Qt Host/client/server/RPC lifecycle, exit 0, zero audio/leaks, ports free
+Fresh extraction path:   /tmp/webjam-v010-final-install.gOTCiQ/WebJam.app; strict/deep PASS
+Installed test app:      /Applications/WebJam.app; version/build ID/strict/deep PASS
+Packaged smoke result:   PASS twice; fresh ZIP, normal 20 s Qt Host/client/server/RPC lifecycle, exit 0, zero audio/leaks, ports free
 Failed local report:     /Users/jeffstory/Claude/Projects/WebJam/soak-artifacts/jamulus-jack-soak-native-arm64.json
-Native Ubuntu report:    run 29261331713 CANCELLED/INSUFFICIENT; run 29262915880 PENDING
+Native Ubuntu report:    run 29269188463 PASS; 3602.851 measured s; evidence artifact jamulus-jack-soak-29269188463-1
+Cancelled runs:          29261331713 and 29262915880 CANCELLED/INSUFFICIENT
 Two-Mac worksheet:       NOT RUN
 Logic Pro import:        NOT RUN
 ```
 
 ## Exact continuation point
 
-1. Monitor replacement GitHub Actions run `29262915880`, download its
-   always-uploaded JSON/log, and record exact thresholds/results here. Do not
-   count the short rehearsal, failed 667.201-second run, or cancelled
-   `29261331713` run as longevity.
-2. Complete the remaining human-confirmed packaged Band Check, Join, recording,
+1. Complete the remaining human-confirmed packaged Band Check, Join, recording,
    Studio, support-button, and interface-route checks on the pilot Macs.
-3. Put that exact new ZIP on two Macs and complete
+2. Put that exact new ZIP on two Macs and complete
    [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md). Preserve failure
    media and the support bundle before changing any variable.
-4. Import the exact export into Logic Pro and record the project rate, track
+3. Import the exact export into Logic Pro and record the project rate, track
    identities, alignment, references, and result. Until then keep the result
    **NOT RUN**.
-5. The working feature branch may be pushed with failed/pending gates stated
-   plainly, but the default branch remains gated until the fixed-source native
-   at-least-60-minute report passes every threshold. Even after that source
-   handoff, do not call the build certified or release-ready until the physical
-   two-Mac and Logic gates pass. Do not tag, notarize, or publish an artifact
-   unless separately authorized.
+4. The exact-source native handoff gate is satisfied, so the default branch may
+   receive the source and evidence-only documentation commit. Do not call the
+   build physically certified or release-ready until the two-Mac and Logic
+   gates pass. Do not tag, notarize, or publish an artifact unless separately
+   authorized.
