@@ -365,8 +365,8 @@ if __name__ == "__main__":
 class TestFreshInstallDefaultsAreBlank(unittest.TestCase):
     """The old defaults (private LAN IP 172.24.194.9 + a sandbox Webex link)
     were dead for anyone but the original dev box.  Fresh installs must start
-    unconfigured so the wizard (whose server/URL fields are mandatory) and
-    the F2 Ready Check drive the user to real values."""
+    unconfigured so the launch gate and F2 Band Check drive the user to a real
+    band address while leaving the optional Webex companion blank."""
 
     def test_jamulus_server_default_is_empty(self):
         from core.settings import AppSettings
@@ -376,10 +376,10 @@ class TestFreshInstallDefaultsAreBlank(unittest.TestCase):
         from core.settings import AppSettings
         self.assertEqual(AppSettings().webex_url, "")
 
-    def test_ready_check_flags_unconfigured_fresh_install(self):
+    def test_band_check_flags_server_but_not_optional_webex(self):
         from core.preflight import run_ready_check
         from core.settings import AppSettings
         report = run_ready_check(AppSettings(jamulus_candidates=[]))
         failed = {item.name for item in report.items if not item.ok}
         self.assertIn("Jamulus server set", failed)
-        self.assertIn("Webex meeting set", failed)
+        self.assertNotIn("Webex companion", failed)

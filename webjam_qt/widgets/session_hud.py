@@ -21,7 +21,7 @@ from webjam_qt.theme.tokens import Space
 
 
 class SessionHud(QFrame):
-    """Compact session truth plus the host's exact invitation URL."""
+    """Compact session truth with an explicit, credential-safe copy action."""
 
     invite_requested = Signal()
     retry_requested = Signal()
@@ -32,6 +32,7 @@ class SessionHud(QFrame):
         self.setAccessibleName("Session readiness")
         self._last_announcement = ""
         self._invite_available = False
+        self._invite_url = ""
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
@@ -53,12 +54,12 @@ class SessionHud(QFrame):
         self._invite = QLineEdit()
         self._invite.setObjectName("SessionInviteLink")
         self._invite.setReadOnly(True)
-        self._invite.setAccessibleName("Invitation link")
+        self._invite.setAccessibleName("Private invitation status")
         self._invite.setAccessibleDescription(
-            "Read-only invitation link. Use Copy Invite in the controls below to share it."
+            "A private invitation is ready. Use Copy Invite to share it."
         )
-        self._invite.setMinimumWidth(360)
-        self._invite.setMaximumWidth(440)
+        self._invite.setMinimumWidth(180)
+        self._invite.setMaximumWidth(220)
         self._invite.setVisible(False)
         layout.addWidget(self._invite)
 
@@ -83,9 +84,14 @@ class SessionHud(QFrame):
     ) -> None:
         self._status.setText(str(status))
         self._detail.setText(str(detail))
-        self._invite.setText(str(invite_url or ""))
+        self._invite_url = str(invite_url or "")
+        self._invite.setText("Private invite ready" if invite_url else "")
         self._invite.setCursorPosition(0)
-        self._invite.setToolTip(str(invite_url or ""))
+        self._invite.setToolTip(
+            "Use Copy Invite to share this private invitation."
+            if invite_url
+            else ""
+        )
         self._invite_available = bool(invite_url)
         self._sync_invite_visibility()
         visible = bool(invite_url) if action_visible is None else bool(action_visible)
@@ -95,7 +101,11 @@ class SessionHud(QFrame):
             "Copies the complete invitation link to your clipboard."
             if invite_url else str(detail)
         )
-        self._action.setToolTip(str(invite_url or detail))
+        self._action.setToolTip(
+            "Copy the private invitation to your clipboard."
+            if invite_url
+            else str(detail)
+        )
         self._action_kind = str(action_kind)
         self._action.setVisible(visible)
         self.setProperty("ready", "true" if ready else "false")
@@ -122,14 +132,16 @@ class SessionHud(QFrame):
             self._action.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def invite_url(self) -> str:
-        return self._invite.text()
+        """Return the private value to the controller, never to rendered UI."""
+
+        return self._invite_url
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
         self._sync_invite_visibility()
 
     def _sync_invite_visibility(self) -> None:
-        # Wide layouts show the exact invitation as useful host confirmation.
+        # Wide layouts show only a non-secret readiness confirmation.
         # Narrow rehearsal windows keep the single Copy Invite control instead
         # of squeezing the session status or introducing horizontal scrolling.
         self._invite.setVisible(self._invite_available and self.width() >= 900)

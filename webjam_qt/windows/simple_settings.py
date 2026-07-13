@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -33,6 +33,8 @@ LOGGER = logging.getLogger("webjam.qt.simple_settings")
 
 class SimpleSettingsDialog(QDialog):
     """Preferences only; connection plumbing stays automated."""
+
+    band_check_requested = Signal()
 
     def __init__(
         self,
@@ -95,6 +97,11 @@ class SimpleSettingsDialog(QDialog):
         root.addStretch(1)
 
         footer = QHBoxLayout()
+        band_check = QPushButton("Run Band Check")
+        band_check.setObjectName("GhostButton")
+        band_check.setAccessibleName("Close settings and run Band Check")
+        band_check.clicked.connect(self.band_check_requested.emit)
+        footer.addWidget(band_check)
         footer.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("GhostButton")

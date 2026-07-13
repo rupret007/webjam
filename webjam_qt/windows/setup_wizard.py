@@ -964,13 +964,13 @@ class _DonePage(QWizardPage):
     def __init__(self) -> None:
         super().__init__()
         self.setTitle("Configuration saved")
-        self.setSubTitle("Run Ready Check before your first jam.")
+        self.setSubTitle("Run Band Check before your first jam.")
 
         layout = QVBoxLayout(self)
         layout.addWidget(_body_label(
             "Click Finish to launch the Conductor.\n\n"
             "Quick-start:\n"
-            "  1.  Open Checks → Ready Check (F2)\n"
+            "  1.  Open Band Check (F2)\n"
             "  2.  Click \u201cStart Audio\u201d — WebJam will connect to your Jamulus server\n"
             "  3.  Click \u201cOpen Webex\u201d and finish joining in Webex\n"
             "  4.  Adjust faders as musicians join the session\n\n"

@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+import zipfile
 
 from core.settings import AppSettings
 from webjam_qt import __version__
@@ -57,19 +61,111 @@ class TestDiagnosticsExporter(unittest.TestCase):
     def test_build_summary_redacts_secret(self):
         settings = AppSettings()
         settings.sentry_dsn = "super-sensitive-secret-token-xyz"
+        settings.musician_name = "Private Musician Name"
+        settings.takes_directory = "/Users/private/Music/WebJam Takes"
         out = _make_exporter(settings=settings).build_summary()
         self.assertNotIn("super-sensitive-secret-token-xyz", out)
+        self.assertNotIn("Private Musician Name", out)
+        self.assertNotIn("WebJam Takes", out)
         self.assertIn("[redacted]", out)
+
+    def test_preview_copy_and_bundle_share_one_cached_snapshot(self):
+        exporter = _make_exporter(jamulus_state="Running")
+        copied = exporter.build_summary()
+        preview = exporter.build_preview()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = exporter.save_bundle(Path(temp_dir))
+            with zipfile.ZipFile(output, "r") as archive:
+                self.assertEqual(
+                    archive.read("README.txt").decode("utf-8"), copied
+                )
+                self.assertEqual(copied, preview.copy_text)
+                self.assertEqual(
+                    json.loads(archive.read("support.json")), preview.report
+                )
+                self.assertEqual(
+                    tuple(sorted(archive.namelist())), preview.archive_files
+                )
 
     def test_build_summary_handles_missing_log_file(self):
         # Point HOME at a temp dir with no .webjam.log present.
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp}):
-                # Build should not raise and should mention the log path.
+                # Build should not raise or disclose a source path merely to
+                # explain that an optional log was unavailable.
                 out = _make_exporter().build_summary()
-        self.assertIn(".webjam.log", out)
-        self.assertIn("(log file unavailable)", out)
+        self.assertNotIn(tmp, out)
+        self.assertIn("## Included sanitized logs\n- None", out)
+
+    def test_structured_report_includes_available_recorder_and_cleanup_facts(self):
+        settings = AppSettings(
+            local_capture_enabled=True,
+            jamulus_rpc_port=22222,
+            server_rpc_port=22240,
+            jamulus_port=22124,
+        )
+        bridge = SimpleNamespace(
+            jamulus_state="Stopped",
+            jamulus_reconnect_attempts=3,
+            jamulus_process=None,
+            hosted_server_process=None,
+            _port_free=lambda _port, *, udp=False: True,
+        )
+        jamulus = SimpleNamespace(
+            rpc_client=SimpleNamespace(
+                available=False, last_activity_age=lambda: 1.0
+            ),
+            audio_engine=SimpleNamespace(
+                diagnostics=lambda: SimpleNamespace(
+                    backend="sounddevice",
+                    active=False,
+                    samplerate=48_000,
+                )
+            ),
+        )
+        take = SimpleNamespace(
+            duration_s=12.5,
+            tracks=(
+                SimpleNamespace(samplerate=48_000, channels=1),
+                SimpleNamespace(samplerate=48_000, channels=1),
+            ),
+        )
+        recording = SimpleNamespace(
+            phase=SimpleNamespace(value="complete"),
+            snapshot=SimpleNamespace(armed=False, recording=False),
+            last_validation=SimpleNamespace(take=take, errors=()),
+        )
+        metrics = SimpleNamespace(
+            collect=lambda: {
+                "metric_jamulus_reconnect_success": "2",
+                "metric_jamulus_reconnect_failed": "1",
+            }
+        )
+        report = DiagnosticsExporter(
+            settings=settings,
+            bridge=bridge,
+            jamulus_controller=jamulus,
+            window_version=__version__,
+            build_id="a" * 40,
+            recording_coordinator=recording,
+            metrics_service=metrics,
+        ).artifact().structured_report
+
+        self.assertEqual(report["versions"]["build"], "a" * 40)
+        self.assertEqual(report["session"]["reconnects"], {
+            "attempts": 3,
+            "failed": 1,
+            "succeeded": 2,
+        })
+        self.assertEqual(report["audio"]["channels"]["recorded"], 2)
+        self.assertEqual(report["recorder"]["state"], "complete")
+        self.assertTrue(report["recorder"]["finalized"])
+        self.assertTrue(report["recorder"]["reopened"])
+        self.assertEqual(report["recorder"]["sample_rate_hz"], 48_000)
+        self.assertTrue(
+            all(item["released"] for item in report["cleanup"]["ports"])
+        )
 
 
 if __name__ == "__main__":

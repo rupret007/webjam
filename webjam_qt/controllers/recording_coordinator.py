@@ -21,6 +21,7 @@ from core.take_library import (
     write_take_manifest,
     wait_for_take_files_stable,
 )
+from core.take_project import new_project_id
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -57,12 +58,18 @@ class RecordingCoordinator:
         self._before_takes: dict[Path, int] = {}
         self._expected_tracks = 0
         self._track_names: dict[int, str] = {}
+        self._participant_ids: dict[int, str] = {}
+        self._participant_id_by_channel: dict[int, str] = {}
         self._session_title = ""
+        self._session_id = new_project_id()
+        self._take_id = ""
+        self._local_participant_id = new_project_id()
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
         self._completion_box = None
         self._recovery_box = None
         self._local_capture = None
+        self._stale_capture_scan_done = False
         # The validation worker, toggle-failure handler, and shutdown salvage
         # all hand off the capture; the lock makes the hand-off atomic so the
         # stream is finalized exactly once.
@@ -193,6 +200,8 @@ class RecordingCoordinator:
                         self._c._recorder_armed = False
                         self._c._server_recording = False
                         self._c.window.set_status_recording(False)
+                        if self._take_id:
+                            self._c.signal_peer_recording_stopped(self._take_id)
                         LOGGER.info(
                             "Hosted-server recording stopped and confirmed"
                         )
@@ -288,6 +297,25 @@ class RecordingCoordinator:
                 )
                 for index, participant in enumerate(real_participants)
             }
+            self._participant_ids = {}
+            if self._c.host_peer.active:
+                self._session_id = self._c.host_peer.session_id
+                if self._c.host_peer.host_enrollment is not None:
+                    self._local_participant_id = (
+                        self._c.host_peer.host_enrollment.participant_id
+                    )
+            for index, participant in enumerate(real_participants):
+                channel_id = int(getattr(participant, "channel_id", index))
+                durable = str(getattr(participant, "participant_id", "") or "")
+                if not durable:
+                    durable = self._c.peer_participant_id_for_channel(channel_id)
+                if not durable:
+                    durable = self._participant_id_by_channel.get(channel_id, "")
+                if not durable:
+                    durable = new_project_id()
+                self._participant_id_by_channel[channel_id] = durable
+                self._participant_ids[channel_id] = durable
+            self._take_id = new_project_id()
             self._session_title = self._c.window.session_strip.current_title()
             if not self._start_local_capture():
                 return
@@ -303,6 +331,7 @@ class RecordingCoordinator:
 
     def _start_local_capture(self) -> bool:
         """Start optional isolated local-input capture independently of Webex."""
+        self._recover_stale_captures_once()
         if not self._c.settings.local_capture_enabled:
             self._local_capture = None
             return True
@@ -346,12 +375,43 @@ class RecordingCoordinator:
                 ),
                 next_action=(
                     "Keep Jamulus running, verify the selected interface inputs "
-                    "1–2 at 48 kHz in Ready Check, then retry. No server recording "
+                    "1–2 at 48 kHz in Band Check, then retry. No server recording "
                     "was started."
                 ),
                 retry_callback=self.on_record_requested,
             )
             return False
+
+    def _recover_stale_captures_once(self) -> None:
+        if self._stale_capture_scan_done:
+            return
+        self._stale_capture_scan_done = True
+        root = (self._c.settings.takes_directory or "").strip()
+        if not root:
+            return
+        try:
+            from core.local_capture import recover_stale_local_captures
+
+            recovered = recover_stale_local_captures(root)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not scan for abandoned local captures")
+            return
+        if not recovered:
+            return
+        for item in recovered:
+            LOGGER.warning(
+                "Recovered abandoned local capture in %s", item.recovery_dir
+            )
+        self._c.window.flash_message(
+            "WebJam recovered unfinished local audio from an earlier session. "
+            "Open Studio to review it.",
+            ms=9000,
+        )
+        try:
+            self._c.window.recording_studio.set_takes_directory(root)
+            self._c.window.recording_studio.refresh_takes()
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
 
     def toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         from core.jamulus_server_rpc import (
@@ -405,6 +465,8 @@ class RecordingCoordinator:
             # Authenticated status polling confirmed the recorder is enabled;
             # do not leave the UI hanging if a notification is delayed/lost.
             self._set_phase(RecorderPhase.RECORDING)
+            if self._take_id:
+                self._c.signal_peer_recording_started(self._take_id)
             self._c.window.flash_message(
                 "Recording confirmed by the band server.",
                 ms=5000,
@@ -414,16 +476,24 @@ class RecordingCoordinator:
             except Exception:  # noqa: BLE001
                 LOGGER.debug("recording metric failed", exc_info=True)
         else:
+            if self._take_id:
+                self._c.signal_peer_recording_stopped(self._take_id)
             self._set_phase(RecorderPhase.VALIDATING)
             self._begin_take_validation()
 
     def apply_toggle_failure(self, message: str) -> None:
-        if not self._c._recorder_armed:
-            capture = self._take_local_capture()
-            if capture is not None:
-                # The server never started recording, so the stems have no
-                # matching take — abort discards only this pre-take audio.
-                capture.abort()
+        ambiguous_start = (
+            self.phase is RecorderPhase.STARTING
+            and not self._c._recorder_armed
+        )
+        if ambiguous_start:
+            # A timeout can arrive after JamulusServer accepted startRecording
+            # but before WebJam received the acknowledgement or status reply.
+            # Never delete local stems or offer another start in that state.
+            # Fail safe toward "possibly armed" so the retry is an idempotent
+            # stop; normal stop confirmation then validates the server take and
+            # finalizes this still-running local capture.
+            self._c._recorder_armed = True
         still_armed = bool(self._c._recorder_armed or self._c._server_recording)
         self._c.session_health.mark_rpc_result("recorder", False, message)
         self._set_phase(
@@ -599,12 +669,20 @@ class RecordingCoordinator:
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
             duration_s = 0.0
+            capture_gaps: tuple[object, ...] = ()
+            local_total_frames = 0
+            capture_device = None
             capture = self._take_local_capture()
             if capture is not None:
                 local_result = capture.stop_into(recovered)
                 capture_errors = local_result.errors
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
+                capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
+                local_total_frames = int(
+                    getattr(local_result, "total_frames", 0) or 0
+                )
+                capture_device = getattr(local_result, "capture_device", None)
             if recovered.is_dir():
                 from webjam_qt import __version__
                 self._post_validation_stage("ALIGNING HOST TRACKS…")
@@ -621,6 +699,14 @@ class RecordingCoordinator:
                     app_version=__version__,
                     participant_names=self._track_names,
                     session_title=self._session_title,
+                    session_id=self._session_id,
+                    take_id=self._take_id,
+                    participant_ids=self._participant_ids,
+                    local_participant_id=self._local_participant_id,
+                    local_participant_name=self._c.settings.musician_name,
+                    capture_device=capture_device,
+                    capture_gaps=capture_gaps,
+                    local_total_frames=local_total_frames,
                 )
             else:
                 result = TakeValidationResult(
@@ -631,12 +717,20 @@ class RecordingCoordinator:
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
             duration_s = 0.0
+            capture_gaps: tuple[object, ...] = ()
+            local_total_frames = 0
+            capture_device = None
             capture = self._take_local_capture()
             if capture is not None:
                 local_result = capture.stop_into(take_dir)
                 capture_errors = local_result.errors
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
+                capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
+                local_total_frames = int(
+                    getattr(local_result, "total_frames", 0) or 0
+                )
+                capture_device = getattr(local_result, "capture_device", None)
             self._post_validation_stage("CHECKING TRACKS…")
             stable = wait_for_take_files_stable(take_dir, polls=20, interval_s=0.25)
             if not stable:
@@ -653,6 +747,14 @@ class RecordingCoordinator:
                 app_version=__version__,
                 participant_names=self._track_names,
                 session_title=self._session_title,
+                session_id=self._session_id,
+                take_id=self._take_id,
+                participant_ids=self._participant_ids,
+                local_participant_id=self._local_participant_id,
+                local_participant_name=self._c.settings.musician_name,
+                capture_device=capture_device,
+                capture_gaps=capture_gaps,
+                local_total_frames=local_total_frames,
             )
         return result
 
@@ -673,6 +775,11 @@ class RecordingCoordinator:
             result.take.path if result.take else None,
             result,
         )
+        if result.take is not None and self._take_id and self._c.host_peer.active:
+            try:
+                self._c.host_peer.register_take(self._take_id, result.take.path)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Could not attach peer transfer inventory to take")
 
     @staticmethod
     def _completion_text(result: TakeValidationResult) -> tuple[str, str]:
@@ -709,7 +816,7 @@ class RecordingCoordinator:
             details.extend(f"• {error}" for error in result.errors)
             details.extend([
                 "",
-                "There is nothing to play back yet. Run Ready Check (F2) to "
+                "There is nothing to play back yet. Run Band Check (F2) to "
                 "verify the band server's recorder, then record a short test "
                 "take.",
             ])

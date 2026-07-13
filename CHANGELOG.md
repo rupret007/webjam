@@ -4,6 +4,80 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.10.0] — 2026-07-13 certification candidate
+
+### Band Check before guesswork
+
+- **Band Check is now the permanent readiness path.** It guides each musician
+  through the music engine, owned host service, selected local input, headphone
+  left/right output, a five-second PCM24 recording, explicit playback
+  confirmation, Studio transport, and a plain-language result: **Ready to
+  Jam**, **Ready with a Warning**, or **Action Needed**.
+- Live Band Check never opens a second device or restarts a running music
+  service. Its copy now distinguishes WebJam's separate PortAudio input from
+  Jamulus observations, so a moving local meter is not presented as proof of
+  what a bandmate hears.
+- **Save Support Bundle** previews one immutable allowlisted artifact before it
+  is copied or saved. The private archive excludes audio, notes, transcripts,
+  Webex content, meeting/invite links, settings/environment dumps, secrets,
+  home paths, and arbitrary personal files by default; bounded log excerpts
+  are recursively redacted.
+
+### Originals survive reconnects
+
+- A schema-v2 take now uses durable session, take, participant, track, source,
+  and segment IDs. Explicit project placement, device/rate/channel/format
+  facts, SHA-256, media status, reconnect segments, and gap intervals replace
+  filename/name inference.
+- Any Mac can explicitly keep interface inputs 1 and 2 as separate local
+  PCM24/48-kHz originals. Queue or write loss preserves absolute frame time by
+  inserting disclosed silence instead of shortening the recording. Writer
+  timeout, attach failure, crash, and shutdown preserve visible recoverable
+  media and never steal a still-live writer's file handles.
+- A v2 private invite enrolls one stable installation identity. Guest capture
+  begins only after authenticated host recording state, continues while the
+  peer control plane is unavailable, and uploads immutable segments in
+  restartable chunks. Size, SHA-256, and PCM facts must agree before the host
+  atomically attaches a copy; the guest original is never moved or deleted.
+- The peer plane is intentionally limited to authenticated plain HTTP on the
+  same RFC1918 IPv4 LAN. It does not claim TLS, IPv6, Internet, VPN, NAT
+  traversal, or safe public exposure. Invite links now contain a private
+  enrollment credential and should be shared only with the intended bandmate.
+
+### Studio and Logic evidence
+
+- Studio retains missing, partial, damaged, transferring, and failed-transfer
+  truth. Playback and exact asynchronous waveforms support multi-segment,
+  mixed-rate, reconnect-gap, and drift-adjusted projects; active seek reopens
+  every reader and leaving Studio releases its output.
+- Non-destructive alignment now measures repeated transients, signed start
+  offset, long-take drift, mixed rates, gaps, residuals, and confidence. Manual
+  nudge remains separate and can be restored to the automatic evidence.
+- The Logic handoff now publishes common-origin numbered PCM24 stems, a server
+  reference, Studio reference, marker/tempo/signature guidance, source
+  manifest, alignment and recording reports, independent WAV analysis, and
+  checksums. Missing or changed selected media blocks publication. The
+  deterministic affine resampler is disclosed and is not claimed to be
+  sample-perfect or mastering grade.
+
+### Identity and certification boundary
+
+- The placeholder **WJ** header has been replaced by an original three-part
+  WebJam mark representing conversation, live music, and production. SVG, ICO,
+  and ICNS assets use only black/white/neutral and Longhorn burnt orange; no
+  purple or teal is part of the identity.
+- A real Jamulus 3.12.2/JACK harness now measures two independently named
+  clients at their hardware-boundary ports, checks cross-contamination,
+  dropouts, server stems, Studio/export traversal, reconnect, resources, and
+  owned-process cleanup. A separate longevity test refuses to count runs below
+  3,600 seconds.
+- Automated evidence does not replace the final two-Mac musician and Logic Pro
+  gates. At this changelog entry, bidirectional acoustic audibility and Logic
+  import remain **NOT RUN**; the exact new artifact path and SHA are recorded
+  only after the fresh v0.10.0 ZIP is complete.
+
+---
+
 ## [0.9.0] — 2026-07-13 test-night candidate
 
 ### A simpler first five seconds

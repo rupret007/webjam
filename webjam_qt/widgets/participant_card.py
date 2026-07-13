@@ -46,6 +46,9 @@ class ParticipantPresentation:
     is_local: bool = False
     video_connected: bool = False
     audio_level: float = 0.0            # 0..1
+    # Durable peer enrollment identity; Jamulus channel_id and display name
+    # are both transient and may change on reconnect.
+    participant_id: str = ""
 
 
 class ParticipantCard(QFrame):

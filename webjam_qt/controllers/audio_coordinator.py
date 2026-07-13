@@ -210,6 +210,7 @@ class AudioCoordinator:
             )
             self._c.window.flash_message(error, ms=8000)
             return
+        self._c._stop_session_peer()
         self._c.recording.on_audio_session_stopped()
         self.reset_to_idle()
         self._c._reconnect_banner_shown = False

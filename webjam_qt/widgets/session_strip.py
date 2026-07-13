@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
+from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 
 
@@ -43,7 +44,7 @@ class SessionStrip(QFrame):
     mute_self_requested = Signal()      # toggle local-user mute
     practice_requested = Signal()       # start a solo practice session
     record_requested = Signal()         # toggle band-server multitrack recording
-    ready_check_requested = Signal()    # run the pre-jam readiness report
+    ready_check_requested = Signal()    # run Band Check
     invite_requested = Signal()         # copy the host address for bandmates
     tool_requested = Signal(str)        # progressive-disclosure destination
 
@@ -67,7 +68,7 @@ class SessionStrip(QFrame):
         self._webex_audio_mode = "talkback"
 
         # --- Widgets
-        self._logo = QLabel("WJ")
+        self._logo = BrandMark(28)
         self._logo.setObjectName("SessionStripLogo")
 
         self._title_input = QLineEdit(initial_title)
@@ -136,13 +137,13 @@ class SessionStrip(QFrame):
         self._record_button.clicked.connect(self.record_requested.emit)
 
         self._test_button = QToolButton()
-        self._test_button.setText("Checks ▾")
+        self._test_button.setText("Band Check ▾")
         self._test_button.setObjectName("GhostButton")
-        self._test_button.setAccessibleName("Readiness and practice tests")
+        self._test_button.setAccessibleName("Band Check and solo practice")
         self._test_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         test_menu = QMenu(self._test_button)
-        self._ready_action = QAction("Ready Check\tF2", test_menu)
-        self._ready_action.setToolTip("Check devices, server settings, and recording readiness")
+        self._ready_action = QAction("Band Check\tF2", test_menu)
+        self._ready_action.setToolTip("Check your input, headphones, and recording")
         self._ready_action.triggered.connect(self.ready_check_requested.emit)
         test_menu.addAction(self._ready_action)
         self._practice_action = QAction("Practice Solo\tCtrl+P", test_menu)
@@ -150,7 +151,7 @@ class SessionStrip(QFrame):
         self._practice_action.triggered.connect(self.practice_requested.emit)
         test_menu.addAction(self._practice_action)
         self._test_button.setMenu(test_menu)
-        # Diagnostics remain available through F2, but the everyday workflow
+        # Band Check remains available through F2, but the everyday workflow
         # should not look like a checklist musicians must operate.
         self._test_button.setVisible(False)
 
@@ -214,7 +215,7 @@ class SessionStrip(QFrame):
         settings_action = QAction("Settings", tools_menu)
         settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
         tools_menu.addAction(settings_action)
-        diagnostics_action = QAction("Troubleshooting", tools_menu)
+        diagnostics_action = QAction("Band Check\tF2", tools_menu)
         diagnostics_action.triggered.connect(
             lambda: self.tool_requested.emit("diagnostics")
         )

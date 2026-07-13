@@ -241,8 +241,9 @@ class ParticipantGrid(QScrollArea):
         self._empty_practice.setObjectName("GhostButton")
         self._empty_practice.setAccessibleName("Start a private practice session")
         self._empty_practice.clicked.connect(self.practice_requested.emit)
-        self._empty_ready = QPushButton("Run Ready Check")
+        self._empty_ready = QPushButton("Run Band Check")
         self._empty_ready.setObjectName("GhostButton")
+        self._empty_ready.setAccessibleName("Run Band Check")
         self._empty_ready.clicked.connect(self.ready_check_requested.emit)
 
         actions = QHBoxLayout()

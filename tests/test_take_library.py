@@ -7,6 +7,9 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from types import SimpleNamespace
+
+from core.take_project import CaptureDevice
 
 from core.take_library import (
     discover_takes,
@@ -104,6 +107,44 @@ class TestLoadTake(unittest.TestCase):
             info = load_take(take)
         self.assertEqual(info.tracks[0].offset_s, 0.0)
 
+    def test_manifest_declared_missing_track_remains_visible_and_invalidates_take(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "host.wav", seconds=0.1)
+            (take / "webjam-take.json").write_text(json.dumps({
+                "schema_version": 1,
+                "status": "complete",
+                "tracks": [
+                    {
+                        "filename": "host.wav",
+                        "name": "Host",
+                        "source": "jamulus_server",
+                    },
+                    {
+                        "filename": "guest.wav",
+                        "name": "Guest",
+                        "source": "jamulus_server",
+                        "duration_s": 2.0,
+                        "sample_rate": 48000,
+                        "offset_s": 0.5,
+                    },
+                ],
+            }), encoding="utf-8")
+
+            info = load_take(take)
+
+        self.assertIsNotNone(info)
+        self.assertEqual([track.name for track in info.tracks], ["Host", "Guest"])
+        guest = info.tracks[1]
+        self.assertEqual(guest.path.name, "guest.wav")
+        self.assertEqual(guest.media_status, "missing")
+        self.assertEqual(guest.duration_s, 2.0)
+        self.assertEqual(guest.samplerate, 48000)
+        self.assertEqual(info.duration_s, 2.5)
+        self.assertEqual(info.validation_status, "needs_attention")
+        self.assertTrue(any("Guest is missing" in error for error in info.manifest_errors))
+
 
 class TestDiscoverTakes(unittest.TestCase):
     def test_discovers_multiple_and_sorts_newest_first(self):
@@ -200,7 +241,11 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(manifest["status"], "needs_attention")
         self.assertTrue(any("aligned confidently" in e for e in result.errors))
         self.assertEqual(
-            len([track for track in loaded.tracks if track.source == "local_ssl"]), 2
+            len([
+                track for track in loaded.tracks
+                if track.source == "local_isolated"
+            ]),
+            2,
         )
         self.assertEqual(loaded.validation_status, "needs_attention")
 
@@ -212,6 +257,189 @@ class TestTakeValidation(unittest.TestCase):
             write_take_manifest(take, expected_tracks=1, required_local_stems=0)
             text = (take / "webjam-take.json").read_text()
         self.assertNotIn("secret", text.lower())
+
+    def test_final_manifest_v2_has_stable_ids_exact_media_hash_and_capture_gap(self):
+        import hashlib
+        import uuid
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "host-guitar.wav", seconds=0.1)
+            _write_wav(take / "host-vocal.wav", seconds=0.1)
+            _write_wav(take / "Band-127_0_0_1_50000-0-1.wav", seconds=0.1)
+            session_id = str(uuid.uuid4())
+            take_id = str(uuid.uuid4())
+            participant_id = str(uuid.uuid4())
+            local_id = str(uuid.uuid4())
+            gap = SimpleNamespace(
+                start_frame=1200,
+                frame_count=240,
+                channels=(0,),
+                reason="queue_overflow",
+            )
+            device = CaptureDevice(
+                device_id="coreaudio:test-input",
+                display_name="Test Input",
+                backend="Core Audio",
+                sample_rate=48000,
+                channel_indices=(0, 1),
+                channel_labels=("Guitar", "Vocal"),
+            )
+
+            write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=2,
+                session_id=session_id,
+                take_id=take_id,
+                participant_names={0: "Jeff"},
+                participant_ids={0: participant_id},
+                local_participant_id=local_id,
+                local_participant_name="Jeff",
+                capture_device=device,
+                capture_gaps=(gap,),
+                local_total_frames=4800,
+            )
+            data = json.loads((take / "webjam-take.json").read_text())
+            expected_guitar_size = (take / "host-guitar.wav").stat().st_size
+            expected_guitar_hash = hashlib.sha256(
+                (take / "host-guitar.wav").read_bytes()
+            ).hexdigest()
+
+        self.assertEqual(data["schema_version"], 2)
+        self.assertEqual(data["session_id"], session_id)
+        self.assertEqual(data["take_id"], take_id)
+        self.assertEqual(len({item["participant_id"] for item in data["participants"]}), 2)
+        self.assertEqual(data["devices"][0]["device_id"], device.device_id)
+        server = next(item for item in data["tracks"] if item["source"] == "jamulus_server")
+        guitar = next(item for item in data["tracks"] if item["filename"] == "host-guitar.wav")
+        vocal = next(item for item in data["tracks"] if item["filename"] == "host-vocal.wav")
+        self.assertEqual(server["participant_id"], participant_id)
+        self.assertEqual(guitar["participant_id"], local_id)
+        self.assertEqual(vocal["participant_id"], local_id)
+        segment = guitar["segments"][0]
+        self.assertEqual(segment["frame_count"], 4800)
+        self.assertEqual(segment["sample_rate"], 48000)
+        self.assertEqual(segment["channels"], 1)
+        self.assertEqual(segment["sample_format"], "PCM_16")
+        self.assertEqual(segment["size_bytes"], expected_guitar_size)
+        self.assertEqual(segment["sha256"], expected_guitar_hash)
+        self.assertEqual(
+            segment["gaps"],
+            [{
+                "start_frame": 1200,
+                "frame_count": 240,
+                "reason": "queue_overflow",
+                "channels": [0],
+            }],
+        )
+        self.assertEqual(vocal["segments"][0]["gaps"], [])
+
+    def test_load_schema2_retains_nested_reconnect_segments_rates_and_gaps(self):
+        import hashlib
+
+        import numpy as np
+        import soundfile as sf
+
+        from core.take_project import (
+            AlignmentState,
+            GapInterval,
+            MediaSegment,
+            MediaStatus,
+            Participant,
+            ProjectStatus,
+            ProjectTrack,
+            SourceQuality,
+            SourceType,
+            TakeProject,
+            new_project_id,
+            write_take_project,
+        )
+
+        with tempfile.TemporaryDirectory() as d:
+            take_dir = Path(d) / "take"
+            nested = take_dir / "transferred-isolated"
+            nested.mkdir(parents=True)
+            first = nested / "first.wav"
+            second = nested / "second.wav"
+            sf.write(first, np.full(4410, 0.2, dtype="float32"), 44100)
+            sf.write(second, np.full(4800, 0.3, dtype="float32"), 48000)
+            participant_id = new_project_id()
+            segments = (
+                MediaSegment(
+                    new_project_id(),
+                    "transferred-isolated/first.wav",
+                    4800,
+                    4410,
+                    44100,
+                    1,
+                    "PCM_16",
+                    sha256=hashlib.sha256(first.read_bytes()).hexdigest(),
+                    size_bytes=first.stat().st_size,
+                    gaps=(GapInterval(100, 50, "network interruption"),),
+                ),
+                MediaSegment(
+                    new_project_id(),
+                    "transferred-isolated/second.wav",
+                    14400,
+                    4800,
+                    48000,
+                    1,
+                    "PCM_16",
+                    sha256=hashlib.sha256(second.read_bytes()).hexdigest(),
+                    size_bytes=second.stat().st_size,
+                ),
+            )
+            track = ProjectTrack(
+                new_project_id(),
+                new_project_id(),
+                participant_id,
+                "Guest Guitar",
+                "Guitar",
+                SourceType.LOCAL_ISOLATED,
+                SourceQuality.VERIFIED_ISOLATED,
+                MediaStatus.AVAILABLE,
+                0,
+                segments,
+                AlignmentState(
+                    automatic_offset_s=0.01,
+                    drift_ppm=500.0,
+                    confidence=0.9,
+                    method="test-alignment",
+                ),
+            )
+            project = TakeProject(
+                new_project_id(),
+                new_project_id(),
+                "Session",
+                "Take",
+                ProjectStatus.COMPLETE,
+                48000,
+                (Participant(participant_id, "Guest", "Guitar"),),
+                (track,),
+            )
+            write_take_project(take_dir, project)
+            loaded = load_take(take_dir)
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.project_samplerate, 48000)
+        self.assertEqual(len(loaded.tracks), 1)
+        loaded_track = loaded.tracks[0]
+        self.assertEqual(len(loaded_track.segments), 2)
+        self.assertEqual(
+            [segment.samplerate for segment in loaded_track.segments],
+            [44100, 48000],
+        )
+        self.assertEqual(loaded_track.segments[1].project_start_frame, 14400)
+        self.assertEqual(
+            loaded_track.segments[0].gaps,
+            ((100, 50, (), "network interruption"),),
+        )
+        self.assertEqual(loaded_track.offset_s, 0.01)
+        self.assertEqual(loaded_track.drift_ppm, 500.0)
+        self.assertEqual(loaded_track.alignment_method, "test-alignment")
+        self.assertAlmostEqual(loaded_track.duration_s, 0.40005, places=4)
 
     def test_alignment_recovers_known_server_delay(self):
         import numpy as np

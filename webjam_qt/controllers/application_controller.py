@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer
@@ -25,6 +27,11 @@ from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
 from core.settings import AppSettings, load_settings
+from core.session_transfer_runtime import (
+    GuestPeerSession,
+    HostPeerSession,
+    default_installation_identity_path,
+)
 from services.bridge_service import BridgeService
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
@@ -52,6 +59,7 @@ class ApplicationController(QObject):
         self,
         window: ConductorWindow,
         settings: Optional[AppSettings] = None,
+        session_invite=None,
     ) -> None:
         super().__init__(window)
         self.window = window
@@ -111,6 +119,20 @@ class ApplicationController(QObject):
         self.audio = AudioCoordinator(self)
         self.video = VideoCoordinator(self)
         self.recording = RecordingCoordinator(self)
+
+        # The peer plane is independent from Jamulus: it carries only durable
+        # identity, confirmed recording state, and isolated local originals.
+        # Host service binding is lazy until a real private Wi-Fi address is
+        # known; joiners enroll in a worker so startup/UI never blocks on LAN.
+        self._host_peer_warning = ""
+        self.host_peer = HostPeerSession(
+            on_take_updated=self._on_peer_take_updated,
+        )
+        self.guest_peer: GuestPeerSession | None = None
+        if session_invite is not None and bool(
+            getattr(session_invite, "peer_enabled", False)
+        ):
+            self._configure_guest_peer(session_invite)
 
         # Companion API — optional localhost HTTP bridge for DAWs/editors.
         # Constructed here (no side effects) but only started in
@@ -201,6 +223,8 @@ class ApplicationController(QObject):
         self._wire_signals()
         self._bootstrap_ui()
         self._start_routing_scan()
+        if self.guest_peer is not None:
+            self.guest_peer.start()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -260,6 +284,10 @@ class ApplicationController(QObject):
                 self.bridge.stop_hosted_server()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Hosted server shutdown failed")
+        # Keep the host peer reachable until the recorder is stopped and local
+        # joiners have had their final control snapshot. Joiners then preserve
+        # any still-active original and retain a resumable upload queue.
+        self._stop_session_peer()
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
@@ -274,6 +302,161 @@ class ApplicationController(QObject):
             self.api_bridge.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Companion API stop failed")
+
+    def _configure_guest_peer(self, invite) -> None:
+        self._stop_session_peer()
+        try:
+            self.guest_peer = GuestPeerSession(
+                invite,
+                display_name=self.settings.musician_name,
+                takes_root=(
+                    self.settings.takes_directory
+                    or str(Path.home() / "Music" / "WebJam Takes")
+                ),
+                installation_path=default_installation_identity_path(
+                    self.settings.config_file
+                ),
+                capture_enabled=lambda: bool(
+                    self.settings.local_capture_enabled
+                ),
+                capture_config=lambda: (
+                    int(self.settings.audio_input_device_index),
+                    int(self.settings.audio_samplerate),
+                    int(self.settings.audio_blocksize),
+                ),
+                on_originals_changed=self._on_guest_originals_changed,
+            )
+            self._on_guest_originals_changed(self.guest_peer.originals_root)
+            if self.guest_peer.recovered_captures:
+                self.window.flash_message(
+                    "WebJam recovered unfinished local audio from an earlier "
+                    "session. Open Studio to review it.",
+                    ms=9000,
+                )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not configure private recording transfer")
+            self.guest_peer = None
+
+    def _stop_session_peer(self) -> None:
+        guest = getattr(self, "guest_peer", None)
+        if guest is not None:
+            try:
+                guest.stop()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Guest recording transfer cleanup failed")
+        self.guest_peer = None
+        host = getattr(self, "host_peer", None)
+        if host is not None:
+            try:
+                host.stop()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Host recording service cleanup failed")
+        self._host_peer_warning = ""
+
+    def _on_peer_take_updated(
+        self,
+        _take_id: str,
+        take_dir: Path,
+        attached_new_media: bool,
+    ) -> None:
+        """Reveal late verified transfers in the open Studio immediately."""
+
+        def refresh() -> None:
+            if self._shutdown:
+                return
+            self.window.recording_studio.refresh_take(take_dir)
+            if attached_new_media:
+                self.window.flash_message(
+                    "A bandmate's Local Original arrived and is now visible in Studio.",
+                    ms=7000,
+                )
+
+        self._ui_invoker.invoke(refresh)
+
+    def _on_guest_originals_changed(self, path: Path) -> None:
+        """Keep one safe Finder action current as guest originals arrive."""
+
+        def refresh() -> None:
+            if self._shutdown:
+                return
+            self.window.recording_studio.set_local_originals_directory(path)
+
+        self._ui_invoker.invoke(refresh)
+
+    def _sync_local_originals_action(self) -> None:
+        takes_root = Path(
+            self.settings.takes_directory
+            or str(Path.home() / "Music" / "WebJam Takes")
+        ).expanduser()
+        self.window.recording_studio.set_local_originals_directory(
+            takes_root / "WebJam Local Originals"
+        )
+
+    def _ensure_host_peer(self, address: str) -> bool:
+        if not bool(getattr(self.settings, "host_server_enabled", False)):
+            self._host_peer_warning = ""
+            return False
+        if self.host_peer.active:
+            self._host_peer_warning = ""
+            return True
+        try:
+            self.host_peer.start(
+                address,
+                takes_root=(
+                    self.settings.takes_directory
+                    or str(Path.home() / "Music" / "WebJam Takes")
+                ),
+                installation_path=default_installation_identity_path(
+                    self.settings.config_file
+                ),
+                display_name=self.settings.musician_name,
+            )
+            self._host_peer_warning = ""
+            return True
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not start private recording service")
+            self._host_peer_warning = (
+                "Bandmates can still join and play. Automatic Local Originals "
+                "are unavailable, so use the band take or have each musician "
+                "record separately."
+            )
+            return False
+
+    def peer_participant_id_for_channel(self, channel_id: int) -> str:
+        if self.host_peer.active:
+            return self.host_peer.participant_id_for_channel(channel_id) or ""
+        if self.guest_peer is not None:
+            local = self.guest_peer.participant_id
+            participant = self.participants.get(int(channel_id))
+            if local and participant is not None and participant.is_local:
+                return local
+        return ""
+
+    def signal_peer_recording_started(self, take_id: str) -> None:
+        if not self.host_peer.active:
+            return
+        try:
+            self.host_peer.begin_take(
+                take_id,
+                started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not publish confirmed recording start")
+
+    def signal_peer_recording_stopped(
+        self, take_id: str, *, needs_attention: bool = False, message: str = ""
+    ) -> None:
+        if not self.host_peer.active:
+            return
+        try:
+            self.host_peer.finish_take(
+                take_id,
+                stopped_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                needs_attention=needs_attention,
+                message=message,
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not publish confirmed recording stop")
 
     def _confirm_close(self) -> bool:
         """Never let a live jam disappear from a close-button accident."""
@@ -513,6 +696,7 @@ class ApplicationController(QObject):
         self.window.recording_studio.set_takes_directory(
             self.settings.takes_directory
         )
+        self._sync_local_originals_action()
         self.window.recording_studio.set_output_device(
             self.settings.take_playback_output_device
         )
@@ -523,7 +707,7 @@ class ApplicationController(QObject):
         self.window.session_strip.set_invite_available(False)
         self.window.recording_studio.set_can_record(
             hosting,
-            "The host controls recording; your audio is captured there as its own track."
+            "The host controls take start and stop. Local Originals are optional in Recording Setup."
             if not hosting else "",
         )
         self._load_notes()
@@ -560,23 +744,148 @@ class ApplicationController(QObject):
         self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
 
     def _on_ready_check(self) -> None:
-        """F2 — open/re-run the non-blocking pre-jam readiness report."""
+        """F2 — open the guided Band Check without disrupting a live jam."""
+        self._open_band_check()
+
+    def _open_band_check(self, *, start_session_when_ready: bool = False) -> None:
+        """Open Band Check; optionally make it the unverified-start gate."""
         existing = getattr(self, "_ready_check_dialog", None)
         if existing is not None and existing.isVisible():
-            existing.run_checks()
+            if getattr(existing, "_mode", None) is not None:
+                existing._refresh_live_observations()
             existing.raise_()
             existing.activateWindow()
             return
-        from webjam_qt.windows.ready_check import ReadyCheckDialog
+        from core.band_check import BandCheckMode
+        from webjam_qt.windows.ready_check import BandCheckDialog
 
-        dialog = ReadyCheckDialog(lambda: self.settings, parent=self.window)
+        live = self._is_jamulus_running() or self.bridge.hosted_server_alive()
+        dialog = BandCheckDialog(
+            lambda: self.settings,
+            parent=self.window,
+            mode=(
+                BandCheckMode.LIVE_OBSERVE
+                if live
+                else BandCheckMode.PRE_SESSION
+            ),
+            observations_provider=self._band_check_observations,
+            host_server_service=self.bridge,
+            start_session_when_ready=start_session_when_ready,
+        )
         dialog.settings_requested.connect(self._open_settings_wizard)
         dialog.practice_requested.connect(self._on_practice_requested)
+        dialog.support_requested.connect(self._on_save_support_bundle)
+        if start_session_when_ready:
+            dialog.session_start_requested.connect(self._start_after_band_check)
         dialog.finished.connect(
             lambda _result: setattr(self, "_ready_check_dialog", None)
         )
         self._ready_check_dialog = dialog
         dialog.show()
+
+    def _start_after_band_check(self) -> None:
+        if not self._is_jamulus_running():
+            self._on_launch_audio()
+
+    def start_session_or_band_check(self) -> None:
+        """Reuse a matching verification or gate startup with Band Check.
+
+        Signature probing runs off the UI thread and never opens an audio
+        stream. A missing, corrupt, failed, or changed verification fails
+        closed into the guided check.
+        """
+
+        settings = self.settings
+        self.window.session_hud.set_state(
+            "Checking this setup…",
+            "WebJam is confirming whether your verified audio setup changed.",
+        )
+
+        def worker() -> None:
+            verified = False
+            try:
+                from core.band_check import (
+                    build_verification_signature,
+                    load_verification,
+                    verification_path,
+                )
+                from webjam_qt import __version__
+
+                signature = build_verification_signature(
+                    settings,
+                    app_version=__version__,
+                )
+                saved = load_verification(verification_path(settings))
+                verified = bool(saved and saved.matches(signature))
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Band Check verification could not be inspected")
+            def deliver() -> None:
+                if getattr(self, "_shutdown", False):
+                    return
+                if verified:
+                    self._on_launch_audio()
+                else:
+                    self._open_band_check(start_session_when_ready=True)
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                LOGGER.debug("Startup Band Check finished after Qt shutdown")
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="band-check-startup",
+        ).start()
+
+    def _band_check_observations(self):
+        """Return read-only evidence; never start, stop, or restart a service."""
+        from core.band_check import BandCheckObservations
+
+        rpc = getattr(self.jamulus, "rpc_client", None)
+        rpc_available = bool(getattr(rpc, "available", False))
+        responsive = rpc_available
+        if rpc_available:
+            try:
+                age = rpc.last_activity_age()
+                if age is not None:
+                    responsive = float(age) <= self._RPC_HANG_THRESHOLD_S
+            except Exception:  # noqa: BLE001
+                responsive = False
+        meter_active = False
+        meter_rms = 0.0
+        try:
+            diagnostics = self.jamulus.audio_engine.diagnostics()
+            meter_active = bool(getattr(diagnostics, "active", False))
+            meter_rms = float(self.jamulus.audio_engine.get_level(-1))
+        except Exception:  # noqa: BLE001
+            pass
+        peer_connected = any(
+            not self._is_local_participant(person)
+            for person in self.participants.values()
+        )
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        return BandCheckObservations(
+            music_engine_running=self._is_jamulus_running(),
+            music_engine_responsive=responsive,
+            band_server_running=(
+                self.bridge.hosted_server_alive() if hosting else None
+            ),
+            recorder_ready=(
+                rpc_available and self.bridge.hosted_server_alive()
+                if hosting
+                else None
+            ),
+            production_local_signal=bool(self._local_audio_seen),
+            production_remote_signal=bool(self._remote_audio_seen),
+            peer_connected=peer_connected,
+            local_meter_active=meter_active,
+            local_meter_rms=meter_rms,
+            # The existing local meter exposes RMS only. Do not invent a peak
+            # or clipping result from it during LIVE_OBSERVE.
+            local_meter_peak=meter_rms,
+            local_meter_clipped=False,
+        )
 
     def _on_chat_submitted(self, text: str) -> None:
         """User sent a chat message from the canvas box — send to the band and
@@ -620,6 +929,30 @@ class ApplicationController(QObject):
             self._self_transmit_muted = False
             self._sync_self_mute_button()
         self.audio.apply_participants(jamulus_participants)
+        # Bind only this process's authenticated local participant. The host
+        # resolves remote channels from each joiner's signed presence update,
+        # so duplicate or renamed display names never become identity keys.
+        for person in jamulus_participants:
+            if not self._is_local_participant(person):
+                continue
+            if self.host_peer.active:
+                try:
+                    self.host_peer.bind_host_presence(
+                        int(person.channel_id),
+                        str(person.name or self.settings.musician_name),
+                        capture_enabled=bool(self.settings.local_capture_enabled),
+                    )
+                except Exception:  # noqa: BLE001
+                    LOGGER.exception("Could not bind host participant presence")
+            if self.guest_peer is not None:
+                self.guest_peer.observe_presence(
+                    int(person.channel_id),
+                    str(person.name or self.settings.musician_name),
+                )
+        for channel_id, presentation in self.participants.items():
+            durable = self.peer_participant_id_for_channel(channel_id)
+            if durable:
+                presentation.participant_id = durable
         self.window.recording_studio.set_live_participants(
             self.participants.values()
         )
@@ -727,7 +1060,9 @@ class ApplicationController(QObject):
         self.window.flash_message(f"Switched to {mode.label}")
 
     def _on_title_changed(self, title: str) -> None:
-        LOGGER.info("Session title set: %s", title)
+        # Session titles are user content. Persist them locally, but never put
+        # them into logs that may later be included in a support bundle.
+        LOGGER.info("Session title updated")
         # Persist immediately so a crash before clean shutdown doesn't lose it
         self._save_session_title()
         self._refresh_session_pulse()
@@ -758,6 +1093,10 @@ class ApplicationController(QObject):
             )
             return
         QApplication.clipboard().setText(invite_url)
+        if self._host_peer_warning:
+            # The legacy invitation is intentionally still usable, but the
+            # host must never miss why automatic originals are unavailable.
+            self._update_session_hud()
         self.window.flash_message(
             "Invite link copied — send it to your bandmate.",
             ms=7000,
@@ -839,17 +1178,24 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
+            if bool(getattr(invite, "peer_enabled", False)):
+                self._configure_guest_peer(invite)
+                if self.guest_peer is not None:
+                    self.guest_peer.start()
+            else:
+                self._stop_session_peer()
             self.window.session_strip.set_session_title(invite.session_name)
             self._save_session_title()
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory
             )
+            self._sync_local_originals_action()
             self.window.recording_studio.set_output_device(
                 self.settings.take_playback_output_device
             )
             self.window.recording_studio.set_can_record(
                 False,
-                "The host controls recording; your track is captured there.",
+                "The host controls take start and stop. Local Originals are optional in Recording Setup.",
             )
             self.window.session_strip.set_recording_available(False)
             self.window.session_strip.set_invite_available(False)
@@ -946,7 +1292,7 @@ class ApplicationController(QObject):
         return SessionUiState.session_unavailable()
 
     def _current_invite_url(self) -> str:
-        """Return the host's public, non-secret invitation URL when usable."""
+        """Return one private Jamulus + isolated-recording invitation."""
         if not bool(getattr(self.settings, "host_server_enabled", False)):
             return ""
         if not self.bridge.hosted_server_alive():
@@ -957,6 +1303,17 @@ class ApplicationController(QObject):
         if not address:
             return ""
         try:
+            if self._ensure_host_peer(address):
+                return self.host_peer.invite_link(
+                    host=address,
+                    jamulus_port=self.settings.jamulus_port,
+                    session_name=(
+                        self.window.session_strip.current_title()
+                        or "Band Rehearsal"
+                    ),
+                )
+            # A legacy link remains available for older hosts/tests, but only
+            # v2 carries stable enrollment and guest isolated recording.
             return create_invite_link(
                 address,
                 port=self.settings.jamulus_port,
@@ -1066,6 +1423,15 @@ class ApplicationController(QObject):
                     action_text="Try Again",
                     action_visible=True,
                     action_kind="retry",
+                )
+                return
+            if self._host_peer_warning:
+                self.window.session_hud.set_state(
+                    "Automatic Local Originals are off",
+                    self._host_peer_warning,
+                    invite_url=invite_url,
+                    action_visible=False,
+                    ready=connected,
                 )
                 return
             bandmates = sum(
@@ -1687,15 +2053,7 @@ class ApplicationController(QObject):
         try:
             from PySide6.QtWidgets import QApplication
 
-            from webjam_qt import __version__
-            from webjam_qt.controllers.diagnostics import DiagnosticsExporter
-
-            exporter = DiagnosticsExporter(
-                settings=self.settings,
-                bridge=self.bridge,
-                jamulus_controller=self.jamulus,
-                window_version=__version__,
-            )
+            exporter = self._diagnostics_exporter()
             summary = exporter.build_summary()
             QApplication.clipboard().setText(summary)
             self.window.flash_message(
@@ -1708,6 +2066,63 @@ class ApplicationController(QObject):
             self.window.flash_message(
                 "Couldn't export diagnostics. See ~/.webjam.log for details.",
                 ms=6000,
+            )
+
+    def _diagnostics_exporter(self):
+        """Build one canonical privacy-safe artifact adapter."""
+        from core.build_info import build_id
+        from webjam_qt import __version__
+        from webjam_qt.controllers.diagnostics import DiagnosticsExporter
+
+        return DiagnosticsExporter(
+            settings=self.settings,
+            bridge=self.bridge,
+            jamulus_controller=self.jamulus,
+            window_version=__version__,
+            build_id=build_id(),
+            session_health=self.session_health,
+            recording_coordinator=self.recording,
+            metrics_service=self.metrics,
+        )
+
+    def _on_save_support_bundle(self) -> None:
+        """Preview the exact sanitized artifact, then save it on confirmation."""
+        try:
+            from pathlib import Path
+
+            from PySide6.QtWidgets import QFileDialog
+
+            from webjam_qt.windows.support_bundle_preview import (
+                SupportBundlePreviewDialog,
+            )
+
+            exporter = self._diagnostics_exporter()
+            preview = exporter.build_preview()
+            dialog = SupportBundlePreviewDialog(preview, parent=self.window)
+            if dialog.exec() != SupportBundlePreviewDialog.DialogCode.Accepted:
+                return
+            default = Path.home() / "Documents" / "webjam_support.zip"
+            selected, _filter = QFileDialog.getSaveFileName(
+                self.window,
+                "Save Support Bundle",
+                str(default),
+                "ZIP archives (*.zip)",
+            )
+            if not selected:
+                return
+            requested = Path(selected).expanduser()
+            saved = exporter.save_bundle(requested.parent, requested.name)
+            self.window.flash_message(
+                f"Support bundle saved as {saved.name}.",
+                ms=7000,
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to save support bundle")
+            QMessageBox.warning(
+                self.window,
+                "Support bundle not saved",
+                "WebJam couldn't save the support bundle. Choose another folder "
+                "and try again.",
             )
 
     # Public method names retained as a thin compatibility surface; the real
@@ -1844,6 +2259,11 @@ class ApplicationController(QObject):
         # In-session reopen — skip the welcome page since the user already
         # knows what WebJam is and is here to change a specific setting.
         wizard = SimpleSettingsDialog(self.settings, parent=self.window)
+        def _open_band_check_from_settings() -> None:
+            wizard.reject()
+            QTimer.singleShot(0, self._on_ready_check)
+
+        wizard.band_check_requested.connect(_open_band_check_from_settings)
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
             self.settings = load_settings(self.settings.config_file)
@@ -1851,13 +2271,14 @@ class ApplicationController(QObject):
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory
             )
+            self._sync_local_originals_action()
             self.window.recording_studio.set_output_device(
                 self.settings.take_playback_output_device
             )
             hosting = bool(getattr(self.settings, "host_server_enabled", False))
             self.window.recording_studio.set_can_record(
                 hosting,
-                "The host controls recording; your audio is captured there as its own track."
+                "The host controls take start and stop. Local Originals are optional in Recording Setup."
                 if not hosting else "",
             )
             self._update_session_hud()
@@ -1903,10 +2324,26 @@ class ApplicationController(QObject):
         )
         capture = bool(self.settings.local_capture_enabled)
         self.window.flash_message(
-            "Recording setup saved · isolated host inputs "
-            + ("will be added to the next take." if capture else "are off."),
+            "Recording setup saved · local originals "
+            + ("will be kept for the next confirmed take." if capture else "are off."),
             ms=7000,
         )
+        for participant in self.participants.values():
+            if not participant.is_local:
+                continue
+            if self.guest_peer is not None:
+                self.guest_peer.observe_presence(
+                    participant.channel_id, participant.name
+                )
+            if self.host_peer.active:
+                try:
+                    self.host_peer.bind_host_presence(
+                        participant.channel_id,
+                        participant.name,
+                        capture_enabled=capture,
+                    )
+                except Exception:  # noqa: BLE001
+                    LOGGER.exception("Could not refresh local recording preference")
 
     def _save_take_playback_output(self, device_name: str) -> None:
         self.settings.take_playback_output_device = str(device_name or "")

@@ -27,6 +27,7 @@ from PySide6.QtCore import (  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 
 from core.network_invite import create_invite_link  # noqa: E402
+from core.session_transfer import SessionCredentials  # noqa: E402
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.session_state import SessionPhase  # noqa: E402
@@ -137,15 +138,28 @@ def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
         assert dialog._join_button_primary.height() >= 48
         assert dialog._invite_input.accessibleName() == "WebJam invite link"
         assert dialog._invite_input.accessibleDescription()
+        assert (
+            dialog._invite_input.echoMode()
+            is dialog._invite_input.EchoMode.Password
+        )
         for control in (dialog._invite_input, dialog._join_button_primary):
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
         _destroy(dialog)
 
 
-def test_host_invite_is_visible_when_wide_and_copy_only_when_narrow(styled_qapp):
+def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
+    styled_qapp,
+):
     hud = SessionHud()
-    invite = create_invite_link("192.168.1.42", session_name="Band Rehearsal")
+    credentials = SessionCredentials.create()
+    invite = create_invite_link(
+        "192.168.1.42",
+        session_name="Band Rehearsal",
+        session_id=credentials.session_id,
+        peer_port=43121,
+        invite_token=credentials.invite_token,
+    )
     hud.resize(1024, 72)
     hud.set_state(
         "Ready to share",
@@ -157,8 +171,23 @@ def test_host_invite_is_visible_when_wide_and_copy_only_when_narrow(styled_qapp)
     styled_qapp.processEvents()
     try:
         assert hud._invite.isVisibleTo(hud)
-        assert hud._invite.text() == invite
+        assert hud._invite.text() == "Private invite ready"
         assert hud._invite.isReadOnly()
+        rendered = "\n".join(
+            (
+                hud._invite.text(),
+                hud._invite.toolTip(),
+                hud._invite.accessibleName(),
+                hud._invite.accessibleDescription(),
+                hud._action.text(),
+                hud._action.toolTip(),
+                hud._action.accessibleName(),
+                hud._action.accessibleDescription(),
+                hud.accessibleDescription(),
+            )
+        )
+        assert credentials.invite_token not in rendered
+        assert invite not in rendered
         hud.resize(800, 72)
         styled_qapp.processEvents()
         assert hud._invite.isHidden()

@@ -1,168 +1,254 @@
-# Tonight's two-Mac pilot
+# WebJam v0.10.0 two-Mac certification worksheet
 
-This is the physical acceptance gate for the private macOS v0.9.0 test build.
-The goal is deliberately small:
+**Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
+Do not pre-check boxes from automated tests or from the preserved v0.9.0 build.
 
-> Host → Copy Invite → open or paste → Play → Record → End Session
+The goal is deliberately simple:
 
-Do not publish or call the build release-ready until the checks below have
-passed with the exact ZIP being handed to the musicians.
+> Band Check → Host → Invite → Join → Play → Record → Review → Export → End
 
-## Pilot boundary
+## Evidence header
 
-- Use two Apple Silicon Macs on the same home or studio network. For the
-  simplest test, put both on the same Wi-Fi. This build does not provide
-  internet, VPN, NAT, or router traversal.
-- Use wired headphones on both Macs. Do not monitor through speakers.
-- Before opening WebJam, select the intended audio interface as the macOS Sound
-  input and output. The host can use the SSL 2+; the drummer can use the TD-27
-  in VENDOR USB-audio mode at 48 kHz. If TD-27 USB audio is unreliable, use its
-  analog master outputs through a known-good interface.
-- The test ZIP is ad-hoc signed, not notarized. Extract it, then Control-click
-  **WebJam.app** → **Open** on first launch. If macOS still blocks it, use
-  System Settings → Privacy & Security → Open Anyway. A “damaged” or
-  “incomplete” warning is a packaging failure, not an expected warning.
-- Webex or another conversation app is optional and stays outside the core
-  music test. If used, keep its microphone muted while playing so it cannot
-  create delayed duplicate music.
+Fill this in before opening either app. Do not invent or copy an old hash.
 
-Record the exact ZIP filename and SHA-256 here:
+- Candidate version: `0.10.0`
+- Artifact filename: _________________________________________________
+- Artifact absolute path: ____________________________________________
+- SHA-256: ___________________________________________________________
+- Source commit: ____________________________________________________
+- Test date/time/timezone: ___________________________________________
+- Host Mac model / macOS: ___________________________________________
+- Bandmate Mac model / macOS: _______________________________________
+- Host interface / driver / connection: ______________________________
+- Bandmate interface / driver / connection: __________________________
+- Headphones used on both Macs: YES / NO
+- LAN/router and connection type: ____________________________________
+- Logic Pro version (when tested): ___________________________________
 
-- Artifact: `WebJam-v0.9.0-TEST-NIGHT-macos-arm64.zip`
-- SHA-256: `9d8476167191c99ad311fcb2a33bd3b9aa1e4aacd9ce8043ddd3386864dc49e5`
-- Host Mac / macOS: ____________________
-- Drummer Mac / macOS: ____________________
+Both Macs must use the same artifact hash. If either filename/hash differs,
+stop and replace it before testing.
 
-## 1. Clean launch
+## Know what this test proves
 
-- [ ] Delete or replace every older **WebJam.app** on both Macs, then copy the
-  v0.9.0 app into `/Applications`. Do not leave a second older copy in
-  Downloads; macOS could otherwise send an invitation to the wrong app.
-- [ ] Launch the new app once from `/Applications` and confirm the live window
-  title reports **v0.9.0** before testing invitation links.
-- [ ] Open WebJam on each Mac. The first screen shows only **Host a Jam** and
-  **Join a Jam** as primary choices.
-- [ ] The interface is black, white, and restrained burnt orange. Purple, teal,
-  red danger styling, neon glow, and competing launch controls are absent.
-- [ ] There is no setup wizard, Ready Check, server-address field, port field,
-  executable picker, or visible second music-client window.
-- [ ] If macOS asks for microphone access, WebJam first explains why, then
-  macOS asks. Allow it. On one Mac, optionally prove the denied path: WebJam
-  shows **Microphone access is off**, opens the correct System Settings pane,
-  and offers **Try Again** after returning.
-- [ ] If macOS asks whether the host may accept incoming network connections,
-  click **Allow**. Turn off VPN software for this same-network pilot.
-- [ ] Resize the launch window and live session down to 760×600. Text, cards,
-  status, and Copy Invite / Record / More / End-or-Leave remain usable without
-  horizontal clipping.
+- Jamulus carries the live music. WebJam starts it, but WebJam's local input
+  meter and isolated recorder open a **separate PortAudio/Core Audio stream**.
+  A passing meter does not prove Jamulus chose the same device. Your ears and
+  the resulting track inventory must prove the real route.
+- Webex is optional for video/conversation. Keep its microphone muted while
+  playing so it does not add a delayed copy of the music.
+- Guest isolated-original delivery uses authenticated plain HTTP on the same
+  private RFC1918 IPv4 LAN. It has no TLS, IPv6, Internet, VPN, NAT-traversal,
+  or public-network claim. Keep VPNs off and do not expose the peer port.
+- A v2 invite contains a random private enrollment credential. Send the full
+  link only to the intended bandmate. Do not post it publicly or include it in
+  screenshots/support notes. Ending/restarting the host peer session rotates
+  the credential.
+- Use wired headphones, not speakers. Set both interfaces to 48 kHz where the
+  hardware control panel allows it.
 
-Evidence or failure notes: ________________________________________________
+## 1. Fresh install and launch
 
-## 2. Host and invite
+- [ ] Remove or rename every older WebJam copy on both Macs.
+- [ ] Extract the exact candidate and put **WebJam.app** in `/Applications`.
+- [ ] Verify the app reports **v0.10.0** on both Macs.
+- [ ] First launch succeeds using the private-build Gatekeeper instructions.
+  A “damaged” or “incomplete” app warning is a packaging failure.
+- [ ] The app uses black, white, neutral gray, and burnt orange. There is no
+  purple or teal, and the original three-part WebJam symbol replaces `WJ`.
+- [ ] Resize to 760×600. Text, Band Check, participant cards, and essential
+  controls remain reachable without horizontal clipping.
 
-- [ ] On the host, click **Host a Jam** once. Do not configure anything else.
-- [ ] The HUD moves from **Starting your jam** to **Ready to share**. It must
-  not show an invitation before the hosted service is alive.
-- [ ] Click **Copy Invite**. The clipboard contains one `webjam://join?...`
-  link. It contains the session name and network destination, but no password,
-  secret, filesystem path, or musician-private data.
-- [ ] Send that complete link to the drummer without editing it.
+Notes/evidence: __________________________________________________________
 
-Evidence or failure notes: ________________________________________________
+## 2. Record the actual audio routes
 
-## 3. Join and play
+Before trusting any meter, write down the choices visible in macOS and the
+interface itself.
 
-Test both supported invitation paths, one at a time:
+| Mac | macOS input | macOS output | Band Check input | Recording input | Jamulus route confirmed by ears? |
+| --- | --- | --- | --- | --- | --- |
+| Host | __________ | __________ | __________ | __________ | YES / NO |
+| Bandmate | __________ | __________ | __________ | __________ | YES / NO |
 
-- [ ] With WebJam closed on the drummer Mac, open the invitation link. WebJam
-  launches and joins that jam.
-- [ ] Click **Leave Jam** on the drummer Mac, confirm the host is still running,
-  reopen WebJam, choose **Join a Jam**, paste the same link into the single
-  field, and click **Join Jam**.
-- [ ] Within about 30 seconds both named participant cards appear. The host HUD
-  reports the bandmate connection and the drummer HUD reports the joined state.
-- [ ] Play guitar, vocal, and drums in turn. Both musicians hear the intended
-  music return without sustained crackle, clipping, echo, or a delayed copy.
-- [ ] Adjust a bandmate fader on one Mac and confirm it changes only that
-  listener's monitor mix.
-- [ ] Use **Mute Monitor** on the local card and confirm it changes only what
-  that musician hears; it must not imply or cause outgoing transmit mute.
+- [ ] On both Macs, open Studio → **Recording Setup**.
+- [ ] Choose the wired Studio playback output.
+- [ ] If local originals are part of this test, enable **Keep interface inputs
+  1 and 2 as isolated local originals** on both Macs and choose the intended
+  two-channel input. This is explicit opt-in and requires a shareable 48-kHz
+  two-channel device.
+- [ ] If an interface has only one meaningful source, note which of input 1 or
+  input 2 is expected to be silent; do not mislabel the silent lane.
 
-Meter truth matters:
+Expected local-original setting:
 
-- [ ] A local meter moves only when WebJam observes input on that Mac.
-- [ ] A remote meter moves only when WebJam observes band audio for that
-  participant; local input is never copied onto remote cards as a placeholder.
-- [ ] Treat a moving meter as observed signal, not proof that the other
-  musician heard it. Confirm audibility with the other musician out loud.
+- Host: ON / OFF; input 1 = ______________; input 2 = ______________
+- Bandmate: ON / OFF; input 1 = ___________; input 2 = ______________
 
-Evidence or failure notes: ________________________________________________
+## 3. Band Check on each Mac
 
-## 4. Studio two-track take
+Run Band Check separately before joining. Do not let one person's confirmation
+stand in for the other Mac.
 
-- [ ] On the host, open **More → Multitrack Studio**. Both musicians
-  have distinct lanes.
-- [ ] Click **Record**, play together for at least 60 seconds, then stop. Wait
-  for validation to finish before ending the session or quitting.
-- [ ] The completed take appears in the Studio library and plays in WebJam.
-  Select SSL 2+ as the output, scrub the waveform, and exercise gain, pan,
-  mute, and solo on both lanes.
-- [ ] Reveal the take and confirm there are two isolated, readable, non-empty
-  musician WAVs—one for each participant—and a take manifest. Record the take
-  folder name: ____________________
-- [ ] Press **Export for Logic** and require numbered 24-bit stems of identical
-  length, `WebJam Rough Mix.wav`, import instructions, and the export manifest.
-- [ ] Import every numbered stem together at `0:00` in a new 48 kHz Logic
-  project. Confirm duration, alignment, and the expected musician on each
-  track. Do not import the rough mix as another stem. The optional `.rpp` file
-  is for Reaper and is not a Logic project. Follow
-  [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+- [ ] Music client/server checks finish without an unexplained blocker.
+- [ ] The selected local input meter moves when that musician plays and rests
+  near silence when they stop.
+- [ ] Deliberately play too loudly once; clipping is identified in words, then
+  reduce the interface gain and pass cleanly.
+- [ ] Left/right output checks are heard in the named headphone side.
+- [ ] The five-second recording plays back through the intended headphones.
+- [ ] The musician explicitly chooses **That sounds right** only after hearing
+  their own recording.
+- [ ] Final result is recorded below. A warning is copied verbatim and not
+  treated as an unexplained pass.
 
-Evidence or failure notes: ________________________________________________
+- Host Band Check result/details: ______________________________________
+- Bandmate Band Check result/details: _________________________________
 
-## 5. Reconnect
+## 4. Host and private invite
 
-- [ ] While both are connected and not recording, disable Wi-Fi on the drummer
-  Mac for 5–10 seconds, then restore it.
-- [ ] WebJam shows reconnection truthfully—no stale “ready” claim—and restores
-  both participant cards and audible music without relaunching the host.
-- [ ] If the attempt reaches the 30-second limit, it stops spinning and offers
-  one **Try Again** action with same-network guidance. Restore the network,
-  click it once, and confirm recovery.
+- [ ] On the host, choose **Host a Jam** once.
+- [ ] Wait until WebJam says the jam is ready before copying the invite.
+- [ ] **Copy Invite** produces one complete `webjam://join?...` link.
+- [ ] Do not paste the link into this worksheet. Confirm only that it begins
+  with `webjam://join?` and send it privately to the bandmate.
+- [ ] On the bandmate Mac, open the link from a cold start.
+- [ ] Leave, confirm the host remains alive, then paste the same link through
+  **Join a Jam** and rejoin.
+- [ ] Both participant names appear once. Renaming/reconnecting does not create
+  a duplicate musician card or duplicate recording identity.
 
-Evidence or failure notes: ________________________________________________
+Join time and any message shown: _________________________________________
 
-## 6. End Session and cleanup
+## 5. Bidirectional acoustic proof
 
-- [ ] If recording, let WebJam stop, save, and validate the take first.
-- [ ] On the drummer Mac, click **Leave Jam** and confirm the dialog says only
-  this Mac will disconnect. **Leaving…** remains until cleanup finishes; the
-  host remains ready and can copy the same invite again.
-- [ ] Rejoin the drummer before the host-ending check.
-- [ ] Click **End Session** on the host and confirm the warning that the jam
-  ends for everyone.
-- [ ] **Ending…** remains visible until recording/client/server cleanup really
-  completes. A failure must not be replaced by an ended success message.
-- [ ] The host returns to an ended state; the joined Mac no longer pretends it
-  is connected.
-- [ ] Quit both apps. Activity Monitor shows no WebJam-owned background music
-  client, dedicated server, or `caffeinate` process left behind.
-- [ ] Reopen WebJam. It again starts at the two-choice Host/Join screen, and a
-  new host session can be created without a port-in-use error.
+Meters are supporting evidence only. The other musician must confirm what
+they actually hear.
 
-Evidence or failure notes: ________________________________________________
+- [ ] Host plays alone for 10 seconds; bandmate hears the intended source with
+  no delayed copy, sustained crackle, echo, or clipping.
+- [ ] Bandmate plays alone for 10 seconds; host hears the intended source with
+  no delayed copy, sustained crackle, echo, or clipping.
+- [ ] Both play together for at least one minute and call the result playable.
+- [ ] Each musician changes the remote fader and hears only their own monitor
+  mix change.
+- [ ] **Mute Monitor**, solo, gain, and pan do not claim to mute outgoing audio
+  or change the other musician's personal mix.
+- [ ] A local meter never appears as fake remote activity. A remote meter is
+  not treated as proof of audibility.
+
+- Host heard bandmate clearly: YES / NO
+- Bandmate heard host clearly: YES / NO
+- Playable together: YES / NO
+- Dropout/echo/noise notes: _____________________________________________
+
+If either musician answers NO, the acoustic gate fails. Preserve evidence
+before changing a device, cable, or network.
+
+## 6. Record through one interruption
+
+This section proves local preservation, reconnect truth, and later delivery.
+
+- [ ] Start one take on the host. Wait until recording is confirmed.
+- [ ] Play a short identifiable phrase on each source and say “before outage.”
+- [ ] While recording, turn Wi-Fi off on the bandmate Mac for 10–15 seconds.
+- [ ] WebJam shows an interruption/reconnect state instead of stale readiness.
+- [ ] Keep playing a steady identifiable pattern on the bandmate interface
+  during the outage so its opted-in local original can be checked later.
+- [ ] Restore Wi-Fi. The same participant identity returns without duplicating
+  the musician.
+- [ ] Say “after reconnect,” play another phrase, then stop the take on the
+  host and wait for validation and transfer to settle.
+- [ ] If transfer is interrupted, retry/resume without deleting the bandmate's
+  original. Repeating the action does not create duplicate attached media.
+
+- Interruption start/end time: _________________________________________
+- Reconnect time/message: ______________________________________________
+- Transfer status/message: _____________________________________________
+
+## 7. Studio and source-truth review
+
+- [ ] The take appears once in Studio and opens without changing source files.
+- [ ] Expected Jamulus server tracks are present for both musicians.
+- [ ] For each Mac where local originals were enabled, its input 1/input 2
+  stems are present or explicitly marked missing/partial/failed. Nothing
+  silently disappears while the take says complete.
+- [ ] The outage appears as a truthful gap/segment/transfer finding where
+  applicable; later audio is not pulled earlier to hide missing time.
+- [ ] Waveforms span the full take and show the outage/reconnect placement.
+- [ ] Play, pause, stop, scrub/seek, gain, pan, mute, and multi-solo work.
+- [ ] Playback reaches both headphone channels through the chosen output.
+- [ ] Closing/leaving Studio stops playback and releases that output.
+- [ ] Reopen the take and repeat a seek/play check.
+
+Track inventory (one row per displayed track):
+
+| Track name | Source type | Rate/channels | Status | Expected musician/input heard? |
+| --- | --- | --- | --- | --- |
+| __________ | __________ | __________ | __________ | YES / NO |
+| __________ | __________ | __________ | __________ | YES / NO |
+| __________ | __________ | __________ | __________ | YES / NO |
+| __________ | __________ | __________ | __________ | YES / NO |
+
+Take ID/folder: __________________________________________________________
+
+## 8. Export and Logic Pro
+
+- [ ] Export the completed take. An uncertain/missing required source blocks
+  a false Logic-ready package and explains what must be fixed.
+- [ ] A successful package contains numbered PCM24 stems of equal project
+  length, `WebJam Server Reference.wav`, `WebJam Studio Reference.wav`,
+  `MARKERS.csv`, alignment/recording reports, source manifest, independent
+  audio analysis, SHA checksums, and import instructions that name the tempo
+  and time signature.
+- [ ] Check the SHA file before importing. Record any mismatch as a failure.
+- [ ] Create an empty Logic project at the sample rate named in the package.
+- [ ] Drag all numbered stems together at `0:00`, one per track. Do not drag
+  either reference mix in as another performance stem.
+- [ ] Confirm names/order, duration, musician/input identity, outage placement,
+  marker/tempo information, and audible alignment.
+- [ ] Compare against `WebJam Server Reference.wav`, understanding that it is an
+  offline unity mix of post-network Jamulus server tracks, not an independent
+  acoustic/live-output recording.
+- [ ] Save the Logic project without changing the WebJam source take.
+
+- Logic export folder: _________________________________________________
+- Export project rate / frames: ________________________________________
+- Logic import result: PASS / FAIL / **NOT RUN**
+- Alignment/identity notes: ____________________________________________
+
+If Logic was not actually opened, leave the result **NOT RUN**.
+
+## 9. Support evidence and cleanup
+
+- [ ] Open the support preview before choosing a save location.
+- [ ] Confirm it contains bounded technical facts but no audio, notes,
+  transcript, meeting link, invitation token, secret, home path, or arbitrary
+  personal file.
+- [ ] Save the bundle and record its path/hash below.
+- [ ] End the host session only after recording/transfer is settled.
+- [ ] Leave/end messages remain visible until real cleanup finishes.
+- [ ] Quit both apps. No WebJam-owned Jamulus client, JamulusServer, recorder,
+  transfer worker, or `caffeinate` process remains.
+- [ ] Relaunch both apps. A new host starts without a port-in-use error and an
+  old invite cannot silently resume the old private recording session.
+
+- Support bundle path: _________________________________________________
+- Support bundle SHA-256: ______________________________________________
+- Cleanup/process evidence: ____________________________________________
 
 ## Pass decision
 
-The pilot passes only if both musicians consider the music playable, both
-invitation paths work, readiness/meters remain honest, the two isolated tracks
-survive a Logic import, reconnect recovers (automatically or through the one
-retry), and End Session leaves no owned processes behind.
+The physical gate passes only when both musicians hear playable two-way audio,
+the actual routes are recorded, the outage is represented truthfully, every
+expected original is present or explicitly disclosed, Studio survives reopen,
+the exact export imports correctly into Logic, and cleanup leaves no owned
+processes. Automated tests cannot fill these fields.
 
-- Result: PASS / FAIL
-- Blocking defect: _______________________________________________________
-- Logs/take copied before retrying: YES / NO
+- Overall result: PASS / FAIL / **NOT RUN**
+- Blocking defect: ____________________________________________________
+- Failed section: _____________________________________________________
+- Take and support bundle preserved before retry: YES / NO
+- Tester names/sign-off: ______________________________________________
 
-If anything fails, preserve the take and use **More →
-Troubleshooting** before changing devices, network topology, or app settings.
-Change one variable at a time and rerun the failed section.
+On failure, change one variable at a time. Keep the original take, local
+originals, Logic export, and support bundle until the defect is understood.

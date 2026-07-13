@@ -27,7 +27,7 @@ LOGGER = logging.getLogger("webjam.qt.recording_setup")
 
 
 class RecordingSetupDialog(QDialog):
-    """Configure review output and optional host-side isolated inputs."""
+    """Configure review output and explicit local-original recording consent."""
 
     def __init__(
         self,
@@ -49,9 +49,9 @@ class RecordingSetupDialog(QDialog):
         title = QLabel("Recording setup")
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
-            "The host always records one synchronized Jamulus track per musician. "
-            "Choose where Studio plays and, if useful, add the host interface's "
-            "first two inputs as separate local stems."
+            "The host records the synchronized Jamulus take. Choose where Studio "
+            "plays and whether this Mac also keeps its first two interface inputs "
+            "as local originals."
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
@@ -77,22 +77,18 @@ class RecordingSetupDialog(QDialog):
         root.addWidget(self._output)
 
         self._capture = QCheckBox(
-            "Also record interface inputs 1 and 2 as isolated local stems"
+            "Keep interface inputs 1 and 2 as isolated local originals"
         )
         self._capture.setAccessibleName("Record two isolated local input stems")
         self._capture.setChecked(bool(settings.local_capture_enabled))
-        if not settings.host_server_enabled:
-            self._capture.setEnabled(False)
-            self._capture.setChecked(False)
-            self._capture.setToolTip(
-                "The band host owns synchronized recording and local stem capture."
-            )
         root.addWidget(self._capture)
 
         self._capture_help = QLabel(
             "Use this when one interface carries two distinct sources, such as "
             "guitar on input 1 and vocal on input 2. The device must support two "
-            "input channels at 48 kHz and be shareable with Jamulus."
+            "input channels at 48 kHz and be shareable with Jamulus. WebJam records "
+            "only after the host confirms a take, keeps the originals on this Mac, "
+            "and transfers verified copies to the host when available."
         )
         self._capture_help.setObjectName("SimpleSettingsSubtitle")
         self._capture_help.setWordWrap(True)

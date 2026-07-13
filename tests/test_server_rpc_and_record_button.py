@@ -435,6 +435,33 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.recording.phase = RecorderPhase.IDLE
         self.window.session_strip.set_recording_phase("idle")
 
+    def test_ambiguous_start_failure_preserves_capture_and_retries_stop(self):
+        """A lost start reply must not delete audio or send another start."""
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        capture = MagicMock()
+        c.recording._local_capture = capture
+        c.recording.phase = RecorderPhase.STARTING
+        c.recording.apply_toggle_failure("Recorder confirmation timed out")
+
+        self.assertTrue(c._recorder_armed)
+        self.assertIs(c.recording._local_capture, capture)
+        capture.abort.assert_not_called()
+        capture.stop_into.assert_not_called()
+        self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "■ Try Stop Again"
+        )
+        _args, kwargs = c._show_actionable_error.call_args
+        self.assertIn("may still be recording", kwargs["next_action"])
+
+        c.recording._local_capture = None
+        c._recorder_armed = False
+        c._server_recording = False
+        c.recording.phase = RecorderPhase.IDLE
+        self.window.session_strip.set_recording_phase("idle")
+
     def test_shutdown_salvages_active_capture_into_recovery_folder(self):
         """Quitting mid-recording must preserve the stems, never abort them."""
         import tempfile
@@ -652,7 +679,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertIn("guitar.wav appears silent.", body)
         self.assertIn("Take Deck", body)
 
-    def test_completion_copy_no_take_points_to_ready_check(self):
+    def test_completion_copy_no_take_points_to_band_check(self):
         c = self.controller
         result = SimpleNamespace(
             ok=False,
@@ -663,7 +690,7 @@ class TestRecordButtonWiring(unittest.TestCase):
         )
         title, body = c.recording._completion_text(result)
         self.assertEqual(title, "WebJam — Take needs attention")
-        self.assertIn("Ready Check", body)
+        self.assertIn("Band Check", body)
         self.assertNotIn("Saved to:", body)
 
     def test_completion_copy_success_unchanged(self):

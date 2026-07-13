@@ -1,4 +1,4 @@
-"""The Ready Check (core/preflight) is reachable from the Conductor via F2."""
+"""Band Check is reachable from the Conductor via F2."""
 from __future__ import annotations
 
 import os
@@ -97,8 +97,9 @@ class TestReadyCheckShortcut(unittest.TestCase):
     def test_visible_ready_check_button_exists_and_emits(self):
         strip = self.window.session_strip
         self.assertEqual(
-            strip._test_button.accessibleName(), "Readiness and practice tests"
+            strip._test_button.accessibleName(), "Band Check and solo practice"
         )
+        self.assertEqual(strip._ready_action.text(), "Band Check\tF2")
         received = []
         strip.ready_check_requested.connect(lambda: received.append(True))
         strip._ready_action.trigger()

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from core.logging_config import configure_logging
 from core.settings import load_settings
 from webjam_qt.controllers.application_controller import ApplicationController
-from webjam_qt.theme import load_stylesheet
+from webjam_qt.theme import load_stylesheet, make_brand_icon
 from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
 
@@ -137,6 +137,7 @@ def _run_app() -> int:
     app.setApplicationName("WebJam")
     app.setApplicationDisplayName("WebJam")
     app.setOrganizationName("WebJam")
+    app.setWindowIcon(make_brand_icon())
 
     _configure_default_font(app)
     app.setStyleSheet(load_stylesheet())
@@ -190,7 +191,15 @@ def _run_app() -> int:
         initial_mode_key="music_jam",
         initial_title="Band Rehearsal",
     )
-    controller = ApplicationController(window, settings=settings)
+    controller = ApplicationController(
+        window,
+        settings=settings,
+        session_invite=(
+            getattr(launch, "band_invite", None)
+            if launch is not None and launch.selected_role == "join"
+            else None
+        ),
+    )
     # Qt may terminate the native event loop without returning from exec() on
     # some platform shutdown paths.  Keep the finally block below as a second,
     # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so
@@ -212,9 +221,16 @@ def _run_app() -> int:
                 0, lambda value=late_invite: _deliver_live_invite(value)
             )
     window.show()
-    # Host and Join are actions, not setup pages. Both go directly into the
-    # automated session lifecycle.
-    QTimer.singleShot(0, controller._on_launch_audio)
+    # A matching Band Check verification keeps returning musicians on the
+    # one-click path. New or changed audio setups are checked before WebJam
+    # starts the production music engine. Frozen smoke validation deliberately
+    # bypasses this human confirmation gate.
+    QTimer.singleShot(
+        0,
+        controller._on_launch_audio
+        if smoke_autostart
+        else controller.start_session_or_band_check,
+    )
     if smoke_autostart:
         # Frozen-build validation needs to exercise the real Host lifecycle
         # and then leave through Qt's ordinary quit path.  A process signal

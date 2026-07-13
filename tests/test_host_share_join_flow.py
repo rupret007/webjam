@@ -26,6 +26,7 @@ from core.network_invite import (
 from core.settings import AppSettings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import LaunchDialog
+from webjam_qt.windows.launch_dialog import apply_join_invite
 
 
 @pytest.fixture(scope="module")
@@ -113,6 +114,20 @@ def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
     assert data["take_playback_output_device"] == "SSL 2+"
 
 
+def test_join_preserves_explicit_local_original_recording_preference(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+    )
+    apply_join_invite(
+        settings,
+        parse_invite_link(create_invite_link("192.168.1.42")),
+    )
+    assert settings.local_capture_enabled is True
+    assert settings.audio_input_device_index == 7
+
+
 def test_join_asks_for_one_link_and_applies_it(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     dialog = LaunchDialog(settings)
@@ -187,14 +202,90 @@ def test_host_invite_stays_hidden_until_real_server_readiness(qapp, tmp_path):
     assert controller.window.session_hud.invite_url() == ""
     assert controller.window.session_hud._action.isHidden()
     controller.bridge.hosted_server_alive.return_value = True
-    with patch(
-        "core.network_invite.local_band_address", return_value="192.168.1.42"
+    with patch.object(
+        controller,
+        "_current_invite_url",
+        return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
     assert controller.window.session_hud.invite_url().startswith("webjam://join?")
     assert controller.window.session_hud._action.isHidden()
     assert not controller.window.session_strip._invite_button.isHidden()
     controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_peer_bind_failure_keeps_jamulus_invite_with_persistent_plain_warning(
+    qapp,
+    tmp_path,
+):
+    from core.session_transfer import SessionTransferError
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+        takes_directory=str(tmp_path / "takes"),
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Fallback Truth",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller._jamulus_connected = True
+    controller.host_peer.start = MagicMock(
+        side_effect=SessionTransferError("address already in use")
+    )
+
+    with patch(
+        "core.network_invite.local_band_address", return_value="192.168.1.42"
+    ):
+        controller._update_session_hud()
+        invite = parse_invite_link(controller.window.session_hud.invite_url())
+        controller._update_session_hud()
+
+    assert not invite.peer_enabled
+    assert invite.host == "192.168.1.42"
+    assert controller.window.session_hud._status.text() == (
+        "Automatic Local Originals are off"
+    )
+    detail = controller.window.session_hud._detail.text()
+    assert "can still join and play" in detail
+    assert "record separately" in detail
+    assert not controller.window.session_strip._invite_button.isHidden()
+    assert controller.host_peer.start.call_count >= 1
+
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_peer_take_update_is_marshaled_into_open_studio(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        takes_directory=str(tmp_path / "takes"),
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Late Transfer",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.window.recording_studio.refresh_take = MagicMock()
+    controller.window.flash_message = MagicMock()
+    take_dir = tmp_path / "takes" / "Take 01"
+
+    controller._on_peer_take_updated("take-id", take_dir, True)
+    qapp.processEvents()
+
+    controller.window.recording_studio.refresh_take.assert_called_once_with(take_dir)
+    assert "visible in Studio" in controller.window.flash_message.call_args.args[0]
     controller.shutdown()
 
 
@@ -219,8 +310,10 @@ def test_one_local_host_is_ready_to_share_not_a_bandmate(qapp, tmp_path):
     controller.participants = {
         0: ParticipantPresentation(0, "Jeff", "You", is_local=True)
     }
-    with patch(
-        "core.network_invite.local_band_address", return_value="192.168.1.42"
+    with patch.object(
+        controller,
+        "_current_invite_url",
+        return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
     assert controller.window.session_hud._status.text() == "Ready to share"
@@ -329,8 +422,10 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
     controller = ApplicationController(window, settings=settings)
     controller.bridge.jamulus_launch_intended = True
     controller.bridge.hosted_server_alive = MagicMock(return_value=True)
-    with patch(
-        "core.network_invite.local_band_address", return_value="192.168.1.42"
+    with patch.object(
+        controller,
+        "_current_invite_url",
+        return_value=create_invite_link("192.168.1.42"),
     ):
         controller._apply_jamulus_participants([
             JamulusParticipant(channel_id=7, name="Guest", is_local=False)
@@ -478,7 +573,7 @@ def test_running_host_must_finish_take_before_switching_invites(qapp, tmp_path):
     controller.shutdown()
 
 
-def test_returning_user_still_gets_host_join_gate_and_autostart(qapp):
+def test_returning_user_still_gets_host_join_gate_and_verification_gate(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/already/configured.json")
@@ -506,7 +601,9 @@ def test_returning_user_still_gets_host_join_gate_and_autostart(qapp):
         os.environ.pop("WEBJAM_SMOKE_AUTOSTART_AUDIO", None)
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invite_url="")
-    single_shot.assert_called_once_with(0, controller._on_launch_audio)
+    single_shot.assert_called_once_with(
+        0, controller.start_session_or_band_check
+    )
 
 
 def test_cold_launch_passes_command_line_invite_to_gate(qapp):

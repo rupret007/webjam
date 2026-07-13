@@ -1,18 +1,16 @@
-"""
-DiagnosticsExporter — build a Markdown summary of the running app for bug reports.
+"""Privacy-safe diagnostics adapter for the Qt application.
 
-The summary is intended to be copied to the clipboard via Ctrl+Shift+D and
-pasted directly into a GitHub issue.  It collects version info, service
-state, log paths + a tail of the WebJam log, and a sanitised view of the
-user's settings (the Webex guest-issuer secret is redacted).
+``DiagnosticsExporter`` translates live Qt/controller objects into the small,
+explicit allowlist accepted by :mod:`core.support_bundle`.  Clipboard text,
+preview, structured JSON, and ZIP export all come from one cached artifact.
 """
 
 from __future__ import annotations
 
+from dataclasses import asdict
+import json
 import logging
 import platform
-import sys
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +20,12 @@ from core.redaction import (
     redact_mapping,
     redact_text,
 )
+from core.support_bundle import (
+    SupportBundleArtifact,
+    SupportBundlePreview,
+    SupportFacts,
+    build_support_bundle,
+)
 
 LOGGER = logging.getLogger("webjam.qt.diagnostics")
 
@@ -29,7 +33,7 @@ _LOG_TAIL_LINES = 30
 
 
 class DiagnosticsExporter:
-    """Builds a Markdown bug-report summary from live app state."""
+    """Build one privacy-safe support snapshot from live app state."""
 
     def __init__(
         self,
@@ -37,105 +41,341 @@ class DiagnosticsExporter:
         bridge: Any,
         jamulus_controller: Any,
         window_version: str,
+        *,
+        build_id: str = "",
+        jamulus_version: str = "",
+        session_health: Any = None,
+        recording_coordinator: Any = None,
+        metrics_service: Any = None,
     ) -> None:
         self.settings = settings
         self.bridge = bridge
         self.jamulus = jamulus_controller
         self.window_version = window_version
+        self.build_id = build_id
+        self.jamulus_version = jamulus_version
+        self.session_health = session_health
+        self.recording = recording_coordinator
+        self.metrics = metrics_service
+        self._artifact_cache: SupportBundleArtifact | None = None
 
     def build_summary(self) -> str:
-        lines: list[str] = []
-        lines.append("# WebJam Diagnostics")
-        lines.append("")
-        lines.append("## Versions")
-        lines.append(f"- WebJam: `{self.window_version}`")
-        lines.append(f"- Python: `{sys.version.split()[0]}` ({sys.executable})")
-        lines.append(f"- Platform: `{platform.platform()}`")
-        lines.append("")
+        """Return the exact human report stored as ``README.txt`` in the ZIP."""
 
-        lines.append("## Service state")
-        lines.append(f"- Jamulus state: `{getattr(self.bridge, 'jamulus_state', 'unknown')}`")
-        lines.append(f"- Webex state: `{getattr(self.bridge, 'webex_state', 'unknown')}`")
-        server = f"{getattr(self.settings, 'jamulus_server', '?')}:{getattr(self.settings, 'jamulus_port', '?')}"
-        lines.append(f"- Jamulus server: `{server}`")
-        try:
-            jamulus_path = self.bridge.find_jamulus()
-        except Exception:  # noqa: BLE001
-            jamulus_path = None
-        lines.append(f"- Jamulus binary: `{jamulus_path or 'not found'}`")
-        lines.append(f"- Audio routing: `{self._routing_status()}`")
-        try:
-            n_participants = len(self.jamulus.get_participants())
-        except Exception:  # noqa: BLE001
-            n_participants = "unknown"
-        lines.append(f"- Participants: `{n_participants}`")
+        return self.artifact().copy_text
+
+    def build_preview(self) -> SupportBundlePreview:
+        """Return a preview of the exact logical report and archive members."""
+
+        return self.artifact().preview()
+
+    def save_bundle(self, output_dir: Path, filename: str | None = None) -> Path:
+        """Save the same snapshot used by ``build_summary`` and preview."""
+
+        return self.artifact().save_zip(output_dir, filename)
+
+    def save_structured_report(
+        self, output_dir: Path, filename: str | None = None
+    ) -> Path:
+        return self.artifact().save_structured_json(output_dir, filename)
+
+    def artifact(self) -> SupportBundleArtifact:
+        if self._artifact_cache is None:
+            self._artifact_cache = self._build_artifact()
+        return self._artifact_cache
+
+    def refresh(self) -> None:
+        """Discard the snapshot so the next explicit action samples live state."""
+
+        self._artifact_cache = None
+
+    def _build_artifact(self) -> SupportBundleArtifact:
+        diagnostics = self._audio_diagnostics()
+        engine_capabilities: dict[str, Any] = {}
+        for source_name, report_name in (
+            ("backend", "backend"),
+            ("active", "active"),
+            ("latency_mode", "latency_mode"),
+            ("blocksize", "block_size"),
+        ):
+            value = _plain_value(getattr(diagnostics, source_name, None))
+            if value is not None:
+                engine_capabilities[report_name] = value
+
         rpc = getattr(self.jamulus, "rpc_client", None)
-        rpc_avail = getattr(rpc, "available", False) if rpc is not None else False
-        lines.append(f"- RPC available: `{rpc_avail}`")
+        rpc_available = _plain_value(getattr(rpc, "available", None))
+        if isinstance(rpc_available, bool):
+            engine_capabilities["rpc_available"] = rpc_available
         try:
             age = rpc.last_activity_age() if rpc is not None else None
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - diagnostics must remain best-effort
             age = None
-        lines.append(f"- RPC last activity age (s): `{age}`")
-        lines.append("")
+        if isinstance(age, (int, float)) and not isinstance(age, bool):
+            engine_capabilities["rpc_last_activity_age_s"] = max(0.0, float(age))
 
-        log_path = Path.home() / ".webjam.log"
-        jamulus_log = Path.home() / ".webjam_jamulus.log"
-        server_log = Path.home() / "Library" / "Logs" / "WebJam" / "jamulus-server.log"
-        lines.append("## Log files")
-        lines.append(f"- `{log_path}` (WebJam)")
-        lines.append(f"- `{jamulus_log}` (Jamulus client stdout/stderr)")
-        lines.append(f"- `{server_log}` (Jamulus server stdout/stderr)")
-        lines.append("")
-
-        for label, path in (
-            ("~/.webjam.log", log_path),
-            ("~/.webjam_jamulus.log", jamulus_log),
-            ("~/Library/Logs/WebJam/jamulus-server.log", server_log),
+        sample_rate = _plain_value(getattr(diagnostics, "samplerate", None))
+        reconnect_attempts = _plain_value(
+            getattr(self.bridge, "jamulus_reconnect_attempts", None)
+        )
+        metric_values = self._metric_values()
+        reconnect_counts: dict[str, int] = {}
+        if isinstance(reconnect_attempts, int) and not isinstance(
+            reconnect_attempts, bool
         ):
-            lines.append(f"## Last {_LOG_TAIL_LINES} lines of `{label}`")
-            lines.append("```")
-            lines.extend(self._tail_log(path))
-            lines.append("```")
-            lines.append("")
+            reconnect_counts["attempts"] = max(0, reconnect_attempts)
+        for field, metric_name in (
+            ("succeeded", "metric_jamulus_reconnect_success"),
+            ("failed", "metric_jamulus_reconnect_failed"),
+        ):
+            value = _metric_count(metric_values, metric_name)
+            if value:
+                reconnect_counts[field] = value
 
-        lines.append("## Settings (sanitised)")
-        lines.append("```json")
-        lines.append(self._sanitised_settings_json())
-        lines.append("```")
-        return "\n".join(lines)
+        channels: dict[str, int] = {}
+        local_capture_enabled = _plain_value(
+            getattr(self.settings, "local_capture_enabled", None)
+        )
+        if isinstance(local_capture_enabled, bool):
+            channels["recorded"] = 2 if local_capture_enabled else 0
+        recorder_health = self._recorder_health()
+        process_cleanup, port_cleanup = self._cleanup_snapshot()
+        export_counts = {
+            "succeeded": _metric_count(
+                metric_values, "metric_diagnostics_bundle_exported"
+            ),
+            "failed": _metric_count(
+                metric_values, "metric_diagnostics_bundle_failed"
+            ),
+        }
+        export_counts = {key: value for key, value in export_counts.items() if value}
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-    def _routing_status(self) -> str:
+        facts = SupportFacts(
+            webjam_version=self.window_version,
+            build_id=self.build_id,
+            os_name=f"{platform.system()} {platform.release()}".strip(),
+            architecture=platform.machine(),
+            jamulus_version=self.jamulus_version or self._jamulus_version(),
+            jamulus_state=str(
+                _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
+            ),
+            engine_capabilities=engine_capabilities,
+            sample_rate_hz=(
+                sample_rate
+                if isinstance(sample_rate, (int, float))
+                and not isinstance(sample_rate, bool)
+                else None
+            ),
+            channels=channels,
+            recorder_health=recorder_health,
+            reconnect_counts=reconnect_counts,
+            export_counts=export_counts,
+            process_cleanup=process_cleanup,
+            port_cleanup=port_cleanup,
+        )
+        return build_support_bundle(facts, log_excerpts=self._log_excerpts())
+
+    def _metric_values(self) -> dict[str, Any]:
         try:
-            diag = self.jamulus.audio_engine.diagnostics()
-            return f"{diag.backend} / {diag.latency_mode} (active={diag.active})"
-        except Exception:  # noqa: BLE001
-            return "unknown"
+            values = self.metrics.collect() if self.metrics is not None else {}
+        except Exception:  # noqa: BLE001 - support export remains best-effort
+            return {}
+        return dict(values) if isinstance(values, dict) else {}
 
-    def _tail_log(self, path: Path) -> list[str]:
+    def _recorder_health(self) -> dict[str, Any]:
+        recorder = self.recording
+        if recorder is None:
+            return {}
+        result: dict[str, Any] = {}
+        phase = getattr(recorder, "phase", None)
+        phase_value = _plain_value(getattr(phase, "value", phase))
+        if isinstance(phase_value, str):
+            result["state"] = phase_value
+        snapshot = getattr(recorder, "snapshot", None)
+        for name in ("armed", "recording"):
+            value = _plain_value(getattr(snapshot, name, None))
+            if isinstance(value, bool):
+                result[name] = value
+
+        validation = getattr(recorder, "last_validation", None)
+        if validation is not None:
+            take = getattr(validation, "take", None)
+            errors = getattr(validation, "errors", ())
+            result["finalized"] = True
+            result["reopened"] = bool(take is not None)
+            if take is not None:
+                duration = _plain_value(getattr(take, "duration_s", None))
+                if isinstance(duration, (int, float)) and not isinstance(
+                    duration, bool
+                ):
+                    result["duration_seconds"] = max(0.0, float(duration))
+                tracks = list(getattr(take, "tracks", ()) or ())
+                rates = {
+                    int(rate)
+                    for track in tracks
+                    if isinstance(
+                        (rate := _plain_value(getattr(track, "samplerate", None))),
+                        int,
+                    )
+                    and not isinstance(rate, bool)
+                    and rate > 0
+                }
+                if len(rates) == 1:
+                    result["sample_rate_hz"] = next(iter(rates))
+                result["channels"] = sum(
+                    max(
+                        0,
+                        int(
+                            _plain_value(getattr(track, "channels", 0)) or 0
+                        ),
+                    )
+                    for track in tracks
+                    if isinstance(
+                        _plain_value(getattr(track, "channels", 0)), int
+                    )
+                )
+            if errors:
+                result["last_error"] = str(tuple(errors)[0])
+        return result
+
+    def _cleanup_snapshot(
+        self,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        processes: list[dict[str, Any]] = []
+        for component, attribute in (
+            ("music_engine", "jamulus_process"),
+            ("band_server", "hosted_server_process"),
+        ):
+            process = getattr(self.bridge, attribute, None)
+            poll = getattr(process, "poll", None)
+            live = bool(process is not None and callable(poll) and poll() is None)
+            processes.append(
+                {
+                    "component": component,
+                    "status": "running" if live else "released",
+                    "owned": process is not None,
+                }
+            )
+
+        ports: list[dict[str, Any]] = []
+        port_free = getattr(self.bridge, "_port_free", None)
+        if callable(port_free):
+            for component, setting_name, protocol in (
+                ("music_engine_control", "jamulus_rpc_port", "tcp"),
+                ("band_server_control", "server_rpc_port", "tcp"),
+                ("band_audio", "jamulus_port", "udp"),
+            ):
+                raw_port = _plain_value(getattr(self.settings, setting_name, None))
+                if not isinstance(raw_port, int) or isinstance(raw_port, bool):
+                    continue
+                try:
+                    released = bool(port_free(raw_port, udp=protocol == "udp"))
+                except Exception:  # noqa: BLE001 - snapshot is optional evidence
+                    continue
+                ports.append(
+                    {
+                        "component": component,
+                        "port": raw_port,
+                        "protocol": protocol,
+                        "status": "released" if released else "active",
+                        "in_use": not released,
+                        "released": released,
+                    }
+                )
+        return processes, ports
+
+    def _audio_diagnostics(self) -> Any:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            return self.jamulus.audio_engine.diagnostics()
+        except Exception:  # noqa: BLE001 - report generation must never crash UI
+            return None
+
+    def _jamulus_version(self) -> str:
+        value = _plain_value(getattr(self.bridge, "jamulus_version", ""))
+        return value if isinstance(value, str) else ""
+
+    def _log_excerpts(self) -> dict[str, str]:
+        home = Path.home()
+        candidates = {
+            "webjam": home / ".webjam.log",
+            "jamulus": home / ".webjam_jamulus.log",
+            "jamulus_server": home
+            / "Library"
+            / "Logs"
+            / "WebJam"
+            / "jamulus-server.log",
+        }
+        excerpts: dict[str, str] = {}
+        for name, path in candidates.items():
+            lines = self._tail_log(path, unavailable_marker=False)
+            if lines:
+                excerpts[name] = "\n".join(lines)
+        return excerpts
+
+    def _tail_log(
+        self, path: Path, *, unavailable_marker: bool = True
+    ) -> list[str]:
+        """Return a bounded, redacted tail without exposing the source path."""
+
+        if path.is_symlink():
+            return ["(log file unavailable)"] if unavailable_marker else []
+        try:
+            with path.open("rb") as handle:
+                handle.seek(0, 2)
+                size = handle.tell()
+                handle.seek(max(0, size - 128 * 1024))
+                raw = handle.read()
         except OSError:
-            return ["(log file unavailable)"]
+            return ["(log file unavailable)"] if unavailable_marker else []
         except Exception:  # noqa: BLE001
             LOGGER.debug("Unexpected log read failure", exc_info=True)
-            return ["(log file unavailable)"]
+            return ["(log file unavailable)"] if unavailable_marker else []
+        if _looks_binary(raw):
+            return ["(log file unavailable)"] if unavailable_marker else []
+        text = raw.decode("utf-8", errors="replace")
         all_lines = text.splitlines()
         tail = all_lines[-_LOG_TAIL_LINES:] if all_lines else ["(empty log)"]
         return [redact_text(line) for line in tail]
 
     def _sanitised_settings_json(self) -> str:
-        import json
+        """Compatibility helper; settings are never included in support output."""
+
         try:
             data = asdict(self.settings)
         except TypeError:
-            data = {k: getattr(self.settings, k) for k in dir(self.settings)
-                    if not k.startswith("_") and not callable(getattr(self.settings, k))}
-        data = redact_mapping(data)
+            data = {
+                key: getattr(self.settings, key)
+                for key in dir(self.settings)
+                if not key.startswith("_")
+                and not callable(getattr(self.settings, key))
+            }
         try:
-            return json.dumps(data, indent=2, default=str, sort_keys=True)
+            return json.dumps(redact_mapping(data), indent=2, default=str, sort_keys=True)
         except Exception:  # noqa: BLE001
             return "(settings unavailable)"
+
+
+def _plain_value(value: Any) -> str | int | float | bool | None:
+    """Reject mocks, paths, and arbitrary objects at the controller boundary."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return None
+
+
+def _metric_count(values: dict[str, Any], name: str) -> int:
+    value = _plain_value(values.get(name))
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _looks_binary(payload: bytes) -> bool:
+    audio_magic = (b"RIFF", b"FORM", b"fLaC", b"OggS", b"ID3", b"caff")
+    if payload.startswith(audio_magic) or b"\x00" in payload[:4_096]:
+        return True
+    sample = payload[:4_096]
+    if not sample:
+        return False
+    controls = sum(byte < 32 and byte not in (9, 10, 13) for byte in sample)
+    return controls / len(sample) >= 0.02

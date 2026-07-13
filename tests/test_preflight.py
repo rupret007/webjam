@@ -1,4 +1,4 @@
-"""Tests for the pre-jam Ready Check (core/preflight.py)."""
+"""Tests for the Band Check configuration probes (core/preflight.py)."""
 from __future__ import annotations
 
 import tempfile
@@ -38,10 +38,13 @@ class TestReadyCheck(unittest.TestCase):
                     mock.patch("core.preflight.sys.platform", "darwin"):
                 rep = preflight.run_ready_check(s)
         self.assertTrue(rep.automated_ok, rep.to_text())
-        self.assertFalse(rep.all_ok)
-        self.assertEqual(rep.pending_manual_count, 6)
+        self.assertTrue(rep.all_ok)
+        self.assertEqual(rep.pending_manual_count, 0)
+        self.assertEqual(
+            len([item for item in rep.items if item.manual_verification]), 6
+        )
         self.assertIn("✓", rep.to_text())
-        self.assertIn("confirm 6 Webex settings", rep.to_text())
+        self.assertIn("ready to jam", rep.to_text())
 
     def test_jamulus_missing(self):
         s = _settings(jamulus_candidates=["/nope/Jamulus"])
@@ -119,6 +122,25 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("Settings", item.detail)
         self.assertIn("bad rate", item.detail)
 
+    def test_selected_device_index_zero_is_not_changed_to_system_default(self):
+        s = _settings(
+            audio_input_device_index=0,
+            audio_samplerate=48000,
+        )
+        devices = [{
+            "index": 0,
+            "name": "First Interface",
+            "channels": 2,
+            "default_samplerate": 48000,
+        }]
+        with mock.patch(
+            "core.audio_routing.list_input_devices", return_value=devices
+        ), mock.patch("sounddevice.check_input_settings") as check:
+            item = preflight._check_selected_input(s)
+        self.assertTrue(item.ok)
+        self.assertIn("First Interface", item.detail)
+        check.assert_called_once_with(device=0, channels=1, samplerate=48000)
+
     def test_local_capture_requires_two_channels_48k_and_writable_takes(self):
         with tempfile.NamedTemporaryFile() as jam, tempfile.TemporaryDirectory() as takes:
             s = _settings(
@@ -161,7 +183,7 @@ class TestReadyCheck(unittest.TestCase):
                     ))
                 manual = [i for i in rep.items if i.manual_verification]
                 self.assertEqual(len(manual), count)
-                self.assertTrue(all(i.required and not i.ok for i in manual))
+                self.assertTrue(all(not i.required and not i.ok for i in manual))
 
     def test_non_macos_talkback_omits_macos_mic_mode(self):
         with tempfile.NamedTemporaryFile() as jam, mock.patch(
@@ -189,7 +211,7 @@ class TestReadyCheck(unittest.TestCase):
                 rep = preflight.run_ready_check(s)
         item = next(i for i in rep.items if i.name == "Host recorder")
         self.assertFalse(item.ok)
-        self.assertIn("Ready Check", item.detail)
+        self.assertIn("Band Check", item.detail)
         self.assertIn("connection refused", item.detail)
         # The pilot topology is same-Mac: lead with "is the server running"
         # and name the start script before the remote-Linux SSH hint.
@@ -233,9 +255,9 @@ class TestReadyCheck(unittest.TestCase):
             s = _settings(jamulus_candidates=[jam.name], webex_url="")
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
-        self.assertFalse(rep.all_ok)
-        item = next(i for i in rep.items if i.name == "Webex meeting set")
-        self.assertFalse(item.ok)
+        self.assertTrue(rep.all_ok)
+        self.assertNotIn("Webex companion", {item.name for item in rep.items})
+        self.assertFalse(any(item.manual_verification for item in rep.items))
 
     def test_webex_http_url_fails(self):
         with tempfile.NamedTemporaryFile() as jam:
@@ -245,9 +267,10 @@ class TestReadyCheck(unittest.TestCase):
             )
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
-        self.assertFalse(rep.all_ok)
-        item = next(i for i in rep.items if i.name == "Webex meeting set")
+        self.assertTrue(rep.all_ok)
+        item = next(i for i in rep.items if i.name == "Webex companion")
         self.assertFalse(item.ok)
+        self.assertFalse(item.required)
         self.assertIn("https", item.detail.lower())
 
     def test_non_webex_url_fails(self):
@@ -258,9 +281,10 @@ class TestReadyCheck(unittest.TestCase):
             )
             with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
                 rep = preflight.run_ready_check(s)
-        self.assertFalse(rep.all_ok)
-        item = next(i for i in rep.items if i.name == "Webex meeting set")
+        self.assertTrue(rep.all_ok)
+        item = next(i for i in rep.items if i.name == "Webex companion")
         self.assertFalse(item.ok)
+        self.assertFalse(item.required)
         self.assertIn("webex.com", item.detail)
 
     def test_to_text_marks_failures(self):

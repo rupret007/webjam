@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import json
 import os
 import platform
 import shutil
-import sys
 import tempfile
 import time
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from core.redaction import redact_mapping, redact_text
+from core.support_bundle import SupportBundleArtifact, SupportFacts, build_support_bundle
 
 
 class RetryService:
@@ -182,47 +180,16 @@ class MetricsService:
         webex_url: str,
         audio_diagnostics: dict[str, Any],
     ) -> Path:
-        home_dir = Path(home_dir)
-        try:
-            home_dir.mkdir(parents=True, exist_ok=True)
-        except FileExistsError as exc:
-            raise NotADirectoryError(f"Snapshot output path is not a directory: {home_dir}") from exc
-        if not home_dir.is_dir():
-            raise NotADirectoryError(f"Snapshot output path is not a directory: {home_dir}")
-
-        timestamp = datetime.now(timezone.utc)
-        snapshot = {
-            "created_at": timestamp.isoformat().replace("+00:00", "Z"),
-            "jamulus_state": jamulus_state,
-            "webex_state": webex_state,
-            "latency_ms": latency_ms,
-            "server": server,
-            "webex_url": webex_url,
-            "audio_diagnostics": audio_diagnostics,
-            "usage_metrics": self.collect(),
-        }
-        out_path = home_dir / f"webjam_diagnostics_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
-        content = json.dumps(self._json_safe(snapshot), indent=2)
-        fd, temp_name = tempfile.mkstemp(
-            prefix=out_path.stem + ".",
-            suffix=".tmp",
-            dir=str(home_dir),
+        # Webex destinations and the configured server are deliberately not
+        # forwarded.  They are private meeting/session information, not facts
+        # needed to diagnose the production audio engine.
+        _ = (webex_state, server, webex_url)
+        artifact = self._build_support_artifact(
+            jamulus_state=jamulus_state,
+            latency_ms=latency_ms,
+            audio_diagnostics=audio_diagnostics,
         )
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        temp_path = Path(temp_name)
-        try:
-            temp_path.write_text(content, encoding="utf-8")
-            temp_path.replace(out_path)
-            return out_path
-        finally:
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
+        return artifact.save_structured_json(Path(home_dir))
 
     def export_session_brief(
         self,
@@ -366,138 +333,128 @@ class MetricsService:
         support_files: Iterable[os.PathLike[str] | str] = (),
         extra_json_files: dict[str, Any] | None = None,
     ) -> Path:
-        output_dir = Path(output_dir)
-        try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        except FileExistsError as exc:
-            raise NotADirectoryError(f"Bundle output path is not a directory: {output_dir}") from exc
-        if not output_dir.is_dir():
-            raise NotADirectoryError(f"Bundle output path is not a directory: {output_dir}")
+        # Compatibility parameters are intentionally ignored.  In particular,
+        # settings, room context, databases, arbitrary support files, private
+        # meeting URLs, executable paths, and ad-hoc JSON can no longer enter a
+        # default support archive.
+        _ = (
+            webex_state,
+            server,
+            webex_url,
+            settings_payload,
+            room_context,
+            webex_last_error,
+            jamulus_path,
+            support_files,
+            extra_json_files,
+        )
+        artifact = self._build_support_artifact(
+            jamulus_state=jamulus_state,
+            latency_ms=latency_ms,
+            audio_diagnostics=audio_diagnostics,
+            log_excerpts=self._allowed_log_excerpts(log_files),
+        )
+        return artifact.save_zip(Path(output_dir))
 
-        created_at = datetime.now(timezone.utc)
-        stamp = created_at.strftime("%Y%m%d_%H%M%S")
-        bundle_path = output_dir / f"webjam_diagnostics_bundle_{stamp}.zip"
-        workspace = Path(tempfile.mkdtemp(prefix=f"{bundle_path.stem}.", dir=str(output_dir)))
+    def _build_support_artifact(
+        self,
+        *,
+        jamulus_state: str,
+        latency_ms: float | None,
+        audio_diagnostics: dict[str, Any],
+        log_excerpts: dict[str, str] | None = None,
+    ) -> SupportBundleArtifact:
+        diagnostics = audio_diagnostics if isinstance(audio_diagnostics, dict) else {}
+        engine_fields: dict[str, Any] = {}
+        for source, destination in (
+            ("backend", "backend"),
+            ("active", "active"),
+            ("responsive", "responsive"),
+            ("latency_mode", "latency_mode"),
+            ("blocksize", "block_size"),
+            ("rpc_available", "rpc_available"),
+        ):
+            if source in diagnostics:
+                engine_fields[destination] = diagnostics[source]
+        if latency_ms is not None:
+            engine_fields["latency_ms"] = latency_ms
 
-        try:
-            logs_dir = workspace / "logs"
-            files_dir = workspace / "files"
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            files_dir.mkdir(parents=True, exist_ok=True)
+        metrics = self.collect()
 
-            snapshot_payload = {
-                "created_at": created_at.isoformat().replace("+00:00", "Z"),
-                "jamulus_state": jamulus_state,
-                "webex_state": webex_state,
-                "latency_ms": latency_ms,
-                "server": server,
-                "webex_url": webex_url,
-                "webex_last_error": webex_last_error or "none",
-                "jamulus_path": jamulus_path or "",
-                "audio_diagnostics": audio_diagnostics,
-                "usage_metrics": self.collect(),
-            }
-            (workspace / "snapshot.json").write_text(
-                json.dumps(self._json_safe(snapshot_payload), indent=2),
-                encoding="utf-8",
-            )
-
-            if settings_payload is not None:
-                (workspace / "settings.json").write_text(
-                    json.dumps(self._json_safe(settings_payload), indent=2),
-                    encoding="utf-8",
-                )
-            if room_context is not None:
-                (workspace / "room_context.json").write_text(
-                    json.dumps(self._json_safe(room_context), indent=2),
-                    encoding="utf-8",
-                )
-            if extra_json_files:
-                for raw_name, payload in extra_json_files.items():
-                    candidate_name = os.path.basename(str(raw_name or "").strip()) or "extra.json"
-                    if not candidate_name.lower().endswith(".json"):
-                        candidate_name = f"{candidate_name}.json"
-                    (workspace / candidate_name).write_text(
-                        json.dumps(self._json_safe(payload), indent=2),
-                        encoding="utf-8",
-                    )
-
-            environment_payload = {
-                "platform": platform.platform(),
-                "python": sys.version,
-                "python_executable": sys.executable,
-                "timestamp_utc": created_at.isoformat().replace("+00:00", "Z"),
-            }
-            (workspace / "environment.json").write_text(
-                json.dumps(self._json_safe(environment_payload), indent=2),
-                encoding="utf-8",
-            )
-
-            missing_files: list[str] = []
-            copied_logs = self._copy_files(
-                self._normalize_file_candidates(log_files),
-                logs_dir,
-                missing_files,
-                redact=True,
-            )
-            copied_support = self._copy_files(
-                self._normalize_file_candidates(support_files),
-                files_dir,
-                missing_files,
-            )
-
-            readme_lines = [
-                "WebJam Diagnostics Bundle",
-                "",
-                f"Created (UTC): {created_at.isoformat().replace('+00:00', 'Z')}",
-                f"Jamulus state: {jamulus_state}",
-                f"Webex state: {webex_state}",
-                f"Server: {server}",
-                "",
-                "Included files:",
-                "- Snapshot JSON: snapshot.json",
-                "- Environment JSON: environment.json",
-                f"- Logs copied: {len(copied_logs)}",
-                f"- Support files copied: {len(copied_support)}",
-            ]
-            if settings_payload is not None:
-                readme_lines.append("- Settings JSON: settings.json")
-            if room_context is not None:
-                readme_lines.append("- Room context JSON: room_context.json")
-            if extra_json_files:
-                for raw_name in extra_json_files.keys():
-                    candidate_name = os.path.basename(str(raw_name or "").strip()) or "extra.json"
-                    if not candidate_name.lower().endswith(".json"):
-                        candidate_name = f"{candidate_name}.json"
-                    readme_lines.append(f"- Extra JSON: {candidate_name}")
-            if missing_files:
-                readme_lines.append("")
-                readme_lines.append("Missing/Skipped file paths:")
-                readme_lines.extend(f"- {item}" for item in missing_files)
-            (workspace / "README.txt").write_text("\n".join(readme_lines), encoding="utf-8")
-
-            fd, temp_name = tempfile.mkstemp(
-                prefix=bundle_path.stem + ".",
-                suffix=".tmp",
-                dir=str(output_dir),
-            )
+        def metric(name: str) -> int:
             try:
-                os.close(fd)
+                return max(0, int(metrics.get(name, "0") or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        reconnect_counts = {
+            "attempts": metric("metric_jamulus_reconnect_attempt"),
+            "succeeded": metric("metric_jamulus_reconnect_success"),
+            "failed": metric("metric_jamulus_reconnect_failed"),
+        }
+        export_counts = {
+            "succeeded": metric("metric_diagnostics_bundle_exported"),
+            "failed": metric("metric_diagnostics_bundle_failed"),
+        }
+        try:
+            from webjam_qt import __version__
+        except Exception:  # pragma: no cover - legacy-only fallback
+            __version__ = "unknown"
+
+        facts = SupportFacts(
+            webjam_version=__version__,
+            os_name=f"{platform.system()} {platform.release()}".strip(),
+            architecture=platform.machine(),
+            jamulus_state=jamulus_state,
+            engine_capabilities=engine_fields,
+            sample_rate_hz=diagnostics.get("samplerate"),
+            reconnect_counts=reconnect_counts,
+            export_counts=export_counts,
+        )
+        return build_support_bundle(facts, log_excerpts=log_excerpts or {})
+
+    @staticmethod
+    def _allowed_log_excerpts(
+        candidates: Iterable[os.PathLike[str] | str],
+    ) -> dict[str, str]:
+        allowed_names = {
+            ".webjam.log": "webjam",
+            "webjam.log": "webjam",
+            ".webjam_jamulus.log": "jamulus",
+            "jamulus.log": "jamulus",
+            "jamulus-server.log": "jamulus_server",
+            "band-check.log": "band_check",
+        }
+        excerpts: dict[str, str] = {}
+        for raw in candidates:
+            try:
+                source = Path(raw)
+            except (TypeError, ValueError):
+                continue
+            key = allowed_names.get(source.name.lower())
+            if not key or key in excerpts or source.is_symlink() or not source.is_file():
+                continue
+            try:
+                with source.open("rb") as handle:
+                    handle.seek(0, os.SEEK_END)
+                    size = handle.tell()
+                    handle.seek(max(0, size - 128 * 1024))
+                    raw_excerpt = handle.read()
             except OSError:
-                pass
-            temp_path = Path(temp_name)
-            try:
-                with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-                    for item in workspace.rglob("*"):
-                        if item.is_file():
-                            archive.write(item, item.relative_to(workspace).as_posix())
-                temp_path.replace(bundle_path)
-                return bundle_path
-            finally:
-                if temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except OSError:
-                        pass
-        finally:
-            shutil.rmtree(workspace, ignore_errors=True)
+                continue
+            if _looks_binary_log(raw_excerpt):
+                continue
+            excerpt = raw_excerpt.decode("utf-8", errors="replace")
+            excerpts[key] = excerpt
+        return excerpts
+
+
+def _looks_binary_log(payload: bytes) -> bool:
+    audio_magic = (b"RIFF", b"FORM", b"fLaC", b"OggS", b"ID3", b"caff")
+    if payload.startswith(audio_magic) or b"\x00" in payload[:4_096]:
+        return True
+    sample = payload[:4_096]
+    if not sample:
+        return False
+    controls = sum(byte < 32 and byte not in (9, 10, 13) for byte in sample)
+    return controls / len(sample) >= 0.02

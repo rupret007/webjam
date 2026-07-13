@@ -1,4 +1,4 @@
-"""Pre-jam Ready Check.
+"""Configuration probes used by Band Check.
 
 A pure, GUI-free readiness probe so a musician learns what's missing *before*
 they try to play. Virtual-loopback audio is checked only for the advanced
@@ -49,7 +49,7 @@ class ReadyCheckReport:
         )
 
     def to_text(self) -> str:
-        lines = ["Ready Check"]
+        lines = ["Band Check"]
         for i in self.items:
             mark = (
                 "✓"
@@ -122,7 +122,10 @@ def _check_audio_routing(settings) -> CheckItem:
 def _check_selected_input(settings) -> CheckItem:
     from core.audio_routing import list_input_devices
 
-    selected = int(getattr(settings, "audio_input_device_index", -1) or -1)
+    try:
+        selected = int(getattr(settings, "audio_input_device_index", -1))
+    except (TypeError, ValueError):
+        selected = -1
     local_capture = bool(getattr(settings, "local_capture_enabled", False))
     item_name = "Meter and local recording input"
     if local_capture and int(getattr(settings, "audio_samplerate", 48000) or 48000) != 48000:
@@ -171,7 +174,7 @@ def _ensure_takes_dir(settings) -> tuple[Path, str | None]:
 
     Hosted mode derives the Takes folder inside the sandboxed JamulusServer
     container, which otherwise only materializes at Start Audio
-    (BridgeService.ensure_hosted_server). Ready Check may legitimately run
+    (BridgeService.ensure_hosted_server). Band Check may legitimately run
     first, so in hosted mode create the folder here the same way Start Audio
     would. A folder the user chose explicitly (non-hosted mode) is never
     created: a typo must surface instead of being silently instantiated.
@@ -216,11 +219,13 @@ def _check_local_capture(settings) -> CheckItem | None:
 
 def _manual_item(name: str, detail: str) -> CheckItem:
     return CheckItem(
-        name, False, detail, required=True, manual_verification=True
+        name, False, detail, required=False, manual_verification=True
     )
 
 
 def _webex_manual_checks(settings) -> list[CheckItem]:
+    if not str(getattr(settings, "webex_url", "") or "").strip():
+        return []
     mode = str(getattr(settings, "webex_audio_mode", "talkback") or "talkback")
     if mode == "video_only":
         return [
@@ -315,7 +320,7 @@ def _check_recorder(settings) -> CheckItem:
             detail = (
                 "couldn't reach the band server's recorder — this Mac hosts "
                 "the server, and WebJam starts it with Start Audio. Press "
-                "Start Audio, then run Ready Check again. "
+                "start the session, then run Band Check again. "
                 f"(Details: {exc})"
             )
             return CheckItem("Host recorder", False, detail, required=False)
@@ -323,7 +328,7 @@ def _check_recorder(settings) -> CheckItem:
             "couldn't reach the band server's recorder — is the server "
             "running? Same Mac: start it with server/start_macos_pilot.sh. "
             "Remote Linux: check the SSH tunnel. Then verify the RPC port "
-            "and secret file and run Ready Check again. "
+            "and secret file and run Band Check again. "
             f"(Details: {exc})"
         )
         return CheckItem("Host recorder", False, detail)
@@ -339,10 +344,16 @@ def _check_recorder(settings) -> CheckItem:
 def _check_webex(settings) -> CheckItem:
     from core.webex_url import normalize_webex_url, webex_url_error
     url = str(getattr(settings, "webex_url", "") or "").strip()
+    if not url:
+        return CheckItem(
+            "Webex companion", True, "not configured — optional", required=False
+        )
     error = webex_url_error(url)
     if error is None:
-        return CheckItem("Webex meeting set", True, normalize_webex_url(url))
-    return CheckItem("Webex meeting set", False, error)
+        return CheckItem(
+            "Webex companion", True, normalize_webex_url(url), required=False
+        )
+    return CheckItem("Webex companion", False, error, required=False)
 
 
 def _check_hosted_server(settings) -> "CheckItem | None":
@@ -408,9 +419,11 @@ def run_ready_check(settings) -> ReadyCheckReport:
         _check_jamulus_executable(settings),
         _check_server(settings),
         _check_selected_input(settings),
-        _check_webex(settings),
         _check_recorder(settings),
     ]
+    webex = _check_webex(settings)
+    if str(getattr(settings, "webex_url", "") or "").strip():
+        items.insert(-1, webex)
     hosted = _check_hosted_server(settings)
     if hosted is not None:
         items.insert(1, hosted)
@@ -419,5 +432,6 @@ def run_ready_check(settings) -> ReadyCheckReport:
     local_capture = _check_local_capture(settings)
     if local_capture is not None:
         items.insert(-2, local_capture)
-    items.extend(_webex_manual_checks(settings))
+    if webex.ok:
+        items.extend(_webex_manual_checks(settings))
     return ReadyCheckReport(items=items)

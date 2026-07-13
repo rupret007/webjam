@@ -65,10 +65,10 @@ jobs:
 
   # ------------------------------------------------------------------
   # Job 1b: Integration against a REAL Jamulus binary.
-  # Installs the pinned official jamulus-headless release (checksum-
-  # verified) and runs the integration suite: real apiAuth handshake for
-  # WebJam's RPC client, the jamulusserver/* recorder contract the Record
-  # button uses, and the exact practice-mode command line.
+  # Installs checksum-verified official server + client packages. The
+  # headless package is SERVER_ONLY despite printing client flags, so the
+  # full package and a private JACK dummy graph are required to certify two
+  # real client codecs in addition to the server/RPC production path.
   # ------------------------------------------------------------------
   integration-jamulus:
     name: Integration (real Jamulus)
@@ -89,19 +89,105 @@ jobs:
           curl -fsSL -o jamulus-headless.deb \
             https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus-headless_3.12.2_ubuntu_amd64.deb
           echo "aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab  jamulus-headless.deb" | sha256sum -c -
+          curl -fsSL -o jamulus-client.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
+          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus-client.deb" | sha256sum -c -
           sudo apt-get update -q
-          sudo apt-get install -y -q ./jamulus-headless.deb
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            --no-install-recommends \
+            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools
           # The package can auto-start a systemd service on the default
           # port — stop it so the tests own their ports.
           sudo systemctl stop jamulus-headless 2>/dev/null || true
           sudo systemctl disable jamulus-headless 2>/dev/null || true
           echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
+          echo "WEBJAM_JAMULUS_CLIENT_BINARY=$(command -v jamulus)" >> "$GITHUB_ENV"
+          echo "WEBJAM_RUN_JACK_AUDIO_INTEGRATION=1" >> "$GITHUB_ENV"
 
       - name: Install test deps
-        run: pip install pytest
+        run: >-
+          pip install "pytest==8.3.5" "numpy==1.26.4"
+          "JACK-Client==0.5.5" "soundfile==0.12.1"
 
       - name: Run integration suite against the real binary
         run: pytest tests/test_real_jamulus_integration.py -v
+
+      - name: Run two-client JACK production-boundary harness
+        run: >-
+          pytest tests/test_real_jamulus_audio.py
+          tests/test_real_jamulus_recording_pipeline.py -v -s
+
+  # ------------------------------------------------------------------
+  # Manual release certification: one uninterrupted hour on a native
+  # GitHub-hosted Ubuntu/amd64 VM. It never runs for pushes or PRs. The
+  # workflow already exists on the default branch, so maintainers can run
+  # the job against a pushed candidate with:
+  #   gh workflow run ci.yml --ref <candidate-branch>
+  # ------------------------------------------------------------------
+  certify-jamulus-one-hour:
+    name: Certify Jamulus/JACK (one hour, manual)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      WEBJAM_RUN_JACK_AUDIO_SOAK: "1"
+      WEBJAM_JACK_AUDIO_SOAK_SECONDS: "3600"
+      WEBJAM_JACK_AUDIO_SOAK_REPORT: artifacts/jamulus-jack-soak.json
+    steps:
+      - name: Checkout selected candidate ref
+        uses: actions/checkout@v4
+
+      - name: Initialize failure-safe evidence
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' \
+            '{"kind":"workflow-bootstrap","success":false,"note":"The soak test did not overwrite this bootstrap report."}' \
+            > artifacts/jamulus-jack-soak.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install checksum-pinned real Jamulus and JACK
+        run: |
+          curl -fsSL -o jamulus-headless.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus-headless_3.12.2_ubuntu_amd64.deb
+          echo "aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab  jamulus-headless.deb" | sha256sum -c -
+          curl -fsSL -o jamulus-client.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
+          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus-client.deb" | sha256sum -c -
+          sudo apt-get update -q
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            --no-install-recommends \
+            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools
+          sudo systemctl stop jamulus-headless 2>/dev/null || true
+          sudo systemctl disable jamulus-headless 2>/dev/null || true
+          echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
+          echo "WEBJAM_JAMULUS_CLIENT_BINARY=$(command -v jamulus)" >> "$GITHUB_ENV"
+
+      - name: Install pinned certification dependencies
+        run: >-
+          pip install "pytest==8.3.5" "numpy==1.26.4"
+          "JACK-Client==0.5.5" "soundfile==0.12.1"
+
+      - name: Run one-hour two-client transport and recovery certification
+        run: |
+          pytest -p no:cacheprovider tests/test_real_jamulus_audio_soak.py \
+            -k one_hour -vv -s 2>&1 \
+            | tee artifacts/jamulus-jack-soak-pytest.log
+
+      - name: Upload certification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jamulus-jack-soak-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/jamulus-jack-soak.json
+            artifacts/jamulus-jack-soak-pytest.log
+          if-no-files-found: error
+          retention-days: 30
 
   # ------------------------------------------------------------------
   # Job 2: Build desktop artifacts

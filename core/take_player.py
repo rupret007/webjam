@@ -37,6 +37,19 @@ class PlaybackError(RuntimeError):
 
 
 @dataclass
+class TrackSegmentState:
+    """One immutable media interval rendered onto the playback timeline."""
+
+    path: Path
+    project_start_frame: int
+    frame_count: int
+    samplerate: int
+    channels: int = 1
+    gaps: tuple[tuple[int, int, tuple[int, ...], str], ...] = ()
+    _reader: object = field(default=None, repr=False)
+
+
+@dataclass
 class TrackState:
     """Per-track mixer state (mutated live from the UI)."""
     channel_id: int
@@ -51,6 +64,8 @@ class TrackState:
     level: float = 0.0       # last block RMS, 0..1 (for meters)
     _reader: object = field(default=None, repr=False)
     _eof: bool = False
+    segments: tuple[TrackSegmentState, ...] = field(default_factory=tuple, repr=False)
+    drift_ppm: float = 0.0
 
 
 class OutputSink(Protocol):
@@ -152,37 +167,91 @@ class TakePlayer:
         self.stop()
         with self._lock:
             self._tracks = []
-            # Adopt the take's samplerate (most common non-zero rate across
-            # its tracks); keep the current default if none is known.
+            # Schema-v2 owns an explicit project rate. Legacy takes adopt the
+            # most common non-zero source rate. Individual files are converted
+            # to this timeline while streaming, so mixed supported rates never
+            # play at the wrong pitch or duration.
             _rates = [int(getattr(t, "samplerate", 0) or 0)
                       for t in getattr(take, "tracks", [])]
             _rates = [r for r in _rates if r > 0]
-            if _rates:
+            project_rate = int(getattr(take, "project_samplerate", 0) or 0)
+            if project_rate > 0:
+                self.samplerate = project_rate
+            elif _rates:
                 from collections import Counter
                 self.samplerate = Counter(_rates).most_common(1)[0][0]
-                _distinct = set(_rates)
-                if len(_distinct) > 1:
-                    _logger.warning(
-                        "take has mixed track samplerates %s; playing all at "
-                        "%d Hz (other-rate tracks will be off-pitch)",
-                        sorted(_distinct), self.samplerate,
-                    )
+            _distinct = set(_rates)
+            if len(_distinct) > 1:
+                _logger.info(
+                    "take has mixed track samplerates %s; converting to %d Hz "
+                    "on the non-destructive playback timeline",
+                    sorted(_distinct), self.samplerate,
+                )
             longest = 0
             for i, t in enumerate(getattr(take, "tracks", [])):
                 # Offsets are signed: a negative offset means the track's file
                 # starts before the take timeline (normal for supplemental
                 # host stems) and playback skips that lead-in.
                 offset_s = float(getattr(t, "offset_s", 0.0) or 0.0)
-                offset_frames = int(offset_s * self.samplerate)
-                dur = getattr(t, "duration_s", 0.0) or 0.0
-                end = offset_frames + int(dur * self.samplerate)
-                longest = max(longest, end)
+                offset_frames = int(round(offset_s * self.samplerate))
+                drift_ppm = float(getattr(t, "drift_ppm", 0.0) or 0.0)
+                drift_scale = 1.0 + drift_ppm / 1_000_000.0
+                if not np.isfinite(drift_scale) or drift_scale <= 0.0:
+                    drift_scale = 1.0
+                    drift_ppm = 0.0
+                segment_states: list[TrackSegmentState] = []
+                for segment in tuple(getattr(t, "segments", ()) or ()):
+                    source_rate = int(getattr(segment, "samplerate", 0) or 0)
+                    source_frames = int(getattr(segment, "frame_count", 0) or 0)
+                    if source_rate <= 0 or source_frames <= 0:
+                        continue
+                    state = TrackSegmentState(
+                        path=Path(getattr(segment, "path")),
+                        project_start_frame=int(
+                            getattr(segment, "project_start_frame", 0) or 0
+                        ),
+                        frame_count=source_frames,
+                        samplerate=source_rate,
+                        channels=max(1, int(getattr(segment, "channels", 1) or 1)),
+                        gaps=tuple(getattr(segment, "gaps", ()) or ()),
+                    )
+                    segment_states.append(state)
+                    rendered = int(
+                        round(
+                            source_frames
+                            / source_rate
+                            * drift_scale
+                            * self.samplerate
+                        )
+                    )
+                    longest = max(
+                        longest,
+                        state.project_start_frame + offset_frames + rendered,
+                    )
+                if not segment_states:
+                    source_rate = int(getattr(t, "samplerate", 0) or self.samplerate)
+                    duration = float(getattr(t, "duration_s", 0.0) or 0.0)
+                    source_frames = max(0, int(round(duration * source_rate)))
+                    segment_states.append(
+                        TrackSegmentState(
+                            path=Path(getattr(t, "path")),
+                            project_start_frame=0,
+                            frame_count=source_frames,
+                            samplerate=source_rate,
+                        )
+                    )
+                    longest = max(
+                        longest,
+                        offset_frames + int(round(duration * drift_scale * self.samplerate)),
+                    )
                 self._tracks.append(TrackState(
                     channel_id=i,
                     name=getattr(t, "name", f"Track {i}"),
                     path=Path(getattr(t, "path")),
                     offset_s=offset_s,
                     source=str(getattr(t, "source", "jamulus_server")),
+                    segments=tuple(segment_states),
+                    drift_ppm=drift_ppm,
                 ))
             self._total_frames = longest
             self._pos_frames = 0
@@ -279,8 +348,14 @@ class TakePlayer:
         with self._lock:
             target = int(max(0.0, seconds) * self.samplerate)
             self._pos_frames = min(target, self._total_frames)
-            # Force readers to re-seek on next pull.
+            # Recreate readers so their next pull seeks from one consistent
+            # timeline position.  Playback may already be running (Studio's
+            # scrubber seeks without stopping the output stream), so leaving
+            # the readers closed here would turn every subsequent block into
+            # silence until the user manually stopped and pressed Play again.
             self._close_readers()
+            if self._playing:
+                self._open_readers()
         if self._on_position:
             self._on_position(self.position_s)
 
@@ -289,53 +364,107 @@ class TakePlayer:
         import soundfile as sf  # type: ignore
         with self._lock:
             for t in self._tracks:
-                if t._reader is None:
+                for segment in t.segments:
+                    if segment._reader is not None:
+                        continue
                     try:
-                        t._reader = sf.SoundFile(str(t.path))
+                        segment._reader = sf.SoundFile(str(segment.path))
                     except Exception as exc:  # noqa: BLE001
-                        _logger.warning("can't open %s: %s", t.path, exc)
-                        t._reader = None
-                    t._eof = False
+                        _logger.warning("can't open %s: %s", segment.path, exc)
+                        segment._reader = None
+                t._reader = t.segments[0]._reader if t.segments else None
+                t._eof = False
 
     def _close_readers(self) -> None:
         for t in self._tracks:
-            if t._reader is not None:
+            for segment in t.segments:
+                if segment._reader is None:
+                    continue
                 try:
-                    t._reader.close()
+                    segment._reader.close()
                 except Exception:  # noqa: BLE001
                     pass
-                t._reader = None
+                segment._reader = None
+            t._reader = None
             t._eof = False
 
     def _read_track_block(self, t: TrackState, start: int, n: int) -> np.ndarray:
         """Return n source-channel frames for absolute take-timeline
         window [start, start+n), honouring the track's offset. Silence where
         the track isn't sounding (before its offset or past its end)."""
-        reader = t._reader
-        channels = max(1, int(getattr(reader, "channels", 1) or 1))
+        channels = max((segment.channels for segment in t.segments), default=1)
         out = np.zeros((n, channels), dtype=np.float32)
-        if reader is None:
-            return out
-        offset_frames = int(t.offset_s * self.samplerate)
-        track_start = start - offset_frames  # first file-frame this block wants
-        # The window [track_start, track_start+n) intersected with the file.
-        file_len = len(reader)
-        read_from = max(0, track_start)          # file position to seek to
-        if read_from >= file_len:
-            return out                            # entirely past end -> silence
-        dest_start = read_from - track_start      # where it lands in ``out``
-        want = min(n - dest_start, file_len - read_from)
-        if want <= 0:
-            return out
-        try:
-            if reader.tell() != read_from:
-                reader.seek(read_from)
-            data = reader.read(want, dtype="float32", always_2d=True)
-        except Exception:  # noqa: BLE001
-            return out
-        if data.shape[0] == 0:
-            return out
-        out[dest_start:dest_start + data.shape[0], :data.shape[1]] = data
+        offset_frames = int(round(t.offset_s * self.samplerate))
+        scale = 1.0 + float(t.drift_ppm) / 1_000_000.0
+        for segment in t.segments:
+            reader = segment._reader
+            if reader is None or segment.samplerate <= 0 or segment.frame_count <= 0:
+                continue
+            segment_start = segment.project_start_frame + offset_frames
+            rendered_frames = int(
+                round(
+                    segment.frame_count
+                    / segment.samplerate
+                    * scale
+                    * self.samplerate
+                )
+            )
+            segment_end = segment_start + max(0, rendered_frames)
+            overlap_start = max(start, segment_start)
+            overlap_end = min(start + n, segment_end)
+            if overlap_end <= overlap_start:
+                continue
+            output_positions = np.arange(
+                overlap_start, overlap_end, dtype=np.float64
+            )
+            source_positions = (
+                (output_positions - segment_start)
+                / self.samplerate
+                / scale
+                * segment.samplerate
+            )
+            source_positions = np.clip(
+                source_positions, 0.0, max(0.0, segment.frame_count - 1.0)
+            )
+            first = max(0, int(np.floor(source_positions[0])) - 1)
+            last = min(
+                segment.frame_count,
+                int(np.ceil(source_positions[-1])) + 2,
+            )
+            try:
+                if reader.tell() != first:
+                    reader.seek(first)
+                source = reader.read(
+                    last - first, dtype="float32", always_2d=True
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if not len(source):
+                continue
+            local_positions = source_positions - first
+            grid = np.arange(len(source), dtype=np.float64)
+            rendered = np.empty(
+                (len(output_positions), source.shape[1]), dtype=np.float32
+            )
+            for channel in range(source.shape[1]):
+                rendered[:, channel] = np.interp(
+                    local_positions, grid, source[:, channel]
+                ).astype(np.float32)
+            for gap_start, gap_count, gap_channels, _reason in segment.gaps:
+                inside = (source_positions >= gap_start) & (
+                    source_positions < gap_start + gap_count
+                )
+                if not np.any(inside):
+                    continue
+                targets = gap_channels or tuple(range(rendered.shape[1]))
+                for channel in targets:
+                    if 0 <= channel < rendered.shape[1]:
+                        rendered[inside, channel] = 0.0
+            destination = overlap_start - start
+            out[
+                destination : destination + len(rendered),
+                : rendered.shape[1],
+            ] = rendered
         return out
 
     @staticmethod

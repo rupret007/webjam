@@ -86,8 +86,9 @@ def apply_join_invite(settings: AppSettings, invite: BandInvite) -> None:
     if not settings.takes_directory:
         settings.takes_directory = str(Path.home() / "Music" / "WebJam Takes")
     settings.webex_audio_mode = "talkback"
-    settings.local_capture_enabled = False
-    settings.audio_input_device_index = -1
+    # Isolated local recording is an explicit musician preference. Joining a
+    # band must never silently disable a choice already made in Recording
+    # Setup; the host's authenticated recording signal controls when it runs.
 
 
 class LaunchDialog(QDialog):
@@ -106,6 +107,7 @@ class LaunchDialog(QDialog):
         self._host_available = sys.platform == "darwin"
         self.selected_role = ""
         self.session_name = "Band Rehearsal"
+        self.band_invite: BandInvite | None = None
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
@@ -213,6 +215,11 @@ class LaunchDialog(QDialog):
 
         self._invite_input = QLineEdit()
         self._invite_input.setObjectName("LaunchInviteInput")
+        # Version-2 invitations contain a private bearer credential. Keep the
+        # value available to the parser without rendering it as ordinary text
+        # on screen or exposing it as an ordinary editable value to assistive
+        # technologies.
+        self._invite_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._invite_input.setPlaceholderText("Paste your WebJam invite link")
         self._invite_input.setAccessibleName("WebJam invite link")
         self._invite_input.setAccessibleDescription(
@@ -274,6 +281,7 @@ class LaunchDialog(QDialog):
             return
         self.selected_role = "host"
         self.session_name = "Band Rehearsal"
+        self.band_invite = None
         self.accept()
 
     def _join(self) -> None:
@@ -309,6 +317,7 @@ class LaunchDialog(QDialog):
             return False
         self.selected_role = "join"
         self.session_name = invite.session_name
+        self.band_invite = invite
         self.accept()
         return True
 

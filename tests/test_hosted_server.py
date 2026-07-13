@@ -297,6 +297,213 @@ class TestEnsureHostedServer(unittest.TestCase):
             bridge.settings.jamulus_server = "public.example.com"
             self.assertEqual(bridge.effective_server(), "127.0.0.1:22124")
 
+    def test_band_check_certifies_real_owned_lifecycle_and_releases_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            running = [True]
+            fake_proc = MagicMock()
+            fake_proc.pid = 4242
+            fake_proc.poll.side_effect = lambda: None if running[0] else 0
+
+            def stopped(*_args, **_kwargs):
+                running[0] = False
+                return 0
+
+            fake_proc.wait.side_effect = stopped
+
+            def port_free(_port, *, udp=False):
+                del udp
+                return not (
+                    bridge.hosted_server_process is fake_proc and running[0]
+                )
+
+            with patch(
+                "services.bridge_service.subprocess.run",
+                return_value=_version_ok(),
+            ), patch(
+                "services.bridge_service.subprocess.Popen",
+                return_value=fake_proc,
+            ), patch.object(
+                bridge, "_port_free", side_effect=port_free
+            ), patch.object(
+                bridge, "_probe_hosted_server_rpc", return_value=(True, "ready")
+            ), patch.object(bridge, "_start_hosted_caffeinate"):
+                result = bridge.certify_hosted_server_lifecycle()
+
+            self.assertTrue(result.ok, result.detail)
+            self.assertFalse(result.warning)
+            self.assertTrue(result.started_owned_server)
+            self.assertTrue(result.recorder_authenticated)
+            self.assertTrue(result.secret_private)
+            self.assertTrue(result.owned_stop_confirmed)
+            self.assertTrue(result.ports_released)
+            self.assertIn("3.12.2", result.detail)
+            self.assertFalse(bridge.hosted_server_alive())
+            fake_proc.terminate.assert_called_once()
+            secret = Path(tmp) / "rpc.secret"
+            self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+
+    def test_band_check_reports_port_conflict_without_spawning_or_killing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            with patch.object(
+                bridge, "_port_free", return_value=False
+            ), patch.object(
+                bridge,
+                "_probe_hosted_server_rpc",
+                return_value=(False, "authentication failed"),
+            ), patch("services.bridge_service.subprocess.Popen") as popen:
+                result = bridge.certify_hosted_server_lifecycle()
+            self.assertFalse(result.ok)
+            self.assertIn("already in use", result.detail)
+            self.assertFalse(bridge.hosted_server_alive())
+            popen.assert_not_called()
+
+    def test_band_check_auth_failure_cleans_up_the_owned_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            running = [True]
+            fake_proc = MagicMock()
+            fake_proc.pid = 4242
+            fake_proc.poll.side_effect = lambda: None if running[0] else 0
+
+            def stopped(*_args, **_kwargs):
+                running[0] = False
+                return 0
+
+            fake_proc.wait.side_effect = stopped
+
+            def port_free(_port, *, udp=False):
+                del udp
+                return not (
+                    bridge.hosted_server_process is fake_proc and running[0]
+                )
+
+            with patch(
+                "services.bridge_service.subprocess.run",
+                return_value=_version_ok(),
+            ), patch(
+                "services.bridge_service.subprocess.Popen",
+                return_value=fake_proc,
+            ), patch.object(
+                bridge, "_port_free", side_effect=port_free
+            ), patch.object(
+                bridge,
+                "_probe_hosted_server_rpc",
+                return_value=(False, "authentication failed"),
+            ), patch.object(bridge, "_start_hosted_caffeinate"), patch(
+                "services.bridge_service.time.monotonic",
+                side_effect=[0.0, 0.0, 7.0],
+            ), patch("services.bridge_service.time.sleep"):
+                result = bridge.certify_hosted_server_lifecycle()
+            self.assertFalse(result.ok)
+            self.assertIn("never became", result.detail)
+            fake_proc.terminate.assert_called_once()
+            self.assertFalse(bridge.hosted_server_alive())
+
+    def test_band_check_does_not_stop_a_preexisting_owned_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            fake_proc = MagicMock()
+            fake_proc.poll.return_value = None
+            bridge.hosted_server_process = fake_proc
+            with patch.object(
+                bridge, "ensure_hosted_server", return_value=(True, "already running")
+            ), patch.object(
+                bridge, "_probe_hosted_server_rpc", return_value=(True, "ready")
+            ), patch.object(
+                bridge, "_hosted_secret_is_private", return_value=(True, "0600")
+            ), patch.object(bridge, "_port_free", return_value=False):
+                result = bridge.certify_hosted_server_lifecycle()
+            # The process predated Band Check, so it is observed but never
+            # terminated. Its full start/stop lifecycle cannot be certified.
+            self.assertTrue(result.ok)
+            self.assertTrue(result.warning)
+            fake_proc.terminate.assert_not_called()
+
+    def test_band_check_fails_closed_when_owned_stop_does_not_release_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            running = [True]
+            fake_proc = MagicMock()
+            fake_proc.poll.side_effect = lambda: None if running[0] else 0
+
+            def stopped(*_args, **_kwargs):
+                running[0] = False
+                return 0
+
+            fake_proc.wait.side_effect = stopped
+
+            def started():
+                bridge.hosted_server_process = fake_proc
+                return True, "started from installed app"
+
+            with patch.object(
+                bridge, "ensure_hosted_server", side_effect=started
+            ), patch.object(
+                bridge, "_probe_hosted_server_rpc", return_value=(True, "ready")
+            ), patch.object(
+                bridge, "_hosted_secret_is_private", return_value=(True, "0600")
+            ), patch.object(
+                bridge, "_port_free", return_value=False
+            ), patch.object(
+                bridge, "_wait_for_hosted_ports_release", return_value=False
+            ):
+                result = bridge.certify_hosted_server_lifecycle()
+            self.assertFalse(result.ok)
+            self.assertTrue(result.owned_stop_confirmed)
+            self.assertFalse(result.ports_released)
+            self.assertIn("not released", result.detail)
+            self.assertFalse(bridge.hosted_server_alive())
+
+    def test_band_check_authenticates_but_never_stops_external_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            secret = Path(tmp) / "rpc.secret"
+            secret.write_text("external-secret\n", encoding="utf-8")
+            secret.chmod(0o644)
+            with patch.object(
+                bridge, "_port_free", return_value=False
+            ), patch.object(
+                bridge, "_probe_hosted_server_rpc", return_value=(True, "ready")
+            ), patch("services.bridge_service.subprocess.Popen") as popen:
+                result = bridge.certify_hosted_server_lifecycle()
+            self.assertTrue(result.ok, result.detail)
+            self.assertTrue(result.warning)
+            self.assertTrue(result.adopted_external_server)
+            self.assertIn("externally managed", result.detail)
+            self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+            self.assertFalse(bridge.hosted_server_alive())
+            popen.assert_not_called()
+
+    def test_band_check_unexpected_failure_leaves_no_owned_orphan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            running = [True]
+            fake_proc = MagicMock()
+            fake_proc.poll.side_effect = lambda: None if running[0] else 0
+
+            def stopped(*_args, **_kwargs):
+                running[0] = False
+                return 0
+
+            fake_proc.wait.side_effect = stopped
+
+            def raise_after_spawn():
+                bridge.hosted_server_process = fake_proc
+                raise RuntimeError("boom after spawn")
+
+            with patch.object(
+                bridge, "ensure_hosted_server", side_effect=raise_after_spawn
+            ), patch.object(
+                bridge, "_wait_for_hosted_ports_release", return_value=True
+            ):
+                result = bridge.certify_hosted_server_lifecycle()
+            self.assertFalse(result.ok)
+            self.assertIn("boom after spawn", result.detail)
+            fake_proc.terminate.assert_called_once()
+            self.assertFalse(bridge.hosted_server_alive())
+
 
 class TestHostedServerDiscovery(unittest.TestCase):
     def _real_discovery_bridge(self, tmp):

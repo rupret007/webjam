@@ -28,6 +28,11 @@ class TestPackagedDataFiles(unittest.TestCase):
     def test_conductor_qss_present_where_code_expects_it(self):
         self.assertTrue((PKG / "theme" / "conductor.qss").is_file())
 
+    def test_brand_assets_present_where_code_and_packaging_expect_them(self):
+        assets = PKG / "theme" / "assets"
+        for name in ("webjam-mark.svg", "webjam.ico", "webjam.icns"):
+            self.assertTrue((assets / name).is_file(), name)
+
     def test_webex_widget_html_present_where_code_expects_it(self):
         # webex_embed.py: Path(__file__).parent.parent / "webex_widget.html"
         self.assertTrue((PKG / "webex_widget.html").is_file())
@@ -39,7 +44,10 @@ class TestPackagedDataFiles(unittest.TestCase):
 
     def test_spec_bundles_the_runtime_data_files(self):
         self.assertIn("conductor.qss", SPEC)
+        self.assertIn('"theme" / "assets"', SPEC)
         self.assertIn("webex_widget.html", SPEC)
+        self.assertIn("webjam-build-id.txt", SPEC)
+        self.assertIn("WEBJAM_BUILD_ID", SPEC)
         self.assertIn("INTER_OFL.txt", SPEC)
         self.assertTrue((ROOT / "licenses" / "INTER_OFL.txt").is_file())
 

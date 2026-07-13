@@ -216,7 +216,7 @@ def test_geometry_has_no_clipping_at_supported_sizes(qapp, settings, size):
     dialog.close()
 
 
-def test_startup_always_asks_host_or_join_then_starts_audio(qapp):
+def test_startup_always_asks_host_or_join_then_checks_verification(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/missing/config.json")
@@ -242,7 +242,9 @@ def test_startup_always_asks_host_or_join_then_starts_audio(qapp):
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invite_url="")
     qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
-    single_shot.assert_called_once_with(0, controller._on_launch_audio)
+    single_shot.assert_called_once_with(
+        0, controller.start_session_or_band_check
+    )
 
 
 def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):

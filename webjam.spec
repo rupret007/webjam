@@ -26,7 +26,9 @@
 #   signtool sign /a /fd SHA256 /tr http://timestamp.sectigo.com /td SHA256 \
 #     dist\WebJam\WebJam.exe
 
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +42,32 @@ block_cipher = None
 _init_src = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 _m = re.search(r'__version__\s*=\s*"([^"]+)"', _init_src)
 VERSION = _m.group(1) if _m else "0.0.0"
+
+# Capture one non-personal provenance value for privacy-safe support bundles.
+# CI can provide WEBJAM_BUILD_ID explicitly; local builds use the exact Git
+# HEAD.  The generated file lives under build/ and is bundled as data rather
+# than mutating tracked source files.
+_build_id = str(os.environ.get("WEBJAM_BUILD_ID", "") or "").strip()
+if not re.fullmatch(r"[0-9a-fA-F]{7,64}", _build_id):
+    try:
+        _probe = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=3,
+        )
+        _build_id = _probe.stdout.strip() if _probe.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        _build_id = ""
+_build_info_path = ROOT / "build" / "webjam-build-id.txt"
+_build_info_path.parent.mkdir(parents=True, exist_ok=True)
+_build_info_path.write_text(
+    (_build_id.lower() if re.fullmatch(r"[0-9a-fA-F]{7,64}", _build_id) else "")
+    + "\n",
+    encoding="ascii",
+)
 
 # Give the Windows executable the same authoritative version metadata as the
 # macOS bundle. CI reads ProductVersion from the built PE before packaging.
@@ -119,11 +147,14 @@ a = Analysis(
     datas=[
         # QSS stylesheet and theme assets
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
+        # Canonical WebJam mark plus packaged OS icon containers.
+        (str(ROOT / "webjam_qt" / "theme" / "assets"), "webjam_qt/theme/assets"),
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
         (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
         # Webex widget HTML template
         (str(ROOT / "webjam_qt" / "webex_widget.html"), "webjam_qt"),
+        (str(_build_info_path), "."),
         *_extra_datas,
     ],
     hiddenimports=[
@@ -131,6 +162,7 @@ a = Analysis(
         "PySide6.QtWebEngineWidgets",
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebChannel",
+        "PySide6.QtSvg",
         # Core modules
         "core.settings",
         "core.audio_engine",
@@ -194,8 +226,11 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     version=_windows_version_info,
-    # icon="webjam_qt/theme/webjam.icns" if sys.platform == "darwin" else
-    #      "webjam_qt/theme/webjam.ico",
+    icon=(
+        str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.ico")
+        if sys.platform == "win32"
+        else None
+    ),
 )
 
 coll = COLLECT(
@@ -219,7 +254,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="WebJam.app",
-        # icon="webjam_qt/theme/webjam.icns",
+        icon=str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.icns"),
         bundle_identifier="com.webjam.app",
         info_plist={
             "NSMicrophoneUsageDescription":

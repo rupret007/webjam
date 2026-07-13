@@ -9,12 +9,14 @@ diagnostics exporter.  All headless (QT_QPA_PLATFORM=offscreen).
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -403,6 +405,39 @@ class TestExportDiagnostics(_ControllerTestBase):
             c._on_export_diagnostics()
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("Couldn't export" in m for m in msgs), msgs)
+
+    def test_band_check_support_action_previews_then_saves_zip(self):
+        c = self.controller
+        with tempfile.TemporaryDirectory() as temp_dir:
+            requested = Path(temp_dir) / "WebJam support.zip"
+            with patch(
+                "webjam_qt.windows.support_bundle_preview."
+                "SupportBundlePreviewDialog.exec",
+                return_value=QDialog.DialogCode.Accepted,
+            ) as preview, patch(
+                "PySide6.QtWidgets.QFileDialog.getSaveFileName",
+                return_value=(str(requested), "ZIP archives (*.zip)"),
+            ) as choose:
+                c._on_save_support_bundle()
+            preview.assert_called_once_with()
+            choose.assert_called_once()
+            bundles = list(Path(temp_dir).glob("*.zip"))
+            self.assertEqual(len(bundles), 1)
+            self.assertTrue(bundles[0].is_file())
+        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
+        self.assertTrue(any("Support bundle saved" in m for m in msgs), msgs)
+
+    def test_cancelled_privacy_preview_never_opens_save_picker(self):
+        c = self.controller
+        with patch(
+            "webjam_qt.windows.support_bundle_preview."
+            "SupportBundlePreviewDialog.exec",
+            return_value=QDialog.DialogCode.Rejected,
+        ), patch(
+            "PySide6.QtWidgets.QFileDialog.getSaveFileName"
+        ) as choose:
+            c._on_save_support_bundle()
+        choose.assert_not_called()
 
 
 class TestRoutingScanShutdownRace(unittest.TestCase):

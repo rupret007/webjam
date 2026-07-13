@@ -201,11 +201,7 @@ QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
 }
 
 #SessionStripLogo {
-    color: ${COLOR_ACCENT_PRIMARY};
-    font-size: ${FONT_SIZE_LG}px;
-    font-weight: ${FONT_WEIGHT_BOLD};
-    letter-spacing: 0.06em;
-    padding: 0 ${SPACE_SM}px;
+    background-color: transparent;
 }
 
 #SessionStripTitle {
@@ -646,8 +642,48 @@ QPushButton#LaunchSecondary:focus {
 }
 
 /* -------------------------------------------------------------------------
- * Ready Check and settings
+ * Band Check and settings
  * ---------------------------------------------------------------------- */
+#BandCheckDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#BandCheckEyebrow {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#BandCheckTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#BandCheckIntro, #BandCheckNext {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_BASE}px;
+}
+
+#BandCheckNext {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#BandCheckMeter {
+    min-height: 24px;
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    text-align: center;
+}
+
+#BandCheckMeter::chunk {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+}
+
 #ReadySummary {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};
@@ -688,6 +724,75 @@ QPushButton#LaunchSecondary:focus {
 #ReadyCheckDetail {
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_SM}px;
+}
+
+#TechnicalDetailsButton {
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 0;
+    padding: ${SPACE_XS}px 0;
+    text-align: left;
+}
+
+#TechnicalDetailsButton:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
+#TechnicalDetailsText {
+    color: ${COLOR_TEXT_MUTED};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_SM}px;
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
+#SupportBundlePreviewDialog {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#SupportPreviewEyebrow {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SupportPreviewTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_XL}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#SupportPreviewPrivacy {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_MD}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SupportPreviewSummary, #SupportPreviewFile {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SupportPreviewSectionTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SupportPreviewFiles, #SupportPreviewReport {
+    color: ${COLOR_TEXT_SECONDARY};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+}
+
+#SupportPreviewReport {
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+    padding: ${SPACE_SM}px;
 }
 
 #SimpleSettingsDialog, #RecordingSetupDialog, #FirstRunSetupDialog {

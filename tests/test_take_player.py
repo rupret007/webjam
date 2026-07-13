@@ -47,6 +47,15 @@ def _write_const(path: Path, seconds: float, value: float):
         w.writeframes(struct.pack("<%dh" % n, *ints.tolist()))
 
 
+def _write_rate(path: Path, samples: np.ndarray, rate: int):
+    values = np.int16(np.clip(samples, -1, 1) * 32767)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(struct.pack("<%dh" % len(values), *values.tolist()))
+
+
 @dataclass
 class _Track:
     path: Path
@@ -107,6 +116,22 @@ class CapturingSink:
         )
 
 
+class DeferredPullSink:
+    """Capture the realtime pull callback without consuming the take in start()."""
+
+    def __init__(self):
+        self.pull = None
+        self.started = False
+        self.stopped = False
+
+    def start(self, _samplerate, _blocksize, pull):
+        self.pull = pull
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+
 def _take_from(tmp: str, specs):
     """specs: list of (filename, seconds, value_or_None, offset)."""
     tracks = []
@@ -134,6 +159,102 @@ class TestTransportAndDuration(unittest.TestCase):
         self.assertAlmostEqual(player.duration_s, 3.0, places=2)
         self.assertEqual(len(player.tracks), 2)
         self.assertEqual(player.position_s, 0.0)
+
+    def test_mixed_rate_track_is_converted_without_pitch_or_duration_shift(self):
+        with tempfile.TemporaryDirectory() as d:
+            source_rate = 4000
+            duration = 0.5
+            timeline = np.arange(int(source_rate * duration)) / source_rate
+            source = Path(d) / "four-k.wav"
+            _write_rate(
+                source,
+                (0.4 * np.sin(2 * np.pi * 200.0 * timeline)).astype(np.float32),
+                source_rate,
+            )
+            segment = SimpleNamespace(
+                path=source,
+                project_start_frame=0,
+                frame_count=len(timeline),
+                samplerate=source_rate,
+                channels=1,
+                gaps=(),
+            )
+            track = SimpleNamespace(
+                path=source,
+                name="Mixed rate",
+                offset_s=0.0,
+                duration_s=duration,
+                samplerate=source_rate,
+                segments=(segment,),
+                drift_ppm=0.0,
+                source="local_isolated",
+            )
+            take = SimpleNamespace(tracks=[track], project_samplerate=RATE)
+            sink = CapturingSink()
+            player = TakePlayer(samplerate=RATE, blocksize=128, sink=sink)
+            player.load(take)
+            player.play()
+            rendered = sink.mixed()[: int(duration * RATE)]
+        spectrum = np.abs(np.fft.rfft(rendered * np.hanning(len(rendered))))
+        frequencies = np.fft.rfftfreq(len(rendered), 1.0 / RATE)
+        dominant = float(frequencies[int(np.argmax(spectrum))])
+        self.assertAlmostEqual(player.duration_s, duration, places=3)
+        self.assertAlmostEqual(dominant, 200.0, delta=3.0)
+
+    def test_explicit_reconnect_segments_keep_timeline_gap_and_declared_dropout(self):
+        with tempfile.TemporaryDirectory() as d:
+            first = Path(d) / "first.wav"
+            second = Path(d) / "second.wav"
+            _write_const(first, 0.1, 0.4)
+            _write_const(second, 0.1, 0.25)
+            segments = (
+                SimpleNamespace(
+                    path=first,
+                    project_start_frame=0,
+                    frame_count=int(0.1 * RATE),
+                    samplerate=RATE,
+                    channels=1,
+                    gaps=((200, 100, (), "queue_overflow"),),
+                ),
+                SimpleNamespace(
+                    path=second,
+                    project_start_frame=int(0.3 * RATE),
+                    frame_count=int(0.1 * RATE),
+                    samplerate=RATE,
+                    channels=1,
+                    gaps=(),
+                ),
+            )
+            track = SimpleNamespace(
+                path=first,
+                name="Reconnect",
+                offset_s=0.05,
+                duration_s=0.4,
+                samplerate=RATE,
+                segments=segments,
+                drift_ppm=0.0,
+                source="local_isolated",
+            )
+            sink = DeferredPullSink()
+            player = TakePlayer(samplerate=RATE, blocksize=64, sink=sink)
+            player.load(SimpleNamespace(tracks=[track], project_samplerate=RATE))
+            player.play()
+            rendered = np.concatenate(
+                [sink.pull(64)[:, 0] for _ in range(60)]
+            )
+            player.stop()
+        self.assertLess(np.max(np.abs(rendered[: int(0.049 * RATE)])), 0.01)
+        self.assertGreater(np.max(np.abs(rendered[int(0.05 * RATE) : 550])), 0.2)
+        self.assertLess(np.max(np.abs(rendered[600:700])), 0.01)
+        self.assertLess(
+            np.max(np.abs(rendered[int(0.16 * RATE) : int(0.34 * RATE)])),
+            0.01,
+        )
+        self.assertGreater(
+            np.max(np.abs(rendered[int(0.35 * RATE) : int(0.44 * RATE)])),
+            0.1,
+        )
+        self.assertAlmostEqual(player.duration_s, 0.45, places=3)
 
     def test_play_pulls_audio_then_finishes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -278,6 +399,25 @@ class TestSeekAndLevels(unittest.TestCase):
             player.load(take)
             player.seek(999.0)
         self.assertLessEqual(player.position_s, player.duration_s + 0.01)
+
+    def test_seek_while_playing_reopens_readers_and_keeps_audio_audible(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = _take_from(d, [("a.wav", 2.0, 0.3, 0.0)])
+            sink = DeferredPullSink()
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=sink)
+            player.load(take)
+            player.play()
+            self.assertIsNotNone(sink.pull)
+            before = sink.pull(256)
+
+            player.seek(1.0)
+            after = sink.pull(256)
+
+            self.assertGreater(float(np.max(np.abs(before))), 0.1)
+            self.assertGreater(float(np.max(np.abs(after))), 0.1)
+            self.assertIsNotNone(player.tracks[0]._reader)
+            self.assertAlmostEqual(player.position_s, 1.0 + 256 / RATE, places=3)
+            player.stop()
 
     def test_level_callback_fires(self):
         with tempfile.TemporaryDirectory() as d:

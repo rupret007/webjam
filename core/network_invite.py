@@ -1,8 +1,9 @@
 """Small, dependency-free helpers for musician-friendly band invites.
 
-An invite deliberately contains only public connection information.  RPC
-credentials, recorder paths, and other host-only details must never cross the
-clipboard boundary.
+Legacy v1 links contain only the Jamulus endpoint.  Private-session v2 links
+also carry one random enrollment credential for WebJam's same-LAN recording
+control plane.  That credential never grants Jamulus RPC or filesystem access,
+and the peer service accepts it only for enrollment into the one session.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import ipaddress
 import socket
 import subprocess
 import sys
+import re
+import uuid
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -23,7 +26,14 @@ from core.jamulus_endpoint import (
 
 INVITE_SCHEME = "webjam"
 INVITE_ACTION = "join"
-INVITE_VERSION = "1"
+INVITE_VERSION = "2"
+LEGACY_INVITE_VERSION = "1"
+_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
+_PRIVATE_LAN_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
 
 
 class InviteLinkError(ValueError):
@@ -32,11 +42,22 @@ class InviteLinkError(ValueError):
 
 @dataclass(frozen=True)
 class BandInvite:
-    """The non-secret information needed to join one jam."""
+    """Parsed join data; v2 instances include a private bearer credential.
+
+    Callers must never render, persist in ordinary settings, or log the full
+    object. The credential exists only to enroll with the session peer.
+    """
 
     host: str
     port: int = DEFAULT_JAMULUS_PORT
     session_name: str = "Band Rehearsal"
+    session_id: str = ""
+    peer_port: int = 0
+    invite_token: str = ""
+
+    @property
+    def peer_enabled(self) -> bool:
+        return bool(self.session_id and self.peer_port and self.invite_token)
 
 
 def _validate_invitable_host(host: str) -> None:
@@ -55,11 +76,37 @@ def _validate_invitable_host(host: str) -> None:
         raise InviteLinkError("That invite link does not contain a reachable host.")
 
 
+def _validate_private_peer_host(host: str) -> None:
+    """Keep the unencrypted recording-control plane on an RFC1918 LAN.
+
+    Legacy invitations may still point at ordinary remote Jamulus servers.
+    Version-2 invitations also carry a bearer credential and can upload local
+    originals, so accepting a public IP or hostname would silently move that
+    private control/media plane onto the Internet.
+    """
+
+    try:
+        address = ipaddress.ip_address(str(host or "").strip())
+    except ValueError as exc:
+        raise InviteLinkError(
+            "Private recording invites require a same-network IPv4 address."
+        ) from exc
+    if address.version != 4 or not any(
+        address in network for network in _PRIVATE_LAN_NETWORKS
+    ):
+        raise InviteLinkError(
+            "Private recording invites require a same-network IPv4 address."
+        )
+
+
 def create_invite_link(
     host: str,
     *,
     port: int = DEFAULT_JAMULUS_PORT,
     session_name: str = "Band Rehearsal",
+    session_id: str = "",
+    peer_port: int = 0,
+    invite_token: str = "",
 ) -> str:
     """Create a clickable, pasteable WebJam invitation URL."""
     raw_host = str(host or "").strip()
@@ -76,14 +123,34 @@ def create_invite_link(
     _validate_invitable_host(endpoint.host)
     clean_name = " ".join(str(session_name or "Band Rehearsal").split())
     clean_name = clean_name[:80] or "Band Rehearsal"
-    query = urlencode(
-        {
-            "v": INVITE_VERSION,
-            "host": endpoint.host,
-            "port": endpoint.port,
-            "session": clean_name,
-        }
-    )
+    peer_values = (str(session_id or ""), int(peer_port or 0), str(invite_token or ""))
+    peer_supplied = any(peer_values)
+    if peer_supplied and not all(peer_values):
+        raise InviteLinkError("WebJam could not create a complete private invite link.")
+    fields: dict[str, object] = {
+        "v": INVITE_VERSION if peer_supplied else LEGACY_INVITE_VERSION,
+        "host": endpoint.host,
+        "port": endpoint.port,
+        "session": clean_name,
+    }
+    if peer_supplied:
+        _validate_private_peer_host(endpoint.host)
+        try:
+            canonical_session = str(uuid.UUID(peer_values[0]))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise InviteLinkError("WebJam could not create a safe private invite link.") from exc
+        if canonical_session != peer_values[0].lower():
+            raise InviteLinkError("WebJam could not create a safe private invite link.")
+        if not 1 <= peer_values[1] <= 65535 or not _TOKEN_PATTERN.fullmatch(peer_values[2]):
+            raise InviteLinkError("WebJam could not create a safe private invite link.")
+        fields.update(
+            {
+                "sid": canonical_session,
+                "peer": peer_values[1],
+                "token": peer_values[2],
+            }
+        )
+    query = urlencode(fields)
     return f"{INVITE_SCHEME}://{INVITE_ACTION}?{query}"
 
 
@@ -109,11 +176,14 @@ def parse_invite_link(text: str) -> BandInvite:
         query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
     except ValueError as exc:
         raise InviteLinkError("That WebJam invite link is not valid.") from exc
+    version = query.get("v", [LEGACY_INVITE_VERSION])[0]
     allowed = {"v", "host", "port", "session"}
+    if version == INVITE_VERSION:
+        allowed.update({"sid", "peer", "token"})
+    elif version != LEGACY_INVITE_VERSION:
+        raise InviteLinkError("This invite was made by an incompatible WebJam version.")
     if set(query) - allowed or any(len(values) != 1 for values in query.values()):
         raise InviteLinkError("That WebJam invite link is not valid.")
-    if query.get("v", [INVITE_VERSION])[0] != INVITE_VERSION:
-        raise InviteLinkError("This invite was made by an incompatible WebJam version.")
     host = query.get("host", [""])[0]
     port_text = query.get("port", [str(DEFAULT_JAMULUS_PORT)])[0]
     if ":" in host:
@@ -130,10 +200,35 @@ def parse_invite_link(text: str) -> BandInvite:
     session_name = " ".join(
         query.get("session", ["Band Rehearsal"])[0].split()
     )[:80]
+    session_id = ""
+    peer_port = 0
+    invite_token = ""
+    if version == INVITE_VERSION:
+        if not all(key in query for key in ("sid", "peer", "token")):
+            raise InviteLinkError("That private WebJam invite link is incomplete.")
+        try:
+            session_id = str(uuid.UUID(query["sid"][0]))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise InviteLinkError("That private WebJam invite link is not valid.") from exc
+        peer_text = query["peer"][0]
+        invite_token = query["token"][0]
+        if (
+            session_id != query["sid"][0].lower()
+            or not peer_text.isascii()
+            or not peer_text.isdigit()
+            or not 1 <= int(peer_text) <= 65535
+            or not _TOKEN_PATTERN.fullmatch(invite_token)
+        ):
+            raise InviteLinkError("That private WebJam invite link is not valid.")
+        _validate_private_peer_host(endpoint.host)
+        peer_port = int(peer_text)
     return BandInvite(
         host=endpoint.host,
         port=endpoint.port,
         session_name=session_name or "Band Rehearsal",
+        session_id=session_id,
+        peer_port=peer_port,
+        invite_token=invite_token,
     )
 
 

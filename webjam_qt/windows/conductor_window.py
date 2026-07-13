@@ -241,7 +241,7 @@ class ConductorWindow(QMainWindow):
 
         # Cmd/Ctrl+L — focus session title
         QShortcut(QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title())
-        # F2 — pre-jam Ready Check (signal consumed by controller)
+        # F2 — Band Check (signal consumed by controller)
         self._ready_check_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self)
         # F11 — fullscreen toggle
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, self._toggle_fullscreen)
@@ -362,7 +362,7 @@ class ConductorWindow(QMainWindow):
             "<b>5.</b> Use <b>More → Multitrack Studio</b> to review a take.<br>"
             "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
             "<b>Useful shortcuts</b><br>"
-            "F2 — Troubleshooting<br>"
+            "F2 — Band Check<br>"
             "Ctrl+1 / Ctrl+2 / Ctrl+3 — Live / Notes / Studio<br>"
             "Ctrl+Shift+R — Reset every fader to 0 dB<br>"
             "F11 / Esc — Enter / leave full screen"

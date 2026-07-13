@@ -8,7 +8,12 @@ screen provides transport plus per-track gain/mute/solo controls.
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from contextlib import ExitStack
+from dataclasses import dataclass
 import logging
+import queue
 import threading
 from pathlib import Path
 from typing import Iterable, Optional
@@ -43,6 +48,70 @@ from webjam_qt.theme.tokens import Color, Space
 
 LOGGER = logging.getLogger("webjam.qt.recording_studio")
 
+_WAVEFORM_BUCKETS = 720
+_WAVEFORM_CHUNK_FRAMES = 65_536
+_WAVEFORM_CACHE_ENTRIES = 64
+_WaveformSourceKey = tuple[object, ...]
+
+
+class _WaveformBuildCancelled(RuntimeError):
+    """Internal cooperative cancellation for a no-longer-visible take."""
+
+
+@dataclass(frozen=True)
+class _WaveformSegmentSpec:
+    path: Path
+    project_start_frame: int
+    frame_count: int
+    samplerate: int
+    channels: int
+    gaps: tuple[tuple[int, int, tuple[int, ...], str], ...] = ()
+
+
+@dataclass(frozen=True)
+class _CompositeWaveformSpec:
+    segments: tuple[_WaveformSegmentSpec, ...]
+    project_samplerate: int
+    offset_s: float
+    drift_ppm: float
+    timeline_duration_s: float
+
+
+def _waveform_source_key(path: Path) -> _WaveformSourceKey:
+    """Return a cheap cache key that changes when the source identity changes."""
+    source = Path(path)
+    stat = source.stat()
+    return (
+        str(source.resolve()),
+        int(getattr(stat, "st_dev", 0)),
+        int(getattr(stat, "st_ino", 0)),
+        int(stat.st_size),
+        int(stat.st_mtime_ns),
+    )
+
+
+class _WaveformPeakCache:
+    """Small thread-safe LRU for bounded waveform envelopes."""
+
+    def __init__(self, max_entries: int = _WAVEFORM_CACHE_ENTRIES) -> None:
+        self._max_entries = max(1, int(max_entries))
+        self._items: OrderedDict[_WaveformSourceKey, tuple[float, ...]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: _WaveformSourceKey) -> Optional[tuple[float, ...]]:
+        with self._lock:
+            value = self._items.get(key)
+            if value is not None:
+                self._items.move_to_end(key)
+            return value
+
+    def put(self, key: _WaveformSourceKey, peaks: tuple[float, ...]) -> None:
+        with self._lock:
+            self._items[key] = tuple(peaks)
+            self._items.move_to_end(key)
+            while len(self._items) > self._max_entries:
+                self._items.popitem(last=False)
+
 
 def _fmt_time(seconds: float) -> str:
     value = max(0, int(seconds))
@@ -63,8 +132,24 @@ class _CompactComboBox(QComboBox):
         return hint
 
 
-def _waveform_peaks(path: Path, buckets: int = 720) -> tuple[float, ...]:
-    """Read a bounded visual peak envelope without loading a take into RAM."""
+def _waveform_peaks(
+    path: Path,
+    buckets: int = _WAVEFORM_BUCKETS,
+    *,
+    chunk_frames: int = _WAVEFORM_CHUNK_FRAMES,
+    cancel_event: Optional[threading.Event] = None,
+) -> tuple[float, ...]:
+    """Build a truthful bounded envelope by streaming every source frame.
+
+    Each output value is the maximum absolute sample in one exact, contiguous
+    timeline bucket.  Unlike the former sparse sampler, this cannot miss a
+    transient between probe windows.  Reads stay chunk-bounded and the
+    ``SoundFile`` context closes the handle on success, failure, or cancellation.
+    """
+    if int(buckets) <= 0:
+        raise ValueError("buckets must be positive")
+    if int(chunk_frames) <= 0:
+        raise ValueError("chunk_frames must be positive")
     try:
         import numpy as np
         import soundfile as sf  # type: ignore
@@ -74,19 +159,206 @@ def _waveform_peaks(path: Path, buckets: int = 720) -> tuple[float, ...]:
             if total <= 0:
                 return ()
             count = max(1, min(int(buckets), total))
-            window = max(1, min(4096, total // count or 1))
             values: list[float] = []
             for index in range(count):
-                start = min(max(0, total - window), int(index * total / count))
-                audio.seek(start)
-                block = audio.read(window, dtype="float32", always_2d=True)
-                values.append(
-                    min(1.0, float(np.max(np.abs(block))) if block.size else 0.0)
-                )
+                if cancel_event is not None and cancel_event.is_set():
+                    raise _WaveformBuildCancelled
+                start = index * total // count
+                end = (index + 1) * total // count
+                if audio.tell() != start:
+                    audio.seek(start)
+                remaining = end - start
+                peak = 0.0
+                while remaining > 0:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise _WaveformBuildCancelled
+                    block = audio.read(
+                        min(int(chunk_frames), remaining),
+                        dtype="float32",
+                        always_2d=True,
+                    )
+                    frames_read = int(block.shape[0])
+                    if frames_read <= 0:
+                        break
+                    peak = max(peak, float(np.max(np.abs(block))))
+                    remaining -= frames_read
+                values.append(min(1.0, peak))
             return tuple(values)
+    except _WaveformBuildCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001
         LOGGER.debug("Could not build waveform for %s: %s", path, exc)
         return ()
+
+
+def _composite_waveform_key(spec: _CompositeWaveformSpec) -> _WaveformSourceKey:
+    items: list[object] = [
+        "composite-v1",
+        spec.project_samplerate,
+        round(spec.offset_s, 9),
+        round(spec.drift_ppm, 9),
+        round(spec.timeline_duration_s, 9),
+    ]
+    for segment in spec.segments:
+        items.extend(
+            (
+                *_waveform_source_key(segment.path),
+                segment.project_start_frame,
+                segment.frame_count,
+                segment.samplerate,
+                segment.channels,
+                segment.gaps,
+            )
+        )
+    return tuple(items)
+
+
+def _composite_waveform_peaks(
+    spec: _CompositeWaveformSpec,
+    buckets: int = _WAVEFORM_BUCKETS,
+    *,
+    chunk_frames: int = _WAVEFORM_CHUNK_FRAMES,
+    cancel_event: Optional[threading.Event] = None,
+) -> tuple[float, ...]:
+    """Inspect every segment frame while retaining reconnect gaps on screen."""
+    if buckets <= 0 or chunk_frames <= 0:
+        raise ValueError("buckets and chunk_frames must be positive")
+    if spec.project_samplerate <= 0 or spec.timeline_duration_s <= 0:
+        return ()
+    try:
+        import numpy as np
+        import soundfile as sf  # type: ignore
+
+        scale = 1.0 + spec.drift_ppm / 1_000_000.0
+        if scale <= 0.0:
+            return ()
+        count = max(
+            1,
+            min(
+                int(buckets),
+                int(round(spec.timeline_duration_s * spec.project_samplerate)),
+            ),
+        )
+        values = [0.0] * count
+        with ExitStack() as stack:
+            readers = [
+                stack.enter_context(sf.SoundFile(str(segment.path)))
+                for segment in spec.segments
+            ]
+            for bucket in range(count):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise _WaveformBuildCancelled
+                project_start_s = bucket / count * spec.timeline_duration_s
+                project_end_s = (bucket + 1) / count * spec.timeline_duration_s
+                peak = 0.0
+                for segment, reader in zip(spec.segments, readers):
+                    segment_start_s = (
+                        segment.project_start_frame / spec.project_samplerate
+                        + spec.offset_s
+                    )
+                    segment_end_s = (
+                        segment_start_s
+                        + segment.frame_count / segment.samplerate * scale
+                    )
+                    overlap_start = max(project_start_s, segment_start_s)
+                    overlap_end = min(project_end_s, segment_end_s)
+                    if overlap_end <= overlap_start:
+                        continue
+                    source_start = max(
+                        0,
+                        int(
+                            np.floor(
+                                (overlap_start - segment_start_s)
+                                / scale
+                                * segment.samplerate
+                            )
+                        ),
+                    )
+                    source_end = min(
+                        segment.frame_count,
+                        int(
+                            np.ceil(
+                                (overlap_end - segment_start_s)
+                                / scale
+                                * segment.samplerate
+                            )
+                        ),
+                    )
+                    if source_end <= source_start:
+                        continue
+                    reader.seek(source_start)
+                    cursor = source_start
+                    while cursor < source_end:
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise _WaveformBuildCancelled
+                        block = reader.read(
+                            min(chunk_frames, source_end - cursor),
+                            dtype="float32",
+                            always_2d=True,
+                        )
+                        if not len(block):
+                            break
+                        if segment.gaps:
+                            block = block.copy()
+                            block_end = cursor + len(block)
+                            for gap_start, gap_count, gap_channels, _reason in segment.gaps:
+                                gap_end = gap_start + gap_count
+                                if gap_end <= cursor or gap_start >= block_end:
+                                    continue
+                                lo = max(cursor, gap_start) - cursor
+                                hi = min(block_end, gap_end) - cursor
+                                channels = gap_channels or tuple(range(block.shape[1]))
+                                for channel in channels:
+                                    if 0 <= channel < block.shape[1]:
+                                        block[lo:hi, channel] = 0.0
+                        peak = max(peak, float(np.max(np.abs(block))))
+                        cursor += len(block)
+                values[bucket] = min(1.0, peak)
+        return tuple(values)
+    except _WaveformBuildCancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.debug("Could not build composite waveform: %s", exc)
+        return ()
+
+
+def _waveform_spec_for_track(track, take: TakeInfo) -> _CompositeWaveformSpec | None:
+    raw_segments = tuple(getattr(track, "segments", ()) or ())
+    if not raw_segments:
+        return None
+    project_rate = int(getattr(take, "project_samplerate", 0) or 0)
+    if project_rate <= 0:
+        project_rate = int(getattr(track, "samplerate", 0) or 0)
+    segments = tuple(
+        _WaveformSegmentSpec(
+            path=Path(segment.path),
+            project_start_frame=int(segment.project_start_frame),
+            frame_count=int(segment.frame_count),
+            samplerate=int(segment.samplerate),
+            channels=int(segment.channels),
+            gaps=tuple(segment.gaps),
+        )
+        for segment in raw_segments
+        if int(getattr(segment, "samplerate", 0) or 0) > 0
+        and int(getattr(segment, "frame_count", 0) or 0) > 0
+    )
+    if not segments or project_rate <= 0:
+        return None
+    needs_composite = (
+        len(segments) > 1
+        or any(segment.project_start_frame or segment.gaps for segment in segments)
+        or any(segment.samplerate != project_rate for segment in segments)
+        or bool(float(getattr(track, "drift_ppm", 0.0) or 0.0))
+    )
+    if not needs_composite:
+        return None
+    return _CompositeWaveformSpec(
+        segments=segments,
+        project_samplerate=project_rate,
+        offset_s=float(getattr(track, "offset_s", 0.0) or 0.0),
+        drift_ppm=float(getattr(track, "drift_ppm", 0.0) or 0.0),
+        timeline_duration_s=max(0.001, float(take.duration_s)),
+    )
 
 
 class WaveformCanvas(QWidget):
@@ -152,6 +424,13 @@ class WaveformCanvas(QWidget):
 
     def set_recording(self, recording: bool) -> None:
         self._recording = bool(recording)
+        self.update()
+
+    def set_peaks(self, peaks: tuple[float, ...]) -> None:
+        """Apply an asynchronously generated envelope to a recorded lane."""
+        if self._live:
+            return
+        self._peaks = tuple(peaks)
         self.update()
 
     def push_level(self, level: float) -> None:
@@ -389,11 +668,31 @@ class RecordingStudio(QWidget):
         self._export_outcome: tuple[Optional[LogicExportResult], str] | None = None
         self._exporting = False
         self._reveal_path: Optional[Path] = None
+        self._local_originals_path: Optional[Path] = None
         self._recording_elapsed = 0.0
         self._recording = False
         self._can_record = True
         self._phase_name = "idle"
         self._viewing_live = True
+        self._waveform_cache = _WaveformPeakCache()
+        self._waveform_executor = ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="webjam-waveform",
+        )
+        self._waveform_generation = 0
+        self._waveform_cancel = threading.Event()
+        self._waveform_futures: set[Future] = set()
+        self._waveform_futures_lock = threading.Lock()
+        self._waveform_results: queue.SimpleQueue[
+            tuple[
+                int,
+                int,
+                Path,
+                _WaveformSourceKey,
+                tuple[float, ...],
+            ]
+        ] = queue.SimpleQueue()
+        self._waveform_shutdown = False
         self._player = player or TakePlayer(sink=SoundDeviceSink())
         self._player._on_levels = self._on_levels_bg
         self._player._on_finished = self._on_finished_bg
@@ -525,6 +824,17 @@ class RecordingStudio(QWidget):
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.clicked.connect(self._reveal_current)
         actions.addWidget(self._reveal_btn)
+        self._originals_btn = QPushButton("Show My Originals")
+        self._originals_btn.setObjectName("GhostButton")
+        self._originals_btn.setAccessibleName(
+            "Show preserved Local Originals folder"
+        )
+        self._originals_btn.setToolTip(
+            "Open the folder containing this Mac's preserved, unchanged recordings."
+        )
+        self._originals_btn.setVisible(False)
+        self._originals_btn.clicked.connect(self._reveal_local_originals)
+        actions.addWidget(self._originals_btn)
         editor_layout.addLayout(actions)
 
         self._playback_controls = (
@@ -566,6 +876,31 @@ class RecordingStudio(QWidget):
             return
         self._takes_dir = normalized
         self.reload()
+
+    def set_local_originals_directory(self, path: str | Path | None) -> None:
+        """Expose preserved guest media without importing or modifying it."""
+
+        self._local_originals_path = (
+            Path(path).expanduser().resolve() if path else None
+        )
+        available = bool(
+            self._local_originals_path is not None
+            and self._local_originals_path.is_dir()
+        )
+        self._originals_btn.setVisible(available)
+        self._originals_btn.setEnabled(available)
+
+    def refresh_take(self, path: str | Path) -> None:
+        """Reload manifest truth while preserving the user's Studio context."""
+
+        target = Path(path).resolve()
+        selected = self._current.path if self._current is not None else None
+        viewing_live = self._viewing_live
+        if not viewing_live and selected is None:
+            selected = target
+        self.reload(select_path=selected)
+        if viewing_live:
+            self._show_live_session()
 
     def set_output_device(self, name: str) -> None:
         """Apply the saved Studio playback output without starting audio."""
@@ -711,7 +1046,191 @@ class RecordingStudio(QWidget):
             messages.extend(f"Warning: {item}" for item in validation.warnings)
             self._hint.setText("\n".join(messages))
 
+    def _cancel_waveform_jobs(self) -> None:
+        """Cancel current work and discard results for lanes being replaced."""
+        self._waveform_cancel.set()
+        with self._waveform_futures_lock:
+            futures = tuple(self._waveform_futures)
+            self._waveform_futures.clear()
+        for future in futures:
+            future.cancel()
+        while True:
+            try:
+                self._waveform_results.get_nowait()
+            except queue.Empty:
+                break
+
+    def _begin_waveform_batch(self) -> tuple[int, threading.Event]:
+        self._waveform_generation += 1
+        self._waveform_cancel = threading.Event()
+        return self._waveform_generation, self._waveform_cancel
+
+    def _schedule_waveform(
+        self,
+        *,
+        generation: int,
+        cancel_event: threading.Event,
+        channel_id: int,
+        path: Path,
+    ) -> None:
+        """Apply a cached envelope or build one away from the Qt thread."""
+        if self._waveform_shutdown or cancel_event.is_set():
+            return
+        source = Path(path)
+        try:
+            key = _waveform_source_key(source)
+        except OSError as exc:
+            LOGGER.debug("Could not identify waveform source %s: %s", source, exc)
+            return
+
+        cached = self._waveform_cache.get(key)
+        if cached is not None:
+            if generation == self._waveform_generation and not self._viewing_live:
+                lane = self._lanes.get(int(channel_id))
+                if lane is not None:
+                    lane.waveform.set_peaks(cached)
+            return
+
+        def build() -> tuple[float, ...]:
+            if cancel_event.is_set():
+                raise _WaveformBuildCancelled
+            existing = self._waveform_cache.get(key)
+            if existing is not None:
+                return existing
+            peaks = _waveform_peaks(source, cancel_event=cancel_event)
+            if cancel_event.is_set():
+                raise _WaveformBuildCancelled
+            self._waveform_cache.put(key, peaks)
+            return peaks
+
+        try:
+            future = self._waveform_executor.submit(build)
+        except RuntimeError:
+            # Executor shutdown raced an application/window close.
+            return
+        with self._waveform_futures_lock:
+            self._waveform_futures.add(future)
+
+        def completed(done: Future) -> None:
+            with self._waveform_futures_lock:
+                self._waveform_futures.discard(done)
+            try:
+                peaks = done.result()
+            except (CancelledError, _WaveformBuildCancelled):
+                return
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.debug("Waveform worker failed for %s: %s", source, exc)
+                return
+            if self._waveform_shutdown or cancel_event.is_set():
+                return
+            self._waveform_results.put(
+                (generation, int(channel_id), source, key, tuple(peaks))
+            )
+
+        future.add_done_callback(completed)
+
+    def _schedule_composite_waveform(
+        self,
+        *,
+        generation: int,
+        cancel_event: threading.Event,
+        channel_id: int,
+        spec: _CompositeWaveformSpec,
+    ) -> None:
+        if self._waveform_shutdown or cancel_event.is_set():
+            return
+        try:
+            key = _composite_waveform_key(spec)
+        except OSError as exc:
+            LOGGER.debug("Could not identify composite waveform: %s", exc)
+            return
+        cached = self._waveform_cache.get(key)
+        if cached is not None:
+            if generation == self._waveform_generation and not self._viewing_live:
+                lane = self._lanes.get(int(channel_id))
+                if lane is not None:
+                    lane.waveform.set_peaks(cached)
+            return
+
+        def build() -> tuple[float, ...]:
+            existing = self._waveform_cache.get(key)
+            if existing is not None:
+                return existing
+            peaks = _composite_waveform_peaks(spec, cancel_event=cancel_event)
+            if cancel_event.is_set():
+                raise _WaveformBuildCancelled
+            self._waveform_cache.put(key, peaks)
+            return peaks
+
+        try:
+            future = self._waveform_executor.submit(build)
+        except RuntimeError:
+            return
+        with self._waveform_futures_lock:
+            self._waveform_futures.add(future)
+
+        def completed(done: Future) -> None:
+            with self._waveform_futures_lock:
+                self._waveform_futures.discard(done)
+            try:
+                peaks = done.result()
+            except (CancelledError, _WaveformBuildCancelled):
+                return
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.debug("Composite waveform worker failed: %s", exc)
+                return
+            if self._waveform_shutdown or cancel_event.is_set():
+                return
+            self._waveform_results.put(
+                (generation, int(channel_id), spec, key, tuple(peaks))
+            )
+
+        future.add_done_callback(completed)
+
+    def _drain_waveform_results(self) -> None:
+        """Apply current worker results; stale take/source results are ignored."""
+        while True:
+            try:
+                generation, channel_id, source, key, peaks = (
+                    self._waveform_results.get_nowait()
+                )
+            except queue.Empty:
+                return
+            if generation != self._waveform_generation or self._viewing_live:
+                continue
+            lane = self._lanes.get(channel_id)
+            if lane is None:
+                continue
+            try:
+                current_key = (
+                    _composite_waveform_key(source)
+                    if isinstance(source, _CompositeWaveformSpec)
+                    else _waveform_source_key(source)
+                )
+            except OSError:
+                continue
+            if current_key != key:
+                # The file changed while it was being scanned.  Never paint
+                # stale peaks; queue one build for the new source identity.
+                if isinstance(source, _CompositeWaveformSpec):
+                    self._schedule_composite_waveform(
+                        generation=generation,
+                        cancel_event=self._waveform_cancel,
+                        channel_id=channel_id,
+                        spec=source,
+                    )
+                else:
+                    self._schedule_waveform(
+                        generation=generation,
+                        cancel_event=self._waveform_cancel,
+                        channel_id=channel_id,
+                        path=source,
+                    )
+                continue
+            lane.waveform.set_peaks(peaks)
+
     def _clear_lanes(self) -> None:
+        self._cancel_waveform_jobs()
         self._lanes.clear()
         while self._track_layout.count() > 1:
             item = self._track_layout.takeAt(0)
@@ -794,16 +1313,33 @@ class RecordingStudio(QWidget):
         self._current = take
         self._player.load(take)
         self._clear_lanes()
+        waveform_generation, waveform_cancel = self._begin_waveform_batch()
         self._set_playback_controls_visible(True)
         self._live_btn.setVisible(True)
         self._new_take_btn.setVisible(True)
         self._title.setText(take.display_name)
-        self._subtitle.setText(
-            f"{take.track_count} synchronized tracks · {_fmt_time(take.duration_s)}"
+        blocked_statuses = {"missing", "damaged", "transfer_failed", "transferring"}
+        missing_count = sum(
+            getattr(track, "media_status", "available") in blocked_statuses
+            for track in take.tracks
         )
-        self._play_btn.setEnabled(bool(self._player.tracks))
-        self._stop_btn.setEnabled(bool(self._player.tracks))
-        self._scrub.setEnabled(bool(self._player.tracks))
+        if missing_count:
+            self._subtitle.setText(
+                f"{take.track_count} tracks · {missing_count} missing · "
+                f"{_fmt_time(take.duration_s)}"
+            )
+        else:
+            self._subtitle.setText(
+                f"{take.track_count} synchronized tracks · {_fmt_time(take.duration_s)}"
+            )
+        playable = any(
+            getattr(track, "media_status", "available") not in blocked_statuses
+            and float(getattr(track, "duration_s", 0.0) or 0.0) > 0.0
+            for track in take.tracks
+        )
+        self._play_btn.setEnabled(playable)
+        self._stop_btn.setEnabled(playable)
+        self._scrub.setEnabled(playable)
         verified = take.validation_status == "complete" and not take.manifest_errors
         self._export_btn.setEnabled(
             bool(self._player.tracks) and verified and not self._exporting
@@ -817,16 +1353,58 @@ class RecordingStudio(QWidget):
         for track in self._player.tracks:
             source_info = info_by_path.get(Path(track.path))
             duration = float(getattr(source_info, "duration_s", 0.0) or 0.0)
-            detail = "BAND TRACK" if track.source == "jamulus_server" else "LOCAL TRACK"
+            media_status = str(
+                getattr(source_info, "media_status", "available") or "available"
+            )
+            if media_status in blocked_statuses:
+                label = {
+                    "missing": "MISSING MEDIA",
+                    "damaged": "DAMAGED MEDIA",
+                    "transfer_failed": "TRANSFER FAILED",
+                    "transferring": "TRANSFER IN PROGRESS",
+                }.get(media_status, "MEDIA NEEDS ATTENTION")
+                detail = f"{label} · restore or finish this track to continue"
+            elif media_status == "partial":
+                detail = "PARTIAL TRACK · listen and review before export"
+            elif media_status == "recovered":
+                detail = "RECOVERED TRACK · listen and review before export"
+            else:
+                detail = (
+                    "BAND TRACK" if track.source == "jamulus_server" else "LOCAL TRACK"
+                )
             lane = TrackLane(track.channel_id, track.name, detail)
+            composite_spec = (
+                _waveform_spec_for_track(source_info, take)
+                if source_info is not None
+                else None
+            )
             lane.waveform.set_recorded_clip(
-                peaks=_waveform_peaks(track.path),
-                offset=track.offset_s,
-                duration=duration,
+                peaks=(),
+                offset=0.0 if composite_spec is not None else track.offset_s,
+                duration=(
+                    max(0.001, float(take.duration_s))
+                    if composite_spec is not None
+                    else duration
+                ),
                 timeline_duration=max(1.0, take.duration_s),
                 source=track.source,
             )
             self._add_lane(lane, live=False)
+            if media_status not in blocked_statuses:
+                if composite_spec is not None:
+                    self._schedule_composite_waveform(
+                        generation=waveform_generation,
+                        cancel_event=waveform_cancel,
+                        channel_id=track.channel_id,
+                        spec=composite_spec,
+                    )
+                else:
+                    self._schedule_waveform(
+                        generation=waveform_generation,
+                        cancel_event=waveform_cancel,
+                        channel_id=track.channel_id,
+                        path=track.path,
+                    )
         messages = list(take.manifest_errors)
         messages.extend(f"Warning: {item}" for item in take.manifest_warnings)
         if messages:
@@ -911,6 +1489,11 @@ class RecordingStudio(QWidget):
         if self._reveal_path is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._reveal_path)))
 
+    def _reveal_local_originals(self) -> None:
+        path = self._local_originals_path
+        if path is not None and path.is_dir():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
     def _toggle_play(self) -> None:
         if self._current is None:
             return
@@ -961,6 +1544,7 @@ class RecordingStudio(QWidget):
             lane = self._lanes.get(int(channel_id))
             if lane is not None:
                 lane.set_level(level)
+        self._drain_waveform_results()
         if self._finished_flag:
             self._finished_flag = False
             self._player.stop()
@@ -971,8 +1555,23 @@ class RecordingStudio(QWidget):
             self._finish_export(*outcome)
 
     def shutdown(self) -> None:
+        if self._waveform_shutdown:
+            return
+        self._waveform_shutdown = True
+        self._cancel_waveform_jobs()
+        self._waveform_executor.shutdown(wait=False, cancel_futures=True)
         self._timer.stop()
         self._player.stop()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        """Release playback when the integrated Studio workspace is left.
+
+        Studio lives in a stacked workspace rather than a separate closeable
+        window.  A stack switch emits a hide event, so this is the lifecycle
+        boundary that must stop the output stream and close source readers.
+        """
+        self._stop_playback()
+        super().hideEvent(event)
 
     @property
     def export_in_progress(self) -> bool:

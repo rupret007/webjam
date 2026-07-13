@@ -4,14 +4,15 @@ WebJam's normal path is four verbs:
 
 > Host → Share → Join → Play
 
-There is no server setup for the band to perform and no Ready Check to pass.
-The private macOS v0.9.0 test build starts the music service in the background.
+There is no server setup for the band to perform. Band Check guides each
+musician through input, headphones, and a short recording before playing.
+The private macOS v0.10.0 candidate starts the music service in the background.
 
 ## Before anyone opens WebJam
 
-1. Put both Macs on the same home or studio network. For the simplest first
-   test, use the same Wi-Fi. This build is not an internet/VPN invitation
-   service.
+1. Put both Macs on the same private IPv4 home or studio network. For the
+   simplest first test, use the same Wi-Fi and turn VPNs off. Live music and
+   private-recording delivery are not Internet, VPN, NAT, or IPv6 services.
 2. Connect each musician's interface and wired headphones. In macOS System
    Settings → Sound, choose that interface for both input and output.
 3. Turn speakers off. If you use Webex or another conversation app, keep its
@@ -32,8 +33,10 @@ The private macOS v0.9.0 test build starts the music service in the background.
    other musician. Do not edit it or extract an address from it.
 
 The invitation appears only after WebJam has confirmed that the hosted service
-is alive. It contains connection information and the session name, not a
-password or private recording path.
+is alive. A current invite contains the Jamulus destination plus a random
+credential that enrolls this bandmate in the same-LAN private recording plane.
+Treat the whole link as private: send it only to the intended bandmate and do
+not paste it into screenshots or support notes.
 
 ## Join
 
@@ -61,21 +64,30 @@ each Mac and confirm what the other person actually hears.
 Faders, **Mute Monitor**, and Solo change the current listener's monitor mix.
 They do not mute outgoing audio or rewrite the other musician's mix.
 
+WebJam's input meter and optional local-original recorder use a separate Core
+Audio/PortAudio stream from Jamulus. A passing meter is useful, but only the
+other musician's ears prove the Jamulus route. Use wired headphones and confirm
+both directions out loud.
+
 ## Record a multitrack take
 
 The host can press **Record** in the bottom control bar, then open **More →
 Multitrack Studio** to watch lanes or review the take.
 
 1. Confirm there is a lane for each connected musician.
-2. Click **Record**, play, then stop. Wait while WebJam validates and saves the
+2. On every Mac that should keep interface originals, open **Recording Setup**,
+   enable **Keep interface inputs 1 and 2 as isolated local originals**, and
+   choose a shareable two-channel 48-kHz input. This is explicit opt-in.
+3. Click **Record**, play, then stop. Wait while WebJam validates and saves the
    take.
-3. Select the take in the Studio library to view its waveforms, choose the
+4. Select the take in the Studio library to view its waveforms, choose the
    wired playback output, and test gain, pan, mute, and solo.
-4. Press **Export for Logic**, then **Show Logic Export**. Drag every numbered
+5. Press **Export for Logic**, then **Show Logic Export**. Drag every numbered
    stem WAV into separate Logic tracks together at `0:00`. The stems are
-   already padded or trimmed to the same timeline and length. Use the rough
-   mix only as a reference; the optional `.rpp` is a Reaper project, not a
-   Logic file. See [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+   rendered onto the same project timeline and length. Keep `WebJam Server
+   Reference.wav`, `WebJam Studio Reference.wav`, the reports, and checksums
+   as evidence, not as extra performance stems. See
+   [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
 Do not quit or end the session while a take is still being checked. If a
 capture problem occurs, WebJam preserves recoverable audio rather than
@@ -91,9 +103,11 @@ preferences such as your display name and optional conversation link.
 ## Reconnect
 
 A short network interruption can reconnect automatically. During the attempt,
-WebJam says it is reconnecting rather than showing stale readiness. If the
-attempt times out, restore the same-network connection and use the single
-**Try Again** action.
+WebJam says it is reconnecting rather than showing stale readiness. An opted-in
+local original keeps recording even while the peer control plane is offline;
+after reconnect, WebJam resumes verified delivery without deleting that local
+file. If the attempt times out, restore the same-network connection and use the
+single **Try Again** action.
 
 ## Finish
 

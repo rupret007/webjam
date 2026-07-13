@@ -89,7 +89,7 @@ def _find_server() -> tuple[Optional[str], str]:
 
 
 class FirstRunSetupDialog(QDialog):
-    """Two-step setup containing only decisions required before Ready Check."""
+    """Two-step setup containing only decisions required before Band Check."""
 
     stepChanged = Signal(int)
 

@@ -3,6 +3,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -111,6 +112,27 @@ class JamulusState(str, Enum):
 
 
 PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
+
+
+@dataclass(frozen=True)
+class HostedServerCertification:
+    """Truthful result of a temporary production server lifecycle proof.
+
+    ``warning`` is reserved for an authenticated server that WebJam did not
+    start.  Such a server is useful evidence, but Band Check cannot truthfully
+    claim its binary version or clean-stop behavior.
+    """
+
+    ok: bool
+    warning: bool
+    detail: str
+    technical_details: tuple[str, ...] = ()
+    started_owned_server: bool = False
+    adopted_external_server: bool = False
+    recorder_authenticated: bool = False
+    secret_private: bool = False
+    owned_stop_confirmed: bool | None = None
+    ports_released: bool | None = None
 
 
 class BridgeService:
@@ -856,6 +878,189 @@ class BridgeService:
                 sock.close()
             except OSError:
                 pass
+
+    def _hosted_secret_is_private(self) -> tuple[bool, str]:
+        """Harden and verify the configured recorder credential as mode 0600."""
+
+        secret_path = str(
+            getattr(self.settings, "server_rpc_secret_file", "") or ""
+        ).strip()
+        if not secret_path:
+            return False, "the recorder secret is not configured"
+        path = Path(secret_path).expanduser()
+        try:
+            if not path.is_file() or not path.stat().st_size:
+                return False, "the recorder secret is missing or empty"
+            path.chmod(0o600)
+            mode = path.stat().st_mode & 0o777
+        except OSError as exc:
+            return False, f"the recorder secret could not be secured ({exc})"
+        if mode != 0o600:
+            return False, f"the recorder secret mode is {mode:04o}, not 0600"
+        return True, "recorder secret mode 0600"
+
+    def _wait_for_hosted_ports_release(self, timeout_s: float = 2.0) -> bool:
+        """Confirm that both production ports can be rebound after owned stop."""
+
+        rpc_port = int(self.settings.server_rpc_port)
+        udp_port = int(self.settings.jamulus_port)
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        while True:
+            if self._port_free(rpc_port) and self._port_free(udp_port, udp=True):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def certify_hosted_server_lifecycle(self) -> HostedServerCertification:
+        """Exercise the real host-server path without harming external state.
+
+        The normal production launcher remains the authority for the exact
+        binary, port preflight, secret creation, process launch, and recorder
+        authentication.  Band Check adds the missing proof: a server it starts
+        is stopped again and both intended ports are confirmed released.
+
+        An already-running listener is adopted only through the normal
+        authenticated recorder probe.  It is never signalled.  Because WebJam
+        cannot prove that process's binary version or stop behavior, the result
+        is explicitly a warning rather than a full pass.
+        """
+
+        with self._hosted_lifecycle_lock:
+            was_owned = self.hosted_server_owned()
+            was_adopted = self.hosted_server_adopted()
+            started_by_check = False
+            adopted_by_check = False
+            recorder_authenticated = False
+            secret_private = False
+            owned_stop_confirmed: bool | None = None
+            ports_released: bool | None = None
+            lifecycle_ok = False
+            lifecycle_detail = ""
+            technical: list[str] = [
+                f"required_version={self.HOSTED_SERVER_VERSION}",
+                f"udp_port={int(self.settings.jamulus_port)}",
+                f"rpc_port={int(self.settings.server_rpc_port)}",
+            ]
+
+            try:
+                ok, detail = self.ensure_hosted_server()
+                started_by_check = not was_owned and self.hosted_server_owned()
+                adopted_by_check = (
+                    not was_adopted and self.hosted_server_adopted()
+                )
+                technical.append(f"production_launcher={detail}")
+                if not ok:
+                    lifecycle_detail = detail
+                else:
+                    recorder_authenticated, rpc_detail = (
+                        self._probe_hosted_server_rpc()
+                    )
+                    technical.append(
+                        f"recorder_authenticated={recorder_authenticated}"
+                    )
+                    if not recorder_authenticated:
+                        lifecycle_detail = (
+                            "The band server started, but its recorder could not "
+                            f"be authenticated ({rpc_detail})."
+                        )
+                    else:
+                        secret_private, secret_detail = (
+                            self._hosted_secret_is_private()
+                        )
+                        technical.append(f"recorder_secret={secret_detail}")
+                        if not secret_private:
+                            lifecycle_detail = (
+                                "The recorder authenticated, but its local secret "
+                                f"is not private ({secret_detail})."
+                            )
+                        elif self._port_free(
+                            int(self.settings.jamulus_port), udp=True
+                        ):
+                            lifecycle_detail = (
+                                "The recorder authenticated, but the intended "
+                                f"Jamulus audio port UDP {self.settings.jamulus_port} "
+                                "is not listening."
+                            )
+                        else:
+                            lifecycle_ok = True
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("Hosted server certification failed")
+                lifecycle_detail = f"The band server check failed: {exc}"
+            finally:
+                # Re-evaluate ownership in case ensure_hosted_server raised
+                # after spawning.  A process handle here is WebJam-owned; an
+                # arbitrary external listener never becomes this attribute.
+                newly_owned = not was_owned and self.hosted_server_owned()
+                if newly_owned:
+                    started_by_check = True
+                    owned_stop_confirmed = self.stop_hosted_server()
+                    if owned_stop_confirmed:
+                        ports_released = self._wait_for_hosted_ports_release()
+                    else:
+                        ports_released = False
+                # Detach a server adopted only for this proof.  stop_hosted_server
+                # sends no signal when there is no owned Popen handle.
+                if adopted_by_check and not was_adopted:
+                    self.stop_hosted_server()
+
+            if started_by_check:
+                technical.extend(
+                    (
+                        "server_source=production JamulusServer.app",
+                        f"version_verified={lifecycle_ok}",
+                        f"owned_stop_confirmed={owned_stop_confirmed}",
+                        f"ports_released={ports_released}",
+                    )
+                )
+                if owned_stop_confirmed is not True:
+                    lifecycle_ok = False
+                    lifecycle_detail = (
+                        "Band Check started the server but could not confirm that "
+                        "its owned process stopped. Close WebJam before retrying."
+                    )
+                elif ports_released is not True:
+                    lifecycle_ok = False
+                    lifecycle_detail = (
+                        "The server stopped, but its UDP/RPC ports were not "
+                        "released. Close WebJam before retrying."
+                    )
+                elif lifecycle_ok:
+                    lifecycle_detail = (
+                        "WebJam started JamulusServer 3.12.2 on the intended "
+                        "audio and control ports, authenticated its recorder, "
+                        "then stopped it cleanly and confirmed both ports were "
+                        "released."
+                    )
+
+            external = was_adopted or adopted_by_check
+            existing_owned = was_owned and not external
+            if lifecycle_ok and external:
+                lifecycle_detail = (
+                    "An externally managed Jamulus server authenticated on the "
+                    "expected recorder and audio ports. Band Check did not "
+                    "version-check or stop that external server."
+                )
+            elif lifecycle_ok and existing_owned:
+                lifecycle_detail = (
+                    "The existing WebJam-owned server authenticated on the "
+                    "expected recorder and audio ports. Band Check did not stop "
+                    "a server it did not start."
+                )
+
+            warning = bool(lifecycle_ok and (external or existing_owned))
+            return HostedServerCertification(
+                ok=lifecycle_ok,
+                warning=warning,
+                detail=lifecycle_detail or "The hosted band server could not be verified.",
+                technical_details=tuple(technical),
+                started_owned_server=started_by_check,
+                adopted_external_server=external,
+                recorder_authenticated=recorder_authenticated,
+                secret_private=secret_private,
+                owned_stop_confirmed=owned_stop_confirmed,
+                ports_released=ports_released,
+            )
 
     def ensure_hosted_server(self) -> tuple[bool, str]:
         """Start (or adopt) the band server on this Mac. Returns (ok, detail).
