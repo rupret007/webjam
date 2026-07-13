@@ -272,6 +272,30 @@ def peer(tmp_path: Path):
         server.stop()
 
 
+def test_peer_server_bind_never_uses_reverse_dns(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fail_reverse_dns(_host: str) -> str:
+        pytest.fail("Session peer binding must not perform reverse DNS.")
+
+    monkeypatch.setattr("http.server.socket.getfqdn", fail_reverse_dns)
+    credentials = SessionCredentials.create()
+    host_root = tmp_path / "host"
+    server = SessionPeerServer(
+        "127.0.0.1",
+        0,
+        registry=EnrollmentRegistry(host_root, credentials),
+        control=SessionControlState(host_root, credentials.session_id),
+        transfers=TransferStore(host_root, credentials.session_id),
+    )
+    try:
+        assert server.address[0] == "127.0.0.1"
+        assert server.address[1] > 0
+    finally:
+        server.stop()
+
+
 def test_peer_protocol_enrolls_observes_and_transfers_without_changing_original(
     tmp_path: Path,
     peer,

@@ -39,6 +39,7 @@ from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from typing import Any, Mapping
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -995,6 +996,13 @@ class TransferStore:
 class _ReusableThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def server_bind(self) -> None:
+        """Bind without HTTPServer's blocking reverse-DNS lookup."""
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
 
 class SessionPeerServer:
