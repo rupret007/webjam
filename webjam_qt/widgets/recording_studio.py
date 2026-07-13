@@ -54,6 +54,21 @@ _WAVEFORM_CACHE_ENTRIES = 64
 _WaveformSourceKey = tuple[object, ...]
 
 
+def _take_review_message(*, has_errors: bool, has_warnings: bool) -> str:
+    """Return fixed musician-facing copy; findings stay in the take manifest."""
+    if has_errors:
+        return (
+            "This take needs review. Listen to each track before export, then "
+            "record a short test take."
+        )
+    if has_warnings:
+        return (
+            "Take saved with something to review. Listen to each track before "
+            "export."
+        )
+    return "Take verified and ready to mix or export."
+
+
 class _WaveformBuildCancelled(RuntimeError):
     """Internal cooperative cancellation for a no-longer-visible take."""
 
@@ -1042,9 +1057,18 @@ class RecordingStudio(QWidget):
     ) -> None:
         self.reload(select_path=path)
         if validation is not None:
-            messages = list(validation.errors)
-            messages.extend(f"Warning: {item}" for item in validation.warnings)
-            self._hint.setText("\n".join(messages))
+            if path is None:
+                self._hint.setText(
+                    "No completed take was found. Run Band Check, then record "
+                    "a short test take."
+                )
+            else:
+                self._hint.setText(
+                    _take_review_message(
+                        has_errors=bool(validation.errors),
+                        has_warnings=bool(validation.warnings),
+                    )
+                )
 
     def _cancel_waveform_jobs(self) -> None:
         """Cancel current work and discard results for lanes being replaced."""
@@ -1405,17 +1429,20 @@ class RecordingStudio(QWidget):
                         channel_id=track.channel_id,
                         path=track.path,
                     )
-        messages = list(take.manifest_errors)
-        messages.extend(f"Warning: {item}" for item in take.manifest_warnings)
-        if messages:
-            self._hint.setText("\n".join(messages))
-        elif verified:
-            self._hint.setText("Take verified and ready to mix or export.")
-        else:
+        if take.manifest_errors or take.manifest_warnings:
+            self._hint.setText(
+                _take_review_message(
+                    has_errors=bool(take.manifest_errors),
+                    has_warnings=bool(take.manifest_warnings),
+                )
+            )
+        elif not verified:
             self._hint.setText(
                 "Unverified take. Playback is available, but Logic export stays "
                 "locked until WebJam verifies the recording."
             )
+        else:
+            self._hint.setText("Take verified and ready to mix or export.")
 
     def _export_for_logic(self) -> None:
         take = self._current
@@ -1504,8 +1531,11 @@ class RecordingStudio(QWidget):
         try:
             self._player.play()
             self._play_btn.setText("⏸ Pause")
-        except PlaybackError as exc:
-            self._hint.setText(str(exc))
+        except PlaybackError:
+            self._hint.setText(
+                "Studio couldn't open the selected playback output. Choose "
+                "another output in Recording Setup, then try again."
+            )
 
     def _stop_playback(self) -> None:
         self._player.stop()

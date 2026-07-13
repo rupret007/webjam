@@ -1,8 +1,8 @@
 # Your first WebJam
 
-WebJam's normal path is four verbs:
+WebJam's normal path is three moves:
 
-> Host → Share → Join → Play
+> Host or Join → Band Check → Play
 
 There is no server setup for the band to perform. Band Check guides each
 musician through input, headphones, and a short recording before playing.
@@ -24,27 +24,36 @@ The private macOS v0.10.0 candidate starts the music service in the background.
 ## Host
 
 1. Open WebJam and click **Host a Jam**.
-2. If WebJam needs microphone access, follow its permission explanation. If
+2. Complete Band Check if WebJam asks, then choose **Start Session**.
+3. If WebJam needs microphone access, follow its permission explanation. If
    access was denied earlier, use **Open System Settings**, enable WebJam under
    Privacy & Security → Microphone, return, and choose **Try Again**.
-3. Wait for **Ready to share**. WebJam is starting its bundled music service
+4. Wait for **Ready to share**. WebJam is starting its bundled music service
    while the HUD says **Starting your jam**.
-4. Click **Copy Invite** and send the entire `webjam://join?...` link to the
+5. Click **Copy Invite** and send the entire `webjam://join?...` link to the
    other musician. Do not edit it or extract an address from it.
 
 The invitation appears only after WebJam has confirmed that the hosted service
-is alive. A current invite contains the Jamulus destination plus a random
+is alive. A v2 invite normally contains the Jamulus destination plus a random
 credential that enrolls this bandmate in the same-LAN private recording plane.
-Treat the whole link as private: send it only to the intended bandmate and do
-not paste it into screenshots or support notes.
+It is reusable during this host-peer session, not a one-use token; anyone
+holding it on the LAN can enroll. Treat the whole link as private: send it only
+to the intended bandmate and do not paste it into screenshots or support notes.
+If WebJam warns **Automatic
+Local Originals are off**, its v1 fallback still joins the music session and
+receives a host-side server track, but WebJam provides no local-original
+capture or delivery path on that guest Mac.
 
 ## Join
 
 The bandmate can either:
 
-- open the invitation link, which launches WebJam and joins the jam; or
+- open the invitation link, which launches WebJam and accepts the connection
+  details before the readiness/start step; or
 - open WebJam, click **Join a Jam**, paste the complete link into the one field,
   and click **Join Jam**.
+
+Complete Band Check if WebJam asks, then choose **Start Session**.
 
 If joining takes more than 30 seconds, WebJam stops the attempt and offers one
 **Try Again** button. Confirm both Macs are still on the same network, then try
@@ -75,9 +84,11 @@ The host can press **Record** in the bottom control bar, then open **More →
 Multitrack Studio** to watch lanes or review the take.
 
 1. Confirm there is a lane for each connected musician.
-2. On every Mac that should keep interface originals, open **Recording Setup**,
+2. On the host and each v2-connected guest that should keep interface
+   originals, open **Recording Setup**,
    enable **Keep interface inputs 1 and 2 as isolated local originals**, and
    choose a shareable two-channel 48-kHz input. This is explicit opt-in.
+   Automatic guest-original delivery also requires the active v2 invite.
 3. Click **Record**, play, then stop. Wait while WebJam validates and saves the
    take.
 4. Select the take in the Studio library to view its waveforms, choose the
@@ -97,25 +108,29 @@ silently deleting it.
 
 Everything beyond the live jam is under **More**: notes, Multitrack
 Studio, an optional video/conversation link, Talk Break when applicable,
-Settings, and Troubleshooting. Settings intentionally contains only ordinary
+Settings, and Band Check. Settings intentionally contains only ordinary
 preferences such as your display name and optional conversation link.
 
 ## Reconnect
 
 A short network interruption can reconnect automatically. During the attempt,
-WebJam says it is reconnecting rather than showing stale readiness. An opted-in
-local original keeps recording even while the peer control plane is offline;
-after reconnect, WebJam resumes verified delivery without deleting that local
-file. If the attempt times out, restore the same-network connection and use the
-single **Try Again** action.
+WebJam says it is reconnecting rather than showing stale readiness. With an
+active v2 invite, an opted-in local original keeps recording even while the
+peer control plane is offline; after reconnect, WebJam resumes verified
+delivery without deleting that local file. If the attempt times out, restore
+the same-network connection and use the single **Try Again** action.
 
 ## Finish
 
-The host clicks **End Session**; the bandmate clicks **Leave Jam**. If a take is
-active, WebJam stops and saves it before stopping the local music client and
-the server it owns. Ending the host session ends the jam for everyone; leaving
-disconnects only that Mac. **Ending…** or **Leaving…** remains visible until
-cleanup is actually finished. Quit both copies of WebJam when finished.
+The host clicks **End Session**; the bandmate clicks **Leave Jam**. If the host
+take is recording or validating, WebJam blocks End Session: press **Stop Rec**
+if needed, wait for **Take saved**, then end the jam. Ending the host session
+ends the jam for everyone. Leaving disconnects only that Mac after finalizing
+any active opted-in guest original, persisting its transfer queue, and trying
+one final upload. **Ending…** or **Leaving…** remains visible until
+cleanup is actually finished. If guest originals are enabled, wait until
+Studio reports them verified and arrived before ending; otherwise preserve
+them on the guest for recovery. Quit both copies of WebJam when finished.
 
 On the next launch, the same two choices—**Host a Jam** and **Join a Jam**—are
 shown again.

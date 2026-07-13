@@ -1,9 +1,9 @@
 # Recording and Logic Pro workflow
 
 WebJam records a rehearsal as a **take** on one shared project timeline.
-JamulusServer supplies a post-network track for each connected musician. Any
-Mac that explicitly opts in can also keep its interface inputs 1 and 2 as local
-isolated originals.
+JamulusServer supplies a post-network track for each connected musician. The
+host, and a guest connected through an active v2 private invite, can explicitly
+opt in to keeping interface inputs 1 and 2 as local isolated originals.
 
 ## Know the sources
 
@@ -26,8 +26,8 @@ prove the actual interface route.
 
 ## Choose local originals
 
-On each Mac that should retain interface originals, open **More → Multitrack
-Studio → Recording Setup** and:
+On the host and each active-v2 guest that should retain interface originals,
+open **More → Multitrack Studio → Recording Setup** and:
 
 1. Choose the wired output Studio should use for review.
 2. Enable **Keep interface inputs 1 and 2 as isolated local originals**.
@@ -40,9 +40,15 @@ silent; label that expectation instead of calling it another musician.
 
 Guest originals use WebJam's authenticated same-LAN transfer plane after a v2
 invite. It is plain HTTP on private RFC1918 IPv4, not TLS or an Internet/VPN/
-IPv6 service. The guest's original is never moved or deleted. Interrupted
-delivery resumes from the verified byte offset, and the host publishes an
-attached copy only after size, SHA-256, and PCM facts agree.
+IPv6 service, and it has no upload quota or rate limiting. Use it only with a
+trusted bandmate on a trusted LAN. The complete link is a reusable
+session-scoped bearer credential, not a one-use token; anyone holding it on
+that LAN can enroll until the host peer restarts. The guest's original is never
+moved or deleted. Interrupted delivery resumes from the verified byte offset,
+and the host publishes an attached copy only after size, SHA-256, and PCM facts agree.
+If the host warns **Automatic Local Originals are off**, the v1 fallback still
+joins/plays and receives a host-side server track, but has no WebJam-orchestrated
+guest local-original capture or delivery.
 
 ## Record and verify a take
 
@@ -52,6 +58,11 @@ attached copy only after size, SHA-256, and PCM facts agree.
 4. Keep both apps open while server files finalize and any guest originals
    transfer.
 5. Open the take in Studio and read its status before exporting.
+
+Before the host ends, press **Stop Rec** and wait for **Take saved**; End Session
+is blocked while a take is recording or validating. **Leave Jam** finalizes any
+active opted-in guest original, persists its resumable queue, and attempts one
+final upload. An unavailable host leaves that media and queue on the guest Mac.
 
 The schema-v2 `webjam-take.json` records stable take/participant/track/segment
 IDs, source type and quality, project placement, media rate/channels/format,

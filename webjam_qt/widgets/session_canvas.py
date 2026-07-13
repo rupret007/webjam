@@ -235,10 +235,11 @@ class SessionCanvas(QFrame):
             try:
                 from core.file_io import atomic_write_text
                 atomic_write_text(path, text)
-            except OSError as exc:
+            except OSError:
                 QMessageBox.warning(
                     self, "Export Failed",
-                    f"Could not write notes to:\n{path}\n\n{exc}",
+                    "WebJam couldn't export the notes. Choose another folder "
+                    "and try again.",
                 )
 
     def export_brief(self) -> None:
@@ -260,11 +261,12 @@ class SessionCanvas(QFrame):
                 from core.file_io import atomic_write_text
 
                 atomic_write_text(path, text)
-            except OSError as exc:
+            except OSError:
                 QMessageBox.warning(
                     self,
                     "Export Failed",
-                    f"Could not write brief to:\n{path}\n\n{exc}",
+                    "WebJam couldn't export the brief. Choose another folder "
+                    "and try again.",
                 )
 
     # ------------------------------------------------------------------

@@ -1,8 +1,10 @@
 """Simple, truthful Band Check with an old-name compatibility alias."""
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import threading
@@ -46,15 +48,32 @@ from core.band_check_audio import (
     StudioCheckEvidence,
     validate_studio_scratch,
 )
+from core.redaction import redact_text
+from webjam_qt.platform_permissions import microphone_permission_status
 
 
 LOGGER = logging.getLogger("webjam.qt.band_check")
+
+_ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![:\\/\w])/(?:[^/\s]+/)*[^,;:\s]+|"
+    r"(?i:(?<![\w])(?:[a-z]:\\|\\\\)[^\r\n,;]+)"
+)
+
+
+def _safe_report_text(value: object) -> str:
+    """Keep Band Check useful without turning its report into a log viewer."""
+
+    clean = redact_text(str(value or ""))
+    return _ABSOLUTE_PATH_RE.sub("[private path]", clean)[:800]
 
 
 class BandCheckDialog(QDialog):
     """Guided check whose audio actions always require an explicit click."""
 
     settings_requested = Signal()
+    recording_settings_requested = Signal()
+    system_input_requested = Signal()
+    microphone_settings_requested = Signal()
     practice_requested = Signal()
     support_requested = Signal()
     session_start_requested = Signal()
@@ -70,6 +89,7 @@ class BandCheckDialog(QDialog):
         observations_provider: Callable[[], BandCheckObservations] | None = None,
         host_server_service: object | None = None,
         start_session_when_ready: bool = False,
+        settings_generation_provider: Callable[[], int] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("BandCheckDialog")
@@ -82,7 +102,9 @@ class BandCheckDialog(QDialog):
         self._observations_provider = observations_provider
         self._host_server_service = host_server_service
         self._start_session_when_ready = bool(start_session_when_ready)
+        self._settings_generation_provider = settings_generation_provider
         self._scan_id = 0
+        self._scan_failed = False
         self._items: list[object] = []  # old Ready Check test/extension surface
         self._session: BandCheckSession | None = None
         self._input_probe: InputActivityProbe | None = None
@@ -95,6 +117,7 @@ class BandCheckDialog(QDialog):
         self._scratch_root: Path | None = None
         self._action_step: BandCheckStepKey | None = None
         self._verification_save_started = False
+        self._microphone_permission_explained = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 16)
@@ -230,6 +253,7 @@ class BandCheckDialog(QDialog):
         self._clear_rows()
         self._items = []
         self._session = None
+        self._scan_failed = False
         self._verification_save_started = False
 
         def worker() -> None:
@@ -319,14 +343,17 @@ class BandCheckDialog(QDialog):
             BandCheckStatus.NOT_APPLICABLE: "OPTIONAL",
         }
         mark_text = words[step.status]
-        row.setAccessibleName(f"{mark_text}: {step.title}. {step.detail}")
+        safe_detail = _safe_report_text(step.detail)
+        row.setAccessibleName(f"{mark_text}: {step.title}. {safe_detail}")
         mark = QLabel(mark_text)
         mark.setObjectName("ReadyCheckMark")
         mark.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         title = QLabel(step.title)
         title.setObjectName("ReadyCheckName")
-        detail = QLabel(step.detail)
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        detail = QLabel(safe_detail)
         detail.setObjectName("ReadyCheckDetail")
+        detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)
         text = QVBoxLayout()
         text.setSpacing(2)
@@ -342,8 +369,12 @@ class BandCheckDialog(QDialog):
                 QSizePolicy.Policy.Expanding,
                 QSizePolicy.Policy.Fixed,
             )
-            technical = QLabel("\n".join(str(value) for value in cleaned))
+            technical = QLabel(
+                "Private technical values are hidden here. Choose Save Support "
+                "Bundle if support asks for diagnostics."
+            )
             technical.setObjectName("TechnicalDetailsText")
+            technical.setTextFormat(Qt.TextFormat.PlainText)
             technical.setWordWrap(True)
             technical.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
@@ -418,12 +449,50 @@ class BandCheckDialog(QDialog):
     def _run_primary_action(self) -> None:
         session = self._session
         if session is None:
+            if self._scan_failed:
+                self.run_checks()
             return
         key = self._action_step
+        if key is not None:
+            step = session.step(key)
+            if step.next_action == "Recording Setup":
+                self.recording_settings_requested.emit()
+                return
+            if step.next_action == "Use System Input":
+                self.system_input_requested.emit()
+                return
+            if step.next_action == "Open Settings":
+                self.settings_requested.emit()
+                return
+            if step.next_action == "Close Band Check":
+                self.close()
+                return
+        if (
+            self._mode is BandCheckMode.LIVE_OBSERVE
+            and key in {BandCheckStepKey.MUSIC_ENGINE, BandCheckStepKey.BAND_SERVER}
+        ):
+            # Main-session controls own End/Start. Closing this observational
+            # report is the only truthful action the dialog can take itself.
+            self.close()
+            return
         if key in {BandCheckStepKey.MUSIC_ENGINE, BandCheckStepKey.BAND_SERVER}:
             self.settings_requested.emit()
         elif key is BandCheckStepKey.AUDIO_INPUT:
-            self._start_input_check()
+            step = session.step(BandCheckStepKey.AUDIO_INPUT)
+            if step.next_action == "Open System Settings":
+                self.microphone_settings_requested.emit()
+                session.update_step(
+                    BandCheckStepKey.AUDIO_INPUT,
+                    status=BandCheckStatus.ACTION_NEEDED,
+                    detail=(
+                        "Allow WebJam in System Settings → Privacy & Security → "
+                        "Microphone. Then return here and choose Try Again."
+                    ),
+                    next_action="Try Again",
+                )
+                self._render_session()
+            else:
+                self._start_input_check()
         elif key is BandCheckStepKey.HEADPHONES:
             if self._tone_played:
                 session.confirm_headphones(
@@ -483,7 +552,36 @@ class BandCheckDialog(QDialog):
             return
         if self._input_probe is not None:
             return
-        settings = self._settings_provider()
+        permission = microphone_permission_status()
+        if (
+            permission == "not_determined"
+            and not self._microphone_permission_explained
+        ):
+            self._microphone_permission_explained = True
+            session.update_step(
+                BandCheckStepKey.AUDIO_INPUT,
+                status=BandCheckStatus.RUNNING,
+                detail=(
+                    "WebJam needs microphone access so your band can hear your "
+                    "instrument. Choose Continue, then allow access in the macOS prompt."
+                ),
+                next_action="Continue",
+            )
+            self._render_session()
+            return
+        if permission in {"denied", "restricted"}:
+            session.update_step(
+                BandCheckStepKey.AUDIO_INPUT,
+                status=BandCheckStatus.ACTION_NEEDED,
+                detail=(
+                    "Microphone access is off. Open System Settings, allow WebJam "
+                    "to use the microphone, then return to Band Check."
+                ),
+                next_action="Open System Settings",
+            )
+            self._render_session()
+            return
+        settings = deepcopy(self._settings_provider())
         self._input_probe = InputActivityProbe(
             device=_input_device_index(settings),
             sample_rate=int(getattr(settings, "audio_samplerate", 48_000) or 48_000),
@@ -491,14 +589,39 @@ class BandCheckDialog(QDialog):
         )
         try:
             self._input_probe.start()
-        except BandCheckAudioError as exc:
+        except BandCheckAudioError:
             self._input_probe = None
-            session.update_step(
-                BandCheckStepKey.AUDIO_INPUT,
-                status=BandCheckStatus.ACTION_NEEDED,
-                detail=str(exc),
-                next_action="Open Settings",
-            )
+            permission = microphone_permission_status()
+            if permission in {"denied", "restricted"}:
+                session.update_step(
+                    BandCheckStepKey.AUDIO_INPUT,
+                    status=BandCheckStatus.ACTION_NEEDED,
+                    detail=(
+                        "Microphone access is off. Open System Settings, allow "
+                        "WebJam to use the microphone, then return to Band Check."
+                    ),
+                    next_action="Open System Settings",
+                )
+            else:
+                selected_index = _input_device_index(settings)
+                session.update_step(
+                    BandCheckStepKey.AUDIO_INPUT,
+                    status=BandCheckStatus.ACTION_NEEDED,
+                    detail=(
+                        "The saved input is unavailable. Use the Mac's system "
+                        "input, then Band Check will try again."
+                        if selected_index >= 0
+                        else (
+                            "WebJam couldn't open the Mac's system input. "
+                            "Reconnect an input, then choose Try Again."
+                        )
+                    ),
+                    next_action=(
+                        "Use System Input"
+                        if selected_index >= 0
+                        else "Try Again"
+                    ),
+                )
             self._render_session()
             return
         session.update_step(
@@ -544,7 +667,7 @@ class BandCheckDialog(QDialog):
                 LOGGER.debug("Input probe cleanup failed", exc_info=True)
 
     def _play_headphone_test(self) -> None:
-        settings = self._settings_provider()
+        settings = deepcopy(self._settings_provider())
         self._primary.setEnabled(False)
         self._primary.setText("Playing Left, then Right…")
         try:
@@ -553,13 +676,16 @@ class BandCheckDialog(QDialog):
                     getattr(settings, "take_playback_output_device", "") or ""
                 )
             )
-        except BandCheckAudioError as exc:
+        except BandCheckAudioError:
             if self._session is not None:
                 self._session.update_step(
                     BandCheckStepKey.HEADPHONES,
                     status=BandCheckStatus.ACTION_NEEDED,
-                    detail=str(exc),
-                    next_action="Open Settings",
+                    detail=(
+                        "WebJam couldn't play through the selected Studio output. "
+                        "Open Settings, choose another output, then try again."
+                    ),
+                    next_action="Recording Setup",
                 )
                 self._render_session()
             return
@@ -608,10 +734,28 @@ class BandCheckDialog(QDialog):
                     dir=scratch_parent,
                 )
             )
-        except OSError as exc:
+        except OSError:
             session.mark_scratch_recording(
                 valid=False,
-                detail=f"The recording folder is not writable: {exc}",
+                detail=(
+                    "WebJam can't write the recording folder. Choose another "
+                    "Takes folder in Settings, then try again."
+                ),
+            )
+            session.update_step(
+                BandCheckStepKey.TEST_RECORDING,
+                status=BandCheckStatus.ACTION_NEEDED,
+                detail=(
+                    "WebJam can't write the recording folder. Choose another "
+                    "Takes folder in Recording Setup, then try again."
+                ),
+                next_action="Recording Setup",
+            )
+            session.update_step(
+                BandCheckStepKey.RECORDING_PATH,
+                status=BandCheckStatus.ACTION_NEEDED,
+                detail="The selected Takes folder is not writable.",
+                next_action="Recording Setup",
             )
             self._render_session()
             return
@@ -624,9 +768,15 @@ class BandCheckDialog(QDialog):
         )
         try:
             self._scratch.start()
-        except BandCheckAudioError as exc:
+        except BandCheckAudioError:
             self._delete_scratch()
-            session.mark_scratch_recording(valid=False, detail=str(exc))
+            session.mark_scratch_recording(
+                valid=False,
+                detail=(
+                    "WebJam couldn't start the five-second input recording. "
+                    "Check the selected input and try again."
+                ),
+            )
             self._render_session()
             return
         session.update_step(
@@ -684,18 +834,29 @@ class BandCheckDialog(QDialog):
             return
         self._scratch_evidence = evidence
         self._scratch_played = False
+        recording_detail = (
+            "WebJam couldn't validate the five-second recording. Check the "
+            "selected input and Takes folder, then try again."
+            if not evidence.valid
+            else ""
+        )
         self._session.mark_scratch_recording(
             valid=evidence.valid,
             duration_s=evidence.duration_s,
             sample_rate=evidence.sample_rate,
             channels=evidence.channels,
             has_signal=evidence.has_signal,
-            detail=evidence.error,
+            detail=recording_detail,
         )
         if studio is not None:
             self._session.mark_studio_check(
                 valid=studio.valid,
-                detail=studio.error,
+                detail=(
+                    "Studio couldn't safely open the five-second test recording. "
+                    "Record it again."
+                    if not studio.valid
+                    else ""
+                ),
             )
         self._render_session()
 
@@ -711,11 +872,14 @@ class BandCheckDialog(QDialog):
                     getattr(settings, "take_playback_output_device", "") or ""
                 )
             )
-        except BandCheckAudioError as exc:
+        except BandCheckAudioError:
             self._session.update_step(
                 BandCheckStepKey.TEST_RECORDING,
                 status=BandCheckStatus.ACTION_NEEDED,
-                detail=str(exc),
+                detail=(
+                    "WebJam couldn't play the five-second test through the "
+                    "selected output. Choose another output and try again."
+                ),
                 next_action="Check the output and try again",
             )
             self._render_session()
@@ -819,16 +983,30 @@ class BandCheckDialog(QDialog):
         ):
             return
         self._verification_save_started = True
-        settings = self._settings_provider()
+        settings = deepcopy(self._settings_provider())
+        expected_generation = getattr(self, "_settings_generation", None)
+
+        def generation_is_current() -> bool:
+            provider = self._settings_generation_provider
+            if provider is None or expected_generation is None:
+                return True
+            try:
+                return int(provider()) == int(expected_generation)
+            except Exception:  # noqa: BLE001
+                return False
 
         def worker() -> None:
             try:
                 from webjam_qt import __version__
 
+                if not generation_is_current():
+                    return
                 signature = build_verification_signature(
                     settings,
                     app_version=__version__,
                 )
+                if not generation_is_current():
+                    return
                 save_verification(
                     verification_path(settings),
                     signature=signature,
@@ -844,15 +1022,25 @@ class BandCheckDialog(QDialog):
         ).start()
 
     def _show_scan_failure(self, error: Exception) -> None:
+        # The worker already records the failure through WebJam's redacted log
+        # pipeline. Never echo ``str(error)`` here: device libraries can put
+        # home paths, invite material, or backend command lines in it.
         self._clear_rows()
+        self._session = None
+        self._scan_failed = True
         self._summary.setText(BandCheckOutcome.ACTION_NEEDED.value)
         self._summary.setProperty("result", "fail")
         self._next.setText("Next: close Band Check and try again.")
-        detail = QLabel("Band Check could not inspect this setup. Technical details are below.")
+        detail = QLabel("Band Check could not inspect this setup.")
+        detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)
         self._report_layout.addWidget(detail)
-        technical = QLabel(str(error))
+        technical = QLabel(
+            "The automatic scan stopped safely. Choose Try Again. If it repeats, "
+            "save a Support Bundle."
+        )
         technical.setObjectName("TechnicalDetailsText")
+        technical.setTextFormat(Qt.TextFormat.PlainText)
         technical.setWordWrap(True)
         self._report_layout.addWidget(technical)
         self._primary.setText("Try Again")
@@ -872,7 +1060,8 @@ class BandCheckDialog(QDialog):
         for item in items:
             self._add_legacy_row(item)
         if not items:
-            fallback = QLabel(report.to_text())
+            fallback = QLabel(_safe_report_text(report.to_text()))
+            fallback.setTextFormat(Qt.TextFormat.PlainText)
             fallback.setWordWrap(True)
             self._report_layout.addWidget(fallback)
         self._report_layout.addStretch(1)
@@ -916,7 +1105,8 @@ class BandCheckDialog(QDialog):
         row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         row.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         row.setAccessibleName(
-            f"{'Passed' if item.ok else 'Manual verification' if manual else 'Required failure' if item.required else 'Optional warning'}: {item.name}"
+            f"{'Passed' if item.ok else 'Manual verification' if manual else 'Required failure' if item.required else 'Optional warning'}: "
+            f"{_safe_report_text(item.name)}"
         )
         if manual:
             mark = QCheckBox("VERIFY")
@@ -931,10 +1121,14 @@ class BandCheckDialog(QDialog):
             mark = QLabel("PASS" if item.ok else "FIX" if item.required else "OPTIONAL")
         mark.setObjectName("ReadyCheckMark")
         mark.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        name = QLabel(item.name)
+        name = QLabel(_safe_report_text(item.name))
         name.setObjectName("ReadyCheckName")
-        detail = QLabel(item.detail or "No additional details")
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        detail = QLabel(
+            _safe_report_text(item.detail or "No additional details")
+        )
         detail.setObjectName("ReadyCheckDetail")
+        detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)
         text = QVBoxLayout()
         text.addWidget(name)

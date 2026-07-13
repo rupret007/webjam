@@ -135,6 +135,60 @@ class TestLaunchPracticeSession(unittest.TestCase):
             "Practice Server Failed",
         )
 
+    def test_rejected_client_launch_cleans_up_private_server(self):
+        bridge = _make_bridge()
+        server = MagicMock()
+        server.poll.return_value = None
+        bridge.launch_jamulus = MagicMock(return_value=False)
+        with patch(
+            "services.bridge_service.subprocess.Popen", return_value=server
+        ):
+            self.assertFalse(bridge.launch_practice_session())
+
+        server.terminate.assert_called_once_with()
+        self.assertIsNone(bridge.practice_server_process)
+        self.assertFalse(bridge.practice_mode)
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_practice_launch_failed"
+        )
+
+    def test_practice_client_error_never_retries_the_band_session(self):
+        bridge = _make_bridge()
+        bridge.practice_mode = True
+        bridge._is_rpc_port_in_use.return_value = True
+
+        self.assertFalse(bridge.launch_jamulus(manual=True))
+
+        kwargs = bridge.show_actionable_error.call_args.kwargs
+        self.assertIsNone(kwargs["retry_callback"])
+
+    @patch("services.bridge_service.time.sleep")
+    @patch(
+        "services.bridge_service.threading.Thread",
+        side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw),
+    )
+    def test_async_practice_failure_names_the_real_retry_action(
+        self, _thread, _sleep
+    ):
+        bridge = _make_bridge()
+        server = MagicMock()
+        server.poll.return_value = None
+
+        def popen(cmd, **_kwargs):
+            if "--server" in cmd:
+                return server
+            raise OSError("client blocked")
+
+        with patch(
+            "services.bridge_service.subprocess.Popen", side_effect=popen
+        ), patch("core.file_io.atomic_write_text"):
+            self.assertTrue(bridge.launch_practice_session())
+
+        kwargs = bridge.show_actionable_error.call_args.kwargs
+        self.assertIn("choose Practice Solo again", kwargs["next_action"])
+        self.assertNotIn("Try Again", kwargs["next_action"])
+        self.assertIsNone(kwargs["retry_callback"])
+
     def test_refused_while_band_session_running(self):
         bridge = _make_bridge()
         alive = MagicMock()

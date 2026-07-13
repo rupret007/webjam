@@ -33,9 +33,16 @@ class AudioCoordinator:
         self.recovering = False
         self.permission_explained = False
 
-    def on_launch_toggle(self) -> None:
+    def on_launch_toggle(self) -> bool:
+        """Apply the live toggle and report whether a new launch was allowed.
+
+        ``False`` includes a stop action and either microphone-permission
+        recovery state.  Callers can therefore defer any capture-capable
+        companion until the production audio attempt has passed this preflight.
+        """
         if self._c._is_jamulus_running():
             self.stop()
+            return False
         else:
             from webjam_qt.platform_permissions import microphone_permission_status
 
@@ -50,7 +57,7 @@ class AudioCoordinator:
                     "Your band needs to hear your instrument. Choose Continue to use the macOS prompt.",
                 )
                 self._c.window.session_strip.set_tools_enabled(True)
-                return
+                return False
             if permission in {"denied", "restricted"}:
                 self._c.window.participant_grid.set_session_state(
                     SessionUiState.permission_denied()
@@ -60,7 +67,7 @@ class AudioCoordinator:
                     "Open System Settings below, allow access, then return to WebJam.",
                 )
                 self._c.window.session_strip.set_tools_enabled(True)
-                return
+                return False
             self.ended_by_user = False
             self.connection_timed_out = False
             self.recovering = False
@@ -85,8 +92,11 @@ class AudioCoordinator:
                     "Joining your jam…",
                     "WebJam is connecting you to the band.",
                 )
-            self._c.bridge.launch_jamulus(manual=True)
+            accepted = bool(self._c.bridge.launch_jamulus(manual=True))
+            if not accepted:
+                return False
             self._c._connection_timer.start()
+            return True
 
     def on_practice_requested(self) -> None:
         if self._c._is_jamulus_running():

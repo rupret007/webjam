@@ -85,6 +85,8 @@ class TestLaunchAbortsOnPortConflict(unittest.TestCase):
         port = sock.getsockname()[1]
         try:
             bridge = _make_bridge(rpc_port=port)
+            retry = MagicMock()
+            bridge.retry_audio_launch = retry
             # Make find_jamulus succeed so we reach the port check.
             with patch.object(bridge, "find_jamulus", return_value="C:/Jamulus.exe"), \
                  patch("services.bridge_service.threading.Thread") as thread_cls:
@@ -102,6 +104,10 @@ class TestLaunchAbortsOnPortConflict(unittest.TestCase):
             bridge.metrics_service.increment.assert_any_call(
                 "metric_jamulus_port_conflict"
             )
+            # The callback captured by the dialog must re-enter the controller
+            # path rather than launching a client behind its timer/peer state.
+            kwargs["retry_callback"]()
+            retry.assert_called_once_with()
         finally:
             sock.close()
 

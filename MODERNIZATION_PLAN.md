@@ -334,9 +334,10 @@
 ## Remaining release gates
 
 1. Put both Apple Silicon Macs on the same local network, install the exact
-   versioned candidate ZIP, then prove the complete **Host a Jam → Copy Invite
-   → Join a Jam → Play** path. Tonight does not claim VPN, internet, NAT
-   traversal, port forwarding, Windows, or Intel support.
+   versioned candidate ZIP, then prove the complete **Host a Jam → Band Check
+   → Start Session → Copy Invite → Join a Jam → Band Check → Start Session
+   → Play** path. Tonight does not claim VPN, internet, NAT traversal, port
+   forwarding, Windows, or Intel support.
 2. With wired interfaces/headphones at 48 kHz, prove real bidirectional audio,
    truthful local/remote meters, participant identity, mix controls, optional
    Webex talkback, and recovery after a forced disconnect. The app must never

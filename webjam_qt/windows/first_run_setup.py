@@ -423,7 +423,24 @@ class FirstRunSetupDialog(QDialog):
             parse_jamulus_endpoint(self._server_address.text())
         except JamulusEndpointError as exc:
             if show_error and self._server_address.text().strip():
-                self._server_error.setText(str(exc))
+                # JamulusEndpointError is produced only by our fixed-copy
+                # parser. Still fail closed if an extension ever raises the
+                # same type with arbitrary device/path text.
+                allowed = {
+                    "Port must be a number from 1 to 65535.",
+                    "Enter the server address from your host.",
+                    "Enter a valid hostname or IP address.",
+                    "Server addresses cannot contain spaces.",
+                    "Enter a hostname or IP address, not a URL.",
+                    "Use [IPv6]:port when an IPv6 address includes a port.",
+                    "Enter a valid IPv6 address.",
+                }
+                message = str(exc)
+                self._server_error.setText(
+                    message
+                    if message in allowed
+                    else "Enter a valid host address and port from your invitation."
+                )
                 self._server_error.setVisible(True)
             return False
         return True

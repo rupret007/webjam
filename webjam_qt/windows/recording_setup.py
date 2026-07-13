@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from typing import Optional
 
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -33,9 +35,16 @@ class RecordingSetupDialog(QDialog):
         self,
         settings: AppSettings,
         parent: Optional[QWidget] = None,
+        *,
+        local_originals_available: bool = True,
+        takes_folder_editable: bool = True,
     ) -> None:
         super().__init__(parent)
-        self._settings = settings
+        # Edit a draft. A failed atomic save must never leave the running
+        # controller believing that unsaved preferences are active.
+        self._settings = deepcopy(settings)
+        self._local_originals_available = bool(local_originals_available)
+        self._takes_folder_editable = bool(takes_folder_editable)
         self.setObjectName("RecordingSetupDialog")
         self.setWindowTitle("WebJam Recording Setup")
         self.setModal(True)
@@ -49,9 +58,16 @@ class RecordingSetupDialog(QDialog):
         title = QLabel("Recording setup")
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
-            "The host records the synchronized Jamulus take. Choose where Studio "
-            "plays and whether this Mac also keeps its first two interface inputs "
-            "as local originals."
+            (
+                "The host records the synchronized Jamulus take. Choose where "
+                "Studio plays and whether this Mac also keeps its first two "
+                "interface inputs as local originals."
+            )
+            if self._local_originals_available
+            else (
+                "The host records the synchronized Jamulus take. Choose where "
+                "Studio plays it back on this Mac."
+            )
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
@@ -80,8 +96,23 @@ class RecordingSetupDialog(QDialog):
             "Keep interface inputs 1 and 2 as isolated local originals"
         )
         self._capture.setAccessibleName("Record two isolated local input stems")
-        self._capture.setChecked(bool(settings.local_capture_enabled))
+        self._capture.setChecked(
+            self._local_originals_available
+            and bool(settings.local_capture_enabled)
+        )
+        self._capture.setEnabled(self._local_originals_available)
         root.addWidget(self._capture)
+
+        self._capture_unavailable = QLabel(
+            "Local originals are unavailable for this session. You can "
+            "still play normally, and the host's synchronized server track is kept."
+        )
+        self._capture_unavailable.setObjectName("SimpleSettingsSubtitle")
+        self._capture_unavailable.setWordWrap(True)
+        self._capture_unavailable.setVisible(
+            not self._local_originals_available
+        )
+        root.addWidget(self._capture_unavailable)
 
         self._capture_help = QLabel(
             "Use this when one interface carries two distinct sources, such as "
@@ -113,14 +144,26 @@ class RecordingSetupDialog(QDialog):
         root.addWidget(self._input)
 
         folder_row = QHBoxLayout()
-        folder = QLabel(
+        self._folder = QLabel(
             "Takes: " + (str(settings.takes_directory or "Not configured"))
         )
-        folder.setObjectName("SimpleSettingsSubtitle")
-        folder.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        folder_row.addWidget(folder, 1)
+        self._folder.setObjectName("SimpleSettingsSubtitle")
+        self._folder.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        folder_row.addWidget(self._folder, 1)
+        choose_folder = QPushButton("Choose Folder")
+        choose_folder.setObjectName("GhostButton")
+        choose_folder.setEnabled(self._takes_folder_editable)
+        if not self._takes_folder_editable:
+            choose_folder.setToolTip(
+                "End or restart the current jam before changing its Takes folder."
+            )
+        choose_folder.clicked.connect(self._choose_folder)
+        folder_row.addWidget(choose_folder)
         show_folder = QPushButton("Show Folder")
         show_folder.setObjectName("GhostButton")
+        self._show_folder_button = show_folder
         show_folder.setEnabled(bool(settings.takes_directory))
         show_folder.clicked.connect(self._show_folder)
         folder_row.addWidget(show_folder)
@@ -167,6 +210,21 @@ class RecordingSetupDialog(QDialog):
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
+    def _choose_folder(self) -> None:
+        start = str(self._settings.takes_directory or "")
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Choose WebJam Takes Folder",
+            start,
+        )
+        if not path:
+            return
+        self._settings.takes_directory = str(path)
+        self._folder.setText(f"Takes: {path}")
+        self._show_folder_button.setEnabled(True)
+        self._error.clear()
+        self._error.setVisible(False)
+
     def _save(self) -> None:
         capture = self._capture.isEnabled() and self._capture.isChecked()
         input_index = self._input.currentData()
@@ -178,7 +236,8 @@ class RecordingSetupDialog(QDialog):
         self._settings.take_playback_output_device = str(
             self._output.currentData() or ""
         )
-        self._settings.local_capture_enabled = capture
+        if self._local_originals_available:
+            self._settings.local_capture_enabled = capture
         if capture:
             self._settings.audio_input_device_index = int(input_index)
         try:

@@ -7,6 +7,7 @@ setup path.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from pathlib import Path
 from typing import Optional
@@ -42,7 +43,9 @@ class SimpleSettingsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self._settings = settings
+        # Keep edits isolated until the settings file is saved successfully.
+        # The controller reloads the committed file after Accepted.
+        self._settings = deepcopy(settings)
         self.setObjectName("SimpleSettingsDialog")
         self.setWindowTitle("WebJam Settings")
         self.setModal(True)

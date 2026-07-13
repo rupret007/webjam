@@ -2,14 +2,14 @@
 
 ## The whole idea
 
-**Host. Share. Join. Play.**
+**Host or Join. Band Check. Play.**
 
 WebJam wraps the low-latency Jamulus engine in a musician-facing session. It
 starts the needed processes, chooses defaults, creates the invitation, watches
 the connection, and records synchronized tracks without asking musicians to
 understand the plumbing.
 
-The v0.9.0 interface uses near-black surfaces, white text, and restrained burnt
+The v0.10.0 interface uses near-black surfaces, white text, and restrained burnt
 orange for the next important action. Purple, teal, technical setup panels, and
 competing session controls are not part of the normal path.
 
@@ -28,27 +28,51 @@ The downloadable macOS app contains its own Jamulus client and server.
 Ordinary rehearsals do not require BlackHole, VB-CABLE, Webex, a Terminal
 command, or a separate server setup.
 
+## Run Band Check
+
+Band Check is the one readiness path for both musicians. After **Host a Jam**
+or an invite is accepted, WebJam opens it before starting a new or changed
+setup. Open it again at any time with `F2`, **More → Band Check**, or
+**Settings → Run Band Check**.
+
+Follow the prompts to confirm the local input meter, left/right headphones, a
+five-second isolated recording, and playback. Band Check says **Ready to Jam**,
+**Ready with a Warning**, or **Action Needed** in words. Its local input meter
+proves only what WebJam's separate PortAudio stream can hear; the other
+musician's ears must still confirm the live Jamulus route.
+
 ## Start a jam
 
 ### Host
 
 1. Launch WebJam.
 2. Choose **Host a Jam**.
-3. WebJam displays **Starting your jam** while it starts the bundled server and
+3. Complete Band Check if WebJam asks, then choose **Start Session**.
+4. WebJam displays **Starting your jam** while it starts the bundled server and
    connects the host in the background.
-4. When **Ready to share** appears, click **Copy Invite**.
-5. Send the complete `webjam://join?...` link to the bandmate.
+5. When **Ready to share** appears, click **Copy Invite**.
+6. Send the complete `webjam://join?...` link to the bandmate.
 
-The test-night invitation is for Macs on the same Wi-Fi. The link never
-contains recorder credentials or local file paths.
+The test-night invitation is for Macs on the same private IPv4 LAN. A v2 link
+normally contains a random private enrollment credential for guest-original
+delivery. It is reusable during this host-peer session, not a one-use token;
+anyone holding it on the LAN can enroll. Send the whole link only to the
+intended bandmate; do not put it in screenshots, notes, logs, or support
+messages. It never contains the recorder RPC secret or local file paths, and
+WebJam masks it when pasted. If the host
+warns **Automatic Local Originals are off**, its v1 fallback still joins the
+music session and receives a host-side server track, but WebJam provides no
+local-original capture or delivery path on that guest Mac.
 
 ### Join from the link
 
-Open the host's invite link. macOS launches WebJam, WebJam fills in the
-connection, and the session starts automatically.
+Open the host's invite link. macOS launches WebJam and fills in and accepts the
+connection; opening the link alone is not a readiness result. Complete Band
+Check if WebJam asks, then choose **Start Session**.
 
 If clicking the link is unavailable, launch WebJam, choose **Join a Jam**, paste
-the link into the single field, and click **Join Jam**.
+the link into the single field, and click **Join Jam**. Complete Band Check if
+WebJam asks, then choose **Start Session**.
 
 ## Read the session state
 
@@ -102,21 +126,29 @@ a manifest that preserves the musician names WebJam observed. In Studio you
 can play, pause, scrub, choose a wired output, and change each track's gain,
 pan, mute, or solo without modifying the source WAVs.
 
-Open **Recording Setup** inside Studio to select its playback output. A hosting
-Mac can also enable two isolated interface inputs there—for example, guitar on
-input 1 and vocal on input 2. WebJam saves that choice and adds the two local
-24-bit/48 kHz stems to future takes; the live Jamulus path is unchanged.
+Open **Recording Setup** inside Studio to select its playback output. The host,
+or a guest connected through an active v2 invite, can explicitly keep two
+isolated interface inputs there—for example, guitar on input 1 and vocal on
+input 2. WebJam saves that choice and records two local
+PCM24/48-kHz originals while the host's take is active; the live Jamulus path is
+unchanged. With an active v2 private invite, a guest original stays on that
+guest Mac, continues through a peer outage, and transfers a verified copy to
+the host when the private-LAN service is available again. A v1 guest has no
+WebJam-orchestrated local-original capture or delivery.
 
 For a reliable Logic handoff, select the finished take and click **Export for
 Logic**. WebJam creates a new atomic export containing numbered, musician-named
-24-bit WAV stems that all start at `0:00` and have the same length, a stereo
-rough mix reflecting the current Studio controls, import instructions, and an
-evidence manifest. Drag the numbered stems into a new Logic project together;
-do not add the rough mix as another stem. The original take is never rewritten.
+PCM24 WAV stems that all start at `0:00` and have the same length, server and
+Studio references, markers, recording/alignment reports, independent audio
+analysis, source evidence, checksums, and import instructions. Drag the numbered
+stems into a new Logic project together; do not add either reference as another
+performance stem. The original take is never rewritten.
 See [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
 A joining musician sees the Studio but does not control the host recorder.
-Their live audio is captured as its own host-side track.
+Their live audio is captured as its own host-side server track. With an active
+v2 invite, they can separately opt in to keeping this Mac's two local interface
+originals.
 
 ## More
 
@@ -128,7 +160,7 @@ The live session keeps secondary features in one **More** menu:
 - **Add Video or Conversation** — optionally open a configured Webex link.
 - **Talk Break** — appears only after conversation has been opened.
 - **Settings** — change your displayed name or optional conversation link.
-- **Troubleshooting** — open the detailed readiness report.
+- **Band Check** — rerun or observe the guided readiness check (`F2`).
 
 Webex is not part of the startup path. If used for conversation, keep the
 Webex microphone muted while playing so its delayed audio does not duplicate
@@ -139,9 +171,15 @@ the low-latency music path.
 The host clicks **End Session**; a joined musician clicks **Leave Jam**. The
 host action ends the jam for everyone, while Leave Jam disconnects only that
 Mac. WebJam keeps **Ending…** or **Leaving…** on screen until work is complete.
-For a host, it stops and saves an active take first, then stops the client, the
-hosted server, and the macOS sleep assertion. Quitting the application uses the
-same role-aware confirmation and owned-process cleanup.
+If the host take is recording or still validating, **End Session** is blocked:
+press **Stop Rec** if needed, wait for **Take saved**, then end the jam. A guest
+**Leave Jam** finalizes any active opted-in local original, persists its upload
+queue, and makes a final upload attempt before disconnecting. If the host is
+unavailable, that original and its resumable queue stay on the guest Mac.
+Quitting uses the same ownership-aware cleanup.
+If guest originals are enabled, wait until Studio reports them verified and
+arrived before **End Session**. Otherwise, preserve the originals on the guest
+Mac for recovery.
 
 ## Recovery
 
@@ -166,8 +204,8 @@ stale link cannot create a session after its host has ended the jam.
 ### Input meter does not move
 
 Play directly into the connected interface. If macOS asks, allow microphone
-access. Open **More → Troubleshooting** only if the meter still does
-not move; it provides the technical detail without placing it in startup.
+access. Open **More → Band Check** if the meter still does not move; it keeps
+technical detail collapsed unless you choose to inspect it.
 
 ### Microphone access is off
 
@@ -178,16 +216,15 @@ editing a port will not fix a macOS permission denial.
 ### Invite opens the wrong session
 
 Opening a new invite while WebJam is running asks once before safely ending
-the current jam and switching to the new one.
+the current jam and switching to the new one. If a hosted take is active or
+validating, WebJam refuses the switch until **Stop Rec** and **Take saved**.
 
 ### App will not open
 
 Control-click the app and choose **Open**. If macOS says the downloaded test
-app is damaged, clear quarantine in Terminal:
-
-```bash
-xattr -dr com.apple.quarantine /path/to/WebJam.app
-```
+app is damaged or incomplete, stop: that is a packaging failure. Record the
+exact ZIP filename and SHA-256, preserve the app unchanged, and report the
+message instead of removing quarantine or bypassing the bundle check.
 
 ## Useful shortcuts
 
@@ -202,7 +239,7 @@ xattr -dr com.apple.quarantine /path/to/WebJam.app
 | `Ctrl+Shift+R` | Reset all faders to unity |
 | `Ctrl+Shift+D` | Copy redacted diagnostics |
 | `Ctrl+,` | Open preferences |
-| `F2` | Open troubleshooting |
+| `F2` | Open Band Check |
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Live / Notes / Studio |
 | `F11` / `Esc` | Enter / leave fullscreen |
 

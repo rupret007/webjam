@@ -17,7 +17,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -69,13 +69,14 @@ class TestTakeDeckEmpty(unittest.TestCase):
             try:
                 self.assertFalse(deck._play_btn.isEnabled())
                 self.assertIn("No takes found", deck._hint.text())
+                self.assertNotIn(d, deck._hint.text())
             finally:
                 deck.close()
 
     def test_unset_dir_shows_hint(self):
         deck = TakeDeck("", player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
         try:
-            self.assertIn("no takes folder set", deck._hint.text())
+            self.assertIn("No Takes folder is set", deck._hint.text())
         finally:
             deck.close()
 
@@ -194,11 +195,13 @@ class TestTakeHealthPanel(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             take = _make_take_dir(Path(d), "take_A")
+            private_path = "/Users/jeff/private/recordings/bass.wav"
+            secret = "Bearer deck-secret-123"
             (take / "webjam-take.json").write_text(json.dumps({
                 "schema_version": 1,
                 "status": "needs_attention",
-                "errors": ["Expected at least 3 tracks but found 2."],
-                "warnings": ["Bass.Wav appears silent."],
+                "errors": [f"capture failed at {private_path}: {secret}"],
+                "warnings": [f"warning at {private_path}: {secret}"],
                 "tracks": [],
             }), encoding="utf-8")
             with mock.patch(
@@ -207,9 +210,14 @@ class TestTakeHealthPanel(unittest.TestCase):
                 deck = self._deck(d)
                 try:
                     probe.assert_not_called()
-                    self.assertIn("Expected at least 3 tracks", deck._hint.text())
-                    self.assertIn("Warning: Bass.Wav appears silent.",
-                                  deck._hint.text())
+                    rendered = "\n".join(
+                        widget.text()
+                        for widget in deck.findChildren(QLabel)
+                    )
+                    self.assertIn("needs review", rendered.lower())
+                    self.assertNotIn(private_path, rendered)
+                    self.assertNotIn(secret, rendered)
+                    self.assertNotIn("capture failed", rendered)
                     row = deck._take_list.item(0).text()
                     self.assertIn("Needs Attention", row)
                 finally:

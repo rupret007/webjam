@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -500,7 +501,7 @@ def build_band_check_session(
             getattr(host_server_certification, "detail", "")
             or "The hosted band server could not be verified."
         )
-        server_action = "" if certification_ok else "Open Settings"
+        server_action = "" if certification_ok else "Close Band Check"
         server_technical = tuple(
             str(value)
             for value in getattr(
@@ -511,8 +512,16 @@ def build_band_check_session(
         )
     elif server_failure:
         server_status = BandCheckStatus.ACTION_NEEDED
-        server_detail = "The band server settings need attention."
-        server_action = "Open Settings"
+        server_detail = (
+            "This Mac could not verify the bundled band server. Close Band "
+            "Check, restart WebJam, and reinstall the latest build if it repeats."
+            if is_host
+            else (
+                "This Mac no longer has a complete band invite. Close WebJam, "
+                "open it again, and paste a fresh invite from your host."
+            )
+        )
+        server_action = "Close Band Check"
         server_technical = tuple(getattr(item, "detail", "") for item in server_items)
     elif server_warning:
         server_status = BandCheckStatus.WARNING
@@ -538,7 +547,19 @@ def build_band_check_session(
         if selected_input is not None and selected_input.ok
         else "The selected input cannot be opened with this setup."
     )
-    input_action = "Check Input" if input_status is BandCheckStatus.PENDING else "Open Settings"
+    try:
+        selected_input_index = int(
+            getattr(settings, "audio_input_device_index", -1)
+        )
+    except (TypeError, ValueError):
+        selected_input_index = -1
+    input_action = (
+        "Check Input"
+        if input_status is BandCheckStatus.PENDING
+        else "Use System Input"
+        if selected_input_index >= 0
+        else "Try Again"
+    )
 
     recording_problem = next(
         (
@@ -563,7 +584,10 @@ def build_band_check_session(
     engine_detail = (
         "The music engine opened for a version check and exited cleanly."
         if engine_compatible
-        else "The required music engine version could not be launched and verified."
+        else (
+            "The required music engine is missing or incompatible. Close Band "
+            "Check and reinstall the latest WebJam build."
+        )
     )
 
     steps = [
@@ -572,7 +596,9 @@ def build_band_check_session(
             "Music engine",
             engine_status,
             engine_detail,
-            "Open Settings" if engine_status is BandCheckStatus.ACTION_NEEDED else "",
+            "Close Band Check"
+            if engine_status is BandCheckStatus.ACTION_NEEDED
+            else "",
             tuple(
                 value
                 for value in (
@@ -653,7 +679,7 @@ def build_band_check_session(
             (
                 ""
                 if mode is BandCheckMode.LIVE_OBSERVE
-                else "Open Settings"
+                else "Recording Setup"
                 if recording_problem is not None
                 else "Record 5 Seconds"
             ),
@@ -727,6 +753,8 @@ class VerificationSignature:
     input_channels: tuple[int, ...]
     host_server_enabled: bool = False
     output_device_id: str = "system-default"
+    audio_blocksize: int = 0
+    recording_path_id: str = "unconfigured"
 
     def to_dict(self) -> dict:
         return {
@@ -737,6 +765,8 @@ class VerificationSignature:
             "input_channels": list(self.input_channels),
             "host_server_enabled": self.host_server_enabled,
             "output_device_id": self.output_device_id,
+            "audio_blocksize": self.audio_blocksize,
+            "recording_path_id": self.recording_path_id,
         }
 
     @classmethod
@@ -753,6 +783,10 @@ class VerificationSignature:
             host_server_enabled=bool(value.get("host_server_enabled", False)),
             output_device_id=str(
                 value.get("output_device_id", "system-default")
+            ),
+            audio_blocksize=int(value.get("audio_blocksize", 0)),
+            recording_path_id=str(
+                value.get("recording_path_id", "unconfigured")
             ),
         )
 
@@ -778,7 +812,11 @@ class BandCheckVerification:
         )
 
     def matches(self, signature: VerificationSignature) -> bool:
-        return self.usable and self.signature == signature
+        return (
+            self.usable
+            and not signature.output_device_id.startswith("unavailable:")
+            and self.signature == signature
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -903,6 +941,49 @@ def build_verification_signature(
     except Exception:  # noqa: BLE001 - signature remains stable and honest
         pass
     device_id = f"portaudio:{device_index}:{device_name}"[:256]
+    requested_output = str(
+        getattr(settings, "take_playback_output_device", "") or ""
+    ).strip()
+    try:
+        import sounddevice as sd  # type: ignore
+
+        output = sd.query_devices(
+            requested_output or None,
+            "output",
+        )
+        if not isinstance(output, dict):
+            raise ValueError("output device unavailable")
+        output_name = str(output.get("name") or "unknown")
+        output_channels = int(output.get("max_output_channels", 0) or 0)
+        if output_channels < 1:
+            raise ValueError("output device has no channels")
+        output_device_id = (
+            f"portaudio:{requested_output or 'default'}:"
+            f"{output_name}:{output_channels}"
+        )[:256]
+    except Exception:  # noqa: BLE001 - unavailable output must fail closed
+        output_device_id = (
+            f"unavailable:{requested_output or 'system-default'}"
+        )[:256]
+
+    configured_root = str(getattr(settings, "takes_directory", "") or "").strip()
+    if configured_root:
+        recording_root = Path(configured_root).expanduser()
+    else:
+        config_file = Path(
+            str(
+                getattr(settings, "config_file", "")
+                or "~/.webjam_config.json"
+            )
+        ).expanduser()
+        recording_root = config_file.parent
+    try:
+        normalized_root = str(recording_root.resolve(strict=False))
+    except OSError:
+        normalized_root = str(recording_root.absolute())
+    recording_path_id = hashlib.sha256(
+        normalized_root.encode("utf-8", errors="surrogatepass")
+    ).hexdigest()
     channel_count = 2 if bool(getattr(settings, "local_capture_enabled", False)) else 1
     return VerificationSignature(
         app_version=str(app_version),
@@ -915,8 +996,7 @@ def build_verification_signature(
         sample_rate=int(getattr(settings, "audio_samplerate", 48000) or 48000),
         input_channels=tuple(range(channel_count)),
         host_server_enabled=bool(getattr(settings, "host_server_enabled", False)),
-        output_device_id=(
-            str(getattr(settings, "take_playback_output_device", "") or "").strip()
-            or "system-default"
-        )[:256],
+        output_device_id=output_device_id,
+        audio_blocksize=int(getattr(settings, "audio_blocksize", 0) or 0),
+        recording_path_id=recording_path_id,
     )

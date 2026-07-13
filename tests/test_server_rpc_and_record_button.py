@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -363,7 +364,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording._validate_take_worker()
         self.assertEqual(c.recording.phase.value, "needs_attention")
         self.assertIn(
-            "couldn't finish verifying",
+            "No completed take was found",
             self.window.recording_studio._hint.text(),
         )
         self.assertNotIn("private/path", self.window.recording_studio._hint.text())
@@ -408,7 +409,11 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._show_actionable_error.assert_called_once()
         args, kwargs = c._show_actionable_error.call_args
         self.assertEqual(args[0], "Recording Could Not Start")
-        self.assertIn("SSH tunnel", kwargs["what_failed"])
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording started.",
+        )
+        self.assertNotIn("SSH tunnel", kwargs["what_failed"])
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
     def test_stop_failure_stays_visibly_recording_and_retries_stop(self):
@@ -577,7 +582,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             self.assertTrue(strip._record_elapsed.isHidden())
             self.assertEqual(strip._record_button.text(), "● Record")
             msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-            self.assertTrue(any("saved to" in m for m in msgs), msgs)
+            self.assertTrue(any("tracks were saved" in m for m in msgs), msgs)
 
     def test_stop_audio_during_validation_does_not_steal_capture(self):
         from PySide6.QtWidgets import QMessageBox
@@ -653,8 +658,8 @@ class TestRecordButtonWiring(unittest.TestCase):
             box = c.recording._recovery_box
             self.assertIsNotNone(box)
             self.assertTrue(box.isVisible())  # open(), not exec(): non-blocking
-            self.assertIn("WebJam Recovered Takes", box.text())
-            self.assertIn("Take Deck", box.text())
+            self.assertIn("outside your Takes folder", box.text())
+            self.assertIn("Studio", box.text())
             labels = [button.text() for button in box.buttons()]
             self.assertIn("Reveal in Finder", labels)
         finally:
@@ -662,22 +667,69 @@ class TestRecordButtonWiring(unittest.TestCase):
                 c.recording._recovery_box.close()
                 c.recording._recovery_box = None
 
-    def test_completion_copy_failure_states_folder_and_next_step(self):
+    def test_recovery_box_hides_capture_errors_and_absolute_path(self):
         c = self.controller
+        private_path = "/Users/jeff/private/takes/Recovered-01"
+        secret = "Bearer capture-secret-123"
+        try:
+            c.recording._notify_recovered(
+                Path(private_path),
+                (f"capture failed at {private_path}: {secret}",),
+            )
+            box = c.recording._recovery_box
+            self.assertIsNotNone(box)
+            rendered = box.text()
+            self.assertIn("Reveal in Finder", rendered)
+            self.assertIn("need review", rendered)
+            self.assertNotIn(private_path, rendered)
+            self.assertNotIn(secret, rendered)
+            self.assertNotIn("capture failed", rendered)
+        finally:
+            if c.recording._recovery_box is not None:
+                c.recording._recovery_box.close()
+                c.recording._recovery_box = None
+
+    def test_completion_copy_failure_hides_findings_and_path(self):
+        c = self.controller
+        private_path = "/Users/jeff/private/takes/Take01"
+        secret = "Bearer validation-secret-456"
         result = SimpleNamespace(
             ok=False,
-            take=SimpleNamespace(path="/takes/Take01"),
-            errors=("Expected at least 3 tracks but found 2.",),
-            warnings=("guitar.wav appears silent.",),
+            take=SimpleNamespace(path=private_path),
+            errors=(f"Expected tracks at {private_path}; {secret}",),
+            warnings=(f"private.wav appears silent: {secret}",),
             summary="",
         )
         title, body = c.recording._completion_text(result)
         self.assertEqual(title, "WebJam — Take needs attention")
         self.assertIn("preserved", body)
-        self.assertIn("/takes/Take01", body)
-        self.assertIn("Expected at least 3 tracks but found 2.", body)
-        self.assertIn("guitar.wav appears silent.", body)
-        self.assertIn("Take Deck", body)
+        self.assertIn("Studio", body)
+        self.assertIn("Reveal in Finder", body)
+        self.assertNotIn(private_path, body)
+        self.assertNotIn(secret, body)
+        self.assertNotIn("Expected tracks", body)
+        self.assertNotIn("private.wav", body)
+
+    def test_validation_flash_hides_raw_findings(self):
+        c = self.controller
+        private_path = Path("/Users/jeff/private/takes/Take02")
+        secret = "rpc-secret-789"
+        result = SimpleNamespace(
+            ok=False,
+            take=SimpleNamespace(path=private_path),
+            errors=(f"failed at {private_path}: {secret}",),
+            warnings=(f"warning at {private_path}",),
+            summary="",
+        )
+        c.recording._take_id = ""
+        with patch.object(c.window.recording_studio, "on_take_completed"):
+            c.recording._show_validation_result(result)
+        self.assertIs(c.recording.last_validation, result)
+        rendered = c.window.flash_message.call_args.args[0]
+        self.assertIn("needs review", rendered)
+        self.assertNotIn(str(private_path), rendered)
+        self.assertNotIn(secret, rendered)
+        self.assertNotIn("failed at", rendered)
 
     def test_completion_copy_no_take_points_to_band_check(self):
         c = self.controller
@@ -697,11 +749,16 @@ class TestRecordButtonWiring(unittest.TestCase):
         c = self.controller
         result = SimpleNamespace(
             ok=True, take=SimpleNamespace(path="/takes/Take01"),
-            errors=(), warnings=(), summary="2 tracks · 1:04 · 48 kHz",
+            errors=(),
+            warnings=("secret warning at /Users/jeff/private.wav",),
+            summary="2 tracks · 1:04 · 48 kHz",
         )
         title, body = c.recording._completion_text(result)
         self.assertEqual(title, "WebJam — Recording complete")
         self.assertIn("Take saved · 2 tracks · 1:04 · 48 kHz", body)
+        self.assertIn("something to review", body)
+        self.assertNotIn("secret warning", body)
+        self.assertNotIn("/Users/jeff", body)
 
     def test_validation_worker_posts_staged_progress(self):
         import tempfile

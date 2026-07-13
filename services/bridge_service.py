@@ -177,6 +177,12 @@ class BridgeService:
         self.show_message = ui_callbacks.get("show_message")
         self.shutdown_requested = ui_callbacks.get("shutdown_requested", lambda: False)
         self.schedule_ui_callback = ui_callbacks.get("schedule_ui_callback", lambda f: f())
+        # Production retries must re-enter the controller so connection
+        # timers and the optional v2 peer are restored with the client.
+        self.retry_audio_launch = ui_callbacks.get(
+            "retry_audio_launch",
+            lambda: self.launch_jamulus(manual=True),
+        )
 
         # State
         self.jamulus_process: Optional[subprocess.Popen] = None
@@ -298,8 +304,14 @@ class BridgeService:
                     return resolved
         return None
 
-    def launch_jamulus(self, manual: bool = True, reconnect: bool = False):
-        """Launch the Jamulus client subprocess and connect to the band's server.
+    def launch_jamulus(
+        self, manual: bool = True, reconnect: bool = False
+    ) -> bool:
+        """Accept a Jamulus launch and connect to the band's server.
+
+        Returns ``False`` when a synchronous preflight rejects the launch and
+        ``True`` once an already-running client or a new launch worker owns the
+        request. Later worker failures are reported through normal session UI.
 
         Args:
             manual: True when triggered by the user clicking 'Launch Audio'.
@@ -325,7 +337,7 @@ class BridgeService:
         """
         if self.shutdown_requested():
             self.jamulus_reconnect_inflight = False
-            return
+            return False
             
         if manual:
             self.jamulus_launch_intended = True
@@ -349,7 +361,7 @@ class BridgeService:
             if reconnect:
                 self.metrics_service.increment("metric_jamulus_reconnect_failed")
                 LOGGER.warning("Jamulus reconnect skipped: no server configured.")
-                return
+                return False
             self.metrics_service.increment("metric_jamulus_launch_failed")
             self.show_actionable_error(
                 "This jam needs a new invite",
@@ -361,7 +373,7 @@ class BridgeService:
                 ),
                 retry_callback=None,
             )
-            return
+            return False
 
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
@@ -371,7 +383,7 @@ class BridgeService:
                 self._set_jamulus_state(JamulusState.NOT_RUNNING)
                 self.schedule_ui_callback(self.refresh_readiness)
                 LOGGER.warning("Jamulus reconnect skipped: executable not found.")
-                return
+                return False
 
             # Audit-found bug: previously this manual-launch failure path didn't
             # clear `jamulus_reconnect_inflight`, leaving a stale True flag from
@@ -389,7 +401,7 @@ class BridgeService:
                 next_action="Reinstall the latest WebJam build, then try again.",
                 retry_callback=None,
             )
-            return
+            return False
 
         if self.jamulus_process and self.jamulus_process.poll() is None:
             self._set_jamulus_state(JamulusState.ALREADY)
@@ -402,7 +414,7 @@ class BridgeService:
                 self.schedule_ui_callback(
                     lambda: self.set_status_banner("Jamulus is already running.")
                 )
-            return
+            return True
 
         # Detect port conflict before launching Jamulus.  If the JSON-RPC port
         # is already in use (typically: another WebJam instance, or a previous
@@ -425,7 +437,9 @@ class BridgeService:
                         "still finishing."
                     ),
                     next_action="Close the other WebJam window, wait a moment, then try again.",
-                    retry_callback=lambda: self.launch_jamulus(manual=True),
+                    retry_callback=(
+                        None if self.practice_mode else self.retry_audio_launch
+                    ),
                 )
             else:
                 self.metrics_service.increment("metric_jamulus_reconnect_failed")
@@ -433,7 +447,7 @@ class BridgeService:
                 LOGGER.warning(
                     "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
                 )
-            return
+            return False
 
         banner_text = "Starting your band audio…" if not reconnect else "Reconnecting band audio…"
         if self.practice_mode:
@@ -610,6 +624,7 @@ class BridgeService:
                         )
 
                 except Exception as exc:
+                    was_practice = self.practice_mode
                     LOGGER.exception("Failed to launch Jamulus: %s", exc)
                     # Close the log file we opened before Popen — Jamulus never
                     # started, nothing's writing to it.
@@ -642,12 +657,20 @@ class BridgeService:
                                 "A required component may be blocked, incomplete, or "
                                 "still closing from the last session."
                             ),
-                            next_action="Wait a moment, then choose Try Again.",
-                            retry_callback=lambda: self.launch_jamulus(manual=True)
+                            next_action=(
+                                "Close this message, then choose Practice Solo "
+                                "again."
+                                if was_practice
+                                else "Wait a moment, then choose Try Again."
+                            ),
+                            retry_callback=(
+                                None if was_practice else self.retry_audio_launch
+                            ),
                         )
                     )
 
         threading.Thread(target=_do_launch, daemon=True).start()
+        return True
 
     def _close_jamulus_log_file(self) -> None:
         """Close the Jamulus stdout/stderr log file if it's open. Idempotent."""
@@ -734,10 +757,9 @@ class BridgeService:
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Practice server failed to start: %s", exc)
             self.metrics_service.increment("metric_practice_launch_failed")
-            exc_msg = str(exc)
             self.show_actionable_error(
                 "Practice Server Failed",
-                what_failed=f"The local practice server could not start ({exc_msg}).",
+                what_failed="The local practice server could not start.",
                 likely_cause="Jamulus path invalid, or the practice port is blocked.",
                 next_action="Check the Jamulus path in Settings, then retry.",
                 retry_callback=None,
@@ -745,9 +767,14 @@ class BridgeService:
             return False
 
         self.practice_mode = True
-        self.metrics_service.increment("metric_practice_mode_started")
         # Connect the regular client to the local server.
-        self.launch_jamulus(manual=True, reconnect=False)
+        accepted = self.launch_jamulus(manual=True, reconnect=False)
+        if not accepted:
+            self._terminate_practice_server()
+            self.practice_mode = False
+            self.metrics_service.increment("metric_practice_launch_failed")
+            return False
+        self.metrics_service.increment("metric_practice_mode_started")
         return True
 
     def _close_practice_log_file(self) -> None:

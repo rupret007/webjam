@@ -4,8 +4,10 @@ from pathlib import Path
 from unittest import mock
 
 import numpy as np
+import pytest
 
 from core.band_check_audio import (
+    BandCheckAudioError,
     HeadphoneTonePlayer,
     InputActivityProbe,
     ScratchRecorder,
@@ -188,3 +190,13 @@ def test_headphone_tone_falls_back_truthfully_to_mono_output() -> None:
     assert float(np.max(np.abs(audio[:midpoint, 0]))) > 0.02
     assert float(np.max(np.abs(audio[midpoint:, 0]))) > 0.02
     check.assert_called_once()
+
+
+def test_missing_saved_output_never_falls_back_to_system_default() -> None:
+    with mock.patch(
+        "sounddevice.query_devices", return_value=[]
+    ), mock.patch("sounddevice.play") as play:
+        with pytest.raises(BandCheckAudioError, match="not connected"):
+            HeadphoneTonePlayer().play(output_device_name="Missing Interface")
+
+    play.assert_not_called()

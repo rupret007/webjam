@@ -1,8 +1,8 @@
-# WebJam v0.9.0 UX acceptance checklist
+# WebJam v0.10.0 UX acceptance checklist
 
 Use this checklist for the current Qt app. Setup Wizard, Ready Check, raw
 endpoints, **Start Audio**, **Host & Start Audio**, and a visible Jamulus window
-are legacy paths, not v0.9.0 acceptance criteria.
+are legacy paths, not v0.10.0 acceptance criteria.
 
 ## Launch: understandable in five seconds
 
@@ -10,8 +10,8 @@ are legacy paths, not v0.9.0 acceptance criteria.
       Jam**, and **Join a Jam**.
 - [ ] **Host a Jam** is the single dominant action; Join is obvious without
       visually competing with it.
-- [ ] The supporting signal graphic is original, lightweight, static, sharp at
-      different scales, and never delays interaction.
+- [ ] The original three-part WebJam mark is sharp at different scales, works
+      in one color, and never delays interaction.
 - [ ] Choosing Join reveals one invitation field, one **Join Jam** action, and
       one Back action. No server address, port, process path, recorder setting,
       or routing option is visible.
@@ -41,21 +41,33 @@ are legacy paths, not v0.9.0 acceptance criteria.
 
 ## Host and invitation
 
-- [ ] **Host a Jam** requires one click in the normal macOS build and starts
-      the bundled server and client in the background.
+- [ ] **Host a Jam** requires one click in the normal macOS build. A new or
+      changed setup opens Band Check first; **Start Session** then starts the
+      bundled server and client in the background.
 - [ ] **Starting your jam…** is real lifecycle state, not a fake delay.
 - [ ] Copy Invite stays unavailable until the hosted service is alive and a
       usable same-LAN address exists.
 - [ ] **Ready to share** explains that the host can send the link to a bandmate.
-- [ ] The complete invitation can be copied with one control. It contains no
-      recorder secret, credentials, local path, or private musician data.
+- [ ] The complete invitation can be copied with one control. A v2 invitation
+      normally contains a reusable session-scoped bearer credential, not a
+      one-use token; anyone holding it on the LAN can enroll until the host peer
+      restarts. The app therefore masks pasted invite text, renders only
+      **Private invite ready**, and never writes the full link to logs,
+      diagnostics, or support output. It contains no recorder RPC secret, local
+      path, or private musician data. If peer
+      startup fails, **Automatic Local Originals are off** truthfully labels a
+      v1 fallback that still joins/plays and receives a server track but has no
+      WebJam-orchestrated guest local capture or delivery.
 - [ ] The host is represented as **You** from authoritative session data; no
       preview or phantom participant is rendered as connected.
 
 ## Join and connection truth
 
 - [ ] Cold-start link activation and paste-then-Join use the same strict
-      invitation parser and produce the same session.
+      invitation parser, fill/accept the same connection, and proceed through
+      any required Band Check and **Start Session** before producing the same
+      session. An already-running deep link uses the same parser but honors the
+      current-session/active-take guard before switching.
 - [ ] A malformed or ambiguous invite is rejected in the Join window. A stale
       or unreachable invite becomes **This jam isn’t available** with a plain
       request to confirm the host and resend it.
@@ -86,10 +98,17 @@ are legacy paths, not v0.9.0 acceptance criteria.
       descriptions distinguish quiet, signal present, and high signal without
       depending on meter color.
 - [ ] Secondary features—Notes, Multitrack Studio, optional conversation,
-      Settings, and Troubleshooting—remain under **More**.
+      Settings, and Band Check—remain under **More**.
 
 ## Permission and error states
 
+- [ ] After Host/Join on a new or changed setup, plus F2, **More → Band Check**,
+      and **Settings → Run Band Check**, the same guided readiness flow opens.
+      During a live jam it observes the running session without opening a
+      second device or restarting services.
+- [ ] Band Check reports **Ready to Jam**, **Ready with a Warning**, or
+      **Action Needed** in words and keeps technical detail collapsed by
+      default.
 - [ ] Before the first macOS microphone prompt, WebJam explains why access is
       needed and offers **Continue**.
 - [ ] A denied or restricted microphone permission shows **Microphone access is
@@ -99,8 +118,9 @@ are legacy paths, not v0.9.0 acceptance criteria.
 - [ ] **Connection interrupted** clears stale participant/audio truth, announces
       that recovery is in progress, and restores readiness only after real
       reconnection evidence.
-- [ ] Recoverable failures have one next action. Raw exceptions, stack traces,
-      process names, RPC detail, and secrets remain in logs or Troubleshooting.
+- [ ] Recoverable failures have one next action. Appropriate process/RPC detail
+      stays in sanitized logs or collapsed Band Check technical details; raw
+      exceptions and secrets never render, and support output redacts them.
 - [ ] A fatal startup failure is caught, logged, and shown as a concise message
       that tells the user to quit/reopen rather than exposing an exception.
 
@@ -111,11 +131,20 @@ are legacy paths, not v0.9.0 acceptance criteria.
       will disconnect.
 - [ ] The stage and bottom action remain in **Ending…** or **Leaving…** state
       until the worker actually finishes.
-- [ ] An active host recording is stopped and saved before client/server
-      cleanup.
+- [ ] An active or validating host take blocks **End Session** until the host
+      presses **Stop Rec** if needed and waits for **Take saved**; only then can
+      client/server cleanup begin.
 - [ ] Studio Recording Setup clearly separates automatic per-musician server
-      tracks from optional host inputs 1 and 2; joiners cannot enable host-only
-      capture, and explicit capture/output choices persist.
+      tracks from optional inputs 1 and 2 kept locally on this Mac. Either host
+      or an active-v2 guest can explicitly opt in; only the host controls the
+      shared take, and explicit capture/output choices persist. A v1 guest sees
+      no false local-capture claim.
+- [ ] An opted-in guest keeps recording through a peer-control outage and later
+      transfers a size/SHA/PCM-verified copy without moving or deleting the
+      guest original.
+- [ ] **Leave Jam** finalizes any active opted-in guest original, persists the
+      resumable upload queue, and attempts a final upload before disconnecting.
+      An unreachable host leaves truthful recoverable media on the guest Mac.
 - [ ] A finished take exposes gain, pan, mute, solo, wired-output selection,
       and **Export for Logic**. Export stays responsive, never rewrites source
       audio, and reports either the ready folder or an actionable safe failure.
@@ -146,7 +175,8 @@ are legacy paths, not v0.9.0 acceptance criteria.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.
-- [ ] The exact frozen v0.9.0 app passes packaged startup, Host/Join runtime,
+- [ ] The exact frozen v0.10.0 app passes packaged startup, Band Check,
+      Host/Join runtime,
       deep-link, cleanup, and resource/version inspection.
 - [ ] The exact ZIP and SHA-256 used tonight are recorded in
       [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).

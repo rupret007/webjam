@@ -449,19 +449,24 @@ class TestMissingFilesAreGraceful(unittest.TestCase):
 
     def test_playback_open_failure_is_actionable_and_resets_state(self):
         class _FailingSink:
+            def __init__(self):
+                self.stopped = False
+
             def start(self, *_args):
                 raise OSError("device busy")
 
             def stop(self):
-                pass
+                self.stopped = True
 
         with tempfile.TemporaryDirectory() as d:
             take = _take_from(d, [("a.wav", 0.1, 0.2, 0.0)])
-            player = TakePlayer(samplerate=RATE, sink=_FailingSink())
+            sink = _FailingSink()
+            player = TakePlayer(samplerate=RATE, sink=sink)
             player.load(take)
             with self.assertRaisesRegex(PlaybackError, "device busy"):
                 player.play()
         self.assertFalse(player.is_playing)
+        self.assertTrue(sink.stopped)
 
 
 class TestSoundDeviceStereoSink(unittest.TestCase):

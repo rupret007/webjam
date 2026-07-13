@@ -64,12 +64,15 @@ mix-minus system if both are required in a future production.
 
 ## Local recording is separate
 
-**Record a supplemental local input stem** is independent of all three Webex
-modes. When enabled, **Meter and local recording input** chooses the device
-WebJam opens for local meters and isolated local capture. It does not configure
-Jamulus or Webex. Open **More → Troubleshooting** and run its detailed check to
-confirm 48 kHz support and recording-path access before relying on it. This
-report is secondary in v0.9.0; it is not part of Host or Join.
+**Keep local interface originals on this Mac** is independent of all three
+Webex modes. When enabled, **Meter and local recording input** chooses the
+device WebJam opens for local meters and isolated local capture. It does not
+configure Jamulus or Webex. Run **Band Check** after choosing Host/Join on a new
+or changed setup, with `F2`, from Settings, or from the live **More** menu to
+confirm 48-kHz support and recording-path access before relying on it. The host,
+or a guest connected through an active v2 private invite, may opt in; the host
+still controls the shared take. A v1 guest has no WebJam-orchestrated local
+capture or delivery.
 
 ## Safety rules
 

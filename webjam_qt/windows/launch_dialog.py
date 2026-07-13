@@ -34,6 +34,7 @@ from core.settings import (
     hosted_server_secret_path,
     save_settings,
 )
+from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
 
@@ -118,10 +119,9 @@ class LaunchDialog(QDialog):
         root.setContentsMargins(Space.XXL, Space.XL, Space.XXL, Space.XL)
         root.setSpacing(Space.MD)
 
-        logo = QLabel("WEBJAM")
-        logo.setObjectName("LaunchLogo")
-        logo.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        root.addWidget(logo)
+        self._logo = BrandMark(48)
+        self._logo.setObjectName("LaunchBrandMark")
+        root.addWidget(self._logo, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._pages = QStackedWidget()
         self._choice_page = self._build_choice_page()

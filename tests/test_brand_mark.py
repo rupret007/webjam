@@ -11,8 +11,9 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QColor  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
+from core.settings import AppSettings  # noqa: E402
 from webjam_qt.theme.brand import (  # noqa: E402
     BRAND_DESCRIPTION,
     BRAND_MARK_PATH,
@@ -23,6 +24,7 @@ from webjam_qt.theme.brand import (  # noqa: E402
 )
 from webjam_qt.theme.tokens import Color  # noqa: E402
 from webjam_qt.widgets.session_strip import SessionStrip  # noqa: E402
+from webjam_qt.windows.launch_dialog import LaunchDialog  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +103,20 @@ def test_session_header_replaces_the_wj_placeholder_with_the_mark():
     assert strip._logo.has_vector_mark()
     assert strip._logo.accessibleName() == "WebJam"
     assert strip._logo.text() != "WJ"
+
+
+def test_launch_dialog_uses_the_three_path_mark_without_an_abbreviation(tmp_path):
+    _qapp()
+    dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    assert isinstance(dialog._logo, BrandMark)
+    assert dialog._logo.has_vector_mark()
+    assert dialog._logo.accessibleName() == "WebJam"
+    assert dialog._logo.text() not in {"WJ", "WEBJAM"}
+    assert all(
+        label.text() not in {"WJ", "WEBJAM"}
+        for label in dialog.findChildren(QLabel)
+    )
+    dialog.close()
 
 
 def test_runtime_and_packaged_icons_share_the_brand_asset():

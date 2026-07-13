@@ -465,7 +465,19 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
         initial_title="Old Jam",
     )
     controller = ApplicationController(window, settings=settings)
-    controller._on_launch_audio = MagicMock()
+    controller.start_session_or_band_check = MagicMock()
+    stale_visible = True
+    stale_dialog = MagicMock()
+    stale_dialog.isVisible.side_effect = lambda: stale_visible
+    stale_dialog._start_session_when_ready = True
+
+    def close_stale_dialog() -> None:
+        nonlocal stale_visible
+        stale_visible = False
+
+    stale_dialog.close.side_effect = close_stale_dialog
+    controller._ready_check_dialog = stale_dialog
+    old_generation = controller._settings_generation
     link = create_invite_link(
         "192.168.1.42", session_name="New Jam"
     )
@@ -473,7 +485,9 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
     assert controller.settings.jamulus_server == "192.168.1.42"
     assert controller.settings.host_server_enabled is False
     assert window.session_strip.current_title() == "New Jam"
-    controller._on_launch_audio.assert_called_once()
+    assert controller._settings_generation == old_generation + 1
+    stale_dialog.close.assert_called_once_with()
+    controller.start_session_or_band_check.assert_called_once()
     controller.shutdown()
 
 
@@ -509,8 +523,8 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     controller.bridge.stop_hosted_server = MagicMock(
         side_effect=lambda: events.append("server-stop") or True
     )
-    controller._on_launch_audio = MagicMock(
-        side_effect=lambda: events.append("new-join-launch")
+    controller.start_session_or_band_check = MagicMock(
+        side_effect=lambda: events.append("new-join-gate")
     )
     link = create_invite_link("192.168.1.42", session_name="New Join Jam")
     with patch.object(
@@ -531,7 +545,7 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
         "client-stop",
         "server-stop",
         "recording-reset",
-        "new-join-launch",
+        "new-join-gate",
     ]
     assert controller.settings.host_server_enabled is False
     controller.bridge.hosted_server_alive.return_value = False

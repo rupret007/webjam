@@ -8,7 +8,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 |------|---------|-------|
 | Python | 3.10+ | Download from https://www.python.org/downloads/ |
 | Git | Latest | https://git-scm.com/downloads |
-| Jamulus | 3.9+ | **Install separately for development** — free at [jamulus.io](https://jamulus.io). Downloadable release *builds* supply Jamulus (the current private macOS build contains prepared client/server apps; earlier Windows builds supplied the official installer — see `THIRD_PARTY_NOTICES.md`), but packaging has no effect when running from source with `python webjam_qt_main.py`. |
+| Jamulus | 3.12.2 | **Install this exact version separately for development** — free at [jamulus.io](https://jamulus.io). Band Check rejects a different client version. Downloadable release *builds* supply Jamulus (the current private macOS build contains prepared client/server apps; earlier Windows builds supplied the official installer — see `THIRD_PARTY_NOTICES.md`), but packaging has no effect when running from source with `python webjam_qt_main.py`. |
 | VB-Cable | Latest | Optional, Windows only — advanced audience-bridge mode; not musician talkback |
 
 When installing Python on Windows, check **"Add python.exe to PATH"** during the installer.
@@ -66,10 +66,13 @@ python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
 Every launch begins with the responsive **Host a Jam** / **Join a Jam** dialog.
-Host derives the standard service settings and starts the server/client without
-a setup form. Join accepts one strict `webjam://` invitation. Ordinary Settings
-contains only the displayed musician name and optional conversation URL;
-technical readiness detail is secondary under **More → Troubleshooting**.
+Host derives the standard service settings without a setup form; a new or
+changed setup goes through Band Check and **Start Session** before the
+server/client starts. Join fills and accepts one strict `webjam://` invitation,
+then follows the same required readiness/start step. Ordinary Settings contains
+only the displayed musician name and optional conversation URL; technical
+readiness is handled by the permanent **Band Check** flow from first run, `F2`,
+Settings, or the live **More** menu.
 
 The current UI contract is documented in
 [`UX_ACCEPTANCE_CHECKLIST.md`](UX_ACCEPTANCE_CHECKLIST.md). When adding a state,
@@ -151,7 +154,7 @@ Override defaults without editing code:
 | `WEBJAM_JAMULUS_PORT` | `22124` | Jamulus server port |
 | `WEBJAM_WEBEX_URL` | empty | HTTPS `webex.com` meeting URL |
 | `WEBJAM_WEBEX_AUDIO_MODE` | `talkback` | `talkback`, `video_only`, or `audience_bridge` |
-| `WEBJAM_LOCAL_CAPTURE_ENABLED` | `false` | Enable supplemental local input capture independently of Webex mode |
+| `WEBJAM_LOCAL_CAPTURE_ENABLED` | `false` | Explicitly keep this Mac's local interface originals independently of Webex mode |
 | `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
 | `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
 | `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |

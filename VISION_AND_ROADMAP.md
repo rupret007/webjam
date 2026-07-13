@@ -73,26 +73,45 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Implemented — v0.9.0 test-night candidate (2026-07-13)
+### ✅ Implemented in source — v0.10.0 certification candidate (2026-07-13)
 
 - **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
-  opens one invitation field. The bundled server/client start automatically in
-  the normal macOS flow.
+  opens one invitation field. A new or changed setup proceeds through Band
+  Check and **Start Session**; a matching stored check starts the bundled
+  server/client directly.
+- **Permanent Band Check** — required checks after Host/Join on a new or changed
+  setup, plus F2, Settings, and live troubleshooting, share one guided input/
+  headphone/scratch-recording/Studio path with typed Ready, Warning, and Action
+  Needed outcomes. A separate footer action previews the support bundle.
 - **Distinct visual identity** — near-black surfaces, white type, and official
   burnt orange (`#BF5700`) replace the previous purple/teal control palette.
-  The launch graphic is original, lightweight, static, and purpose-driven.
+  An original three-part mark represents conversation, live music, and
+  production without reusing a third-party logo.
 - **Meeting-style live hierarchy** — responsive musician tiles and one bottom
   control bar for Copy Invite, Record, More, and role-aware End Session or
   Leave Jam.
 - **Lifecycle truth** — permission, connecting, interrupted, unavailable,
   offline, ending/leaving, recoverable, and fatal states have plain-language
   next actions. A running process is not treated as proof of connection.
+- **Private local originals** — the host, or a guest connected through an active
+  v2 private invite, can explicitly retain its first two interface inputs. That
+  guest keeps recording through peer outage and resumes a size/SHA/PCM-verified
+  same-LAN transfer without deleting its original. A v1 guest has no
+  WebJam-orchestrated local capture or delivery.
+- **Schema-v2 Studio and Logic handoff** — stable identities, segments, gaps,
+  media truth, offset/drift evidence, mixed-rate playback, common-origin PCM24
+  stems, references, reports, analysis, and checksums share one project model.
+- **Privacy-safe support bundle** — preview and save use one immutable
+  allowlisted artifact that excludes recordings, notes, transcripts, Webex
+  content, private invites, secrets, and home paths by default. The diagnostics
+  shortcut separately creates a short sanitized clipboard summary.
 - **Accessibility and narrow-window support** — visible focus, task-ordered
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
-- **Tonight's boundary** — private Apple Silicon two-Mac same-LAN artifact;
-  physical audio, reconnect, Studio multitrack, Logic import, and cleanup are
-  still required before widening the pilot.
+- **Tonight's boundary** — private Apple Silicon two-Mac same-LAN candidate.
+  Native one-hour longevity, exact-package runtime, physical audio/reconnect/
+  guest-original delivery, Logic import, and cleanup remain explicit gates; no
+  automated result fills those physical fields.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
@@ -101,10 +120,10 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.9.0
+work. It is retained as implementation history; current status is the v0.10.0
 section above. v0.8.0 remains the latest published build at
-[Releases](https://github.com/rupret007/webjam/releases) until the physical
-pilot gates pass.
+[Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
+gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Focused first run** — two-step Host/Join, identity, Webex, and optional
@@ -136,13 +155,15 @@ pilot gates pass.
 
 ### 🔜 Next — closed pilot gates
 
-- Exact v0.9.0 artifact startup/resource/signature inspection and the planned
+- Native Jamulus/JACK 3,600-second certification plus exact v0.10.0 artifact
+  startup/resource/signature/runtime inspection and the planned
   two-Apple-Silicon-Mac same-LAN physical pilot.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
-  reconnection truth, role-aware
-  End/Leave, and a 45–60 minute soak on the pilot hardware.
-- macOS code signing/notarization and Windows signing.
+  reconnection truth, guest-original outage delivery, role-aware End/Leave,
+  and clean relaunch.
+- Developer ID macOS signing/notarization and Windows signing before broad
+  distribution; the private candidate remains ad-hoc signed.
 - Architecture split after pilot-readiness fixes: audio/session, video, recording, settings, and companion API coordinators.
 
 ### Phase 2 – Differentiation (mid term)

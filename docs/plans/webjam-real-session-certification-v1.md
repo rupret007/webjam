@@ -68,8 +68,10 @@ evidence.
 - Logic Pro import and playback: **NOT RUN**.
 - Local Docker ARM at-least-60-minute soak: **FAILED after 667.201 seconds**;
   the 73rd measured cycle had 35/105 silent 20-ms windows. Cleanup was clean.
-- Native Ubuntu at-least-60-minute workflow: **PENDING dispatch after the
-  branch is pushed**.
+- Native Ubuntu at-least-60-minute workflow: initial run `29261331713` was
+  deliberately **CANCELLED as insufficient** after packaged smoke exposed a
+  release-blocking Host UI freeze in source `6ebc883`. Replacement GitHub
+  Actions run `29262915880` is dispatched against fixed source `f4d04c7`.
 
 These remain gates even when every deterministic and real-JACK test passes.
 
@@ -83,11 +85,11 @@ These remain gates even when every deterministic and real-JACK test passes.
 - [x] Resolve the old candidate SHA mismatch without overwriting either file.
 - [x] Exercise the preserved v0.9.0 packaged Host, bundled Jamulus client and
   server, Record, manifest creation, finalization, and normal cleanup.
-- [ ] Build a new candidate from the integrated tree.
+- [x] Build a new candidate from the integrated tree.
 - [ ] Exercise new-candidate cold Host and Join/deep-link, Band Check, Record,
   reconnect, Studio, support bundle, Logic export, End/Leave, and relaunch.
-- [ ] Record the new candidate's final version, commit, path, SHA-256,
-  signatures, and extraction directory. Use placeholders until it exists.
+- [x] Record the new candidate's final version, commit, path, SHA-256,
+  signatures, and extraction directory.
 
 ### 2. Production audio and recording architecture
 
@@ -117,8 +119,8 @@ These remain gates even when every deterministic and real-JACK test passes.
   unless the requested signal duration is at least 3,600 seconds.
 - [x] Record the failed local Docker ARM soak without treating its clean first
   72 cycles or clean shutdown as a longevity pass.
-- [ ] Dispatch and record the native Ubuntu at-least-60-minute workflow after
-  the branch is pushed.
+- [ ] Record replacement native Ubuntu at-least-60-minute workflow
+  `29262915880`, dispatched against fixed source `f4d04c7`.
 - [ ] Repeat the critical route/acoustic proof on two physical Macs.
 
 ### 4. Permanent Band Check
@@ -148,7 +150,8 @@ These remain gates even when every deterministic and real-JACK test passes.
 - [x] Gaps and reconnect media intervals are explicit schema-v2 segments.
 - [x] A private installation UUID derives a stable session participant UUID;
   authenticated generation-bound presence survives channel/name changes.
-- [x] Host and opted-in guests can retain local isolated originals.
+- [x] The host and active-v2 opted-in guests can retain local isolated
+  originals; v1 guests cannot use WebJam-orchestrated local capture.
 - [x] Uploads are resumable, idempotent, size/SHA/PCM verified, and published
   atomically without moving or deleting the guest's original.
 - [x] Partial files remain visible; missing, receiving, partial, damaged, and
@@ -194,7 +197,8 @@ server tracks, not an independently captured acoustic/live-output feed.
 - [x] Blank Webex is optional and never blocks Band Check.
 - [x] Warn about delayed duplicate monitoring without changing enterprise
   Webex settings.
-- [x] Preview/copy/save derive from one immutable allowlisted support artifact.
+- [x] Preview and saved ZIP derive from one immutable allowlisted support
+  artifact; the shortcut separately creates a sanitized clipboard summary.
 - [x] The default bundle excludes settings dumps, environment dumps, audio,
   notes, transcripts, meeting links, invitation tokens, secrets, arbitrary
   files, and personal paths.
@@ -213,7 +217,7 @@ server tracks, not an independently captured acoustic/live-output feed.
   restart, client disconnect/reconnect, resource sampling, finalized WAVs, and
   zero-owned-process cleanup.
 - [x] Preserve and record the failed 667.201-second local Docker ARM soak.
-- [ ] Dispatch and record the native Ubuntu at-least-60-minute workflow.
+- [ ] Record fixed-source native Ubuntu replacement workflow `29262915880`.
 - [ ] Finish the remaining packaged/physical matrix: device removal and
   reappearance, microphone permission, full/low disk, invalid directory,
   sleep/wake, firewall, output failure, host restart, and UI close races.
@@ -222,9 +226,10 @@ server tracks, not an independently captured acoustic/live-output feed.
 
 ### 9. Release-candidate evidence
 
-- [ ] Run the final merged full suite, Ruff, compile, dependency, privacy,
-  links, accessibility, and platform build gates.
-- [ ] Build, sign, zip, hash, freshly extract, and run the exact new candidate.
+- [x] Run the final integrated full suite, production Ruff, compile,
+  dependency/vulnerability, privacy, UX, and local build gates.
+- [x] Complete the exact candidate's packaged runtime smoke after its passed
+  build, nested signing, ZIP, hash, and fresh-extraction gates.
 - [x] Maintain a concise physical worksheet at
   [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md).
 - [ ] Complete the worksheet on two Macs and attach its evidence.
@@ -246,15 +251,15 @@ server tracks, not an independently captured acoustic/live-output feed.
 | --- | --- | --- |
 | Band Check | Implemented; focused suites and lifecycle/adversarial cases pass | Manual input/output/acoustic confirmation **NOT RUN** |
 | Two-client audio | Real Jamulus 3.12.2 + two JACK clients exchange distinct measured signals; short rehearsal passes | Two-Mac audibility **NOT RUN** |
-| Isolated recording | Host/guest opt-in local capture, explicit gaps/recovery, resumable verified delivery implemented and deterministically tested | Real two-interface originals/outage delivery **NOT RUN** |
+| Isolated recording | Host/active-v2-guest opt-in local capture, explicit gaps/recovery, resumable verified delivery implemented and deterministically tested; v1 guest capture is unavailable | Real two-interface originals/outage delivery **NOT RUN** |
 | Reconnect | Stable session identity, generation binding, continued capture, resumable upload, truthful segment inventory tested | Physical Wi-Fi interruption **NOT RUN** |
 | Studio | Schema-v2 multi-segment/mixed-rate/gap playback, seek, waveform, mixer, and media truth pass focused tests | Packaged and long-take physical review pending |
 | Alignment | Offset/drift/rate/gap fixtures and non-destructive transforms pass focused tests | Real musician material pending |
 | Logic handoff | Complete schema-v2 package, reports, analyses, and checksum behavior pass focused tests | Logic Pro import **NOT RUN** |
-| Diagnostics | Immutable allowlist preview/copy/save and adversarial redaction pass | Fresh packaged-button check pending |
-| Long session | Short 65.677-second rehearsal passed; local Docker ARM soak failed at 667.201 seconds with a material decoded outage | Native Ubuntu 60-minute workflow pending; neither short/failed run counts |
+| Diagnostics | Immutable allowlist preview/saved-ZIP parity, separate sanitized clipboard summary, and adversarial redaction pass | Fresh packaged-button check pending |
+| Long session | Short 65.677-second rehearsal passed; local Docker ARM soak failed at 667.201 seconds with a material decoded outage | Initial fixed-commit-invalidated CI run was cancelled; replacement native Ubuntu run `29262915880` is pending; neither short/failed/cancelled run counts |
 | Physical two-Mac | Worksheet is ready | **NOT RUN** |
-| New candidate | Source integration in progress | Version/path/SHA/package smoke pending |
+| New candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, bundled client/server authenticated lifecycle, normal Qt close, and cleanup pass at source `f4d04c7` | Human Band Check/Join/recording/Studio/support matrix remains physical work |
 
 ## Defect log
 
@@ -263,7 +268,7 @@ server tracks, not an independently captured acoustic/live-output feed.
 | CERT-001 | High | Resolved | Old artifact provenance and SHA mismatch resolved without overwriting either file. |
 | AUD-001 | Critical | Open physical boundary | WebJam's meter/local writer opens PortAudio separately from Jamulus. It cannot prove Jamulus selected the same device or that a virtual interface excludes Webex/system audio. Band Check copy now preserves this distinction. |
 | AUD-002 | Critical | Resolved deterministically | Local queue/write loss keeps absolute frame time, inserts silence, and records gaps. |
-| AUD-003 | Critical | Resolved in source | Opted-in guests retain local originals and upload verified copies. Physical guest capture/transfer remains **NOT RUN**. |
+| AUD-003 | Critical | Resolved in source | Active-v2 opted-in guests retain local originals and upload verified copies; v1 guests have no WebJam capture path. Physical guest capture/transfer remains **NOT RUN**. |
 | AUD-004 | Critical | Resolved deterministically | Durable installation/session/participant/take/track/segment identities replace mutable name/channel identity. |
 | AUD-005 | High | Resolved for harness | Real two-client Jamulus/JACK boundary harness measures exchange, recorder stems, Studio core, export, and cleanup. It does not replace the macOS gate. |
 | AUD-006 | High | Resolved deterministically | Writer timeout retains ownership and schedules visible recovery; abandoned captures are safely adopted on startup. |
@@ -273,12 +278,13 @@ server tracks, not an independently captured acoustic/live-output feed.
 | AUD-010 | High | Resolved deterministically | Leaving/shutting Studio stops playback and releases its output sink. |
 | AUD-011 | High | Resolved | Band Check has typed outcomes and separates local PortAudio evidence from Jamulus observations. |
 | AUD-012 | High | Resolved | Blank Webex remains optional; input device index `0` is preserved. |
-| AUD-013 | Critical | Resolved deterministically | Support export is allowlist-first, private, recursively redacted, and parity-tested across preview/copy/save. |
+| AUD-013 | Critical | Resolved deterministically | Support export is allowlist-first, private, recursively redacted, and parity-tested across preview/saved ZIP; the separate clipboard summary is sanitized. |
 | AUD-014 | High | Resolved deterministically | Alignment covers multiple anchors, signed offset, drift, rates, gaps, residuals, and manual restoration. |
 | AUD-015 | High | Resolved in source | Schema-v2 Logic package contains aligned selectable stems, references, musical metadata, reports, analysis, source manifest, and checksums. Physical Logic is **NOT RUN**. |
-| AUD-016 | High | Open after failed soak | Short rehearsal passed, but local Docker ARM longevity failed at cycle 73 with 35/105 silent 20-ms windows. Native Ubuntu 3,600-second workflow remains pending. |
-| AUD-017 | Critical scope limit | Accepted for private pilot only | Peer recording control/transfer is authenticated same-LAN HTTP bound to RFC1918 IPv4. There is no TLS, IPv6, Internet, VPN, or NAT traversal claim. Treat invite links as private credentials. |
-| AUD-018 | High | Open final gate | The integrated new candidate has not yet completed full-suite, fresh-package, and two-Mac certification. |
+| AUD-016 | High | Open after failed soak | Short rehearsal passed, but local Docker ARM longevity failed at cycle 73 with 35/105 silent 20-ms windows. The initial CI attempt was cancelled after a separate package blocker; fixed-source native 3,600-second run `29262915880` is pending. |
+| AUD-017 | Critical scope limit | Accepted for trusted private pilot only | Peer recording control/transfer is authenticated same-LAN HTTP bound to RFC1918 IPv4. There is no TLS, IPv6, Internet, VPN, NAT traversal, upload quota, or rate limiting. Treat invites as private credentials and do not use this plane with untrusted users/hostile LANs. |
+| AUD-018 | High | Open physical/longevity gate | The integrated full suite, fresh-package integrity, and full packaged Host/client cleanup gates pass. Native longevity and two-Mac certification remain open. |
+| AUD-019 | Critical | Resolved and packaged | Packaged Host could freeze its UI in reverse DNS while binding the private peer service. `f4d04c7` bypasses `HTTPServer` name lookup, has a regression that fails on `getfqdn`, and completes the full frozen Host lifecycle normally. |
 
 ## Architecture truth
 
@@ -330,8 +336,11 @@ A private installation UUID deterministically maps to a session participant
 UUID. The host binds that durable participant to the current Jamulus channel
 using an authenticated monotonic generation. A v2 invitation includes the
 Jamulus endpoint plus session UUID, host peer port, and a random enrollment
-credential. Legacy v1 links still join Jamulus but do not enable the private
-recording plane.
+credential. That invitation is a reusable session-scoped bearer rather than a
+one-use or one-guest token: every installation presenting it on the LAN can
+enroll until the host peer restarts. Legacy v1 links still join Jamulus and
+receive a host-side server track, but do not enable WebJam-orchestrated guest
+local capture or the private recording/transfer plane.
 
 The host peer service binds only to a private RFC1918 IPv4 address and an
 ephemeral port. It uses authenticated plain HTTP, not HTTPS/TLS. It does not
@@ -370,14 +379,18 @@ verification remains false until the worksheet is completed.
 Band Check uses a GUI-free typed state model. Pre-session tests require
 explicit user actions before input metering, tone playback, or scratch capture.
 Live-observe mode reads existing process/RPC/recorder/level evidence and never
-opens a second device or changes a running service. A private verification
-signature binds app/Jamulus versions, role, devices, rate/channels, outcome,
-manual confirmations, and time; a material change reopens the flow.
+opens a second device or changes a running service. The locally stored
+verification record contains app/Jamulus versions, role, devices,
+rate/channels, outcome, manual confirmations, and an informational timestamp.
+Startup reuse requires a usable outcome/confirmations and an exact signature
+match; the timestamp is recorded for evidence but does not expire the check.
 
-Support preview, copy text, JSON, manifest, and ZIP derive from one cached
-immutable allowlist artifact. The archive excludes audio and personal content
-by default, recursively redacts bounded text-log tails, publishes atomically,
-and uses mode 0600.
+Within the save workflow, support preview, copy-text representation, JSON,
+manifest, and ZIP derive from one cached immutable allowlist artifact. The
+separate shortcut creates a new sanitized clipboard summary. The archive
+excludes recordings, notes, transcripts, Webex content, private invites,
+secrets, and home paths by default; it recursively redacts bounded text-log
+tails, publishes atomically, and uses mode 0600.
 
 ## Command and evidence log
 
@@ -439,12 +452,18 @@ brand mark/assets/UI/package-focused suite
 Ruff / compile / git diff --check for reported slices
   passed
 final post-integration full suite
-  NOT RUN at the time of this entry
+  1304 passed, 17 skipped, 1 warning, 6 subtests passed in 51.50 s
+production Ruff (webjam_qt core ui services api)
+  passed
+compileall, UX smoke, workflow YAML, and git diff --check
+  passed
+pip check, pip-audit --local, and pip-audit -r requirements.txt
+  passed; no broken requirements or known vulnerabilities reported
 ```
 
-The transfer runtime numbers above are slice evidence, not a substitute for a
-post-merge rerun. Root subsequently fixed project-clock duration handling; the
-final combined/full gates must be recorded separately.
+The final integrated suite supersedes the earlier interim failure count. Ruff
+was intentionally applied to production code, matching CI; a whole-tests-tree
+Ruff scan still reports 11 pre-existing findings in otherwise passing tests.
 
 ### 2026-07-13 — real Jamulus/JACK boundary evidence
 
@@ -493,9 +512,32 @@ cleanup
 ```
 
 The bounded xrun rate and clean cleanup do not override the decoded-signal
-failure. This run is preserved as a real defect result, not a partial pass. A
-native Ubuntu workflow will be dispatched after the branch push; its
-at-least-3,600-second result remains pending.
+failure. This run is preserved as a real defect result, not a partial pass.
+
+### 2026-07-13 — packaged reverse-DNS defect and fixed candidate
+
+The first v0.10.0 package from `6ebc883` was rejected after an eight-second
+frozen Host smoke stopped making UI progress. A process sample proved all
+763/763 main-thread samples were blocked in reverse DNS from
+`HTTPServer.server_bind()` while the private peer service bound its RFC1918
+address. It was not a microphone-permission wait.
+
+Commit `f4d04c7d6151295e4098428f2d1a9e2d7e5a0853` now binds through
+`TCPServer.server_bind()`, preserves numeric bound-address metadata, and has a
+regression that fails if construction calls `socket.getfqdn()`. The adjacent
+transfer suites passed 30 tests and the final integrated suite passed 1,304.
+
+GitHub Actions run `29261331713` against the rejected source was deliberately
+cancelled after about five minutes. Its source test, real-Jamulus integration,
+and macOS ARM build happened to pass, but the cancelled run is not longevity or
+cross-platform evidence and will not be counted. Fixed-source replacement run
+`29262915880` is dispatched and must complete.
+
+The fixed, fresh-extracted package completed the normal eight-second Host
+lifecycle with exit 0 and no forced termination. Bundled Jamulus client/server
+3.12.2, UDP, both authenticated RPC listeners, and `caffeinate` were observed;
+the Qt close timer fired; zero audio files were created; no child processes or
+ports remained.
 
 ## New-candidate artifact handoff
 
@@ -503,40 +545,36 @@ Do not copy the preserved v0.9.0 values into these fields.
 
 ```text
 Candidate version:       0.10.0
-Source commit:           [TO FILL AFTER FINAL COMMIT]
-Artifact filename:       [TO FILL AFTER FRESH BUILD]
-Artifact absolute path:  [TO FILL AFTER FRESH BUILD]
-SHA-256:                 [TO FILL AFTER ZIP IS FINAL]
-Codesign result:         [TO FILL]
-Fresh extraction path:   [TO FILL]
-Packaged smoke result:   [TO FILL]
+Source commit:           f4d04c7d6151295e4098428f2d1a9e2d7e5a0853
+Artifact filename:       WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
+Artifact absolute path:  /Users/jeffstory/Documents/WebJam 2/WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
+SHA-256:                 ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8
+Codesign result:         PASS; strict/deep ad-hoc outer + nested Jamulus/JamulusServer; not Developer ID/notarized
+Fresh extraction path:   /tmp/webjam-v010-fresh/WebJam.app; strict/deep PASS
+Packaged smoke result:   PASS; fresh ZIP, normal 8 s Qt Host/client/server/RPC lifecycle, exit 0, zero audio/leaks, ports free
 Failed local report:     /Users/jeffstory/Claude/Projects/WebJam/soak-artifacts/jamulus-jack-soak-native-arm64.json
-Native Ubuntu report:    [PENDING DISPATCH AFTER BRANCH PUSH]
+Native Ubuntu report:    run 29261331713 CANCELLED/INSUFFICIENT; run 29262915880 PENDING
 Two-Mac worksheet:       NOT RUN
 Logic Pro import:        NOT RUN
 ```
 
 ## Exact continuation point
 
-1. Preserve the failed local Docker ARM report outside the commit. After the
-   branch push, dispatch the native Ubuntu at-least-60-minute workflow, review
-   its report, and record exact thresholds/results here. Do not count the short
-   rehearsal or failed 667.201-second run as longevity certification.
-2. Reconcile all concurrent edits, then rerun the focused transfer/Band
-   Check/support/project/Studio/export/harness suites together.
-3. Run the final full source, Ruff, compile, dependency, privacy, links,
-   accessibility, and platform build gates. Record exact commands and results.
-4. Build the v0.10.0 candidate without overwriting v0.9.0. Build from a clean
-   work directory, sign, zip, hash, freshly extract, and exercise the
-   packaged Host/Join/Band Check/Record/reconnect/Studio/export/support/cleanup
-   paths.
-5. Put that exact new ZIP on two Macs and complete
+1. Monitor replacement GitHub Actions run `29262915880`, download its
+   always-uploaded JSON/log, and record exact thresholds/results here. Do not
+   count the short rehearsal, failed 667.201-second run, or cancelled
+   `29261331713` run as longevity.
+2. Complete the remaining human-confirmed packaged Band Check, Join, recording,
+   Studio, support-button, and interface-route checks on the pilot Macs.
+3. Put that exact new ZIP on two Macs and complete
    [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md). Preserve failure
    media and the support bundle before changing any variable.
-6. Import the exact export into Logic Pro and record the project rate, track
+4. Import the exact export into Logic Pro and record the project rate, track
    identities, alignment, references, and result. Until then keep the result
    **NOT RUN**.
-7. Source may be pushed as requested with the failed/pending gates stated
-   plainly. Do not call the build certified or release-ready until the native
-   longevity, physical two-Mac, and Logic gates pass. Do not tag, notarize, or
-   publish an artifact unless separately authorized.
+5. The working feature branch may be pushed with failed/pending gates stated
+   plainly, but the default branch remains gated until the fixed-source native
+   at-least-60-minute report passes every threshold. Even after that source
+   handoff, do not call the build certified or release-ready until the physical
+   two-Mac and Logic gates pass. Do not tag, notarize, or publish an artifact
+   unless separately authorized.

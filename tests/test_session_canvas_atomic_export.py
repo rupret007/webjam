@@ -170,7 +170,10 @@ class TestSessionCanvasAtomicExport(unittest.TestCase):
             canvas.export_brief()
 
         warning.assert_called_once()
-        self.assertIn("disk full", warning.call_args.args[2])
+        rendered = warning.call_args.args[2]
+        self.assertIn("Choose another folder", rendered)
+        self.assertNotIn("disk full", rendered)
+        self.assertNotIn("/unwritable", rendered)
 
     def test_cleared_pulse_falls_back_to_raw_notes(self):
         canvas = SessionCanvas()

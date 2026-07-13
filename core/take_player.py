@@ -328,6 +328,10 @@ class TakePlayer:
         try:
             self._sink.start(self.samplerate, self.blocksize, self._pull)
         except Exception as exc:  # noqa: BLE001
+            try:
+                self._sink.stop()
+            except Exception:  # noqa: BLE001
+                pass
             with self._lock:
                 self._playing = False
                 self._close_readers()

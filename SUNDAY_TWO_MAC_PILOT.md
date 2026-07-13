@@ -5,7 +5,7 @@ Do not pre-check boxes from automated tests or from the preserved v0.9.0 build.
 
 The goal is deliberately simple:
 
-> Band Check → Host → Invite → Join → Play → Record → Review → Export → End
+> Host choice → Band Check → Invite → Join choice → Band Check → Play → Record → Review → Export → End
 
 ## Evidence header
 
@@ -38,11 +38,13 @@ stop and replace it before testing.
   playing so it does not add a delayed copy of the music.
 - Guest isolated-original delivery uses authenticated plain HTTP on the same
   private RFC1918 IPv4 LAN. It has no TLS, IPv6, Internet, VPN, NAT-traversal,
-  or public-network claim. Keep VPNs off and do not expose the peer port.
+  upload quota/rate limiting, or public-network claim. Use only the intended
+  trusted bandmate, keep VPNs off, and do not expose the peer port.
 - A v2 invite contains a random private enrollment credential. Send the full
   link only to the intended bandmate. Do not post it publicly or include it in
-  screenshots/support notes. Ending/restarting the host peer session rotates
-  the credential.
+  screenshots/support notes. It is reusable for that host-peer session, not a
+  one-use token; anyone holding it on the LAN can enroll. Ending/restarting the
+  host peer session rotates the credential.
 - Use wired headphones, not speakers. Set both interfaces to 48 kHz where the
   hardware control panel allows it.
 
@@ -63,59 +65,61 @@ Notes/evidence: __________________________________________________________
 ## 2. Record the actual audio routes
 
 Before trusting any meter, write down the choices visible in macOS and the
-interface itself.
+interface itself. Fill the Band Check and Recording input columns later when
+those controls appear.
 
 | Mac | macOS input | macOS output | Band Check input | Recording input | Jamulus route confirmed by ears? |
 | --- | --- | --- | --- | --- | --- |
 | Host | __________ | __________ | __________ | __________ | YES / NO |
 | Bandmate | __________ | __________ | __________ | __________ | YES / NO |
 
-- [ ] On both Macs, open Studio → **Recording Setup**.
-- [ ] Choose the wired Studio playback output.
-- [ ] If local originals are part of this test, enable **Keep interface inputs
-  1 and 2 as isolated local originals** on both Macs and choose the intended
-  two-channel input. This is explicit opt-in and requires a shareable 48-kHz
-  two-channel device.
-- [ ] If an interface has only one meaningful source, note which of input 1 or
-  input 2 is expected to be silent; do not mislabel the silent lane.
-
 Expected local-original setting:
 
 - Host: ON / OFF; input 1 = ______________; input 2 = ______________
 - Bandmate: ON / OFF; input 1 = ___________; input 2 = ______________
 
-## 3. Band Check on each Mac
+## 3. Host Band Check
 
-Run Band Check separately before joining. Do not let one person's confirmation
-stand in for the other Mac.
+On the host, choose **Host a Jam** once. If its stored verification is missing
+or changed, WebJam opens Band Check before starting the session.
 
-- [ ] Music client/server checks finish without an unexplained blocker.
-- [ ] The selected local input meter moves when that musician plays and rests
+- [ ] Host music-engine and server checks finish without an unexplained blocker.
+- [ ] The host's selected local input meter moves when the host plays and rests
   near silence when they stop.
 - [ ] Deliberately play too loudly once; clipping is identified in words, then
   reduce the interface gain and pass cleanly.
 - [ ] Left/right output checks are heard in the named headphone side.
 - [ ] The five-second recording plays back through the intended headphones.
-- [ ] The musician explicitly chooses **That sounds right** only after hearing
-  their own recording.
-- [ ] Final result is recorded below. A warning is copied verbatim and not
-  treated as an unexplained pass.
+- [ ] The host chooses **That sounds right** only after hearing the recording.
+- [ ] Record the result below. Copy any warning verbatim; do not treat it as an
+  unexplained pass.
+- [ ] Choose **Start Session** after Band Check.
 
-- Host Band Check result/details: ______________________________________
-- Bandmate Band Check result/details: _________________________________
+Host Band Check result/details: _________________________________________
 
-## 4. Host and private invite
+## 4. Private invite and bandmate Band Check
 
-- [ ] On the host, choose **Host a Jam** once.
-- [ ] Wait until WebJam says the jam is ready before copying the invite.
+- [ ] Wait until WebJam says the host jam is ready before copying the invite.
 - [ ] **Copy Invite** produces one complete `webjam://join?...` link.
 - [ ] Do not paste the link into this worksheet. Confirm only that it begins
   with `webjam://join?` and send it privately to the bandmate.
-- [ ] On the bandmate Mac, open the link from a cold start.
+- [ ] If the host shows **Automatic Local Originals are off**, record that the
+  v1 fallback can join/play and receives a host-side server track, but WebJam
+  guest local-original capture and delivery are unavailable.
+- [ ] On the bandmate Mac, open the link from a cold start. Confirm WebJam fills
+  and accepts the connection before the readiness/start step; opening the link
+  alone does not count as joined.
+- [ ] If WebJam asks, complete Band Check on that Mac before joining: verify its
+  music engine, input/clipping, left/right headphones, five-second recording,
+  and **That sounds right** confirmation. Then choose **Start Session**.
+- [ ] Record the bandmate result below; do not reuse the host's confirmation.
 - [ ] Leave, confirm the host remains alive, then paste the same link through
-  **Join a Jam** and rejoin.
+  **Join a Jam**, complete any required Band Check, choose **Start Session**,
+  and rejoin.
 - [ ] Both participant names appear once. Renaming/reconnecting does not create
   a duplicate musician card or duplicate recording identity.
+
+Bandmate Band Check result/details: _____________________________________
 
 Join time and any message shown: _________________________________________
 
@@ -147,7 +151,18 @@ before changing a device, cable, or network.
 ## 6. Record through one interruption
 
 This section proves local preservation, reconnect truth, and later delivery.
+It requires the v2 peer service. If the host showed **Automatic Local Originals
+are off**, run the reconnect/audibility observations but mark WebJam guest
+local-original capture and delivery **NOT AVAILABLE** and do not pass this
+section.
 
+- [ ] On both connected Macs, open Studio → **Recording Setup** and choose the
+  wired Studio playback output.
+- [ ] If local originals are part of this test, enable **Keep interface inputs
+  1 and 2 as isolated local originals** on both Macs and choose the intended
+  shareable two-channel 48-kHz input.
+- [ ] If an interface has only one meaningful source, record which input is
+  expected to be silent; do not mislabel that lane as another source.
 - [ ] Start one take on the host. Wait until recording is confirmed.
 - [ ] Play a short identifiable phrase on each source and say “before outage.”
 - [ ] While recording, turn Wi-Fi off on the bandmate Mac for 10–15 seconds.
@@ -225,6 +240,11 @@ If Logic was not actually opened, leave the result **NOT RUN**.
   transcript, meeting link, invitation token, secret, home path, or arbitrary
   personal file.
 - [ ] Save the bundle and record its path/hash below.
+- [ ] Press **Stop Rec** and wait for **Take saved** before **End Session**.
+  Confirm End Session is blocked while the take is recording or validating.
+- [ ] When the guest chooses **Leave Jam**, confirm WebJam finalizes any active
+  opted-in guest original, persists its resumable queue, and attempts a final
+  upload. If the host is unreachable, the media and queue remain on the guest.
 - [ ] End the host session only after recording/transfer is settled.
 - [ ] Leave/end messages remain visible until real cleanup finishes.
 - [ ] Quit both apps. No WebJam-owned Jamulus client, JamulusServer, recorder,

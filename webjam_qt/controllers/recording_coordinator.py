@@ -368,7 +368,7 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.ERROR)
             self._c._show_actionable_error(
                 "Recording Preflight Failed",
-                what_failed=str(exc),
+                what_failed="WebJam couldn't open the selected two-channel input.",
                 likely_cause=(
                     "The selected interface is unavailable, is not at 48 kHz, "
                     "or another application prevented two-channel capture."
@@ -451,7 +451,7 @@ class RecordingCoordinator:
             LOGGER.exception("Record toggle failed unexpectedly")
             self._c._ui_invoker.invoke(
                 lambda: self._c._apply_record_toggle_failure(
-                    "Unexpected error talking to the band server — see ~/.webjam.log."
+                    "WebJam couldn't confirm the band server's recording state."
                 )
             )
 
@@ -502,7 +502,11 @@ class RecordingCoordinator:
         self._c._show_actionable_error(
             "Recording Could Not Start" if not self._c._recorder_armed
             else "Recording Could Not Stop",
-            what_failed=message,
+            what_failed=(
+                "WebJam couldn't confirm that recording started."
+                if not self._c._recorder_armed
+                else "WebJam couldn't confirm that recording stopped."
+            ),
             likely_cause=(
                 "The recorder RPC is unavailable, the secret is incorrect, or "
                 "JamulusServer is not ready."
@@ -556,12 +560,13 @@ class RecordingCoordinator:
             return False
 
     def _notify_recovered(self, recovered: Path, errors: tuple[str, ...]) -> None:
-        """Tell the user where rescued tracks went — persistently if the
-        folder is outside the Takes folder, where the Take Deck can't list it."""
+        """Offer a safe route to rescued tracks without rendering local paths."""
+        for error in errors:
+            LOGGER.warning("Recovered local capture needs review: %s", error)
         if self._is_inside_takes_dir(recovered):
             self._c.window.flash_message(
-                f"Audio stopped. Your isolated local tracks were saved to "
-                f"{recovered.name} — open the Take Deck to review them.",
+                "Audio stopped. Your isolated local tracks were saved. "
+                "Open Studio to review them.",
                 ms=8000,
             )
             return
@@ -572,15 +577,18 @@ class RecordingCoordinator:
             "Recording stopped before a finished server take arrived, but "
             "your isolated local tracks were saved.",
             "",
-            f"Saved to:\n{recovered}",
-            "",
             "This folder is outside your Takes folder, so it won't appear in "
-            "the Take Deck. Use Reveal in Finder to open it, and set a Takes "
+            "Studio. Use Reveal in Finder to open it, and set a Takes "
             "folder in Settings so future recordings land in one place.",
         ]
         if errors:
-            details.extend(["", "Problems noted:"])
-            details.extend(errors)
+            details.extend(
+                [
+                    "",
+                    "Some local tracks need review. Listen to each file before "
+                    "using it.",
+                ]
+            )
         box.setText("\n".join(details))
         reveal_button = box.addButton(
             "Reveal in Finder", QMessageBox.ButtonRole.ActionRole
@@ -761,10 +769,23 @@ class RecordingCoordinator:
     def _show_validation_result(self, result: TakeValidationResult) -> None:
         self.last_validation = result
         self.last_completed_take = result.take.path if result.take else None
+        for warning in result.warnings:
+            LOGGER.warning("Take validation warning: %s", warning)
         if not result.ok:
+            for error in result.errors:
+                LOGGER.warning("Take validation needs attention: %s", error)
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
-            detail = "\n".join(result.errors) or "The take could not be verified."
-            self._c.window.flash_message(f"Take needs attention: {detail}", ms=10000)
+            if result.take is None:
+                message = (
+                    "No completed take was found. Run Band Check, then record "
+                    "a short test take."
+                )
+            else:
+                message = (
+                    "Take saved, but it needs review. Open Studio and listen "
+                    "to each track before export."
+                )
+            self._c.window.flash_message(message, ms=10000)
         else:
             self._set_phase(RecorderPhase.COMPLETE)
             suffix = f" · {len(result.warnings)} warning(s)" if result.warnings else ""
@@ -786,40 +807,33 @@ class RecordingCoordinator:
         """Title and body for the completion box — pure, so tests can read it."""
         if result.ok:
             details = [f"Take saved · {result.summary}"]
-            details.extend(f"Warning: {warning}" for warning in result.warnings)
+            if result.warnings:
+                details.extend(
+                    [
+                        "",
+                        "WebJam found something to review. Open Studio and listen "
+                        "to each track before export.",
+                    ]
+                )
             return "WebJam — Recording complete", "\n".join(details)
         title = "WebJam — Take needs attention"
         if result.take is not None:
             details = [
                 "Your recording was preserved, but it did not pass every check.",
                 "",
-                f"Saved to: {result.take.path}",
+                "The recorded tracks may still be playable. Open Studio, listen "
+                "to each track, then record a short test take.",
                 "",
-                "What needs attention:",
+                "Use Reveal in Finder to open the saved files.",
             ]
-            details.extend(f"• {error}" for error in result.errors)
-            if result.warnings:
-                details.extend(["", "Warnings:"])
-                details.extend(f"• {warning}" for warning in result.warnings)
-            details.extend([
-                "",
-                "The recorded tracks are still playable. Open the Take Deck to "
-                "hear what was captured, fix the issue above, then record a "
-                "short test take.",
-            ])
         else:
             details = [
                 "No completed take was found on this Mac.",
                 "",
-                "What went wrong:",
-            ]
-            details.extend(f"• {error}" for error in result.errors)
-            details.extend([
-                "",
                 "There is nothing to play back yet. Run Band Check (F2) to "
                 "verify the band server's recorder, then record a short test "
                 "take.",
-            ])
+            ]
         return title, "\n".join(details)
 
     def _open_completion_box(self, result: TakeValidationResult) -> None:
@@ -830,7 +844,7 @@ class RecordingCoordinator:
             QMessageBox.Icon.Information if result.ok else QMessageBox.Icon.Warning
         )
         box.setText(body)
-        open_button = box.addButton("Open Take Deck", QMessageBox.ButtonRole.ActionRole)
+        open_button = box.addButton("Open Studio", QMessageBox.ButtonRole.ActionRole)
         reveal_button = None
         if result.take is not None:
             reveal_button = box.addButton("Reveal in Finder", QMessageBox.ButtonRole.ActionRole)

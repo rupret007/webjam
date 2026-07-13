@@ -569,6 +569,10 @@ class HeadphoneTonePlayer:
             left *= envelope
             right *= envelope
             device = _output_device_index(sd, output_device_name)
+            if str(output_device_name or "").strip() and device is None:
+                raise BandCheckAudioError(
+                    "The selected Studio output is not connected."
+                )
             channels = 2
             try:
                 raw = sd.query_devices(device, "output")

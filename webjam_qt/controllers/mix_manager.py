@@ -62,18 +62,17 @@ class MixManager:
             self._log.info("Mix saved to %s", mix_path)
             self._flash("Mix saved  \u00b7  Ctrl+O to restore", 4000)
             return True
-        except OSError as exc:
+        except OSError:
             self._log.exception("Failed to save mix to %s", mix_path)
             self._flash(
-                f"Couldn't save mix: {exc.strerror or exc}. "
-                f"Check folder permissions and disk space.",
+                "Couldn't save mix. Check folder permissions and disk space.",
                 6000,
             )
             return False
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             self._log.exception("Failed to save mix")
             self._flash(
-                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
+                "Couldn't save mix. Check folder permissions and disk space.",
                 6000,
             )
             return False
@@ -106,17 +105,17 @@ class MixManager:
                 except Exception:  # noqa: BLE001
                     self._log.debug("metric increment failed", exc_info=True)
             return False
-        except OSError as exc:
+        except OSError:
             self._log.exception("Could not read mix file")
             self._flash(
-                f"Couldn't read mix file: {exc.strerror or exc}.",
+                "Couldn't read mix file. Check file access and try again.",
                 6000,
             )
             return False
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             self._log.exception("Failed to load mix")
             self._flash(
-                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
+                "Couldn't load mix. Save a Support Bundle if this repeats.",
                 6000,
             )
             return False
@@ -136,18 +135,17 @@ class MixManager:
             self._log.info("Mix saved to %s", path)
             self._flash(f"Mix saved to {path.name}", 4000)
             return True
-        except OSError as exc:
+        except OSError:
             self._log.exception("Failed to save mix to %s", path)
             self._flash(
-                f"Couldn't save mix: {exc.strerror or exc}. "
-                f"Check folder permissions and disk space.",
+                "Couldn't save mix. Check folder permissions and disk space.",
                 6000,
             )
             return False
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             self._log.exception("Failed to save mix to %s", path)
             self._flash(
-                f"Couldn't save mix: {exc}. See ~/.webjam.log for details.",
+                "Couldn't save mix. Check folder permissions and disk space.",
                 6000,
             )
             return False
@@ -184,17 +182,17 @@ class MixManager:
                 except Exception:  # noqa: BLE001
                     self._log.debug("metric increment failed", exc_info=True)
             return False
-        except OSError as exc:
+        except OSError:
             self._log.exception("Could not read mix file %s", path)
             self._flash(
-                f"Couldn't read mix file: {exc.strerror or exc}.",
+                "Couldn't read mix file. Check file access and try again.",
                 6000,
             )
             return False
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             self._log.exception("Failed to load mix from %s", path)
             self._flash(
-                f"Couldn't load mix: {exc}. See ~/.webjam.log for details.",
+                "Couldn't load mix. Save a Support Bundle if this repeats.",
                 6000,
             )
             return False

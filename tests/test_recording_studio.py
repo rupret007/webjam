@@ -643,11 +643,71 @@ def test_missing_manifest_track_has_lane_and_blocks_logic_export():
             )
             assert "MISSING MEDIA" in guest_lane._detail.text()
             assert "1 missing" in studio._subtitle.text()
-            assert "Guest is missing" in studio._hint.text()
+            assert "needs review" in studio._hint.text()
+            assert "Guest is missing" not in studio._hint.text()
             assert not studio._export_btn.isEnabled()
             assert studio._current.validation_status == "needs_attention"
         finally:
             studio.shutdown()
+
+
+def test_studio_hides_raw_manifest_and_completion_findings(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "host.wav")
+    private_path = "/Users/jeff/private/recordings/host.wav"
+    secret = "Bearer take-secret-123"
+    manifest_path = take / "webjam-take.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "needs_attention",
+                "errors": [f"capture failed at {private_path}: {secret}"],
+                "warnings": [f"warning for {private_path}: {secret}"],
+                "tracks": [
+                    {
+                        "filename": "host.wav",
+                        "name": "Host",
+                        "source": "jamulus_server",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        rendered = "\n".join(
+            [label.text() for label in studio.findChildren(QLabel)]
+            + [
+                studio._take_list.item(row).text()
+                for row in range(studio._take_list.count())
+            ]
+        )
+        assert "needs review" in rendered.lower()
+        assert private_path not in rendered
+        assert secret not in rendered
+        assert "capture failed" not in rendered
+        assert secret in manifest_path.read_text(encoding="utf-8")
+
+        studio.on_take_completed(
+            take,
+            SimpleNamespace(
+                errors=(f"completion failed at {private_path}: {secret}",),
+                warnings=(f"warning at {private_path}",),
+            ),
+        )
+        assert "needs review" in studio._hint.text().lower()
+        assert private_path not in studio._hint.text()
+        assert secret not in studio._hint.text()
+        assert "completion failed" not in studio._hint.text()
+    finally:
+        studio.shutdown()
 
 
 def test_simple_settings_changes_preferences_without_connection_plumbing(tmp_path):
@@ -742,6 +802,108 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
     assert dialog._capture.isChecked()
     assert not dialog._input.isHidden()
     assert "host confirms a take" in dialog._capture_help.text()
+
+
+def test_legacy_invite_disables_false_local_original_claim(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=False,
+        local_capture_enabled=True,
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_output_devices", return_value=[]
+    ), patch(
+        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
+    ):
+        dialog = RecordingSetupDialog(
+            settings,
+            local_originals_available=False,
+        )
+    assert not dialog._capture.isEnabled()
+    assert not dialog._capture.isChecked()
+    assert not dialog._capture_unavailable.isHidden()
+    assert "unavailable for this session" in dialog._capture_unavailable.text()
+
+    dialog._save()
+
+    # The v1 session ignores capture without erasing a musician's opt-in for a
+    # later Host or v2 session.
+    assert settings.local_capture_enabled is True
+
+
+def test_recording_setup_failed_save_does_not_mutate_live_settings(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        take_playback_output_device="Old Output",
+        local_capture_enabled=False,
+    )
+    with patch(
+        "webjam_qt.windows.recording_setup.list_output_devices",
+        return_value=[{"name": "New Output", "channels": 2, "index": 3}],
+    ), patch(
+        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
+    ):
+        dialog = RecordingSetupDialog(settings)
+    dialog._output.setCurrentIndex(dialog._output.findData("New Output"))
+
+    with patch(
+        "webjam_qt.windows.recording_setup.save_settings",
+        side_effect=OSError("token=do-not-show /tmp/settings"),
+    ):
+        dialog._save()
+
+    assert settings.take_playback_output_device == "Old Output"
+    assert settings.local_capture_enabled is False
+    assert not dialog._error.isHidden()
+    assert "do-not-show" not in dialog._error.text()
+
+
+def test_recording_setup_can_choose_a_new_takes_folder(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        takes_directory=str(tmp_path / "old-takes"),
+    )
+    chosen = tmp_path / "new-takes"
+    with patch(
+        "webjam_qt.windows.recording_setup.list_output_devices", return_value=[]
+    ), patch(
+        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
+    ):
+        dialog = RecordingSetupDialog(settings)
+
+    with patch(
+        "webjam_qt.windows.recording_setup.QFileDialog.getExistingDirectory",
+        return_value=str(chosen),
+    ):
+        dialog._choose_folder()
+    dialog._save()
+
+    saved = json.loads(Path(settings.config_file).read_text())
+    assert saved["takes_directory"] == str(chosen)
+    assert str(chosen) in dialog._folder.text()
+    # Dialog edits remain a draft until the controller reloads the saved file.
+    assert settings.takes_directory == str(tmp_path / "old-takes")
+
+
+def test_simple_settings_failed_save_does_not_mutate_live_settings(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        musician_name="Old Name",
+        webex_url="",
+    )
+    dialog = SimpleSettingsDialog(settings)
+    dialog._name.setText("New Name")
+
+    with patch(
+        "webjam_qt.windows.simple_settings.save_settings",
+        side_effect=OSError("token=do-not-show /tmp/settings"),
+    ):
+        dialog._save()
+
+    assert settings.musician_name == "Old Name"
+    assert settings.webex_url == ""
+    assert not dialog._error.isHidden()
+    assert "do-not-show" not in dialog._error.text()
 
 
 def test_invite_chooses_a_non_loopback_address():

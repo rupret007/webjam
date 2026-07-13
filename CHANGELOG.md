@@ -17,11 +17,12 @@ All notable improvements and features for the WebJam music collaboration platfor
   service. Its copy now distinguishes WebJam's separate PortAudio input from
   Jamulus observations, so a moving local meter is not presented as proof of
   what a bandmate hears.
-- **Save Support Bundle** previews one immutable allowlisted artifact before it
-  is copied or saved. The private archive excludes audio, notes, transcripts,
-  Webex content, meeting/invite links, settings/environment dumps, secrets,
-  home paths, and arbitrary personal files by default; bounded log excerpts
-  are recursively redacted.
+- **Save Support Bundle** previews the same immutable allowlisted artifact that
+  is saved as a ZIP. The separate diagnostics shortcut creates its own short,
+  sanitized clipboard summary. The private archive excludes audio, notes,
+  transcripts, Webex content, meeting/invite links, settings/environment dumps,
+  secrets, home paths, and arbitrary personal files by default; bounded log
+  excerpts are recursively redacted.
 
 ### Originals survive reconnects
 
@@ -29,16 +30,26 @@ All notable improvements and features for the WebJam music collaboration platfor
   and segment IDs. Explicit project placement, device/rate/channel/format
   facts, SHA-256, media status, reconnect segments, and gap intervals replace
   filename/name inference.
-- Any Mac can explicitly keep interface inputs 1 and 2 as separate local
-  PCM24/48-kHz originals. Queue or write loss preserves absolute frame time by
-  inserting disclosed silence instead of shortening the recording. Writer
+- The host, and a guest connected through an active v2 private invite, can
+  explicitly keep interface inputs 1 and 2 as separate local PCM24/48-kHz
+  originals. A v1 guest still joins/plays and receives a server track, but has
+  no WebJam-orchestrated local capture or delivery. Queue or write loss
+  preserves absolute frame time by inserting disclosed silence instead of
+  shortening the recording. Writer
   timeout, attach failure, crash, and shutdown preserve visible recoverable
   media and never steal a still-live writer's file handles.
-- A v2 private invite enrolls one stable installation identity. Guest capture
-  begins only after authenticated host recording state, continues while the
-  peer control plane is unavailable, and uploads immutable segments in
-  restartable chunks. Size, SHA-256, and PCM facts must agree before the host
-  atomically attaches a copy; the guest original is never moved or deleted.
+- Each installation that uses a v2 private invite receives a stable
+  session-participant identity. The invite is a reusable session-scoped bearer
+  credential, not a one-use or one-guest token; anyone who has it on the trusted
+  LAN can enroll until the host peer service restarts. Guest capture begins only
+  after authenticated host recording state, continues while the peer control
+  plane is unavailable, and uploads immutable segments in restartable chunks.
+  Size, SHA-256, and PCM facts must agree before the host atomically attaches a
+  copy; the guest original is never moved or deleted.
+- End Session is blocked while a host take is recording or validating; the host
+  presses **Stop Rec** and waits for **Take saved** first. **Leave Jam** finalizes
+  active opted-in guest capture, persists the resumable queue, and attempts one
+  final upload before disconnecting.
 - The peer plane is intentionally limited to authenticated plain HTTP on the
   same RFC1918 IPv4 LAN. It does not claim TLS, IPv6, Internet, VPN, NAT
   traversal, or safe public exposure. Invite links now contain a private
@@ -71,10 +82,17 @@ All notable improvements and features for the WebJam music collaboration platfor
   dropouts, server stems, Studio/export traversal, reconnect, resources, and
   owned-process cleanup. A separate longevity test refuses to count runs below
   3,600 seconds.
+- Private peer-server startup now binds directly to the selected numeric LAN
+  address instead of blocking the Qt thread on reverse DNS. A frozen-package
+  regression and full Host lifecycle prove client/server/RPC startup, normal
+  close, process cleanup, and port release.
 - Automated evidence does not replace the final two-Mac musician and Logic Pro
   gates. At this changelog entry, bidirectional acoustic audibility and Logic
-  import remain **NOT RUN**; the exact new artifact path and SHA are recorded
-  only after the fresh v0.10.0 ZIP is complete.
+  import remain **NOT RUN**. The fresh private Apple Silicon ZIP is
+  `WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `ec9a19585681eb15b194542b6314698ab8ceee42c5f6f24227ee842e729c05b8`;
+  its fresh-extracted Host lifecycle passes and the native one-hour result
+  remains a gate.
 
 ---
 

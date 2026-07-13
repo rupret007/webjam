@@ -187,11 +187,17 @@ class TakeDeck(QDialog):
         self._takes = discover_takes(self._takes_dir) if self._takes_dir else []
         self._take_list.clear()
         if not self._takes:
-            hint = (
-                "No takes found yet. Press ● Record during a jam to capture "
-                "one (needs the band-server recorder — see server/README.md). "
-                f"Looking in: {self._takes_dir or '(no takes folder set)'}"
-            )
+            if self._takes_dir:
+                hint = (
+                    "No takes found yet. Record a short test from Studio, then "
+                    "refresh this list. Choose another Takes folder in Settings "
+                    "if this is unexpected."
+                )
+            else:
+                hint = (
+                    "No Takes folder is set. Open Settings, choose a Takes "
+                    "folder, then record a short test from Studio."
+                )
             recovered_root = Path.home() / "Music" / "WebJam Recovered Takes"
             if recovered_root.is_dir():
                 hint += (
@@ -273,15 +279,26 @@ class TakeDeck(QDialog):
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Take health check failed for %s", take.path)
                 result = TakeValidationResult(
-                    take, ("The take could not be checked — see ~/.webjam.log.",)
+                    take,
+                    ("The take could not be checked — save a Support Bundle.",),
                 )
             self._show_take_health(take, result)
 
     def _show_take_health(self, take, validation: TakeValidationResult) -> None:
         self._title.setText(f"{take.name}  ·  {validation.summary}")
-        messages = list(validation.errors)
-        messages.extend(f"Warning: {warning}" for warning in validation.warnings)
-        self._hint.setText("\n".join(messages))
+        if validation.errors:
+            message = (
+                "This take needs review. Listen to each track before using it, "
+                "then record a short test take."
+            )
+        elif validation.warnings:
+            message = (
+                "This take has something to review. Listen to each track before "
+                "using it."
+            )
+        else:
+            message = "Take checked and ready to play."
+        self._hint.setText(message)
 
     # -- transport --------------------------------------------------------
     def _toggle_play(self) -> None:
@@ -291,8 +308,11 @@ class TakeDeck(QDialog):
         else:
             try:
                 self._player.play()
-            except PlaybackError as exc:
-                self._hint.setText(str(exc))
+            except PlaybackError:
+                self._hint.setText(
+                    "Studio couldn't open the selected playback output. Choose "
+                    "another output in Recording Setup, then try again."
+                )
                 self._play_btn.setText("▶ Play")
                 return
             self._play_btn.setText("⏸ Pause")

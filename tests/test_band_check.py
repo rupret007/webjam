@@ -222,6 +222,36 @@ def test_music_engine_must_launch_exact_compatible_version() -> None:
     assert "required_version=3.12.2" in engine.technical_details
 
 
+def test_missing_guest_server_explains_how_to_get_a_fresh_invite() -> None:
+    report = ReadyCheckReport(
+        [
+            CheckItem("Jamulus installed", True),
+            CheckItem(
+                "Jamulus server set",
+                False,
+                "not configured",
+                required=True,
+            ),
+            CheckItem("Meter and local recording input", True),
+        ]
+    )
+    settings = SimpleNamespace(
+        host_server_enabled=False,
+        webex_url="",
+        audio_input_device_index=-1,
+    )
+    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
+        "core.band_check.music_engine_version", return_value="3.12.2"
+    ):
+        session = build_band_check_session(settings)
+
+    server = session.step(BandCheckStepKey.BAND_SERVER)
+    assert server.status is BandCheckStatus.ACTION_NEEDED
+    assert "paste a fresh invite" in server.detail
+    assert "open it again" in server.detail
+    assert server.next_action == "Close Band Check"
+
+
 def test_host_server_certification_promotes_real_lifecycle_to_pass() -> None:
     report = ReadyCheckReport(
         [
@@ -377,6 +407,21 @@ def test_verification_round_trip_private_and_invalidates_on_any_signature_change
     assert not loaded.matches(
         VerificationSignature("1.0.0", "3.12.2", "portaudio:0:SSL", 44_100, (0,))
     )
+    unavailable = VerificationSignature(
+        "1.0.0",
+        "3.12.2",
+        "portaudio:0:SSL",
+        48_000,
+        (0,),
+        output_device_id="unavailable:Missing Interface",
+    )
+    unavailable_saved = save_verification(
+        tmp_path / "unavailable.json",
+        signature=unavailable,
+        session=session,
+    )
+    assert unavailable_saved.usable
+    assert not unavailable_saved.matches(unavailable)
     if os.name != "nt":
         assert path.stat().st_mode & 0o777 == 0o600
 
@@ -424,15 +469,82 @@ def test_signature_preserves_device_zero_and_channel_configuration() -> None:
     settings = SimpleNamespace(
         audio_input_device_index=0,
         audio_samplerate=48_000,
+        audio_blocksize=128,
         local_capture_enabled=True,
+        take_playback_output_device="Studio Output",
+        takes_directory="/tmp/webjam-takes",
     )
-    with mock.patch("sounddevice.query_devices", return_value={"name": "SSL 2+"}) as query:
+    def query_device(_device, kind):
+        if kind == "input":
+            return {"name": "SSL 2+"}
+        return {"name": "Studio Output", "max_output_channels": 2}
+
+    with mock.patch("sounddevice.query_devices", side_effect=query_device) as query:
         signature = build_verification_signature(
             settings,
             app_version="1.0.0",
             engine_version="3.12.2",
         )
-    query.assert_called_once_with(0, "input")
+    assert query.call_args_list == [
+        mock.call(0, "input"),
+        mock.call("Studio Output", "output"),
+    ]
     assert signature.input_device_id == "portaudio:0:SSL 2+"
     assert signature.input_channels == (0, 1)
     assert signature.sample_rate == 48_000
+    assert signature.audio_blocksize == 128
+    assert signature.output_device_id.endswith(":Studio Output:2")
+    assert len(signature.recording_path_id) == 64
+
+
+def test_signature_invalidates_changed_recording_path_or_output_topology(
+    tmp_path: Path,
+) -> None:
+    settings = SimpleNamespace(
+        audio_input_device_index=0,
+        audio_samplerate=48_000,
+        audio_blocksize=0,
+        local_capture_enabled=False,
+        host_server_enabled=False,
+        take_playback_output_device="SSL 2+",
+        takes_directory=str(tmp_path / "takes-a"),
+        config_file=str(tmp_path / "settings.json"),
+    )
+
+    def connected(_device, kind):
+        if kind == "input":
+            return {"name": "SSL 2+"}
+        return {"name": "SSL 2+", "max_output_channels": 2}
+
+    with mock.patch("sounddevice.query_devices", side_effect=connected):
+        original = build_verification_signature(
+            settings,
+            app_version="1.0.0",
+            engine_version="3.12.2",
+        )
+        settings.takes_directory = str(tmp_path / "takes-b")
+        moved = build_verification_signature(
+            settings,
+            app_version="1.0.0",
+            engine_version="3.12.2",
+        )
+
+    assert moved.recording_path_id != original.recording_path_id
+    assert moved != original
+
+    settings.takes_directory = str(tmp_path / "takes-a")
+
+    def disconnected(_device, kind):
+        if kind == "input":
+            return {"name": "SSL 2+"}
+        raise ValueError("device not found")
+
+    with mock.patch("sounddevice.query_devices", side_effect=disconnected):
+        unplugged = build_verification_signature(
+            settings,
+            app_version="1.0.0",
+            engine_version="3.12.2",
+        )
+
+    assert unplugged.output_device_id == "unavailable:SSL 2+"
+    assert unplugged != original

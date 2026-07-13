@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
@@ -367,6 +368,29 @@ class TestSettingsWizard(_ControllerTestBase):
         self.assertIs(c._mix_manager._jamulus, c.jamulus)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("Settings saved" in m for m in msgs), msgs)
+
+    def test_accepted_wizard_recreates_visible_start_gate(self):
+        c = self.controller
+        stale_dialog = MagicMock()
+        stale_dialog.isVisible.return_value = True
+        stale_dialog._start_session_when_ready = True
+        c._ready_check_dialog = stale_dialog
+        old_generation = c._settings_generation
+        fresh = AppSettings()
+
+        try:
+            with patch.object(c, "_open_band_check") as reopen, patch.object(
+                QTimer,
+                "singleShot",
+                side_effect=lambda _delay, callback: callback(),
+            ):
+                self._run_wizard(accepted=True, new_settings=fresh)
+
+            self.assertEqual(c._settings_generation, old_generation + 1)
+            stale_dialog.close.assert_called_once_with()
+            reopen.assert_called_once_with(start_session_when_ready=True)
+        finally:
+            c._ready_check_dialog = None
 
     def test_accepted_with_changed_webex_url_warns_after_external_launch(self):
         c = self.controller

@@ -1,15 +1,16 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-13 (v0.9.0 test-night candidate)
+> **Last updated:** 2026-07-13 (v0.10.0 certification candidate)
 
 ## Overview
 
 WebJam is a creative-collaboration shell that runs **Jamulus** as its
 low-latency music engine and can optionally launch native **Webex**
-(speech/video) alongside its Conductor window. The normal product flow is
-Host/Join, not music-engine configuration. Notes, multitrack Studio, settings,
-conversation, and diagnostics remain progressively disclosed under **More**.
-WebJam does not embed or control the native meeting.
+(speech/video) alongside its Conductor window. The normal product flow is one
+Host/Join choice, then Band Check when the setup is new or changed, not
+music-engine configuration. Notes, multitrack Studio, settings, conversation,
+and diagnostics remain progressively disclosed under **More**. WebJam does not
+embed or control the native meeting.
 
 The primary runtime is a **Qt/PySide6 Conductor UI**. A legacy Tkinter UI (`legacy/webjam_app_enhanced.py`) is quarantined for archive/fallback use and is not part of the pilot release path.
 
@@ -58,8 +59,10 @@ webjam_qt_main.py          ← entry point
 | `windows/launch_dialog.py` | Responsive two-choice launch plus one-field invitation validation |
 | `windows/conductor_window.py` | Main application window — header, `SessionHud`, `ParticipantGrid`, workspaces, and bottom controls |
 | `windows/simple_settings.py` | Progressive preferences for the displayed name and optional conversation URL |
-| `windows/recording_setup.py` | Focused Studio output and optional two-input host-capture preferences |
-| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.9.0 musician path |
+| `windows/recording_setup.py` | Focused Studio output and explicit two-input local-original consent for the host or an active-v2 guest |
+| `windows/ready_check.py` | Permanent guided Band Check; pre-session actions and non-invasive live observation |
+| `windows/support_bundle_preview.py` | Preview and save one immutable allowlisted, redacted support artifact |
+| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.10.0 musician path |
 | `widgets/participant_card.py` | Per-channel fader, monitor mute, solo, accessible state, and observed level meter |
 | `widgets/participant_grid.py` | Viewport-driven participant layout plus intentional empty/recovery states |
 | `widgets/level_meter.py` | Truthful observed level meter with coarse accessible signal descriptions |
@@ -73,7 +76,6 @@ webjam_qt_main.py          ← entry point
 | `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, completion actions |
 | `session_state.py` | UI-only truth for connect, reconnect, permission, error, ending, and leaving states |
 | `platform_permissions.py` | Dependency-free macOS microphone authorization query; unavailable elsewhere without blocking |
-| `windows/ready_check.py` | Non-blocking required/optional readiness report |
 | `windows/take_deck.py` | Validated take library, selectable stereo playback output, review mixer |
 | `theme/tokens.py` | Color tokens and QSS stylesheet |
 
@@ -120,47 +122,60 @@ apps with recorder data under WebJam's Application Support directory. With
 verifies the exact server version and port ownership, creates the 0600 recorder
 secret, starts the server and per-PID sleep assertion, authenticates recorder
 readiness, and supervises crashes independently of the musician client's
-reconnect preference. **End Session** stops a take, client, owned server, and
-sleep assertion in ownership-aware order; **Leave Jam** stops only the guest's
-client.
+reconnect preference. An active or validating host take blocks **End Session**
+until **Stop Rec** and **Take saved**; the clear End path then stops the client,
+owned server, and sleep assertion in ownership-aware order. **Leave Jam** stops
+the guest client after its v2 peer worker finalizes active local capture,
+persists the resumable queue, and attempts a final upload.
 
 If TCP 22240 is already occupied, WebJam adopts the endpoint only after the
 configured secret authenticates and `getRecorderStatus` proves it is a
 Jamulus recorder. Adopted processes are reported as external and are never
 terminated—or have recording stopped—when WebJam quits. Remote Linux hosting
-remains a developer/legacy-compatible recipe, not the v0.9.0 same-LAN pilot
+remains a developer/legacy-compatible recipe, not the v0.10.0 same-LAN pilot
 path. Both paths use `core/jamulus_server_rpc.py`.
 
 ## Data Flow: Recording completion
 
 ```
 Record button → RecordingCoordinator (preflight)
-  → host only: LocalInputCapture opens inputs 1–2 at 48 kHz
+  → host opt-in: open LocalInputCapture inputs 1–2 at 48 kHz
   → authenticated loopback JSON-RPC → recorderState (recording + timer)
+  → guest opt-in: observe authenticated host state, then open LocalInputCapture
+  → peer outage never deliberately stops that guest's local writer
   → Stop RPC → finalize atomic host WAVs → wait for stable server files
-  → align local stems → write secret-free webjam-take.json → validate WAVs
-  → completion summary → integrated Studio
+  → finalize host local segments and write the initial schema-v2 manifest
+  → register expected guest media as missing/receiving truth in that manifest
+  → resume guest upload from its verified byte offset
+  → require size/SHA/PCM agreement, attach the host copy, and revise atomically
+  → refresh the integrated Studio with the current media truth
 
 Studio Export for Logic
-  → render each signed-offset source onto one zero-based timeline
-  → atomically publish equal-length 24-bit PCM stems
-  → stream a stereo rough mix using gain/pan/mute/solo state
-  → write import instructions + secret-free export evidence manifest
+  → hash-check selected sources and apply immutable offset/drift transforms
+  → render each source onto one common-origin project timeline
+  → atomically publish equal-length PCM24 stems plus server/Studio references
+  → write markers, recording/alignment reports, independent analysis,
+    source/export manifests, checksums, and import instructions
 ```
 
-Supplemental host capture never participates in the live mix. If it fails,
+Local-original capture never participates in the live mix. If it fails,
 Jamulus audio and server-recorder shutdown remain authoritative; WebJam keeps
-the available files and blocks take approval with `Needs Attention`.
+the original/recovered/partial files visible and blocks false completion or
+export while required media needs attention.
 
 ### `core/` — Domain models
 
 | Module | Responsibility |
 |--------|----------------|
 | `settings.py` | `AppSettings` dataclass, `load_settings()` / `save_settings()` — `~/.webjam_config.json` |
-| `local_capture.py` | Atomic two-channel host capture with explicit failure cleanup |
-| `take_library.py` | Take discovery, alignment, manifest evidence, and validation |
-| `take_export.py` | Atomic zero-aligned 24-bit stem package and streaming stereo rough mix for Logic/DAW handoff |
-| `take_player.py` | Non-destructive stereo review transport with gain, pan, mute, solo, and signed-offset playback |
+| `band_check.py` / `band_check_audio.py` | Typed readiness outcomes plus explicit input, output, scratch-recording, host, and Studio checks |
+| `local_capture.py` | PCM24/48-kHz two-channel local originals with absolute-frame gaps, writer ownership, and crash recovery |
+| `session_transfer.py` / `session_transfer_runtime.py` | Authenticated same-RFC1918-LAN presence and resumable verified guest-original delivery |
+| `take_project.py` / `take_library.py` | Schema-v2 identity, segments, media truth, discovery, and validation |
+| `take_alignment.py` | Non-destructive bounded offset/drift evidence and manual restoration |
+| `take_export.py` | Atomic common-origin PCM24 Logic package with references, reports, analysis, and checksums |
+| `take_player.py` | Non-destructive multi-segment/mixed-rate project-clock review with seek, gain, pan, mute, and solo |
+| `support_bundle.py` | Immutable allowlist artifact, recursive redaction, and private atomic ZIP publication |
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
 | `templates.py` | Per-mode quick-start templates |
 | `audio_routing.py` | Loopback-device detection for advanced audience-bridge mode only |
@@ -241,17 +256,29 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot-ready, not broad-release-ready; real-hardware gates still need
-  the two-Mac audio/reconnect/recording/Studio soak and exact-artifact checks.
+- Closed-pilot candidate, not broad-release-ready; native one-hour longevity,
+  exact-package runtime, two-Mac audio/reconnect/originals, Studio, and Logic
+  checks remain release evidence gates until recorded.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
-  earlier Windows artifacts supplied the official client installer). v0.9.0's
-  private pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one
+  Windows CI artifacts supply the official client installer). v0.10.0's private
+  physical pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one
   invitation field; `SimpleSettingsDialog` contains only the musician name and
   optional conversation link. Source runs still require compatible Jamulus
   apps separately.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
+- Guest-original control and transfer use authenticated plain HTTP on one
+  private RFC1918 IPv4 LAN. There is no TLS, IPv6, Internet, VPN, NAT-traversal,
+  or public-deployment claim. The complete v2 invite is a reusable,
+  session-scoped bearer credential: anyone who has it on that LAN can enroll
+  until the host peer service restarts. Peer uploads have no quota or rate
+  limiting, so this is for trusted bandmates on a trusted private LAN, not
+  untrusted users or hostile networks.
+- A legacy v1 guest can join/play and is still represented by a host-side server
+  track, but has no WebJam-orchestrated guest local-original capture or delivery.
 - Native Webex is launched externally. WebJam cannot observe its participant,
-  device, microphone, video, leave, or reconnect state. Troubleshooting can
-  present manual checks, but the primary session never invents Webex state.
+  device, microphone, video, leave, or reconnect state. Band Check can present
+  manual checks, but the primary session never invents Webex state.
 - Listening profiles and deeper creative-mode workflows exist conceptually but are not first-class pilot workflows.
-- macOS code signing/notarization is not yet set up; downloaded `.app` requires manual Gatekeeper override.
+- The private macOS candidate is ad-hoc signed, not Developer ID signed or
+  notarized; a damaged/incomplete-app warning is a packaging failure, not a
+  prompt to bypass the bundle seal.

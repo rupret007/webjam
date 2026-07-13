@@ -3,8 +3,9 @@
 **Date:** 2026-06-29
 **Status:** Historical memo. Its market comparison and protocol history remain
 useful, but current status lives in `README.md` and `MODERNIZATION_PLAN.md`.
-The memo predates the current v0.9.0 Host/Join experience, automatic same-Mac
-hosting, responsive black/white/burnt-orange interface, and integrated Studio.
+The memo predates the current v0.10.0 Band Check/Host/Join experience,
+automatic same-Mac hosting, responsive black/white/burnt-orange interface,
+guest originals, and integrated Studio.
 Do not treat the old release recommendations below as current work.
 An evaluation of what WebJam needs to become a tool a band actually relies on, with the audio engine assessed against the current open-source landscape — plus the headline fix implemented this round.
 
@@ -81,7 +82,7 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: use the distinct v0.9.0 candidate privately, complete
+Current recommendation: use the distinct v0.10.0 candidate privately, complete
 the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the
-exact artifact passes audio, recording, reconnect, role-aware cleanup, and soak
-gates.
+exact artifact passes audio, recording, reconnect, role-aware cleanup, native
+one-hour longevity, and Logic import gates.
