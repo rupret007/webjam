@@ -295,22 +295,13 @@ class TestCheckParticipantsNormalization(unittest.TestCase):
 
 
 class TestRpcConvenienceWrappers(unittest.TestCase):
-    def test_set_self_muted_false_when_rpc_unavailable(self):
-        c = _make_controller()
-        self.assertFalse(c.set_self_muted(True))
-        c.rpc_client.set_self_muted.assert_not_called()
-
-    def test_set_self_muted_success(self):
+    def test_set_self_muted_is_unsupported_and_never_delegates(self):
         c = _make_controller()
         c.rpc_client.available = True
         c.rpc_client.set_self_muted.return_value = True
-        self.assertTrue(c.set_self_muted(True))
-
-    def test_set_self_muted_swallows_rpc_errors(self):
-        c = _make_controller()
-        c.rpc_client.available = True
-        c.rpc_client.set_self_muted.side_effect = RuntimeError("boom")
         self.assertFalse(c.set_self_muted(True))
+        c.rpc_client.set_self_muted.assert_not_called()
+        self.assertFalse(c.live_send_mute)
 
     def test_send_chat_rejects_empty_and_unavailable(self):
         c = _make_controller()

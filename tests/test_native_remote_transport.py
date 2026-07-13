@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
+from core.remote_invitation import issue_remote_invitation
+from core.session_transport import SessionRole, TransportPath
+from services import native_remote_transport as native
+from services.remote_invitation_owner import RemoteInvitationOwnerError
+from services.remote_session_runtime import RemoteSessionPhase
+from services.transport_runtime import TransportEvent
+
+
+HOST_PIN = bytes.fromhex("44" * 32)
+
+
+def _invitation():
+    return issue_remote_invitation(
+        "reference-local",
+        allowed_profiles={"reference-local"},
+        host_spki_sha256=HOST_PIN,
+    ).invitation
+
+
+class FakeProcess:
+    instances = []
+
+    def __init__(self, binary, *, expected_build, command_timeout=5, on_event=None, **_kw):
+        self.binary = Path(binary)
+        self.expected_build = expected_build
+        self.command_timeout = command_timeout
+        self.on_event = on_event
+        self.running = False
+        self.host_generations = []
+        self.guest_generations = []
+        self.closed = 0
+        self.stopped = 0
+        FakeProcess.instances.append(self)
+
+    def start(self):
+        self.running = True
+        return TransportEvent(event_id=0, event_type="ready", code="ok", state="idle")
+
+    def prepare_host(self):
+        return HOST_PIN
+
+    def open_host(self, invitation, *, target_port, generation):
+        assert invitation.host_spki_sha256 == HOST_PIN
+        assert target_port == 22124
+        self.host_generations.append(generation)
+        return TransportEvent(
+            event_id=generation,
+            event_type="host_registered",
+            code="ok",
+            state="host_waiting",
+            mode="host",
+            profile_id="reference-local",
+            generation=generation,
+            loopback_port=43000 + generation,
+        )
+
+    def open_guest(self, invitation, *, generation):
+        assert invitation.host_spki_sha256 == HOST_PIN
+        self.guest_generations.append(generation)
+        return TransportEvent(
+            event_id=generation,
+            event_type="peer_connected",
+            code="ok",
+            state="connected",
+            mode="guest",
+            profile_id="reference-local",
+            generation=generation,
+            loopback_port=43123,
+        )
+
+    def close_peer(self):
+        self.closed += 1
+        return TransportEvent(
+            event_id=self.closed,
+            event_type="peer_closed",
+            code="ok",
+            state="closed",
+        )
+
+    def stop(self):
+        self.stopped += 1
+        self.running = False
+
+    def emit_host_connected(self, generation: int):
+        assert self.on_event is not None
+        self.on_event(
+            TransportEvent(
+                event_id=0,
+                event_type="peer_connected",
+                code="ok",
+                state="connected",
+                mode="host",
+                profile_id="reference-local",
+                generation=generation,
+                loopback_port=43000 + generation,
+            )
+        )
+
+
+def test_guest_backend_returns_only_authenticated_loopback_facts(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+    )
+
+    connected = backend.start_guest(_invitation(), generation=7)
+
+    assert connected.loopback_port == 43123
+    assert connected.path is TransportPath.SECURE_RELAY
+    assert connected.generation == 7
+    assert FakeProcess.instances[-1].guest_generations == [7]
+    backend.stop()
+    assert FakeProcess.instances[-1].closed == 1
+    assert FakeProcess.instances[-1].stopped == 1
+
+
+def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
+    monkeypatch,
+) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    snapshots = []
+    owner = native.NativeHostTransportOwner(
+        target_port=22124,
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_snapshot=snapshots.append,
+    )
+    process = FakeProcess.instances[-1]
+
+    first = owner.copy_for_clipboard()
+    assert first.startswith("webjam://join?v=3")
+    assert process.host_generations == [1]
+    assert owner.snapshot.phase is RemoteSessionPhase.PREPARING
+
+    owner.reset()
+    second = owner.copy_for_clipboard()
+
+    assert second != first
+    assert process.closed == 1
+    assert process.host_generations == [1, 2]
+    assert owner.snapshot.generation == 2
+    assert first not in repr(owner)
+
+    process.emit_host_connected(1)
+    assert owner.invitation_available
+    assert owner.snapshot.phase is RemoteSessionPhase.PREPARING
+
+    process.emit_host_connected(2)
+    assert owner.snapshot.phase is RemoteSessionPhase.CONNECTED
+    assert owner.snapshot.role is SessionRole.HOST
+    assert snapshots[-1].phase is RemoteSessionPhase.CONNECTED
+    assert not owner.invitation_available
+    with pytest.raises(RemoteInvitationOwnerError, match="fresh"):
+        owner.copy_for_clipboard()
+
+    owner.reset()
+    assert owner.invitation_available
+    assert process.host_generations == [1, 2, 3]
+    assert process.closed == 2
+    owner.stop()
+    assert process.stopped == 1
+    assert owner.snapshot.phase is RemoteSessionPhase.STOPPED
+
+
+def test_lab_hosting_requires_explicit_process_local_opt_in(monkeypatch) -> None:
+    monkeypatch.delenv(native.REFERENCE_LOCAL_OPT_IN, raising=False)
+    assert not native.reference_local_host_requested()
+    monkeypatch.setenv(native.REFERENCE_LOCAL_OPT_IN, "1")
+    assert native.reference_local_host_requested()
+    monkeypatch.setenv(native.REFERENCE_LOCAL_OPT_IN, "true")
+    assert not native.reference_local_host_requested()
+
+
+def test_frozen_sidecar_is_resolved_beside_main_executable(monkeypatch) -> None:
+    monkeypatch.setenv(
+        native.TRANSPORT_BINARY_OVERRIDE,
+        "/tmp/attacker-selected-fabric",
+    )
+    monkeypatch.setattr(native.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(native.sys, "executable", "/App/WebJam.app/Contents/MacOS/WebJam")
+    with mock.patch.object(native.os, "name", "posix"):
+        assert native.transport_binary_path() == Path(
+            "/App/WebJam.app/Contents/MacOS/webjam-fabric"
+        )
+
+
+def test_frozen_integrity_manifest_is_mandatory_and_canonical(
+    tmp_path, monkeypatch
+) -> None:
+    binary = tmp_path / "webjam-fabric"
+    binary.write_bytes(b"binary")
+    monkeypatch.setattr(native.sys, "frozen", True, raising=False)
+
+    with pytest.raises(Exception, match="verify"):
+        native._integrity_options(binary)
+
+    (tmp_path / "webjam-fabric.sha256").write_text("a" * 64 + "\n", encoding="ascii")
+    options = native._integrity_options(binary)
+    assert options["expected_sha256"] == "a" * 64
+    assert options["require_platform_signature"] is True

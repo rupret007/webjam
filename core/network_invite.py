@@ -40,7 +40,7 @@ class InviteLinkError(ValueError):
     """Raised when pasted text is not a safe WebJam invitation."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class BandInvite:
     """Parsed join data; v2 instances include a private bearer credential.
 
@@ -58,6 +58,23 @@ class BandInvite:
     @property
     def peer_enabled(self) -> bool:
         return bool(self.session_id and self.peer_port and self.invite_token)
+
+    @property
+    def version(self) -> int:
+        return int(INVITE_VERSION if self.peer_enabled else LEGACY_INVITE_VERSION)
+
+    @property
+    def is_remote(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        """Never place an endpoint, title, session ID, or bearer in logs."""
+
+        version = INVITE_VERSION if self.peer_enabled else LEGACY_INVITE_VERSION
+        return (
+            f"BandInvite(version={version!r}, "
+            f"peer_enabled={self.peer_enabled!r}, private=[redacted])"
+        )
 
 
 def _validate_invitable_host(host: str) -> None:
@@ -154,7 +171,11 @@ def create_invite_link(
     return f"{INVITE_SCHEME}://{INVITE_ACTION}?{query}"
 
 
-def parse_invite_link(text: str) -> BandInvite:
+def parse_invite_link(
+    text: str,
+    *,
+    allowed_remote_profiles: frozenset[str] | None = None,
+):
     """Parse a ``webjam://join`` URL without accepting hidden parameters.
 
     The strict shape keeps the link understandable and prevents a future
@@ -164,6 +185,28 @@ def parse_invite_link(text: str) -> BandInvite:
     value = str(text or "").strip()
     if not value:
         raise InviteLinkError("Paste the invite link your host sent you.")
+    # A literal v3 marker is a one-way dispatcher. Any malformed, mixed, or
+    # untrusted v3 shape fails in the strict remote parser and can never fall
+    # back to a plaintext v1/v2 interpretation.
+    if any(part == "v=3" for part in value.partition("?")[2].split("&")):
+        from core.remote_invitation import (
+            RemoteInvitationError,
+            parse_remote_invitation_link,
+        )
+        from core.rendezvous_profiles import DEFAULT_RENDEZVOUS_PROFILES
+
+        profiles = (
+            DEFAULT_RENDEZVOUS_PROFILES.profile_ids
+            if allowed_remote_profiles is None
+            else allowed_remote_profiles
+        )
+        try:
+            return parse_remote_invitation_link(
+                value,
+                allowed_profiles=profiles,
+            )
+        except RemoteInvitationError as exc:
+            raise InviteLinkError(str(exc)) from exc
     try:
         parsed = urlsplit(value)
     except ValueError as exc:
@@ -232,7 +275,11 @@ def parse_invite_link(text: str) -> BandInvite:
     )
 
 
-def invite_from_text(text: str) -> BandInvite:
+def invite_from_text(
+    text: str,
+    *,
+    allowed_remote_profiles: frozenset[str] | None = None,
+):
     """Parse the preferred link, with a quiet legacy-address fallback.
 
     New UI copy asks for a link.  Accepting a bare address here keeps old test
@@ -241,7 +288,10 @@ def invite_from_text(text: str) -> BandInvite:
     """
     value = str(text or "").strip()
     if "://" in value:
-        return parse_invite_link(value)
+        return parse_invite_link(
+            value,
+            allowed_remote_profiles=allowed_remote_profiles,
+        )
     try:
         endpoint = parse_jamulus_endpoint(value)
     except JamulusEndpointError as exc:

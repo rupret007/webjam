@@ -24,7 +24,12 @@ from PySide6.QtCore import (  # noqa: E402
     QTimer,
     Qt,
 )
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QLineEdit,
+    QMessageBox,
+    QWidget,
+)
 
 from core.network_invite import create_invite_link  # noqa: E402
 from core.session_transfer import SessionCredentials  # noqa: E402
@@ -164,34 +169,32 @@ def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
     hud.set_state(
         "Ready to share",
         "Send this link to your bandmate.",
-        invite_url=invite,
+        invite_available=True,
         action_visible=False,
     )
     hud.show()
     styled_qapp.processEvents()
     try:
-        assert hud._invite.isVisibleTo(hud)
-        assert hud._invite.text() == "Private invite ready"
-        assert hud._invite.isReadOnly()
+        assert hud._invite_available is True
+        assert not hasattr(hud, "_invite")
+        assert not hasattr(hud, "_invite_url")
+        assert hud.findChildren(QLineEdit) == []
         rendered = "\n".join(
             (
-                hud._invite.text(),
-                hud._invite.toolTip(),
-                hud._invite.accessibleName(),
-                hud._invite.accessibleDescription(),
                 hud._action.text(),
                 hud._action.toolTip(),
                 hud._action.accessibleName(),
                 hud._action.accessibleDescription(),
                 hud.accessibleDescription(),
+                repr(vars(hud)),
             )
         )
         assert credentials.invite_token not in rendered
         assert invite not in rendered
         hud.resize(800, 72)
         styled_qapp.processEvents()
-        assert hud._invite.isHidden()
-        assert hud.invite_url() == invite
+        assert hud._invite_available is True
+        assert invite not in repr(vars(hud))
     finally:
         _destroy(hud)
 

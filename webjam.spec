@@ -8,8 +8,9 @@
 # Build a one-file executable (slower startup):
 #   pyinstaller webjam.spec --onefile
 #
-# macOS — sign and notarize after building:
-#   codesign --deep --force --verify --verbose \
+# macOS — after signing every nested component bottom-up, shallow-sign the
+# outer bundle so child signatures are not mutated after their manifests:
+#   codesign --force --verify --verbose \
 #     --sign "Developer ID Application: Your Name (TEAMID)" \
 #     dist/WebJam.app
 #   xcrun altool --notarize-app --primary-bundle-id "com.webjam.app" \
@@ -152,6 +153,18 @@ a = Analysis(
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
         (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
+        # The native transport is staged beside the main executable after
+        # PyInstaller so it can be process-owned without PATH lookup. Its
+        # license inventory is ordinary bundle data and ships on every target.
+        (str(ROOT / "transport" / "NOTICE.md"), "THIRD_PARTY_LICENSES"),
+        (
+            str(ROOT / "transport" / "DEPENDENCIES.md"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(ROOT / "transport" / "licenses"),
+            "THIRD_PARTY_LICENSES/transport",
+        ),
         # Webex widget HTML template
         (str(ROOT / "webjam_qt" / "webex_widget.html"), "webjam_qt"),
         (str(_build_info_path), "."),
@@ -171,6 +184,10 @@ a = Analysis(
         "core.jamulus_rpc_client",
         "core.webex_guest_token",
         "services.bridge_service",
+        "services.native_remote_transport",
+        "services.remote_invitation_owner",
+        "services.remote_session_runtime",
+        "services.transport_runtime",
         "storage.repository",
         "ui.services",
         "core.file_io",

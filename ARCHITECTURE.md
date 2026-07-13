@@ -1,6 +1,6 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-13 (v0.10.0 certification candidate)
+> **Last updated:** 2026-07-13 (v0.10.0 certified baseline plus v3 pre-release work)
 
 ## Overview
 
@@ -74,6 +74,7 @@ webjam_qt_main.py          ← entry point
 | `controllers/audio_coordinator.py` | Permission gate, launch/recovery/end-or-leave lifecycle, and participant-grid transitions |
 | `controllers/video_coordinator.py` | External Webex-launch compatibility wrapper; no meeting control |
 | `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, completion actions |
+| `invitation_ingress.py` | Typed v1/v2/v3 activation boundary; v3 is accepted only through secret-safe paste or Qt file-open ingress, never process arguments |
 | `session_state.py` | UI-only truth for connect, reconnect, permission, error, ending, and leaving states |
 | `platform_permissions.py` | Dependency-free macOS microphone authorization query; unavailable elsewhere without blocking |
 | `windows/take_deck.py` | Validated take library, selectable stereo playback output, review mixer |
@@ -84,6 +85,35 @@ webjam_qt_main.py          ← entry point
 | Module | Responsibility |
 |--------|----------------|
 | `bridge_service.py` | Jamulus client/practice/hosted-server process ownership, reconnect/supervision, and truthful external Webex launch |
+| `transport_runtime.py` | Strict ownership of the packaged `webjam-fabric` child process, bounded IPC, fixed profile selection, and secret-free events |
+| `remote_session_runtime.py` | UI-neutral v3 guest lifecycle and immutable connection snapshots |
+| `remote_invitation_owner.py` | Host-side one-use v3 invitation issuance, copy-time serialization, reset, expiry, consume, and revocation |
+| `native_remote_transport.py` | Concrete lab-only guest/host adapters for the fixed `reference-local` profile and authenticated connection snapshots |
+
+### `transport/` and `reference_service/` — remote v3 development boundary
+
+`transport/` contains the static Go sidecar and its protocol/security labs. It
+owns loopback Jamulus UDP proxying and the encrypted peer session so live
+packets do not cross Python IPC. Process readiness or an open loopback proxy is
+not connection evidence; the desktop may report a remote connection only after
+the authenticated peer session is established and its pumps are running.
+Frozen desktop builds ignore sidecar/build-ID environment overrides and accept
+only the sibling executable after package-manifest SHA-256, thin architecture,
+safe owner/mode, native platform signature, and embedded build-ID validation.
+
+`reference_service/` is the smallest self-hostable control and exact-pair relay
+used by local and CI proof. Its native protocol is bounded TCP NDJSON plus an
+authenticated UDP wrapper. It is not HTTP/WebSocket signaling and is not a
+general TURN service. The only compiled desktop profile in this slice is
+`reference-local`, which fixes all service endpoints to loopback and is marked
+lab-only. IPC cannot supply or override an address, URL, credential,
+certificate, or path.
+
+Pion ICE/TURN direct and relay behavior remains separately proven in a
+deterministic virtual-network lab. That evidence does not mean the native
+reference service implements TURN, nor does either lab prove ordinary Internet
+NATs. No public profile, public service, production credential, or two-home
+result is part of this repository slice.
 
 ### `jamulus_controller.py` — Mixer state
 
@@ -94,6 +124,17 @@ Owns the participant map and all mixer operations. Three communication paths:
 3. **Process poll** — tracks Jamulus process health via `jamulus_process.poll()`
 
 Since v0.4: `set_mute()` and `set_solo()` now use `_send_rpc_gain()` so mute/solo reach Jamulus over RPC instead of UDP-only.
+
+Pinned Jamulus 3.12.2 has no client live-send mute method. The controller
+declares `live_send_mute = False`; no UI, shortcut, or reconnect path sends or
+optimistically renders one. Participant-card mute remains a local monitor-mix
+fader operation. For Webex conversation, the musician uses the interface mute
+or ends the WebJam session first.
+
+For v3, neither host nor guest places the musician name in Jamulus argv. The
+authenticated loopback JSON-RPC connection applies `jamulusclient/setName`
+after local-session proof. Legacy v1/v2 keeps its pre-RPC `--clientname`
+behavior for compatibility.
 
 ### `webex_integration.py` — Webex
 
@@ -179,8 +220,34 @@ export while required media needs attention.
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
 | `templates.py` | Per-mode quick-start templates |
 | `audio_routing.py` | Loopback-device detection for advanced audience-bridge mode only |
+| `audio_route_profile.py` | Immutable OS-stable route identity, evidence levels, deterministic invalidation, and strict Jamulus 3.12.2 CoreAudio/ASIO/JACK config adapter |
 | `jamulus_protocol.py` | Low-level Jamulus UDP packet encode/decode |
 | `ui/services.py` / `MetricsService` | Local counters, session-brief export, diagnostics-bundle export |
+
+### Audio-route truth boundary
+
+`AudioRouteProfile` is the immutable route contract shared by future Band
+Check, Jamulus launch, capture, and Studio wiring. Its invalidation fingerprint
+uses stable OS device identities, channel maps, buffer request/observation,
+device generation, app/Jamulus binary versions, and Linux JACK ownership.
+Display names remain part of the fingerprint because Jamulus 3.12.2 can select
+CoreAudio and ASIO only by name.
+
+Evidence is deliberately explicit:
+
+- `configured` means WebJam wrote a versioned route configuration;
+- `preflighted` means the OS accepted the stable device/format selection;
+- `graph_confirmed` is available only when WebJam owns and enumerates the
+  Linux JACK graph;
+- `musician_confirmed` is the final acoustic proof.
+
+Jamulus 3.12.2 cannot report the active CoreAudio/ASIO device, channel map,
+sample rate, or buffer through JSON-RPC, so macOS and Windows are never called
+graph-confirmed. `Jamulus3122AudioRouteAdapter` writes a protected mode-0600
+inifile atomically with backup/rollback, translates macOS to the exact
+`in: <display>/out: <display>` selector, requires one Windows ASIO identity,
+and gives Linux explicit `JACK_DEFAULT_SERVER`, `--nojackconnect`, and graph
+connections.
 
 ### `storage/` — Persistence
 

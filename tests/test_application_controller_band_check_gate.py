@@ -233,6 +233,69 @@ def test_inflight_verification_restarts_after_same_object_setup_change() -> None
     assert controller._band_check_start_pending is True
 
 
+def test_matching_saved_verification_never_bypasses_v3_host_or_guest_path() -> None:
+    class _ImmediateThread:
+        def __init__(self, *, target, **_kwargs) -> None:
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    for role, stage in (("host", "prepared"), ("guest", "connected")):
+        controller = _bare_controller()
+        controller.settings = AppSettings(host_server_enabled=role == "host")
+        controller.window = mock.Mock()
+        controller._ui_invoker = SimpleNamespace(invoke=lambda callback: callback())
+        controller._on_launch_audio = mock.Mock()
+        controller._open_band_check = mock.Mock()
+        controller._begin_remote_host = mock.Mock()
+        controller._band_check_start_pending = False
+        controller._settings_generation = 0
+        controller._shutdown = False
+        controller._remote_invitation = None
+        controller._remote_invite_owner = object() if role == "host" else None
+        controller._remote_session = (
+            controller._remote_invite_owner if role == "host" else object()
+        )
+        controller._remote_band_check_token = (
+            role,
+            1,
+            "secure_relay",
+            stage,
+        )
+        controller._remote_band_check_completed_token = None
+        controller.guest_peer = None
+        controller._guest_invite = None
+        saved = mock.Mock()
+        saved.matches.return_value = True
+
+        with mock.patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            _ImmediateThread,
+        ), mock.patch(
+            "core.band_check.build_verification_signature",
+            return_value=mock.sentinel.signature,
+        ), mock.patch(
+            "core.band_check.load_verification",
+            return_value=saved,
+        ), mock.patch(
+            "core.band_check.verification_path",
+            return_value="/verification.json",
+        ):
+            controller.start_session_or_band_check()
+
+        saved.matches.assert_not_called()
+        controller._on_launch_audio.assert_not_called()
+        controller._open_band_check.assert_called_once_with(
+            start_session_when_ready=True
+        )
+
+        controller._start_after_band_check(controller._settings_generation)
+
+        assert not controller._remote_band_check_required()
+        controller._on_launch_audio.assert_called_once_with()
+
+
 def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     window = ConductorWindow(

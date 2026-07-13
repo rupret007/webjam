@@ -10,6 +10,7 @@ The first two must never be promoted into a claim about the third.  The Qt
 dialog is only a renderer/driver for this model; tests and future front ends can
 exercise every transition without opening an audio device.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
@@ -22,6 +23,8 @@ from pathlib import Path
 import re
 import subprocess
 from typing import Iterable, Mapping
+
+from core.session_transport import ConnectionQuality, TransportPath
 
 
 class BandCheckMode(str, Enum):
@@ -84,6 +87,9 @@ class BandCheckObservations:
     ``production_local_signal`` and ``production_remote_signal`` must come
     from the Jamulus control path (or an equivalent production-boundary
     diagnostic peer), never from WebJam's separate local sounddevice meter.
+    None of the process, meter, signal, participant, or datagram fields is a
+    claim that a human heard audio.  Only
+    ``musician_confirmed_two_way_audibility`` carries that meaning.
     """
 
     music_engine_running: bool = False
@@ -97,6 +103,93 @@ class BandCheckObservations:
     local_meter_rms: float = 0.0
     local_meter_peak: float = 0.0
     local_meter_clipped: bool = False
+    transport_datagrams_flowed: bool = False
+    remote_decoded_test_observed: bool = False
+    musician_confirmed_two_way_audibility: bool | None = None
+    connection_path: TransportPath | None = None
+    connection_quality: ConnectionQuality = ConnectionQuality.UNKNOWN
+    path_generation: int = 0
+
+    def __post_init__(self) -> None:
+        path = (
+            None
+            if self.connection_path is None
+            else TransportPath(self.connection_path)
+        )
+        quality = ConnectionQuality(self.connection_quality)
+        if (
+            not isinstance(self.path_generation, int)
+            or isinstance(self.path_generation, bool)
+            or self.path_generation < 0
+        ):
+            raise ValueError("path_generation must be a non-negative integer")
+        if path is not None and self.path_generation < 1:
+            raise ValueError("a selected connection path requires a generation")
+        if path is None and quality is not ConnectionQuality.UNKNOWN:
+            raise ValueError("connection quality requires a selected path")
+        if self.musician_confirmed_two_way_audibility is not None and not isinstance(
+            self.musician_confirmed_two_way_audibility, bool
+        ):
+            raise ValueError("musician confirmation must be true, false, or absent")
+        object.__setattr__(self, "connection_path", path)
+        object.__setattr__(self, "connection_quality", quality)
+
+
+@dataclass(frozen=True, slots=True)
+class BandCheckEvidence:
+    """Independent evidence facts for one Band Check session.
+
+    The fields are deliberately not derivable from one another.  In
+    particular, a running process, a responsive control channel, a participant,
+    moving datagrams, and a decoded harness fixture remain weaker facts than a
+    musician's explicit two-way hearing confirmation.
+    """
+
+    local_input_observed: bool = False
+    local_output_confirmed: bool = False
+    local_recording_heard: bool = False
+    jamulus_process_started: bool = False
+    jamulus_authenticated_responsive: bool = False
+    remote_participant_appeared: bool = False
+    transport_datagrams_flowed: bool = False
+    production_local_signal_observed: bool = False
+    production_remote_signal_observed: bool = False
+    remote_decoded_test_observed: bool = False
+    musician_confirmed_two_way_audibility: bool = False
+    connection_path: TransportPath | None = None
+    connection_quality: ConnectionQuality = ConnectionQuality.UNKNOWN
+    path_generation: int = 0
+    path_recheck_required: bool = False
+
+    def __post_init__(self) -> None:
+        path = (
+            None
+            if self.connection_path is None
+            else TransportPath(self.connection_path)
+        )
+        quality = ConnectionQuality(self.connection_quality)
+        if (
+            not isinstance(self.path_generation, int)
+            or isinstance(self.path_generation, bool)
+            or self.path_generation < 0
+        ):
+            raise ValueError("path_generation must be a non-negative integer")
+        if path is not None and self.path_generation < 1:
+            raise ValueError("a selected connection path requires a generation")
+        if path is None and quality is not ConnectionQuality.UNKNOWN:
+            raise ValueError("connection quality requires a selected path")
+        object.__setattr__(self, "connection_path", path)
+        object.__setattr__(self, "connection_quality", quality)
+
+    @property
+    def path_label(self) -> str:
+        if self.connection_path is None:
+            return "The connection path is still being checked"
+        return self.connection_path.musician_label
+
+    @property
+    def quality_label(self) -> str:
+        return self.connection_quality.musician_label
 
 
 @dataclass
@@ -107,6 +200,7 @@ class BandCheckSession:
     input_peak: float = 0.0
     input_clipped: bool = False
     manual_confirmations: set[str] = field(default_factory=set)
+    evidence: BandCheckEvidence = field(default_factory=BandCheckEvidence)
 
     def step(self, key: BandCheckStepKey) -> BandCheckStep:
         return next(item for item in self.steps if item.key is key)
@@ -147,6 +241,7 @@ class BandCheckSession:
         self.input_peak = max(0.0, min(1.0, float(peak)))
         self.input_clipped = bool(clipped or self.input_peak >= 0.99)
         if self.input_clipped:
+            self.evidence = replace(self.evidence, local_input_observed=True)
             self.update_step(
                 BandCheckStepKey.AUDIO_INPUT,
                 status=BandCheckStatus.WARNING,
@@ -154,6 +249,7 @@ class BandCheckSession:
                 next_action="Turn the input gain down",
             )
         elif self.input_peak >= 0.02 or self.input_rms >= 0.005:
+            self.evidence = replace(self.evidence, local_input_observed=True)
             self.update_step(
                 BandCheckStepKey.AUDIO_INPUT,
                 status=BandCheckStatus.PASS,
@@ -182,6 +278,7 @@ class BandCheckSession:
         if heard:
             confirmation = "headphones_left_right" if stereo else "headphones_output"
             self.manual_confirmations.add(confirmation)
+            self.evidence = replace(self.evidence, local_output_confirmed=True)
             self.update_step(
                 BandCheckStepKey.HEADPHONES,
                 status=BandCheckStatus.PASS,
@@ -193,6 +290,7 @@ class BandCheckSession:
                 next_action="",
             )
         else:
+            self.evidence = replace(self.evidence, local_output_confirmed=False)
             self.update_step(
                 BandCheckStepKey.HEADPHONES,
                 status=BandCheckStatus.ACTION_NEEDED,
@@ -220,7 +318,8 @@ class BandCheckSession:
             self.update_step(
                 BandCheckStepKey.TEST_RECORDING,
                 status=BandCheckStatus.ACTION_NEEDED,
-                detail=detail or "The test recording could not be finalized and reopened.",
+                detail=detail
+                or "The test recording could not be finalized and reopened.",
                 next_action="Try the recording again",
                 technical_details=facts,
             )
@@ -235,9 +334,7 @@ class BandCheckSession:
         self.update_step(
             BandCheckStepKey.TEST_RECORDING,
             status=(
-                BandCheckStatus.PENDING
-                if has_signal
-                else BandCheckStatus.ACTION_NEEDED
+                BandCheckStatus.PENDING if has_signal else BandCheckStatus.ACTION_NEEDED
             ),
             detail=(
                 "The five-second file was finalized and reopened. Play it, then "
@@ -246,7 +343,9 @@ class BandCheckSession:
                 else "The file was created correctly, but it contains no usable input level."
             ),
             next_action=(
-                "Play the recording" if has_signal else "Check the input and record again"
+                "Play the recording"
+                if has_signal
+                else "Check the input and record again"
             ),
             technical_details=facts,
         )
@@ -268,6 +367,7 @@ class BandCheckSession:
     def confirm_scratch_playback(self, sounds_right: bool) -> None:
         if sounds_right:
             self.manual_confirmations.add("scratch_sounds_right")
+            self.evidence = replace(self.evidence, local_recording_heard=True)
             self.update_step(
                 BandCheckStepKey.TEST_RECORDING,
                 status=BandCheckStatus.PASS,
@@ -276,6 +376,7 @@ class BandCheckSession:
             )
         else:
             self.manual_confirmations.discard("scratch_sounds_right")
+            self.evidence = replace(self.evidence, local_recording_heard=False)
             self.update_step(
                 BandCheckStepKey.TEST_RECORDING,
                 status=BandCheckStatus.ACTION_NEEDED,
@@ -301,25 +402,45 @@ class BandCheckSession:
 
         if self.mode is not BandCheckMode.LIVE_OBSERVE:
             return
+        if not isinstance(observations, BandCheckObservations):
+            raise TypeError("live observations must be BandCheckObservations")
+        self._merge_live_evidence(observations)
         if observations.local_meter_active:
             self.observe_input(
                 rms=observations.local_meter_rms,
                 peak=observations.local_meter_peak,
                 clipped=observations.local_meter_clipped,
             )
-        if observations.music_engine_running and observations.music_engine_responsive:
+        if (
+            self.evidence.jamulus_process_started
+            and self.evidence.jamulus_authenticated_responsive
+        ):
             self.update_step(
                 BandCheckStepKey.MUSIC_ENGINE,
                 status=BandCheckStatus.PASS,
-                detail="The music engine is running and responding.",
+                detail=(
+                    "The music engine started and its secure control check is "
+                    "responding. The music path is checked separately."
+                ),
                 next_action="",
+                technical_details=(
+                    "process_started=true",
+                    "authenticated_responsive=true",
+                ),
             )
-        elif observations.music_engine_running:
+        elif self.evidence.jamulus_process_started:
             self.update_step(
                 BandCheckStepKey.MUSIC_ENGINE,
                 status=BandCheckStatus.ACTION_NEEDED,
-                detail="The music engine is running but is not responding.",
+                detail=(
+                    "The music engine started, but its secure control check is not "
+                    "responding. This does not prove that music is flowing."
+                ),
                 next_action="End the session, then start it again",
+                technical_details=(
+                    "process_started=true",
+                    "authenticated_responsive=false",
+                ),
             )
         else:
             self.update_step(
@@ -327,39 +448,17 @@ class BandCheckSession:
                 status=BandCheckStatus.ACTION_NEEDED,
                 detail="The music engine is not running.",
                 next_action="Close Band Check and start the session",
+                technical_details=(
+                    "process_started=false",
+                    "authenticated_responsive=false",
+                ),
             )
 
-        if observations.production_local_signal and observations.production_remote_signal:
-            status = BandCheckStatus.PASS
-            detail = "Jamulus reports both your music and band audio on the live path."
-            action = ""
-        elif observations.production_local_signal:
-            status = BandCheckStatus.WARNING
-            detail = "Jamulus reports your music. No band audio has been observed yet."
-            action = "Ask a bandmate to play"
-        elif observations.production_remote_signal:
-            status = BandCheckStatus.WARNING
-            detail = "Jamulus reports band audio, but your music has not appeared yet."
-            action = "Play a note"
-        elif observations.peer_connected:
-            status = BandCheckStatus.WARNING
-            detail = "A bandmate is connected, but no live-path audio has been observed yet."
-            action = "Both play a note"
-        else:
-            status = BandCheckStatus.WARNING
-            detail = "No diagnostic peer is available, so send and receive audio are unverified."
-            action = "Check again when a bandmate joins"
         if self.has_step(BandCheckStepKey.MUSIC_PATH):
-            self.update_step(
-                BandCheckStepKey.MUSIC_PATH,
-                status=status,
-                detail=detail,
-                next_action=action,
-            )
+            self._refresh_music_path_step()
 
-        if (
-            observations.band_server_running is not None
-            and self.has_step(BandCheckStepKey.BAND_SERVER)
+        if observations.band_server_running is not None and self.has_step(
+            BandCheckStepKey.BAND_SERVER
         ):
             self.update_step(
                 BandCheckStepKey.BAND_SERVER,
@@ -374,13 +473,13 @@ class BandCheckSession:
                     else "The hosted band server is not running."
                 ),
                 next_action=(
-                    "" if observations.band_server_running
+                    ""
+                    if observations.band_server_running
                     else "End the session, then start it again"
                 ),
             )
-        if (
-            observations.recorder_ready is not None
-            and self.has_step(BandCheckStepKey.RECORDING_PATH)
+        if observations.recorder_ready is not None and self.has_step(
+            BandCheckStepKey.RECORDING_PATH
         ):
             self.update_step(
                 BandCheckStepKey.RECORDING_PATH,
@@ -397,11 +496,270 @@ class BandCheckSession:
                 next_action="",
             )
 
+    def _merge_live_evidence(self, observations: BandCheckObservations) -> None:
+        current = self.evidence
+        authoritative_path = bool(
+            observations.path_generation > 0 or observations.connection_path is not None
+        )
+        next_path = (
+            observations.connection_path
+            if authoritative_path
+            else current.connection_path
+        )
+        next_quality = (
+            observations.connection_quality
+            if authoritative_path
+            else current.connection_quality
+        )
+        next_generation = (
+            observations.path_generation
+            if authoritative_path
+            else current.path_generation
+        )
+        generation_changed = bool(
+            current.path_generation > 0
+            and next_generation > 0
+            and current.path_generation != next_generation
+        )
+        selected_path_changed = bool(
+            authoritative_path
+            and current.path_generation > 0
+            and current.connection_path != next_path
+        )
+        material_path_changed = generation_changed or selected_path_changed
+
+        datagrams = (
+            False if material_path_changed else current.transport_datagrams_flowed
+        )
+        local_signal = (
+            False if material_path_changed else current.production_local_signal_observed
+        )
+        remote_signal = (
+            False
+            if material_path_changed
+            else current.production_remote_signal_observed
+        )
+        remote_decoded = (
+            False if material_path_changed else current.remote_decoded_test_observed
+        )
+        musician_confirmed = (
+            False
+            if material_path_changed
+            else current.musician_confirmed_two_way_audibility
+        )
+        recheck_required = current.path_recheck_required or material_path_changed
+        if material_path_changed:
+            self.manual_confirmations.discard("two_way_audibility")
+
+        supplied_confirmation = observations.musician_confirmed_two_way_audibility
+        if supplied_confirmation is not None:
+            musician_confirmed = supplied_confirmation
+            if supplied_confirmation:
+                recheck_required = False
+                self.manual_confirmations.add("two_way_audibility")
+            else:
+                self.manual_confirmations.discard("two_way_audibility")
+
+        self.evidence = replace(
+            current,
+            jamulus_process_started=bool(observations.music_engine_running),
+            jamulus_authenticated_responsive=bool(observations.music_engine_responsive),
+            remote_participant_appeared=bool(observations.peer_connected),
+            transport_datagrams_flowed=(
+                datagrams or bool(observations.transport_datagrams_flowed)
+            ),
+            production_local_signal_observed=(
+                local_signal or bool(observations.production_local_signal)
+            ),
+            production_remote_signal_observed=(
+                remote_signal or bool(observations.production_remote_signal)
+            ),
+            remote_decoded_test_observed=(
+                remote_decoded or bool(observations.remote_decoded_test_observed)
+            ),
+            musician_confirmed_two_way_audibility=musician_confirmed,
+            connection_path=next_path,
+            connection_quality=next_quality,
+            path_generation=next_generation,
+            path_recheck_required=recheck_required,
+        )
+
+    def confirm_two_way_audibility(self, heard: bool) -> None:
+        """Record an explicit musician judgment for the current path generation."""
+
+        if self.mode is not BandCheckMode.LIVE_OBSERVE or not self.has_step(
+            BandCheckStepKey.MUSIC_PATH
+        ):
+            raise RuntimeError("two-way confirmation requires a live music path")
+        if heard and not self.evidence.remote_participant_appeared:
+            self.evidence = replace(
+                self.evidence,
+                musician_confirmed_two_way_audibility=False,
+            )
+            self.manual_confirmations.discard("two_way_audibility")
+            self.update_step(
+                BandCheckStepKey.MUSIC_PATH,
+                status=BandCheckStatus.ACTION_NEEDED,
+                detail=(
+                    "No bandmate is connected to confirm with yet. Wait for them "
+                    "to join, then play in both directions."
+                ),
+                next_action="Check Again",
+                technical_details=self._music_path_facts(),
+            )
+            return
+        self.evidence = replace(
+            self.evidence,
+            musician_confirmed_two_way_audibility=bool(heard),
+            path_recheck_required=False
+            if heard
+            else self.evidence.path_recheck_required,
+        )
+        if heard:
+            self.manual_confirmations.add("two_way_audibility")
+            self._refresh_music_path_step()
+        else:
+            self.manual_confirmations.discard("two_way_audibility")
+            self.update_step(
+                BandCheckStepKey.MUSIC_PATH,
+                status=BandCheckStatus.ACTION_NEEDED,
+                detail=(
+                    "You could not hear each other in both directions. Check the "
+                    "music setup, then try the Band Check again."
+                ),
+                next_action="Check Again",
+                technical_details=self._music_path_facts(),
+            )
+
+    def _refresh_music_path_step(self) -> None:
+        evidence = self.evidence
+        path_sentence = f"{evidence.path_label}."
+        quality_sentence = f"{evidence.quality_label}."
+
+        if evidence.connection_quality is ConnectionQuality.UNUSABLE:
+            status = BandCheckStatus.ACTION_NEEDED
+            detail = (
+                f"{path_sentence} {quality_sentence} Wait for the connection to "
+                "recover, then check both directions again."
+            )
+            action = "Check Again"
+        elif not evidence.jamulus_authenticated_responsive:
+            status = BandCheckStatus.WARNING
+            detail = (
+                "Waiting for the music engine's secure control check. No hearing "
+                "claim can be made yet."
+            )
+            action = ""
+        elif not evidence.remote_participant_appeared:
+            status = BandCheckStatus.WARNING
+            detail = (
+                f"{path_sentence} Waiting for a bandmate to join. Music in both "
+                "directions is not confirmed yet."
+            )
+            action = "Check Again"
+        elif evidence.musician_confirmed_two_way_audibility:
+            detail = (
+                "You confirmed that you and your bandmate can hear each other in "
+                f"both directions. {path_sentence} {quality_sentence}"
+            )
+            if evidence.connection_quality is ConnectionQuality.PLAYABLE:
+                status = BandCheckStatus.PASS
+                action = ""
+            else:
+                status = BandCheckStatus.WARNING
+                action = "Check Again"
+        elif evidence.path_recheck_required:
+            status = BandCheckStatus.WARNING
+            detail = (
+                "The connection changed. Play in both directions again; moving "
+                "music data does not carry over the earlier hearing confirmation. "
+                f"{path_sentence}"
+            )
+            action = "We Can Still Hear Each Other"
+        elif evidence.remote_decoded_test_observed:
+            status = BandCheckStatus.WARNING
+            detail = (
+                f"{path_sentence} A remote test decoded at the far end. That proves "
+                "the test reached the music path, not that a musician heard it. "
+                "Both play a note, then confirm."
+            )
+            action = "We Can Hear Each Other"
+        elif (
+            evidence.production_local_signal_observed
+            and evidence.production_remote_signal_observed
+        ):
+            status = BandCheckStatus.WARNING
+            detail = (
+                f"{path_sentence} Jamulus reports signal in both directions. That is "
+                "path evidence, not proof that either musician heard it. Both play "
+                "a note, then confirm."
+            )
+            action = "We Can Hear Each Other"
+        elif evidence.transport_datagrams_flowed:
+            status = BandCheckStatus.WARNING
+            detail = (
+                f"Music data crossed the connection. {path_sentence} That does not "
+                "confirm that anyone heard it. Both play a note, then confirm."
+            )
+            action = "We Can Hear Each Other"
+        elif evidence.production_local_signal_observed:
+            status = BandCheckStatus.WARNING
+            detail = (
+                "Jamulus reports your signal, but no band signal has been observed. "
+                "Ask your bandmate to play; this is not a hearing confirmation."
+            )
+            action = "We Can Hear Each Other"
+        elif evidence.production_remote_signal_observed:
+            status = BandCheckStatus.WARNING
+            detail = (
+                "Jamulus reports band signal, but your signal has not been observed. "
+                "Play a note; this is not a hearing confirmation."
+            )
+            action = "We Can Hear Each Other"
+        else:
+            status = BandCheckStatus.WARNING
+            detail = (
+                f"A bandmate is connected. {path_sentence} Both play a note, then "
+                "confirm that you can hear each other."
+            )
+            action = "We Can Hear Each Other"
+
+        if (
+            status is BandCheckStatus.PASS
+            and evidence.connection_quality is ConnectionQuality.DIFFICULT
+        ):
+            status = BandCheckStatus.WARNING
+        self.update_step(
+            BandCheckStepKey.MUSIC_PATH,
+            status=status,
+            detail=detail,
+            next_action=action,
+            technical_details=self._music_path_facts(),
+        )
+
+    def _music_path_facts(self) -> tuple[str, ...]:
+        evidence = self.evidence
+        return (
+            f"process_started={str(evidence.jamulus_process_started).lower()}",
+            "authenticated_responsive="
+            f"{str(evidence.jamulus_authenticated_responsive).lower()}",
+            f"remote_participant={str(evidence.remote_participant_appeared).lower()}",
+            f"transport_datagrams={str(evidence.transport_datagrams_flowed).lower()}",
+            f"remote_decoded_test={str(evidence.remote_decoded_test_observed).lower()}",
+            "musician_two_way_confirmation="
+            f"{str(evidence.musician_confirmed_two_way_audibility).lower()}",
+            f"connection_path={getattr(evidence.connection_path, 'value', 'unknown')}",
+            f"connection_quality={evidence.connection_quality.value}",
+            f"path_generation={evidence.path_generation}",
+            f"path_recheck_required={str(evidence.path_recheck_required).lower()}",
+        )
+
     @property
     def outcome(self) -> BandCheckOutcome:
         required = [item for item in self.steps if item.required]
         if any(
-            item.status in {
+            item.status
+            in {
                 BandCheckStatus.PENDING,
                 BandCheckStatus.RUNNING,
                 BandCheckStatus.ACTION_NEEDED,
@@ -414,7 +772,7 @@ class BandCheckSession:
         return BandCheckOutcome.READY
 
     @property
-    def primary_action(self) -> str:
+    def primary_action_step(self) -> BandCheckStep | None:
         priority = (
             BandCheckStatus.ACTION_NEEDED,
             BandCheckStatus.RUNNING,
@@ -423,11 +781,16 @@ class BandCheckSession:
         for wanted in priority:
             for item in self.steps:
                 if item.required and item.status is wanted and item.next_action:
-                    return item.next_action
+                    return item
         for item in self.steps:
             if item.status is BandCheckStatus.WARNING and item.next_action:
-                return item.next_action
-        return "Close Band Check"
+                return item
+        return None
+
+    @property
+    def primary_action(self) -> str:
+        step = self.primary_action_step
+        return step.next_action if step is not None else "Close Band Check"
 
     def summary_text(self) -> str:
         return f"{self.outcome.value}\nNext: {self.primary_action}."
@@ -467,11 +830,11 @@ def build_band_check_session(
         if item is None:
             return BandCheckStatus.NOT_APPLICABLE
         if item.ok:
-            return BandCheckStatus.PENDING if pending_on_success else BandCheckStatus.PASS
+            return (
+                BandCheckStatus.PENDING if pending_on_success else BandCheckStatus.PASS
+            )
         return (
-            BandCheckStatus.ACTION_NEEDED
-            if item.required
-            else BandCheckStatus.WARNING
+            BandCheckStatus.ACTION_NEEDED if item.required else BandCheckStatus.WARNING
         )
 
     server_items = [item for item in (server, hosted) if item is not None]
@@ -484,9 +847,7 @@ def build_band_check_session(
         and mode is BandCheckMode.PRE_SESSION
         and host_server_certification is not None
     ):
-        certification_ok = bool(
-            getattr(host_server_certification, "ok", False)
-        )
+        certification_ok = bool(getattr(host_server_certification, "ok", False))
         certification_warning = bool(
             getattr(host_server_certification, "warning", False)
         )
@@ -525,7 +886,9 @@ def build_band_check_session(
         server_technical = tuple(getattr(item, "detail", "") for item in server_items)
     elif server_warning:
         server_status = BandCheckStatus.WARNING
-        server_detail = "The band server cannot be fully checked until the session starts."
+        server_detail = (
+            "The band server cannot be fully checked until the session starts."
+        )
         server_action = "Check again after the session starts"
         server_technical = tuple(getattr(item, "detail", "") for item in server_items)
     else:
@@ -548,9 +911,7 @@ def build_band_check_session(
         else "The selected input cannot be opened with this setup."
     )
     try:
-        selected_input_index = int(
-            getattr(settings, "audio_input_device_index", -1)
-        )
+        selected_input_index = int(getattr(settings, "audio_input_device_index", -1))
     except (TypeError, ValueError):
         selected_input_index = -1
     input_action = (
@@ -577,12 +938,16 @@ def build_band_check_session(
 
     engine_compatible = probed_engine_version == "3.12.2"
     engine_status = (
-        BandCheckStatus.PASS
+        BandCheckStatus.PENDING
+        if mode is BandCheckMode.LIVE_OBSERVE
+        else BandCheckStatus.PASS
         if engine is not None and engine.ok and engine_compatible
         else BandCheckStatus.ACTION_NEEDED
     )
     engine_detail = (
-        "The music engine opened for a version check and exited cleanly."
+        "Waiting for the running music engine and its secure control check."
+        if mode is BandCheckMode.LIVE_OBSERVE
+        else "The music engine opened for a version check and exited cleanly."
         if engine_compatible
         else (
             "The required music engine is missing or incompatible. Close Band "
@@ -712,11 +1077,14 @@ def build_band_check_session(
         steps.append(
             BandCheckStep(
                 BandCheckStepKey.MUSIC_PATH,
-                "Live music path",
+                "Connection and music path",
                 BandCheckStatus.WARNING,
-                "Waiting for production send and receive observations.",
-                "Play a note",
-                required=False,
+                (
+                    "Waiting for a bandmate and independent connection, music-data, "
+                    "and hearing evidence."
+                ),
+                "Check Again",
+                required=True,
             )
         )
 
@@ -781,13 +1149,9 @@ class VerificationSignature:
             sample_rate=int(value.get("sample_rate", 0)),
             input_channels=tuple(int(item) for item in channels),
             host_server_enabled=bool(value.get("host_server_enabled", False)),
-            output_device_id=str(
-                value.get("output_device_id", "system-default")
-            ),
+            output_device_id=str(value.get("output_device_id", "system-default")),
             audio_blocksize=int(value.get("audio_blocksize", 0)),
-            recording_path_id=str(
-                value.get("recording_path_id", "unconfigured")
-            ),
+            recording_path_id=str(value.get("recording_path_id", "unconfigured")),
         )
 
 
@@ -958,23 +1322,17 @@ def build_verification_signature(
         if output_channels < 1:
             raise ValueError("output device has no channels")
         output_device_id = (
-            f"portaudio:{requested_output or 'default'}:"
-            f"{output_name}:{output_channels}"
+            f"portaudio:{requested_output or 'default'}:{output_name}:{output_channels}"
         )[:256]
     except Exception:  # noqa: BLE001 - unavailable output must fail closed
-        output_device_id = (
-            f"unavailable:{requested_output or 'system-default'}"
-        )[:256]
+        output_device_id = (f"unavailable:{requested_output or 'system-default'}")[:256]
 
     configured_root = str(getattr(settings, "takes_directory", "") or "").strip()
     if configured_root:
         recording_root = Path(configured_root).expanduser()
     else:
         config_file = Path(
-            str(
-                getattr(settings, "config_file", "")
-                or "~/.webjam_config.json"
-            )
+            str(getattr(settings, "config_file", "") or "~/.webjam_config.json")
         ).expanduser()
         recording_root = config_file.parent
     try:

@@ -106,7 +106,6 @@ class ConductorWindow(QMainWindow):
         self.session_strip._invite_button.setText("Copy Invite")
         self.session_strip._invite_button.setAccessibleName("Copy invite link")
         controls_layout.addWidget(self.session_strip._invite_button)
-        controls_layout.addWidget(self.session_strip._mute_self_button)
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         self.session_strip._tools_button.setText("More")
@@ -281,22 +280,10 @@ class ConductorWindow(QMainWindow):
             QKeySequence("Ctrl+T"), self,
             lambda: self.session_canvas.insert_timestamp(),
         )
-        # Mute-all and mute-self use the macOS-safe binder so they don't
-        # collide with system minimize (Cmd+M).
+        # Mute-all uses the macOS-safe binder so it does not collide with
+        # system minimize (Cmd+M).
         self._practice_shortcut = QShortcut(_ctrl("P"), self)
         self._mute_all_shortcut = QShortcut(_ctrl("M"), self)
-        if on_mac:
-            # Ctrl+Shift+M with literal Control key on macOS
-            self._mute_self_shortcut = QShortcut(
-                QKeySequence(
-                    Qt.KeyboardModifier.MetaModifier.value
-                    | Qt.KeyboardModifier.ShiftModifier.value
-                    | Qt.Key.Key_M.value
-                ),
-                self,
-            )
-        else:
-            self._mute_self_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
         # Cmd/Ctrl+Shift+D — copy diagnostics summary to clipboard
         if on_mac:
             self._diagnostics_shortcut = QShortcut(

@@ -228,6 +228,13 @@
 
 ## Talk Break fail-closed hardening round
 
+> **Superseded capability claim (2026-07-13):** inspection of pinned Jamulus
+> 3.12.2 source and the bundled binary proved that `jamulusclient/setMuted`
+> does not exist. The UI, shortcut, optimistic state, and reconnect reapply
+> described below have been removed. Current guidance is interface mute or
+> ending the WebJam session before unmuting Webex. The bullets remain as a
+> historical record of the defect's earlier implementation.
+
 - An independent review of the two-lane surface found one fail-open path:
   Stop Audio during a Talk Break preserved the confirmed-mute flags, so the
   next Start Audio rendered "Resume Music"/TALK while the fresh Jamulus

@@ -49,10 +49,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install pytest ruff "pip-audit==2.10.1"
 
       - name: Lint (ruff)
         run: ruff check webjam_qt/ core/ ui/ services/ api/
+
+      - name: Audit Python dependencies
+        run: pip-audit --progress-spinner off
 
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
@@ -116,6 +119,98 @@ jobs:
         run: >-
           pytest tests/test_real_jamulus_audio.py
           tests/test_real_jamulus_recording_pipeline.py -v -s
+
+  # ------------------------------------------------------------------
+  # Native v3 transport: strict protocol, race detector, module integrity,
+  # and every desktop target compiled with CGO disabled.
+  # ------------------------------------------------------------------
+  transport:
+    name: Transport (Go security and cross-build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: transport/go.sum
+
+      - name: Set up Python for the real sidecar boundary
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify transport source and dependencies
+        working-directory: transport
+        run: |
+          make check
+          go test -race -count=1 ./...
+          go mod verify
+          go mod tidy -diff
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
+
+      - name: Cross-build supported desktop targets
+        working-directory: transport
+        run: make build-all VERSION="$(git rev-parse HEAD)"
+
+      - name: Run two real sidecars through the reference service
+        run: |
+          python -m pip install "pytest==8.3.5"
+          build_id="$(git rev-parse HEAD)"
+          (cd transport && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+            -o build/webjam-fabric-linux-amd64 ./cmd/webjam-fabric)
+          WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION=1 \
+          WEBJAM_TRANSPORT_BINARY="$PWD/transport/build/webjam-fabric-linux-amd64" \
+          WEBJAM_TEST_TRANSPORT_BUILD_ID="$build_id" \
+            python -m pytest -q tests/test_native_sidecar_integration.py
+
+  # ------------------------------------------------------------------
+  # Self-hostable v3 rendezvous / exact-pair relay reference. The desktop
+  # ships no public endpoint; this job proves the isolated service, package,
+  # and least-privilege container that a later external pilot can deploy.
+  # ------------------------------------------------------------------
+  reference-service:
+    name: Reference service (protocol and container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify protocol, package, and privacy gates
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest ruff build
+          ruff check reference_service
+          python -m compileall -q reference_service/webjam_reference reference_service/tests
+          pytest -q reference_service/tests
+          python -m build reference_service
+
+      - name: Build and health-check restricted container
+        run: |
+          docker build -t webjam-reference:ci reference_service
+          container_id="$(docker run -d --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --cap-drop ALL --security-opt no-new-privileges \
+            webjam-reference:ci)"
+          trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 30); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$container_id")"
+            test "$status" = healthy && exit 0
+            test "$status" = unhealthy && docker logs "$container_id" && exit 1
+            sleep 1
+          done
+          docker logs "$container_id"
+          exit 1
 
   # ------------------------------------------------------------------
   # Manual release certification: one uninterrupted hour on a native
@@ -190,7 +285,7 @@ jobs:
           retention-days: 30
 
   # ------------------------------------------------------------------
-  # Job 2: Build desktop artifacts
+  # Build desktop artifacts
   # Three targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-latest (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
@@ -201,7 +296,7 @@ jobs:
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
-    needs: [test, integration-jamulus]
+    needs: [test, integration-jamulus, transport, reference-service]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -224,10 +319,35 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache-dependency-path: transport/go.sum
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Build bundled secure transport
+        shell: bash
+        run: |
+          build_id="$(git rev-parse HEAD)"
+          mkdir -p transport/build/package
+          if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
+            (cd transport && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+              -o build/package/webjam-fabric.exe ./cmd/webjam-fabric)
+          elif [[ "${{ matrix.target }}" == "macos-arm64" ]]; then
+            (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+              go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+              -o build/package/webjam-fabric ./cmd/webjam-fabric)
+          else
+            (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+              -o build/package/webjam-fabric ./cmd/webjam-fabric)
+          fi
 
       # Bundling Jamulus removes the "leave WebJam, go find jamulus.io,
       # download, come back" detour for most users. Both platforms bundle
@@ -266,13 +386,27 @@ jobs:
           python -m PyInstaller --clean --noconfirm webjam.spec
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
+            cp transport/build/package/webjam-fabric.exe \
+              dist/WebJam/webjam-fabric.exe
+            sha256sum dist/WebJam/webjam-fabric.exe \
+              | awk '{print $1}' > dist/WebJam/webjam-fabric.sha256
             test -f dist/WebJam/WebJam.exe
+            test -f dist/WebJam/webjam-fabric.exe
+            test -s dist/WebJam/webjam-fabric.sha256
+            printf '%s\n' \
+              '{"version":1,"id":1,"type":"hello"}' \
+              '{"version":1,"id":2,"type":"shutdown"}' \
+              | dist/WebJam/webjam-fabric.exe \
+              | grep -q '"type":"stopped"'
             test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
             test -n "$(find dist/WebJam -path '*/webjam_qt/webex_widget.html' -print -quit)"
             test -n "$(find dist/WebJam -path '*/Jamulus/jamulus_3.12.2_win.exe' -print -quit)"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
           else
+            cp transport/build/package/webjam-fabric \
+              dist/WebJam.app/Contents/MacOS/webjam-fabric
+            chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
             # Nest the pinned upstream Jamulus client/server and license.
             # Upstream enables App Sandbox, which prevents WebJam from safely
             # provisioning command-line RPC secrets/recordings for these
@@ -288,6 +422,21 @@ jobs:
               dist/WebJam.app/Contents/Resources/Jamulus.app
             codesign --force --deep --sign - \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
+            codesign --force --sign - \
+              dist/WebJam.app/Contents/MacOS/webjam-fabric
+            shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
+              | awk '{print $1}' \
+              > dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+            build_id="$(git rev-parse HEAD)"
+            expected_machine="arm64"
+            if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
+              expected_machine="x86_64"
+            fi
+            python tests/support/verify_packaged_transport.py \
+              --binary dist/WebJam.app/Contents/MacOS/webjam-fabric \
+              --manifest dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256 \
+              --build-id "$build_id" \
+              --machine "$expected_machine"
             ! codesign -d --entitlements :- \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | grep -q 'com.apple.security.app-sandbox'
@@ -295,6 +444,13 @@ jobs:
               dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
               | grep -q 'com.apple.security.app-sandbox'
             test -x dist/WebJam.app/Contents/MacOS/WebJam
+            test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
+            test -s dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+            printf '%s\n' \
+              '{"version":1,"id":1,"type":"hello"}' \
+              '{"version":1,"id":2,"type":"shutdown"}' \
+              | dist/WebJam.app/Contents/MacOS/webjam-fabric \
+              | grep -q '"type":"stopped"'
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/theme/conductor.qss
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/webex_widget.html
             test -x dist/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus
@@ -312,28 +468,51 @@ jobs:
             server_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            fabric_cdhash_before="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             codesign --force --sign - dist/WebJam.app
             codesign --verify --strict dist/WebJam.app
+            codesign --verify --deep --strict dist/WebJam.app
 
             # Prove outer signing preserved the prepared nested signatures.
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/Jamulus.app
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
+            codesign --verify --strict \
+              dist/WebJam.app/Contents/MacOS/webjam-fabric
             jamulus_cdhash_after="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
             server_cdhash_after="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            fabric_cdhash_after="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             test -n "$jamulus_cdhash_before"
             test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
             test -n "$server_cdhash_before"
             test "$server_cdhash_before" = "$server_cdhash_after"
+            test -n "$fabric_cdhash_before"
+            test "$fabric_cdhash_before" = "$fabric_cdhash_after"
+            test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
+              | awk '{print $1}')" = \
+              "$(tr -d '\n' < dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256)"
             # macOS: ditto preserves resource forks and extended attributes
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \
               "out/WebJam-${{ matrix.target }}.zip"
+            fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
+            mkdir -p "$fresh_dir"
+            ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
+            codesign --verify --deep --strict "$fresh_dir/WebJam.app"
+            python tests/support/verify_packaged_transport.py \
+              --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
+              --manifest "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric.sha256" \
+              --build-id "$build_id" \
+              --machine "$expected_machine"
           fi
 
       - name: Verify Windows version metadata
@@ -346,7 +525,7 @@ jobs:
             throw "WebJam.exe ProductVersion '$actual' does not match '$expected'"
           }
 
-      - name: Sign Windows executable (optional)
+      - name: Sign Windows executables (optional; required for v3)
         if: matrix.target == 'windows-x64'
         shell: pwsh
         env:
@@ -354,7 +533,7 @@ jobs:
           PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: |
           if ([string]::IsNullOrEmpty($env:PFX_B64)) {
-            Write-Host "No code-signing cert configured; skipping sign step."
+            Write-Host "No code-signing cert configured; v1/v2 remains usable but packaged v3 will fail closed."
             exit 0
           }
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
@@ -369,6 +548,17 @@ jobs:
           & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD `
             /tr https://timestamp.digicert.com /td sha256 /fd sha256 `
             "$env:RUNNER_TEMP\sign_work\WebJam\WebJam.exe"
+          & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD `
+            /tr https://timestamp.digicert.com /td sha256 /fd sha256 `
+            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe"
+          $fabricHash = (Get-FileHash `
+            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe" `
+            -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.sha256",
+            $fabricHash,
+            [Text.Encoding]::ASCII
+          )
           cd "$env:RUNNER_TEMP\sign_work"
           7z a "$env:GITHUB_WORKSPACE\out\WebJam-windows-x64.zip" WebJam\
           Remove-Item -Force $pfxPath -ErrorAction SilentlyContinue
@@ -382,7 +572,7 @@ jobs:
           retention-days: 14
 
   # ------------------------------------------------------------------
-  # Job 3: GitHub Release
+  # GitHub Release
   # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
   # Downloads all desktop artifacts and attaches them to a GitHub Release.
   # Auto-generates release notes from commits since previous tag.

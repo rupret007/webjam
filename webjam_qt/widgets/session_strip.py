@@ -41,11 +41,11 @@ class SessionStrip(QFrame):
     session_title_changed = Signal(str)
     launch_audio_requested = Signal()
     join_video_requested = Signal()
-    mute_self_requested = Signal()      # toggle local-user mute
     practice_requested = Signal()       # start a solo practice session
     record_requested = Signal()         # toggle band-server multitrack recording
     ready_check_requested = Signal()    # run Band Check
     invite_requested = Signal()         # copy the host address for bandmates
+    reset_invite_requested = Signal()   # revoke and replace a remote invite
     tool_requested = Signal(str)        # progressive-disclosure destination
 
     STRIP_HEIGHT = 60
@@ -65,8 +65,6 @@ class SessionStrip(QFrame):
 
         self._mode_entries = list(mode_entries)
         self._elapsed_seconds = 0
-        self._webex_audio_mode = "talkback"
-
         # --- Widgets
         self._logo = BrandMark(28)
         self._logo.setObjectName("SessionStripLogo")
@@ -155,18 +153,6 @@ class SessionStrip(QFrame):
         # should not look like a checklist musicians must operate.
         self._test_button.setVisible(False)
 
-        self._mute_self_button = QPushButton("Talk Break")
-        self._mute_self_button.setObjectName("GhostButton")
-        self._mute_self_button.setCheckable(True)
-        self._mute_self_button.setAccessibleName("Start a talk break")
-        self._mute_self_button.setToolTip(
-            "Mute your Jamulus send before using Webex push-to-talk.\n"
-            "This control never changes the Webex microphone.\n"
-            "Shortcut: Ctrl+Shift+M (the literal Control key on macOS)."
-        )
-        self._mute_self_button.clicked.connect(self.mute_self_requested.emit)
-        self._mute_self_button.setVisible(False)
-
         self._video_button = QPushButton("Open Webex")
         self._video_button.setObjectName("PrimaryButton")
         self._video_button.setAccessibleName("Open Webex")
@@ -207,11 +193,16 @@ class SessionStrip(QFrame):
         self._video_action = QAction("Add Video or Conversation", tools_menu)
         self._video_action.triggered.connect(self.join_video_requested.emit)
         tools_menu.addAction(self._video_action)
-        self._talk_action = QAction("Talk Break", tools_menu)
-        self._talk_action.triggered.connect(self.mute_self_requested.emit)
-        self._talk_action.setVisible(False)
-        tools_menu.addAction(self._talk_action)
         tools_menu.addSeparator()
+        self._reset_invite_action = QAction("Reset Invite", tools_menu)
+        self._reset_invite_action.setToolTip(
+            "Revoke the current private invitation and create a new one."
+        )
+        self._reset_invite_action.setVisible(False)
+        self._reset_invite_action.triggered.connect(
+            self.reset_invite_requested.emit
+        )
+        tools_menu.addAction(self._reset_invite_action)
         settings_action = QAction("Settings", tools_menu)
         settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
         tools_menu.addAction(settings_action)
@@ -225,9 +216,8 @@ class SessionStrip(QFrame):
         # --- Layout
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
-        # Nine controls share this strip.  Compact spacing prevents the
-        # longest live states (Record Again + Unmute Jamulus Send) from being
-        # silently truncated at the supported minimum window width.
+        # Compact spacing keeps the longest recorder state readable at the
+        # supported minimum window width.
         layout.setSpacing(Space.SM)
 
         layout.addWidget(self._logo)
@@ -241,7 +231,6 @@ class SessionStrip(QFrame):
         layout.addWidget(self._record_elapsed)
         layout.addWidget(self._timer_label)
         layout.addWidget(self._record_button)
-        layout.addWidget(self._mute_self_button)
         layout.addWidget(self._audio_button)
         layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
@@ -299,9 +288,6 @@ class SessionStrip(QFrame):
     def set_video_configured(self, configured: bool) -> None:
         if not configured:
             self._video_action.setText("Add Video or Conversation")
-
-    def set_talkback_available(self, available: bool) -> None:
-        self._talk_action.setVisible(bool(available))
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_button.setEnabled(bool(enabled))
@@ -398,44 +384,10 @@ class SessionStrip(QFrame):
     def set_invite_available(self, available: bool) -> None:
         self._invite_button.setVisible(bool(available))
 
-    def set_webex_audio_mode(self, mode: str) -> None:
-        """Apply role-specific wording to the Jamulus transmit control."""
-        self._webex_audio_mode = (
-            mode if mode in {"talkback", "video_only", "audience_bridge"}
-            else "talkback"
-        )
-        self.set_self_muted(self._mute_self_button.isChecked())
+    def set_reset_invite_available(self, available: bool) -> None:
+        """Expose revocation only while this app owns a live remote invite."""
 
-    def set_self_muted(self, muted: bool, *, enabled: bool = True) -> None:
-        """Update the Jamulus-send button state without emitting signals."""
-        self._mute_self_button.blockSignals(True)
-        self._mute_self_button.setChecked(muted)
-        talkback = self._webex_audio_mode == "talkback"
-        if talkback:
-            label = "Resume Music" if muted else "Talk Break"
-            accessible = "Resume music" if muted else "Start a talk break"
-            description = (
-                "Music send is muted. Release Spacebar and make sure Webex is "
-                "muted before resuming music."
-                if muted else
-                "Mute the music send before holding Spacebar to talk in Webex. "
-                "This control never changes the Webex microphone."
-            )
-        else:
-            label = "Unmute Music Send" if muted else "Mute Music Send"
-            accessible = label
-            description = (
-                "Your music send is muted."
-                if muted else "Your music send is audible."
-            )
-        self._mute_self_button.setText(label)
-        self._mute_self_button.setEnabled(enabled)
-        self._mute_self_button.setAccessibleName(accessible)
-        self._mute_self_button.setAccessibleDescription(description)
-        self._mute_self_button.setToolTip(description)
-        self._talk_action.setText(label)
-        self._talk_action.setEnabled(enabled)
-        self._mute_self_button.blockSignals(False)
+        self._reset_invite_action.setVisible(bool(available))
 
     def current_mode_key(self) -> str:
         return self._mode_picker.currentData() or ""

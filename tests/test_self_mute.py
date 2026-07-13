@@ -1,5 +1,4 @@
-"""Self-mute uses Jamulus's real global mute (jamulusclient/setMuted), not a
-local fader-to-zero (which would only mute you in your own monitor)."""
+"""Pinned Jamulus 3.12.2 exposes no live network-send mute."""
 from __future__ import annotations
 
 import unittest
@@ -16,21 +15,16 @@ class TestControllerSelfMute(unittest.TestCase):
         c.rpc_client.set_self_muted.return_value = True
         return c
 
-    def test_delegates_to_rpc_when_available(self):
+    def test_fails_closed_without_delegating_when_rpc_available(self):
         c = self._controller(available=True)
-        self.assertTrue(c.set_self_muted(True))
-        c.rpc_client.set_self_muted.assert_called_once_with(True)
+        self.assertFalse(c.set_self_muted(True))
+        c.rpc_client.set_self_muted.assert_not_called()
+        self.assertFalse(c.live_send_mute)
 
     def test_noop_when_rpc_unavailable(self):
         c = self._controller(available=False)
         self.assertFalse(c.set_self_muted(True))
         c.rpc_client.set_self_muted.assert_not_called()
-
-    def test_swallows_rpc_errors(self):
-        c = self._controller(available=True)
-        c.rpc_client.set_self_muted.side_effect = RuntimeError("boom")
-        self.assertFalse(c.set_self_muted(True))  # must not raise
-
 
 class TestControllerSetName(unittest.TestCase):
     def _controller(self, available: bool):

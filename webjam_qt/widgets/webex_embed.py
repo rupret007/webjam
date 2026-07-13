@@ -4,7 +4,7 @@ WebexEmbed — the Webex launch card in the live workspace.
 The pilot path never embeds the meeting: WebJam opens the configured Webex
 room externally (native app or default browser) and renders only truthful
 launch state ("Not opened", "Opening…", "Opened externally", "Open failed")
-plus role-aware audio guidance and the persistent PLAY/TALK safety chip.
+plus role-aware audio guidance.
 WebJam cannot inspect or control the external meeting; joining, microphone,
 speaker, and mute all live in Webex itself (see WEBEX_AUDIO_MODES.md).
 
@@ -160,7 +160,6 @@ class WebexEmbed(QFrame):
         self._pending_token: Optional[str] = None
         self._pending_url:   str = ""
         self._audio_mode = "talkback"
-        self._talk_break_active = False
 
         # Unix timestamp of the most recent successful token acquisition.
         # Used by ``maybe_refresh_token`` to decide whether the embedded
@@ -347,22 +346,16 @@ class WebexEmbed(QFrame):
         )
         self._render_audio_guidance()
 
-    def set_talk_break_active(self, active: bool) -> None:
-        """Persist the PLAY/TALK safety state beside the Webex launcher."""
-        self._talk_break_active = bool(active)
-        self._render_audio_guidance()
-
     def _render_audio_guidance(self) -> None:
         titles = {
-            "talkback": "Webex talkback",
+            "talkback": "Webex conversation",
             "video_only": "Webex video",
             "audience_bridge": "Webex audience feed",
         }
         guidance = {
             "talkback": (
-                "TALK · music send muted — hold Space in Webex to speak."
-                if self._talk_break_active else
-                "PLAY · music stays in WebJam — keep Webex muted."
+                "Keep Webex muted while playing. To speak, mute your audio "
+                "interface or end the WebJam session first."
             ),
             "video_only": "Join Webex without computer audio; music stays in WebJam.",
             "audience_bridge": (
@@ -574,15 +567,15 @@ class WebexEmbed(QFrame):
         frame = QWidget(self)
         frame.setObjectName("WebexPlaceholder")
 
-        self._title_label = QLabel("Webex talkback")
+        self._title_label = QLabel("Webex conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
         self._title_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
 
         self._mode_label = QLabel(
-            "Music stays in WebJam. Join Webex muted; hold Space only "
-            "during a Talk Break."
+            "Keep Webex muted while playing. To speak, mute your audio "
+            "interface or end the WebJam session first."
         )
         self._mode_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter

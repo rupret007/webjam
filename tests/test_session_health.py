@@ -27,7 +27,7 @@ class TestSessionHealth(unittest.TestCase):
         health.mark_participants(1, now=20.0)
         health.mark_levels("rpc", now=21.0)
         health.mark_recorder(armed=True, recording=False)
-        health.mark_rpc_result("self-mute", False, "Jamulus RPC rejected setMuted")
+        health.mark_rpc_result("roster", False, "getClientList timed out")
 
         data = health.to_public_dict(now=24.2)
 
@@ -37,7 +37,7 @@ class TestSessionHealth(unittest.TestCase):
         self.assertEqual(data["recorder_state"], "armed")
         self.assertEqual(
             data["last_rpc_result"],
-            "self-mute failed: Jamulus RPC rejected setMuted",
+            "roster failed: getClientList timed out",
         )
 
         health.mark_recorder(armed=True, recording=True)

@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.jamulus_endpoint import DEFAULT_JAMULUS_PORT
-from core.network_invite import BandInvite, InviteLinkError, invite_from_text
+from core.network_invite import BandInvite
+from core.remote_invitation import RemoteInvitation
 from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
@@ -36,6 +37,13 @@ from core.settings import (
 )
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
+from webjam_qt.invitation_ingress import (
+    Invitation,
+    InvitationIngressError,
+    InvitationSource,
+    invitation_from_arguments,
+    parse_invitation_at_ingress,
+)
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
 
 
@@ -92,6 +100,20 @@ def apply_join_invite(settings: AppSettings, invite: BandInvite) -> None:
     # Setup; the host's authenticated recording signal controls when it runs.
 
 
+def apply_remote_join_defaults(settings: AppSettings) -> None:
+    """Persist only role/local defaults; remote endpoints stay runtime-only."""
+
+    settings.musician_name = default_musician_name(settings)
+    settings.host_server_enabled = False
+    settings.jamulus_server = "127.0.0.1"
+    settings.jamulus_port = DEFAULT_JAMULUS_PORT
+    settings.jamulus_rpc_port = 22222
+    settings.server_rpc_secret_file = ""
+    if not settings.takes_directory:
+        settings.takes_directory = str(Path.home() / "Music" / "WebJam Takes")
+    settings.webex_audio_mode = "talkback"
+
+
 class LaunchDialog(QDialog):
     """Two choices on launch; one pasted link after choosing Join."""
 
@@ -100,6 +122,7 @@ class LaunchDialog(QDialog):
         settings: AppSettings,
         parent: Optional[QWidget] = None,
         *,
+        initial_invitation: Invitation | None = None,
         initial_invite_url: str = "",
     ) -> None:
         super().__init__(parent)
@@ -109,6 +132,7 @@ class LaunchDialog(QDialog):
         self.selected_role = ""
         self.session_name = "Band Rehearsal"
         self.band_invite: BandInvite | None = None
+        self.remote_invitation: RemoteInvitation | None = None
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
@@ -130,9 +154,24 @@ class LaunchDialog(QDialog):
         self._pages.addWidget(self._join_page)
         root.addWidget(self._pages, 1)
 
-        if initial_invite_url:
+        if initial_invitation is not None and initial_invite_url:
+            raise ValueError("provide one initial invitation")
+        if initial_invitation is not None and not isinstance(
+            initial_invitation, (BandInvite, RemoteInvitation)
+        ):
+            raise TypeError("initial_invitation must be typed")
+        if initial_invitation is None and initial_invite_url:
+            # Backward compatibility for v1/v2 callers only. The argv policy
+            # rejects v3 before this dialog can retain it in a closure.
+            initial_invitation = invitation_from_arguments(
+                ["WebJam", initial_invite_url]
+            )
+        if initial_invitation is not None:
             QTimer.singleShot(
-                0, lambda value=initial_invite_url: self.accept_invite(value)
+                0,
+                lambda invitation=initial_invitation: self.accept_invitation(
+                    invitation
+                ),
             )
 
     def _build_choice_page(self) -> QWidget:
@@ -256,6 +295,7 @@ class LaunchDialog(QDialog):
 
     def show_choices(self) -> None:
         self._restore_submission()
+        self._invite_input.clear()
         self._pages.setCurrentWidget(self._choice_page)
         self._host_button.setFocus()
 
@@ -282,33 +322,65 @@ class LaunchDialog(QDialog):
         self.selected_role = "host"
         self.session_name = "Band Rehearsal"
         self.band_invite = None
+        self.remote_invitation = None
         self.accept()
 
     def _join(self) -> None:
-        self.accept_invite(self._invite_input.text())
+        value = self._invite_input.text()
+        self._invite_input.clear()
+        self.accept_invite(value)
 
     def accept_invite(self, value: str) -> bool:
-        """Accept a pasted or operating-system-delivered invitation."""
+        """Compatibility wrapper for an explicit paste into the one field."""
         if not self._begin_submission(self._join_button_primary, "Joining…"):
             return False
+        raw = str(value or "")
+        self._invite_input.clear()
         try:
-            invite = invite_from_text(value)
-        except InviteLinkError as exc:
+            invitation = parse_invitation_at_ingress(
+                raw,
+                source=InvitationSource.PASTE,
+            )
+        except InvitationIngressError as exc:
             self._pages.setCurrentWidget(self._join_page)
-            self._invite_input.setText(str(value or ""))
-            message = str(exc)
-            if str(value or "").strip() and "incompatible" not in message.lower():
-                message = "That invite link doesn’t look right. Copy it again from your host."
-            self._join_error.setText(message)
+            is_remote_shape = any(
+                part == "v=3" for part in raw.partition("?")[2].split("&")
+            )
+            if not is_remote_shape:
+                self._invite_input.setText(raw)
+            self._join_error.setText(str(exc))
             self._announce_error(self._join_error, focus=self._invite_input)
             self._restore_submission()
             return False
-        apply_join_invite(self._settings, invite)
+        return self.accept_invitation(invitation, submission_started=True)
+
+    def accept_invitation(
+        self,
+        invitation: Invitation,
+        *,
+        submission_started: bool = False,
+    ) -> bool:
+        """Accept one already-parsed invitation without retaining its URL."""
+
+        if not isinstance(invitation, (BandInvite, RemoteInvitation)):
+            raise TypeError("invitation must be typed")
+        if not submission_started and not self._begin_submission(
+            self._join_button_primary, "Joining…"
+        ):
+            return False
+        self._invite_input.clear()
+        if isinstance(invitation, RemoteInvitation):
+            apply_remote_join_defaults(self._settings)
+            session_name = "Band Rehearsal"
+        else:
+            apply_join_invite(self._settings, invitation)
+            session_name = invitation.session_name
         try:
             save_settings(self._settings)
         except Exception:  # noqa: BLE001
             LOGGER.exception("Could not save join invitation")
             self._pages.setCurrentWidget(self._join_page)
+            self._invite_input.clear()
             self._join_error.setText(
                 "WebJam couldn’t save that invite. Quit and reopen WebJam, then try again."
             )
@@ -316,10 +388,33 @@ class LaunchDialog(QDialog):
             self._restore_submission()
             return False
         self.selected_role = "join"
-        self.session_name = invite.session_name
-        self.band_invite = invite
+        self.session_name = session_name
+        self.band_invite = invitation if isinstance(invitation, BandInvite) else None
+        self.remote_invitation = (
+            invitation if isinstance(invitation, RemoteInvitation) else None
+        )
+        self._invite_input.clear()
         self.accept()
         return True
+
+    def show_ingress_error(self, message: str) -> None:
+        """Show only fixed-copy errors emitted by the application ingress."""
+
+        self._pages.setCurrentWidget(self._join_page)
+        self._invite_input.clear()
+        self._join_error.setText(str(message or "WebJam could not open that invitation."))
+        self._announce_error(self._join_error, focus=self._invite_input)
+
+    def take_remote_invitation(self) -> RemoteInvitation | None:
+        """Move the typed bearer to the runtime owner exactly once."""
+
+        invitation = self.remote_invitation
+        self.remote_invitation = None
+        return invitation
+
+    def done(self, result: int) -> None:
+        self._invite_input.clear()
+        super().done(result)
 
     def _begin_submission(self, button: QPushButton, label: str) -> bool:
         """Accept exactly one Host/Join activation until it succeeds or fails."""

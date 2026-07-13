@@ -24,6 +24,8 @@ from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
+from core.network_invite import BandInvite
+from core.remote_invitation import RemoteInvitation
 from core.session_health import SessionHealth
 from core.session_intelligence import build_session_pulse
 from core.settings import AppSettings, load_settings
@@ -48,22 +50,44 @@ from webjam_qt.session_state import SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
+
 class ApplicationController(QObject):
     """Glue layer between ConductorWindow and the service layer."""
 
-    _LEVEL_POLL_MS = 100   # how often to push meter updates to the grid
-    _METER_TICK_MS = 40    # global LevelMeter decay tick (was per-meter)
+    _LEVEL_POLL_MS = 100  # how often to push meter updates to the grid
+    _METER_TICK_MS = 40  # global LevelMeter decay tick (was per-meter)
     _CONNECTION_TIMEOUT_MS = 30_000
 
     def __init__(
         self,
         window: ConductorWindow,
         settings: Optional[AppSettings] = None,
-        session_invite=None,
+        session_invite: BandInvite | None = None,
+        remote_invitation: RemoteInvitation | None = None,
     ) -> None:
         super().__init__(window)
         self.window = window
         self.settings = settings or load_settings()
+        if session_invite is not None and remote_invitation is not None:
+            raise ValueError("only one invitation may be active")
+        if remote_invitation is not None and not isinstance(
+            remote_invitation, RemoteInvitation
+        ):
+            raise TypeError("remote_invitation must be a RemoteInvitation")
+        # Remote invitation material remains typed and memory-only.  A
+        # dedicated session transport consumes it; it is never copied into
+        # AppSettings, Jamulus arguments, logs, or the Session HUD.
+        self._remote_invitation = remote_invitation
+        self._remote_session = None
+        self._remote_invite_owner = None
+        self._remote_host_preparing = False
+        self._remote_route_base_settings: AppSettings | None = None
+        self._remote_route_generation = 0
+        # Saved Band Check verification covers stable local hardware only. A
+        # v3 transport path is transient and must be acknowledged separately
+        # for each prepared/connected generation and path.
+        self._remote_band_check_token: tuple[str, int, str, str] | None = None
+        self._remote_band_check_completed_token: tuple[str, int, str, str] | None = None
         # Any Band Check report is evidence for one concrete settings object.
         # Replacing that object invalidates every visible report and every
         # queued start signal that was produced from it.
@@ -93,11 +117,10 @@ class ApplicationController(QObject):
         self._recorder_armed = False
 
         self._shutdown = False
-        # User intent is separate from a transient participant snapshot.  Keep
-        # Talk Break fail-closed across an automatic Jamulus reconnect.
+        # Compatibility state for AudioCoordinator while the nonexistent
+        # Jamulus 3.12.2 live-send mute is retired. These values remain false;
+        # no UI or reconnect path may promote them.
         self._talk_break_intended = False
-        # This is the global jamulusclient/setMuted state. Participant.muted is
-        # a different control: it only mutes that channel in the local mix.
         self._self_transmit_muted = False
 
         self.bridge = BridgeService(
@@ -107,13 +130,13 @@ class ApplicationController(QObject):
             repository=self.repository,
             settings=self.settings,
             ui_callbacks={
-                "set_status_banner":    self._set_status_banner,
-                "refresh_readiness":    self._refresh_readiness,
+                "set_status_banner": self._set_status_banner,
+                "refresh_readiness": self._refresh_readiness,
                 "show_actionable_error": self._show_actionable_error,
-                "show_message":         self._show_message,
-                "shutdown_requested":   lambda: self._shutdown,
+                "show_message": self._show_message,
+                "shutdown_requested": lambda: self._shutdown,
                 "schedule_ui_callback": self._ui_invoker.invoke,
-                "retry_audio_launch":   self.start_session_or_band_check,
+                "retry_audio_launch": self.start_session_or_band_check,
             },
         )
 
@@ -149,6 +172,7 @@ class ApplicationController(QObject):
         # start_companion_api(), which the app bootstrap calls; this keeps
         # tests that build a controller directly from binding a real port.
         from api.local_bridge import LocalApiBridge
+
         self.api_bridge = LocalApiBridge(
             get_participants=self._companion_get_participants,
             get_diagnostics=self._companion_get_diagnostics,
@@ -301,6 +325,9 @@ class ApplicationController(QObject):
         # joiners have had their final control snapshot. Joiners then preserve
         # any still-active original and retain a resumable upload queue.
         self._stop_session_peer(clear_invite=True)
+        self._clear_remote_invite_owner()
+        self._stop_remote_transport(restore_route=False)
+        self._remote_invitation = None
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
@@ -331,9 +358,7 @@ class ApplicationController(QObject):
                 installation_path=default_installation_identity_path(
                     self.settings.config_file
                 ),
-                capture_enabled=lambda: bool(
-                    self.settings.local_capture_enabled
-                ),
+                capture_enabled=lambda: bool(self.settings.local_capture_enabled),
                 capture_config=lambda: (
                     int(self.settings.audio_input_device_index),
                     int(self.settings.audio_samplerate),
@@ -369,6 +394,57 @@ class ApplicationController(QObject):
             dialog.close()
         return visible, start_when_ready
 
+    def _remote_band_check_required(self) -> bool:
+        """Return whether the current v3 path still needs its transient gate."""
+
+        token = getattr(self, "_remote_band_check_token", None)
+        return token is not None and token != getattr(
+            self,
+            "_remote_band_check_completed_token",
+            None,
+        )
+
+    def _mark_remote_band_check_path(
+        self,
+        snapshot,
+        *,
+        connected: bool,
+        invalidation: tuple[bool, bool] | None = None,
+    ) -> bool:
+        """Invalidate Band Check for one new v3 generation/path fact.
+
+        This records no packet, decoded-audio, or hearing evidence. If audio is
+        already live, the replacement dialog is observation-only.
+        """
+
+        raw_role = getattr(snapshot, "role", "")
+        raw_path = getattr(snapshot, "path", "unknown")
+        role = getattr(raw_role, "value", raw_role)
+        path = getattr(raw_path, "value", raw_path)
+        try:
+            generation = int(getattr(snapshot, "generation", 0) or 0)
+        except (TypeError, ValueError):
+            generation = 0
+        token = (
+            str(role),
+            generation,
+            str(path),
+            "connected" if connected else "prepared",
+        )
+        if token == getattr(self, "_remote_band_check_token", None):
+            return False
+        self._remote_band_check_token = token
+        visible, start_when_ready = (
+            invalidation
+            if invalidation is not None
+            else self._invalidate_band_check_evidence()
+        )
+        if self._is_jamulus_running():
+            self._open_band_check()
+        elif visible:
+            self._reopen_invalidated_band_check(visible, start_when_ready)
+        return True
+
     def _replace_settings_object(self, settings: AppSettings) -> tuple[bool, bool]:
         """Install new settings and invalidate evidence for the old setup.
 
@@ -392,23 +468,22 @@ class ApplicationController(QObject):
         generation = self._settings_generation
 
         def reopen_for_current_settings() -> None:
-            if (
-                generation == getattr(self, "_settings_generation", 0)
-                and not getattr(self, "_shutdown", False)
+            if generation == getattr(self, "_settings_generation", 0) and not getattr(
+                self, "_shutdown", False
             ):
-                self._open_band_check(
-                    start_session_when_ready=start_session_when_ready
-                )
+                self._open_band_check(start_session_when_ready=start_session_when_ready)
 
         QTimer.singleShot(0, reopen_for_current_settings)
 
-    def _stop_session_peer(self, *, clear_invite: bool = False) -> None:
+    def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
+        cleanup_ok = True
         guest = getattr(self, "guest_peer", None)
         if guest is not None:
             try:
                 guest.stop()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Guest recording transfer cleanup failed")
+                cleanup_ok = False
         self.guest_peer = None
         if clear_invite:
             self._guest_invite = None
@@ -419,7 +494,9 @@ class ApplicationController(QObject):
                 host.stop()
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Host recording service cleanup failed")
+                cleanup_ok = False
         self._host_peer_warning = ""
+        return cleanup_ok
 
     def _on_peer_take_updated(
         self,
@@ -453,8 +530,7 @@ class ApplicationController(QObject):
 
     def _sync_local_originals_action(self) -> None:
         takes_root = Path(
-            self.settings.takes_directory
-            or str(Path.home() / "Music" / "WebJam Takes")
+            self.settings.takes_directory or str(Path.home() / "Music" / "WebJam Takes")
         ).expanduser()
         self.window.recording_studio.set_local_originals_directory(
             takes_root / "WebJam Local Originals"
@@ -468,9 +544,7 @@ class ApplicationController(QObject):
             or getattr(self, "guest_peer", None) is not None
             or (
                 getattr(self, "_guest_invite", None) is not None
-                and not getattr(
-                    self, "_guest_peer_configuration_failed", False
-                )
+                and not getattr(self, "_guest_peer_configuration_failed", False)
             )
         )
 
@@ -643,7 +717,9 @@ class ApplicationController(QObject):
                 "Companion API on http://127.0.0.1:%d", self.settings.companion_api_port
             )
         else:
-            LOGGER.info("Companion API not started (fastapi/uvicorn missing or port busy)")
+            LOGGER.info(
+                "Companion API not started (fastapi/uvicorn missing or port busy)"
+            )
         return started
 
     @property
@@ -669,15 +745,17 @@ class ApplicationController(QObject):
         """Snapshot of the current mixer participants for the companion API."""
         out: list[dict] = []
         for p in self._snapshot_participants():
-            out.append({
-                "channel_id": p.channel_id,
-                "name": p.name,
-                "fader_level": p.fader_level,
-                "pan": getattr(p, "pan", 50),
-                "muted": bool(p.muted),
-                "solo": bool(p.solo),
-                "is_local": bool(getattr(p, "is_local", False)),
-            })
+            out.append(
+                {
+                    "channel_id": p.channel_id,
+                    "name": p.name,
+                    "fader_level": p.fader_level,
+                    "pan": getattr(p, "pan", 50),
+                    "muted": bool(p.muted),
+                    "solo": bool(p.solo),
+                    "is_local": bool(getattr(p, "is_local", False)),
+                }
+            )
         return out
 
     def _companion_get_diagnostics(self) -> dict:
@@ -705,18 +783,16 @@ class ApplicationController(QObject):
         strip.session_title_changed.connect(self._on_title_changed)
         strip.launch_audio_requested.connect(self._on_session_audio_requested)
         strip.join_video_requested.connect(self._on_join_video)
-        strip.mute_self_requested.connect(self._on_mute_self)
         strip.practice_requested.connect(self._on_practice_requested)
         strip.record_requested.connect(self._on_record_requested)
         strip.ready_check_requested.connect(self._on_ready_check)
         strip.invite_requested.connect(self._copy_band_invite)
+        strip.reset_invite_requested.connect(self._reset_remote_invite)
         strip.tool_requested.connect(self._on_rail_view_changed)
         self.window.session_hud.invite_requested.connect(self._copy_band_invite)
         self.window.session_hud.retry_requested.connect(self._retry_session)
         # Both launch affordances share URL validation and truthful state.
-        self.window.webex_embed.fallback_button().clicked.connect(
-            self._on_join_video
-        )
+        self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
         self.window.close_requested.connect(self.shutdown)
         self.window.confirm_close = self._confirm_close
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
@@ -731,9 +807,7 @@ class ApplicationController(QObject):
         grid.ready_check_requested.connect(self._on_ready_check)
         grid.start_audio_requested.connect(self._on_session_audio_requested)
         grid.practice_requested.connect(self._on_practice_requested)
-        grid.microphone_settings_requested.connect(
-            self._open_microphone_settings
-        )
+        grid.microphone_settings_requested.connect(self._open_microphone_settings)
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -743,8 +817,6 @@ class ApplicationController(QObject):
         self.window._load_mix_from_shortcut.activated.connect(self._on_load_mix_from)
         # Mute all shortcut
         self.window._mute_all_shortcut.activated.connect(self._on_mute_all)
-        # Mute-self shortcut
-        self.window._mute_self_shortcut.activated.connect(self._on_mute_self)
         # Practice mode shortcut (Ctrl+P)
         self.window._practice_shortcut.activated.connect(self._on_practice_requested)
         # Diagnostics export shortcut (Ctrl+Shift+D)
@@ -794,25 +866,22 @@ class ApplicationController(QObject):
         # Start the global meter decay tick (continuous; one timer for the
         # whole grid instead of one per LevelMeter).
         self._meter_tick_timer.start()
-        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
-        self.window.session_strip.set_talkback_available(False)
         self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
-        self.window.recording_studio.set_takes_directory(
-            self.settings.takes_directory
-        )
+        self.window.recording_studio.set_takes_directory(self.settings.takes_directory)
         self._sync_local_originals_action()
         self.window.recording_studio.set_output_device(
             self.settings.take_playback_output_device
         )
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        # Recording, video, talkback, notes, and settings live behind Session
+        # Recording, video, conversation, notes, and settings live behind Session
         # Tools.  The live header keeps only the one action needed now.
         self.window.session_strip.set_recording_available(False)
         self.window.session_strip.set_invite_available(False)
+        self.window.session_strip.set_reset_invite_available(False)
         self.window.recording_studio.set_can_record(
             hosting,
             self._guest_recording_reason() if not hosting else "",
@@ -828,27 +897,26 @@ class ApplicationController(QObject):
         self._refresh_session_pulse()
 
     def _sync_self_mute_button(self) -> None:
-        """Render global transmit truth, never the local mixer-card mute."""
-        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
-        talkback_active = (
-            self._webex_audio_mode() == "talkback"
-            and self._talk_break_intended
-            and self._self_transmit_muted
-        )
-        shown_muted = self._self_transmit_muted
-        self.window.session_strip.set_self_muted(shown_muted)
-        self.window.webex_embed.set_talk_break_active(talkback_active)
+        """Compatibility hook that can only clear unsupported transmit state."""
+        self._talk_break_intended = False
+        self._self_transmit_muted = False
 
     def _webex_audio_mode(self) -> str:
         mode = getattr(self.settings, "webex_audio_mode", "talkback")
-        return mode if mode in {"talkback", "video_only", "audience_bridge"} else "talkback"
+        return (
+            mode
+            if mode in {"talkback", "video_only", "audience_bridge"}
+            else "talkback"
+        )
 
     # ------------------------------------------------------------------
     # Real Jamulus participant callback (called from background thread)
     # ------------------------------------------------------------------
     def _on_jamulus_participants(self, jamulus_participants: list) -> None:
         """Receive live participant list from JamulusController — runs on a worker thread."""
-        self._ui_invoker.invoke(lambda: self._apply_jamulus_participants(jamulus_participants))
+        self._ui_invoker.invoke(
+            lambda: self._apply_jamulus_participants(jamulus_participants)
+        )
 
     def _on_ready_check(self) -> None:
         """F2 — open the guided Band Check without disrupting a live jam."""
@@ -868,28 +936,22 @@ class ApplicationController(QObject):
                 existing = None
         if existing is not None and existing.isVisible():
             existing_mode = getattr(existing, "_mode", None)
-            if (
-                start_session_when_ready
-                and existing_mode is BandCheckMode.LIVE_OBSERVE
-            ):
+            if start_session_when_ready and existing_mode is BandCheckMode.LIVE_OBSERVE:
                 # A live-observe report must never be promoted into permission
                 # to start a new audio stream.  If the old session ended while
                 # it was open, replace it with the ordinary pre-session gate.
                 existing.close()
             else:
-                if (
-                    start_session_when_ready
-                    and not bool(
-                        getattr(existing, "_start_session_when_ready", False)
-                    )
+                if start_session_when_ready and not bool(
+                    getattr(existing, "_start_session_when_ready", False)
                 ):
                     # Preserve progress when F2 Band Check is already open,
                     # while making the final explicit action start the session.
                     existing._start_session_when_ready = True
                     existing.session_start_requested.connect(
-                        lambda generation=getattr(
-                            existing, "_settings_generation", -1
-                        ): self._start_after_band_check(generation)
+                        lambda generation=getattr(existing, "_settings_generation", -1): (
+                            self._start_after_band_check(generation)
+                        )
                     )
                     existing._refresh_action_button()
                 if existing_mode is not None:
@@ -909,11 +971,7 @@ class ApplicationController(QObject):
         dialog = BandCheckDialog(
             self._effective_band_check_settings,
             parent=self.window,
-            mode=(
-                BandCheckMode.LIVE_OBSERVE
-                if live
-                else BandCheckMode.PRE_SESSION
-            ),
+            mode=(BandCheckMode.LIVE_OBSERVE if live else BandCheckMode.PRE_SESSION),
             observations_provider=self._band_check_observations,
             host_server_service=self.bridge,
             start_session_when_ready=start_session_when_ready,
@@ -925,9 +983,7 @@ class ApplicationController(QObject):
         dialog.settings_requested.connect(self._open_settings_wizard)
         dialog.recording_settings_requested.connect(self._open_recording_setup)
         dialog.system_input_requested.connect(self._use_system_input)
-        dialog.microphone_settings_requested.connect(
-            self._open_microphone_settings
-        )
+        dialog.microphone_settings_requested.connect(self._open_microphone_settings)
         dialog.practice_requested.connect(self._on_practice_requested)
         dialog.support_requested.connect(self._on_save_support_bundle)
         if start_session_when_ready:
@@ -936,6 +992,7 @@ class ApplicationController(QObject):
                     self._start_after_band_check(generation)
                 )
             )
+
         def _clear_dialog(_result) -> None:
             # Replacing a stale LIVE_OBSERVE dialog may deliver its finished
             # signal after the new pre-session gate exists.  Never let that
@@ -963,6 +1020,11 @@ class ApplicationController(QObject):
                 self._open_band_check(start_session_when_ready=True)
             return
         if not self._is_jamulus_running():
+            self._remote_band_check_completed_token = getattr(
+                self,
+                "_remote_band_check_token",
+                None,
+            )
             self._on_launch_audio()
 
     def _on_session_audio_requested(self) -> None:
@@ -982,21 +1044,45 @@ class ApplicationController(QObject):
         closed into the guided check.
         """
 
+        if getattr(self, "_remote_invitation", None) is not None:
+            self._begin_remote_join()
+            return
+
+        if bool(getattr(self.settings, "host_server_enabled", False)):
+            from services.native_remote_transport import (
+                reference_local_host_requested,
+            )
+
+            if (
+                reference_local_host_requested()
+                and getattr(self, "_remote_invite_owner", None) is None
+            ):
+                self._begin_remote_host()
+                return
+
         if (
-            getattr(self, "bridge", None) is not None
-            and self._is_jamulus_running()
-        ) or bool(
-            getattr(getattr(self, "audio", None), "stopping", False)
-        ) or getattr(self, "_band_check_start_pending", False):
+            (getattr(self, "bridge", None) is not None and self._is_jamulus_running())
+            or bool(getattr(getattr(self, "audio", None), "stopping", False))
+            or getattr(self, "_band_check_start_pending", False)
+        ):
             return
 
         self._band_check_start_pending = True
         source_settings = self.settings
         settings = self._effective_band_check_settings()
         settings_generation = getattr(self, "_settings_generation", 0)
+        remote_band_check_required = self._remote_band_check_required()
         self.window.session_hud.set_state(
-            "Checking this setup…",
-            "WebJam is confirming whether your verified audio setup changed.",
+            (
+                "Checking this connection…"
+                if remote_band_check_required
+                else "Checking this setup…"
+            ),
+            (
+                "Band Check must confirm this new private path before audio starts."
+                if remote_band_check_required
+                else "WebJam is confirming whether your verified audio setup changed."
+            ),
         )
 
         def worker() -> None:
@@ -1014,17 +1100,21 @@ class ApplicationController(QObject):
                     app_version=__version__,
                 )
                 saved = load_verification(verification_path(settings))
-                verified = bool(saved and saved.matches(signature))
+                verified = bool(
+                    not remote_band_check_required
+                    and saved
+                    and saved.matches(signature)
+                )
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Band Check verification could not be inspected")
+
             def deliver() -> None:
                 self._band_check_start_pending = False
                 if getattr(self, "_shutdown", False):
                     return
                 if (
                     source_settings is not self.settings
-                    or settings_generation
-                    != getattr(self, "_settings_generation", 0)
+                    or settings_generation != getattr(self, "_settings_generation", 0)
                 ):
                     # An invite or Settings save replaced the setup while the
                     # worker was inspecting it, or Recording Setup changed the
@@ -1081,6 +1171,43 @@ class ApplicationController(QObject):
             for person in self.participants.values()
         )
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        remote_runtime = getattr(self, "_remote_session", None)
+        remote_snapshot = getattr(remote_runtime, "snapshot", None)
+        remote_path_facts: dict[str, object] = {}
+        if remote_snapshot is not None:
+            remote_path_facts = {
+                "connection_path": getattr(remote_snapshot, "path", None),
+                "connection_quality": getattr(
+                    remote_snapshot,
+                    "quality",
+                    "unknown",
+                ),
+                "path_generation": int(getattr(remote_snapshot, "generation", 0) or 0),
+                # These stay false until the transport or an opt-in decoded
+                # fixture publishes the corresponding independent fact.
+                "transport_datagrams_flowed": bool(
+                    getattr(
+                        remote_snapshot,
+                        "transport_datagrams_flowed",
+                        getattr(
+                            remote_runtime,
+                            "transport_datagrams_flowed",
+                            False,
+                        ),
+                    )
+                ),
+                "remote_decoded_test_observed": bool(
+                    getattr(
+                        remote_snapshot,
+                        "remote_decoded_test_observed",
+                        getattr(
+                            remote_runtime,
+                            "remote_decoded_test_observed",
+                            False,
+                        ),
+                    )
+                ),
+            }
         return BandCheckObservations(
             music_engine_running=self._is_jamulus_running(),
             music_engine_responsive=responsive,
@@ -1088,9 +1215,7 @@ class ApplicationController(QObject):
                 self.bridge.hosted_server_alive() if hosting else None
             ),
             recorder_ready=(
-                rpc_available and self.bridge.hosted_server_alive()
-                if hosting
-                else None
+                rpc_available and self.bridge.hosted_server_alive() if hosting else None
             ),
             production_local_signal=bool(self._local_audio_seen),
             production_remote_signal=bool(self._remote_audio_seen),
@@ -1101,6 +1226,7 @@ class ApplicationController(QObject):
             # or clipping result from it during LIVE_OBSERVE.
             local_meter_peak=meter_rms,
             local_meter_clipped=False,
+            **remote_path_facts,
         )
 
     def _on_chat_submitted(self, text: str) -> None:
@@ -1127,23 +1253,14 @@ class ApplicationController(QObject):
         band's conversation lives in the session record.
         """
         import re
+
         plain = re.sub(r"<[^>]+>", "", text or "").strip()
         if not plain:
             return
-        self._ui_invoker.invoke(
-            lambda: self.window.session_canvas.append_line(plain)
-        )
+        self._ui_invoker.invoke(lambda: self.window.session_canvas.append_line(plain))
 
     def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
-        was_connected = self._jamulus_connected
-        if not jamulus_participants and was_connected and self._self_transmit_muted:
-            # A reconnect loses proof of the Jamulus client's transmit state
-            # in every Webex mode. Preserve any Talk Break intent, but never
-            # render the send as muted until the new RPC session acknowledges
-            # setMuted.
-            self._self_transmit_muted = False
-            self._sync_self_mute_button()
         self.audio.apply_participants(jamulus_participants)
         # Bind only this process's authenticated local participant. The host
         # resolves remote channels from each joiner's signed presence update,
@@ -1169,12 +1286,8 @@ class ApplicationController(QObject):
             durable = self.peer_participant_id_for_channel(channel_id)
             if durable:
                 presentation.participant_id = durable
-        self.window.recording_studio.set_live_participants(
-            self.participants.values()
-        )
+        self.window.recording_studio.set_live_participants(self.participants.values())
         self._update_session_hud()
-        if self._jamulus_connected and self._talk_break_intended:
-            self._reapply_talk_break_after_reconnect()
 
     @staticmethod
     def _is_local_participant(person) -> bool:
@@ -1201,17 +1314,13 @@ class ApplicationController(QObject):
         # Use the same classification as readiness and tile presentation.
         if ApplicationController._is_local_participant(jp):
             bits.append("You")
-        instrument = ApplicationController._profile_label(
-            getattr(jp, "instrument", "")
-        )
+        instrument = ApplicationController._profile_label(getattr(jp, "instrument", ""))
         if instrument:
             bits.append(instrument.title())
         if not bits:
             bits.append("Musician")
         # Skill badge from the musician's Jamulus profile (stage view v2).
-        skill = ApplicationController._profile_label(
-            getattr(jp, "skill_level", "")
-        )
+        skill = ApplicationController._profile_label(getattr(jp, "skill_level", ""))
         if skill:
             bits.append(skill.title())
         return " · ".join(bits)
@@ -1291,8 +1400,43 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
+        if not self._is_jamulus_running():
+            owner = getattr(self, "_remote_invite_owner", None)
+            try:
+                if owner is not None:
+                    # The owner is the in-memory v3 host discriminator.  Set
+                    # the loopback-only constraint before AudioCoordinator can
+                    # ask BridgeService to launch JamulusServer.
+                    self._install_remote_invite_owner(owner)
+                elif not self.bridge.hosted_server_alive():
+                    # A completed v3 session must not affect a later legacy
+                    # v1/v2 LAN host in the same app process.
+                    disable_remote_host_mode = getattr(
+                        self.bridge,
+                        "disable_remote_host_mode",
+                        None,
+                    )
+                    if callable(disable_remote_host_mode):
+                        disable_remote_host_mode()
+            except RuntimeError:
+                LOGGER.error("Remote host mode was configured after server launch")
+                self.window.flash_message(
+                    "End the current jam, then start the remote jam again.",
+                    ms=7000,
+                )
+                return
         launch_allowed = self.audio.on_launch_toggle()
         if launch_allowed:
+            # V1/v2 GuestPeerSession is a separate same-LAN plaintext service.
+            # It must never be started for a v3 session, even if stale state is
+            # reintroduced by a future invitation-transition regression.
+            if (
+                getattr(self, "_remote_invitation", None) is not None
+                or getattr(self, "_remote_session", None) is not None
+                or getattr(self, "_remote_invite_owner", None) is not None
+                or getattr(self.bridge, "remote_guest_mode_enabled", False) is True
+            ):
+                return
             guest = getattr(self, "guest_peer", None)
             invite = getattr(self, "_guest_invite", None)
             if guest is None and invite is not None:
@@ -1305,6 +1449,101 @@ class ApplicationController(QObject):
                 # preflight allows it, never at app boot or inside either gate.
                 guest.start()
 
+    def _install_remote_invite_owner(self, owner: object) -> None:
+        """Install the v3 host owner and arm loopback binding in memory only.
+
+        Future remote-host orchestration calls this before starting the local
+        Jamulus server.  It intentionally does not save settings or serialize
+        invitation material.
+        """
+
+        if owner is None:
+            raise TypeError("remote invitation owner is required")
+        if not bool(getattr(self.settings, "host_server_enabled", False)):
+            raise RuntimeError("remote host mode requires local server ownership")
+        existing = getattr(self, "_remote_invite_owner", None)
+        if existing is not None and existing is not owner:
+            raise RuntimeError("a different remote invitation owner is active")
+        self.bridge.enable_remote_host_mode()
+        self._remote_invite_owner = owner
+
+    def _clear_remote_invite_owner(self) -> bool:
+        """Revoke v3 invitation state and clear mode after server ownership ends."""
+
+        cleanup_ok = True
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is not None:
+            try:
+                owner.stop()
+            except Exception as exc:  # noqa: BLE001 - never log private detail
+                LOGGER.error(
+                    "Remote invitation cleanup failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                cleanup_ok = False
+        self._remote_invite_owner = None
+        if getattr(self, "_remote_session", None) is owner:
+            self._remote_session = None
+        if self.bridge.hosted_server_alive():
+            # A failed stop remains owned. Keep its launch constraint intact;
+            # the mode is ephemeral and disappears with this app process.
+            return False
+        try:
+            disable_remote_host_mode = getattr(
+                self.bridge,
+                "disable_remote_host_mode",
+                None,
+            )
+            if callable(disable_remote_host_mode):
+                disable_remote_host_mode()
+        except RuntimeError:
+            cleanup_ok = False
+        return cleanup_ok
+
+    def _stop_remote_transport(self, *, restore_route: bool = True) -> bool:
+        """Stop v3 only after Jamulus has released its loopback proxy."""
+
+        cleanup_ok = True
+        runtime = getattr(self, "_remote_session", None)
+        self._remote_session = None
+        if runtime is not None:
+            try:
+                runtime.stop()
+            except Exception as exc:  # noqa: BLE001 - never log private detail
+                LOGGER.error(
+                    "Remote transport cleanup failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                cleanup_ok = False
+        disable_remote_guest_mode = getattr(
+            self.bridge,
+            "disable_remote_guest_mode",
+            None,
+        )
+        if callable(disable_remote_guest_mode):
+            try:
+                disable_remote_guest_mode()
+            except RuntimeError:
+                LOGGER.error("Remote guest mode remained active during cleanup")
+                cleanup_ok = False
+        base_settings = getattr(self, "_remote_route_base_settings", None)
+        self._remote_route_base_settings = None
+        self._remote_route_generation = 0
+        self._remote_band_check_token = None
+        self._remote_band_check_completed_token = None
+        if restore_route and base_settings is not None and base_settings is not self.settings:
+            old_settings = self.settings
+            self._replace_settings_object(base_settings)
+            self._reconfigure_services_after_settings(old_settings)
+        return cleanup_ok
+
+    def _show_private_session_cleanup_failure(self) -> None:
+        self.window.flash_message(
+            "WebJam couldn’t close the previous private session safely. "
+            "Close WebJam, reopen it, then try the invitation again.",
+            ms=8000,
+        )
+
     def _on_record_requested(self) -> None:
         """Compatibility entry point; RecordingCoordinator owns the lifecycle."""
         self.recording.on_record_requested()
@@ -1312,7 +1551,20 @@ class ApplicationController(QObject):
     def _copy_band_invite(self) -> None:
         """Copy one complete invitation; never make a musician parse it."""
         from PySide6.QtWidgets import QApplication
-        invite_url = self._current_invite_url()
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is not None:
+            try:
+                invite_url = owner.copy_for_clipboard()
+            except Exception:  # noqa: BLE001 - private owner exposes fixed state
+                self._update_session_hud()
+                self.window.flash_message(
+                    "Reset the invitation under More, then copy the fresh link.",
+                    ms=6000,
+                )
+                return
+        else:
+            invite_url = self._current_invite_url()
         if not invite_url:
             self._update_session_hud()
             self.window.flash_message(
@@ -1321,6 +1573,7 @@ class ApplicationController(QObject):
             )
             return
         QApplication.clipboard().setText(invite_url)
+        invite_url = ""
         if self._host_peer_warning:
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
@@ -1331,18 +1584,88 @@ class ApplicationController(QObject):
         )
 
     def accept_invite_url(self, value: str) -> bool:
-        """Join an OS-delivered invite, including while WebJam is open."""
-        from core.network_invite import InviteLinkError, parse_invite_link
+        """Compatibility boundary for an explicit in-app paste.
+
+        Serialized invitation text is parsed exactly once and is never kept on
+        the controller.  New code should call :meth:`accept_invitation` with
+        the already-parsed typed object from the application ingress.
+        """
+        from webjam_qt.invitation_ingress import (
+            InvitationIngressError,
+            InvitationSource,
+            parse_invitation_at_ingress,
+        )
 
         try:
-            invite = parse_invite_link(value)
-        except InviteLinkError as exc:
+            invite = parse_invitation_at_ingress(
+                value,
+                source=InvitationSource.PASTE,
+            )
+        except InvitationIngressError as exc:
             self.window.flash_message(str(exc), ms=6000)
             return False
+        return self.accept_invitation(invite)
 
-        busy = bool(
-            self._is_jamulus_running() or self.bridge.hosted_server_alive()
+    def accept_invitation(self, invitation: BandInvite | RemoteInvitation) -> bool:
+        """Join one typed invitation delivered by the trusted UI boundary."""
+
+        if isinstance(invitation, RemoteInvitation):
+            return self._accept_remote_invitation(invitation)
+        if isinstance(invitation, BandInvite):
+            return self._accept_band_invitation(invitation)
+        raise TypeError("invitation must be a BandInvite or RemoteInvitation")
+
+    def _accept_remote_invitation(self, invitation: RemoteInvitation) -> bool:
+        """Retain one typed v3 capability until the transport consumes it.
+
+        A remote session cannot be passed into the legacy settings/Jamulus
+        launch path: doing so would start Jamulus against a loopback port that
+        has no authenticated peer.  The transport coordinator owns the later
+        enrollment and clears this capability only after an acknowledgement.
+        """
+
+        if invitation.advisory_expired():
+            self.window.flash_message(
+                "That invitation expired. Ask the host for a fresh one.",
+                ms=7000,
+            )
+            return False
+        if self._is_jamulus_running() or self.bridge.hosted_server_alive():
+            self.window.flash_message(
+                "End this jam first, then open the new invitation again.",
+                ms=7000,
+            )
+            return False
+        if (
+            getattr(self, "_remote_invite_owner", None) is not None
+            and not self._clear_remote_invite_owner()
+        ):
+            self._show_private_session_cleanup_failure()
+            return False
+        if not self._stop_remote_transport():
+            self._show_private_session_cleanup_failure()
+            return False
+        # V2's peer/original-transfer service is an intentionally isolated
+        # same-LAN plaintext channel. Stop and forget it before v3 enrollment
+        # so a later audio launch cannot reopen the previous session beside the
+        # authenticated transport.
+        if not self._stop_session_peer(clear_invite=True):
+            self._show_private_session_cleanup_failure()
+            return False
+        self._remote_invitation = invitation
+        self.window.session_strip.set_invite_available(False)
+        self.window.session_strip.set_reset_invite_available(False)
+        self.window.session_hud.set_state(
+            "Preparing your jam",
+            "WebJam is finding the fastest secure path to the host.",
         )
+        self._begin_remote_join()
+        return True
+
+    def _accept_band_invitation(self, invite: BandInvite) -> bool:
+        """Preserve the existing v1/v2 same-LAN join flow."""
+
+        busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive())
         if (
             busy
             and bool(
@@ -1378,13 +1701,33 @@ class ApplicationController(QObject):
         self.window.session_hud.set_state(
             "Joining your jam…",
             "WebJam is switching the band connection safely."
-            if busy else "WebJam is connecting your music.",
+            if busy
+            else "WebJam is connecting your music.",
         )
 
-        def _apply_and_launch() -> None:
+        def _apply_and_launch() -> bool:
             from core.settings import load_settings, save_settings
             from webjam_qt.windows.launch_dialog import apply_join_invite
 
+            # Accepting a legacy v1/v2 invitation replaces any armed v3 host,
+            # even when that host never reached a live server. Revoke its
+            # bearer and clear the ephemeral loopback constraint before the
+            # settings object becomes a Join profile; otherwise the next
+            # launch would see a stale owner and reject the legacy join.
+            if (
+                getattr(self, "_remote_invite_owner", None) is not None
+                and not self._clear_remote_invite_owner()
+            ):
+                self._show_private_session_cleanup_failure()
+                return False
+            # Clear all v3 guest state, including a pending capability or an
+            # orphaned remote-mode marker, before the v1/v2 settings and peer
+            # are installed. Otherwise start_session_or_band_check() could
+            # re-enter the stopped v3 join after applying the legacy invite.
+            if not self._stop_remote_transport():
+                self._show_private_session_cleanup_failure()
+                return False
+            self._remote_invitation = None
             old_settings = self.settings
             settings_path = self.settings.config_file
             new_settings = load_settings(settings_path)
@@ -1397,7 +1740,7 @@ class ApplicationController(QObject):
                     "WebJam couldn't use that invite yet. Try opening it again.",
                     ms=7000,
                 )
-                return
+                return False
             self._replace_settings_object(load_settings(settings_path))
             if busy:
                 # The worker has finalized the old host recording and stopped
@@ -1430,10 +1773,10 @@ class ApplicationController(QObject):
             self.audio.ended_by_user = False
             self.audio.reset_to_idle()
             self.start_session_or_band_check()
+            return True
 
         if not busy:
-            _apply_and_launch()
-            return True
+            return _apply_and_launch()
 
         def _switch_worker() -> None:
             cleanup_ok = True
@@ -1466,9 +1809,7 @@ class ApplicationController(QObject):
                     "WebJam couldn’t switch jams safely",
                     "Close WebJam, then open the new invitation again.",
                 )
-                self.window.session_strip.set_audio_state(
-                    "Close WebJam", enabled=False
-                )
+                self.window.session_strip.set_audio_state("Close WebJam", enabled=False)
 
             self._ui_invoker.invoke(_show_switch_failure)
 
@@ -1493,14 +1834,234 @@ class ApplicationController(QObject):
             return
         self.start_session_or_band_check()
 
+    def _begin_remote_join(self) -> None:
+        """Enroll a v3 guest before Jamulus can see its loopback proxy."""
+
+        from services.native_remote_transport import NativeGuestTransportBackend
+        from services.remote_session_runtime import (
+            RemoteSessionPhase,
+            RemoteSessionRuntime,
+        )
+
+        invitation = getattr(self, "_remote_invitation", None)
+        if invitation is None or getattr(self, "_shutdown", False):
+            return
+        runtime = getattr(self, "_remote_session", None)
+        if runtime is not None and runtime.snapshot.phase in {
+            RemoteSessionPhase.PREPARING,
+            RemoteSessionPhase.CONNECTED,
+        }:
+            return
+
+        self.window.participant_grid.set_session_state(
+            SessionUiState.connecting("secure session")
+        )
+        self.window.session_hud.set_state(
+            "Finding the fastest path",
+            "WebJam is opening your private music connection.",
+        )
+        try:
+            runtime = RemoteSessionRuntime(
+                NativeGuestTransportBackend(),
+                on_snapshot=self._on_remote_session_snapshot,
+                schedule_callback=self._ui_invoker.invoke,
+            )
+        except Exception as exc:  # noqa: BLE001 - never expose private detail
+            LOGGER.error(
+                "Remote transport startup failed; exception_type=%s",
+                type(exc).__name__,
+            )
+            self._remote_invitation = None
+            self._show_remote_session_failure()
+            return
+        self._remote_session = runtime
+        if not runtime.start_guest(invitation):
+            self._remote_invitation = None
+
+    def _begin_remote_host(self) -> None:
+        """Prepare the opt-in local reference host before Band Check starts."""
+
+        if getattr(self, "_remote_host_preparing", False):
+            return
+        self._remote_host_preparing = True
+        self.window.session_hud.set_state(
+            "Preparing your jam",
+            "WebJam is creating one private invitation.",
+        )
+
+        def worker() -> None:
+            owner = None
+            try:
+                from services.native_remote_transport import NativeHostTransportOwner
+
+                owner = NativeHostTransportOwner(
+                    target_port=int(self.settings.jamulus_port),
+                    on_snapshot=self._on_remote_session_snapshot,
+                    schedule_callback=self._ui_invoker.invoke,
+                )
+            except Exception as exc:  # noqa: BLE001 - fixed musician copy only
+                LOGGER.error(
+                    "Remote host preparation failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+
+            def deliver() -> None:
+                self._remote_host_preparing = False
+                if getattr(self, "_shutdown", False):
+                    if owner is not None:
+                        owner.stop()
+                    return
+                if owner is None:
+                    self._show_remote_session_failure()
+                    return
+                try:
+                    self._install_remote_invite_owner(owner)
+                except Exception as exc:  # noqa: BLE001
+                    owner.stop()
+                    LOGGER.error(
+                        "Remote host activation failed; exception_type=%s",
+                        type(exc).__name__,
+                    )
+                    self._show_remote_session_failure()
+                    return
+                self._remote_session = owner
+                snapshot = getattr(owner, "snapshot", None)
+                if snapshot is not None:
+                    self._mark_remote_band_check_path(
+                        snapshot,
+                        connected=False,
+                    )
+                self._update_session_hud()
+                self.start_session_or_band_check()
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                if owner is not None:
+                    owner.stop()
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-remote-host",
+        ).start()
+
+    def _on_remote_session_snapshot(self, snapshot) -> None:
+        """Apply one safe transport snapshot on Qt's owning thread."""
+
+        from services.remote_session_runtime import RemoteSessionPhase
+
+        if getattr(self, "_shutdown", False):
+            return
+        if snapshot.phase is RemoteSessionPhase.PREPARING:
+            self.window.session_hud.set_state(
+                "Finding the fastest path",
+                "WebJam is opening your private music connection.",
+            )
+            return
+        if snapshot.phase is RemoteSessionPhase.CONNECTED:
+            if snapshot.role.value == "guest":
+                self._activate_remote_guest_route(snapshot)
+            else:
+                self._remote_route_generation = snapshot.generation
+                self._mark_remote_band_check_path(
+                    snapshot,
+                    connected=True,
+                )
+                self.window.session_hud.set_state(
+                    "Bandmate connected",
+                    "The private music path is ready for Band Check.",
+                )
+                self._update_session_hud()
+            return
+        if snapshot.phase is RemoteSessionPhase.FAILED:
+            self._remote_invitation = None
+            self._show_remote_session_failure()
+
+    def _activate_remote_guest_route(self, snapshot) -> None:
+        """Point Jamulus at the authenticated proxy without persisting it."""
+
+        if snapshot.generation == getattr(self, "_remote_route_generation", 0):
+            if self._mark_remote_band_check_path(snapshot, connected=True):
+                if not self._is_jamulus_running():
+                    self.start_session_or_band_check()
+            return
+        from copy import deepcopy
+
+        old_settings = self.settings
+        if self._remote_route_base_settings is None:
+            self._remote_route_base_settings = old_settings
+        routed = deepcopy(old_settings)
+        routed.host_server_enabled = False
+        routed.jamulus_server = "127.0.0.1"
+        routed.jamulus_port = int(snapshot.loopback_port)
+        invalidation = self._replace_settings_object(routed)
+        self._reconfigure_services_after_settings(old_settings)
+        enable_remote_guest_mode = getattr(
+            self.bridge,
+            "enable_remote_guest_mode",
+            None,
+        )
+        if callable(enable_remote_guest_mode):
+            enable_remote_guest_mode()
+        self._remote_route_generation = snapshot.generation
+        self._mark_remote_band_check_path(
+            snapshot,
+            connected=True,
+            invalidation=invalidation,
+        )
+        self._remote_invitation = None
+        self.window.session_hud.set_state(
+            snapshot.musician_status,
+            "Run Band Check, then play.",
+        )
+        self.start_session_or_band_check()
+
+    def _show_remote_session_failure(self) -> None:
+        self.window.participant_grid.set_session_state(
+            SessionUiState.session_unavailable()
+        )
+        self.window.session_hud.set_state(
+            "The host is temporarily unreachable",
+            "Ask the host for a fresh invitation, then try again.",
+        )
+        self.window.session_strip.set_tools_enabled(True)
+        self.window.flash_message(
+            "The private music connection couldn’t open. Try a fresh invitation.",
+            ms=7000,
+        )
+
+    def _reset_remote_invite(self) -> None:
+        """Revoke/replace the host invite through its owning transport."""
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is None:
+            self.window.flash_message(
+                "Start a remote jam before resetting its invitation.",
+                ms=5000,
+            )
+            return
+        try:
+            owner.reset()
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Remote invitation reset failed")
+            self.window.flash_message(
+                "WebJam couldn’t reset the invitation yet. Try again.",
+                ms=6000,
+            )
+            return
+        self.window.flash_message(
+            "Old invitation revoked. A new private link is ready.",
+            ms=6000,
+        )
+        self._update_session_hud()
+
     def _on_connection_timeout(self) -> None:
         """Turn an endless spinner into one plain recovery action."""
         if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
             return
         self.audio.connection_timed_out = True
-        self.window.participant_grid.set_session_state(
-            self._connection_failure_state()
-        )
+        self.window.participant_grid.set_session_state(self._connection_failure_state())
         self.window.session_hud.set_state(
             "Something needs attention",
             "WebJam is getting ready to try again.",
@@ -1534,8 +2095,7 @@ class ApplicationController(QObject):
                     host=address,
                     jamulus_port=self.settings.jamulus_port,
                     session_name=(
-                        self.window.session_strip.current_title()
-                        or "Band Rehearsal"
+                        self.window.session_strip.current_title() or "Band Rehearsal"
                     ),
                 )
             # A legacy link remains available for older hosts/tests, but only
@@ -1544,8 +2104,7 @@ class ApplicationController(QObject):
                 address,
                 port=self.settings.jamulus_port,
                 session_name=(
-                    self.window.session_strip.current_title()
-                    or "Band Rehearsal"
+                    self.window.session_strip.current_title() or "Band Rehearsal"
                 ),
             )
         except ValueError:
@@ -1556,8 +2115,18 @@ class ApplicationController(QObject):
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
         connected = bool(self._jamulus_connected)
         participants = list(self.participants.values())
-        invite_url = self._current_invite_url() if hosting else ""
-        self.window.session_strip.set_invite_available(bool(invite_url))
+        remote_owner = getattr(self, "_remote_invite_owner", None)
+        remote_invite_available = bool(
+            hosting and remote_owner is not None and remote_owner.invitation_available
+        )
+        invite_url = (
+            self._current_invite_url() if hosting and remote_owner is None else ""
+        )
+        invite_available = remote_invite_available or bool(invite_url)
+        self.window.session_strip.set_invite_available(invite_available)
+        self.window.session_strip.set_reset_invite_available(
+            bool(hosting and remote_owner is not None)
+        )
         self.window.session_strip.set_recording_available(hosting and connected)
         if self.audio.stopping:
             self.window.session_hud.set_state(
@@ -1581,10 +2150,7 @@ class ApplicationController(QObject):
             return
         from webjam_qt.platform_permissions import microphone_permission_status
 
-        if (
-            not connected
-            and microphone_permission_status() in {"denied", "restricted"}
-        ):
+        if not connected and microphone_permission_status() in {"denied", "restricted"}:
             self.window.session_hud.set_state(
                 "Microphone access is off",
                 "Open System Settings below, allow access, then return to WebJam.",
@@ -1614,11 +2180,12 @@ class ApplicationController(QObject):
             )
             return
         if hosting:
-            if (
-                not connected
-                and self.bridge.jamulus_state
-                in {"Stopped", "Launch failed", "Not found", "Port in use"}
-            ):
+            if not connected and self.bridge.jamulus_state in {
+                "Stopped",
+                "Launch failed",
+                "Not found",
+                "Port in use",
+            }:
                 self.window.session_hud.set_state(
                     "Something needs attention",
                     "This Mac couldn’t join the jam. Use Try Again below.",
@@ -1628,7 +2195,10 @@ class ApplicationController(QObject):
             server_ready = self.bridge.hosted_server_alive()
             if not server_ready:
                 stopped = self.bridge.jamulus_state in {
-                    "Stopped", "Launch failed", "Not found", "Port in use"
+                    "Stopped",
+                    "Launch failed",
+                    "Not found",
+                    "Port in use",
                 }
                 if stopped:
                     self.window.session_hud.set_state(
@@ -1642,7 +2212,14 @@ class ApplicationController(QObject):
                         "WebJam is getting the band audio ready.",
                     )
                 return
-            if not invite_url:
+            if not invite_available:
+                if remote_owner is not None:
+                    self.window.session_hud.set_state(
+                        "Create a fresh invitation",
+                        "Open More and choose Reset Invite, then copy the new link.",
+                        action_visible=False,
+                    )
+                    return
                 self.window.session_hud.set_state(
                     "Something needs attention",
                     "Connect this Mac to Wi-Fi, then try again.",
@@ -1655,20 +2232,19 @@ class ApplicationController(QObject):
                 self.window.session_hud.set_state(
                     "Automatic Local Originals are off",
                     self._host_peer_warning,
-                    invite_url=invite_url,
+                    invite_available=invite_available,
                     action_visible=False,
                     ready=connected,
                 )
                 return
             bandmates = sum(
-                1 for person in participants
-                if not self._is_local_participant(person)
+                1 for person in participants if not self._is_local_participant(person)
             )
             if bandmates and not connected:
                 self.window.session_hud.set_state(
                     "Connecting your audio…",
                     "A bandmate is here. WebJam is reconnecting this Mac.",
-                    invite_url=invite_url,
+                    invite_available=invite_available,
                     action_visible=False,
                 )
             elif bandmates:
@@ -1676,7 +2252,7 @@ class ApplicationController(QObject):
                 self.window.session_hud.set_state(
                     "Ready to play" if self._local_audio_seen else "Bandmate connected",
                     self._connected_audio_detail(total),
-                    invite_url=invite_url,
+                    invite_available=invite_available,
                     action_visible=False,
                     ready=self._local_audio_seen,
                 )
@@ -1684,16 +2260,22 @@ class ApplicationController(QObject):
                 detail = (
                     (
                         "Your input is detected. Invite a bandmate on the same Wi-Fi."
-                        if self._local_audio_seen else
-                        "Play a note to check your input, then invite your bandmate."
+                        if remote_owner is None and self._local_audio_seen
+                        else "Your input is detected. Invite your bandmate."
+                        if self._local_audio_seen
+                        else "Play a note to check your input, then invite your bandmate."
                     )
-                    if connected else
-                    "Share this link with a bandmate on the same Wi-Fi."
+                    if connected
+                    else (
+                        "Share this link with a bandmate on the same Wi-Fi."
+                        if remote_owner is None
+                        else "Share this private link with your bandmate."
+                    )
                 )
                 self.window.session_hud.set_state(
                     "Ready to share",
                     detail,
-                    invite_url=invite_url,
+                    invite_available=invite_available,
                     action_visible=False,
                     ready=connected and self._local_audio_seen,
                 )
@@ -1707,7 +2289,10 @@ class ApplicationController(QObject):
                 ready=self._local_audio_seen,
             )
         elif self.bridge.jamulus_state in {
-            "Stopped", "Launch failed", "Not found", "Port in use"
+            "Stopped",
+            "Launch failed",
+            "Not found",
+            "Port in use",
         }:
             self.window.session_hud.set_state(
                 "Something needs attention",
@@ -1757,9 +2342,7 @@ class ApplicationController(QObject):
         reopen_band_check, reopen_start_when_ready = (
             self._invalidate_band_check_evidence()
         )
-        self._reopen_invalidated_band_check(
-            reopen_band_check, reopen_start_when_ready
-        )
+        self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
         self.window.flash_message(
             "Using the Mac's system input. Band Check is running again.",
             ms=5000,
@@ -1901,16 +2484,10 @@ class ApplicationController(QObject):
         if jamulus_up:
             if self.bridge.practice_mode:
                 audio_state = (
-                    "Practice live"
-                    if self._jamulus_connected
-                    else "Practice starting…"
+                    "Practice live" if self._jamulus_connected else "Practice starting…"
                 )
             else:
-                audio_state = (
-                    "Connected"
-                    if self._jamulus_connected
-                    else "Connecting…"
-                )
+                audio_state = "Connected" if self._jamulus_connected else "Connecting…"
         else:
             self.session_health.reset_live_truth()
             if self.bridge.jamulus_state in terminal_states:
@@ -1940,9 +2517,7 @@ class ApplicationController(QObject):
                 if microphone_permission_status() in {"denied", "restricted"}
                 else self._connection_failure_state()
             )
-            self.window.participant_grid.set_session_state(
-                state
-            )
+            self.window.participant_grid.set_session_state(state)
         # Settings and Troubleshooting remain available precisely when a
         # connection is slow or failed.
         self.window.session_strip.set_tools_enabled(True)
@@ -1975,18 +2550,22 @@ class ApplicationController(QObject):
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
-        self.window.session_strip.set_talkback_available(
-            self.bridge.webex_state == "Opened externally"
-        )
         try:
             self.window.webex_embed.set_launch_status(self.bridge.webex_state)
         except AttributeError:
             pass
         self._update_session_hud()
 
-    def _show_actionable_error(self, title: str, *, what_failed: str,
-                                likely_cause: str, next_action: str,
-                                retry_callback=None, copy_text: str = "") -> None:
+    def _show_actionable_error(
+        self,
+        title: str,
+        *,
+        what_failed: str,
+        likely_cause: str,
+        next_action: str,
+        retry_callback=None,
+        copy_text: str = "",
+    ) -> None:
         from core.redaction import redact_text
 
         def safe_text(value: str, fallback: str) -> str:
@@ -2001,7 +2580,7 @@ class ApplicationController(QObject):
                 "[private path]",
                 cleaned,
             )
-            return (cleaned[:600] or fallback)
+            return cleaned[:600] or fallback
 
         # Keep infrastructure out of the first layer. Qt's built-in Details
         # disclosure retains a bounded, redacted diagnosis without exposing
@@ -2045,6 +2624,7 @@ class ApplicationController(QObject):
             self._open_settings_wizard()
         elif copy_btn is not None and clicked is copy_btn:
             from PySide6.QtWidgets import QApplication
+
             QApplication.clipboard().setText(copy_text)
 
     def _show_message(self, title: str, message: str) -> None:
@@ -2119,11 +2699,7 @@ class ApplicationController(QObject):
         # (we got past _jamulus_connected=True) AND the RPC heartbeat hasn't
         # fired in a while.  Distinct from a crash (proc.poll != None) — here
         # the process is still alive but unresponsive.
-        if (
-            self._jamulus_connected
-            and proc is not None
-            and proc.poll() is None
-        ):
+        if self._jamulus_connected and proc is not None and proc.poll() is None:
             try:
                 age = self.jamulus.rpc_client.last_activity_age()
             except AttributeError:
@@ -2156,7 +2732,9 @@ class ApplicationController(QObject):
                     LOGGER.debug("hang metric failed", exc_info=True)
             elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
                 self._rpc_hang_banner_shown = False
-                self.window.flash_message("The music engine is responding again.", ms=3000)
+                self.window.flash_message(
+                    "The music engine is responding again.", ms=3000
+                )
 
         self.bridge.attempt_auto_reconnects()
 
@@ -2166,114 +2744,6 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Save / Load mix (Ctrl+S / Ctrl+O)
     # ------------------------------------------------------------------
-    def _on_mute_self(self) -> None:
-        """Toggle only the local Jamulus send, never the Webex microphone."""
-        local_channel_id: Optional[int] = None
-        for cid, p in self.participants.items():
-            if p.is_local:
-                local_channel_id = cid
-                break
-        if local_channel_id is None:
-            self.window.flash_message(
-                "Start the session first — your music track isn't available yet.",
-                ms=4000,
-            )
-            # Render only acknowledged global transmit state. Local mixer mute
-            # and retained Talk Break intent are not proof that send is muted.
-            self._sync_self_mute_button()
-            self.session_health.mark_rpc_result(
-                "self-mute", False, "local channel not available"
-            )
-            return
-        if not self._jamulus_connected:
-            self.window.flash_message(
-                "Start the session first — this control needs your live music track.",
-                ms=4000,
-            )
-            self._sync_self_mute_button()
-            self.session_health.mark_rpc_result(
-                "self-mute", False, "Jamulus session not proven"
-            )
-            return
-        new_muted = not self._self_transmit_muted
-        talkback = self._webex_audio_mode() == "talkback"
-
-        if talkback and not new_muted:
-            reply = QMessageBox.question(
-                self.window,
-                "Resume Music?",
-                "Release Spacebar and confirm your Webex microphone is muted.\n\n"
-                "Resume sending music to the band?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                self.window.session_strip.set_self_muted(True)
-                return
-
-        # Real self-mute: tell Jamulus to stop sending OUR audio to the band
-        # (jamulusclient/setMuted).  Zeroing our own channel fader would only
-        # mute us in our own monitor — the others would still hear us.
-        if not self.jamulus.set_self_muted(new_muted):
-            self.session_health.mark_rpc_result(
-                "self-mute", False, "Jamulus RPC rejected setMuted"
-            )
-            self._sync_self_mute_button()
-            if talkback:
-                action = "Talk Break" if new_muted else "Resume Music"
-            else:
-                action = "Mute Music Send" if new_muted else "Unmute Music Send"
-            self.window.flash_message(
-                f"{action} did not reach the music engine — keep your Webex microphone "
-                "muted and try again.",
-                ms=6000,
-            )
-            return
-        self._self_transmit_muted = new_muted
-        self._talk_break_intended = bool(talkback and new_muted)
-        self.session_health.mark_rpc_result("self-mute", True)
-        self._sync_self_mute_button()
-        if talkback:
-            message = (
-                "TALK · music send muted — hold Space in Webex to speak."
-                if new_muted else
-                "PLAY · music send live — keep the Webex microphone muted."
-            )
-        else:
-            message = "Music send muted." if new_muted else "Music send live."
-        self.window.flash_message(message, ms=5000)
-
-    def _reapply_talk_break_after_reconnect(self) -> None:
-        """Fail closed when a reconnect returns while Talk Break is intended."""
-        if (
-            not self._talk_break_intended
-            or self._webex_audio_mode() != "talkback"
-            or not self._jamulus_connected
-            or self._self_transmit_muted
-        ):
-            return
-        local = next((p for p in self.participants.values() if p.is_local), None)
-        if local is None:
-            return
-        if self.jamulus.set_self_muted(True):
-            self._self_transmit_muted = True
-            self.session_health.mark_rpc_result("self-mute", True)
-            self._sync_self_mute_button()
-            self.window.flash_message(
-                "Talk break restored after reconnect · music send is muted.", ms=5000
-            )
-            return
-        self.session_health.mark_rpc_result(
-            "self-mute", False, "could not restore Talk Break after reconnect"
-        )
-        self._self_transmit_muted = False
-        self._sync_self_mute_button()
-        self.window.flash_message(
-            "Talk Break is not confirmed after reconnect — keep Webex muted "
-            "and press Talk Break to retry.",
-            ms=8000,
-        )
-
     def _on_mute_all(self) -> None:
         """Ctrl+M — toggle mute state for every participant.
 
@@ -2284,7 +2754,9 @@ class ApplicationController(QObject):
         if not self.participants:
             return
         any_unmuted = any(not p.muted for p in self.participants.values())
-        target_muted = any_unmuted  # mute all if anything is playing; unmute if all silent
+        target_muted = (
+            any_unmuted  # mute all if anything is playing; unmute if all silent
+        )
         for channel_id, p in self.participants.items():
             if p.muted != target_muted:
                 p.muted = target_muted
@@ -2303,7 +2775,8 @@ class ApplicationController(QObject):
         saved mix on disk is unchanged — user can Ctrl+O to restore.
         """
         reply = QMessageBox.question(
-            self.window, "Reset all faders?",
+            self.window,
+            "Reset all faders?",
             "Reset all faders to 0 dB?\n\nYour saved mix on disk is unchanged.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -2423,6 +2896,7 @@ class ApplicationController(QObject):
         """
         from pathlib import Path
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getSaveFileName(
             self.window,
             "Save Mix As...",
@@ -2440,6 +2914,7 @@ class ApplicationController(QObject):
         """Ctrl+Shift+O — open a Load dialog and apply the chosen mix file."""
         from pathlib import Path
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getOpenFileName(
             self.window,
             "Load Mix...",
@@ -2465,9 +2940,8 @@ class ApplicationController(QObject):
         # in sync with the settings object used by the embedded pane.
         self.webex.meeting_url = self.settings.webex_url
         self.bridge.webex_controller = self.webex
-        if self._webex_audio_mode() != "talkback":
-            self._talk_break_intended = False
-        self.window.session_strip.set_webex_audio_mode(self._webex_audio_mode())
+        self._talk_break_intended = False
+        self._self_transmit_muted = False
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
@@ -2499,6 +2973,7 @@ class ApplicationController(QObject):
                 except Exception:  # noqa: BLE001
                     LOGGER.debug("Old Jamulus RPC client stop failed", exc_info=True)
             from core.jamulus_rpc_client import JamulusRpcClient
+
             self.jamulus.rpc_client = JamulusRpcClient(
                 port=self.settings.jamulus_rpc_port,
                 on_participants_changed=self.jamulus._on_rpc_participants,
@@ -2515,11 +2990,17 @@ class ApplicationController(QObject):
             old_settings.companion_api_enabled != self.settings.companion_api_enabled
         )
         was_api_running = bool(getattr(self.api_bridge, "_running", False))
-        if api_port_changed or api_enabled_changed or not self.settings.companion_api_enabled:
+        if (
+            api_port_changed
+            or api_enabled_changed
+            or not self.settings.companion_api_enabled
+        ):
             try:
                 self.api_bridge.stop()
             except Exception:  # noqa: BLE001
-                LOGGER.debug("Companion API stop during settings apply failed", exc_info=True)
+                LOGGER.debug(
+                    "Companion API stop during settings apply failed", exc_info=True
+                )
         self.api_bridge.port = self.settings.companion_api_port
         if self.settings.companion_api_enabled and (
             api_enabled_changed or api_port_changed or was_api_running
@@ -2528,6 +3009,7 @@ class ApplicationController(QObject):
 
     def _open_settings_wizard(self) -> None:
         from webjam_qt.windows.simple_settings import SimpleSettingsDialog
+
         # Snapshot relevant fields before the wizard so we can detect changes.
         old_settings = self.settings
         old_webex_url = self.settings.webex_url
@@ -2535,6 +3017,7 @@ class ApplicationController(QObject):
         # In-session reopen — skip the welcome page since the user already
         # knows what WebJam is and is here to change a specific setting.
         wizard = SimpleSettingsDialog(self.settings, parent=self.window)
+
         def _open_band_check_from_settings() -> None:
             wizard.reject()
             QTimer.singleShot(0, self._on_ready_check)
@@ -2542,10 +3025,9 @@ class ApplicationController(QObject):
         wizard.band_check_requested.connect(_open_band_check_from_settings)
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
-            reopen_band_check, reopen_start_when_ready = (
-                self._replace_settings_object(
-                    load_settings(self.settings.config_file)
-                )
+
+            reopen_band_check, reopen_start_when_ready = self._replace_settings_object(
+                load_settings(self.settings.config_file)
             )
             self._reconfigure_services_after_settings(old_settings)
             self.window.recording_studio.set_takes_directory(
@@ -2569,15 +3051,12 @@ class ApplicationController(QObject):
             # Build a context-aware confirmation message so the user knows
             # whether they need to take any action for the change to apply.
             warnings: list[str] = []
-            if (
-                self.settings.webex_url != old_webex_url
-                and self._is_video_active()
-            ):
+            if self.settings.webex_url != old_webex_url and self._is_video_active():
                 warnings.append("Press Open Again to use the new Webex URL.")
             if (
-                (self.settings.jamulus_server, self.settings.jamulus_port) != old_jamulus_server
-                and self._is_jamulus_running()
-            ):
+                self.settings.jamulus_server,
+                self.settings.jamulus_port,
+            ) != old_jamulus_server and self._is_jamulus_running():
                 warnings.append("End and restart the session to use the new band host.")
 
             if warnings:
@@ -2602,9 +3081,8 @@ class ApplicationController(QObject):
 
         local_originals_available = self._local_originals_available()
         session_running = self._is_jamulus_running()
-        takes_folder_editable = (
-            not session_running
-            and not bool(getattr(self.host_peer, "active", False))
+        takes_folder_editable = not session_running and not bool(
+            getattr(self.host_peer, "active", False)
         )
         old_settings = self.settings
         settings_path = self.settings.config_file
@@ -2630,12 +3108,8 @@ class ApplicationController(QObject):
             # before Start so Local Originals and Studio agree on the newly
             # committed folder.
             self._configure_guest_peer(retained_invite)
-        self._reopen_invalidated_band_check(
-            reopen_band_check, reopen_start_when_ready
-        )
-        self.window.recording_studio.set_takes_directory(
-            self.settings.takes_directory
-        )
+        self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
+        self.window.recording_studio.set_takes_directory(self.settings.takes_directory)
         self._sync_local_originals_action()
         self.window.recording_studio.set_output_device(
             self.settings.take_playback_output_device
@@ -2681,6 +3155,7 @@ class ApplicationController(QObject):
         self.settings.take_playback_output_device = value
         try:
             from core.settings import save_settings
+
             save_settings(self.settings)
         except Exception:  # noqa: BLE001
             self.settings.take_playback_output_device = previous
@@ -2695,9 +3170,7 @@ class ApplicationController(QObject):
         reopen_band_check, reopen_start_when_ready = (
             self._invalidate_band_check_evidence()
         )
-        self._reopen_invalidated_band_check(
-            reopen_band_check, reopen_start_when_ready
-        )
+        self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
 
     def _on_rail_view_changed(self, key: str) -> None:
         splitter = self.window.center_splitter
@@ -2805,6 +3278,7 @@ class ApplicationController(QObject):
 
         def _scan() -> None:
             from core.audio_routing import AudioRoutingStatus, scan_loopback_devices
+
             try:
                 status = scan_loopback_devices()
             except Exception as exc:  # noqa: BLE001

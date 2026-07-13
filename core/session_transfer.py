@@ -186,7 +186,7 @@ def derive_participant_id(session_id: str, installation_id: str) -> str:
     return str(uuid.uuid5(uuid.UUID(canonical_session), canonical_installation))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class SessionCredentials:
     """The private-session identity and one-link enrollment credential."""
 
@@ -214,8 +214,13 @@ class SessionCredentials:
 
         return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
+    def __repr__(self) -> str:
+        """Keep the session correlation ID and enrollment bearer out of logs."""
 
-@dataclass(frozen=True)
+        return "SessionCredentials(private=[redacted])"
+
+
+@dataclass(frozen=True, repr=False)
 class ParticipantEnrollment:
     participant_id: str
     installation_id: str
@@ -235,6 +240,11 @@ class ParticipantEnrollment:
             "participant_token",
             _token_text(self.participant_token, "participant_token"),
         )
+
+    def __repr__(self) -> str:
+        """Avoid leaking a musician name, installation ID, or peer bearer."""
+
+        return "ParticipantEnrollment(private=[redacted])"
 
 
 @dataclass(frozen=True)

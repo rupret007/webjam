@@ -128,16 +128,16 @@ gates pass.
 
 - **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
 - **Focused first run** — two-step Host/Join, identity, Webex, and optional
-  capture. Talkback is the default; video-only and advanced audience-bridge
+  capture. Conversation is the default; video-only and advanced audience-bridge
   roles remain in Settings.
 - **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
 - **Native Webex handoff** — opens the configured room externally and reports
   only launch truth; it never claims to inspect or control meeting membership,
   devices, mute, leave, or reconnect state
-- **Two-lane talkback** — Jamulus remains the only music path; native Webex is
-  muted-by-default speech. Talk Break mutes Jamulus transmit only after RPC
-  acknowledgement, and Resume Music defaults to cancel until Webex mute is
-  manually confirmed
+- **Two-lane conversation safety** — Jamulus remains the only music path and
+  native Webex stays muted while playing. Jamulus 3.12.2 has no live-send mute
+  API, so speaking requires an audio-interface mute or ending the WebJam
+  session first
 - **Role-aware readiness** — native Webex selections are manual `VERIFY` rows;
   `core/audio_routing.py` scans VB-CABLE / BlackHole / JACK / Loopback only for
   advanced audience-bridge mode
@@ -197,7 +197,7 @@ gates pass.
 
 - `CREATIVE_MODES_MVP_SPEC.md` – Mode metadata, canvas, room context (already implemented).
 - `COHORT_VALIDATION_PLAYBOOK.md` – Pilot and validation.
-- `WEBEX_AUDIO_MODES.md` – Canonical music/talkback signal flows and safety rules.
+- `WEBEX_AUDIO_MODES.md` – Canonical music/conversation signal flows and safety rules.
 - `README.md` – User-facing roadmap and quick start.
 
 *WebJam – The app that knows we're making something together.*

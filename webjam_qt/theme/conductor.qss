@@ -468,13 +468,6 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
-#SessionInviteLink {
-    color: ${COLOR_TEXT_SECONDARY};
-    background-color: ${COLOR_BG_INPUT};
-    font-family: ${FONT_FAMILY_MONO};
-    font-size: ${FONT_SIZE_SM}px;
-}
-
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};

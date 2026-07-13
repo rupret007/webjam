@@ -500,6 +500,10 @@ class TestRoutingPage(unittest.TestCase):
         self.assertEqual(page.audio_mode, "talkback")
         self.assertTrue(page.isComplete())
         scan.assert_not_called()
+        guidance = page._status_label.text()
+        self.assertIn("mute your audio interface", guidance)
+        self.assertIn("end the WebJam session", guidance)
+        self.assertNotIn("Talk Break", guidance)
 
     def test_modes_are_mutually_exclusive(self):
         from webjam_qt.windows.setup_wizard import _RoutingPage
@@ -596,7 +600,7 @@ class TestRoutingPage(unittest.TestCase):
         from webjam_qt.windows.setup_wizard import _RoutingPage
 
         page = _RoutingPage(AppSettings())
-        self.assertIn("talkback", page._talkback_radio.accessibleName().lower())
+        self.assertIn("conversation", page._talkback_radio.accessibleName().lower())
         self.assertIn("without computer audio", page._video_only_radio.accessibleName())
         self.assertIn("audience", page._audience_bridge_radio.accessibleName().lower())
         self.assertEqual(

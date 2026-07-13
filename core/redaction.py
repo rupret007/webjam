@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import ipaddress
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlsplit
@@ -25,6 +26,7 @@ REDACTED_NAME_HINTS = (
     "passwd",
     "passphrase",
     "credential",
+    "capability",
     "private_key",
     "api_key",
     "apikey",
@@ -34,6 +36,9 @@ REDACTED_NAME_HINTS = (
     "dsn",
     "invite_code",
     "invite_url",
+    "invite_reference",
+    "session_reference",
+    "session_id",
     "rpc_key",
     "rpc_secret",
     "serial_number",
@@ -195,6 +200,38 @@ _COMMON_HOME_RE = re.compile(
     r"(?i)(?:/Users/[^/\s'\"<>]+|/home/[^/\s'\"<>]+|"
     r"[A-Z]:\\Users\\[^\\\s'\"<>]+)"
 )
+_IPV4_CANDIDATE_RE = re.compile(
+    r"(?<![\w.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![\w.])"
+)
+_BRACKETED_IPV6_CANDIDATE_RE = re.compile(r"\[[0-9A-Fa-f:.%_-]+\]")
+_IPV6_CANDIDATE_RE = re.compile(
+    r"(?<![0-9A-Za-z_])(?:[0-9A-Fa-f]*:){2,}[0-9A-Fa-f]*"
+    r"(?:%[A-Za-z0-9_.-]+)?(?![0-9A-Za-z_])"
+)
+
+
+def _valid_ip_literal(value: str) -> bool:
+    candidate = value.strip("[]")
+    # IPv6 scope identifiers disclose interface names and are not accepted by
+    # all Python versions.  Validate the address portion and redact the scope
+    # together with it.
+    candidate = candidate.split("%", 1)[0]
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return False
+    return True
+
+
+def _redact_ip_literals(text: str) -> str:
+    """Remove valid IPv4/IPv6 literals without eating versions or timestamps."""
+
+    def replace(match: re.Match[str]) -> str:
+        return "[redacted-ip]" if _valid_ip_literal(match.group(0)) else match.group(0)
+
+    out = _IPV4_CANDIDATE_RE.sub(replace, text)
+    out = _BRACKETED_IPV6_CANDIDATE_RE.sub(replace, out)
+    return _IPV6_CANDIDATE_RE.sub(replace, out)
 
 
 def _redact_home_paths(text: str) -> str:
@@ -243,4 +280,5 @@ def redact_text(text: str) -> str:
     out = _WEBJAM_URL_RE.sub("webjam://" + REDACTED, out)
     out = _URL_USERINFO_RE.sub(r"\1" + REDACTED + "@", out)
     out = _EMAIL_RE.sub("[redacted-email]", out)
+    out = _redact_ip_literals(out)
     return out

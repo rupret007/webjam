@@ -240,7 +240,7 @@ def test_startup_always_asks_host_or_join_then_checks_verification(qapp):
              app_module, "ApplicationController", return_value=controller,
          ), patch.object(app_module.QTimer, "singleShot") as single_shot:
         assert app_module.run() == 0
-    launcher_class.assert_called_once_with(initial, initial_invite_url="")
+    launcher_class.assert_called_once_with(initial, initial_invitation=None)
     qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
     single_shot.assert_called_once_with(
         0, controller.start_session_or_band_check

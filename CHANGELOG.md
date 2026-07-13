@@ -4,6 +4,62 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased]
+
+No changes yet.
+
+---
+
+## [0.11.0] — 2026-07-13 private test-night candidate
+
+### Remote-session foundation — local and CI evidence only
+
+- Added a strict v3 invitation boundary with opaque, expiring, revocable,
+  one-use enrollment material. Remote invitations use a compiled profile ID,
+  never a caller-supplied endpoint, and secret-bearing values have constant
+  string representations and are excluded from ordinary diagnostics.
+- Added the statically compiled `webjam-fabric` process boundary, bounded
+  JSON-lines IPC, loopback Jamulus proxy primitives, mutually authenticated
+  QUIC session core, and deterministic direct/relay laboratory coverage. CI
+  now builds the sidecar for macOS arm64, macOS x64, and Windows x64 and stages
+  it beside the packaged desktop executable.
+- Frozen builds ignore environment path/build-ID overrides and require the
+  sibling sidecar, a canonical package-generated SHA-256 manifest, the expected
+  architecture, safe owner/mode, its native platform signature, and the exact
+  embedded build ID before accepting it.
+- Remote Jamulus host and guest launches omit the musician name from process
+  arguments. The name is applied only after authenticated loopback JSON-RPC is
+  available; legacy v1/v2 launch behavior remains unchanged.
+- Added a dependency-free, containerizable reference service with bounded
+  in-memory registration, one-use enrollment, opaque signaling, and an
+  authenticated exact-pair UDP relay. The service is a native WebJam protocol,
+  not an HTTP/WebSocket signaling server or a stock TURN server.
+- The native reference integration now distinguishes host registration from
+  peer connection and proves sealed bootstrap/acknowledgment, mutual TLS with
+  exact pins, bidirectional exporter proofs, pre-proof quarantine, peer pumps,
+  live payloads through the real relay/loopback-proxy seam, reset, and bounded
+  close against an independently spawned service process. Its endpoints are
+  controlled UDP sockets, not real Jamulus processes or physical musicians.
+- Band Check can retain explicit local, transport, remote-signal, decoded-
+  fixture, and musician-confirmed evidence without treating a socket, packet,
+  process, meter, or fixture as proof that a person heard the live route.
+- Added deterministic impairment coverage for latency, jitter, loss, reorder,
+  duplication, bandwidth limits, blackholes, path changes, relay failure,
+  restart, and cleanup, while keeping physical hardware and public-network
+  results separate.
+
+### Release boundary
+
+- No public rendezvous or relay is deployed or bundled. `reference-local` is a
+  loopback-only lab profile; it is not an “anywhere” service and cannot be
+  redirected through desktop input or IPC.
+- The existing v1/v2 same-private-LAN path remains the ordinary musician flow.
+  Public Internet deployment, two independent homes/NATs, two-musician
+  acoustic audibility, physical interface routing, Logic Pro import, and
+  packaged VoiceOver/NVDA review remain **NOT RUN**.
+
+---
+
 ## [0.10.0] — 2026-07-13 certification candidate
 
 ### Band Check before guesswork
@@ -909,7 +965,7 @@ protocol robustness, cross-platform pitfalls, and error UX.
 
 ---
 
-## [Unreleased]
+## Historical post-v0.3.0 development notes
 
 ### Added — Post-v0.3.0 gap fixes
 - **Qt widget test suite** (`tests/test_qt_widgets.py`): 45 headless smoke tests covering `LevelMeter`, `ParticipantCard`, `SessionStrip`, `ParticipantGrid`, `SideRail`, and `ConductorWindow`
@@ -966,7 +1022,7 @@ protocol robustness, cross-platform pitfalls, and error UX.
 
 ---
 
-## Unreleased - Reliability and Hardening Rollup
+## Historical reliability and hardening rollup
 
 ### Security and Data Integrity
 - Added serialized lockout mutation flow in `WebJamRepository.authenticate_with_status()` to avoid race-driven counter drift under concurrent failed authentication attempts.

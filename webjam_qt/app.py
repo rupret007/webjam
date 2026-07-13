@@ -12,9 +12,17 @@ from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.logging_config import configure_logging
+from core.network_invite import BandInvite
 from core.settings import load_settings
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet, make_brand_icon
+from webjam_qt.invitation_ingress import (
+    Invitation,
+    InvitationIngressError,
+    InvitationSource,
+    invitation_from_arguments,
+    parse_invitation_at_ingress,
+)
 from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
 
@@ -22,13 +30,15 @@ from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
 class WebJamApplication(QApplication):
     """QApplication that receives macOS ``webjam://`` open events."""
 
-    invite_url_received = Signal(str)
+    invitation_received = Signal(object)
+    invitation_error = Signal(str)
 
     def __init__(self, arguments: list[str]) -> None:
         # A QFileOpen event may arrive during QApplication construction,
         # before the launch dialog or live controller has connected a slot.
         # Retain one pending invite so a cold deep link can never disappear.
-        self._pending_invite_url = ""
+        self._pending_invitation: Invitation | None = None
+        self._pending_invitation_error = ""
         super().__init__(arguments)
 
     def event(self, event) -> bool:  # noqa: A003
@@ -38,32 +48,45 @@ class WebJamApplication(QApplication):
             except AttributeError:
                 url = ""
             if str(url).lower().startswith("webjam://"):
-                self._pending_invite_url = str(url)
-                self.invite_url_received.emit(str(url))
+                try:
+                    invitation = parse_invitation_at_ingress(
+                        url,
+                        source=InvitationSource.MAC_FILE_OPEN,
+                        platform=sys.platform,
+                    )
+                except InvitationIngressError as exc:
+                    self._pending_invitation_error = str(exc)
+                    self.invitation_error.emit(str(exc))
+                    return True
+                self._pending_invitation = invitation
+                self._pending_invitation_error = ""
+                self.invitation_received.emit(invitation)
                 return True
         return super().event(event)
 
-    def take_pending_invite(self) -> str:
-        """Return and clear an invite received before a consumer was ready."""
-        value = str(getattr(self, "_pending_invite_url", "") or "")
-        self._pending_invite_url = ""
+    def take_pending_invitation(self) -> Invitation | None:
+        """Return and clear a typed invite received before a consumer was ready."""
+
+        value = self._pending_invitation
+        self._pending_invitation = None
         return value
 
-    def acknowledge_invite(self, value: str) -> None:
-        """Clear a just-delivered signal without dropping a newer invite."""
-        if self._pending_invite_url == str(value or ""):
-            self._pending_invite_url = ""
+    def acknowledge_invitation(self, value: Invitation) -> None:
+        """Clear a just-delivered object without dropping a newer invite."""
+
+        if self._pending_invitation is value:
+            self._pending_invitation = None
+
+    def take_pending_invitation_error(self) -> str:
+        message = self._pending_invitation_error
+        self._pending_invitation_error = ""
+        return message
 
 
-def _invite_from_arguments(arguments: list[str]) -> str:
-    return next(
-        (
-            str(item)
-            for item in arguments[1:]
-            if str(item).lower().startswith("webjam://")
-        ),
-        "",
-    )
+def _invite_from_arguments(arguments: list[str]) -> BandInvite | None:
+    """Preserve legacy deep links while refusing v3 process arguments."""
+
+    return invitation_from_arguments(arguments)
 
 
 def _configure_qt_attributes() -> None:
@@ -147,33 +170,57 @@ def _run_app() -> int:
     smoke_autostart = os.environ.get("WEBJAM_SMOKE_AUTOSTART_AUDIO") == "1"
     launch = None
     if not smoke_autostart:
-        argument_invite = _invite_from_arguments(sys.argv)
-        pending_invite = (
-            app.take_pending_invite() if isinstance(app, WebJamApplication) else ""
+        argument_invitation = _invite_from_arguments(sys.argv)
+        pending_invitation = (
+            app.take_pending_invitation()
+            if isinstance(app, WebJamApplication)
+            else None
         )
+        initial_invitation = pending_invitation or argument_invitation
         launch = LaunchDialog(
             settings,
-            initial_invite_url=argument_invite or pending_invite,
+            initial_invitation=initial_invitation,
         )
+        # The dialog owns the typed object now; do not keep extra capability
+        # references in this long-lived bootstrap frame.
+        initial_invitation = None
+        pending_invitation = None
+        argument_invitation = None
         launch_invite_handler = None
+        launch_error_handler = None
         if isinstance(app, WebJamApplication):
-            def _deliver_launch_invite(value: str) -> None:
-                app.acknowledge_invite(value)
-                launch.accept_invite(value)
+            def _deliver_launch_invite(invitation: Invitation) -> None:
+                app.acknowledge_invitation(invitation)
+                launch.accept_invitation(invitation)
 
             launch_invite_handler = _deliver_launch_invite
-            app.invite_url_received.connect(launch_invite_handler)
-            late_invite = app.take_pending_invite()
-            if late_invite:
+            launch_error_handler = launch.show_ingress_error
+            app.invitation_received.connect(launch_invite_handler)
+            app.invitation_error.connect(launch_error_handler)
+            late_invitation = app.take_pending_invitation()
+            if late_invitation is not None:
                 QTimer.singleShot(
-                    0, lambda value=late_invite: _deliver_launch_invite(value)
+                    0,
+                    lambda invitation=late_invitation: _deliver_launch_invite(
+                        invitation
+                    ),
+                )
+            late_error = app.take_pending_invitation_error()
+            if late_error:
+                QTimer.singleShot(
+                    0, lambda message=late_error: launch.show_ingress_error(message)
                 )
         result = launch.exec()
         if isinstance(app, WebJamApplication) and launch_invite_handler is not None:
             try:
-                app.invite_url_received.disconnect(launch_invite_handler)
+                app.invitation_received.disconnect(launch_invite_handler)
             except (RuntimeError, TypeError):
                 pass
+            if launch_error_handler is not None:
+                try:
+                    app.invitation_error.disconnect(launch_error_handler)
+                except (RuntimeError, TypeError):
+                    pass
         if result == LaunchDialog.DialogCode.Rejected:
             return 0
         settings = load_settings(settings.config_file)
@@ -191,6 +238,13 @@ def _run_app() -> int:
         initial_mode_key="music_jam",
         initial_title="Band Rehearsal",
     )
+    remote_invitation = (
+        launch.take_remote_invitation()
+        if launch is not None
+        and launch.selected_role == "join"
+        and hasattr(launch, "take_remote_invitation")
+        else None
+    )
     controller = ApplicationController(
         window,
         settings=settings,
@@ -199,7 +253,9 @@ def _run_app() -> int:
             if launch is not None and launch.selected_role == "join"
             else None
         ),
+        remote_invitation=remote_invitation,
     )
+    remote_invitation = None
     # Qt may terminate the native event loop without returning from exec() on
     # some platform shutdown paths.  Keep the finally block below as a second,
     # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so
@@ -210,15 +266,19 @@ def _run_app() -> int:
         window.session_strip.set_session_title(launch.session_name)
         controller._save_session_title()
     if isinstance(app, WebJamApplication):
-        def _deliver_live_invite(value: str) -> None:
-            app.acknowledge_invite(value)
-            controller.accept_invite_url(value)
+        def _deliver_live_invite(invitation: Invitation) -> None:
+            app.acknowledge_invitation(invitation)
+            controller.accept_invitation(invitation)
 
-        app.invite_url_received.connect(_deliver_live_invite)
-        late_invite = app.take_pending_invite()
-        if late_invite:
+        app.invitation_received.connect(_deliver_live_invite)
+        app.invitation_error.connect(
+            lambda message: window.flash_message(str(message), 5000)
+        )
+        late_invitation = app.take_pending_invitation()
+        if late_invitation is not None:
             QTimer.singleShot(
-                0, lambda value=late_invite: _deliver_live_invite(value)
+                0,
+                lambda invitation=late_invitation: _deliver_live_invite(invitation),
             )
     window.show()
     # A matching Band Check verification keeps returning musicians on the

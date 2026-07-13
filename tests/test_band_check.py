@@ -162,8 +162,10 @@ def test_live_observe_uses_production_evidence_and_has_no_lifecycle_actions() ->
         )
     )
     assert session.step(BandCheckStepKey.MUSIC_ENGINE).status is BandCheckStatus.PASS
-    assert session.step(BandCheckStepKey.MUSIC_PATH).status is BandCheckStatus.PASS
+    assert session.step(BandCheckStepKey.MUSIC_PATH).status is BandCheckStatus.WARNING
     assert "Jamulus reports" in session.step(BandCheckStepKey.MUSIC_PATH).detail
+    assert "not proof" in session.step(BandCheckStepKey.MUSIC_PATH).detail
+    assert not session.evidence.musician_confirmed_two_way_audibility
     assert session.step(BandCheckStepKey.AUDIO_INPUT).status is BandCheckStatus.PASS
 
 
@@ -190,8 +192,9 @@ def test_build_maps_preflight_and_omits_webex_when_unconfigured() -> None:
         ]
     )
     settings = SimpleNamespace(host_server_enabled=False, webex_url="")
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(settings)
     assert session.mode is BandCheckMode.PRE_SESSION
@@ -212,8 +215,9 @@ def test_music_engine_must_launch_exact_compatible_version() -> None:
         ]
     )
     settings = SimpleNamespace(host_server_enabled=False, webex_url="")
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.11.0"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.11.0"),
     ):
         session = build_band_check_session(settings)
     engine = session.step(BandCheckStepKey.MUSIC_ENGINE)
@@ -240,8 +244,9 @@ def test_missing_guest_server_explains_how_to_get_a_fresh_invite() -> None:
         webex_url="",
         audio_input_device_index=-1,
     )
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(settings)
 
@@ -269,8 +274,9 @@ def test_host_server_certification_promotes_real_lifecycle_to_pass() -> None:
         detail="Production lifecycle passed.",
         technical_details=("version_verified=True", "ports_released=True"),
     )
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(
             settings,
@@ -300,8 +306,9 @@ def test_authenticated_external_host_server_is_truthful_warning() -> None:
         detail="Authenticated external server; version and stop unverified.",
         technical_details=("external_server=True",),
     )
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(
             settings,
@@ -327,8 +334,9 @@ def test_optional_configured_webex_can_only_warn() -> None:
         host_server_enabled=False,
         webex_url="https://example.com/not-webex",
     )
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(settings)
     webex = session.step(BandCheckStepKey.WEBEX)
@@ -353,8 +361,9 @@ def test_built_live_session_exposes_no_device_or_lifecycle_action() -> None:
         local_meter_rms=0.1,
         local_meter_peak=0.2,
     )
-    with mock.patch("core.preflight.run_ready_check", return_value=report), mock.patch(
-        "core.band_check.music_engine_version", return_value="3.12.2"
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
     ):
         session = build_band_check_session(
             settings,
@@ -387,7 +396,9 @@ def test_verification_round_trip_private_and_invalidates_on_any_signature_change
         has_signal=True,
     )
     session.confirm_scratch_playback(True)
-    signature = VerificationSignature("1.0.0", "3.12.2", "portaudio:0:SSL", 48_000, (0,))
+    signature = VerificationSignature(
+        "1.0.0", "3.12.2", "portaudio:0:SSL", 48_000, (0,)
+    )
     path = tmp_path / "verification.json"
     saved = save_verification(
         path,
@@ -429,7 +440,9 @@ def test_verification_round_trip_private_and_invalidates_on_any_signature_change
 def test_action_needed_verification_is_persisted_but_not_usable(tmp_path: Path) -> None:
     session = _session()
     signature = VerificationSignature("1", "3", "device", 48_000, (0,))
-    saved = save_verification(tmp_path / "failed.json", signature=signature, session=session)
+    saved = save_verification(
+        tmp_path / "failed.json", signature=signature, session=session
+    )
     assert saved.outcome is BandCheckOutcome.ACTION_NEEDED
     assert not saved.usable
     assert not saved.matches(signature)
@@ -474,6 +487,7 @@ def test_signature_preserves_device_zero_and_channel_configuration() -> None:
         take_playback_output_device="Studio Output",
         takes_directory="/tmp/webjam-takes",
     )
+
     def query_device(_device, kind):
         if kind == "input":
             return {"name": "SSL 2+"}

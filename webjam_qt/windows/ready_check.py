@@ -1,4 +1,5 @@
 """Simple, truthful Band Check with an old-name compatibility alias."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -137,8 +138,8 @@ class BandCheckDialog(QDialog):
             "Three quick proofs: your input, your headphones, and a five-second "
             "recording. Nothing plays or records until you press its button."
             if mode is BandCheckMode.PRE_SESSION
-            else "Band Check observes the running session. It will not restart the "
-            "music engine or band server. Tests still run only when you press them."
+            else "Band Check keeps connection, music-data, and hearing evidence "
+            "separate. It will not restart the music engine or band server."
         )
         intro.setObjectName("BandCheckIntro")
         intro.setWordWrap(True)
@@ -430,21 +431,8 @@ class BandCheckDialog(QDialog):
         session = self._session
         if session is None:
             return None
-        # Workflow order is more useful than status-group order: prove input,
-        # then headphones, then the recording.
-        for step in session.steps:
-            if (
-                step.required
-                and step.status
-                in {
-                    BandCheckStatus.ACTION_NEEDED,
-                    BandCheckStatus.RUNNING,
-                    BandCheckStatus.PENDING,
-                }
-                and step.next_action
-            ):
-                return step.key
-        return None
+        step = session.primary_action_step
+        return step.key if step is not None else None
 
     def _run_primary_action(self) -> None:
         session = self._session
@@ -467,10 +455,10 @@ class BandCheckDialog(QDialog):
             if step.next_action == "Close Band Check":
                 self.close()
                 return
-        if (
-            self._mode is BandCheckMode.LIVE_OBSERVE
-            and key in {BandCheckStepKey.MUSIC_ENGINE, BandCheckStepKey.BAND_SERVER}
-        ):
+        if self._mode is BandCheckMode.LIVE_OBSERVE and key in {
+            BandCheckStepKey.MUSIC_ENGINE,
+            BandCheckStepKey.BAND_SERVER,
+        }:
             # Main-session controls own End/Start. Closing this observational
             # report is the only truthful action the dialog can take itself.
             self.close()
@@ -509,6 +497,16 @@ class BandCheckDialog(QDialog):
             BandCheckStepKey.STUDIO,
         }:
             self._advance_scratch_check()
+        elif key is BandCheckStepKey.MUSIC_PATH:
+            step = session.step(BandCheckStepKey.MUSIC_PATH)
+            if step.next_action in {
+                "We Can Hear Each Other",
+                "We Can Still Hear Each Other",
+            }:
+                session.confirm_two_way_audibility(True)
+                self._render_session()
+            else:
+                self._refresh_live_observations()
         elif key is None:
             if (
                 self._start_session_when_ready
@@ -538,7 +536,10 @@ class BandCheckDialog(QDialog):
             return
         if self._mode is BandCheckMode.LIVE_OBSERVE:
             self._refresh_live_observations()
-            if session.step(BandCheckStepKey.AUDIO_INPUT).status is not BandCheckStatus.PASS:
+            if (
+                session.step(BandCheckStepKey.AUDIO_INPUT).status
+                is not BandCheckStatus.PASS
+            ):
                 session.update_step(
                     BandCheckStepKey.AUDIO_INPUT,
                     status=BandCheckStatus.RUNNING,
@@ -553,10 +554,7 @@ class BandCheckDialog(QDialog):
         if self._input_probe is not None:
             return
         permission = microphone_permission_status()
-        if (
-            permission == "not_determined"
-            and not self._microphone_permission_explained
-        ):
+        if permission == "not_determined" and not self._microphone_permission_explained:
             self._microphone_permission_explained = True
             session.update_step(
                 BandCheckStepKey.AUDIO_INPUT,
@@ -617,9 +615,7 @@ class BandCheckDialog(QDialog):
                         )
                     ),
                     next_action=(
-                        "Use System Input"
-                        if selected_index >= 0
-                        else "Try Again"
+                        "Use System Input" if selected_index >= 0 else "Try Again"
                     ),
                 )
             self._render_session()
@@ -964,6 +960,7 @@ class BandCheckDialog(QDialog):
             LOGGER.debug("Live Band Check observation failed", exc_info=True)
             return
         before = list(self._session.steps)
+        before_evidence = self._session.evidence
         self._session.apply_live_observations(observations)
         if observations.local_meter_active:
             self._show_meter(
@@ -971,7 +968,7 @@ class BandCheckDialog(QDialog):
                 observations.local_meter_peak,
                 observations.local_meter_clipped,
             )
-        if before != self._session.steps:
+        if before != self._session.steps or before_evidence != self._session.evidence:
             self._render_session()
 
     def _persist_verification_if_ready(self) -> None:
@@ -1086,20 +1083,32 @@ class BandCheckDialog(QDialog):
         warnings = [item for item in self._items if not item.required and not item.ok]
         if automatic:
             count = len(automatic)
-            text = f"Fix {count} required item{'s' if count != 1 else ''} before the jam."
+            text = (
+                f"Fix {count} required item{'s' if count != 1 else ''} before the jam."
+            )
         elif manual:
             count = len(manual)
             text = f"Automated checks passed; confirm {count} Webex setting{'s' if count != 1 else ''}."
         else:
             text = "Ready to play — all required checks passed."
         if warnings:
-            text += f" {len(warnings)} optional warning{'s' if len(warnings) != 1 else ''}."
+            text += (
+                f" {len(warnings)} optional warning{'s' if len(warnings) != 1 else ''}."
+            )
         self._summary.setText(text)
 
     def _add_legacy_row(self, item) -> QFrame:
         row = QFrame()
         manual = bool(getattr(item, "manual_verification", False))
-        result = "pass" if item.ok else "verify" if manual else "fail" if item.required else "warn"
+        result = (
+            "pass"
+            if item.ok
+            else "verify"
+            if manual
+            else "fail"
+            if item.required
+            else "warn"
+        )
         row.setObjectName("ReadyCheckRow")
         row.setProperty("result", result)
         row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
@@ -1124,9 +1133,7 @@ class BandCheckDialog(QDialog):
         name = QLabel(_safe_report_text(item.name))
         name.setObjectName("ReadyCheckName")
         name.setTextFormat(Qt.TextFormat.PlainText)
-        detail = QLabel(
-            _safe_report_text(item.detail or "No additional details")
-        )
+        detail = QLabel(_safe_report_text(item.detail or "No additional details"))
         detail.setObjectName("ReadyCheckDetail")
         detail.setTextFormat(Qt.TextFormat.PlainText)
         detail.setWordWrap(True)

@@ -8,9 +8,13 @@ Musicians do not configure servers, ports, recording folders, virtual audio
 devices, or routing modes. WebJam starts the bundled music engine, chooses the
 safe defaults, and keeps the technical details out of the rehearsal.
 
-The v0.10.0 app is deliberately spare: a black and white session with burnt
+The private v0.11.0 candidate is deliberately spare: a black and white session with burnt
 orange reserved for the next important action. Host and Join are the only
 choices at launch.
+
+This quick start covers the ordinary same-private-LAN flow. The v3
+`reference-local` profile is a loopback-only developer lab, not a deployed
+Internet service.
 
 ## What you need
 

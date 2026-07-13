@@ -259,7 +259,7 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
         ]
     checks = [
         _manual_item(
-            "Webex talkback microphone",
+            "Webex conversation microphone",
             "Select the intended dedicated speech microphone.",
         ),
         _manual_item(
@@ -271,8 +271,9 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
             "Confirm the Webex microphone is muted before music starts.",
         ),
         _manual_item(
-            "Webex push-to-talk",
-            "Hold Spacebar and confirm temporary unmute works, then release it.",
+            "Conversation safety control",
+            "Confirm you can mute the audio interface before unmuting Webex. "
+            "Otherwise end the WebJam session first.",
         ),
         _manual_item(
             "Optimize for My Voice",

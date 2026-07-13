@@ -45,6 +45,8 @@ class JamulusController:
     Future enhancement: Implement full Jamulus protocol for real-time control
     """
     
+    live_send_mute = False
+
     def __init__(self, host: str = "127.0.0.1", port: int = 22124, rpc_port: int = 22222):
         self.settings = load_settings()
         self.logger = configure_logging(self.settings).getChild("jamulus_controller")
@@ -84,7 +86,7 @@ class JamulusController:
         # The legacy UDP monitor registers itself with the server as another
         # musician.  Keep it dormant in the product: the bundled Jamulus
         # 3.12.2 client exposes the authoritative roster, levels, mixer, chat,
-        # and mute controls through authenticated JSON-RPC.  The adapter stays
+        # and mixer controls through authenticated JSON-RPC. The adapter stays
         # available for its isolated protocol tests and explicit legacy use.
         self.protocol = JamulusProtocolAdapter(
             self.host,
@@ -432,19 +434,14 @@ class JamulusController:
         self._state.set_solo(channel_id, solo)
 
     def set_self_muted(self, muted: bool) -> bool:
-        """Globally mute/unmute the local user via Jamulus (jamulusclient/setMuted).
+        """Fail closed: Jamulus 3.12.2 cannot mute its live network send.
 
-        Unlike ``set_mute(channel)`` — which only changes YOUR local monitor
-        mix — this tells Jamulus to stop sending your audio to the server, so
-        the rest of the band actually stops hearing you (a real "Mute Me").
-        Returns True if the command was sent; no-op/False if RPC isn't
-        available (old Jamulus / not yet connected)."""
-        if not self.rpc_client.available:
-            return False
-        try:
-            return bool(self.rpc_client.set_self_muted(muted))
-        except Exception:
-            return False
+        Retained temporarily as a compatibility seam for non-UI callers. It
+        deliberately never delegates to RPC. Musicians must use their audio
+        interface mute or stop WebJam audio.
+        """
+        del muted
+        return False
 
     def send_chat(self, text: str) -> bool:
         """Send a chat message to the band via Jamulus (jamulusclient/sendChatText).

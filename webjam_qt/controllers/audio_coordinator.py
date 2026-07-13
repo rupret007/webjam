@@ -221,6 +221,14 @@ class AudioCoordinator:
             self._c.window.flash_message(error, ms=8000)
             return
         self._c._stop_session_peer()
+        # The hosted server has been confirmed stopped before this success
+        # callback. Revoke the v3 owner and clear its in-memory loopback mode
+        # now so a later legacy LAN-host session keeps its original binding.
+        self._c._clear_remote_invite_owner()
+        # Guest transports are independent from the invitation owner. Stop
+        # them only after Jamulus (and the hosted server for a host) is gone,
+        # then restore any in-memory loopback route to its saved local profile.
+        self._c._stop_remote_transport()
         self._c.recording.on_audio_session_stopped()
         self.reset_to_idle()
         self._c._reconnect_banner_shown = False

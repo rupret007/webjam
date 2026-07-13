@@ -35,6 +35,8 @@ def _make_settings() -> MagicMock:
     s.jamulus_rpc_port = 22222
     s.jamulus_candidates = []
     s.webex_url = "https://example.webex.com/m/x"
+    s.musician_name = "Private Musician Name"
+    s.host_server_enabled = False
     return s
 
 
@@ -257,6 +259,31 @@ class TestLaunchCommandContract(unittest.TestCase):
         secret_index = cmd.index("--jsonrpcsecretfile") + 1
         self.assertEqual(cmd[secret_index], str(DEFAULT_SECRET_PATH))
         self.assertEqual(bridge.jamulus_state, "Running")
+
+    def test_v3_guest_keeps_musician_name_out_of_process_arguments(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "127.0.0.1"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        bridge.enable_remote_guest_mode()
+
+        cmd = self._launch_and_capture_cmd(bridge)
+
+        self.assertNotIn("--clientname", cmd)
+        self.assertNotIn("Private Musician Name", cmd)
+
+    def test_legacy_guest_keeps_existing_clientname_contract(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "legacy.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        cmd = self._launch_and_capture_cmd(bridge)
+
+        self.assertEqual(
+            cmd[cmd.index("--clientname") + 1],
+            "Private Musician Name",
+        )
 
     def test_immediate_client_exit_is_not_reported_as_running(self, _thread):
         bridge = _make_bridge()

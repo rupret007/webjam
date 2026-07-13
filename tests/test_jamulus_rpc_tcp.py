@@ -2,7 +2,7 @@
 JSON-RPC server speaking the REAL wire protocol: newline-delimited JSON-RPC 2.0
 over TCP, with jamulus/apiAuth + jamulusclient/* methods and notifications.
 
-This proves the client interoperates with the actual Jamulus 3.x JSON-RPC API
+This proves the client interoperates with the pinned Jamulus 3.12.2 JSON-RPC API
 (transport, auth handshake, method names, value ranges) without a real Jamulus.
 """
 from __future__ import annotations
@@ -14,9 +14,13 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
 
-from core.jamulus_rpc_client import JamulusRpcClient
+from core.jamulus_rpc_client import (
+    LIVE_SEND_MUTE,
+    PINNED_CLIENT_REQUEST_METHODS,
+    PINNED_REQUEST_METHODS,
+    JamulusRpcClient,
+)
 
 
 class _FakeJamulus:
@@ -78,8 +82,14 @@ class _FakeJamulus:
             }})
         elif method == "jamulusclient/getClientList":
             self._reply({"jsonrpc": "2.0", "id": rid, "result": {"clients": self.clients}})
-        elif method and method.startswith("jamulusclient/set"):
+        elif method in PINNED_REQUEST_METHODS:
             self._reply({"jsonrpc": "2.0", "id": rid, "result": "ok"})
+        else:
+            self._reply({
+                "jsonrpc": "2.0",
+                "id": rid,
+                "error": {"code": -32601, "message": "Method not found"},
+            })
 
     def _reply(self, obj: dict):
         try:
@@ -179,70 +189,56 @@ class TestJamulusRpcTcp(unittest.TestCase):
         finally:
             h.close()
 
-    def test_set_self_muted_sends_real_setmuted(self):
+    def test_live_send_mute_is_unsupported_and_never_written(self):
         h = _ClientHarness()
         try:
             h.client.start()
             self.assertTrue(_wait(lambda: h.client.available))
-            self.assertTrue(h.client.set_self_muted(True))
-            self.assertTrue(_wait(
-                lambda: h.server.requests_for("jamulusclient/setMuted")))
-            req = h.server.requests_for("jamulusclient/setMuted")[-1]
-            self.assertEqual(req["params"], {"muted": True})
+            self.assertFalse(LIVE_SEND_MUTE)
+            self.assertFalse(h.client.live_send_mute)
+            self.assertNotIn("jamulusclient/setMuted", PINNED_REQUEST_METHODS)
+            self.assertFalse(h.client.set_self_muted(True))
+            time.sleep(0.05)
+            self.assertEqual(
+                h.server.requests_for("jamulusclient/setMuted"), []
+            )
         finally:
             h.close()
 
-    def test_set_self_muted_requires_ok_response(self):
-        client = JamulusRpcClient()
-        client._sock = MagicMock()
-        result: list[bool] = []
-        worker = threading.Thread(
-            target=lambda: result.append(client.set_self_muted(True))
+    def test_pinned_client_method_contract_matches_3122_source(self):
+        self.assertEqual(
+            PINNED_CLIENT_REQUEST_METHODS,
+            {
+                "jamulusclient/getChannelInfo",
+                "jamulusclient/getClientInfo",
+                "jamulusclient/getClientList",
+                "jamulusclient/getMidiDevices",
+                "jamulusclient/getMidiSettings",
+                "jamulusclient/pollServerList",
+                "jamulusclient/sendChatText",
+                "jamulusclient/setFaderLevel",
+                "jamulusclient/setMidiSettings",
+                "jamulusclient/setName",
+                "jamulusclient/setSkillLevel",
+            },
         )
-        worker.start()
-        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
-        request_id = next(iter(client._pending_commands))
-        client._dispatch_obj(
-            {"jsonrpc": "2.0", "id": request_id, "result": "ok"}
-        )
-        worker.join(timeout=1)
-        self.assertEqual(result, [True])
+        self.assertNotIn("jamulusclient/setMuted", PINNED_CLIENT_REQUEST_METHODS)
 
-    def test_set_self_muted_rejects_rpc_error(self):
-        client = JamulusRpcClient()
-        client._sock = MagicMock()
-        result: list[bool] = []
-        worker = threading.Thread(
-            target=lambda: result.append(client.set_self_muted(True))
-        )
-        worker.start()
-        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
-        request_id = next(iter(client._pending_commands))
-        client._dispatch_obj(
-            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -1}}
-        )
-        worker.join(timeout=1)
-        self.assertEqual(result, [False])
+    def test_fake_rpc_rejects_unknown_client_methods(self):
+        server = _FakeJamulus("secret")
+        replies: list[dict] = []
+        server._reply = replies.append  # type: ignore[method-assign]
+        try:
+            server._handle({
+                "jsonrpc": "2.0",
+                "id": 17,
+                "method": "jamulusclient/setMuted",
+                "params": {"muted": True},
+            })
+        finally:
+            server.stop()
 
-    def test_set_self_muted_times_out_without_response(self):
-        client = JamulusRpcClient()
-        client._sock = MagicMock()
-        client.COMMAND_TIMEOUT_S = 0.01
-        self.assertFalse(client.set_self_muted(True))
-        self.assertFalse(client._pending_commands)
-
-    def test_set_self_muted_fails_when_connection_drops(self):
-        client = JamulusRpcClient()
-        client._sock = MagicMock()
-        result: list[bool] = []
-        worker = threading.Thread(
-            target=lambda: result.append(client.set_self_muted(True))
-        )
-        worker.start()
-        self.assertTrue(_wait(lambda: bool(client._pending_commands)))
-        client._fail_pending_commands()
-        worker.join(timeout=1)
-        self.assertEqual(result, [False])
+        self.assertEqual(replies[0]["error"]["code"], -32601)
 
     def test_set_name_sends_real_setname(self):
         h = _ClientHarness()

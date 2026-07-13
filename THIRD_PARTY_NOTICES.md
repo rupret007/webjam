@@ -67,6 +67,24 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
   WebJam release. The manual-path override above remains available if
   you need a newer (or different) Jamulus version sooner.
 
+## WebJam fabric transport
+
+WebJam bundles `webjam-fabric`, its statically compiled native transport
+sidecar, as a separate executable beside the desktop application. The binary
+links pinned Pion ICE/STUN/TURN/transport modules, quic-go, and their permissive
+transitive dependencies.
+
+- **Exact versions and linked inventory:**
+  [`transport/DEPENDENCIES.md`](transport/DEPENDENCIES.md)
+- **Attribution and license mapping:**
+  [`transport/NOTICE.md`](transport/NOTICE.md)
+- **Full license texts:** [`transport/licenses/`](transport/licenses/)
+
+The notice, inventory, and license texts are included in every desktop bundle's
+`THIRD_PARTY_LICENSES` data. `go.sum`, `go mod verify`, `go mod tidy -diff`, the
+race suite, the vulnerability audit, and a linked-binary dependency inventory
+are release gates.
+
 ## VB-CABLE (Windows audio routing)
 
 WebJam bundles the VB-CABLE installers (see `VB/readme.txt` for VB-Audio

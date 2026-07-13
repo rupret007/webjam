@@ -186,6 +186,22 @@ class TestSessionStrip(unittest.TestCase):
             initial_title=title,
         )
 
+    def test_reset_invite_is_progressive_disclosure_and_emits_once(self):
+        from unittest.mock import MagicMock
+
+        strip = self._strip()
+        reset = MagicMock()
+        strip.reset_invite_requested.connect(reset)
+
+        self.assertFalse(strip._reset_invite_action.isVisible())
+        strip.set_reset_invite_available(True)
+        self.assertTrue(strip._reset_invite_action.isVisible())
+        self.assertIn("Revoke", strip._reset_invite_action.toolTip())
+        strip._reset_invite_action.trigger()
+        reset.assert_called_once_with()
+        strip.set_reset_invite_available(False)
+        self.assertFalse(strip._reset_invite_action.isVisible())
+
     def test_constructs(self):
         s = self._strip()
         self.assertIsNotNone(s)
@@ -249,7 +265,7 @@ class TestSessionStrip(unittest.TestCase):
         controls = [
             s._logo, s._title_input, s._record_elapsed, s._timer_label,
             s._mode_picker, s._record_button, s._test_button,
-            s._mute_self_button, s._audio_button, s._video_button,
+            s._audio_button, s._video_button,
         ]
         visible = [control for control in controls if control.isVisible()]
         self.assertLess(max(control.geometry().right() for control in visible), 1100)
@@ -259,8 +275,6 @@ class TestSessionStrip(unittest.TestCase):
 
     def test_long_live_states_remain_readable_at_supported_width(self):
         s = self._strip()
-        s.set_webex_audio_mode("video_only")
-        s.set_self_muted(True)
         s.set_recording_phase("validating", detail="WAITING FOR SERVER FILES…")
         s.set_audio_state("Stop Audio")
         s.set_video_state("Open Again")
@@ -271,7 +285,6 @@ class TestSessionStrip(unittest.TestCase):
         buttons = [
             s._record_button,
             s._test_button,
-            s._mute_self_button,
             s._audio_button,
             s._video_button,
         ]

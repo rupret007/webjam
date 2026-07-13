@@ -16,7 +16,7 @@ Maps common musician questions to the current interface. Setup Wizard,
 | Prepare aligned Logic stems | Select a Studio take → **Export for Logic** → **Show Logic Export** |
 | Capture rehearsal notes | **More → Session Notes** |
 | Add optional video/conversation | **More → Add Video or Conversation** |
-| Pause music send for conversation | **More → Talk Break**, then hold Spacebar in Webex |
+| Speak during rehearsal | Mute the audio interface before unmuting Webex; if that is unavailable, end the WebJam session first |
 | Change display name or conversation link | **More → Settings** or **Ctrl+,** |
 | Resolve a connection/device problem | Follow the one stage action; run live-observe **Band Check** with `F2` for details without restarting the session |
 | Allow a denied microphone | Stage → **Open System Settings** → Privacy & Security → Microphone → return → **Try Again** |

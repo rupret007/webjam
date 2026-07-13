@@ -21,20 +21,21 @@ _COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$", re.IGNORECASE)
 def build_id() -> str:
     """Return a validated source commit, or ``""`` when it is unavailable."""
 
-    configured = str(os.environ.get("WEBJAM_BUILD_ID", "") or "").strip()
-    if _COMMIT_RE.fullmatch(configured):
-        return configured.lower()
-
     packaged = Path(__file__).resolve().parents[1] / "webjam-build-id.txt"
     try:
         value = packaged.read_text(encoding="ascii").strip()
     except OSError:
         value = ""
+    if getattr(sys, "frozen", False):
+        # A frozen app's signed bundle is the authority. Environment values
+        # must never select a different expected sidecar build.
+        return value.lower() if _COMMIT_RE.fullmatch(value) else ""
+
+    configured = str(os.environ.get("WEBJAM_BUILD_ID", "") or "").strip()
+    if _COMMIT_RE.fullmatch(configured):
+        return configured.lower()
     if _COMMIT_RE.fullmatch(value):
         return value.lower()
-
-    if getattr(sys, "frozen", False):
-        return ""
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],

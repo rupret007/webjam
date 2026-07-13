@@ -228,6 +228,14 @@ class BridgeService:
         self._hosted_log_file: Optional[object] = None
         self._hosted_lifecycle_lock = threading.RLock()
         self._hosted_restart_inflight = False
+        # Remote v3 hosting is an ephemeral launch constraint, never a saved
+        # setting.  Legacy v1/v2 hosts intentionally keep JamulusServer's LAN
+        # binding; a v3 owner must opt in before this service starts a server.
+        self._remote_host_mode = False
+        # A v3 guest also needs a process-local marker so its musician name is
+        # applied only through authenticated loopback RPC, never exposed in
+        # process arguments. This is independent from saved settings.
+        self._remote_guest_mode = False
 
     def _set_jamulus_state(self, state: "JamulusState | str") -> None:
         """Atomically update `jamulus_state` under `_reconnect_lock`.
@@ -245,6 +253,74 @@ class BridgeService:
     def _hosting_enabled(self) -> bool:
         """Return the concrete persisted hosting flag, never truthy sentinels."""
         return getattr(self.settings, "host_server_enabled", False) is True
+
+    @property
+    def remote_host_mode_enabled(self) -> bool:
+        """Whether the next owned host server is constrained to loopback.
+
+        This value exists only for the lifetime of this ``BridgeService``.  It
+        is deliberately independent from ``AppSettings`` so legacy LAN hosts
+        retain their existing bind behavior and the v3 constraint cannot leak
+        into a later session through persistence.
+        """
+
+        return self._remote_host_mode
+
+    def enable_remote_host_mode(self) -> None:
+        """Require loopback-only binding for a v3 server launched next.
+
+        Activation is rejected after any hosted server is live because WebJam
+        cannot retrofit or prove the bind address of an existing process.
+        Repeated activation for the same remote session is harmless and keeps
+        reconnect/restart paths on the same constraint.
+        """
+
+        with self._hosted_lifecycle_lock:
+            if self._remote_host_mode:
+                return
+            if self.hosted_server_alive():
+                raise RuntimeError(
+                    "remote host mode must be enabled before server launch"
+                )
+            self._remote_host_mode = True
+
+    def disable_remote_host_mode(self) -> None:
+        """Clear the ephemeral v3 constraint after its server has stopped."""
+
+        with self._hosted_lifecycle_lock:
+            if not self._remote_host_mode:
+                return
+            if self.hosted_server_alive():
+                raise RuntimeError(
+                    "remote host mode cannot be cleared while its server is live"
+                )
+            self._remote_host_mode = False
+
+    @property
+    def remote_guest_mode_enabled(self) -> bool:
+        return self._remote_guest_mode
+
+    def enable_remote_guest_mode(self) -> None:
+        """Arm privacy-safe Jamulus launch for an authenticated v3 guest."""
+
+        with self._jamulus_lifecycle_lock:
+            if self._remote_guest_mode:
+                return
+            if self._hosting_enabled():
+                raise RuntimeError("remote guest mode cannot host a server")
+            if self.jamulus_process is not None and self.jamulus_process.poll() is None:
+                raise RuntimeError("remote guest mode must be enabled before launch")
+            self._remote_guest_mode = True
+
+    def disable_remote_guest_mode(self) -> None:
+        """Clear the v3 guest marker after the owned Jamulus client stops."""
+
+        with self._jamulus_lifecycle_lock:
+            if not self._remote_guest_mode:
+                return
+            if self.jamulus_process is not None and self.jamulus_process.poll() is None:
+                raise RuntimeError("remote guest mode cannot be cleared while audio is live")
+            self._remote_guest_mode = False
 
     def _is_rpc_port_in_use(self) -> bool:
         """Return True if the configured Jamulus JSON-RPC port is already bound.
@@ -524,19 +600,30 @@ class BridgeService:
                             "refusing to launch without RPC authentication."
                         ) from exc
 
+                    remote_identity = bool(
+                        self._remote_host_mode or self._remote_guest_mode
+                    )
+                    identity_args = [] if remote_identity else [
+                        "--clientname",
+                        str(
+                            getattr(
+                                self.settings,
+                                "musician_name",
+                                "WebJam Musician",
+                            )
+                            or "WebJam Musician"
+                        ),
+                    ]
                     cmd = [
                         jamulus_path,
                         # The music engine is infrastructure, not a second app
                         # the musician must operate.
                         "--nogui",
                         "--connect", server,
-                        # Set identity before the Qt/RPC event loop starts so
-                        # server-side multitrack filenames stay human-readable
-                        # even if the client's control channel starts slowly.
-                        "--clientname", str(
-                            getattr(self.settings, "musician_name", "WebJam Musician")
-                            or "WebJam Musician"
-                        ),
+                        # Legacy LAN sessions keep their pre-RPC identity.
+                        # V3 applies the real name after authenticated local
+                        # RPC connects so it never appears in argv.
+                        *identity_args,
                         "--jsonrpcport", str(self.settings.jamulus_rpc_port),
                         *jsonrpc_secret_args,
                     ]
@@ -1098,6 +1185,7 @@ class BridgeService:
         lifetime so the host Mac cannot sleep mid-session.
         """
         with self._hosted_lifecycle_lock:
+            remote_host_mode = self._remote_host_mode
             if self.hosted_server_owned():
                 return True, "already running"
             if self._hosted_server_adopted:
@@ -1112,6 +1200,16 @@ class BridgeService:
             rpc_port = int(self.settings.server_rpc_port)
             udp_port = int(self.settings.jamulus_port)
             if not self._port_free(rpc_port):
+                if remote_host_mode:
+                    # Authentication proves recorder ownership, not the UDP
+                    # bind address.  V3 therefore cannot adopt an arbitrary
+                    # existing server whose loopback-only launch was not owned
+                    # by this service.
+                    return False, (
+                        "A remote jam requires WebJam to start its own "
+                        "loopback-only band server. Stop the existing server "
+                        "or other WebJam window, then try again."
+                    )
                 # A server may already be listening (e.g. the manual Terminal
                 # script). Adopt it only after authenticating and exercising
                 # the recorder API; an arbitrary listener must never be
@@ -1197,14 +1295,20 @@ class BridgeService:
                 )
 
             cmd = [
-                binary, "--nogui",
-                "--port", str(udp_port),
+                binary,
+                "--nogui",
+                "--port",
+                str(udp_port),
+            ]
+            if remote_host_mode:
+                cmd.extend(("--serverbindip", "127.0.0.1"))
+            cmd.extend([
                 "--recording", str(recordings), "--norecord",
                 "--jsonrpcbindip", "127.0.0.1",
                 "--jsonrpcport", str(rpc_port),
                 "--jsonrpcsecretfile", str(secret_path),
                 "--welcomemessage", "WebJam private band server",
-            ]
+            ])
             stdout_dest = subprocess.DEVNULL
             try:
                 log_dir = Path.home() / "Library" / "Logs" / "WebJam"

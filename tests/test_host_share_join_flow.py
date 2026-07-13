@@ -163,7 +163,7 @@ def test_session_hud_has_semantic_copy_and_retry_actions(qapp):
     hud.set_state(
         "Ready to share",
         "Waiting for bandmates.",
-        invite_url="webjam://join?host=192.168.1.42",
+        invite_available=True,
     )
     hud._action.click()
     copied.assert_called_once()
@@ -199,7 +199,7 @@ def test_host_invite_stays_hidden_until_real_server_readiness(qapp, tmp_path):
     controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=False)
     controller._update_session_hud()
-    assert controller.window.session_hud.invite_url() == ""
+    assert controller.window.session_hud._invite_available is False
     assert controller.window.session_hud._action.isHidden()
     controller.bridge.hosted_server_alive.return_value = True
     with patch.object(
@@ -208,9 +208,71 @@ def test_host_invite_stays_hidden_until_real_server_readiness(qapp, tmp_path):
         return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
-    assert controller.window.session_hud.invite_url().startswith("webjam://join?")
+    assert controller.window.session_hud._invite_available is True
     assert controller.window.session_hud._action.isHidden()
     assert not controller.window.session_strip._invite_button.isHidden()
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
+    qapp, tmp_path
+):
+    from services.remote_invitation_owner import RemoteInvitationOwner
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    class Registrar:
+        def __init__(self):
+            self.registered = []
+            self.revoked = []
+
+        def register_invitation(self, invitation):
+            self.registered.append(invitation)
+
+        def revoke_invitation(self, invitation):
+            self.revoked.append(invitation)
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Remote Host",
+    )
+    controller = ApplicationController(window, settings=settings)
+    registrar = Registrar()
+    owner = RemoteInvitationOwner(
+        registrar,
+        profile_id="reference-local",
+        allowed_profiles=frozenset({"reference-local"}),
+        host_spki_sha256=bytes.fromhex("44" * 32),
+        clock=lambda: 1_800_000_000,
+    )
+    owner.start(session_reference=bytes.fromhex("11" * 16))
+    controller._remote_invite_owner = owner
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller._current_invite_url = MagicMock(
+        side_effect=AssertionError("remote host must not serialize a LAN invite")
+    )
+
+    controller._update_session_hud()
+    controller._copy_band_invite()
+    copied = QApplication.clipboard().text()
+
+    assert copied.startswith("webjam://join?v=3")
+    assert copied not in repr(vars(controller))
+    assert not controller.window.session_strip._invite_button.isHidden()
+    assert controller.window.session_strip._reset_invite_action.isVisible()
+    assert "same Wi-Fi" not in controller.window.session_hud._detail.text()
+
+    old = owner.invitation
+    controller._reset_remote_invite()
+    assert registrar.revoked == [old]
+    assert owner.invitation is not old
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
@@ -245,7 +307,7 @@ def test_peer_bind_failure_keeps_jamulus_invite_with_persistent_plain_warning(
         "core.network_invite.local_band_address", return_value="192.168.1.42"
     ):
         controller._update_session_hud()
-        invite = parse_invite_link(controller.window.session_hud.invite_url())
+        invite = parse_invite_link(controller._current_invite_url())
         controller._update_session_hud()
 
     assert not invite.peer_enabled
@@ -614,7 +676,7 @@ def test_returning_user_still_gets_host_join_gate_and_verification_gate(qapp):
     ), patch.object(app_module.QTimer, "singleShot") as single_shot:
         os.environ.pop("WEBJAM_SMOKE_AUTOSTART_AUDIO", None)
         assert app_module.run() == 0
-    launcher_class.assert_called_once_with(initial, initial_invite_url="")
+    launcher_class.assert_called_once_with(initial, initial_invitation=None)
     single_shot.assert_called_once_with(
         0, controller.start_session_or_band_check
     )
@@ -646,7 +708,10 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
         app_module, "ApplicationController", return_value=MagicMock()
     ), patch.object(app_module.QTimer, "singleShot"):
         assert app_module.run() == 0
-    launcher_class.assert_called_once_with(initial, initial_invite_url=link)
+    launcher_class.assert_called_once_with(
+        initial,
+        initial_invitation=parse_invite_link(link),
+    )
 
 
 def test_macos_bundle_registers_webjam_invitation_scheme():

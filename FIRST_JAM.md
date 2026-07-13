@@ -6,7 +6,10 @@ WebJam's normal path is three moves:
 
 There is no server setup for the band to perform. Band Check guides each
 musician through input, headphones, and a short recording before playing.
-The private macOS v0.10.0 candidate starts the music service in the background.
+The private macOS v0.11.0 candidate starts the music service in the background.
+This first-jam guide remains the ordinary same-private-LAN path. The separate
+v3 `reference-local` profile is a loopback developer lab, not a public remote
+service.
 
 ## Before anyone opens WebJam
 
@@ -107,8 +110,8 @@ silently deleting it.
 ## Optional tools
 
 Everything beyond the live jam is under **More**: notes, Multitrack
-Studio, an optional video/conversation link, Talk Break when applicable,
-Settings, and Band Check. Settings intentionally contains only ordinary
+Studio, an optional video/conversation link, Settings, and Band Check.
+Settings intentionally contains only ordinary
 preferences such as your display name and optional conversation link.
 
 ## Reconnect

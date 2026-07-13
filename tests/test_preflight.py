@@ -184,6 +184,12 @@ class TestReadyCheck(unittest.TestCase):
                 manual = [i for i in rep.items if i.manual_verification]
                 self.assertEqual(len(manual), count)
                 self.assertTrue(all(not i.required and not i.ok for i in manual))
+                copy = " ".join(f"{item.name} {item.detail}" for item in manual)
+                self.assertNotIn("Spacebar", copy)
+                self.assertNotIn("push-to-talk", copy.lower())
+                if mode == "talkback":
+                    self.assertIn("mute the audio interface", copy)
+                    self.assertIn("end the WebJam session", copy)
 
     def test_non_macos_talkback_omits_macos_mic_mode(self):
         with tempfile.NamedTemporaryFile() as jam, mock.patch(

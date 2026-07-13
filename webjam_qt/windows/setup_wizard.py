@@ -5,7 +5,7 @@ Guides new users through:
   Page 0 — Welcome
   Page 1 — Jamulus server (host + port)
   Page 2 — Webex meeting (URL)
-  Page 3 — Music/talkback role and optional local recording input
+  Page 3 — Music/conversation role and optional local recording input
   Page 4 — All done
 
 The wizard saves settings to ``~/.webjam_config.json`` on Finish.
@@ -100,7 +100,7 @@ class _WelcomePage(QWizardPage):
             "This short wizard will configure:\n\n"
             "  \u2022  Your Jamulus server connection\n"
             "  \u2022  Your Webex meeting link\n"
-            "  \u2022  Separate music and talkback audio paths\n\n"
+            "  \u2022  Separate music and conversation audio paths\n\n"
             "You can change any setting later from the Settings panel."
         ))
 
@@ -609,7 +609,7 @@ class _RoutingPage(QWizardPage):
     def __init__(self, settings: Optional[AppSettings] = None) -> None:
         super().__init__()
         self._scan_complete.connect(self._apply_routing)
-        self.setTitle("Music and Talkback")
+        self.setTitle("Music and Conversation")
         self.setSubTitle(
             "Jamulus carries music. Choose how this Mac uses Webex audio."
         )
@@ -628,8 +628,8 @@ class _RoutingPage(QWizardPage):
 
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)
-        self._talkback_radio = QRadioButton("Musician with talkback (recommended)")
-        self._talkback_radio.setAccessibleName("Musician with Webex talkback")
+        self._talkback_radio = QRadioButton("Musician conversation (recommended)")
+        self._talkback_radio.setAccessibleName("Musician with Webex conversation")
         self._talkback_radio.setAccessibleDescription(
             "Use Jamulus for music and native Webex for speech."
         )
@@ -707,7 +707,7 @@ class _RoutingPage(QWizardPage):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setAccessibleName("Music and talkback setup options")
+        scroll.setAccessibleName("Music and conversation setup options")
         content = QWidget()
         scroll.setWidget(content)
         page_layout = QVBoxLayout(self)
@@ -719,8 +719,9 @@ class _RoutingPage(QWizardPage):
         layout.addWidget(self._talkback_radio)
         layout.addWidget(_body_label(
             "Use Jamulus for music and native Webex for conversation. Join "
-            "Webex muted, use a dedicated speech mic when possible, and hold "
-            "Space only when speaking. Use Standard Mic Mode and Optimize for My Voice."
+            "Webex muted and use a dedicated speech mic when possible. Before "
+            "speaking, mute the audio interface or end the WebJam session. Use "
+            "Standard Mic Mode and Optimize for My Voice."
         ))
         layout.addWidget(self._video_only_radio)
         layout.addWidget(_body_label(
@@ -881,7 +882,8 @@ class _RoutingPage(QWizardPage):
             self._skip_chk.setVisible(False)
             self._status_label.setText(
                 "No virtual audio device is required. Keep Webex muted while "
-                "playing; hold Space only for a short talk break."
+                "playing. To speak, mute your audio interface or end the "
+                "WebJam session first."
             )
             self._install_btn.setVisible(False)
         elif self.audio_mode == "video_only":

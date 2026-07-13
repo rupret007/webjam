@@ -98,13 +98,16 @@ class TestFullSessionFlow(unittest.TestCase):
             c._on_reset_all_faders()
         self.assertTrue(all(p.fader_level == 100 for p in c.participants.values()))
 
-        # 6. Self-mute (local channel present and proven RPC succeeds).
+        # 6. Jamulus 3.12.2 has no live-send mute; reconnect/state refresh
+        # must never invent or transmit one.
         c.participants[0].muted = False
-        with mock.patch.object(c.jamulus, "set_self_muted", return_value=True) as set_self_muted:
-            c._on_mute_self()
-        set_self_muted.assert_called_once_with(True)
+        c._self_transmit_muted = True
+        c._talk_break_intended = True
+        with mock.patch.object(c.jamulus, "set_self_muted") as set_self_muted:
+            c._sync_self_mute_button()
+        set_self_muted.assert_not_called()
         self.assertFalse(c.participants[0].muted)
-        self.assertTrue(c._self_transmit_muted)
+        self.assertFalse(c._self_transmit_muted)
 
         # 7. A bandmate leaves.
         c._apply_jamulus_participants([

@@ -1,0 +1,29 @@
+services:
+  webjam-reference:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    environment:
+      WEBJAM_CONTROL_BIND: "0.0.0.0"
+      WEBJAM_RELAY_BIND: "0.0.0.0"
+      WEBJAM_HTTP_BIND: "127.0.0.1"
+      WEBJAM_TLS_CERT: "/run/secrets/tls.crt"
+      WEBJAM_TLS_KEY: "/run/secrets/tls.key"
+      WEBJAM_MAX_SESSIONS: "256"
+    volumes:
+      - type: bind
+        source: ./secrets/tls.crt
+        target: /run/secrets/tls.crt
+        read_only: true
+      - type: bind
+        source: ./secrets/tls.key
+        target: /run/secrets/tls.key
+        read_only: true
+    ports:
+      - "47131:47131/tcp"
+      - "47132:47132/udp"

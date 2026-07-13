@@ -9,9 +9,13 @@ starts the needed processes, chooses defaults, creates the invitation, watches
 the connection, and records synchronized tracks without asking musicians to
 understand the plumbing.
 
-The v0.10.0 interface uses near-black surfaces, white text, and restrained burnt
+The v0.11.0 interface uses near-black surfaces, white text, and restrained burnt
 orange for the next important action. Purple, teal, technical setup panels, and
 competing session controls are not part of the normal path.
+
+This guide covers the ordinary v1/v2 same-private-LAN musician flow. The v3
+`reference-local` profile is a loopback-only developer lab; no public remote
+service is deployed or configured in the app.
 
 ## Install
 
@@ -158,13 +162,13 @@ The live session keeps secondary features in one **More** menu:
 - **Session Notes** — capture notes and export a local brief.
 - **Multitrack Studio** — record and review takes.
 - **Add Video or Conversation** — optionally open a configured Webex link.
-- **Talk Break** — appears only after conversation has been opened.
 - **Settings** — change your displayed name or optional conversation link.
 - **Band Check** — rerun or observe the guided readiness check (`F2`).
 
 Webex is not part of the startup path. If used for conversation, keep the
 Webex microphone muted while playing so its delayed audio does not duplicate
-the low-latency music path.
+the low-latency music path. Before speaking, mute the audio interface or end
+the WebJam session; WebJam cannot live-mute the Jamulus 3.12.2 send.
 
 ## End the session
 
@@ -234,7 +238,6 @@ message instead of removing quarantine or bypassing the bundle check.
 | `Ctrl+S` / `Ctrl+O` | Save / load the default monitor mix |
 | `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save / load a named monitor mix |
 | `Ctrl+M` | Mute or unmute all remote channels in your monitor |
-| `Ctrl+Shift+M` | Talk Break / Resume Music when conversation is active |
 | `Ctrl+T` | Insert a timestamp in Session Notes |
 | `Ctrl+Shift+R` | Reset all faders to unity |
 | `Ctrl+Shift+D` | Copy redacted diagnostics |

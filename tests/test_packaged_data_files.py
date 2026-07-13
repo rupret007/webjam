@@ -16,6 +16,7 @@ import webjam_qt
 PKG = Path(webjam_qt.__file__).resolve().parent
 ROOT = PKG.parent
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
+CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
 
 class TestPackagedDataFiles(unittest.TestCase):
@@ -50,6 +51,32 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("WEBJAM_BUILD_ID", SPEC)
         self.assertIn("INTER_OFL.txt", SPEC)
         self.assertTrue((ROOT / "licenses" / "INTER_OFL.txt").is_file())
+        self.assertIn('"transport" / "NOTICE.md"', SPEC)
+        self.assertIn('"transport" / "DEPENDENCIES.md"', SPEC)
+        self.assertIn('"transport" / "licenses"', SPEC)
+        self.assertTrue((ROOT / "transport" / "NOTICE.md").is_file())
+        self.assertTrue((ROOT / "transport" / "DEPENDENCIES.md").is_file())
+        self.assertTrue((ROOT / "transport" / "licenses").is_dir())
+        for name in (
+            "ANET-BSD-3-CLAUSE.txt",
+            "GO-BSD-3-CLAUSE.txt",
+            "GOOGLE-UUID-BSD-3-CLAUSE.txt",
+            "PION-MIT.txt",
+            "QUIC-GO-MIT.txt",
+        ):
+            self.assertTrue((ROOT / "transport" / "licenses" / name).is_file())
+
+    def test_ci_builds_stages_and_smokes_the_native_transport(self):
+        self.assertIn("go test -race -count=1 ./...", CI)
+        self.assertIn("go mod verify", CI)
+        self.assertIn("webjam-fabric.exe", CI)
+        self.assertIn("Contents/MacOS/webjam-fabric", CI)
+        self.assertIn("webjam-fabric.sha256", CI)
+        self.assertIn("buildID=$build_id", CI)
+        self.assertIn("codesign --force --sign -", CI)
+        self.assertIn('"type":"shutdown"', CI)
+        self.assertIn("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION=1", CI)
+        self.assertIn("tests/test_native_sidecar_integration.py", CI)
 
     def test_spec_version_tracks_package_version(self):
         # The macOS bundle version must not be hardcoded/stale.

@@ -4,7 +4,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from core.redaction import redact_text
+from core.redaction import redact_mapping, redact_text
 from core.settings import AppSettings
 
 
@@ -60,4 +60,23 @@ def configure_sentry(settings: AppSettings) -> None:
     except Exception:
         return
 
-    sentry_sdk.init(dsn=settings.sentry_dsn)
+    def before_send(event, _hint):
+        # Sentry events can include argv, environment, local paths, socket
+        # addresses, breadcrumbs, exception values, and arbitrary ``extra``
+        # mappings.  Apply the same recursive privacy boundary used by support
+        # bundles immediately before the SDK serializes the event.
+        if not isinstance(event, dict):
+            return None
+        return redact_mapping(event)
+
+    def before_breadcrumb(crumb, _hint):
+        if not isinstance(crumb, dict):
+            return None
+        return redact_mapping(crumb)
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        send_default_pii=False,
+        before_send=before_send,
+        before_breadcrumb=before_breadcrumb,
+    )

@@ -5,7 +5,7 @@ so a future change couldn't silently regress it.  Covers:
 
 * WCAG AA contrast of the text tokens on their real backgrounds
 * the fader's keyboard-step + accessible-name attributes
-* Talk Break muting only the Jamulus send, never the Webex microphone
+* absence of the unsupported Jamulus live-send mute UI and shortcut
 * the macOS literal-Control shortcut bindings (Qt.MetaModifier branch)
 * the Webex placeholder auto-restore on a real load failure
 
@@ -102,9 +102,9 @@ class TestFaderAccessibility(unittest.TestCase):
 
 
 # ----------------------------------------------------------------------
-# Talk Break is Jamulus-only
+# Jamulus live-send mute is unsupported and absent
 # ----------------------------------------------------------------------
-class TestTalkBreakIsolation(unittest.TestCase):
+class TestLiveSendMuteCapability(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from core.settings import AppSettings
@@ -121,51 +121,35 @@ class TestTalkBreakIsolation(unittest.TestCase):
     def tearDownClass(cls):
         cls.controller.shutdown()
 
-    def _install_local_participant(self):
-        c = self.controller
-        local = mock.MagicMock()
-        local.is_local = True
-        local.muted = False
-        c.participants.clear()
-        c.participants[0] = local
-        c._jamulus_connected = True
-        c._self_transmit_muted = False
-        c._talk_break_intended = False
-        c.jamulus = mock.MagicMock()              # don't hit real RPC
-        c._push_participants_to_grid = lambda: None
-        return local
+    def test_session_ui_has_no_live_send_mute_control(self):
+        strip = self.window.session_strip
+        self.assertFalse(hasattr(strip, "mute_self_requested"))
+        self.assertFalse(hasattr(strip, "_mute_self_button"))
+        self.assertFalse(hasattr(strip, "_talk_action"))
+        self.assertFalse(hasattr(self.window, "_mute_self_shortcut"))
 
-    def test_talk_break_never_controls_webex(self):
-        local = self._install_local_participant()
-        self.controller.bridge.webex_state = "Opened externally"
-        self.controller._on_mute_self()
-        self.assertFalse(local.muted)
-        self.assertTrue(self.controller._self_transmit_muted)
-        self.assertFalse(
-            hasattr(self.controller.window.webex_embed, "mute_webex_self")
-        )
-
-    def test_mute_self_uses_jamulus_global_setmuted(self):
-        """Talk Break must call the global self-mute, not the local fader
-        channel fader (which would only mute us in our own monitor)."""
-        self._install_local_participant()
-        self.controller.bridge.webex_state = "Not opened"
-        self.controller._on_mute_self()
-        self.controller.jamulus.set_self_muted.assert_called_once_with(True)
-
-    def test_failed_talk_break_stays_in_play(self):
-        local = self._install_local_participant()
-        self.controller.jamulus.set_self_muted.return_value = False
-        self.controller._on_mute_self()
-        self.assertFalse(local.muted)
+    def test_stale_compatibility_state_can_only_be_cleared(self):
+        self.controller._self_transmit_muted = True
+        self.controller._talk_break_intended = True
+        with mock.patch.object(self.controller.jamulus, "set_self_muted") as rpc:
+            self.controller._sync_self_mute_button()
+        rpc.assert_not_called()
+        self.assertFalse(self.controller._self_transmit_muted)
         self.assertFalse(self.controller._talk_break_intended)
+
+    def test_webex_guidance_names_real_safe_actions(self):
+        self.window.webex_embed.set_audio_mode("talkback")
+        guidance = self.window.webex_embed._mode_label.text()
+        self.assertIn("audio interface", guidance)
+        self.assertIn("end the WebJam session", guidance)
+        self.assertNotIn("Talk Break", guidance)
 
 
 # ----------------------------------------------------------------------
 # macOS literal-Control shortcut bindings (Qt.MetaModifier branch)
 # ----------------------------------------------------------------------
 class TestMacShortcutBindings(unittest.TestCase):
-    """On macOS the self-mute / diagnostics / reset / save-as shortcuts must
+    """On macOS the diagnostics / reset / save-as shortcuts must
     bind to literal Control (Qt.MetaModifier) so they don't collide with Cmd."""
 
     def _build_window(self):
@@ -183,7 +167,6 @@ class TestMacShortcutBindings(unittest.TestCase):
             win = self._build_window()
         try:
             for attr in (
-                "_mute_self_shortcut",
                 "_diagnostics_shortcut",
                 "_reset_faders_shortcut",
                 "_save_mix_as_shortcut",
@@ -197,7 +180,7 @@ class TestMacShortcutBindings(unittest.TestCase):
         with mock.patch("sys.platform", "linux"):
             win = self._build_window()
         try:
-            seq = win._mute_self_shortcut.key().toString()
+            seq = win._diagnostics_shortcut.key().toString()
             self.assertIn("Ctrl", seq)
             self.assertNotIn("Meta", seq)
         finally:
@@ -257,7 +240,7 @@ class TestWebexLoadFailureRestore(unittest.TestCase):
     def test_external_card_title_matches_audio_role(self):
         embed = self._make_embed()
         expected = {
-            "talkback": "Webex talkback",
+            "talkback": "Webex conversation",
             "video_only": "Webex video",
             "audience_bridge": "Webex audience feed",
         }

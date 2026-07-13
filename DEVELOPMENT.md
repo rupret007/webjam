@@ -7,6 +7,7 @@ Guide for setting up a development environment on Windows (or macOS/Linux).
 | Tool | Version | Notes |
 |------|---------|-------|
 | Python | 3.10+ | Download from https://www.python.org/downloads/ |
+| Go | 1.25.12 | Required for v3 transport tests and release packaging; ordinary Python UI work does not use it unless a v3 session is started. |
 | Git | Latest | https://git-scm.com/downloads |
 | Jamulus | 3.12.2 | **Install this exact version separately for development** — free at [jamulus.io](https://jamulus.io). Band Check rejects a different client version. Downloadable release *builds* supply Jamulus (the current private macOS build contains prepared client/server apps; earlier Windows builds supplied the official installer — see `THIRD_PARTY_NOTICES.md`), but packaging has no effect when running from source with `python webjam_qt_main.py`. |
 | VB-Cable | Latest | Optional, Windows only — advanced audience-bridge mode; not musician talkback |
@@ -86,6 +87,30 @@ hosting uses the compatible sandboxed app in `/Applications`. Use
 hardware lifecycle in `TEST_PROCEDURE.md` still uses the official server
 app's sandbox container for its secret and recordings.
 
+### Reference-local v3 lab
+
+`reference-local` is a loopback-only developer profile, not a musician or
+Internet configuration. Build the sidecar from the same committed source ID,
+start the reference service on loopback, then explicitly opt the source-run
+host into the lab path:
+
+```bash
+make -C transport build-darwin-arm64 VERSION="$(git rev-parse HEAD)"
+cd reference_service
+python3.12 -m webjam_reference
+```
+
+Leave that service running. In a second terminal at the repository root:
+
+```bash
+WEBJAM_ENABLE_REFERENCE_LOCAL=1 python webjam_qt_main.py
+```
+
+Use the matching `build-darwin-amd64` or `build-windows-amd64` target on other
+supported machines. Do not expose ports 47131–47133, edit the compiled profile,
+or interpret this same-machine path as ordinary-home NAT evidence. The Go
+subprocess integration tests are the canonical two-sidecar reference proof.
+
 ## Run Tests
 
 The project uses `pytest`. Run the full suite:
@@ -106,6 +131,24 @@ QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ -v
 ```
 
 A single failing test fails the CI job, so always run this before pushing.
+
+The native v3 transport has independent format, unit, vet, race, dependency,
+and cross-build gates:
+
+```bash
+make -C transport check
+(cd transport && go test -race -count=1 ./... && go mod verify && go mod tidy -diff)
+make -C transport build-all VERSION="$(git rev-parse HEAD)"
+```
+
+The self-hostable reference service is a separate Python 3.12 package and must
+remain loopback-only during ordinary local verification:
+
+```bash
+python3.12 -m pytest -q reference_service/tests
+python3.12 -m ruff check reference_service
+python3.12 -m build reference_service
+```
 
 ### Code style (ruff)
 
@@ -133,7 +176,7 @@ python3 ux_smoke_test.py
 Set `QT_QPA_PLATFORM=offscreen` for the pytest UI suite when no display is
 available (the CI workflow does the same).
 
-## Build a Standalone Executable
+## Build a Developer Executable
 
 ```bash
 pip install pyinstaller
@@ -142,7 +185,29 @@ python -m PyInstaller --clean --noconfirm webjam.spec
 # Produces dist/WebJam/WebJam.exe (Windows) or dist/WebJam.app (macOS)
 ```
 
-`build_webjam.py` is legacy installer tooling and is not the pilot-release build path.
+PyInstaller bundles the transport notices and licenses, but the platform
+sidecar itself is deliberately staged beside the executable after PyInstaller.
+For example, an Apple Silicon developer build uses:
+
+```bash
+make -C transport build-darwin-arm64 VERSION="$(git rev-parse HEAD)"
+cp transport/build/darwin-arm64/webjam-fabric \
+  dist/WebJam.app/Contents/MacOS/webjam-fabric
+chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
+codesign --force --sign - dist/WebJam.app/Contents/MacOS/webjam-fabric
+shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
+  | awk '{print $1}' \
+  > dist/WebJam.app/Contents/MacOS/webjam-fabric.sha256
+codesign --force --sign - dist/WebJam.app
+```
+
+A release artifact must also stage and verify the pinned Jamulus apps, refresh
+the outer macOS signature, run the packaged sidecar smoke check, and verify
+every nested signature. `.github/workflows/ci.yml` is the executable source of
+truth for all three supported targets. A PyInstaller-only directory is not a
+release artifact. A frozen Windows build without a valid Authenticode signature
+still supports the legacy v1/v2 path, but v3 fails closed at its native-signature
+gate. `build_webjam.py` remains legacy installer tooling.
 
 ## Environment Variables
 
@@ -156,6 +221,7 @@ Override defaults without editing code:
 | `WEBJAM_WEBEX_AUDIO_MODE` | `talkback` | `talkback`, `video_only`, or `audience_bridge` |
 | `WEBJAM_LOCAL_CAPTURE_ENABLED` | `false` | Explicitly keep this Mac's local interface originals independently of Webex mode |
 | `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
+| `WEBJAM_ENABLE_REFERENCE_LOCAL` | unset | Source/developer-only opt-in to host through the loopback v3 reference lab; never a public endpoint |
 | `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
 | `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |
 
@@ -166,12 +232,15 @@ webjam_qt_main.py          Primary entry point — Qt Conductor UI
 webjam_qt/                 Qt application (windows, widgets, controllers)
 legacy/                    Quarantined Tkinter/customtkinter UI and old installer
 core/                      Settings, models, creative modes, templates, protocol
+services/                  Jamulus, transport, invitation, and session lifecycles
+transport/                 Static Go v3 transport and deterministic labs
+reference_service/         Local/CI native rendezvous and exact-pair relay
 storage/                   SQLite repository for users, settings, canvas, audit
 ui/                        Auth controller, services, dialogs, views, theme
 api/                       Optional FastAPI companion API
 tests/                     Unit and edge-case test modules
 VB/                        VB-Cable driver INFs (Windows audio routing)
-.github/workflows/ci.yml   CI: lint, UX smoke, tests, real Jamulus, desktop builds
+.github/workflows/ci.yml   CI: Python/Go/reference/Jamulus gates + desktop builds
 ```
 
 ## Windows-Specific Notes
@@ -348,8 +417,7 @@ self.window._reset_faders_shortcut.activated.connect(self._on_reset_faders)
 ```
 
 Both patterns are already in use side-by-side in `_setup_shortcuts`:
-F11/F1/Esc use Pattern A; Ctrl+S, Ctrl+O, Ctrl+M, Ctrl+Shift+M, Ctrl+,
-all use Pattern B.
+F11/F1/Esc use Pattern A; Ctrl+S, Ctrl+O, Ctrl+M, and Ctrl+, use Pattern B.
 
 **Update the F1 help dialog.** Add a row to the body string in
 `ConductorWindow._show_help` (line 164) so users discover the new key:
