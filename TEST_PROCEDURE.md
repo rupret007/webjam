@@ -15,6 +15,13 @@ CoreAudio-route, storage-preflight, and private-journal path. Earlier packages
 are rollback history only; never reuse their build ID, filename, or checksum
 for this candidate.
 
+The next Studio v0.14 source pass adds a focused review workspace, not a claim
+to be a full DAW: one elapsed-seconds ruler, truthful track inspection, compact
+track controls, and per-take non-destructive mix choices. It deliberately has
+no invented bars, beats, tempo, or automation grid. These source checks do not
+change the v0.13.0 archive identity below, and all physical Studio/Logic
+observations remain **NOT RUN** until the worksheet records them.
+
 This procedure separates deterministic source evidence, real Jamulus/JACK
 evidence, packaged macOS evidence, and physical musician evidence. Passing one
 kind never silently fills another.
@@ -55,10 +62,17 @@ The final run must include:
   neither recorder;
 - resumable/idempotent size/SHA/PCM-verified guest transfer;
 - schema-v2 missing/partial/damaged/segment/rate/project truth;
-- Studio seek/waveform/mixer/output/reopen behavior;
+- Studio seek/waveform/mixer/output/reopen behavior, including the v0.14
+  shared elapsed-seconds ruler, aligned playhead, selected-track source,
+  alignment, and gap inspection, and the compact 760×600 layout;
+- schema-v2 Studio sidecar persistence: gain, pan, mute, solo, and Logic-export
+  inclusion survive reopen by durable `track_id`, while the manifest and WAV
+  bytes remain unchanged;
 - offset/drift/rate/gap alignment and non-destructive manual restoration;
 - atomic Logic exports, independent analysis, source checks, checksums, and
   blocks for selected explicitly silent or unaligned local-original tracks;
+  schema-v2 mix/export choices resolve by durable track ID so reordering a take
+  cannot move a musician's selection to a neighboring lane;
 - support preview/saved-ZIP parity, separate sanitized clipboard-summary
   coverage, and adversarial redaction;
 - owned-process/port cleanup and fresh-host restart;
@@ -88,6 +102,41 @@ redaction, hidden-work-directory discovery exclusion, recovery-project
 reconciliation, final-manifest retirement, and Logic-export propagation.
 Source tests establish this behavior; the physical worksheet remains the only
 place to credit actual recording, crash recovery, audibility, and Logic import.
+
+### Studio v0.14 review-workspace coverage
+
+Run this focused group after the Studio implementation lands and before a new
+candidate is packaged:
+
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q \
+  tests/test_recording_studio.py \
+  tests/test_studio_state.py \
+  tests/test_take_export.py
+```
+
+The tests must establish all of the following without relying on a musical-time
+fiction:
+
+- every completed lane uses the same elapsed-seconds extent and ruler; the UI
+  shows neither bars/beats nor a tempo claim it cannot substantiate;
+- seeking moves the transport, ruler, and displayed lane playheads to the same
+  elapsed time, while unavailable media stays truthfully unavailable;
+- selecting a lane exposes its recorded source, media/alignment evidence,
+  recorded gap truth, and next-export inclusion rather than guessing from a
+  waveform;
+- the Studio remains operable in the 760×600 compact layout, where contextual
+  detail may collapse rather than squeezing track controls out of reach;
+- `.webjam-studio-state.json` is a private, atomic, take-bound sidecar that
+  restores gain, pan, mute, solo, and export inclusion by durable `track_id`;
+  malformed or mismatched state is rejected and neither `webjam-take.json` nor
+  source WAV bytes are rewritten; and
+- schema-v2 Logic handoff uses those durable IDs for mix/export state, so an
+  added or reordered lane cannot inherit another lane's choice.
+
+This is deterministic source evidence only. Package review, musician review,
+and actual Logic Pro import for the next Studio candidate are **NOT RUN** until
+they are entered in the physical worksheet.
 
 ## 2. Real Jamulus/JACK boundary gate
 
@@ -226,13 +275,19 @@ result. Attach the test interfaces before completing the musician steps below.
    project for manual review; it is never silently marked complete or claimed
    transferred.
 7. Studio shows missing/partial/damaged/transferring truth, plays mixed-rate
-   multi-segment projects with gaps, seeks while active, and releases output on
-   close.
+   multi-segment projects with gaps, and releases output on close. Its v0.14
+   review workspace uses one elapsed-seconds ruler—not invented bars or
+   tempo—keeps its transport/ruler/lane playheads aligned while seeking, and
+   lets a selected lane expose source, alignment, and gap evidence. At compact
+   size, contextual detail may collapse but essential track controls remain
+   reachable.
 8. Logic export blocks uncertain required media, a selected explicitly silent
    performance track, and a selected local original without verified timeline
    alignment. Studio may non-destructively leave a reviewed track out of the
-   next export; it does not alter the take. Keep the Jamulus server track or
-   align and verify a local original before treating an export as timing-ready.
+   future exports until changed; its private sidecar restores those choices by
+   durable track ID, not lane position, and it does not alter the take. Keep
+   the Jamulus server track or align and verify a local original before treating
+   an export as timing-ready.
 9. Support preview and saved archive match and exclude recordings, notes,
    transcripts, Webex content, invitations, secrets, meeting links, and home
    paths.
@@ -262,13 +317,20 @@ recorded v0.13.0 archive and record:
   the v2 peer plane is active, plus any recovery project as **NEEDS ATTENTION**
   until a musician manually reviews it;
 - stable identity, resumed verified delivery, and truthful timeline gaps;
-- Studio playback/seek/mixer/output/reopen evidence;
+- Studio playback/seek/mixer/output/reopen evidence, including the
+  elapsed-seconds shared ruler (with no fabricated bars/beats), selected-track
+  source/alignment/gap inspection, and a usable compact layout;
+- a before/after check that the Studio sidecar restores the same durable-ID mix
+  and export choices after reopen without changing `webjam-take.json` or any
+  source WAV; and
+- a Logic handoff in which an intentionally excluded source stays excluded by
+  its durable identity rather than following a display position;
 - exact exported inventory/checksums and actual Logic Pro import at `0:00`;
 - private support bundle and zero-owned-process cleanup.
 
 At the time this procedure was updated, two-Mac audibility, physical
-interruption recovery, and Logic import are **NOT RUN**. Keep that state until
-the worksheet contains real observations.
+interruption recovery, Studio v0.14 review observations, and Logic import are
+**NOT RUN**. Keep that state until the worksheet contains real observations.
 
 ## 6. Pass rule
 

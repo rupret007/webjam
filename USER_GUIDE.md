@@ -152,9 +152,11 @@ survived. The physical recording/recovery and Logic checks are still **NOT
 RUN**.
 
 The resulting take contains synchronized server tracks—one per musician—plus
-a manifest that preserves the musician names WebJam observed. In Studio you
-can play, pause, scrub, choose a wired output, and change each track's gain,
-pan, mute, or solo without modifying the source WAVs.
+a manifest that preserves the musician names WebJam observed. In Studio, open
+the take, read the shared elapsed-time ruler, and select a lane to inspect its
+source, timing, and any known gaps. You can then play, pause, scrub, choose a
+wired output, and change each track's gain, pan, mute, or solo without
+modifying the source WAVs.
 
 Open **Recording Setup** inside Studio to select its playback output or change
 the Takes folder. The host, or a guest connected through an active v2 invite,
@@ -169,9 +171,10 @@ the guest Mac for manual review; recovery is not automatically uploaded or
 reconciled with the host take. A v1 guest has no WebJam-orchestrated
 local-original capture or delivery.
 
-For a reliable Logic handoff, select the finished take and click **Export for
-Logic**. In schema-v2 Studio, each **Logic export** checkbox changes only the
-next export, never the recorded take. WebJam creates a new atomic export
+For a reliable Logic handoff, select the finished take, review its lanes, and
+click **Export for Logic**. Each **Logic export** checkbox is a saved Studio
+choice for that take and is used for future exports until changed; it never
+changes the WAVs or `webjam-take.json`. WebJam creates a new atomic export
 containing numbered, musician-named PCM24 WAV stems that all start at `0:00`
 and have the same length, server and Studio references, markers,
 recording/alignment reports, independent audio analysis, source evidence,
@@ -180,9 +183,11 @@ track pauses export until you review it or intentionally deselect it. A selected
 guest or local original without verified timeline alignment also pauses a
 timing-ready export; keep the Jamulus server track, or align and verify that
 original first. Studio gives a safe actionable message, never a local path or
-raw worker error. Drag the numbered stems into a new Logic project together;
-do not add either reference as another performance stem. The original take is
-never rewritten.
+raw worker error. It is a focused recording-review workspace rather than a
+Logic clone, so its shared ruler is elapsed time only—there is no invented
+tempo, bar/beat grid, or beat editing. Drag the numbered stems into a new Logic
+project together; do not add either reference as another performance stem. The
+original take is never rewritten.
 See [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
 A joining musician sees the Studio but does not control the host recorder.

@@ -13,6 +13,7 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass
 import logging
+import math
 import queue
 import threading
 from pathlib import Path
@@ -45,6 +46,12 @@ from core.take_export import (
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
+from core.studio_state import (
+    StudioStateError,
+    StudioTakeState,
+    load_studio_state,
+    save_studio_state,
+)
 from webjam_qt.theme.tokens import Color, Space
 
 LOGGER = logging.getLogger("webjam.qt.recording_studio")
@@ -183,6 +190,201 @@ class _WaveformPeakCache:
 def _fmt_time(seconds: float) -> str:
     value = max(0, int(seconds))
     return f"{value // 60}:{value % 60:02d}"
+
+
+def _fmt_db(gain: float) -> str:
+    """Return a compact, honest gain label for the non-destructive Studio mix."""
+    value = max(0.0, float(gain))
+    if value <= 0.0001:
+        return "−∞ dB"
+    return f"{20.0 * math.log10(value):+.1f} dB"
+
+
+def _timeline_tick_positions(duration: float, width: int) -> tuple[float, ...]:
+    """Return a small shared seconds-only grid; no musical tempo is implied."""
+    # Eight divisions keep the waveform lanes readable at the 760 px supported
+    # workspace floor while staying stable across every track in a take.
+    _ = max(1, int(width))
+    span = max(1.0, float(duration))
+    return tuple(span * index / 8.0 for index in range(9))
+
+
+def _safe_source_label(source: str) -> str:
+    """Return stable musician-facing source labels without exposing file paths."""
+    return {
+        "jamulus_server": "BAND",
+        "local_ssl": "LOCAL",
+        "local_isolated": "LOCAL",
+    }.get(str(source or ""), "TRACK")
+
+
+class StudioTimelineRuler(QWidget):
+    """Shared elapsed-time ruler and playhead for every Studio waveform lane.
+
+    WebJam does not infer tempo, bars, or beats from a rehearsal.  The ruler
+    therefore exposes only the one thing every recorded source can truthfully
+    share: elapsed project time.  Clicking or dragging it seeks review playback
+    but never changes capture media or project timing.
+    """
+
+    seek_requested = Signal(float)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StudioRuler")
+        self.setMinimumHeight(34)
+        self.setMaximumHeight(34)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+        self.setAccessibleName("Shared recording timeline")
+        self.setAccessibleDescription(
+            "Elapsed time shared by every track. Click or drag to seek the open take."
+        )
+        self._duration = 1.0
+        self._playhead = 0.0
+        self._seek_enabled = False
+        self._dragging = False
+        self._trailing_inset = 8
+
+    def set_timeline(
+        self,
+        *,
+        duration: float,
+        playhead: float = 0.0,
+        seek_enabled: bool,
+    ) -> None:
+        self._duration = max(1.0, float(duration))
+        self._playhead = max(0.0, min(float(playhead), self._duration))
+        self._seek_enabled = bool(seek_enabled)
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if self._seek_enabled
+            else Qt.CursorShape.ArrowCursor
+        )
+        self.update()
+
+    def set_trailing_inset(self, pixels: int) -> None:
+        """Reserve the track-scrollbar width so every lane stays time-aligned."""
+        inset = max(8, int(pixels))
+        if inset != self._trailing_inset:
+            self._trailing_inset = inset
+            self.update()
+
+    def _timeline_rect(self):
+        return self.rect().adjusted(8, 0, -self._trailing_inset, 0)
+
+    def _seconds_at(self, x: float) -> float:
+        rect = self._timeline_rect()
+        if rect.width() <= 0:
+            return 0.0
+        fraction = (float(x) - rect.left()) / rect.width()
+        return max(0.0, min(self._duration, fraction * self._duration))
+
+    def _emit_seek(self, x: float) -> None:
+        if self._seek_enabled:
+            self.seek_requested.emit(self._seconds_at(x))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self._seek_enabled:
+            self._dragging = True
+            self._emit_seek(event.position().x())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._dragging and self._seek_enabled:
+            self._emit_seek(event.position().x())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._dragging and event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+            self._emit_seek(event.position().x())
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        painter.fillRect(rect, QColor(Color.BG_INPUT))
+        painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
+        painter.drawLine(rect.left(), rect.bottom(), rect.right(), rect.bottom())
+        timeline = self._timeline_rect()
+        ticks = _timeline_tick_positions(self._duration, timeline.width())
+        label_step = 2 if timeline.width() < 420 else 1
+        last_label = ""
+        for index, seconds in enumerate(ticks):
+            x = timeline.left() + timeline.width() * seconds / self._duration
+            painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
+            painter.drawLine(int(x), rect.top() + 14, int(x), rect.bottom())
+            label = _fmt_time(seconds)
+            if (
+                (index % label_step == 0 or index == len(ticks) - 1)
+                and label != last_label
+            ):
+                painter.setPen(QPen(QColor(Color.TEXT_MUTED), 1))
+                if index == 0:
+                    painter.drawText(int(x) + 2, rect.top() + 11, label)
+                elif index == len(ticks) - 1:
+                    width = painter.fontMetrics().horizontalAdvance(label)
+                    painter.drawText(int(x) - width - 2, rect.top() + 11, label)
+                else:
+                    painter.drawText(int(x) + 2, rect.top() + 11, label)
+                last_label = label
+        playhead_x = timeline.left() + timeline.width() * self._playhead / self._duration
+        painter.setPen(QPen(QColor(Color.ACCENT_PRIMARY), 2))
+        painter.drawLine(int(playhead_x), rect.top(), int(playhead_x), rect.bottom())
+        painter.setBrush(QColor(Color.ACCENT_PRIMARY))
+        painter.setPen(Qt.PenStyle.NoPen)
+        marker = QPainterPath()
+        marker.moveTo(int(playhead_x) - 4, rect.top())
+        marker.lineTo(int(playhead_x) + 4, rect.top())
+        marker.lineTo(int(playhead_x), rect.top() + 6)
+        marker.closeSubpath()
+        painter.drawPath(marker)
+        painter.end()
+
+
+class TrackLevelMeter(QWidget):
+    """A compact, non-recording level view shared by live and review lanes."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StudioTrackMeter")
+        self.setFixedSize(30, 22)
+        self.setAccessibleName("Track level")
+        self.setAccessibleDescription("Current track playback or input level.")
+        self._level = 0.0
+
+    def set_level(self, level: float) -> None:
+        self._level = max(0.0, min(1.0, float(level)))
+        self.setAccessibleDescription(f"Current track level {round(self._level * 100)} percent.")
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        painter.fillRect(rect, QColor(Color.BG_INPUT))
+        painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
+        painter.drawRoundedRect(rect, 3, 3)
+        fill = rect.adjusted(3, 3, -3, -3)
+        height = int(fill.height() * self._level)
+        if height:
+            level_rect = fill.adjusted(0, fill.height() - height, 0, 0)
+            painter.fillRect(level_rect, QColor(Color.ACCENT_PRIMARY))
+        scale_color = QColor(Color.TEXT_MUTED)
+        scale_color.setAlpha(88)
+        painter.setPen(QPen(scale_color, 1))
+        for fraction in (0.25, 0.5, 0.75):
+            y = round(fill.bottom() - fill.height() * fraction)
+            painter.drawLine(fill.left(), y, fill.right(), y)
+        painter.end()
 
 
 class _CompactComboBox(QComboBox):
@@ -428,6 +630,44 @@ def _waveform_spec_for_track(track, take: TakeInfo) -> _CompositeWaveformSpec | 
     )
 
 
+def _timeline_gaps_for_track(
+    track,
+    take: TakeInfo,
+) -> tuple[tuple[float, float, str], ...]:
+    """Project explicit segment gaps onto the shared seconds-only timeline."""
+    project_rate = int(getattr(take, "project_samplerate", 0) or 0)
+    if project_rate <= 0:
+        project_rate = int(getattr(track, "samplerate", 0) or 0)
+    if project_rate <= 0:
+        return ()
+    scale = 1.0 + float(getattr(track, "drift_ppm", 0.0) or 0.0) / 1_000_000.0
+    if scale <= 0.0:
+        scale = 1.0
+    offset_s = float(getattr(track, "offset_s", 0.0) or 0.0)
+    ranges: list[tuple[float, float, str]] = []
+    for segment in tuple(getattr(track, "segments", ()) or ()):
+        rate = int(getattr(segment, "samplerate", 0) or 0)
+        if rate <= 0:
+            continue
+        start = (
+            int(getattr(segment, "project_start_frame", 0) or 0) / project_rate
+            + offset_s
+        )
+        for gap_start, gap_frames, _channels, reason in tuple(
+            getattr(segment, "gaps", ()) or ()
+        ):
+            length = max(0.0, float(gap_frames) / rate * scale)
+            if length:
+                ranges.append(
+                    (
+                        max(0.0, start + float(gap_start) / rate * scale),
+                        length,
+                        str(reason or "recording gap"),
+                    )
+                )
+    return tuple(ranges)
+
+
 class WaveformCanvas(QWidget):
     """Small DAW-like clip lane for a recorded file or live input history."""
 
@@ -450,6 +690,8 @@ class WaveformCanvas(QWidget):
         self._live = False
         self._recording = False
         self._source = "jamulus_server"
+        self._gaps: tuple[tuple[float, float, str], ...] = ()
+        self._selected = False
 
     def set_recorded_clip(
         self,
@@ -459,6 +701,7 @@ class WaveformCanvas(QWidget):
         duration: float,
         timeline_duration: float,
         source: str,
+        gaps: tuple[tuple[float, float, str], ...] = (),
     ) -> None:
         self._peaks = peaks
         self._history = []
@@ -466,6 +709,11 @@ class WaveformCanvas(QWidget):
         self._clip_duration = max(0.0, float(duration))
         self._timeline_duration = max(0.001, float(timeline_duration))
         self._source = str(source)
+        self._gaps = tuple(
+            (max(0.0, float(start)), max(0.0, float(length)), str(reason))
+            for start, length, reason in gaps
+            if float(length) > 0.0
+        )
         self._live = False
         self._recording = False
         self.setAccessibleDescription(
@@ -481,6 +729,7 @@ class WaveformCanvas(QWidget):
         self._clip_duration = 0.0
         self._timeline_duration = 30.0
         self._playhead = 0.0
+        self._gaps = ()
         self._live = True
         self._recording = bool(recording)
         self.setAccessibleDescription(
@@ -514,17 +763,28 @@ class WaveformCanvas(QWidget):
             self._timeline_duration = max(1.0, float(duration))
         self.update()
 
+    def set_selected(self, selected: bool) -> None:
+        self._selected = bool(selected)
+        self.update()
+
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
         painter.fillRect(rect, QColor(Color.BG_INPUT))
-        painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
+        painter.setPen(
+            QPen(
+                QColor(Color.ACCENT_PRIMARY if self._selected else Color.BORDER_SUBTLE),
+                2 if self._selected else 1,
+            )
+        )
         painter.drawRoundedRect(rect, 6, 6)
 
-        # Beat/time grid: intentionally neutral because tempo is not inferred.
-        for index in range(1, 8):
-            x = rect.left() + rect.width() * index / 8
+        # These elapsed-time divisions deliberately mirror the shared ruler.
+        for seconds in _timeline_tick_positions(
+            self._timeline_duration, rect.width()
+        )[1:-1]:
+            x = rect.left() + rect.width() * seconds / self._timeline_duration
             painter.setPen(QPen(QColor(Color.BG_CARD), 1))
             painter.drawLine(int(x), rect.top() + 1, int(x), rect.bottom() - 1)
 
@@ -563,23 +823,66 @@ class WaveformCanvas(QWidget):
         clip.setLeft(int(clip_x))
         clip.setWidth(int(clip_width))
         fill = QColor(
-            Color.ACCENT_PRIMARY
+            Color.BG_CARD_HOVER
             if self._source == "jamulus_server"
-            else Color.TEXT_MUTED
+            else Color.BG_PANEL
         )
-        fill.setAlpha(72 if self._source == "jamulus_server" else 42)
+        fill.setAlpha(215 if self._source == "jamulus_server" else 235)
         painter.fillRect(clip, fill)
+        # Redraw the shared seconds grid above the clip fill.  The same grid
+        # underneath is useful for live lanes, but would otherwise disappear
+        # under an opaque recorded clip.
+        grid_color = QColor(Color.TEXT_MUTED)
+        grid_color.setAlpha(72)
+        painter.setPen(QPen(grid_color, 1))
+        for seconds in _timeline_tick_positions(
+            self._timeline_duration, rect.width()
+        )[1:-1]:
+            x = rect.left() + rect.width() * seconds / self._timeline_duration
+            painter.drawLine(int(x), rect.top() + 1, int(x), rect.bottom() - 1)
+        painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
+        painter.drawLine(rect.left() + 4, mid, rect.right() - 4, mid)
         painter.setPen(
             QPen(
                 QColor(
                     Color.ACCENT_PRIMARY
-                    if self._source == "jamulus_server"
-                    else Color.TEXT_MUTED
+                    if self._selected
+                    else (
+                        Color.TEXT_SECONDARY
+                        if self._source == "jamulus_server"
+                        else Color.TEXT_MUTED
+                    )
                 ),
-                1,
+                2 if self._selected else 1,
             )
         )
         painter.drawRoundedRect(clip, 4, 4)
+
+        for gap_start, gap_duration, _reason in self._gaps:
+            gap_left = max(
+                clip.left(),
+                int(rect.left() + rect.width() * gap_start / self._timeline_duration),
+            )
+            gap_right = min(
+                clip.right(),
+                int(
+                    rect.left()
+                    + rect.width()
+                    * (gap_start + gap_duration)
+                    / self._timeline_duration
+                ),
+            )
+            if gap_right <= gap_left:
+                continue
+            gap = clip.adjusted(0, 0, 0, 0)
+            gap.setLeft(gap_left)
+            gap.setRight(gap_right)
+            warning = QColor(Color.ACCENT_PRIMARY)
+            warning.setAlpha(92)
+            painter.fillRect(gap, warning)
+            painter.setPen(QPen(QColor(Color.ACCENT_PRIMARY), 1))
+            for x in range(gap.left() - gap.height(), gap.right() + 1, 6):
+                painter.drawLine(x, gap.bottom(), x + gap.height(), gap.top())
 
         if self._peaks and clip.width() > 2:
             center = clip.center().y()
@@ -612,6 +915,7 @@ class TrackLane(QFrame):
     solo_changed = Signal(int, bool)
     pan_changed = Signal(int, int)
     export_included_changed = Signal(str, bool)
+    track_selected = Signal(int)
 
     def __init__(
         self,
@@ -620,15 +924,19 @@ class TrackLane(QFrame):
         detail: str,
         *,
         export_track_id: str = "",
+        track_number: int = 0,
+        source: str = "jamulus_server",
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.channel_id = int(channel_id)
         self._export_track_id = str(export_track_id or "").strip()
+        self._selected = False
         self.setObjectName("StudioTrackLane")
-        self.setFixedHeight(92)
+        self.setFixedHeight(100)
         self.setAccessibleName(f"{name} track")
         self.setAccessibleDescription(detail.replace("·", ","))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(Space.SM, Space.XS, Space.SM, Space.XS)
@@ -636,52 +944,27 @@ class TrackLane(QFrame):
 
         header = QFrame()
         header.setObjectName("StudioTrackHeader")
-        header.setFixedWidth(210)
+        header.setFixedWidth(260)
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(Space.SM, Space.XS, Space.SM, Space.XS)
         header_layout.setSpacing(2)
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(Space.XS)
+        self._track_number = QLabel(f"{max(1, int(track_number or channel_id + 1)):02d}")
+        self._track_number.setObjectName("StudioTrackNumber")
+        self._track_number.setFixedWidth(20)
         self._name = QLabel(name)
         self._name.setObjectName("StudioTrackName")
-        self._detail = QLabel(detail)
-        self._detail.setObjectName("StudioTrackDetail")
-        controls = QHBoxLayout()
-        controls.setSpacing(Space.XS)
-        self._mute = QPushButton("M")
-        self._mute.setObjectName("StudioMuteButton")
-        self._mute.setCheckable(True)
-        self._mute.setAccessibleName(f"Mute {name} track")
-        self._solo = QPushButton("S")
-        self._solo.setObjectName("StudioSoloButton")
-        self._solo.setCheckable(True)
-        self._solo.setAccessibleName(f"Solo {name} track")
-        self._gain = QSlider(Qt.Orientation.Horizontal)
-        self._gain.setRange(0, 127)
-        self._gain.setValue(100)
-        self._gain.setAccessibleName(f"{name} track volume")
-        self._pan = QSlider(Qt.Orientation.Horizontal)
-        self._pan.setRange(-100, 100)
-        self._pan.setValue(0)
-        self._pan.setMaximumWidth(50)
-        self._pan.setAccessibleName(f"{name} track pan")
-        self._pan.setToolTip("Pan left or right")
-        self._gain.setToolTip("Track volume")
-        self._pan_value = QLabel("C")
-        self._pan_value.setObjectName("StudioPanValue")
-        self._pan_value.setFixedWidth(24)
-        controls.addWidget(self._mute)
-        controls.addWidget(self._solo)
-        controls.addWidget(self._gain, 1)
-        controls.addWidget(self._pan)
-        controls.addWidget(self._pan_value)
-        header_layout.addWidget(self._name)
-        header_layout.addWidget(self._detail)
-        header_layout.addLayout(controls)
-        row.addWidget(header)
+        self._name.setMinimumWidth(0)
+        self._source_badge = QLabel(_safe_source_label(source))
+        self._source_badge.setObjectName("StudioTrackSource")
+        self._source_badge.setAccessibleName(f"{_safe_source_label(source)} source")
 
-        # This is deliberately an ephemeral export choice.  It changes neither
+        # This is deliberately an ephemeral export choice. It changes neither
         # the recording nor its durable project manifest; it simply narrows the
-        # next Logic handoff to the tracks the musician has reviewed and wants.
-        self._logic_export_include = QCheckBox("Logic export")
+        # next Logic handoff to tracks the musician has reviewed and wants.
+        self._logic_export_include = QCheckBox("Logic")
         self._logic_export_include.setObjectName("StudioLogicExportInclude")
         self._logic_export_include.setChecked(True)
         self._logic_export_include.setVisible(bool(self._export_track_id))
@@ -696,14 +979,62 @@ class TrackLane(QFrame):
             "Uncheck to leave this track out of the next Logic export. "
             "The recorded take is unchanged."
         )
-        row.addWidget(self._logic_export_include)
+        name_row.addWidget(self._track_number)
+        name_row.addWidget(self._name, 1)
+        name_row.addWidget(self._logic_export_include)
+        self._detail = QLabel(detail)
+        self._detail.setObjectName("StudioTrackDetail")
+        detail_row = QHBoxLayout()
+        detail_row.setContentsMargins(0, 0, 0, 0)
+        detail_row.setSpacing(Space.XS)
+        detail_row.addWidget(self._source_badge)
+        detail_row.addWidget(self._detail, 1)
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(Space.XS)
+        self._mute = QPushButton("M")
+        self._mute.setObjectName("StudioMuteButton")
+        self._mute.setCheckable(True)
+        self._mute.setAccessibleName(f"Mute {name} track")
+        self._solo = QPushButton("S")
+        self._solo.setObjectName("StudioSoloButton")
+        self._solo.setCheckable(True)
+        self._solo.setAccessibleName(f"Solo {name} track")
+        self._meter = TrackLevelMeter()
+        self._gain = QSlider(Qt.Orientation.Horizontal)
+        self._gain.setRange(0, 400)
+        self._gain.setValue(100)
+        self._gain.setMaximumWidth(36)
+        self._gain.setAccessibleName(f"{name} track volume")
+        self._gain_value = QLabel(_fmt_db(1.0))
+        self._gain_value.setObjectName("StudioGainValue")
+        self._gain_value.setFixedWidth(42)
+        self._pan = QSlider(Qt.Orientation.Horizontal)
+        self._pan.setRange(-100, 100)
+        self._pan.setValue(0)
+        self._pan.setMaximumWidth(28)
+        self._pan.setAccessibleName(f"{name} track pan")
+        self._pan.setToolTip("Pan left or right")
+        self._gain.setToolTip("Track volume")
+        self._pan_value = QLabel("C")
+        self._pan_value.setObjectName("StudioPanValue")
+        self._pan_value.setFixedWidth(20)
+        controls.addWidget(self._mute)
+        controls.addWidget(self._solo)
+        controls.addWidget(self._meter)
+        controls.addWidget(self._gain)
+        controls.addWidget(self._gain_value)
+        controls.addWidget(self._pan)
+        controls.addWidget(self._pan_value)
+        header_layout.addLayout(name_row)
+        header_layout.addLayout(detail_row)
+        header_layout.addLayout(controls)
+        row.addWidget(header)
 
         self.waveform = WaveformCanvas()
         row.addWidget(self.waveform, 1)
 
-        self._gain.valueChanged.connect(
-            lambda value: self.gain_changed.emit(self.channel_id, value)
-        )
+        self._gain.valueChanged.connect(self._on_gain_changed)
         self._mute.toggled.connect(
             lambda checked: self.mute_changed.emit(self.channel_id, checked)
         )
@@ -712,6 +1043,22 @@ class TrackLane(QFrame):
         )
         self._pan.valueChanged.connect(self._on_pan_changed)
         self._logic_export_include.toggled.connect(self._on_export_included_changed)
+        for control in (self._mute, self._solo, self._logic_export_include):
+            control.clicked.connect(self._select)
+        self._gain.sliderPressed.connect(self._select)
+        self._pan.sliderPressed.connect(self._select)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._select()
+        super().mousePressEvent(event)
+
+    def _select(self, _checked: bool = False) -> None:
+        self.track_selected.emit(self.channel_id)
+
+    def _on_gain_changed(self, value: int) -> None:
+        self._gain_value.setText(_fmt_db(value / 100.0))
+        self.gain_changed.emit(self.channel_id, value)
 
     def _on_pan_changed(self, value: int) -> None:
         self._pan_value.setText(
@@ -723,6 +1070,7 @@ class TrackLane(QFrame):
         """Hide playback-only controls that cannot affect the live Jamulus mix."""
         self._pan.setVisible(not live)
         self._pan_value.setVisible(not live)
+        self._gain_value.setVisible(not live)
         self._logic_export_include.setVisible(
             not live and bool(self._export_track_id)
         )
@@ -736,12 +1084,45 @@ class TrackLane(QFrame):
     def set_logic_export_enabled(self, enabled: bool) -> None:
         self._logic_export_include.setEnabled(bool(enabled))
 
+    def set_mix_state(
+        self,
+        *,
+        gain: float,
+        pan: float,
+        muted: bool,
+        solo: bool,
+    ) -> None:
+        """Apply saved review-mix choices without treating loading as an edit."""
+        values = (
+            (self._gain, max(0, min(400, round(float(gain) * 100)))),
+            (self._pan, max(-100, min(100, round(float(pan) * 100)))),
+            (self._mute, bool(muted)),
+            (self._solo, bool(solo)),
+        )
+        for control, value in values:
+            control.blockSignals(True)
+            control.setValue(value) if isinstance(control, QSlider) else control.setChecked(value)
+            control.blockSignals(False)
+        self._gain_value.setText(_fmt_db(self._gain.value() / 100.0))
+        pan_value = self._pan.value()
+        self._pan_value.setText(
+            "C" if pan_value == 0 else f"{'L' if pan_value < 0 else 'R'}{abs(pan_value)}"
+        )
+
     def _on_export_included_changed(self, included: bool) -> None:
         if self._export_track_id:
             self.export_included_changed.emit(self._export_track_id, bool(included))
 
     def set_level(self, value: float) -> None:
+        self._meter.set_level(value)
         self.waveform.push_level(value)
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = bool(selected)
+        self.setProperty("selected", self._selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.waveform.set_selected(self._selected)
 
 
 class RecordingStudio(QWidget):
@@ -770,7 +1151,15 @@ class RecordingStudio(QWidget):
         self._live_participants: list = []
         self._live_signature: tuple = ()
         self._lanes: dict[int, TrackLane] = {}
+        self._track_info_by_channel: dict[int, object] = {}
+        self._selected_channel_id: int | None = None
         self._excluded_logic_export_track_ids: dict[Path, set[str]] = {}
+        # Schema-v2 mix choices live in a separate, durable sidecar.  They are
+        # deliberately never written into recording evidence or source media.
+        self._studio_state: StudioTakeState | None = None
+        self._studio_state_take_path: Path | None = None
+        self._studio_state_dirty = False
+        self._studio_state_error = ""
         self._pending_levels: dict[int, float] = {}
         self._finished_flag = False
         self._export_outcome: tuple[Optional[LogicExportResult], str] | None = None
@@ -806,6 +1195,10 @@ class RecordingStudio(QWidget):
         self._player._on_finished = self._on_finished_bg
 
         self._build_ui()
+        self._studio_state_save_timer = QTimer(self)
+        self._studio_state_save_timer.setSingleShot(True)
+        self._studio_state_save_timer.setInterval(350)
+        self._studio_state_save_timer.timeout.connect(self._flush_studio_state)
         self.reload()
         self._show_live_session()
 
@@ -945,6 +1338,18 @@ class RecordingStudio(QWidget):
         actions.addWidget(self._originals_btn)
         editor_layout.addLayout(actions)
 
+        timeline = QHBoxLayout()
+        timeline.setContentsMargins(0, 0, 0, 0)
+        timeline.setSpacing(Space.SM)
+        self._timeline_gutter = QLabel("TRACKS")
+        self._timeline_gutter.setObjectName("StudioTimelineGutter")
+        self._timeline_gutter.setFixedWidth(260)
+        self._timeline_ruler = StudioTimelineRuler()
+        self._timeline_ruler.seek_requested.connect(self._seek_from_ruler)
+        timeline.addWidget(self._timeline_gutter)
+        timeline.addWidget(self._timeline_ruler, 1)
+        editor_layout.addLayout(timeline)
+
         self._playback_controls = (
             self._play_btn,
             self._stop_btn,
@@ -973,10 +1378,245 @@ class RecordingStudio(QWidget):
         self._hint.setWordWrap(True)
         editor_layout.addWidget(self._hint)
         splitter.addWidget(editor)
+
+        inspector = QFrame()
+        self._inspector = inspector
+        inspector.setObjectName("StudioInspector")
+        inspector.setMinimumWidth(210)
+        inspector.setMaximumWidth(260)
+        inspector_layout = QVBoxLayout(inspector)
+        inspector_layout.setContentsMargins(Space.MD, Space.MD, Space.MD, Space.MD)
+        inspector_layout.setSpacing(Space.SM)
+        inspector_title = QLabel("Track details")
+        inspector_title.setObjectName("StudioInspectorTitle")
+        inspector_layout.addWidget(inspector_title)
+        self._inspector_values: dict[str, QLabel] = {}
+        for key, label in (
+            ("status", "STATUS"),
+            ("source", "SOURCE"),
+            ("timeline", "TIMELINE"),
+            ("alignment", "ALIGNMENT"),
+            ("gaps", "GAPS"),
+            ("export", "LOGIC"),
+        ):
+            field = QLabel(label)
+            field.setObjectName("StudioInspectorField")
+            value = QLabel("—")
+            value.setObjectName("StudioInspectorValue")
+            value.setWordWrap(True)
+            inspector_layout.addWidget(field)
+            inspector_layout.addWidget(value)
+            self._inspector_values[key] = value
+        inspector_layout.addStretch(1)
+        splitter.addWidget(inspector)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 900])
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([220, 900, 230])
         root.addWidget(splitter, 1)
+        self._set_empty_inspector()
+        self._update_inspector_visibility()
+
+        scrollbar = self._track_scroll.verticalScrollBar()
+        scrollbar.rangeChanged.connect(
+            lambda _minimum, _maximum: self._sync_timeline_ruler_inset()
+        )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_inspector_visibility()
+        self._sync_timeline_ruler_inset()
+
+    def _update_inspector_visibility(self) -> None:
+        """Keep the compact 760 px workflow focused on tracks, not metadata."""
+        if hasattr(self, "_inspector"):
+            self._inspector.setVisible(self.width() >= 1080)
+
+    def _sync_timeline_ruler_inset(self) -> None:
+        """Keep ruler ticks aligned with the visible waveform viewport."""
+        if not hasattr(self, "_timeline_ruler"):
+            return
+        scrollbar = self._track_scroll.verticalScrollBar()
+        trailing = 8 + (scrollbar.width() if scrollbar.isVisible() else 0)
+        self._timeline_ruler.set_trailing_inset(trailing)
+
+    def _set_inspector_values(self, **values: str) -> None:
+        for key, value in values.items():
+            label = self._inspector_values.get(key)
+            if label is not None:
+                label.setText(value)
+
+    def _set_empty_inspector(self) -> None:
+        self._set_inspector_values(
+            status="Select a track to review it.",
+            source="—",
+            timeline="—",
+            alignment="—",
+            gaps="—",
+            export="—",
+        )
+
+    def _track_info_for_channel(self, channel_id: int):
+        return self._track_info_by_channel.get(int(channel_id))
+
+    @staticmethod
+    def _state_track_id(track) -> str:
+        return str(getattr(track, "track_id", "") or "").strip()
+
+    def _select_track(self, channel_id: int) -> None:
+        """Focus one lane and expose only its review/export facts."""
+        channel_id = int(channel_id)
+        if channel_id not in self._lanes:
+            return
+        self._selected_channel_id = channel_id
+        for lane_id, lane in self._lanes.items():
+            lane.set_selected(lane_id == channel_id)
+
+        source_info = self._track_info_for_channel(channel_id)
+        if self._viewing_live or source_info is None:
+            lane = self._lanes[channel_id]
+            self._set_inspector_values(
+                status="RECORDING" if self._recording else "ARMED",
+                source="Live musician input",
+                timeline=(
+                    f"REC {_fmt_time(self._recording_elapsed)}"
+                    if self._recording
+                    else "Waiting for recording"
+                ),
+                alignment="Not applicable during live capture",
+                gaps="No completed timeline yet",
+                export=(
+                    "Available after this take is saved"
+                    if lane is not None
+                    else "—"
+                ),
+            )
+            return
+
+        source = str(getattr(source_info, "source", "") or "")
+        media_status = str(
+            getattr(source_info, "media_status", "available") or "available"
+        )
+        status = {
+            "available": "READY TO REVIEW",
+            "recovered": "RECOVERED · REVIEW",
+            "partial": "PARTIAL · REVIEW",
+            "missing": "MISSING MEDIA",
+            "damaged": "DAMAGED MEDIA",
+            "transfer_failed": "TRANSFER FAILED",
+            "transferring": "TRANSFER IN PROGRESS",
+        }.get(media_status, "NEEDS REVIEW")
+        offset = float(getattr(source_info, "offset_s", 0.0) or 0.0)
+        duration = float(getattr(source_info, "duration_s", 0.0) or 0.0)
+        if offset < 0:
+            timeline = f"Begins before 0:00 · {_fmt_time(duration)} long"
+        else:
+            timeline = f"Starts {_fmt_time(offset)} · {_fmt_time(duration)} long"
+        confidence = float(
+            getattr(source_info, "alignment_confidence", 0.0) or 0.0
+        )
+        method = str(
+            getattr(source_info, "alignment_method", "unverified") or "unverified"
+        )
+        if source == "jamulus_server":
+            alignment = "Band server timeline reference"
+        elif confidence > 0.0 and method != "unverified":
+            alignment = f"Evidence {confidence:.2f} · {method}"
+        else:
+            alignment = "Needs verified timeline alignment"
+        gaps = _timeline_gaps_for_track(source_info, self._current)
+        track_id = self._state_track_id(source_info)
+        selected = self._selected_logic_track_ids(self._current)
+        export = (
+            "Included in next Logic export"
+            if selected is None or track_id in selected
+            else "Left out of next Logic export"
+        )
+        self._set_inspector_values(
+            status=status,
+            source=(
+                "Band server track"
+                if source == "jamulus_server"
+                else "Local original"
+            ),
+            timeline=timeline,
+            alignment=alignment,
+            gaps=(
+                "No recorded gaps"
+                if not gaps
+                else f"{len(gaps)} recorded gap{'s' if len(gaps) != 1 else ''}"
+            ),
+            export=export,
+        )
+
+    def _load_studio_state(self, take: TakeInfo) -> None:
+        """Load schema-v2 mix choices without ever trusting an invalid sidecar."""
+        self._studio_state = None
+        self._studio_state_take_path = None
+        self._studio_state_dirty = False
+        self._studio_state_error = ""
+        if not _selectable_logic_track_ids(take):
+            return
+        try:
+            state = load_studio_state(take.path)
+        except StudioStateError as exc:
+            LOGGER.warning("Ignoring Studio state for %s: %s", take.path, exc)
+            self._studio_state_error = (
+                "Saved Studio choices couldn't be used. Default review settings are "
+                "shown; the recorded take is safe."
+            )
+            return
+        self._studio_state = state
+        self._studio_state_take_path = take.path.expanduser().resolve()
+
+    def _saved_state_for_track(self, track_id: str):
+        if self._studio_state is None or not track_id:
+            return None
+        try:
+            return self._studio_state.state_for(track_id)
+        except StudioStateError:
+            return None
+
+    def _update_studio_state(self, channel_id: int, **changes: object) -> None:
+        """Stage a user edit and coalesce sidecar writes while a slider moves."""
+        track = self._track_info_for_channel(channel_id)
+        track_id = self._state_track_id(track)
+        if self._studio_state is None or not track_id:
+            return
+        try:
+            self._studio_state = self._studio_state.update_track(track_id, **changes)
+        except StudioStateError as exc:
+            LOGGER.warning("Could not update Studio state: %s", exc)
+            self._studio_state_error = (
+                "Studio couldn't save that review choice. The recorded take is safe."
+            )
+            self._hint.setText(self._studio_state_error)
+            return
+        self._studio_state_dirty = True
+        self._studio_state_save_timer.start()
+        if self._selected_channel_id == int(channel_id):
+            self._select_track(channel_id)
+
+    def _flush_studio_state(self) -> None:
+        """Persist staged settings before changing takes or closing Studio."""
+        if hasattr(self, "_studio_state_save_timer"):
+            self._studio_state_save_timer.stop()
+        if (
+            not self._studio_state_dirty
+            or self._studio_state is None
+            or self._studio_state_take_path is None
+        ):
+            return
+        try:
+            save_studio_state(self._studio_state_take_path, self._studio_state)
+        except StudioStateError as exc:
+            LOGGER.warning("Could not save Studio state: %s", exc)
+            self._studio_state_error = (
+                "Studio couldn't save those review choices. The recorded take is safe."
+            )
+            self._hint.setText(self._studio_state_error)
+        finally:
+            self._studio_state_dirty = False
 
     def set_takes_directory(self, path: str) -> None:
         normalized = str(path or "")
@@ -1349,6 +1989,9 @@ class RecordingStudio(QWidget):
     def _clear_lanes(self) -> None:
         self._cancel_waveform_jobs()
         self._lanes.clear()
+        self._track_info_by_channel.clear()
+        self._selected_channel_id = None
+        self._set_empty_inspector()
         while self._track_layout.count() > 1:
             item = self._track_layout.takeAt(0)
             widget = item.widget()
@@ -1358,6 +2001,7 @@ class RecordingStudio(QWidget):
     def _add_lane(self, lane: TrackLane, *, live: bool) -> None:
         self._lanes[lane.channel_id] = lane
         lane.set_live_mode(live)
+        lane.track_selected.connect(self._select_track)
         if live:
             lane.gain_changed.connect(self.live_fader_changed.emit)
             lane.mute_changed.connect(self.live_mute_toggled.emit)
@@ -1370,6 +2014,22 @@ class RecordingStudio(QWidget):
             lane.solo_changed.connect(self._player.set_solo)
             lane.pan_changed.connect(
                 lambda cid, value: self._player.set_pan(cid, value / 100.0)
+            )
+            lane.gain_changed.connect(
+                lambda cid, value: self._update_studio_state(
+                    cid, gain=value / 100.0
+                )
+            )
+            lane.mute_changed.connect(
+                lambda cid, muted: self._update_studio_state(cid, muted=muted)
+            )
+            lane.solo_changed.connect(
+                lambda cid, solo: self._update_studio_state(cid, solo=solo)
+            )
+            lane.pan_changed.connect(
+                lambda cid, value: self._update_studio_state(
+                    cid, pan=value / 100.0
+                )
             )
         self._track_layout.insertWidget(self._track_layout.count() - 1, lane)
 
@@ -1392,14 +2052,25 @@ class RecordingStudio(QWidget):
         self._position.setText(
             f"REC {_fmt_time(self._recording_elapsed)}" if self._recording else "0:00"
         )
-        for participant in self._live_participants:
+        self._timeline_ruler.set_timeline(
+            duration=max(30.0, self._recording_elapsed),
+            playhead=self._recording_elapsed if self._recording else 0.0,
+            seek_enabled=False,
+        )
+        for track_number, participant in enumerate(self._live_participants, start=1):
             channel_id = int(getattr(participant, "channel_id", -1))
             if channel_id < 0:
                 continue
             detail = "ARMED · live musician"
             if getattr(participant, "is_local", False):
                 detail = "ARMED · you"
-            lane = TrackLane(channel_id, getattr(participant, "name", "Musician"), detail)
+            lane = TrackLane(
+                channel_id,
+                getattr(participant, "name", "Musician"),
+                detail,
+                track_number=track_number,
+                source="jamulus_server",
+            )
             lane.waveform.set_live(self._recording)
             self._add_lane(lane, live=True)
         if self._live_participants:
@@ -1410,10 +2081,18 @@ class RecordingStudio(QWidget):
             )
         else:
             self._hint.setText("Start Session and your musicians will appear here as tracks.")
+        self._sync_timeline_ruler_inset()
+        if self._lanes:
+            self._select_track(next(iter(self._lanes)))
 
     def _show_live_session(self) -> None:
+        self._flush_studio_state()
         self._player.stop()
         self._current = None
+        self._studio_state = None
+        self._studio_state_take_path = None
+        self._studio_state_dirty = False
+        self._studio_state_error = ""
         self._reveal_path = None
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.setText("Show Take")
@@ -1428,10 +2107,23 @@ class RecordingStudio(QWidget):
         return take.path.expanduser().resolve()
 
     def _selected_logic_track_ids(self, take: TakeInfo) -> set[str] | None:
-        """Return Studio's non-destructive selection, or ``None`` for v1 takes."""
+        """Return durable inclusion choices, or ``None`` for schema-v1 takes."""
         available = set(_selectable_logic_track_ids(take))
         if not available:
             return None
+        if (
+            self._studio_state is not None
+            and self._studio_state_take_path
+            == self._logic_export_selection_key(take)
+        ):
+            return {
+                track_id
+                for track_id in available
+                if (
+                    (saved := self._saved_state_for_track(track_id)) is None
+                    or saved.export_included
+                )
+            }
         excluded = self._excluded_logic_export_track_ids.setdefault(
             self._logic_export_selection_key(take), set()
         )
@@ -1461,7 +2153,7 @@ class RecordingStudio(QWidget):
         track_id: str,
         included: bool,
     ) -> None:
-        """Store one temporary UI-only track choice for the current take."""
+        """Store one non-destructive choice for the current take's Logic handoff."""
         take = self._current
         if (
             take is None
@@ -1478,13 +2170,20 @@ class RecordingStudio(QWidget):
         if included:
             excluded.discard(track_id)
             self._hint.setText(
-                "Track included in the next Logic export. The recorded take is unchanged."
+                "Track included in future Logic exports. The recorded take is unchanged."
             )
         else:
             excluded.add(track_id)
             self._hint.setText(
-                "Track left out of the next Logic export. The recorded take is unchanged."
+                "Track left out of future Logic exports. The recorded take is unchanged."
             )
+        for channel_id, track in self._track_info_by_channel.items():
+            if self._state_track_id(track) == track_id:
+                self._update_studio_state(
+                    channel_id,
+                    export_included=bool(included),
+                )
+                break
         if not self._selected_logic_track_ids(take):
             self._hint.setText(
                 "Choose at least one track for Logic export. The recorded take is unchanged."
@@ -1494,9 +2193,11 @@ class RecordingStudio(QWidget):
     def _on_take_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._takes):
             return
+        self._flush_studio_state()
         self._viewing_live = False
         take = self._takes[row]
         self._current = take
+        self._load_studio_state(take)
         self._player.load(take)
         self._clear_lanes()
         waveform_generation, waveform_cancel = self._begin_waveform_batch()
@@ -1537,6 +2238,7 @@ class RecordingStudio(QWidget):
         info_by_channel = {
             index: track for index, track in enumerate(take.tracks)
         }
+        self._track_info_by_channel = dict(info_by_channel)
         selectable_track_ids = set(_selectable_logic_track_ids(take))
         selected_track_ids = self._selected_logic_track_ids(take)
         for track in self._player.tracks:
@@ -1562,7 +2264,7 @@ class RecordingStudio(QWidget):
                 detail = "RECOVERED TRACK · listen and review before export"
             else:
                 detail = (
-                    "BAND TRACK" if track.source == "jamulus_server" else "LOCAL TRACK"
+                    "SYNCHRONIZED" if track.source == "jamulus_server" else "ORIGINAL"
                 )
             export_track_id = str(
                 getattr(source_info, "track_id", "") or ""
@@ -1576,6 +2278,8 @@ class RecordingStudio(QWidget):
                     if export_track_id in selectable_track_ids
                     else ""
                 ),
+                track_number=track.channel_id + 1,
+                source=track.source,
             )
             if export_track_id in selectable_track_ids:
                 lane.set_logic_export_included(
@@ -1606,8 +2310,25 @@ class RecordingStudio(QWidget):
                 ),
                 timeline_duration=max(1.0, take.duration_s),
                 source=track.source,
+                gaps=(
+                    _timeline_gaps_for_track(source_info, take)
+                    if source_info is not None
+                    else ()
+                ),
             )
             self._add_lane(lane, live=False)
+            saved_state = self._saved_state_for_track(export_track_id)
+            if saved_state is not None:
+                lane.set_mix_state(
+                    gain=saved_state.gain,
+                    pan=saved_state.pan,
+                    muted=saved_state.muted,
+                    solo=saved_state.solo,
+                )
+                self._player.set_gain(track.channel_id, saved_state.gain)
+                self._player.set_pan(track.channel_id, saved_state.pan)
+                self._player.set_muted(track.channel_id, saved_state.muted)
+                self._player.set_solo(track.channel_id, saved_state.solo)
             if media_status not in blocked_statuses:
                 if composite_spec is not None:
                     self._schedule_composite_waveform(
@@ -1623,7 +2344,17 @@ class RecordingStudio(QWidget):
                         channel_id=track.channel_id,
                         path=track.path,
                     )
-        if take.manifest_errors or take.manifest_warnings:
+        self._timeline_ruler.set_timeline(
+            duration=max(1.0, take.duration_s),
+            playhead=0.0,
+            seek_enabled=playable,
+        )
+        self._sync_timeline_ruler_inset()
+        if self._lanes:
+            self._select_track(next(iter(self._lanes)))
+        if self._studio_state_error:
+            self._hint.setText(self._studio_state_error)
+        elif take.manifest_errors or take.manifest_warnings:
             self._hint.setText(
                 _take_review_message(
                     has_errors=bool(take.manifest_errors),
@@ -1645,16 +2376,22 @@ class RecordingStudio(QWidget):
             or not self._can_export_current_take()
         ):
             return
+        self._flush_studio_state()
         self._stop_playback()
-        states = {
-            track.channel_id: TrackMixSettings(
+        selectable_track_ids = set(_selectable_logic_track_ids(take))
+        states: dict[int | str, TrackMixSettings] = {}
+        for track in self._player.tracks:
+            source_info = self._track_info_for_channel(track.channel_id)
+            track_id = self._state_track_id(source_info)
+            state_key: int | str = (
+                track_id if track_id in selectable_track_ids else track.channel_id
+            )
+            states[state_key] = TrackMixSettings(
                 gain=track.gain,
                 pan=track.pan,
                 muted=track.muted,
                 solo=track.solo,
             )
-            for track in self._player.tracks
-        }
         selected_track_ids = self._selected_logic_track_ids(take)
         self._exporting = True
         self._export_outcome = None
@@ -1735,11 +2472,39 @@ class RecordingStudio(QWidget):
         self._player.stop()
         self._play_btn.setText("▶ Play")
         self._scrub.setValue(0)
+        if not self._viewing_live:
+            duration = max(1.0, self._player.duration_s)
+            self._timeline_ruler.set_timeline(
+                duration=duration,
+                playhead=0.0,
+                seek_enabled=bool(self._current is not None),
+            )
+            for lane in self._lanes.values():
+                lane.waveform.set_playhead(0.0, duration)
 
     def _seek_from_scrub(self) -> None:
         self._scrubbing = False
         if self._player.duration_s > 0:
             self._player.seek(self._scrub.value() / 1000.0 * self._player.duration_s)
+
+    def _seek_from_ruler(self, seconds: float) -> None:
+        """Seek the open recorded take from the common elapsed-time ruler."""
+        if self._viewing_live or self._current is None or self._player.duration_s <= 0:
+            return
+        position = max(0.0, min(float(seconds), self._player.duration_s))
+        self._player.seek(position)
+        self._scrubbing = False
+        self._scrub.setValue(int(position / self._player.duration_s * 1000))
+        self._position.setText(
+            f"{_fmt_time(position)} / {_fmt_time(self._player.duration_s)}"
+        )
+        self._timeline_ruler.set_timeline(
+            duration=self._player.duration_s,
+            playhead=position,
+            seek_enabled=True,
+        )
+        for lane in self._lanes.values():
+            lane.waveform.set_playhead(position, self._player.duration_s)
 
     def _on_levels_bg(self, levels: dict[int, float]) -> None:
         self._pending_levels = dict(levels)
@@ -1751,9 +2516,15 @@ class RecordingStudio(QWidget):
         if self._recording:
             self._recording_elapsed += self._timer.interval() / 1000.0
             self._position.setText(f"REC {_fmt_time(self._recording_elapsed)}")
+            timeline_duration = max(30.0, self._recording_elapsed)
+            self._timeline_ruler.set_timeline(
+                duration=timeline_duration,
+                playhead=self._recording_elapsed,
+                seek_enabled=False,
+            )
             for lane in self._lanes.values():
                 lane.waveform.set_playhead(
-                    self._recording_elapsed, max(30.0, self._recording_elapsed)
+                    self._recording_elapsed, timeline_duration
                 )
         elif not self._viewing_live:
             pos = self._player.position_s
@@ -1761,6 +2532,11 @@ class RecordingStudio(QWidget):
             if not self._scrubbing and duration > 0:
                 self._scrub.setValue(int(pos / duration * 1000))
             self._position.setText(f"{_fmt_time(pos)} / {_fmt_time(duration)}")
+            self._timeline_ruler.set_timeline(
+                duration=max(1.0, duration),
+                playhead=pos,
+                seek_enabled=bool(self._current is not None and duration > 0),
+            )
             for lane in self._lanes.values():
                 lane.waveform.set_playhead(pos, duration)
         pending, self._pending_levels = self._pending_levels, {}
@@ -1774,6 +2550,12 @@ class RecordingStudio(QWidget):
             self._player.stop()
             self._play_btn.setText("▶ Play")
             self._scrub.setValue(0)
+            if not self._viewing_live:
+                self._timeline_ruler.set_timeline(
+                    duration=max(1.0, self._player.duration_s),
+                    playhead=0.0,
+                    seek_enabled=bool(self._current is not None),
+                )
         if self._export_outcome is not None:
             outcome, self._export_outcome = self._export_outcome, None
             self._finish_export(*outcome)
@@ -1781,6 +2563,7 @@ class RecordingStudio(QWidget):
     def shutdown(self) -> None:
         if self._waveform_shutdown:
             return
+        self._flush_studio_state()
         self._waveform_shutdown = True
         self._cancel_waveform_jobs()
         self._waveform_executor.shutdown(wait=False, cancel_futures=True)
@@ -1794,6 +2577,7 @@ class RecordingStudio(QWidget):
         window.  A stack switch emits a hide event, so this is the lifecycle
         boundary that must stop the output stream and close source readers.
         """
+        self._flush_studio_state()
         self._stop_playback()
         super().hideEvent(event)
 

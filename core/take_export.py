@@ -37,6 +37,9 @@ class TrackMixSettings:
     solo: bool = False
 
 
+MixSettings = Mapping[int | str, TrackMixSettings]
+
+
 @dataclass(frozen=True)
 class LogicExportResult:
     """Files produced by :func:`export_logic_package`."""
@@ -507,12 +510,31 @@ def _write_checksum_manifest(folder: Path, destination: Path) -> None:
     os.chmod(destination, 0o600)
 
 
+def _project_track_mix_settings(
+    settings: MixSettings,
+    *,
+    track_id: str,
+    legacy_position: int,
+) -> TrackMixSettings:
+    """Resolve one schema-v2 mix state without coupling it to export rows.
+
+    Schema-v2 track IDs are durable, unlike the temporary rows produced after
+    filtering tracks for a particular Logic export.  Prefer an explicit ID
+    entry so a selected subset or reordered project cannot borrow another
+    lane's mix state.  Integer keys remain the legacy API and continue to
+    address the track's position in the full, project-order track list.
+    """
+    if track_id in settings:
+        return settings[track_id]
+    return settings.get(legacy_position, TrackMixSettings())
+
+
 def _export_project_logic_package(
     take: TakeInfo,
     project,
     *,
     destination_root: Optional[Path],
-    mix_settings: Optional[Mapping[int, TrackMixSettings]],
+    mix_settings: Optional[MixSettings],
     chunk_frames: int,
     selected_track_ids: set[str] | None,
     include_processed_stems: bool,
@@ -574,6 +596,9 @@ def _export_project_logic_package(
         participant.participant_id: participant for participant in project.participants
     }
     settings_map = dict(mix_settings or {})
+    legacy_positions = {
+        track.track_id: position for position, track in enumerate(ordered)
+    }
     stems: list[Path] = []
     processed: list[Path] = []
     applied_settings: list[TrackMixSettings] = []
@@ -598,8 +623,11 @@ def _export_project_logic_package(
                 total_frames=total_frames,
                 chunk_frames=chunk_frames,
             )
-            original_index = ordered.index(track)
-            state = settings_map.get(original_index, TrackMixSettings())
+            state = _project_track_mix_settings(
+                settings_map,
+                track_id=track.track_id,
+                legacy_position=legacy_positions[track.track_id],
+            )
             stems.append(output)
             applied_settings.append(state)
             if track.source_type is SourceType.JAMULUS_SERVER:
@@ -886,7 +914,7 @@ def export_logic_package(
     take: TakeInfo,
     *,
     destination_root: Optional[Path] = None,
-    mix_settings: Optional[Mapping[int, TrackMixSettings]] = None,
+    mix_settings: Optional[MixSettings] = None,
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,

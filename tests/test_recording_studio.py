@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import struct
 import tempfile
@@ -22,6 +23,20 @@ from core.settings import AppSettings
 from core.network_invite import local_band_address
 from core.take_library import TakeInfo, TrackInfo
 from core.take_player import TakePlayer
+from core.take_project import (
+    AlignmentState,
+    GapInterval,
+    MediaSegment,
+    MediaStatus,
+    ProjectStatus,
+    ProjectTrack,
+    SourceQuality,
+    SourceType,
+    TakeProject,
+    new_project_id,
+    write_take_project,
+)
+from core.studio_state import load_studio_state
 from webjam_qt.widgets.recording_studio import (
     _CompositeWaveformSpec,
     _WaveformSegmentSpec,
@@ -123,6 +138,77 @@ def _mark_verified(take: Path, *filenames: str) -> None:
     )
 
 
+def _schema2_studio_take(tmp_path: Path) -> tuple[Path, tuple[str, str]]:
+    """Create a small genuine v2 take so Studio exercises its sidecar boundary."""
+    take_dir = tmp_path / "Studio Project Take"
+    media = take_dir / "media"
+    media.mkdir(parents=True)
+    server = media / "server.wav"
+    local = media / "local.wav"
+    _wav(server, 220)
+    _wav(local, 440)
+    server_id, local_id = new_project_id(), new_project_id()
+
+    def segment(path: Path, *, gap: bool = False) -> MediaSegment:
+        return MediaSegment(
+            segment_id=new_project_id(),
+            path=path.relative_to(take_dir).as_posix(),
+            project_start_frame=0,
+            frame_count=RATE,
+            sample_rate=RATE,
+            channels=1,
+            sample_format="PCM_16",
+            media_status=MediaStatus.AVAILABLE,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            size_bytes=path.stat().st_size,
+            gaps=(
+                (GapInterval(1_000, 400, "test capture gap"),)
+                if gap
+                else ()
+            ),
+        )
+
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Studio review",
+        take_name="Studio Project Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=RATE,
+        participants=(),
+        tracks=(
+            ProjectTrack(
+                track_id=server_id,
+                source_id=new_project_id(),
+                participant_id=None,
+                name="Band Drums",
+                instrument="Drums",
+                source_type=SourceType.JAMULUS_SERVER,
+                quality=SourceQuality.NETWORK_TRACK,
+                media_status=MediaStatus.AVAILABLE,
+                order=0,
+                segments=(segment(server),),
+                alignment=AlignmentState(confidence=1.0, method="server-origin"),
+            ),
+            ProjectTrack(
+                track_id=local_id,
+                source_id=new_project_id(),
+                participant_id=None,
+                name="Local Guitar",
+                instrument="Guitar",
+                source_type=SourceType.LOCAL_ISOLATED,
+                quality=SourceQuality.VERIFIED_ISOLATED,
+                media_status=MediaStatus.AVAILABLE,
+                order=1,
+                segments=(segment(local, gap=True),),
+                alignment=AlignmentState(confidence=0.92, method="test-alignment"),
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    return take_dir, (server_id, local_id)
+
+
 def test_live_session_arms_one_lane_per_musician():
     studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
     try:
@@ -169,6 +255,107 @@ def test_recorded_take_renders_waveform_lanes_and_mixer_controls():
             assert studio._export_btn.isEnabled()
         finally:
             studio.shutdown()
+
+
+def test_studio_ruler_selection_gap_and_meter_share_the_recorded_timeline(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1440, 900)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+        assert studio._inspector.isVisible()
+        assert studio._timeline_ruler._seek_enabled
+        assert studio._lanes[1].waveform._gaps
+
+        studio._seek_from_ruler(0.5)
+        assert studio._player.position_s == pytest.approx(0.5)
+        assert studio._timeline_ruler._playhead == pytest.approx(0.5)
+        assert all(
+            lane.waveform._playhead == pytest.approx(0.5)
+            for lane in studio._lanes.values()
+        )
+
+        studio._on_levels_bg({1: 0.73})
+        studio._tick()
+        assert studio._lanes[1]._meter._level == pytest.approx(0.73)
+        studio._select_track(1)
+        assert studio._lanes[1]._selected
+        assert not studio._lanes[0]._selected
+        assert "Local original" in studio._inspector_values["source"].text()
+        assert "1 recorded gap" in studio._inspector_values["gaps"].text()
+        assert studio._timeline_ruler._trailing_inset >= 8
+    finally:
+        studio.shutdown()
+
+
+def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
+    take_dir, (server_id, local_id) = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    audio = take_dir / "media" / "local.wav"
+    manifest_before = manifest.read_bytes()
+    audio_before = audio.read_bytes()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        lane = studio._lanes[1]
+        lane._gain.setValue(400)
+        lane._pan.setValue(-40)
+        lane._mute.setChecked(True)
+        lane._solo.setChecked(True)
+        lane._logic_export_include.setChecked(False)
+        studio._flush_studio_state()
+    finally:
+        studio.shutdown()
+
+    state = load_studio_state(take_dir).state_for(local_id)
+    assert state.gain == pytest.approx(4.0)
+    assert state.pan == pytest.approx(-0.4)
+    assert state.muted is True
+    assert state.solo is True
+    assert state.export_included is False
+    assert manifest.read_bytes() == manifest_before
+    assert audio.read_bytes() == audio_before
+
+    called = threading.Event()
+    result = SimpleNamespace(
+        folder=take_dir / "Logic Export",
+        stems=(),
+        samplerate=RATE,
+    )
+    with patch(
+        "webjam_qt.widgets.recording_studio.export_logic_package",
+        side_effect=lambda *_args, **_kwargs: (called.set() or result),
+    ) as export:
+        reopened = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            reopened._take_list.setCurrentRow(0)
+            lane = reopened._lanes[1]
+            assert lane._gain.value() == 400
+            assert lane._pan.value() == -40
+            assert lane._mute.isChecked()
+            assert lane._solo.isChecked()
+            assert not lane._logic_export_include.isChecked()
+            reopened._export_for_logic()
+            assert _wait_until(called.is_set)
+            assert export.call_args.kwargs["selected_track_ids"] == {server_id}
+            settings = export.call_args.kwargs["mix_settings"]
+            assert settings[local_id].gain == pytest.approx(4.0)
+            assert settings[local_id].pan == pytest.approx(-0.4)
+            assert settings[local_id].muted is True
+            assert settings[local_id].solo is True
+        finally:
+            reopened.shutdown()
 
 
 def test_late_attached_track_refreshes_selected_take_without_reopening(tmp_path):

@@ -984,10 +984,26 @@ QPushButton#StudioRecordButton:focus {
     background-color: transparent;
 }
 
+#StudioTimelineGutter {
+    color: ${COLOR_TEXT_MUTED};
+    background-color: ${COLOR_BG_INPUT};
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+    padding-left: ${SPACE_SM}px;
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.1em;
+}
+
 #StudioTrackLane {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_MD}px;
+}
+
+#StudioTrackLane[selected="true"] {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
 }
 
 #StudioTrackHeader {
@@ -996,10 +1012,53 @@ QPushButton#StudioRecordButton:focus {
     border-radius: ${RADIUS_SM}px;
 }
 
+#StudioTrackNumber {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
 #StudioTrackName {
     color: ${COLOR_TEXT_PRIMARY};
     font-size: ${FONT_SIZE_BASE}px;
     font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioTrackSource {
+    color: ${COLOR_TEXT_SECONDARY};
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioGainValue, #StudioPanValue {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
+QCheckBox#StudioLogicExportInclude {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_XS}px;
+    spacing: 3px;
+}
+
+QCheckBox#StudioLogicExportInclude::indicator {
+    width: 11px;
+    height: 11px;
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: 2px;
+    background-color: ${COLOR_BG_INPUT};
+}
+
+QCheckBox#StudioLogicExportInclude::indicator:checked {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
 }
 
 QPushButton#StudioMuteButton, QPushButton#StudioSoloButton {
@@ -1025,6 +1084,31 @@ QPushButton#StudioSoloButton:checked {
     padding: ${SPACE_XS}px ${SPACE_SM}px;
     font-family: ${FONT_FAMILY_MONO};
     font-size: ${FONT_SIZE_XS}px;
+}
+
+#StudioInspector {
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#StudioInspectorTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioInspectorField {
+    color: ${COLOR_TEXT_MUTED};
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.08em;
+}
+
+#StudioInspectorValue {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
 }
 
 #StudioHint {

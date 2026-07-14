@@ -195,6 +195,7 @@ a = Analysis(
         "core.take_library",
         "core.take_player",
         "core.take_export",
+        "core.studio_state",
         "core.jamulus_server_rpc",
         "webjam_qt.windows.take_deck",
         "webjam_qt.widgets.recording_studio",

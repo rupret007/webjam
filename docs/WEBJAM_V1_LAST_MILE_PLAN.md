@@ -80,6 +80,33 @@ port, router change, or Webex credential.
 | Privacy-safe diagnostics | Implemented | Preview, clipboard, JSON, and ZIP derive from one allowlisted/redacted snapshot. The lifecycle timeline contains no invitation, address, device, or path data. |
 | v0.13 macOS arm64 package | Exact private test-night artifact | Fresh extraction passes strict/deep signature, nested-app inspection, exact sidecar build/hash/IPC validation, and two isolated six-second offscreen launch/TERM cycles. The package is arm64, bundles Jamulus/JamulusServer 3.12.2, and remains ad-hoc signed. Physical musician results are NOT RUN. |
 
+### Studio v0.14 source workspace — pending next package
+
+This is source-next work after the exact v0.13.0 artifact recorded above. It
+does not revise that artifact's version, hash, package evidence, or physical
+status. Packaging, two-Mac review, interruption review, and Logic Pro import
+for this Studio work are all **NOT RUN** until a new exact candidate is built
+and the worksheet is completed.
+
+- **Truthful time axis:** Studio draws one shared elapsed-seconds ruler for the
+  recorded project. It does not invent bars, beats, a tempo map, automation, or
+  DAW editing capability the take does not contain.
+- **Aligned review:** Seeking aligns the transport, ruler, and displayed lane
+  playheads. Selecting a lane exposes recorded source, media/alignment evidence,
+  gap truth, and next-export inclusion rather than inferring these from a
+  waveform.
+- **Compact lanes:** fixed, readable track identity and control space survives
+  the 760×600 floor; contextual inspection may collapse before the transport or
+  mute/solo/gain/pan controls become clipped.
+- **Non-destructive persistence:** `.webjam-studio-state.json` is an atomic,
+  private, take-bound sidecar for gain, pan, mute, solo, and export inclusion.
+  It is keyed by schema-v2 durable `track_id`, rejects malformed/mismatched
+  state, and never changes `webjam-take.json` or source WAV bytes.
+- **Durable Logic handoff:** schema-v2 mix and export state resolves by track
+  identity, so a revised/reordered track list cannot silently assign one
+  musician's choice to another. This does not weaken existing media, silence,
+  or alignment export blocks.
+
 ## Highest-risk failure modes and response
 
 | Condition | Product response | Evidence level |
@@ -95,6 +122,9 @@ port, router change, or Webex credential.
 | Recording folder unavailable or storage dangerously low | v0.13.0 Band Check reports one corrective action; Record rechecks before any local capture or server recorder starts, then starts nothing if unsafe. Low storage warns to make room before a long rehearsal. | Source and package inspection pass; physical drive-full recovery remains NOT RUN |
 | App interruption during an in-progress take | The v0.13.0 package retains bounded/redacted session evidence and durable audio-frame checkpoints. It exposes recoverable media as **Needs Attention**; unverified post-checkpoint data is partial, never a completed take. | Source/package integrity passes; physical interruption recovery is NOT RUN |
 | Selected silent or unaligned original in Logic export | v0.13.0 blocks the export and gives the musician one corrective choice: deselect the track, keep the aligned server track, or align and verify the local original. | Packaged behavior is included; Logic Pro import is NOT RUN |
+| Studio lane reorder or a newly reconciled track | v0.14 source state follows durable schema-v2 `track_id`, not a display index; new tracks receive defaults. | Focused source tests; next package and physical review are NOT RUN |
+| Studio review changes source evidence | v0.14 writes only an atomic, private `.webjam-studio-state.json` sidecar; manifest/WAV bytes remain untouched. | Focused source tests; next package and physical review are NOT RUN |
+| Studio time display implies unrecorded musical facts | v0.14 labels a shared elapsed-seconds ruler and omits bars/beats/tempo/automation fiction. | Source/UI review; physical usability remains NOT RUN |
 | v3 sidecar fails before enrollment | v0.13.0 may offer the same one-use invite again because no enrollment was attempted. | Included package behavior; v3 remains a loopback/CI laboratory profile |
 | v3 guest fails after enrollment begins | v0.13.0 removes the invite and asks for a fresh one; it does not retry a potentially consumed credential or fall back to LAN. | Included package behavior; v3 remains a loopback/CI laboratory profile |
 | Webex duplicate music path | Webex stays optional and its role is explained as conversation/video, not performance audio. | UI/source evidence |
@@ -111,6 +141,8 @@ git ls-files '*.py' -z | xargs -0 ./.venv/bin/python -m py_compile
 make -C transport check
 (cd transport && go test -race -count=1 ./... && go mod verify && go mod tidy -diff)
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python ux_smoke_test.py
+QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m pytest -q \
+  tests/test_recording_studio.py tests/test_studio_state.py tests/test_take_export.py
 ```
 
 The historical baseline source checks covered lifecycle transitions,
@@ -141,6 +173,11 @@ from the physical musician certification still required.
 - Both musicians hear each other through the actual Jamulus route
 - Host/link/join and reconnect after outage/interface changes
 - Host server take, guest original delivery, Studio playback, alignment/drift
+- Studio's seconds-only shared ruler, seek alignment, selected-track
+  source/alignment/gap inspection, compact layout, and sidecar reopen without
+  changing manifest/WAV evidence
+- A durable-ID Logic export selection that stays with the identified source,
+  not a reordered display lane
 - Logic Pro import/playback of the exported package
 - Packaged VoiceOver/NVDA review
 - Developer ID signing and notarization before broad distribution

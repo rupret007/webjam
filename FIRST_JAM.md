@@ -113,10 +113,15 @@ Multitrack Studio** to watch lanes or review the take.
    take. WebJam records WebJam-observed UTC timestamps after recorder
    confirmation; those timestamps are not a claim about the band server's
    clock.
-5. Select the take in the Studio library to view its waveforms, choose the
-   wired playback output, and test gain, pan, mute, and solo.
-6. Press **Export for Logic**, then **Show Logic Export**. Drag every numbered
-   stem WAV into separate Logic tracks together at `0:00`. The stems are
+5. Select the take in the Studio library. Read the shared elapsed-time ruler,
+   select each lane you need to review, and inspect its source, timing, and any
+   known gaps. Choose the wired playback output and test gain, pan, mute, and
+   solo; those review controls do not change the recording.
+6. Review each **Logic export** choice, then press **Export for Logic** and
+   **Show Logic Export**. The choice is saved for that take and used by future
+   exports until changed; it never changes the WAVs or `webjam-take.json`.
+   Drag every numbered stem WAV into separate Logic tracks together at `0:00`.
+   The stems are
    rendered onto the same project timeline and length. Keep `WebJam Server
    Reference.wav`, `WebJam Studio Reference.wav`, the reports, and checksums
    as evidence, not as extra performance stems. See
@@ -128,12 +133,13 @@ silently deleting it. Host startup recovery publishes readable local media as a
 visible Studio project marked **Needs Attention**; it is not a completed take
 or timing-ready Logic export.
 
-Before exporting, look at the Studio track choices. They affect only the next
-export, never the recorded take. An explicitly silent selected performance
-track pauses export until you review it or intentionally deselect it. An
-unaligned or unverified selected guest/local original also pauses a
-timing-ready export: retain the Jamulus server track, or align and verify the
-original. The Studio message gives that action without exposing local paths.
+Studio is a focused recording-review workspace, not a Logic clone: its shared
+ruler shows elapsed time and it does not invent tempo, bars, beats, or beat
+editing. An explicitly silent selected performance track pauses export until
+you review it or intentionally deselect it. An unaligned or unverified selected
+guest/local original also pauses a timing-ready export: retain the Jamulus
+server track, or align and verify the original. The Studio message gives that
+action without exposing local paths.
 
 ## Optional tools
 

@@ -53,6 +53,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 |------|-------------|-------|
 | **Companion API (documented & stable)** | Document and stabilize the local bridge API so DAWs, editors, and other tools can read room state, mode, goal, mixer. WebJam as hub. | 1 |
 | **Optional E2E encrypted canvas** | Mode where only people in the room can ever read notes/artifacts; no server-side plaintext. | 3 |
+| **Multitrack Studio review workspace** | Next-candidate source pass: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and a safer Logic handoff. It is not a tempo grid or a full DAW claim. | 1 |
 | **Recording + timeline** | Optional recording; timeline for time-linked notes and replay. | 3 |
 
 ### 5. Community & human layer
@@ -92,6 +93,32 @@ recording-recovery, or Logic Pro claims.
   starts enrollment. After an enrollment attempt, WebJam requires a fresh
   invitation. This changes no ordinary same-LAN flow and does not make remote v3
   a public or deployed service.
+
+### 🟡 Source-next: Studio v0.14 review workspace (not a package or pilot result)
+
+This work is intentionally a musician-friendly review layer, not an imitation
+of a full DAW. It does not change the exact v0.13.0 archive, its hash, or its
+physical-pilot status.
+
+- **One truthful time axis** — all completed lanes share an elapsed-seconds
+  ruler and seek point. We will not fake bars, beats, tempo, automation, or a
+  click track that the session did not record.
+- **Context when it matters** — selecting a track reveals its real source,
+  media/alignment evidence, recorded gaps, and next-export inclusion. A meter
+  or waveform does not become proof of audibility or musical alignment.
+- **A compact working surface** — track identity, M/S, level, gain, pan,
+  transport, and export survive the 760×600 floor; richer inspection yields
+  space before core controls do.
+- **Safe continuity** — a hidden, atomic `.webjam-studio-state.json` sidecar
+  keeps gain, pan, mute, solo, and export inclusion attached to durable
+  schema-v2 track identities. It never rewrites the take manifest or WAVs.
+- **A dependable handoff** — an export choice follows the identified source
+  through a reordered/reconciled project rather than following a lane number.
+  Existing silence, missing-media, and alignment safety blocks still apply.
+
+Source tests and visual review can validate these boundaries, but the next
+package, live two-Mac use, interruption review, and actual Logic Pro import are
+all **NOT RUN** until musicians record them in the pilot worksheet.
 
 ### ✅ Included in the v0.13.0 private test-night candidate (2026-07-14)
 
@@ -198,6 +225,10 @@ gates pass.
   planned two-Apple-Silicon-Mac
   same-LAN physical pilot. The v1/v2 engine's native Jamulus/JACK 3,600-second
   evidence remains historical engine evidence, not package certification.
+- Build and identify the next Studio candidate, then physically verify its
+  seconds-only ruler, seek alignment, selected-track inspection, compact layout,
+  immutable-sidecar reopen behavior, and durable-ID Logic selection. Those
+  observations are **NOT RUN** until recorded against that exact package.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

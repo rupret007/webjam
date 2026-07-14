@@ -250,6 +250,61 @@ def _project_track(
     )
 
 
+def _reordered_project_take(tmp_path):
+    """Build a project whose tuple order differs from its project order."""
+    take_dir = tmp_path / "Reordered Project Take"
+    take_dir.mkdir()
+    bass_audio = take_dir / "bass.wav"
+    drums_audio = take_dir / "drums.wav"
+    guitar_audio = take_dir / "guitar.wav"
+    _write(bass_audio, np.full(2048, 0.2), rate=48_000)
+    _write(drums_audio, np.full(2048, 0.3), rate=48_000)
+    _write(guitar_audio, np.full(2048, 0.4), rate=48_000)
+    participant_id = new_project_id()
+    bass = _project_track(
+        "Bass",
+        participant_id,
+        [_project_segment(bass_audio, take_dir)],
+        order=0,
+    )
+    drums = _project_track(
+        "Drums",
+        participant_id,
+        [_project_segment(drums_audio, take_dir)],
+        order=1,
+    )
+    guitar = _project_track(
+        "Guitar",
+        participant_id,
+        [_project_segment(guitar_audio, take_dir)],
+        order=2,
+    )
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Reordered Session",
+        take_name="Reordered Project Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(participant_id, "Alex"),),
+        # The manifest writer sorts by ``order``; retaining a deliberately
+        # different in-memory tuple ensures export does not use tuple position.
+        tracks=(guitar, bass, drums),
+    )
+    write_take_project(take_dir, project)
+    take = TakeInfo(
+        take_dir,
+        "Reordered Project Take",
+        [
+            TrackInfo(guitar_audio, "Guitar", samplerate=48_000),
+            TrackInfo(bass_audio, "Bass", samplerate=48_000),
+            TrackInfo(drums_audio, "Drums", samplerate=48_000),
+        ],
+        take_id=project.take_id,
+    )
+    return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
+
+
 def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_path):
     take_dir = tmp_path / "Project Take"
     take_dir.mkdir()
@@ -390,6 +445,63 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
     for line in checksum_lines:
         digest, name = line.split("  ", 1)
         assert _digest(result.folder / name) == digest
+
+
+def test_schema2_logic_handoff_prefers_durable_mix_ids_after_selection_and_reorder(
+    tmp_path,
+):
+    take, (bass, _drums, guitar), source_audio = _reordered_project_take(tmp_path)
+    before = {_digest(path) for path in source_audio}
+
+    result = export_logic_package(
+        take,
+        destination_root=tmp_path / "exports",
+        selected_track_ids={bass.track_id, guitar.track_id},
+        mix_settings={
+            # A conflicting legacy setting proves the durable ID wins for
+            # Bass, even though it is the first selected/exported track.
+            0: TrackMixSettings(gain=0.05, pan=1.0),
+            bass.track_id: TrackMixSettings(gain=0.5, pan=-1.0),
+            guitar.track_id: TrackMixSettings(gain=0.25, pan=1.0),
+        },
+    )
+
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert [track["track_id"] for track in manifest["tracks"]] == [
+        bass.track_id,
+        guitar.track_id,
+    ]
+    assert [track["gain"] for track in manifest["tracks"]] == [0.5, 0.25]
+    assert [track["pan"] for track in manifest["tracks"]] == [-1.0, 1.0]
+    mix, rate = sf.read(result.mixdown, dtype="float32", always_2d=True)
+    assert rate == 48_000
+    assert mix[100, 0] == pytest.approx(0.1, abs=0.01)
+    assert mix[100, 1] == pytest.approx(0.1, abs=0.01)
+    assert {_digest(path) for path in source_audio} == before
+
+
+def test_schema2_logic_handoff_keeps_legacy_mix_positions_in_project_order(tmp_path):
+    take, (_bass, _drums, guitar), source_audio = _reordered_project_take(tmp_path)
+    before = {_digest(path) for path in source_audio}
+
+    result = export_logic_package(
+        take,
+        destination_root=tmp_path / "exports",
+        # Guitar is alone in this export but remains position two in the full
+        # project order.  This protects callers still using positional state.
+        selected_track_ids={guitar.track_id},
+        mix_settings={2: TrackMixSettings(gain=0.5, pan=-1.0)},
+    )
+
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert [track["track_id"] for track in manifest["tracks"]] == [guitar.track_id]
+    assert manifest["tracks"][0]["gain"] == 0.5
+    assert manifest["tracks"][0]["pan"] == -1.0
+    mix, rate = sf.read(result.mixdown, dtype="float32", always_2d=True)
+    assert rate == 48_000
+    assert mix[100, 0] == pytest.approx(0.2, abs=0.01)
+    assert abs(float(mix[100, 1])) < 1e-5
+    assert {_digest(path) for path in source_audio} == before
 
 
 def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):

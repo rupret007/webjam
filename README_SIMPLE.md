@@ -129,16 +129,20 @@ guest media stays on that guest Mac for manual review; WebJam does not
 automatically upload or reconcile recovery media with the host take. A v1
 guest has no WebJam-orchestrated local-original capture or delivery.
 
-After a take verifies, select it and press **Export for Logic**. The Studio
-checkboxes choose tracks only for that next export; the original recorder files
-remain unchanged. WebJam writes new numbered PCM24 stems that all start at
-`0:00` and have the same length, plus server/Studio references, reports,
-analysis, checksums, and import instructions. An explicitly silent selected
-performance track pauses export until you review it or deliberately deselect
-it. An unaligned or unverified selected guest/local original also pauses a
-timing-ready export: keep the Jamulus server track, or align and verify the
-original first. Studio states those actions without exposing local paths. Drag
-the numbered stems into Logic together. See
+After a take verifies, open it in Studio and read the shared elapsed-time
+ruler. Select a lane to inspect its source, timing, and any known gaps, then
+use gain, pan, mute, or solo to review the mix without changing the recording.
+Each **Logic export** choice is saved for that take and used by future exports
+until you change it; it never changes the WAVs or `webjam-take.json`. WebJam
+writes new numbered PCM24 stems that all start at `0:00` and have the same
+length, plus server/Studio references, reports, analysis, checksums, and import
+instructions. An explicitly silent selected performance track pauses export
+until you review it or deliberately deselect it. An unaligned or unverified
+selected guest/local original also pauses a timing-ready export: keep the
+Jamulus server track, or align and verify the original first. Studio states
+those actions without exposing local paths. It is a focused recording-review
+workspace, not a Logic clone: it does not invent tempo, bars, beats, or beat
+editing. Drag the numbered stems into Logic together. See
 [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
 The host controls the shared take. A joining musician's network audio becomes a

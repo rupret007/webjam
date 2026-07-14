@@ -6,6 +6,11 @@ acceptance evidence belongs in
 short guide for that gate. Physical audio, interruption, and Logic results
 start as **NOT RUN** until musicians record them there.
 
+The next Studio v0.14 workspace checks are also physical rows, not an upgrade
+to the recorded v0.13.0 package claim. Until the exact newer package is
+identified and exercised in the worksheet, Studio ruler, sidecar, and Logic
+handoff observations remain **NOT RUN**.
+
 ## Message to send before the rehearsal
 
 ```text
@@ -83,14 +88,20 @@ If anything fails, stop and capture what WebJam says before changing settings.
    AVAILABLE** instead of claiming that recovery test passed.
 5. Confirm one server WAV per musician and every opted-in local original is
    present or truthfully disclosed. Check Studio playback and pan/mute/solo,
-   then use **Export for Logic**. A selected explicitly silent performance
-   track, or selected local original without verified timeline alignment, must
-   block the export. Review it; leave it out only with the per-track export
-   control and a written disclosure, or keep the Jamulus server track / align
-   and verify the original. This never changes the recorded take. Require
-   equal-length numbered PCM24 stems, references, reports, analysis, and
-   checksums; import the numbered stems together at `0:00` and use references
-   only for comparison.
+   then use **Export for Logic**. The Studio ruler is elapsed seconds only—not
+   a bar, beat, or tempo map. Seek once and confirm the transport/ruler/lanes
+   agree; select each important track and read its source, alignment, gap, and
+   export evidence. At a narrow window, keep the compact track controls
+   reachable rather than expanding the workspace. A selected explicitly silent
+   performance track, or selected local original without verified timeline
+   alignment, must block the export. Review it; leave it out only with the
+   per-track export control and a written disclosure, or keep the Jamulus
+   server track / align and verify the original. Reopen the take once: review
+   choices must follow its durable source identity through the Studio sidecar,
+   not a display position, and must not alter `webjam-take.json` or source WAVs.
+   Require equal-length numbered PCM24 stems, references, reports, analysis,
+   and checksums; import the numbered stems together at `0:00` and use
+   references only for comparison.
 
 ## Recovery and finish
 
@@ -118,6 +129,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 - Capture screenshots of any unclear state before retrying.
 - Preserve the take folder and each Mac's local originals. Keep raw logs local;
   do not send them directly.
+- Record the Studio v0.14 ruler/inspection/sidecar and durable-ID export rows
+  as **NOT RUN** unless this exact candidate was physically exercised. A source
+  test or a prior v0.13.0 package is not a substitute.
 - Use **More → Band Check → Save Support Bundle** for the previewed, allowlisted,
   redacted support archive. `Ctrl+Shift+D` copies a short redacted summary.
 - Do not widen the cohort until every item in the exact two-Mac pilot passes.

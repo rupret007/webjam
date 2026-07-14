@@ -38,6 +38,13 @@ stop and replace it before testing.
 > checks establish only that these features are present; this worksheet is where
 > the actual hardware, musician, interruption, crash-recovery, and Logic
 > outcomes are recorded.
+>
+> **Studio v0.14 boundary:** The source-next Studio workspace adds a shared
+> elapsed-seconds ruler, selected-track inspection, compact lanes, and a
+> non-destructive per-take sidecar. It is not evidence about this recorded
+> v0.13.0 ZIP. Leave every Studio v0.14 physical result **NOT RUN** until the
+> exact newer package identity is written in this worksheet and musicians run
+> the rows below.
 
 ## Know what this test proves
 
@@ -229,6 +236,10 @@ section.
 
 ## 7. Studio and source-truth review
 
+All checks in this section are physical observations. They start **NOT RUN**;
+automated source tests, a screen render, or a previous package cannot pre-fill
+them.
+
 - [ ] The take appears once in Studio and opens without changing source files.
 - [ ] Expected Jamulus server tracks are present for both musicians.
 - [ ] For each Mac where local originals were enabled, its input 1/input 2
@@ -237,9 +248,28 @@ section.
 - [ ] The outage appears as a truthful gap/segment/transfer finding where
   applicable; later audio is not pulled earlier to hide missing time.
 - [ ] Waveforms span the full take and show the outage/reconnect placement.
+- [ ] The Studio ruler labels elapsed seconds only. It shares one duration with
+  every displayed completed lane and does not pretend the take has bars, beats,
+  a tempo map, or an automation grid.
+- [ ] Click or drag to seek. The transport, ruler, and each playable lane land
+  on the same audible elapsed point; unavailable media remains truthfully
+  unavailable.
+- [ ] Select each important lane. Its inspection shows the actual source,
+  media/alignment evidence, recorded gaps, and next-export inclusion. Do not
+  call a waveform or meter proof that the other musician heard it.
+- [ ] At 760×600, the compact Studio layout keeps track identity, mute/solo,
+  level, gain, pan, transport, and export controls reachable. A contextual
+  panel may collapse rather than clip the core workspace.
 - [ ] Play, pause, stop, scrub/seek, gain, pan, mute, and multi-solo work.
 - [ ] Playback reaches both headphone channels through the chosen output.
 - [ ] Closing/leaving Studio stops playback and releases that output.
+- [ ] Change a harmless Studio review choice (for example gain, pan, mute, or
+  one Logic-export inclusion), close Studio, and reopen the same take. The
+  choice follows the same identified source through the hidden
+  `.webjam-studio-state.json` sidecar; it does not follow a neighboring display
+  position.
+- [ ] Compare `webjam-take.json` and one source WAV before/after the Studio
+  review. Their hashes/bytes are unchanged; only the Studio sidecar may change.
 - [ ] Reopen the take and repeat a seek/play check.
 - [ ] If crash recovery occurred, the recovered project remains visibly **NEEDS
   ATTENTION** with its checkpoint/gap evidence available for manual review.
@@ -256,6 +286,10 @@ Track inventory (one row per displayed track):
 | __________ | __________ | __________ | __________ | YES / NO |
 
 Take ID/folder: __________________________________________________________
+Studio workspace result: PASS / FAIL / **NOT RUN**
+Manifest hash before/after: ______________________________________________
+Source WAV hash before/after: ____________________________________________
+Studio sidecar/reopen notes: _____________________________________________
 
 ## 8. Export and Logic Pro
 
@@ -268,6 +302,10 @@ Take ID/folder: __________________________________________________________
   never the recorded take. Keep the Jamulus server track or align and verify a
   local original before calling the export timing-ready; disclose any expected
   track intentionally left out.
+- [ ] For a schema-v2 take, close/reopen Studio after leaving one reviewed
+  source out. Verify the durable identified source—not merely the lane in that
+  display position—remains the excluded one in the next Logic handoff. Record
+  the source identity below; this does not replace the later Logic import.
 - [ ] A successful package contains numbered PCM24 stems of equal project
   length, `WebJam Server Reference.wav`, `WebJam Studio Reference.wav`,
   `MARKERS.csv`, alignment/recording reports, source manifest, independent
@@ -288,6 +326,7 @@ Take ID/folder: __________________________________________________________
 - Export project rate / frames: ________________________________________
 - Logic import result: PASS / FAIL / **NOT RUN**
 - Alignment/identity notes: ____________________________________________
+- Durable-ID export-selection notes: ___________________________________
 
 If Logic was not actually opened, leave the result **NOT RUN**.
 
@@ -321,8 +360,9 @@ If Logic was not actually opened, leave the result **NOT RUN**.
 The physical gate passes only when both musicians hear playable two-way audio,
 the actual routes are recorded, the outage is represented truthfully, every
 expected original is present or explicitly disclosed, Studio survives reopen,
-the exact export imports correctly into Logic, and cleanup leaves no owned
-processes. Automated tests cannot fill these fields.
+its sidecar leaves source evidence unchanged, the exact export imports
+correctly into Logic, and cleanup leaves no owned processes. Automated tests
+cannot fill these fields.
 
 - Overall result: PASS / FAIL / **NOT RUN**
 - Blocking defect: ____________________________________________________

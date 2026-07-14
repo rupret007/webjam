@@ -9,6 +9,11 @@ history. Setup Wizard, Ready Check, raw endpoints, **Start Audio**, **Host &
 Start Audio**, and a visible Jamulus window are legacy paths, not current
 acceptance criteria.
 
+The Studio v0.14 rows below are next-candidate source and UI checks. They do
+not revise the recorded v0.13.0 archive claim, and neither a passing offscreen
+test nor a rendered screenshot turns a physical musician or Logic result into
+anything other than **NOT RUN**.
+
 ## Launch: understandable in five seconds
 
 - [ ] A clean launch opens one calm screen with the WebJam identity, **Host a
@@ -194,6 +199,39 @@ acceptance criteria.
       behavior. A second confirmation is not shown after the recording flow has
       already handled it.
 
+## Multitrack Studio v0.14 review workspace
+
+- [ ] The Studio has one shared ruler expressed in elapsed seconds. Every
+      displayed completed lane uses that same time extent; the UI does not draw
+      fictitious bars, beats, tempo, automation, or a musical grid it cannot
+      prove from the take.
+- [ ] Clicking or dragging a playable point in that ruler keeps the transport,
+      ruler, and every lane playhead at the same elapsed time. Missing or
+      damaged media remains visibly unavailable rather than appearing aligned.
+- [ ] Selecting a track reveals its actual source type, media status,
+      alignment evidence, recorded-gap truth, and next-export inclusion. The
+      inspector does not turn waveform shape or a meter into an audibility or
+      alignment claim.
+- [ ] The compact Studio layout keeps track identity, mute/solo, level, gain,
+      pan, playback, and export controls usable at 760×600. Contextual
+      inspection may collapse at narrow widths rather than forcing horizontal
+      clipping or hiding the transport.
+- [ ] For a schema-v2 take, closing and reopening Studio restores gain, pan,
+      mute, solo, and export inclusion from the take-bound
+      `.webjam-studio-state.json` sidecar by durable `track_id`. A malformed,
+      mismatched, or stale sidecar fails safely and never gets applied to a
+      different take.
+- [ ] Changing or restoring Studio state never changes `webjam-take.json` or a
+      source WAV. The sidecar is the only persisted mix/export state and is
+      atomic/private.
+- [ ] Schema-v2 Logic mix and export selection follow durable track IDs even if
+      the project adds or reorders lanes; they cannot silently move to an
+      adjacent musician. Legacy take behavior remains explicit rather than
+      pretending a positional setting is a durable identity.
+- [ ] These are candidate/source acceptance checks. Two-Mac Studio use,
+      interruption review, and actual Logic Pro import remain **NOT RUN** until
+      they are recorded in `SUNDAY_TWO_MAC_PILOT.md` for the exact package.
+
 ## Keyboard and assistive technology
 
 - [ ] Main-window order is title → each participant's fader/mute/solo → Copy
@@ -212,6 +250,9 @@ acceptance criteria.
 - [ ] Ruff and compile checks pass for all first-party source roots.
 - [ ] `QT_QPA_PLATFORM=offscreen .venv/bin/python ux_smoke_test.py` passes.
 - [ ] `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q` passes.
+- [ ] The focused Studio review group—`test_recording_studio.py`,
+      `test_studio_state.py`, and `test_take_export.py`—passes, including
+      durable-ID selection, sidecar immutability, and compact-ruler coverage.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.

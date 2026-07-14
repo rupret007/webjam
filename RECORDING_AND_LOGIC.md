@@ -109,26 +109,47 @@ project truth; it is never silently dropped while the take is called complete.
 
 ## Review in Studio
 
-Studio is non-destructive. It supports:
+Studio is a focused, non-destructive review workspace. It borrows the useful
+shape of a DAW—one shared timeline, compact track headers, a selected-track
+inspector, and a transport—without claiming to be a music editor. It supports:
 
-- full-take composite waveform lanes and a shared time ruler;
+- full-take composite waveform lanes on one shared **elapsed-time-only** ruler;
 - multi-segment and mixed-rate playback on the project clock;
 - play, pause, stop, scrub, and seek;
-- per-track gain, pan, mute, and multi-solo;
+- a selected-track inspector with source, media status, timeline placement,
+  alignment evidence, recorded-gap count, and Logic-inclusion status;
+- per-track observed input/playback meter, gain, pan, mute, and multi-solo;
 - a selectable wired playback output;
 - explicit missing/partial/damaged/transfer findings;
 - non-destructive automatic offset/drift evidence and separate manual nudge.
 
-The original WAVs are not rewritten. Close/reopen the take and repeat a seek
-and playback check before accepting it.
+The ruler deliberately shows seconds only. WebJam does not infer tempo,
+bars, beats, automation, plug-ins, or audio edits from a rehearsal; clicking
+or dragging the ruler only seeks review playback. Known recorded gaps stay
+visible on the shared timeline and in the selected-track inspector.
+
+For a schema-v2 take, Studio saves review choices in
+`.webjam-studio-state.json` beside the take. That small sidecar holds only
+gain, pan, mute, solo, and Logic-export inclusion, keyed by the take's stable
+opaque `track_id` values and bound to its `session_id` and `take_id`. It is
+atomically replaced, so a slider change never rewrites source WAVs or
+`webjam-take.json`. A malformed or wrong-take sidecar is ignored rather than
+applied; Studio shows safe default review choices. New or reordered tracks get
+defaults instead of inheriting another musician's settings.
+
+Close/reopen the take and repeat a seek and playback check before accepting it.
 
 ## Export for Logic Pro
 
 Select a trustworthy take and press **Export for Logic**. In schema-v2 Studio,
-the per-track **Logic export** checkboxes control only the next export; the
-recorded take remains unchanged. WebJam publishes a new `Logic Export`, `Logic
-Export 2`, and so on only after every required output succeeds. A schema-v2
-package contains:
+the per-track **Logic export** choices are saved as non-destructive review
+state and control the next handoff until changed; the recorded take remains
+unchanged. WebJam resolves that selection and the Studio rough-mix state by
+durable `track_id`, never by the temporary order of visible or exported rows.
+That keeps a selected subset or a reordered project from borrowing another
+musician's gain, pan, mute, or solo setting. WebJam publishes a new `Logic
+Export`, `Logic Export 2`, and so on only after every required output succeeds.
+A schema-v2 package contains:
 
 - numbered, musician/source-named **PCM24 WAV stems** rendered from the same
   project origin and to the same project length;

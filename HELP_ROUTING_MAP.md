@@ -16,7 +16,8 @@ results remain **NOT RUN** until recorded in the pilot worksheet.
 | Record the whole band | Live bottom bar → **Record** |
 | Review tracks and takes | **More → Multitrack Studio** |
 | Choose Studio output / keep this Mac's isolated inputs | **More → Multitrack Studio → Recording Setup** |
-| Prepare aligned Logic stems | Select a Studio take → review each selected track's **Logic export** checkbox → **Export for Logic** → **Show Logic Export**; a selected silent track or unaligned local original pauses export until reviewed |
+| Review a take before export | **More → Multitrack Studio** → open the take → read the shared elapsed-time ruler → select a lane → inspect source, timing, and known gaps → review its non-destructive gain/pan/mute/solo mix |
+| Prepare aligned Logic stems | In the open Studio take, review each track's saved **Logic export** choice → **Export for Logic** → **Show Logic Export**; the choice is used for future exports until changed and never changes WAVs or `webjam-take.json`; a selected silent track or unaligned local original pauses export until reviewed |
 | Capture rehearsal notes | **More → Session Notes** |
 | Add optional video/conversation | **More → Add Video or Conversation** |
 | Speak during rehearsal | Mute the audio interface before unmuting Webex; if that is unavailable, end the WebJam session first |
@@ -34,5 +35,6 @@ results remain **NOT RUN** until recorded in the pilot worksheet.
 | Keyboard shortcut reference | **F1** |
 | Exact two-Mac test-night run | [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) |
 | Recording and Logic workflow | [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md) |
+| Why Studio has no beat grid | Studio is a recording-review workspace, not a Logic clone; its ruler is elapsed time only and it does not invent tempo, bars, beats, or beat editing. |
 | Developer band-server detail | [`server/README.md`](server/README.md) |
 | Companion API for external tools | [`COMPANION_API.md`](COMPANION_API.md) |

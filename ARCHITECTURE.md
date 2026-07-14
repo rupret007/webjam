@@ -70,7 +70,7 @@ webjam_qt_main.py          ← entry point
 | `widgets/level_meter.py` | Truthful observed level meter with coarse accessible signal descriptions |
 | `widgets/session_hud.py` | One authoritative readiness/invitation/recovery summary |
 | `widgets/session_strip.py` | Header metadata plus persistent Copy Invite / Record / More / End-or-Leave controls |
-| `widgets/recording_studio.py` | Live participant lanes, take library, waveform transport, stereo output, gain/pan/mute/solo, non-destructive per-track Logic-export selection, and background Logic export |
+| `widgets/recording_studio.py` | Live participant lanes and take library; shared elapsed-time-only waveform ruler/transport; selected-track source, alignment, gap, and export inspector; observed level meters; non-destructive gain/pan/mute/solo and durable per-track Logic selection; background Logic export |
 | `widgets/webex_embed.py` | Compact native-Webex launch/status card; legacy embed code is inactive |
 | `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
 | `controllers/audio_coordinator.py` | Permission gate, launch/recovery/end-or-leave lifecycle, and participant-grid transitions |
@@ -205,6 +205,9 @@ Record button → RecordingCoordinator (preflight + roster-aware storage reserve
     handling and is not automatically uploaded
 
 Studio Export for Logic
+  → load or atomically save schema-v2 Studio review state beside the take;
+    bind gain/pan/mute/solo and Logic inclusion to durable track IDs, never
+    to a visible/export-row position or recording evidence
   → apply non-destructive per-track Studio export selection, hash-check sources,
     and reject selected explicit-silence or unaligned/unverified local originals
   → apply immutable offset/drift transforms only after those truth gates pass
@@ -238,7 +241,8 @@ server-clock timestamps.
 | `take_project.py` / `take_library.py` | Schema-v2 identity, segments, media truth, discovery, validation, and optional bounded/redacted session evidence |
 | `recording_manifest_journal.py` | Private, crash-safe in-progress checkpoint below the selected Takes folder; stores typed session evidence only and fails closed to recovery-needed truth |
 | `take_alignment.py` | Non-destructive bounded offset/drift evidence and manual restoration |
-| `take_export.py` | Atomic common-origin PCM24 Logic package with references, reports, analysis, checksums, and silent/unaligned-selected-track truth gates |
+| `studio_state.py` | Atomic, schema-v2-only `.webjam-studio-state.json` sidecar for durable-ID review mix and Logic-inclusion choices; never changes source media or take evidence |
+| `take_export.py` | Atomic common-origin PCM24 Logic package with references, reports, analysis, checksums, and silent/unaligned-selected-track truth gates; schema-v2 rough-mix state resolves by durable track ID before legacy positional compatibility |
 | `take_player.py` | Non-destructive multi-segment/mixed-rate project-clock review with seek, gain, pan, mute, and solo |
 | `support_bundle.py` | Immutable allowlist artifact, recursive redaction, and private atomic ZIP publication |
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
@@ -345,7 +349,27 @@ JamulusController background thread
 |------|---------|
 | `~/.webjam_config.json` | Server/ports, Webex URL and role, independent local-capture settings, misc prefs |
 | `~/.webjam_mix.json` | Anonymous local default mix (fader/mute/solo state) |
+| `<take>/.webjam-studio-state.json` | Schema-v2-only Studio review choices—gain, pan, mute, solo, and Logic inclusion—bound to that take/session and durable track IDs; atomically written separately from source WAVs and `webjam-take.json` |
 | SQLite DB (path in settings) | Users, mixes, room context, canvas, audit |
+
+### Studio review-state boundary
+
+The Studio's DAW-style workspace is a review surface, not an editor. Every
+lane shares one elapsed project-time ruler; it intentionally has no fabricated
+tempo, bars, beats, automation, or editing claim. The compact track header
+shows the performer/source, observed level, and review controls. Selecting a
+lane exposes its source, media condition, timeline placement, alignment
+evidence, disclosed gaps, and current Logic-inclusion status in the inspector.
+
+For a schema-v2 take, those review controls persist only in the hidden
+`.webjam-studio-state.json` sidecar. The state is bound to the project's
+opaque `session_id`, `take_id`, and each `track_id`; it is reconciled by ID when
+tracks are added or reordered, so it cannot shift a musician's mix setting by
+position. The sidecar is atomically written and never opens or alters
+`webjam-take.json` or recorded media. A malformed, symbolic-link, or
+wrong-take sidecar fails closed and Studio uses defaults. At Logic export, the
+schema-v2 selection and rough-mix values are resolved by the same durable IDs
+before the reference mix is rendered.
 
 ---
 
