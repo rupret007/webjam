@@ -192,6 +192,23 @@ QPushButton#GhostButton:checked, QToolButton#GhostButton:checked {
     border-color: ${COLOR_ACCENT_PRIMARY};
 }
 
+QPushButton#QuietButton {
+    background-color: transparent;
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 1px solid transparent;
+    padding: ${SPACE_SM}px ${SPACE_XS}px;
+}
+
+QPushButton#QuietButton:hover {
+    color: ${COLOR_TEXT_PRIMARY};
+    border-color: ${COLOR_BORDER_STRONG};
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+QPushButton#QuietButton:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
 /* -------------------------------------------------------------------------
  * Session header and meeting controls
  * ---------------------------------------------------------------------- */
@@ -719,27 +736,6 @@ QPushButton#LaunchSecondary:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
-#TechnicalDetailsButton {
-    color: ${COLOR_TEXT_SECONDARY};
-    border: 0;
-    padding: ${SPACE_XS}px 0;
-    text-align: left;
-}
-
-#TechnicalDetailsButton:focus {
-    border: 1px solid ${COLOR_BORDER_FOCUS};
-}
-
-#TechnicalDetailsText {
-    color: ${COLOR_TEXT_MUTED};
-    background-color: ${COLOR_BG_INPUT};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
-    border-radius: ${RADIUS_SM}px;
-    padding: ${SPACE_SM}px;
-    font-family: ${FONT_FAMILY_MONO};
-    font-size: ${FONT_SIZE_XS}px;
-}
-
 #SupportBundlePreviewDialog {
     background-color: ${COLOR_BG_BASE};
 }
@@ -816,6 +812,42 @@ QPushButton#LaunchSecondary:focus {
 #SimpleSettingsFieldLabel, #FirstRunFieldLabel {
     color: ${COLOR_TEXT_PRIMARY};
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+#SimpleSettingsSection {
+    background-color: ${COLOR_BG_CARD};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+}
+
+#SimpleSettingsSectionTitle {
+    color: ${COLOR_ACCENT_PRIMARY};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    text-transform: uppercase;
+}
+
+#SimpleSettingsHint {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+QToolButton#SimpleSettingsDisclosure {
+    background-color: transparent;
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 0;
+    padding: 0;
+    min-height: 20px;
+    text-align: left;
+}
+
+QToolButton#SimpleSettingsDisclosure:hover {
+    color: ${COLOR_ACCENT_PRIMARY};
+    background-color: transparent;
+}
+
+QToolButton#SimpleSettingsDisclosure:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
 }
 
 QLabel#SimpleSettingsError, QLabel#FirstRunError, QLabel#WizardError {

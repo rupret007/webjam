@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -194,7 +193,7 @@ class BandCheckDialog(QDialog):
         root.addWidget(self._report, stretch=1)
 
         footer = QHBoxLayout()
-        settings = QPushButton("Settings")
+        settings = QPushButton("Audio Settings")
         settings.setObjectName("GhostButton")
         settings.clicked.connect(self.settings_requested.emit)
         footer.addWidget(settings)
@@ -202,11 +201,14 @@ class BandCheckDialog(QDialog):
         practice.setObjectName("GhostButton")
         practice.clicked.connect(self.practice_requested.emit)
         footer.addWidget(practice)
+        footer.addStretch(1)
         support = QPushButton("Save Support Bundle")
-        support.setObjectName("GhostButton")
+        support.setObjectName("QuietButton")
+        support.setAccessibleDescription(
+            "Save a private diagnostic file only when support asks for it"
+        )
         support.clicked.connect(self.support_requested.emit)
         footer.addWidget(support)
-        footer.addStretch(1)
         close = QPushButton("Close")
         close.setObjectName("GhostButton")
         close.clicked.connect(self.close)
@@ -360,30 +362,6 @@ class BandCheckDialog(QDialog):
         text.setSpacing(2)
         text.addWidget(title)
         text.addWidget(detail)
-        cleaned = [value for value in step.technical_details if str(value).strip()]
-        if cleaned:
-            toggle = QToolButton()
-            toggle.setText("Technical Details")
-            toggle.setCheckable(True)
-            toggle.setObjectName("TechnicalDetailsButton")
-            toggle.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Fixed,
-            )
-            technical = QLabel(
-                "Private technical values are hidden here. Choose Save Support "
-                "Bundle if support asks for diagnostics."
-            )
-            technical.setObjectName("TechnicalDetailsText")
-            technical.setTextFormat(Qt.TextFormat.PlainText)
-            technical.setWordWrap(True)
-            technical.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
-            technical.setVisible(False)
-            toggle.toggled.connect(technical.setVisible)
-            text.addWidget(toggle)
-            text.addWidget(technical)
         layout = QHBoxLayout(row)
         layout.addWidget(mark)
         layout.addLayout(text, stretch=1)

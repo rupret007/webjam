@@ -120,11 +120,16 @@ Everything that is not required to play is under **More**:
 - Session Notes
 - Multitrack Studio
 - Add Video or Conversation
-- Settings (name and optional conversation link only)
+- Settings (name, Band Check input, review playback, and an optional
+  conversation link)
 - Band Check
 
 Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
+
+Choose the interface WebJam listens to in **Settings**. Choose **Review
+playback** there for Studio and Band Check playback; your live Jamulus output
+continues to follow macOS Audio MIDI Setup.
 
 ## End the jam
 

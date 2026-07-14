@@ -19,6 +19,16 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Recorded the current v1 last-mile acceptance boundary and manual gates in
   `docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
 
+### Simpler musician setup
+
+- Reworked in-session **Settings** into a short musician-first page: name,
+  Band Check input, review-playback output, and a collapsed optional
+  conversation link. On macOS it links directly to Audio MIDI Setup for the
+  system-owned live output device.
+- Removed Band Check's empty technical-details disclosure. Private diagnostics
+  remain available only through the quieter **Save Support Bundle** action;
+  **Audio Settings** is now the obvious correction path.
+
 ---
 
 ## [0.11.0] — 2026-07-13 private test-night candidate

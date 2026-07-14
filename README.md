@@ -116,7 +116,7 @@ Environment overrides:
 | **Ctrl+T** | Insert timestamp heading into Session Canvas |
 | **Ctrl+Shift+R** | Reset all faders to 0 dB (with confirmation) |
 | **Ctrl+Shift+D** | Copy diagnostics summary to clipboard |
-| **Ctrl+,** | Open name / optional conversation preferences |
+| **Ctrl+,** | Open name, basic audio, and optional conversation preferences |
 | **F2** | Open permanent Band Check |
 | **Ctrl+1 / Ctrl+2 / Ctrl+3** | Open Live / Notes / Studio |
 | **F11** | Toggle fullscreen |

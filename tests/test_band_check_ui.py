@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QLabel,
     QPushButton,
-    QToolButton,
     QWidget,
 )
 
@@ -179,16 +178,16 @@ def test_live_band_check_never_runs_host_server_lifecycle() -> None:
         dialog.close()
 
 
-def test_technical_details_are_collapsed_by_default() -> None:
+def test_private_technical_details_are_not_an_empty_disclosure() -> None:
     dialog = _dialog(_session())
     try:
-        toggle = dialog.findChild(QToolButton, "TechnicalDetailsButton")
-        technical = dialog.findChild(QLabel, "TechnicalDetailsText")
-        assert toggle is not None and technical is not None
-        assert not technical.isVisible()
-        toggle.setChecked(True)
-        APP.processEvents()
-        assert technical.isVisible()
+        rendered = " ".join(label.text() for label in dialog.findChildren(QLabel))
+        assert "Technical Details" not in rendered
+        assert "Private technical values are hidden" not in rendered
+        assert any(
+            button.text() == "Save Support Bundle"
+            for button in dialog.findChildren(QPushButton)
+        )
     finally:
         dialog.close()
 
@@ -221,7 +220,12 @@ def test_report_never_renders_private_backend_values() -> None:
         assert "/tmp/private" not in combined
         assert "/Volumes/Private" not in combined
         assert "private-room" not in combined
-        assert "Save Support Bundle" in rendered
+        assert any(
+            button.text() == "Save Support Bundle"
+            for button in dialog.findChildren(QPushButton)
+        )
+        assert "Technical Details" not in rendered
+        assert "Private technical values are hidden" not in rendered
     finally:
         dialog.close()
 
