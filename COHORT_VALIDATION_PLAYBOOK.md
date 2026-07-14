@@ -62,7 +62,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 3. On the host and each v2-connected guest that should retain interface
    originals, open **More → Multitrack Studio → Recording Setup**, explicitly
    enable inputs 1 and 2, and select the intended shareable 48-kHz interface.
-   The host still controls the shared take.
+   The host still controls the shared take. For the frozen v0.11 ZIP, manually
+   confirm free space before starting the session; its app-level storage guard
+   is source-only and cannot be counted in this cohort run.
 4. The host records at least 60 seconds. With an active v2 invite, briefly
    interrupt the guest's Wi-Fi, keep playing, reconnect, and wait for validation
    and resumed guest-original transfer before ending. If the host reported the

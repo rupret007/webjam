@@ -2,7 +2,13 @@
 
 - Status: Accepted
 - Date: 2026-07-13
-- Scope: WebJam v0.11.0 remote pilot, one host plus one guest
+- Scope: target architecture for a WebJam v0.11.0 remote pilot, one host plus
+  one guest
+
+> **Current status (2026-07-14):** The only compiled `reference-local` profile
+> is a loopback/CI lab. No public rendezvous, relay, or ordinary-home remote
+> session is deployed. This ADR is a target architecture, not evidence that the
+> ordinary product supports Internet sessions.
 
 ## Context
 
@@ -11,12 +17,13 @@ v1/v2 invitation carries a literal LAN endpoint and its private recording plane
 is bounded plaintext HTTP on RFC1918 IPv4. Neither may be exposed to the public
 Internet.
 
-The v0.11.0 pilot needs one private link that works across ordinary musician
-networks without router changes, VPN accounts, Terminal, elevated privileges,
-or networking choices. Jamulus 3.12.2 remains unmodified and remains the only
-live-music engine. The new layer must carry Jamulus's latency-sensitive UDP
-packets, reliable control and original-media data, authenticated end-to-end
-encryption, direct traversal, relay fallback, reconnect, and bounded evidence.
+The target v0.11.0 pilot would need one private link that works across ordinary
+musician networks without router changes, VPN accounts, Terminal, elevated
+privileges, or networking choices. Jamulus 3.12.2 remains unmodified and remains
+the only live-music engine. The proposed layer must carry Jamulus's
+latency-sensitive UDP packets, reliable control and original-media data,
+authenticated end-to-end encryption, direct traversal, relay fallback,
+reconnect, and bounded evidence.
 
 ## Decision
 
@@ -300,9 +307,10 @@ bounded and testable.
 The proxy adds two loopback UDP hops plus QUIC framing/encryption. Direct paths
 avoid relay geography; relay paths add the relay network detour. The prototype
 shows sub-millisecond local implementation overhead but does not predict home
-Internet suitability. Band Check therefore reports measured path latency,
-jitter, loss, and stability and never equates connectivity with playability or
-human audibility.
+Internet suitability. A future remote Band Check must report measured path
+latency, jitter, loss, and stability and never equate connectivity with
+playability or human audibility; current `reference-local` does not populate
+those facts for an ordinary session.
 
 QUIC DATAGRAM is encrypted and congestion-controlled but deliberately not
 retransmitted. That matches live Jamulus packets better than a reliable stream.

@@ -67,25 +67,31 @@ python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
 ```
 
 Every launch begins with the responsive **Host a Jam** / **Join a Jam** dialog.
-Host derives the standard service settings without a setup form; a new or
+Either choice then opens one short name and band-sound confirmation. A new or
 changed setup goes through Band Check and **Start Session** before the
 server/client starts. Join fills and accepts one strict `webjam://` invitation,
 then follows the same required readiness/start step. Ordinary Settings contains
-only the displayed musician name and optional conversation URL; technical
-readiness is handled by the permanent **Band Check** flow from first run, `F2`,
-Settings, or the live **More** menu.
+the displayed musician name, Band input, Band output & review, and an optional
+conversation URL; technical readiness is handled by the permanent **Band Check**
+flow from first run, `F2`, Settings, or the live **More** menu. On macOS, a
+complete CoreAudio pair is resolved by stable UID and staged in a WebJam-owned
+Jamulus config before client launch. The result is OS-level configuration—not a
+claim that a musician has heard the route.
 
 The current UI contract is documented in
 [`UX_ACCEPTANCE_CHECKLIST.md`](UX_ACCEPTANCE_CHECKLIST.md). When adding a state,
 keep one primary action, use plain musician-facing copy, preserve the
 black/white/burnt-orange token system, and add keyboard/accessibility coverage.
 
-Release artifacts bundle prepared Jamulus client/server apps 3.12.2 and keep
-their runtime data under `~/Library/Application Support/WebJam/`; source-run
-hosting uses the compatible sandboxed app in `/Applications`. Use
+Release artifacts bundle prepared Jamulus client/server apps 3.12.2. WebJam
+keeps its own runtime data under `~/Library/Application Support/WebJam/`; on
+current macOS source, its dedicated Jamulus route file intentionally lives in
+Jamulus's allowed container at
+`~/Library/Containers/app.jamulussoftware.Jamulus/Data/.config/Jamulus/`.
+Source-run hosting uses the compatible sandboxed app in `/Applications`. Use
 `tests/test_hosted_server.py` for the ownership/adoption matrix. The manual
-hardware lifecycle in `TEST_PROCEDURE.md` still uses the official server
-app's sandbox container for its secret and recordings.
+hardware lifecycle in `TEST_PROCEDURE.md` still uses the official server app's
+sandbox container for its secret and recordings.
 
 ### Reference-local v3 lab
 

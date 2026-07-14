@@ -1,16 +1,16 @@
-"""The entire startup experience: Host a Jam or Join a Jam.
+"""The simple startup experience: Host a Jam or Join a Jam.
 
-This is intentionally not a setup wizard.  A role selection applies safe
-defaults and starts the session; the join branch asks for exactly one value,
-the invitation link.
+A role choice is followed by one short musician-facing sound confirmation.
+It keeps host/join connection details automatic while making the name and band
+input/output that will be checked before launch explicit.
 """
 
 from __future__ import annotations
 
 import getpass
-import logging
 import os
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 
@@ -33,7 +33,6 @@ from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
     hosted_server_secret_path,
-    save_settings,
 )
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
@@ -45,9 +44,6 @@ from webjam_qt.invitation_ingress import (
     parse_invitation_at_ingress,
 )
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
-
-
-LOGGER = logging.getLogger("webjam.qt.launch")
 
 
 def default_musician_name(settings: AppSettings) -> str:
@@ -305,18 +301,34 @@ class LaunchDialog(QDialog):
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
 
+    def _confirm_sound_setup(
+        self,
+        candidate: AppSettings,
+        *,
+        primary_action_label: str,
+    ) -> bool:
+        """Save one short musician-facing setup before the session gate."""
+
+        from webjam_qt.windows.simple_settings import SimpleSettingsDialog
+
+        dialog = SimpleSettingsDialog(
+            candidate,
+            parent=self,
+            primary_action_label=primary_action_label,
+            show_band_check_action=False,
+        )
+        dialog.setWindowTitle("Check your sound")
+        return dialog.exec() == SimpleSettingsDialog.DialogCode.Accepted
+
     def _host(self) -> None:
         if not self._begin_submission(self._host_button, "Starting…"):
             return
-        apply_host_defaults(self._settings)
-        try:
-            save_settings(self._settings)
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not save host defaults")
-            self._choice_error.setText(
-                "WebJam couldn’t start this jam. Quit and reopen WebJam, then try again."
-            )
-            self._announce_error(self._choice_error)
+        candidate = deepcopy(self._settings)
+        apply_host_defaults(candidate)
+        if not self._confirm_sound_setup(
+            candidate,
+            primary_action_label="Continue to Band Check",
+        ):
             self._restore_submission()
             return
         self.selected_role = "host"
@@ -369,22 +381,19 @@ class LaunchDialog(QDialog):
         ):
             return False
         self._invite_input.clear()
+        candidate = deepcopy(self._settings)
         if isinstance(invitation, RemoteInvitation):
-            apply_remote_join_defaults(self._settings)
+            apply_remote_join_defaults(candidate)
             session_name = "Band Rehearsal"
         else:
-            apply_join_invite(self._settings, invitation)
+            apply_join_invite(candidate, invitation)
             session_name = invitation.session_name
-        try:
-            save_settings(self._settings)
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not save join invitation")
+        if not self._confirm_sound_setup(
+            candidate,
+            primary_action_label="Join Session",
+        ):
             self._pages.setCurrentWidget(self._join_page)
             self._invite_input.clear()
-            self._join_error.setText(
-                "WebJam couldn’t save that invite. Quit and reopen WebJam, then try again."
-            )
-            self._announce_error(self._join_error, focus=self._invite_input)
             self._restore_submission()
             return False
         self.selected_role = "join"

@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 from typing import Iterable, Mapping
 
 from core.session_transport import ConnectionQuality, TransportPath
@@ -349,13 +350,27 @@ class BandCheckSession:
             ),
             technical_details=facts,
         )
-        self.update_step(
-            BandCheckStepKey.RECORDING_PATH,
-            status=BandCheckStatus.PASS,
-            detail="WebJam created, finalized, reopened, and read the test file.",
-            next_action="",
-            technical_details=facts,
-        )
+        existing_recording_path = self.step(BandCheckStepKey.RECORDING_PATH)
+        if existing_recording_path.status is BandCheckStatus.WARNING:
+            # A successful five-second write proves this small file worked; it
+            # cannot erase a preflight warning that the available reserve is
+            # too small for a long rehearsal.
+            self.update_step(
+                BandCheckStepKey.RECORDING_PATH,
+                status=BandCheckStatus.WARNING,
+                detail=existing_recording_path.detail,
+                next_action=existing_recording_path.next_action,
+                technical_details=tuple(existing_recording_path.technical_details)
+                + facts,
+            )
+        else:
+            self.update_step(
+                BandCheckStepKey.RECORDING_PATH,
+                status=BandCheckStatus.PASS,
+                detail="WebJam created, finalized, reopened, and read the test file.",
+                next_action="",
+                technical_details=facts,
+            )
         self.update_step(
             BandCheckStepKey.STUDIO,
             status=BandCheckStatus.PASS,
@@ -818,6 +833,7 @@ def build_band_check_session(
     selected_input = _preflight_item(report, "Meter and local recording input")
     recorder = _preflight_item(report, "Host recorder")
     local_capture = _preflight_item(report, "Local stem recording")
+    recording_storage = _preflight_item(report, "Recording storage")
     webex = _preflight_item(report, "Webex companion")
     is_host = bool(getattr(settings, "host_server_enabled", False))
     probed_engine_version = (
@@ -925,14 +941,24 @@ def build_band_check_session(
     recording_problem = next(
         (
             item
-            for item in (local_capture, recorder)
+            for item in (local_capture, recording_storage, recorder)
             if item is not None and not item.ok and item.required
+        ),
+        None,
+    )
+    recording_warning = next(
+        (
+            item
+            for item in (local_capture, recording_storage, recorder)
+            if item is not None and bool(getattr(item, "warning", False))
         ),
         None,
     )
     recording_status = (
         BandCheckStatus.ACTION_NEEDED
         if recording_problem is not None
+        else BandCheckStatus.WARNING
+        if recording_warning is not None
         else BandCheckStatus.PENDING
     )
 
@@ -1039,18 +1065,20 @@ def build_band_check_session(
                 if mode is BandCheckMode.LIVE_OBSERVE
                 else "The configured recording path needs attention."
                 if recording_problem is not None
+                else getattr(recording_warning, "detail", "")
+                if recording_warning is not None
                 else "A real write, finalization, and reopen check runs with the five-second recording."
             ),
             (
                 ""
                 if mode is BandCheckMode.LIVE_OBSERVE
                 else "Recording Setup"
-                if recording_problem is not None
+                if recording_problem is not None or recording_warning is not None
                 else "Record 5 Seconds"
             ),
             tuple(
                 getattr(item, "detail", "")
-                for item in (local_capture, recorder)
+                for item in (local_capture, recording_storage, recorder)
                 if item is not None
             ),
             required=mode is BandCheckMode.PRE_SESSION,
@@ -1123,6 +1151,10 @@ class VerificationSignature:
     output_device_id: str = "system-default"
     audio_blocksize: int = 0
     recording_path_id: str = "unconfigured"
+    # A hash of the native Jamulus route selection/snapshot when macOS owns
+    # it. This stays separate from the PortAudio meter/capture identity above:
+    # neither one may stand in for the other.
+    jamulus_route_id: str = "system-controlled"
 
     def to_dict(self) -> dict:
         return {
@@ -1135,6 +1167,7 @@ class VerificationSignature:
             "output_device_id": self.output_device_id,
             "audio_blocksize": self.audio_blocksize,
             "recording_path_id": self.recording_path_id,
+            "jamulus_route_id": self.jamulus_route_id,
         }
 
     @classmethod
@@ -1152,6 +1185,9 @@ class VerificationSignature:
             output_device_id=str(value.get("output_device_id", "system-default")),
             audio_blocksize=int(value.get("audio_blocksize", 0)),
             recording_path_id=str(value.get("recording_path_id", "unconfigured")),
+            jamulus_route_id=str(
+                value.get("jamulus_route_id", "legacy-system-route")
+            ),
         )
 
 
@@ -1357,4 +1393,31 @@ def build_verification_signature(
         output_device_id=output_device_id,
         audio_blocksize=int(getattr(settings, "audio_blocksize", 0) or 0),
         recording_path_id=recording_path_id,
+        jamulus_route_id=_jamulus_route_signature(settings),
     )
+
+
+def _jamulus_route_signature(settings) -> str:
+    """Return a non-identifying value that invalidates stale band-route proof.
+
+    On macOS the Jamulus selector is based on CoreAudio identities, not the
+    PortAudio index used by WebJam's optional meter.  Hash the UIDs and current
+    defaults before storing the verification so they never appear in a public
+    diagnostic or in the verification file as raw hardware labels.
+    """
+
+    if sys.platform != "darwin":
+        return "system-controlled"
+    input_uid = str(getattr(settings, "jamulus_audio_input_uid", "") or "").strip()
+    output_uid = str(getattr(settings, "jamulus_audio_output_uid", "") or "").strip()
+    try:
+        from core.coreaudio_devices import scan_coreaudio_devices
+
+        scan = scan_coreaudio_devices()
+        if scan.available:
+            input_uid = input_uid or str(scan.default_input_uid or "")
+            output_uid = output_uid or str(scan.default_output_uid or "")
+    except Exception:  # noqa: BLE001 - verification remains conservative
+        pass
+    material = f"{input_uid}\x1f{output_uid}".encode("utf-8", "surrogatepass")
+    return "coreaudio:" + hashlib.sha256(material).hexdigest()

@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 from typing import Optional
 
-from PySide6.QtCore import Qt, QProcess, Signal
+from PySide6.QtCore import Qt, QProcess
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_routing import list_input_devices, list_output_devices
+from core.coreaudio_devices import CoreAudioScan, scan_coreaudio_devices
 from core.settings import AppSettings, save_settings
 from core.webex_url import normalize_webex_url, webex_url_error
 from webjam_qt.theme.tokens import Space
@@ -40,16 +41,20 @@ LOGGER = logging.getLogger("webjam.qt.simple_settings")
 class SimpleSettingsDialog(QDialog):
     """A compact setup page for choices the musician can actually make."""
 
-    band_check_requested = Signal()
-
     def __init__(
         self,
         settings: AppSettings,
         parent: Optional[QWidget] = None,
+        *,
+        primary_action_label: str = "Save",
+        show_band_check_action: bool = True,
     ) -> None:
         super().__init__(parent)
         # Keep edits isolated until the settings file is saved successfully.
         self._settings = deepcopy(settings)
+        self._native_jamulus_route = False
+        self._native_route_names: dict[str, str] = {}
+        self._run_band_check_after_save = False
         self.setObjectName("SimpleSettingsDialog")
         self.setWindowTitle("WebJam Settings")
         self.setModal(True)
@@ -87,32 +92,32 @@ class SimpleSettingsDialog(QDialog):
         root.addWidget(identity)
 
         audio = self._section("Audio")
-        input_label = self._field_label("Input for Band Check")
+        self._input_label = self._field_label("Band input")
         input_row = QHBoxLayout()
         self._input = QComboBox()
-        self._input.setAccessibleName("Input for Band Check")
+        self._input.setAccessibleName("Band audio input")
         input_row.addWidget(self._input, 1)
         refresh = QPushButton("Refresh")
         refresh.setObjectName("QuietButton")
         refresh.setAccessibleName("Refresh audio device list")
         refresh.clicked.connect(self._populate_audio_devices)
         input_row.addWidget(refresh)
-        audio.layout().addWidget(input_label)
+        audio.layout().addWidget(self._input_label)
         audio.layout().addLayout(input_row)
 
-        review_label = self._field_label("Review playback")
+        self._output_label = self._field_label("Band output & review")
         self._output = QComboBox()
-        self._output.setAccessibleName("Review playback output")
-        audio.layout().addWidget(review_label)
+        self._output.setAccessibleName("Band audio output and review playback")
+        audio.layout().addWidget(self._output_label)
         audio.layout().addWidget(self._output)
 
-        audio_note = QLabel(
-            "Live Jamulus output follows your Mac's audio device. Review playback "
-            "uses the choice above."
+        self._audio_note = QLabel(
+            "WebJam applies these choices to band audio when you start a new "
+            "session. Run Band Check and confirm you hear the band."
         )
-        audio_note.setObjectName("SimpleSettingsHint")
-        audio_note.setWordWrap(True)
-        audio.layout().addWidget(audio_note)
+        self._audio_note.setObjectName("SimpleSettingsHint")
+        self._audio_note.setWordWrap(True)
+        audio.layout().addWidget(self._audio_note)
         self._system_audio = QPushButton("Open Audio MIDI Setup")
         self._system_audio.setObjectName("QuietButton")
         self._system_audio.setAccessibleName("Open macOS Audio MIDI Setup")
@@ -161,19 +166,20 @@ class SimpleSettingsDialog(QDialog):
         self._populate_audio_devices()
 
         footer = QHBoxLayout()
-        band_check = QPushButton("Run Band Check")
-        band_check.setObjectName("GhostButton")
-        band_check.setAccessibleName("Close settings and run Band Check")
-        band_check.clicked.connect(self.band_check_requested.emit)
-        footer.addWidget(band_check)
+        if show_band_check_action:
+            band_check = QPushButton("Run Band Check")
+            band_check.setObjectName("GhostButton")
+            band_check.setAccessibleName("Save these settings and run Band Check")
+            band_check.clicked.connect(self._save_and_run_band_check)
+            footer.addWidget(band_check)
         footer.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("GhostButton")
         cancel.clicked.connect(self.reject)
-        save = QPushButton("Save")
+        save = QPushButton(primary_action_label)
         save.setObjectName("PrimaryButton")
         save.setDefault(True)
-        save.clicked.connect(self._save)
+        save.clicked.connect(self._save_and_accept)
         footer.addWidget(cancel)
         footer.addWidget(save)
         root.addLayout(footer)
@@ -207,7 +213,86 @@ class SimpleSettingsDialog(QDialog):
         return section
 
     def _populate_audio_devices(self) -> None:
-        """Refresh both simple, stable device selectors without changing drafts."""
+        """Refresh one simple input/output pair without changing drafts."""
+
+        scan = self._scan_native_jamulus_route()
+        if scan is not None:
+            self._populate_native_jamulus_route(scan)
+            self._clear_error()
+            return
+
+        self._populate_legacy_audio_choices()
+        self._clear_error()
+
+    def _scan_native_jamulus_route(self) -> CoreAudioScan | None:
+        """Use CoreAudio only when it can truthfully supply a complete pair."""
+
+        if sys.platform != "darwin":
+            return None
+        scan = scan_coreaudio_devices()
+        has_input = any(device.input_channels > 0 for device in scan.devices)
+        has_output = any(device.output_channels > 0 for device in scan.devices)
+        if not scan.available or not has_input or not has_output:
+            return None
+        return scan
+
+    def _populate_native_jamulus_route(self, scan: CoreAudioScan) -> None:
+        self._native_jamulus_route = True
+        self._native_route_names = {device.uid: device.name for device in scan.devices}
+        self._input_label.setText("Band input")
+        self._output_label.setText("Band output & review")
+        self._audio_note.setText(
+            "WebJam applies this pair to Jamulus when you start a new session. "
+            "Band Check still asks you to confirm you hear the band."
+        )
+
+        saved_input = self._input.currentData()
+        if saved_input is None:
+            saved_input = str(self._settings.jamulus_audio_input_uid or "")
+        self._input.blockSignals(True)
+        self._input.clear()
+        self._input.addItem("Mac default input", "")
+        for device in scan.devices:
+            if device.input_channels <= 0:
+                continue
+            suffix = f" · {device.input_channels} input"
+            suffix += "s" if device.input_channels != 1 else ""
+            self._input.addItem(device.name + suffix, device.uid)
+        index = self._input.findData(saved_input)
+        if index < 0 and saved_input:
+            self._input.addItem("Saved band input (unavailable)", saved_input)
+            index = self._input.count() - 1
+        self._input.setCurrentIndex(max(0, index))
+        self._input.blockSignals(False)
+
+        saved_output = self._output.currentData()
+        if saved_output is None:
+            saved_output = str(self._settings.jamulus_audio_output_uid or "")
+        self._output.blockSignals(True)
+        self._output.clear()
+        self._output.addItem("Mac default output", "")
+        for device in scan.devices:
+            if device.output_channels > 0:
+                self._output.addItem(device.name, device.uid)
+        index = self._output.findData(saved_output)
+        if index < 0 and saved_output:
+            self._output.addItem("Saved band output (unavailable)", saved_output)
+            index = self._output.count() - 1
+        self._output.setCurrentIndex(max(0, index))
+        self._output.blockSignals(False)
+
+    def _populate_legacy_audio_choices(self) -> None:
+        """Use the existing meter/review picker where CoreAudio has no pair."""
+
+        self._native_jamulus_route = False
+        self._native_route_names = {}
+        self._input_label.setText("Band input")
+        self._output_label.setText("Band output & review")
+        self._audio_note.setText(
+            "Connect a 48 kHz audio interface to choose the pair WebJam uses for "
+            "band audio. Until then, Band Check can only check this Mac's current "
+            "input and review playback."
+        )
 
         saved_input = self._input.currentData()
         if saved_input is None:
@@ -245,7 +330,6 @@ class SimpleSettingsDialog(QDialog):
             output_index = self._output.count() - 1
         self._output.setCurrentIndex(max(0, output_index))
         self._output.blockSignals(False)
-        self._clear_error()
 
     def _set_conversation_visible(self, visible: bool) -> None:
         self._conversation_body.setVisible(visible)
@@ -265,24 +349,55 @@ class SimpleSettingsDialog(QDialog):
         self._error.setText(message)
         self._error.setVisible(True)
 
-    def _save(self) -> None:
+    @property
+    def run_band_check_after_save(self) -> bool:
+        """Whether this accepted dialog should open Band Check immediately."""
+
+        return self._run_band_check_after_save
+
+    def _save_and_accept(self) -> None:
+        if self._save():
+            self.accept()
+
+    def _save_and_run_band_check(self) -> None:
+        """Persist this exact draft before testing it in Band Check."""
+
+        if self._save():
+            self._run_band_check_after_save = True
+            self.accept()
+
+    def _save(self) -> bool:
         name = self._name.text().strip() or default_musician_name(self._settings)
         video = normalize_webex_url(self._video.text())
         if video:
             error = webex_url_error(video)
             if error:
                 self._show_error(error)
-                return
+                return False
 
         input_device = self._input.currentData()
         if input_device is None:
             self._show_error("Choose an input, then save your setup.")
-            return
+            return False
         self._settings.musician_name = name
         self._settings.webex_url = video
         self._settings.webex_audio_mode = "talkback"
-        self._settings.audio_input_device_index = int(input_device)
-        self._settings.take_playback_output_device = str(self._output.currentData() or "")
+        if self._native_jamulus_route:
+            input_uid = str(input_device or "")
+            output_uid = str(self._output.currentData() or "")
+            self._settings.jamulus_audio_input_uid = input_uid
+            self._settings.jamulus_audio_output_uid = output_uid
+            input_name = self._native_route_names.get(input_uid, "")
+            output_name = self._native_route_names.get(output_uid, "")
+            self._settings.audio_input_device_index = self._matching_input_index(
+                input_name
+            )
+            self._settings.take_playback_output_device = output_name
+        else:
+            self._settings.audio_input_device_index = int(input_device)
+            self._settings.take_playback_output_device = str(
+                self._output.currentData() or ""
+            )
         try:
             save_settings(self._settings)
         except Exception as exc:  # noqa: BLE001
@@ -290,5 +405,19 @@ class SimpleSettingsDialog(QDialog):
             self._show_error(
                 "WebJam couldn't save these settings. Check folder access and try again."
             )
-            return
-        self.accept()
+            return False
+        return True
+
+    @staticmethod
+    def _matching_input_index(device_name: str) -> int:
+        """Best-effort meter/capture match; Jamulus itself uses the CoreAudio UID."""
+
+        if not device_name:
+            return -1
+        matches = [
+            int(device.get("index", -1))
+            for device in list_input_devices()
+            if str(device.get("name") or "").strip() == device_name
+            and int(device.get("index", -1)) >= 0
+        ]
+        return matches[0] if len(matches) == 1 else -1

@@ -202,12 +202,12 @@ def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
 def test_host_activation_is_guarded_against_duplicate_submission(tmp_path):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
-    with patch("webjam_qt.windows.launch_dialog.save_settings") as save, patch.object(
+    with patch.object(dialog, "_confirm_sound_setup", return_value=True) as confirm, patch.object(
         dialog, "accept"
     ) as accept:
         dialog._host()
         dialog._host()
-    save.assert_called_once()
+    confirm.assert_called_once()
     accept.assert_called_once()
     assert dialog.selected_role == "host"
     assert dialog._submitting is True
@@ -217,33 +217,23 @@ def test_host_activation_is_guarded_against_duplicate_submission(tmp_path):
 def test_join_activation_is_guarded_against_duplicate_submission(tmp_path):
     dialog = LaunchDialog(_settings(tmp_path))
     link = create_invite_link("192.168.1.42", session_name="Drummer Test")
-    with patch("webjam_qt.windows.launch_dialog.save_settings") as save, patch.object(
+    with patch.object(dialog, "_confirm_sound_setup", return_value=True) as confirm, patch.object(
         dialog, "accept"
     ) as accept:
         assert dialog.accept_invite(link) is True
         assert dialog.accept_invite(link) is False
-    save.assert_called_once()
+    confirm.assert_called_once()
     accept.assert_called_once()
     assert dialog.selected_role == "join"
     assert dialog._submitting is True
     _destroy(dialog)
 
 
-def test_host_save_failure_is_human_readable_and_recoverable(tmp_path):
+def test_host_canceled_sound_confirmation_is_recoverable(tmp_path):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
-    technical = "PermissionError errno=13 /Users/private/.webjam TOKEN=secret"
-    with patch(
-        "webjam_qt.windows.launch_dialog.save_settings",
-        side_effect=OSError(technical),
-    ):
+    with patch.object(dialog, "_confirm_sound_setup", return_value=False):
         dialog._host()
-    message = dialog._choice_error.text()
-    assert message
-    assert technical not in message
-    assert "/Users/" not in message
-    assert "errno" not in message.lower()
-    assert dialog._choice_error.accessibleDescription() == message
     assert dialog.selected_role == ""
     assert dialog._submitting is False
     assert dialog._host_button.isEnabled()

@@ -15,6 +15,7 @@ sends them to Jamulus via JSON-RPC (preferred) or UDP protocol (fallback).
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -277,6 +278,10 @@ class ApplicationController(QObject):
         self._wire_signals()
         self._bootstrap_ui()
         self._start_routing_scan()
+        # Give the visible shell one event-loop turn before surfacing any
+        # interrupted local recording or private evidence checkpoint.  The
+        # scan is bounded and never exposes a local path or journal payload.
+        QTimer.singleShot(0, self.recording.recover_interrupted_recordings)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -629,26 +634,39 @@ class ApplicationController(QObject):
                 return local
         return ""
 
-    def signal_peer_recording_started(self, take_id: str) -> None:
+    def signal_peer_recording_started(
+        self, take_id: str, *, started_utc: str = ""
+    ) -> None:
         if not self.host_peer.active:
             return
         try:
             self.host_peer.begin_take(
                 take_id,
-                started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                started_utc=(
+                    started_utc
+                    or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                ),
             )
         except Exception:  # noqa: BLE001
             LOGGER.exception("Could not publish confirmed recording start")
 
     def signal_peer_recording_stopped(
-        self, take_id: str, *, needs_attention: bool = False, message: str = ""
+        self,
+        take_id: str,
+        *,
+        stopped_utc: str = "",
+        needs_attention: bool = False,
+        message: str = "",
     ) -> None:
         if not self.host_peer.active:
             return
         try:
             self.host_peer.finish_take(
                 take_id,
-                stopped_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                stopped_utc=(
+                    stopped_utc
+                    or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                ),
                 needs_attention=needs_attention,
                 message=message,
             )
@@ -796,6 +814,30 @@ class ApplicationController(QObject):
                 "Ignored stale session lifecycle transition to %s",
                 phase.value,
             )
+        else:
+            # A recording manifest needs the same redacted lifecycle facts as
+            # the support timeline, but only the coordinator knows whether a
+            # server-confirmed take is actually active. Never hand it the raw
+            # caller reason; SessionLifecycle already bounded/redacted it.
+            recorder = getattr(self, "recording", None)
+            record_event = getattr(recorder, "record_lifecycle_event", None)
+            if callable(record_event):
+                try:
+                    recording_reason = re.sub(
+                        r"(?i)\bwebjam:(?://)?\[redacted\]",
+                        "private invite",
+                        lifecycle.snapshot.last_reason,
+                    )
+                    record_event(
+                        phase,
+                        reason=recording_reason,
+                        recovery_attempt=lifecycle.snapshot.recovery_attempt,
+                    )
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug(
+                        "Could not attach lifecycle evidence to active take",
+                        exc_info=True,
+                    )
         return accepted
 
     def _snapshot_participants(self) -> list:
@@ -3300,15 +3342,10 @@ class ApplicationController(QObject):
         # In-session reopen — skip the welcome page since the user already
         # knows what WebJam is and is here to change a specific setting.
         wizard = SimpleSettingsDialog(self.settings, parent=self.window)
-
-        def _open_band_check_from_settings() -> None:
-            wizard.reject()
-            QTimer.singleShot(0, self._on_ready_check)
-
-        wizard.band_check_requested.connect(_open_band_check_from_settings)
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
 
+            run_band_check = getattr(wizard, "run_band_check_after_save", False) is True
             reopen_band_check, reopen_start_when_ready = self._replace_settings_object(
                 load_settings(self.settings.config_file)
             )
@@ -3330,6 +3367,14 @@ class ApplicationController(QObject):
             self._reopen_invalidated_band_check(
                 reopen_band_check, reopen_start_when_ready
             )
+
+            if run_band_check:
+                self.window.flash_message(
+                    "Settings saved. Band Check is using this setup."
+                )
+                if not reopen_band_check:
+                    QTimer.singleShot(0, self._on_ready_check)
+                return
 
             # Build a context-aware confirmation message so the user knows
             # whether they need to take any action for the change to apply.

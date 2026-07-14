@@ -1,8 +1,11 @@
-# WebJam v0.11.0 UX acceptance checklist
+# WebJam UX acceptance checklist
 
-Use this checklist for the current Qt app. Setup Wizard, Ready Check, raw
+Use this checklist for the current Qt source candidate. The frozen v0.11.0
+package has its own test-night worksheet; its Host/Join path goes directly to
+Band Check and does not contain the source-only sound confirmation, CoreAudio
+route preflight, or recording-storage guard. Setup Wizard, Ready Check, raw
 endpoints, **Start Audio**, **Host & Start Audio**, and a visible Jamulus window
-are legacy paths, not v0.11.0 acceptance criteria.
+are legacy paths, not current acceptance criteria.
 
 ## Launch: understandable in five seconds
 
@@ -41,9 +44,9 @@ are legacy paths, not v0.11.0 acceptance criteria.
 
 ## Host and invitation
 
-- [ ] **Host a Jam** requires one click in the normal macOS build. A new or
-      changed setup opens Band Check first; **Start Session** then starts the
-      bundled server and client in the background.
+- [ ] **Host a Jam** opens one concise name and band-sound confirmation in the
+      current macOS source candidate. A new or changed setup then opens Band Check;
+      **Start Session** starts the bundled server and client in the background.
 - [ ] **Starting your jam…** is real lifecycle state, not a fake delay.
 - [ ] Copy Invite stays unavailable until the hosted service is alive and a
       usable same-LAN address exists.
@@ -64,10 +67,10 @@ are legacy paths, not v0.11.0 acceptance criteria.
 ## Join and connection truth
 
 - [ ] Cold-start link activation and paste-then-Join use the same strict
-      invitation parser, fill/accept the same connection, and proceed through
-      any required Band Check and **Start Session** before producing the same
-      session. An already-running deep link uses the same parser but honors the
-      current-session/active-take guard before switching.
+      invitation parser, fill/accept the same connection, and—in the current
+      source candidate—show the same concise sound confirmation before Band
+      Check and **Start Session**. An already-running deep link uses the same
+      parser but honors the current-session/active-take guard before switching.
 - [ ] A malformed or ambiguous invite is rejected in the Join window. A stale
       or unreachable invite becomes **This jam isn’t available** with a plain
       request to confirm the host and resend it.
@@ -99,22 +102,37 @@ are legacy paths, not v0.11.0 acceptance criteria.
       depending on meter color.
 - [ ] Secondary features—Notes, Multitrack Studio, optional conversation,
       Settings, and Band Check—remain under **More**.
+- [ ] Current-source Settings exposes display name, **Band input**, **Band
+      output & review**, and an optional conversation link. On macOS it says
+      the pair is staged for the next Jamulus session, never that a musician
+      has already heard it.
 
 ## Permission and error states
 
-- [ ] After Host/Join on a new or changed setup, plus F2, **More → Band Check**,
-      and **Settings → Run Band Check**, the same guided readiness flow opens.
-      During a live jam it observes the running session without opening a
-      second device or restarting services.
+- [ ] In the current source candidate, Host/Join on a new or changed setup
+      first shows the concise sound confirmation, then Band Check; F2, **More
+      → Band Check**, and **Settings → Run Band Check** open the same guided
+      readiness flow. During a live jam it observes the running session without
+      opening a second device or restarting services.
 - [ ] Band Check reports **Ready to Jam**, **Ready with a Warning**, or
       **Action Needed** in words and keeps technical detail collapsed by
       default.
+- [ ] In a freshly built candidate containing the storage guard, an unusable
+      folder or dangerously low free space reports one corrective action and
+      starts neither local capture nor the server recorder. Low storage renders
+      a warning; it is not a claim that a long rehearsal is safe. This check is
+      not applicable to the frozen v0.11.0 ZIP, which predates the guard.
 - [ ] Before the first macOS microphone prompt, WebJam explains why access is
       needed and offers **Continue**.
 - [ ] A denied or restricted microphone permission shows **Microphone access is
       off** with one **Open System Settings** action.
 - [ ] After opening settings, WebJam explains how to return and offers **Try
       Again**. The user is not sent to an unrelated preferences form.
+- [ ] In the current source candidate, a missing, ambiguous, or non-48-kHz
+      selected macOS band device blocks client/server launch before any external
+      process starts, gives one safe correction path, and never exposes a raw
+      path or CoreAudio error. An automatic reconnect never silently chooses a
+      newly changed default route.
 - [ ] **Connection interrupted** clears stale participant/audio truth, announces
       that recovery is in progress, and restores readiness only after real
       reconnection evidence.
@@ -137,8 +155,9 @@ are legacy paths, not v0.11.0 acceptance criteria.
 - [ ] Studio Recording Setup clearly separates automatic per-musician server
       tracks from optional inputs 1 and 2 kept locally on this Mac. Either host
       or an active-v2 guest can explicitly opt in; only the host controls the
-      shared take, and explicit capture/output choices persist. A v1 guest sees
-      no false local-capture claim.
+      shared take, and explicit capture/output choices persist. The Takes
+      folder is chosen before a session and remains fixed while it is running.
+      A v1 guest sees no false local-capture claim.
 - [ ] An opted-in guest keeps recording through a peer-control outage and later
       transfers a size/SHA/PCM-verified copy without moving or deleting the
       guest original.

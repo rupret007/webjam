@@ -309,6 +309,8 @@ class HostPeerSession:
             Participant,
             ProjectStatus,
             ProjectTrack,
+            RecoveryStatus,
+            SessionTimelineEvent,
             SourceQuality,
             SourceType,
             load_take_project,
@@ -485,18 +487,49 @@ class HostPeerSession:
         base_errors = tuple(
             item for item in project.errors if not item.startswith(_TRANSFER_ERROR_PREFIX)
         )
+        had_transfer_attention = any(
+            item.startswith(_TRANSFER_ERROR_PREFIX) for item in project.errors
+        )
         errors = tuple(dict.fromkeys((*base_errors, *transfer_errors)))
         status = project.status
         if errors:
             status = ProjectStatus.NEEDS_ATTENTION
         elif not base_errors and status is ProjectStatus.NEEDS_ATTENTION:
             status = ProjectStatus.COMPLETE
+        evidence = project.session_evidence
+        if had_transfer_attention and not transfer_errors:
+            timeline = list(evidence.timeline)
+            recovered_event = SessionTimelineEvent(
+                "peer_original_recovered",
+                occurred_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                detail="A verified guest local original arrived after take validation.",
+            )
+            if recovered_event not in timeline:
+                timeline.append(recovered_event)
+            recovery_status = evidence.recovery_status
+            if recovery_status is not RecoveryStatus.NEEDS_ATTENTION:
+                recovery_status = RecoveryStatus.RECOVERED
+            recovery_notes = tuple(
+                dict.fromkeys(
+                    (
+                        *evidence.recovery_notes,
+                        "A verified guest local original arrived after take validation.",
+                    )
+                )
+            )
+            evidence = replace(
+                evidence,
+                recovery_status=recovery_status,
+                recovery_notes=recovery_notes,
+                timeline=tuple(timeline),
+            )
         updated = replace(
             project,
             status=status,
             participants=tuple(participants.values()),
             tracks=tuple(tracks_by_id.values()),
             errors=errors,
+            session_evidence=evidence,
             revision=project.revision + 1,
         )
         # Avoid rewriting the manifest every maintenance tick if truth did not change.

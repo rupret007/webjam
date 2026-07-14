@@ -161,6 +161,15 @@ def test_coreaudio_uses_display_pair_only_as_selector_and_writes_exact_maps() ->
         _mac_profile(input_device_name="Interface/Input")
 
 
+def test_macos_launch_uses_only_the_owned_inifile_name() -> None:
+    adapter = Jamulus3122AudioRouteAdapter()
+
+    assert adapter.launch_arguments(
+        _mac_profile(),
+        Path("/Users/tester/Library/Containers/app.jamulussoftware.Jamulus/Data/.config/Jamulus/WebJam-route-v1.ini"),
+    ) == ("--inifile", "WebJam-route-v1.ini")
+
+
 def test_windows_requires_one_asio_identity_and_uses_its_driver_name() -> None:
     adapter = Jamulus3122AudioRouteAdapter()
     profile = _windows_profile()

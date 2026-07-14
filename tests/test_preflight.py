@@ -46,6 +46,22 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("✓", rep.to_text())
         self.assertIn("ready to jam", rep.to_text())
 
+    def test_report_text_marks_a_nonblocking_warning(self):
+        report = preflight.ReadyCheckReport(
+            [
+                preflight.CheckItem("Engine", True),
+                preflight.CheckItem(
+                    "Recording storage",
+                    True,
+                    "Running low",
+                    warning=True,
+                ),
+            ]
+        )
+        self.assertTrue(report.all_ok)
+        self.assertIn("! Recording storage", report.to_text())
+        self.assertIn("Ready with a warning", report.to_text())
+
     def test_jamulus_missing(self):
         s = _settings(jamulus_candidates=["/nope/Jamulus"])
         with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):

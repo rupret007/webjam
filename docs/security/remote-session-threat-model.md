@@ -289,7 +289,11 @@ updated measurements and threat-model review. Starting bounds are:
 | Control queue / media flow window | 1 MiB / 4 MiB |
 | Media chunk / concurrent media streams | 256 KiB / 1 per peer |
 | Segment / session media | 8 GiB / 20 GiB |
-| Host free-space reserve | greater of 2 GiB or 10% |
+| Host free-space reserve | Future-v3 service policy: greater of 2 GiB or 10% |
+
+The host-reserve row is a future-v3 service policy, not the current v1/v2
+local-recording guard. The current source calculates a conservative PCM24
+reserve from the session roster, with a 1-GiB minimum and 5-GiB warning floor.
 
 The maximum Jamulus payload is fixed only after real 3.12.2 capture proves the
 bound against negotiated QUIC DATAGRAM capacity. Packet/byte rates, burst

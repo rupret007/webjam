@@ -22,6 +22,7 @@ class CheckItem:
     detail: str = ""
     required: bool = True
     manual_verification: bool = False
+    warning: bool = False
 
 
 @dataclass
@@ -52,6 +53,9 @@ class ReadyCheckReport:
         lines = ["Band Check"]
         for i in self.items:
             mark = (
+                "!"
+                if i.warning
+                else
                 "✓"
                 if i.ok
                 else "□"
@@ -69,6 +73,10 @@ class ReadyCheckReport:
             lines.append(
                 "Automated checks passed; confirm "
                 f"{self.pending_manual_count} Webex settings."
+            )
+        elif any(item.warning for item in self.items):
+            lines.append(
+                "Ready with a warning; review the marked item before a long rehearsal."
             )
         else:
             lines.append(
@@ -215,6 +223,37 @@ def _check_local_capture(settings) -> CheckItem | None:
             "Local stem recording", False, f"audio file support is unavailable: {exc}"
         )
     return CheckItem("Local stem recording", True, f"48 kHz stems · {takes}")
+
+
+def _check_recording_storage(settings) -> CheckItem | None:
+    """Refuse a new host/local take before storage becomes a silent failure."""
+
+    host = bool(getattr(settings, "host_server_enabled", False))
+    local_originals = bool(getattr(settings, "local_capture_enabled", False))
+    if not host and not local_originals:
+        return None
+    takes, takes_error = _ensure_takes_dir(settings)
+    if takes_error:
+        return CheckItem("Recording storage", False, takes_error)
+    from core.recording_readiness import (
+        RecordingStorageStatus,
+        check_recording_storage,
+    )
+
+    result = check_recording_storage(
+        takes,
+        # A Band Check cannot yet know the live roster. Use two server tracks
+        # as the smallest real band and let Record re-evaluate against it.
+        expected_server_tracks=2 if host else 1,
+        local_originals_enabled=local_originals,
+    )
+    return CheckItem(
+        "Recording storage",
+        result.can_start,
+        result.detail,
+        required=host or local_originals,
+        warning=result.status is RecordingStorageStatus.WARNING,
+    )
 
 
 def _manual_item(name: str, detail: str) -> CheckItem:
@@ -433,6 +472,9 @@ def run_ready_check(settings) -> ReadyCheckReport:
     local_capture = _check_local_capture(settings)
     if local_capture is not None:
         items.insert(-2, local_capture)
+    recording_storage = _check_recording_storage(settings)
+    if recording_storage is not None:
+        items.insert(-2, recording_storage)
     if webex.ok:
         items.extend(_webex_manual_checks(settings))
     return ReadyCheckReport(items=items)

@@ -12,6 +12,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -28,11 +29,19 @@ from core.settings import AppSettings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import LaunchDialog
 from webjam_qt.windows.launch_dialog import apply_join_invite
+from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
 
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
+
+
+def _save_confirmed_sound_setup(candidate: AppSettings, **_kwargs) -> bool:
+    """Stand in for the short launch sound dialog in launch-flow tests."""
+
+    save_settings(candidate)
+    return True
 
 
 def test_invite_link_round_trip_contains_only_public_connection_data():
@@ -84,12 +93,18 @@ def test_launch_initially_shows_only_host_and_join_actions(qapp, tmp_path):
     dialog.close()
 
 
-def test_host_is_one_click_and_derives_every_technical_default(qapp, tmp_path):
+def test_host_confirms_sound_setup_and_derives_every_technical_default(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-        dialog._host_button.click()
+        with patch.object(
+            dialog,
+            "_confirm_sound_setup",
+            side_effect=_save_confirmed_sound_setup,
+        ) as confirm:
+            dialog._host_button.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
+    assert confirm.call_args.kwargs["primary_action_label"] == "Continue to Band Check"
     assert dialog.selected_role == "host"
     assert data["host_server_enabled"] is True
     assert data["jamulus_server"] == "127.0.0.1"
@@ -97,6 +112,26 @@ def test_host_is_one_click_and_derives_every_technical_default(qapp, tmp_path):
     assert data["audio_input_device_index"] == -1
     assert data["local_capture_enabled"] is False
     assert data["musician_name"] != "WebJam Musician"
+
+
+def test_host_real_sound_confirmation_saves_before_leaving_launch(qapp, tmp_path):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+
+    def accept_sound_setup() -> None:
+        setup = dialog.findChild(SimpleSettingsDialog)
+        assert setup is not None
+        setup._name.setText("Host Guitar")
+        setup._save_and_accept()
+
+    QTimer.singleShot(0, accept_sound_setup)
+    dialog._host()
+
+    saved = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
+    assert dialog.selected_role == "host"
+    assert saved["musician_name"] == "Host Guitar"
+    assert saved["host_server_enabled"] is True
 
 
 def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
@@ -108,7 +143,12 @@ def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
     )
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-        dialog._host_button.click()
+        with patch.object(
+            dialog,
+            "_confirm_sound_setup",
+            side_effect=_save_confirmed_sound_setup,
+        ):
+            dialog._host_button.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
     assert data["local_capture_enabled"] is True
     assert data["audio_input_device_index"] == 7
@@ -129,7 +169,7 @@ def test_join_preserves_explicit_local_original_recording_preference(tmp_path):
     assert settings.audio_input_device_index == 7
 
 
-def test_join_asks_for_one_link_and_applies_it(qapp, tmp_path):
+def test_join_asks_for_one_link_then_confirms_sound_setup(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     dialog = LaunchDialog(settings)
     dialog.show_join()
@@ -146,8 +186,14 @@ def test_join_asks_for_one_link_and_applies_it(qapp, tmp_path):
             "192.168.1.42", session_name="Drummer Test"
         )
     )
-    dialog._join_button_primary.click()
+    with patch.object(
+        dialog,
+        "_confirm_sound_setup",
+        side_effect=_save_confirmed_sound_setup,
+    ) as confirm:
+        dialog._join_button_primary.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
+    assert confirm.call_args.kwargs["primary_action_label"] == "Join Session"
     assert dialog.selected_role == "join"
     assert dialog.session_name == "Drummer Test"
     assert data["host_server_enabled"] is False

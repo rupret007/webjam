@@ -713,7 +713,7 @@ class BandCheckDialog(QDialog):
                 valid=False,
                 detail=(
                     "WebJam can't write the recording folder. Choose another "
-                    "Takes folder in Settings, then try again."
+                    "Takes folder in Recording Setup, then try again."
                 ),
             )
             session.update_step(

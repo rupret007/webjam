@@ -1,16 +1,25 @@
 # WebJam — Quick Start
 
-WebJam is designed around three simple moves:
+WebJam is designed around four short moves:
 
-**Host or Join. Band Check. Play.**
+**Host or Join. Confirm your sound. Band Check. Play.**
 
-Musicians do not configure servers, ports, recording folders, virtual audio
-devices, or routing modes. WebJam starts the bundled music engine, chooses the
-safe defaults, and keeps the technical details out of the rehearsal.
+Musicians do not configure servers, ports, virtual audio devices, or routing
+modes. WebJam starts the bundled music engine and keeps technical details out of
+the rehearsal. In current macOS source, the two Settings choices—**Band input**
+and **Band output & review**—are the Jamulus route WebJam stages for the next
+session. WebJam still asks musicians to confirm what they hear.
 
 The private v0.11.0 candidate is deliberately spare: a black and white session with burnt
 orange reserved for the next important action. Host and Join are the only
 choices at launch.
+
+> **Artifact scope:** The frozen
+> `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip` package built from `1a03927`
+> remains tonight's test artifact. It goes directly from Host/Join to Band
+> Check; the short sound-confirmation screen, CoreAudio route preflight, and
+> recording-storage guard below are current-source behavior only until a new
+> package is built and tested.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed
@@ -28,8 +37,9 @@ BlackHole, VB-CABLE, and Webex are not required to start playing.
 
 ## Band Check
 
-For a new or changed setup, choosing **Host a Jam** or accepting an invite opens
-Band Check before the music session starts. It walks each musician through the
+In current source, a new or changed setup opens one short screen to confirm
+your name, **Band input**, and **Band output & review** before Band Check. The
+frozen v0.11 app opens Band Check directly. Band Check walks each musician through the
 local input meter, left/right headphones, a five-second recording, and playback, then says
 **Ready to Jam**, **Ready with a Warning**, or **Action Needed**. Press `F2` to
 run it again. A passing local meter is useful, but only your bandmate's ears
@@ -39,7 +49,9 @@ prove the live Jamulus route.
 
 1. Open WebJam.
 2. Click **Host a Jam**.
-3. Complete Band Check if WebJam asks, then choose **Start Session**. If macOS
+3. In current source, confirm your name and band sound; in the frozen v0.11
+   app, continue directly to Band Check. Complete Band Check and choose
+   **Start Session**. If macOS
    asks for microphone access, allow it. If access was previously
    denied, use WebJam's **Open System Settings** action, allow access, return,
    and choose **Try Again**.
@@ -63,14 +75,18 @@ Preferred:
 
 1. Open the host's invite link.
 2. WebJam launches and fills in and accepts the connection.
-3. Complete Band Check if WebJam asks, then choose **Start Session**.
+3. In current source, confirm your name and band sound; in the frozen v0.11
+   app, continue directly to Band Check. Complete Band Check and choose
+   **Start Session**.
 
 Manual fallback:
 
 1. Open WebJam and click **Join a Jam**.
 2. Paste the invite link.
 3. Click **Join Jam**.
-4. Complete Band Check if WebJam asks, then choose **Start Session**.
+4. In current source, confirm your name and band sound; in the frozen v0.11
+   app, continue directly to Band Check. Complete Band Check and choose
+   **Start Session**.
 
 ## Know when it is working
 
@@ -94,6 +110,12 @@ The host can click **Record** in the bottom control bar. The host server records
 one synchronized track per connected musician. Open **More → Multitrack
 Studio** to see live lanes and completed takes with waveform playback,
 scrubbing, selectable headphone output, gain, pan, mute, and solo.
+
+For the frozen test-night ZIP, check that the selected drive has enough free
+space before you start the session. If you need a different Takes folder, choose
+it before starting the jam; a running session does not allow the folder to
+change. The source-only guard noted above will block an unsafe start and warn
+about low space only after it is shipped in a new candidate.
 
 In Studio, **Recording Setup** can optionally keep this Mac's first two
 interface inputs as separate PCM24/48-kHz originals. The host can opt in; a
@@ -120,16 +142,18 @@ Everything that is not required to play is under **More**:
 - Session Notes
 - Multitrack Studio
 - Add Video or Conversation
-- Settings (name, Band Check input, review playback, and an optional
-  conversation link)
+- Settings (in current source: name, Band input, Band output & review, and an
+  optional conversation link; in frozen v0.11: name and optional conversation)
 - Band Check
 
 Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
 
-Choose the interface WebJam listens to in **Settings**. Choose **Review
-playback** there for Studio and Band Check playback; your live Jamulus output
-continues to follow macOS Audio MIDI Setup.
+Choose **Band input** and **Band output & review** in **Settings** before a
+session. Current macOS source verifies a unique 48-kHz CoreAudio pair and uses
+it to stage Jamulus; the review choice follows the selected output. A moving
+local meter still is not proof that your bandmate hears you. The frozen v0.11
+test-night ZIP predates this source-only routing behavior.
 
 ## End the jam
 

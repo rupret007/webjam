@@ -205,6 +205,44 @@ def test_build_maps_preflight_and_omits_webex_when_unconfigured() -> None:
     assert "Reachability is checked" in guest_server.detail
 
 
+def test_storage_warning_is_visible_without_blocking_band_check() -> None:
+    report = ReadyCheckReport(
+        [
+            CheckItem("Jamulus installed", True, "/bundled/Jamulus"),
+            CheckItem("Jamulus server set", True, "band:22124"),
+            CheckItem("Meter and local recording input", True, "Interface"),
+            CheckItem(
+                "Recording storage",
+                True,
+                "Recording storage is running low.",
+                warning=True,
+            ),
+            CheckItem("Host recorder", True, "not configured", required=False),
+        ]
+    )
+    settings = SimpleNamespace(host_server_enabled=False, webex_url="")
+    with (
+        mock.patch("core.preflight.run_ready_check", return_value=report),
+        mock.patch("core.band_check.music_engine_version", return_value="3.12.2"),
+    ):
+        session = build_band_check_session(settings)
+
+    storage = session.step(BandCheckStepKey.RECORDING_PATH)
+    assert storage.status is BandCheckStatus.WARNING
+    assert storage.detail == "Recording storage is running low."
+    assert storage.next_action == "Recording Setup"
+    session.mark_scratch_recording(
+        valid=True,
+        duration_s=5.0,
+        sample_rate=48_000,
+        channels=1,
+        has_signal=True,
+    )
+    storage = session.step(BandCheckStepKey.RECORDING_PATH)
+    assert storage.status is BandCheckStatus.WARNING
+    assert storage.detail == "Recording storage is running low."
+
+
 def test_music_engine_must_launch_exact_compatible_version() -> None:
     report = ReadyCheckReport(
         [
@@ -562,3 +600,48 @@ def test_signature_invalidates_changed_recording_path_or_output_topology(
 
     assert unplugged.output_device_id == "unavailable:SSL 2+"
     assert unplugged != original
+
+
+def test_signature_hashes_the_macos_jamulus_route_separately_from_portaudio(
+    tmp_path: Path,
+) -> None:
+    settings = SimpleNamespace(
+        audio_input_device_index=0,
+        audio_samplerate=48_000,
+        audio_blocksize=0,
+        local_capture_enabled=False,
+        host_server_enabled=False,
+        take_playback_output_device="SSL 2+",
+        takes_directory=str(tmp_path / "takes"),
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_audio_input_uid="coreaudio-input-a",
+        jamulus_audio_output_uid="coreaudio-output-a",
+    )
+
+    def device(_device, kind):
+        return {
+            "name": "SSL 2+",
+            "max_output_channels": 2 if kind == "output" else 0,
+        }
+
+    with mock.patch("core.band_check.sys.platform", "darwin"), mock.patch(
+        "sounddevice.query_devices", side_effect=device
+    ), mock.patch(
+        "core.coreaudio_devices.scan_coreaudio_devices",
+        side_effect=RuntimeError("hardware not available to this test"),
+    ):
+        original = build_verification_signature(
+            settings,
+            app_version="1.0.0",
+            engine_version="3.12.2",
+        )
+        settings.jamulus_audio_output_uid = "coreaudio-output-b"
+        changed = build_verification_signature(
+            settings,
+            app_version="1.0.0",
+            engine_version="3.12.2",
+        )
+
+    assert original.input_device_id == changed.input_device_id
+    assert original.jamulus_route_id.startswith("coreaudio:")
+    assert original.jamulus_route_id != changed.jamulus_route_id

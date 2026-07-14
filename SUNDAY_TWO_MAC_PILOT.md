@@ -28,12 +28,22 @@ Fill this in before opening either app. Do not invent or copy an old hash.
 Both Macs must use the same artifact hash. If either filename/hash differs,
 stop and replace it before testing.
 
+> **Artifact boundary:** This exact ZIP predates the source-only
+> recording-storage guard. Do not record a PASS for an app-level storage block
+> or warning in this worksheet; a rebuilt candidate needs its own exact hash and
+> physical run.
+
 ## Know what this test proves
 
 - Jamulus carries the live music. WebJam starts it, but WebJam's local input
   meter and isolated recorder open a **separate PortAudio/Core Audio stream**.
   A passing meter does not prove Jamulus chose the same device. Your ears and
   the resulting track inventory must prove the real route.
+- A rebuilt candidate from current source adds **Band input** and **Band output
+  & review**. Before launch it resolves their stable CoreAudio UIDs, rejects an
+  ambiguous or non-48-kHz pair, and stages a WebJam-owned Jamulus config. That
+  is still configuration/preflight evidence, not audibility. Do not record this
+  behavior for the exact frozen v0.11 ZIP above.
 - Webex is optional for video/conversation. Keep its microphone muted while
   playing so it does not add a delayed copy of the music.
 - Guest isolated-original delivery uses authenticated plain HTTP on the same
@@ -163,7 +173,13 @@ section.
   shareable two-channel 48-kHz input.
 - [ ] If an interface has only one meaningful source, record which input is
   expected to be silent; do not mislabel that lane as another source.
+- [ ] Before starting the session, manually confirm enough free storage on the
+  selected Takes drive for this test and record the amount below. This frozen
+  artifact predates the app-level storage guard, so do not claim an automated
+  block or warning from this run.
 - [ ] Start one take on the host. Wait until recording is confirmed.
+
+- Host free storage before take: ___________________________________________
 - [ ] Play a short identifiable phrase on each source and say “before outage.”
 - [ ] While recording, turn Wi-Fi off on the bandmate Mac for 10–15 seconds.
 - [ ] WebJam shows an interruption/reconnect state instead of stale readiness.

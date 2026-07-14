@@ -22,13 +22,28 @@ import re
 import time
 import uuid
 import wave
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from core.take_project import SessionEvidence
 
 _logger = logging.getLogger("webjam.take_library")
 
 _AUDIO_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif"}
+
+
+def _is_visible_take_directory(path: Path) -> bool:
+    """Return whether an immediate child may represent a musician-facing take.
+
+    The Takes root also holds private WebJam working folders: local-capture
+    recovery, export staging, and the in-progress recording-evidence journal.
+    None is a Jamulus take, and choosing one by mtime can hide the real server
+    folder immediately after Record stops.  Keep this boundary name-based and
+    dependency-free so discovery and the recorder snapshot agree.
+    """
+    return not path.name.startswith(".") and path.is_dir()
 
 
 @dataclass
@@ -149,7 +164,7 @@ def snapshot_take_directories(root: str | Path) -> dict[Path, int]:
         return {
             child: child.stat().st_mtime_ns
             for child in path.iterdir()
-            if child.is_dir()
+            if _is_visible_take_directory(child)
         }
     except OSError:
         return {}
@@ -161,7 +176,7 @@ def find_changed_take(root: str | Path, before: dict[Path, int]) -> Optional[Pat
     candidates: list[tuple[int, Path]] = []
     try:
         for child in path.iterdir():
-            if not child.is_dir():
+            if not _is_visible_take_directory(child):
                 continue
             stamp = child.stat().st_mtime_ns
             if child not in before or stamp > before[child]:
@@ -413,6 +428,7 @@ def write_take_manifest(
     local_participant_id: str = "", local_participant_name: str = "Host",
     capture_device=None, capture_gaps: tuple[object, ...] = (),
     local_total_frames: int = 0,
+    session_evidence: "SessionEvidence | None" = None,
 ) -> TakeValidationResult:
     """Validate a take and atomically publish schema-v2 project truth.
 
@@ -430,6 +446,8 @@ def write_take_manifest(
         Participant,
         ProjectStatus,
         ProjectTrack,
+        SessionEvidence,
+        SessionTimelineEvent,
         SourceQuality,
         SourceType,
         TakeProject,
@@ -439,6 +457,15 @@ def write_take_manifest(
 
     path = Path(take_dir)
     offset_s, confidence = estimate_local_alignment(path)
+    if session_evidence is None:
+        final_session_evidence = SessionEvidence()
+    elif isinstance(session_evidence, SessionEvidence):
+        # It is deliberately copied below rather than mutated: callers may
+        # retain the evidence object while the writer adds file-backed facts.
+        final_session_evidence = session_evidence
+    else:
+        raise TypeError("session_evidence must be a SessionEvidence instance.")
+
     # Write a preliminary manifest so load_take can classify supplemental files.
     manifest_path = path / "webjam-take.json"
     preliminary = {
@@ -467,6 +494,11 @@ def write_take_manifest(
             for p in sorted(path.glob("*.wav"))
         ],
     }
+    if not final_session_evidence.is_empty:
+        # A crash before final classification still leaves bounded recording
+        # provenance beside the source media. This is a receipt, not a claim
+        # that the incomplete folder has become a verified project.
+        preliminary["session"] = final_session_evidence.to_dict()
     atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
     result = validate_take(
         path, expected_tracks=expected_tracks + required_local_stems,
@@ -617,16 +649,57 @@ def write_take_manifest(
             ),
         ))
 
+    # A host can be a durable session participant even when this take has no
+    # host-owned stem (for example, a host records only the server mix).
+    # Keep that identity in the manifest so session evidence never points at
+    # an unresolvable participant.
+    if final_session_evidence.host.participant_id:
+        participants_by_id.setdefault(
+            final_session_evidence.host.participant_id,
+            Participant(
+                final_session_evidence.host.participant_id,
+                final_session_evidence.host.display_name or "Host",
+            ),
+        )
+
     errors = list(dict.fromkeys(errors))
+    project_sample_rate = next(
+        (item.primary_segment.sample_rate for item in project_tracks), 48000
+    )
+
+    # Segment gaps remain the source-of-truth, frame-exact records.  The
+    # timeline adds a human-reviewable, project-time index without inventing
+    # a wall-clock timestamp or changing any source audio.
+    timeline = list(final_session_evidence.timeline)
+    for project_track in project_tracks:
+        for segment in project_track.segments:
+            for gap in segment.gaps:
+                event = SessionTimelineEvent(
+                    event="media_gap",
+                    at_s=(
+                        segment.project_start_frame / project_sample_rate
+                        + gap.start_frame / segment.sample_rate
+                    ),
+                    participant_id=project_track.participant_id or "",
+                    detail=(
+                        f"Segment {segment.segment_id}: {gap.frame_count} source "
+                        f"frames unavailable ({gap.reason})."
+                    ),
+                )
+                if event not in timeline:
+                    timeline.append(event)
+    final_session_evidence = replace(
+        final_session_evidence,
+        timeline=tuple(timeline),
+    )
+
     project = TakeProject(
         session_id=stable_session_id,
         take_id=stable_take_id,
         session_title=str(session_title or "").strip(),
         take_name=path.name or "Take",
         status=ProjectStatus.COMPLETE if not errors else ProjectStatus.NEEDS_ATTENTION,
-        project_sample_rate=next(
-            (item.primary_segment.sample_rate for item in project_tracks), 48000
-        ),
+        project_sample_rate=project_sample_rate,
         participants=tuple(participants_by_id.values()),
         tracks=tuple(project_tracks),
         app_version=app_version,
@@ -634,6 +707,7 @@ def write_take_manifest(
         devices=(capture_device,) if capture_device is not None else (),
         errors=tuple(errors),
         warnings=result.warnings,
+        session_evidence=final_session_evidence,
     )
     write_take_project(path, project)
     loaded = load_take(path)
@@ -1117,7 +1191,7 @@ def discover_takes(root: str | Path) -> List[TakeInfo]:
         if direct is not None:
             takes.append(direct)
         for child in root.iterdir():
-            if child.is_dir():
+            if _is_visible_take_directory(child):
                 take = load_take(child)
                 if take is not None:
                     takes.append(take)

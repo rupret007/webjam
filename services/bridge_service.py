@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -9,6 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 from webex_integration import WebexLaunchState
+from core.macos_audio_route import (
+    JamulusAudioRouteError,
+    MacOSJamulusRouteManager,
+)
+from core.settings import AppSettings
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
@@ -199,6 +205,15 @@ class BridgeService:
         # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
         # cannot race the old process's port release.
         self._jamulus_lifecycle_lock = threading.Lock()
+        # A macOS route is frozen for the client lifecycle.  An automatic
+        # reconnect may revalidate that same CoreAudio UID pair, but it never
+        # silently swaps to whatever device happened to become the new default.
+        self._active_audio_route = None
+        self._audio_route_manager = (
+            MacOSJamulusRouteManager()
+            if sys.platform == "darwin" and isinstance(settings, AppSettings)
+            else None
+        )
 
         # Practice mode: a private Jamulus server on this machine so a
         # musician can validate audio routing and hear themselves with zero
@@ -253,6 +268,17 @@ class BridgeService:
     def _hosting_enabled(self) -> bool:
         """Return the concrete persisted hosting flag, never truthy sentinels."""
         return getattr(self.settings, "host_server_enabled", False) is True
+
+    def _set_live_audio_route_owned(self, owned: bool) -> None:
+        """Keep WebJam's optional PortAudio meter off a Jamulus-owned route."""
+
+        setter = getattr(self.jamulus_controller, "set_live_audio_route_owned", None)
+        if not callable(setter):
+            return
+        try:
+            setter(bool(owned))
+        except Exception as exc:  # noqa: BLE001 - monitoring must not block music
+            LOGGER.debug("Could not update local-meter route ownership: %s", exc)
 
     @property
     def remote_host_mode_enabled(self) -> bool:
@@ -553,6 +579,30 @@ class BridgeService:
                             self.jamulus_reconnect_inflight = False
                         return
 
+                    audio_route = None
+                    if self._audio_route_manager is not None:
+                        if reconnect:
+                            audio_route = self._active_audio_route
+                            if audio_route is None:
+                                raise JamulusAudioRouteError(
+                                    "Your band audio route needs a fresh start. End "
+                                    "this session, then start it again."
+                                )
+                            self._audio_route_manager.validate_active(audio_route)
+                        else:
+                            audio_route = self._audio_route_manager.prepare(
+                                self.settings,
+                                jamulus_path,
+                            )
+                            self._active_audio_route = audio_route
+                        # Jamulus now owns the live input/output pair. The
+                        # optional PortAudio meter still supports Band Check
+                        # before launch, but it must not contend with the
+                        # performance route during a session.
+                        self._set_live_audio_route_owned(True)
+                    else:
+                        self._set_live_audio_route_owned(False)
+
                     if (
                         self._hosting_enabled()
                         and not self.practice_mode
@@ -560,6 +610,8 @@ class BridgeService:
                         hosted_ok, hosted_detail = self.ensure_hosted_server()
                         if not hosted_ok:
                             LOGGER.error("Hosted server could not start: %s", hosted_detail)
+                            self._active_audio_route = None
+                            self._set_live_audio_route_owned(False)
                             self._set_jamulus_state(JamulusState.STOPPED)
                             with self._reconnect_lock:
                                 self.jamulus_reconnect_inflight = False
@@ -619,6 +671,7 @@ class BridgeService:
                         # The music engine is infrastructure, not a second app
                         # the musician must operate.
                         "--nogui",
+                        *(audio_route.arguments if audio_route is not None else ()),
                         "--connect", server,
                         # Legacy LAN sessions keep their pre-RPC identity.
                         # V3 applies the real name after authenticated local
@@ -646,7 +699,13 @@ class BridgeService:
                         "stdout": stdout_dest,
                         "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
                     }
-                    import sys
+                    if audio_route is not None:
+                        popen_kwargs["cwd"] = str(audio_route.working_directory)
+                        if audio_route.environment:
+                            popen_kwargs["env"] = {
+                                **os.environ,
+                                **dict(audio_route.environment),
+                            }
                     if sys.platform == "win32":
                         popen_kwargs["creationflags"] = (
                             getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -678,6 +737,8 @@ class BridgeService:
                         if proc:
                             proc.terminate()
                         self._close_jamulus_log_file()
+                        self._active_audio_route = None
+                        self._set_live_audio_route_owned(False)
                         with self._reconnect_lock:
                             self.jamulus_reconnect_inflight = False
                         return
@@ -710,12 +771,57 @@ class BridgeService:
                             lambda m=msg: self.set_status_banner(m)
                         )
 
+                except JamulusAudioRouteError as exc:
+                    was_practice = self.practice_mode
+                    LOGGER.info("Jamulus audio-route preflight failed: %s", exc)
+                    self._close_jamulus_log_file()
+                    self._set_live_audio_route_owned(False)
+                    self._active_audio_route = None
+                    self._set_jamulus_state(
+                        JamulusState.LAUNCH_FAILED
+                        if not reconnect
+                        else JamulusState.NOT_RUNNING
+                    )
+                    with self._reconnect_lock:
+                        self.jamulus_reconnect_inflight = False
+                    if reconnect:
+                        # A reconnect must not try a newly chosen default route
+                        # behind the musician's back. Stop the retry loop and
+                        # explain the one recovery action instead.
+                        self.jamulus_launch_intended = False
+                        self.metrics_service.increment("metric_jamulus_reconnect_failed")
+                    else:
+                        self.metrics_service.increment("metric_jamulus_launch_failed")
+                    if was_practice:
+                        self._terminate_practice_server()
+                        self.practice_mode = False
+                    self.schedule_ui_callback(self.refresh_readiness)
+                    self.schedule_ui_callback(
+                        lambda message=str(exc): self.show_actionable_error(
+                            "Band audio needs attention",
+                            what_failed=message,
+                            likely_cause=(
+                                "The selected device changed, is not ready at "
+                                "48 kHz, or WebJam could not safely prepare it."
+                            ),
+                            next_action=(
+                                "Open Settings, check the Band input and Band "
+                                "output, then try again."
+                            ),
+                            retry_callback=(
+                                None if was_practice else self.retry_audio_launch
+                            ),
+                        )
+                    )
                 except Exception as exc:
                     was_practice = self.practice_mode
                     LOGGER.exception("Failed to launch Jamulus: %s", exc)
                     # Close the log file we opened before Popen — Jamulus never
                     # started, nothing's writing to it.
                     self._close_jamulus_log_file()
+                    if not reconnect:
+                        self._active_audio_route = None
+                        self._set_live_audio_route_owned(False)
                     self._set_jamulus_state(
                         JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
                     )
@@ -1520,6 +1626,9 @@ class BridgeService:
             practice_stopped = self._terminate_practice_server()
             self.practice_mode = False
             stopped = monitoring_stopped and process_stopped and practice_stopped
+            if stopped:
+                self._active_audio_route = None
+                self._set_live_audio_route_owned(False)
             with self._reconnect_lock:
                 self.jamulus_state = (
                     JamulusState.STOPPED.value if stopped else "Stop failed"

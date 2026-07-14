@@ -5,6 +5,13 @@ JamulusServer supplies a post-network track for each connected musician. The
 host, and a guest connected through an active v2 private invite, can explicitly
 opt in to keeping interface inputs 1 and 2 as local isolated originals.
 
+**Artifact scope:** The preserved v0.11.0 test-night ZIP predates the current
+source-only recording-storage guard and recording-provenance journal. Its
+test-night operator must verify free space manually before starting a session,
+and cannot attribute the current source's session-evidence behavior to that
+package. A new package and physical run are required before the app itself can
+be credited with either hardening measure below.
+
 ## Know the sources
 
 | Source | What it proves | Where it lives |
@@ -32,7 +39,8 @@ open **More → Multitrack Studio → Recording Setup** and:
 1. Choose the wired output Studio should use for review.
 2. Enable **Keep interface inputs 1 and 2 as isolated local originals**.
 3. Choose a shareable two-channel input that supports 48 kHz.
-4. Save Recording Setup before the host starts the take.
+4. If the recording drive needs changing, use **Choose Folder** on the same
+   screen and save Recording Setup before the host starts the session.
 
 This is explicit per-Mac opt-in. WebJam writes two separate mono PCM24/48-kHz
 files. If only one interface input carries a source, the other file may be
@@ -53,7 +61,11 @@ guest local-original capture or delivery.
 ## Record and verify a take
 
 1. Join the session and confirm the actual musicians appear once.
-2. The host presses **Record** or **Record Take**.
+2. In the frozen test-night package, the host manually confirms free storage
+   before Record. Current source adds a pre-arm writable-folder/free-space check
+   for the actual band: an unsafe result starts nothing, while a low-storage
+   result is a warning to make room before a long rehearsal. If a running
+   session is unsafe, end it before choosing another Takes folder and restarting.
 3. Wait until recording is confirmed, play, then stop from the host.
 4. Keep both apps open while server files finalize and any guest originals
    transfer.
@@ -66,9 +78,21 @@ final upload. An unavailable host leaves that media and queue on the guest Mac.
 
 The schema-v2 `webjam-take.json` records stable take/participant/track/segment
 IDs, source type and quality, project placement, media rate/channels/format,
-hashes, device facts, gap intervals, and alignment evidence. A reconnect or
-dropped local block does not pull later audio earlier to hide time: missing
+hashes, device facts, gap intervals, and alignment evidence. Current source
+also adds optional session evidence: recorder start and end timestamps only
+after server confirmation, the host identity and protocol label, and a bounded,
+redacted lifecycle/recovery timeline. That session-evidence portion
+intentionally excludes invitation links, network addresses, credentials, and
+raw device identifiers. A reconnect
+or dropped local block does not pull later audio earlier to hide time: missing
 frames stay on the timeline as a disclosed gap/silence interval.
+
+While a take is in progress, current source atomically checkpoints that same
+bounded session evidence in a private, crash-safe journal below the selected
+**Takes** folder. The journal is only a recovery checkpoint, not a completed
+take claim: a malformed or unfinished checkpoint is treated as needing
+attention, and it is removed only after the final take manifest is published.
+The frozen v0.11.0 package does not contain this journal.
 
 If a local writer cannot finish normally, WebJam preserves visible recovered
 media and recovery metadata. Missing, receiving, partial, recovered, damaged,
@@ -108,7 +132,9 @@ succeeds. A schema-v2 package contains:
   WAV and measuring its rate, channels, frames, duration, RMS/peak, and clips;
 - `webjam-project-source.json`, preserving the source project evidence;
 - `webjam-logic-export.json`, including project rate, tempo, time signature,
-  selected source identity, transform, and output facts;
+  selected source identity, transform, and output facts; current source also
+  carries the nonempty bounded/redacted session evidence when the source take
+  has it;
 - `CHECKSUMS.sha256`;
 - `IMPORT INTO LOGIC PRO.md`.
 

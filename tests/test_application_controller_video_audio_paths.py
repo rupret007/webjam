@@ -326,7 +326,13 @@ class TestRailViewChanges(_ControllerTestBase):
 
 
 class TestSettingsWizard(_ControllerTestBase):
-    def _run_wizard(self, accepted: bool, new_settings=None):
+    def _run_wizard(
+        self,
+        accepted: bool,
+        new_settings=None,
+        *,
+        run_band_check: bool = False,
+    ):
         c = self.controller
         wizard = MagicMock()
         with patch(
@@ -336,6 +342,7 @@ class TestSettingsWizard(_ControllerTestBase):
             return_value=new_settings or AppSettings(),
         ):
             wizard_cls.return_value = wizard
+            wizard.run_band_check_after_save = run_band_check
             wizard.exec.return_value = (
                 wizard_cls.DialogCode.Accepted if accepted else 0
             )
@@ -368,6 +375,25 @@ class TestSettingsWizard(_ControllerTestBase):
         self.assertIs(c._mix_manager._jamulus, c.jamulus)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("Settings saved" in m for m in msgs), msgs)
+
+    def test_run_band_check_uses_the_reloaded_saved_settings(self):
+        c = self.controller
+        fresh = AppSettings()
+        fresh.musician_name = "New Guitar"
+        c._on_ready_check = MagicMock()
+
+        with patch.object(QTimer, "singleShot") as single_shot:
+            self._run_wizard(
+                accepted=True,
+                new_settings=fresh,
+                run_band_check=True,
+            )
+
+        self.assertIs(c.settings, fresh)
+        self.assertEqual(c.settings.musician_name, "New Guitar")
+        single_shot.assert_called_once_with(0, c._on_ready_check)
+        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
+        self.assertIn("Settings saved. Band Check is using this setup.", msgs)
 
     def test_accepted_wizard_recreates_visible_start_gate(self):
         c = self.controller

@@ -22,6 +22,8 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping
 
+from core.redaction import redact_text
+
 
 PROJECT_SCHEMA_VERSION = 2
 _MIGRATION_NAMESPACE = uuid.UUID("f1203a8a-b035-4fe0-8a48-1c5b23d78d33")
@@ -65,6 +67,14 @@ class SourceQuality(str, Enum):
     REFERENCE = "reference"
     PROCESSED = "processed"
     UNVERIFIED = "unverified"
+
+
+class RecoveryStatus(str, Enum):
+    """Whether session evidence says a take needed recovery attention."""
+
+    NOT_NEEDED = "not_needed"
+    RECOVERED = "recovered"
+    NEEDS_ATTENTION = "needs_attention"
 
 
 def new_project_id() -> str:
@@ -125,6 +135,14 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(str(item) for item in value if isinstance(item, str))
+
+
+def _safe_session_text(value: object, limit: int) -> str:
+    """Bound and redact the free-text fields retained with a take."""
+    text = redact_text(str(value or ""))
+    # A recording manifest needs no invite context, even in redacted form.
+    text = re.sub(r"(?i)\bwebjam:(?://)?\[redacted\]", "private invite", text)
+    return " ".join(text.split())[:limit]
 
 
 @dataclass(frozen=True)
@@ -719,6 +737,213 @@ class ProjectMarker:
 
 
 @dataclass(frozen=True)
+class HostIdentity:
+    """Optional durable host identity carried with one recorded session."""
+
+    participant_id: str = ""
+    display_name: str = ""
+
+    def __post_init__(self) -> None:
+        participant_id = str(self.participant_id or "").strip()
+        if participant_id:
+            participant_id = _canonical_uuid(participant_id, "session.host.participant_id")
+        # Host identity is a musician-facing name, but it remains free text
+        # supplied by a local setting. Apply the same invite/address/secret
+        # boundary as every other session-evidence string before it reaches a
+        # journal, take manifest, or Logic export.
+        name = _safe_session_text(self.display_name, 160)
+        if "[redacted" in name or "$HOME" in name:
+            # A partially redacted display name is not useful session
+            # provenance and can still hint at a private value's shape. Keep
+            # the durable participant UUID and use a neutral label instead.
+            name = "Private host"
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "display_name", name)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.participant_id and not self.display_name
+
+    def to_dict(self) -> dict[str, str]:
+        payload: dict[str, str] = {}
+        if self.participant_id:
+            payload["participant_id"] = self.participant_id
+        if self.display_name:
+            payload["display_name"] = self.display_name
+        return payload
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "HostIdentity":
+        return cls(
+            participant_id=value.get("participant_id", ""),
+            display_name=value.get("display_name", ""),
+        )
+
+
+@dataclass(frozen=True)
+class SessionTimelineEvent:
+    """One bounded, non-secret recording-session event."""
+
+    event: str
+    occurred_utc: str = ""
+    at_s: float | None = None
+    participant_id: str = ""
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        event = _safe_session_text(self.event, 80)
+        if not event:
+            raise TakeProjectError("session timeline event is required.")
+        occurred_utc = str(self.occurred_utc or "").strip()[:40]
+        participant_id = str(self.participant_id or "").strip()
+        if participant_id:
+            participant_id = _canonical_uuid(
+                participant_id, "session.timeline.participant_id"
+            )
+        at_s = self.at_s
+        if at_s is not None:
+            at_s = _finite_float(at_s, "session.timeline.at_s", minimum=0)
+        detail = _safe_session_text(self.detail, 240)
+        object.__setattr__(self, "event", event)
+        object.__setattr__(self, "occurred_utc", occurred_utc)
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "at_s", at_s)
+        object.__setattr__(self, "detail", detail)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"event": self.event}
+        if self.occurred_utc:
+            payload["occurred_utc"] = self.occurred_utc
+        if self.at_s is not None:
+            payload["at_s"] = self.at_s
+        if self.participant_id:
+            payload["participant_id"] = self.participant_id
+        if self.detail:
+            payload["detail"] = self.detail
+        return payload
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "SessionTimelineEvent":
+        return cls(
+            event=value.get("event", ""),
+            occurred_utc=value.get("occurred_utc", ""),
+            at_s=value.get("at_s"),
+            participant_id=value.get("participant_id", ""),
+            detail=value.get("detail", ""),
+        )
+
+
+@dataclass(frozen=True)
+class SessionEvidence:
+    """Optional recorded-session proof that does not alter source audio."""
+
+    protocol_version: str = ""
+    started_utc: str = ""
+    ended_utc: str = ""
+    host: HostIdentity = field(default_factory=HostIdentity)
+    recovery_status: RecoveryStatus = RecoveryStatus.NOT_NEEDED
+    recovery_notes: tuple[str, ...] = ()
+    timeline: tuple[SessionTimelineEvent, ...] = ()
+
+    def __post_init__(self) -> None:
+        protocol_version = _safe_session_text(self.protocol_version, 80)
+        started_utc = str(self.started_utc or "").strip()[:40]
+        ended_utc = str(self.ended_utc or "").strip()[:40]
+        host = self.host
+        if isinstance(host, Mapping):
+            host = HostIdentity.from_dict(host)
+        if not isinstance(host, HostIdentity):
+            raise TakeProjectError("session.host must be a host identity.")
+        status = self.recovery_status
+        if not isinstance(status, RecoveryStatus):
+            try:
+                status = RecoveryStatus(str(status))
+            except ValueError:
+                status = RecoveryStatus.NEEDS_ATTENTION
+        notes = tuple(
+            _safe_session_text(item, 240)
+            for item in self.recovery_notes
+            if _safe_session_text(item, 240)
+        )
+        if (
+            str(self.recovery_status or "")
+            and not isinstance(self.recovery_status, RecoveryStatus)
+            and status is RecoveryStatus.NEEDS_ATTENTION
+            and str(self.recovery_status) != RecoveryStatus.NEEDS_ATTENTION.value
+        ):
+            notes = (*notes, "Session recovery state was unreadable.")
+        timeline: list[SessionTimelineEvent] = []
+        for item in self.timeline:
+            if isinstance(item, SessionTimelineEvent):
+                timeline.append(item)
+            elif isinstance(item, Mapping):
+                timeline.append(SessionTimelineEvent.from_dict(item))
+            else:
+                raise TakeProjectError("session.timeline entries must be events.")
+        object.__setattr__(self, "protocol_version", protocol_version)
+        object.__setattr__(self, "started_utc", started_utc)
+        object.__setattr__(self, "ended_utc", ended_utc)
+        object.__setattr__(self, "host", host)
+        object.__setattr__(self, "recovery_status", status)
+        object.__setattr__(self, "recovery_notes", tuple(dict.fromkeys(notes)))
+        object.__setattr__(self, "timeline", tuple(timeline))
+
+    @property
+    def is_empty(self) -> bool:
+        return (
+            not self.protocol_version
+            and not self.started_utc
+            and not self.ended_utc
+            and self.host.is_empty
+            and self.recovery_status is RecoveryStatus.NOT_NEEDED
+            and not self.recovery_notes
+            and not self.timeline
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.protocol_version:
+            payload["protocol_version"] = self.protocol_version
+        if self.started_utc:
+            payload["started_utc"] = self.started_utc
+        if self.ended_utc:
+            payload["ended_utc"] = self.ended_utc
+        host = self.host.to_dict()
+        if host:
+            payload["host"] = host
+        payload["recovery_status"] = self.recovery_status.value
+        if self.recovery_notes:
+            payload["recovery_notes"] = list(self.recovery_notes)
+        if self.timeline:
+            payload["timeline"] = [item.to_dict() for item in self.timeline]
+        return payload
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "SessionEvidence":
+        host_value = value.get("host", {})
+        host = HostIdentity.from_dict(host_value) if isinstance(host_value, Mapping) else HostIdentity()
+        timeline_value = value.get("timeline", ())
+        timeline = (
+            tuple(
+                SessionTimelineEvent.from_dict(item)
+                for item in timeline_value
+                if isinstance(item, Mapping)
+            )
+            if isinstance(timeline_value, (list, tuple))
+            else ()
+        )
+        return cls(
+            protocol_version=value.get("protocol_version", ""),
+            started_utc=value.get("started_utc", ""),
+            ended_utc=value.get("ended_utc", ""),
+            host=host,
+            recovery_status=value.get("recovery_status", RecoveryStatus.NOT_NEEDED.value),
+            recovery_notes=_string_tuple(value.get("recovery_notes")),
+            timeline=timeline,
+        )
+
+
+@dataclass(frozen=True)
 class TakeProject:
     session_id: str
     take_id: str
@@ -737,6 +962,7 @@ class TakeProject:
     markers: tuple[ProjectMarker, ...] = ()
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    session_evidence: SessionEvidence = field(default_factory=SessionEvidence)
     revision: int = 1
     schema_version: int = PROJECT_SCHEMA_VERSION
 
@@ -813,6 +1039,19 @@ class TakeProject:
         object.__setattr__(self, "markers", markers)
         object.__setattr__(self, "errors", tuple(str(item) for item in self.errors))
         object.__setattr__(self, "warnings", tuple(str(item) for item in self.warnings))
+        evidence = self.session_evidence
+        if isinstance(evidence, Mapping):
+            evidence = SessionEvidence.from_dict(evidence)
+        if not isinstance(evidence, SessionEvidence):
+            raise TakeProjectError("session_evidence must be session evidence.")
+        if evidence.host.participant_id and evidence.host.participant_id not in participant_ids:
+            raise TakeProjectError("session host references an unknown participant.")
+        for event in evidence.timeline:
+            if event.participant_id and event.participant_id not in participant_ids:
+                raise TakeProjectError(
+                    "session timeline references an unknown participant."
+                )
+        object.__setattr__(self, "session_evidence", evidence)
 
     @property
     def has_blocking_media(self) -> bool:
@@ -830,7 +1069,12 @@ class TakeProject:
 
     @property
     def effective_status(self) -> ProjectStatus:
-        if self.errors or self.has_blocking_media:
+        if (
+            self.errors
+            or self.has_blocking_media
+            or self.session_evidence.recovery_status
+            is RecoveryStatus.NEEDS_ATTENTION
+        ):
             return ProjectStatus.NEEDS_ATTENTION
         return self.status
 
@@ -842,7 +1086,7 @@ class TakeProject:
                 self.project_sample_rate
             )
             tracks.append(value)
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "revision": self.revision,
             "app_version": self.app_version,
@@ -865,6 +1109,9 @@ class TakeProject:
             "errors": list(self.errors),
             "warnings": list(self.warnings),
         }
+        if not self.session_evidence.is_empty:
+            payload["session"] = self.session_evidence.to_dict()
+        return payload
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "TakeProject":
@@ -874,6 +1121,16 @@ class TakeProject:
         signature = value.get("time_signature", {})
         if not isinstance(signature, Mapping):
             signature = {}
+        session_value = value.get("session", {})
+        if isinstance(session_value, Mapping):
+            evidence = SessionEvidence.from_dict(session_value)
+        elif session_value in (None, ""):
+            evidence = SessionEvidence()
+        else:
+            evidence = SessionEvidence(
+                recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+                recovery_notes=("Session evidence was unreadable.",),
+            )
         return cls(
             session_id=value.get("session_id", ""),
             take_id=value.get("take_id", ""),
@@ -892,6 +1149,7 @@ class TakeProject:
             markers=_mapping_tuple(value.get("markers"), ProjectMarker.from_dict),
             errors=_string_tuple(value.get("errors")),
             warnings=_string_tuple(value.get("warnings")),
+            session_evidence=evidence,
             revision=value.get("revision", 1),
             schema_version=schema,
         )

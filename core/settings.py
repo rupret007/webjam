@@ -52,7 +52,8 @@ def _coerce_settings_data(data: dict) -> None:
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
                 "server_rpc_secret_file", "takes_directory",
-                "take_playback_output_device",
+                "take_playback_output_device", "jamulus_audio_input_uid",
+                "jamulus_audio_output_uid",
                 "audio_latency", "sentry_dsn", "log_level", "log_file",
                 "musician_name"):
         if key in data and data[key] is not None and not isinstance(data[key], str):
@@ -87,6 +88,12 @@ class AppSettings:
     audio_samplerate: int = 48000
     audio_latency: str = "low"
     audio_input_device_index: int = -1  # -1 means "system default / auto-detect"
+    # macOS live-music route.  These are CoreAudio UIDs, never PortAudio
+    # indexes or display names; blank means resolve the Mac defaults when the
+    # next session starts.  They deliberately stay separate from the meter's
+    # best-effort PortAudio index above.
+    jamulus_audio_input_uid: str = ""
+    jamulus_audio_output_uid: str = ""
     # Webex carries speech only by default; Jamulus remains the music path.
     webex_audio_mode: str = "talkback"
     # Supplemental isolated input capture is independent of the Webex role.

@@ -299,13 +299,17 @@ server tracks, not an independently captured acoustic/live-output feed.
 
 ### Live music path
 
-`BridgeService` starts the Jamulus client with server, client name, and RPC
-arguments. It does not choose or expose Jamulus's input/output device, channel
-map, sample rate, buffer, or PCM. `AudioEngine` opens a separate
-PortAudio/sounddevice input for WebJam's meter. Jamulus RPC exposes scalar
-levels, not PCM. Therefore a moving WebJam meter proves only that WebJam's
-PortAudio stream sees signal; it does not prove what Jamulus sends or what a
-bandmate hears.
+**Historical boundary (the certification evidence recorded below):** at the
+time this plan was written, `BridgeService` started Jamulus with server, client
+name, and RPC arguments only. It did not choose or expose Jamulus's
+input/output device, channel map, sample rate, buffer, or PCM. Current macOS
+source now resolves persistent CoreAudio input/output IDs, stages a WebJam-owned
+Jamulus route file, and freezes that selection across reconnects; this plan's
+older evidence does not certify that newer route behavior. `AudioEngine` still
+opens a separate PortAudio/sounddevice input for WebJam's meter. Jamulus RPC
+exposes scalar levels, not PCM. Therefore a moving WebJam meter proves only
+that WebJam's PortAudio stream sees signal; it does not prove what Jamulus sends
+or what a bandmate hears.
 
 The deterministic harness uses one real Jamulus 3.12.2 server and two real
 clients with a JACK dummy device. Fixtures enter through each client's public

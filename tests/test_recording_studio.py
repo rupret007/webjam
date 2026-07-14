@@ -769,6 +769,66 @@ def test_simple_settings_exposes_basic_audio_choices_and_saves_them(tmp_path):
     assert data["take_playback_output_device"] == "Studio Monitors"
 
 
+def test_simple_settings_uses_stable_coreaudio_pair_for_live_band_audio(tmp_path):
+    from core.coreaudio_devices import CoreAudioDevice, CoreAudioScan
+
+    interface = CoreAudioDevice(
+        uid="coreaudio-input",
+        name="SSL 2+",
+        object_id=10,
+        input_channels=2,
+        output_channels=0,
+        nominal_rate=48_000,
+    )
+    speakers = CoreAudioDevice(
+        uid="coreaudio-output",
+        name="Studio Monitors",
+        object_id=11,
+        input_channels=0,
+        output_channels=2,
+        nominal_rate=48_000,
+    )
+    scan = CoreAudioScan(
+        devices=(interface, speakers),
+        default_input_uid=interface.uid,
+        default_output_uid=speakers.uid,
+    )
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    with patch("webjam_qt.windows.simple_settings.sys.platform", "darwin"), patch(
+        "webjam_qt.windows.simple_settings.scan_coreaudio_devices",
+        return_value=scan,
+    ), patch(
+        "webjam_qt.windows.simple_settings.list_input_devices",
+        return_value=[{"name": "SSL 2+", "channels": 2, "index": 7}],
+    ):
+        dialog = SimpleSettingsDialog(settings)
+        dialog._input.setCurrentIndex(dialog._input.findData(interface.uid))
+        dialog._output.setCurrentIndex(dialog._output.findData(speakers.uid))
+        dialog._save()
+
+    data = json.loads(Path(settings.config_file).read_text())
+    assert data["jamulus_audio_input_uid"] == interface.uid
+    assert data["jamulus_audio_output_uid"] == speakers.uid
+    assert data["audio_input_device_index"] == 7
+    assert data["take_playback_output_device"] == "Studio Monitors"
+
+
+def test_simple_settings_saves_the_selected_draft_before_running_band_check(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        musician_name="Old Name",
+    )
+    dialog = SimpleSettingsDialog(settings)
+    dialog._name.setText("New Name")
+
+    dialog._save_and_run_band_check()
+
+    saved = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
+    assert saved["musician_name"] == "New Name"
+    assert dialog.run_band_check_after_save is True
+    assert dialog.result() == dialog.DialogCode.Accepted
+
+
 def test_simple_settings_keeps_optional_conversation_link_out_of_the_way(tmp_path):
     dialog = SimpleSettingsDialog(
         AppSettings(config_file=str(tmp_path / "settings.json"))

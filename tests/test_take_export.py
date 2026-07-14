@@ -18,6 +18,7 @@ from core.take_library import TakeInfo, TrackInfo
 from core.take_project import (
     AlignmentState,
     GapInterval,
+    HostIdentity,
     MediaSegment,
     MediaStatus,
     Participant,
@@ -26,6 +27,8 @@ from core.take_project import (
     ProjectTrack,
     SourceQuality,
     SourceType,
+    SessionEvidence,
+    SessionTimelineEvent,
     TakeProject,
     new_project_id,
     write_take_project,
@@ -303,6 +306,19 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
         time_signature_denominator=4,
         markers=(ProjectMarker(new_project_id(), 0.2, "Verse, one"),),
         warnings=("Guest reconnected once.",),
+        session_evidence=SessionEvidence(
+            protocol_version="webjam-v2",
+            started_utc="2026-07-14T01:02:03Z",
+            ended_utc="2026-07-14T01:08:09Z",
+            host=HostIdentity(host_id, "Morgan"),
+            timeline=(
+                SessionTimelineEvent(
+                    "recording_started",
+                    occurred_utc="2026-07-14T01:02:03Z",
+                    participant_id=host_id,
+                ),
+            ),
+        ),
     )
     write_take_project(take_dir, project)
     take = TakeInfo(
@@ -347,6 +363,9 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
     assert manifest["tracks"][1]["musician"] == "Riley"
     assert manifest["tracks"][1]["resampling"] == "deterministic-linear-affine-v1"
     assert manifest["logic_pro_physically_verified"] is False
+    assert manifest["session_evidence"] == project.session_evidence.to_dict()
+    assert "endpoint" not in manifest["session_evidence"]
+    assert "invitation" not in manifest["session_evidence"]
     assert result.alignment_report and "not a sample-perfect claim" in result.alignment_report.read_text()
     assert result.recording_report and "writer queue overflow" not in result.recording_report.read_text()
     assert "1 disclosed gap" in result.recording_report.read_text()
@@ -362,6 +381,44 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
     for line in checksum_lines:
         digest, name = line.split("  ", 1)
         assert _digest(result.folder / name) == digest
+
+
+def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    audio = take_dir / "source.wav"
+    _write(audio, np.ones(2048) * 0.1, rate=48_000)
+    participant_id = new_project_id()
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(participant_id, "Alex"),),
+        tracks=(
+            _project_track(
+                "Guitar",
+                participant_id,
+                [_project_segment(audio, take_dir)],
+                order=0,
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    result = export_logic_package(
+        TakeInfo(
+            take_dir,
+            "Take",
+            [TrackInfo(audio, "Guitar", samplerate=48_000)],
+            take_id=project.take_id,
+        ),
+        destination_root=tmp_path / "exports",
+    )
+
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert "session_evidence" not in manifest
 
 
 def test_schema2_logic_handoff_blocks_missing_or_changed_media_atomically(tmp_path):

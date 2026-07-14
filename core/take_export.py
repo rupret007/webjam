@@ -756,6 +756,12 @@ def _export_project_logic_package(
             "source_manifest": source_manifest.name,
             "logic_pro_physically_verified": False,
         }
+        if not project.session_evidence.is_empty:
+            # SessionEvidence is deliberately bounded to recording provenance: it
+            # contains no invitation, endpoint, credential, or raw device data.
+            # Keep it optional so exports from pre-evidence projects retain their
+            # stable metadata shape.
+            payload["session_evidence"] = project.session_evidence.to_dict()
         manifest.write_text(
             json.dumps(payload, indent=2, sort_keys=False) + "\n",
             encoding="utf-8",

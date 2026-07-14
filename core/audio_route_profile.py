@@ -406,7 +406,12 @@ class Jamulus3122AudioRouteAdapter:
     ) -> tuple[str, ...]:
         self.validate(profile)
         path = Path(config_path).expanduser()
-        arguments = ["--inifile", str(path)]
+        # Jamulus on macOS reads an --inifile only from its own Data container
+        # and its documented command contract is filename-only.  The route
+        # manager owns the container working directory; passing an absolute
+        # path here makes a sandboxed client silently fall back or fail.
+        inifile = path.name if profile.platform is AudioRoutePlatform.MACOS_COREAUDIO else str(path)
+        arguments = ["--inifile", inifile]
         if profile.platform is AudioRoutePlatform.LINUX_JACK:
             arguments.append("--nojackconnect")
         return tuple(arguments)

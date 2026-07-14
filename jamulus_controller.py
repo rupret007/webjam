@@ -97,6 +97,11 @@ class JamulusController:
         )
 
         self.audio_engine = RealAudioEngine(self.settings, logger=self.logger.getChild("audio_engine"))
+        # Set by BridgeService only when it has provisioned a native Jamulus
+        # CoreAudio route.  The optional PortAudio meter is valuable before a
+        # session, but opening the same hardware while Jamulus owns it can
+        # create avoidable driver contention.
+        self._live_audio_route_owned = False
         self.last_error: str = ""
 
     # ------------------------------------------------------------------
@@ -156,8 +161,13 @@ class JamulusController:
         if setter is not None:
             setter(cached)
         
+    def set_live_audio_route_owned(self, owned: bool) -> None:
+        """Declare whether Jamulus owns the live hardware route this session."""
+
+        self._live_audio_route_owned = bool(owned)
+
     def start(self):
-        """Start authoritative Jamulus monitoring and the local audio meter."""
+        """Start authoritative monitoring and a meter only when it is safe."""
         if self.running:
             return
 
@@ -171,7 +181,12 @@ class JamulusController:
         self.running = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
-        self.audio_engine.start()
+        if self._live_audio_route_owned:
+            self.logger.info(
+                "Skipping the optional local meter: Jamulus owns the live audio route"
+            )
+        else:
+            self.audio_engine.start()
 
     def stop(self):
         """Stop all monitoring and release per-channel level cache."""

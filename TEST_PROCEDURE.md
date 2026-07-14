@@ -1,11 +1,16 @@
 # WebJam v0.11.0 certification procedure
 
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
 **Current target:** private Apple Silicon two-Mac v0.11.0 candidate
 
-The product path is:
+The current-source product path is:
 
-> Host choice → Band Check → Invite → Join choice → Band Check → Play → Record → Studio → Export → End
+> Host choice → Confirm sound → Band Check → Invite → Join choice → Confirm sound → Band Check → Play → Record → Studio → Export → End
+
+The exact frozen v0.11.0 package used tonight omits the source-only
+confirmation screen and goes directly from each Host/Join choice to Band Check.
+Keep those two flows separate in the worksheet; a package test cannot credit a
+current-source-only screen.
 
 This procedure separates deterministic source evidence, real Jamulus/JACK
 evidence, packaged macOS evidence, and physical musician evidence. Passing one
@@ -37,6 +42,9 @@ The final run must include:
 - Band Check input/output/scratch/host/Studio/support outcomes;
 - stable participant identity and authenticated presence generations;
 - local capture absolute-frame gaps, writer timeout, recovery, and shutdown;
+- recording-folder write probes, conservative free-storage reserves, visible
+  nonblocking warnings, and the guarantee that an unsafe Record attempt arms
+  neither recorder;
 - resumable/idempotent size/SHA/PCM-verified guest transfer;
 - schema-v2 missing/partial/damaged/segment/rate/project truth;
 - Studio seek/waveform/mixer/output/reopen behavior;
@@ -46,6 +54,33 @@ The final run must include:
   coverage, and adversarial redaction;
 - owned-process/port cleanup and fresh-host restart;
 - the three-part black/white/burnt-orange brand assets.
+
+### Source-only recording durability hardening
+
+Current `master` adds recording-storage readiness. Run its focused checks before
+packaging:
+
+```bash
+.venv/bin/python -m pytest -q \
+  tests/test_recording_readiness.py \
+  tests/test_recording_manifest_journal.py \
+  tests/test_preflight.py \
+  tests/test_band_check.py \
+  tests/test_server_rpc_and_record_button.py \
+  tests/test_take_project.py \
+  tests/test_take_library.py \
+  tests/test_take_export.py \
+  tests/test_ready_check_ui.py
+```
+
+This source-only group covers the writable-folder/storage reserve, private
+0600 in-progress evidence journal, start/stop/lifecycle checkpoint integration,
+private-name/invite/address/credential redaction, hidden-work-directory take
+discovery exclusion, final-manifest retirement, and Logic-export propagation.
+The preserved v0.11 ZIP below was built before these safeguards existed; do not
+mark its worksheet as proving a block/warning/journal recovery. A fresh package
+must repeat the package and physical gates before that behavior is credited to a
+test-night build.
 
 ## 2. Real Jamulus/JACK boundary gate
 
@@ -122,6 +157,10 @@ Installed test app:      /Applications/WebJam.app
 Rollback app:            /Applications/WebJam-v0.10.0-before-v0.11.0-TEST-NIGHT.app
 ```
 
+The exact v0.11.0 ZIP predates the source-only recording-storage guard. It is
+still the correct artifact for its existing worksheet, but it cannot certify
+that newer behavior.
+
 Inspect that exact fresh extraction:
 
 - `Info.plist` reports `0.11.0` and registers the `webjam` URL scheme.
@@ -155,6 +194,9 @@ the remaining Host/Join and musician steps below.
 
 1. Launch shows the original three-part WebJam mark and the restrained black,
    white, neutral, and burnt-orange system. No purple or teal remains.
+   A rebuilt source candidate additionally exposes **Band input** and **Band
+   output & review** in Settings; the frozen v0.11 ZIP does not contain the
+   CoreAudio route manager described below.
 2. Band Check performs explicit input/output/scratch actions, separates its
    local PortAudio evidence from Jamulus send/receive observations, and reports
    one typed outcome. Blank Webex remains optional.

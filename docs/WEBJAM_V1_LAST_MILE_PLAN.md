@@ -1,9 +1,10 @@
 # WebJam v1 last-mile readiness record
 
-**Working branch:** `codex/vnext-last-mile-readiness`
-**Version:** `0.11.0` source candidate; CI packages exist for this branch, but no
-new private test-night package has been promoted
-**Last verified baseline:** `master` at `a3ba8498ed87529589cd4738903695d7cba18219`
+**Working branch:** `master`
+**Version:** `0.12.0` source candidate; the preserved v0.11 private test-night
+package remains historical evidence until the new candidate is packaged and
+physically certified
+**Last verified baseline:** `master` at `1438a7379e710203baed2ae77ad0db3d325fe4e3`
 **Baseline CI:** GitHub Actions run `29296365785` passed on 2026-07-14.
 
 This is an implementation record, not a release claim. It separates source
@@ -15,15 +16,17 @@ test can never be confused with a successful rehearsal.
 The ordinary supported path stays intentionally small:
 
 1. Choose **Host a Jam** or **Join a Jam**.
-2. Complete Band Check only when the saved setup is missing or changed.
-3. Host: WebJam starts and supervises the local Jamulus server and client,
+2. In current source, confirm the musician name and band sound in one concise
+   screen. The frozen v0.11 package goes directly to Band Check instead.
+3. Complete Band Check when the saved setup is missing or changed.
+4. Host: WebJam starts and supervises the local Jamulus server and client,
    checks the private-LAN pre-share facts, then enables **Copy Invite**.
    If Wi-Fi, sleep/wake, or an interface change gives the host a new private
    address after a link was copied, WebJam stops calling the session simply
    ready and asks for one **Copy New Invite** action.
-4. Join: paste/open the complete invitation, pass Band Check, and WebJam starts
+5. Join: paste/open the complete invitation, pass Band Check, and WebJam starts
    the client.
-5. Play. Recording, Studio, conversation, settings, and diagnostics stay under
+6. Play. Recording, Studio, conversation, settings, and diagnostics stay under
    **More**.
 
 No ordinary musician is asked for an executable path, server address, UDP
@@ -40,21 +43,25 @@ port, router change, or Webex credential.
   The v3 `reference-local` profile remains a loopback/CI lab boundary.
 - **Live audio truth:** Jamulus is the performance-audio path. Webex is
   optional conversation/video and should keep its microphone muted while
-  musicians play. A WebJam PortAudio meter or scratch recording does not prove
-  Jamulus selected the same device; real two-way audibility remains a human
-  gate.
+  musicians play. Current macOS source resolves a stable CoreAudio pair,
+  rejects missing/ambiguous/non-48-kHz hardware, and stages a WebJam-owned
+  filename-only Jamulus config before launch. A WebJam PortAudio meter or
+  scratch recording still does not prove a bandmate can hear the route; real
+  two-way audibility remains a human gate. The preserved v0.11 ZIP predates the
+  source route manager.
 
 ## Current implementation milestones
 
 | Milestone | Source status | Evidence / boundary |
 | --- | --- | --- |
-| Minimal Host/Join and progressive Band Check | Implemented | Qt coverage exercises the first screen, invitation ingress, and preflight gate. |
+| Minimal Host/Join, current-source sound confirmation, and progressive Band Check | Implemented | Qt coverage exercises the first screen, confirmation, invitation ingress, and preflight gate. The frozen v0.11 package goes directly to Band Check. |
 | Owned Jamulus host/client lifecycle | Implemented | Host server authentication, private secret permissions, duplicate prevention, idempotent stop, and reconnect coverage exist. A long event-loop pause (including likely sleep/wake) clears the connected/roster claim until fresh live evidence arrives. |
 | Authoritative session lifecycle | Implemented on this branch | `core/session_lifecycle.py` records preflight, host/join, private-LAN share readiness, roster-confirmed connection, degraded/reconnect, recording finalization, cleanup, and recoverable failure. An active cancellation closes through ending/completed/idle rather than leaving stale state. It supplies the diagnostics timeline. |
 | Honest pre-share readiness | Implemented on this branch | `core/host_share_readiness.py` fails closed when the server, UDP listener, or private Wi-Fi address is missing. It does not call that an Internet reachability test. |
 | LAN address-change truth | Implemented on this branch | A copied v1/v2 LAN invite is process-locally tied to its advertised address. A changed private address produces a plain **Copy New Invite** recovery state; no address is persisted or added to diagnostics. |
 | Band Check | Implemented | Ready / Warning / Action Needed results retain independent local, production, and musician-confirmed evidence. |
-| Recording and Logic handoff | Implemented in source | Schema-v2 manifests, atomic output/recovery, alignment evidence, common-origin PCM24 stems, checksums, and import instructions exist. Physical Logic import is still NOT RUN. |
+| macOS Jamulus device route | Implemented in current source | Settings persists CoreAudio UIDs; launch uses a protected owned config and filename-only `--inifile`, freezes that plan through reconnect, and fails closed if hardware changes. It is OS preflight, not graph/hearing proof, and is not in the frozen v0.11 ZIP. |
+| Recording and Logic handoff | Implemented in source | Current source checks a writable recording folder and a conservative PCM24 reserve before a take; Record recalculates for the actual roster and starts nothing if storage is unsafe. Its schema-v2 session-evidence portion writes only recorder-server-confirmed start/end timestamps, host/protocol, and a bounded redacted lifecycle/recovery timeline—never an invite, address, credential, or raw device identifier. A private crash-safe checkpoint below Takes retains that evidence across an in-progress interruption and is removed only after final manifest publication; Logic export carries nonempty evidence. These source safeguards are not in the preserved v0.11 ZIP. Atomic output/recovery, alignment evidence, common-origin PCM24 stems, checksums, and import instructions exist. Physical Logic import is still NOT RUN. |
 | Privacy-safe diagnostics | Implemented | Preview, clipboard, JSON, and ZIP derive from one allowlisted/redacted snapshot. The lifecycle timeline contains no invitation, address, device, or path data. |
 | v0.11 macOS arm64 package | Existing private artifact plus CI candidate | The preserved private test-night package remains the only test-night artifact. CI run `29311760834` built source `e4172a84cdbddbfe34e9e9d89ba61c245d00551c` for macOS arm64/x64 and Windows x64; its downloaded packages are build-verified but have not had a clean-install or physical musician run. |
 
@@ -70,6 +77,8 @@ port, router change, or Webex credential.
 | Process exit or silent RPC | Lifecycle becomes degraded/reconnecting; bounded retry keeps mix state and ends in one retry action if exhausted. | Automated |
 | Stale terminal callback | Lifecycle rejects a transition that would resurrect a completed/failed-final session. | Automated |
 | End Session during an active host take | Recording finalizes before owned processes are released; a failed finalization leaves the session protected. | Automated; physical media review pending |
+| Recording folder unavailable or storage dangerously low | Current source Band Check reports one corrective action; Record rechecks before any local capture or server recorder starts, then starts nothing if unsafe. Low storage warns to make room before a long rehearsal. | Focused source checks only; a new package and physical drive-full recovery remain NOT RUN |
+| App interruption during an in-progress take | Current source atomically retains only bounded/redacted session evidence in a private checkpoint below Takes. A malformed or unfinished checkpoint is recovery-needed truth, not a completed take; final publication removes it. | Focused source checks only; not in the preserved v0.11 ZIP and physical interruption recovery remains NOT RUN |
 | Webex duplicate music path | Webex stays optional and its role is explained as conversation/video, not performance audio. | UI/source evidence |
 | Remote home/NAT reachability | Not claimed. The user gets no public-share promise from the private-LAN flow. | Physical/deployment gate NOT RUN |
 
@@ -86,17 +95,22 @@ make -C transport check
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python ux_smoke_test.py
 ```
 
-The focused source checks added for this milestone cover lifecycle transitions,
+The historical baseline source checks covered lifecycle transitions,
 support-bundle redaction, pre-share refusal when a local fact is missing, and a
-copied LAN invite after a private Wi-Fi address changes. On this branch, the
-local Python suite completed with **1,628 passed, 18 skipped, 1 existing
-Starlette/httpx deprecation warning, and 6 subtests** in 49.92 seconds. GitHub
-Actions run `29311760834` also passed its reference service, Python/UX,
-transport, real-Jamulus integration, and macOS arm64/x64 plus Windows x64
-packaging jobs. The downloaded CI artifacts identify build
-`e4172a84cdbddbfe34e9e9d89ba61c245d00551c`; they are candidate evidence, not
-test-night certification. The full CI matrix remains the authoritative
-cross-platform build evidence.
+copied LAN invite after a private Wi-Fi address changes. At the earlier baseline
+they completed with **1,628 passed, 18 skipped, 1 existing Starlette/httpx
+deprecation warning, and 6 subtests** in 49.92 seconds. That result predates
+the current storage hardening and is not presented as its evidence. The focused
+storage group now passes focused source coverage. The current full source
+gate completed with **1,687 passed, 18 skipped, one existing Starlette/httpx
+deprecation warning, and 6 subtests**, with no failures or errors; this is
+still source evidence only, not a new package or physical certification.
+GitHub Actions run
+`29311760834` passed its then-current reference service, Python/UX, transport,
+real-Jamulus integration, and macOS arm64/x64 plus Windows x64 packaging jobs.
+The downloaded CI artifacts identify build `e4172a84cdbddbfe34e9e9d89ba61c245d00551c`;
+they are candidate evidence, not test-night certification. The full CI matrix
+remains the authoritative cross-platform build evidence.
 
 ## Manual certification gates — never inferred from source tests
 

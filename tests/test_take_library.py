@@ -9,7 +9,13 @@ import wave
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.take_project import CaptureDevice
+from core.take_project import (
+    CaptureDevice,
+    HostIdentity,
+    RecoveryStatus,
+    SessionEvidence,
+    SessionTimelineEvent,
+)
 
 from core.take_library import (
     discover_takes,
@@ -336,6 +342,90 @@ class TestTakeValidation(unittest.TestCase):
         )
         self.assertEqual(vocal["segments"][0]["gaps"], [])
 
+    def test_manifest_preserves_session_evidence_adds_host_and_indexes_media_gap(self):
+        import uuid
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "host-guitar.wav", seconds=0.1)
+            _write_wav(take / "host-vocal.wav", seconds=0.1)
+            _write_wav(take / "Band-127_0_0_1_50000-0-1.wav", seconds=0.1)
+            session_id = str(uuid.uuid4())
+            take_id = str(uuid.uuid4())
+            local_id = str(uuid.uuid4())
+            host_id = str(uuid.uuid4())
+            evidence = SessionEvidence(
+                protocol_version="jamulus-3.12.2 / webjam-v2",
+                started_utc="2026-07-14T02:00:00Z",
+                ended_utc="2026-07-14T02:05:00Z",
+                host=HostIdentity(host_id, "Jeff Story"),
+                recovery_status=RecoveryStatus.RECOVERED,
+                recovery_notes=("Local capture resumed from a safe checkpoint.",),
+                timeline=(SessionTimelineEvent(
+                    "recording_started",
+                    occurred_utc="2026-07-14T02:00:00Z",
+                    participant_id=host_id,
+                ),),
+            )
+            gap = SimpleNamespace(
+                start_frame=1200,
+                frame_count=240,
+                channels=(0,),
+                reason="queue_overflow",
+            )
+
+            write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=2,
+                session_id=session_id,
+                take_id=take_id,
+                local_participant_id=local_id,
+                local_participant_name="Local input",
+                capture_gaps=(gap,),
+                local_total_frames=4800,
+                session_evidence=evidence,
+            )
+            data = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertEqual(data["schema_version"], 2)
+        self.assertIn(
+            {
+                "participant_id": host_id,
+                "display_name": "Jeff Story",
+                "instrument": "",
+            },
+            data["participants"],
+        )
+        session = data["session"]
+        self.assertEqual(session["protocol_version"], evidence.protocol_version)
+        self.assertEqual(session["started_utc"], evidence.started_utc)
+        self.assertEqual(session["ended_utc"], evidence.ended_utc)
+        self.assertEqual(session["host"], {
+            "participant_id": host_id,
+            "display_name": "Jeff Story",
+        })
+        self.assertEqual(session["recovery_status"], "recovered")
+        self.assertEqual(
+            session["recovery_notes"],
+            ["Local capture resumed from a safe checkpoint."],
+        )
+        self.assertIn(
+            {
+                "event": "recording_started",
+                "occurred_utc": "2026-07-14T02:00:00Z",
+                "participant_id": host_id,
+            },
+            session["timeline"],
+        )
+        media_gap = next(
+            item for item in session["timeline"] if item["event"] == "media_gap"
+        )
+        self.assertEqual(media_gap["participant_id"], local_id)
+        self.assertEqual(media_gap["at_s"], 0.025)
+        self.assertIn("240 source frames unavailable (queue_overflow)", media_gap["detail"])
+
     def test_load_schema2_retains_nested_reconnect_segments_rates_and_gaps(self):
         import hashlib
 
@@ -579,6 +669,24 @@ class TestTakeValidation(unittest.TestCase):
             new.mkdir()
             _write_wav(new / "track.wav", seconds=0.1)
             self.assertEqual(find_changed_take(root, before), new)
+
+    def test_snapshot_ignores_private_work_directories(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            before = snapshot_take_directories(root)
+            take = root / "Jamulus-2026-07-14"
+            take.mkdir()
+            _write_wav(take / "track.wav", seconds=0.1)
+            # A final lifecycle/evidence checkpoint can be newer than the
+            # server folder. It must never become the candidate take.
+            journal = root / ".webjam-recording-evidence"
+            journal.mkdir()
+            _write_wav(journal / "would-be-audio.wav", seconds=0.1)
+
+            after = snapshot_take_directories(root)
+            self.assertNotIn(journal, after)
+            self.assertEqual(find_changed_take(root, before), take)
+            self.assertEqual([item.path for item in discover_takes(root)], [take])
 
 
 if __name__ == "__main__":

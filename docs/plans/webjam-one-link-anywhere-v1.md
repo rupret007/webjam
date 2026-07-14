@@ -1,8 +1,10 @@
-# WebJam one-link-anywhere v1
+# WebJam one-link-anywhere v1 (historical ledger)
 
-This is the recovery record, implementation ledger, and evidence boundary for
-the v0.11.0 remote-session vertical slice. Update it whenever a slice changes
-the security, transport, audio-route, packaging, or release evidence.
+> **Historical record:** This preserves the 2026-07-13 recovery chronology for
+> the v0.11.0 remote-session vertical slice. It is not the current branch or
+> release-status record. Use
+> [`../WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md) for active
+> source/package/physical proof boundaries.
 
 ## Product promise
 
@@ -248,11 +250,9 @@ result remains **NOT RUN**.
 - [x] Build/install/exercise a fresh v0.11.0 candidate and record exact SHA and
   signature evidence. Package integrity and no-input cleanup pass; live client
   audio remains **NOT RUN** because no input device is attached.
-- [x] Commit and push the dedicated branch after all automatable release gates
-  pass. `codex/vnext-last-mile-readiness` is intentionally separate from
-  `master` pending the manual two-Mac and Logic gates.
-- [ ] Merge to `master` only after the recorded manual gates pass; then push
-  `master` without force.
+- [x] Historical branch work was later incorporated into `master`; the
+  `1438a73` master baseline is recorded in the active last-mile record. That
+  integration did not certify the still-open two-Mac or Logic physical gates.
 
 ### Current native reference proof — 2026-07-13
 

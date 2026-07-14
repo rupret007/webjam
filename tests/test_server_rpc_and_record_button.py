@@ -12,6 +12,7 @@ import os
 import socket
 import threading
 import time
+from tempfile import TemporaryDirectory
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -212,7 +213,10 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._server_recording = False
         c.recording.phase = c.recording.phase.__class__.IDLE
         c.recording._local_capture = None
+        c.recording._take_id = ""
+        c.recording._reset_session_evidence()
         c.settings.local_capture_enabled = False
+        c.settings.musician_name = "Test Musician"
         c.settings.takes_directory = ""
         c.settings.server_rpc_secret_file = ""
         # A prior test may have left the button disabled mid-toggle.
@@ -251,11 +255,126 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.settings.server_rpc_secret_file = "/tmp/secret"
         c._jamulus_connected = True
         c.participants = {1: SimpleNamespace(role="Guitar")}
-        with patch.object(c, "_record_toggle_worker") as worker, \
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.check_recording_storage"
+        ) as storage, patch.object(c, "_record_toggle_worker") as worker, \
+             patch.object(c.recording, "_create_evidence_journal", return_value=True) as journal, \
              patch("webjam_qt.controllers.application_controller.threading.Thread",
                    side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
+            storage.return_value = SimpleNamespace(
+                can_start=True,
+                status="ready",
+            )
             c._on_record_requested()
+        journal.assert_called_once()
         worker.assert_called_once_with(True, "/tmp/secret")
+        c._jamulus_connected = False
+        c.participants = {}
+
+    def test_private_evidence_journal_tracks_confirmed_start_stop_and_retires(self):
+        from core.recording_manifest_journal import RecordingManifestJournal
+        from core.take_project import new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            c.settings.takes_directory = directory
+            c.settings.musician_name = "Test Host"
+            c.recording._take_id = new_project_id()
+            c.recording._local_participant_id = new_project_id()
+            c.recording._reset_session_evidence()
+
+            self.assertTrue(c.recording._create_evidence_journal())
+            journal = RecordingManifestJournal(directory)
+            initial = journal.load(c.recording._take_id)
+            self.assertIsNotNone(initial)
+            self.assertTrue(initial.trusted)
+            self.assertFalse(initial.evidence.started_utc)
+
+            with patch.object(c, "signal_peer_recording_started"), \
+                 patch.object(c, "signal_peer_recording_stopped"), \
+                 patch.object(c.recording, "_begin_take_validation"):
+                c.recording.apply_toggle_result(True)
+                c.recording.apply_toggle_result(False)
+
+            completed = journal.load(c.recording._take_id)
+            self.assertIsNotNone(completed)
+            self.assertTrue(completed.trusted)
+            self.assertTrue(completed.evidence.started_utc)
+            self.assertTrue(completed.evidence.ended_utc)
+            self.assertEqual(
+                [item.event for item in completed.evidence.timeline],
+                ["recording_requested", "recording_started", "recording_stopped"],
+            )
+
+            c.recording._remove_evidence_journal_after_manifest()
+            self.assertIsNone(journal.load(c.recording._take_id))
+
+    def test_evidence_journal_setup_failure_blocks_server_recording(self):
+        c = self.controller
+        c.settings.server_rpc_secret_file = "/tmp/secret"
+        c._jamulus_connected = True
+        c.participants = {1: SimpleNamespace(role="Guitar")}
+        ready = SimpleNamespace(can_start=True, status="ready")
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.check_recording_storage",
+            return_value=ready,
+        ), patch.object(c.recording, "_create_evidence_journal", return_value=False), \
+                patch.object(c, "_record_toggle_worker") as worker:
+            c._on_record_requested()
+
+        worker.assert_not_called()
+        self.assertEqual(c.recording.phase.value, "error")
+        self.assertEqual(
+            c._show_actionable_error.call_args.args[0],
+            "Recording Recovery Setup Failed",
+        )
+        self.assertIn(
+            "No server recording was started",
+            c._show_actionable_error.call_args.kwargs["next_action"],
+        )
+        c._jamulus_connected = False
+        c.participants = {}
+
+    def test_pending_evidence_journal_is_surfaced_without_private_identifier(self):
+        from core.recording_manifest_journal import RecordingManifestJournal
+        from core.take_project import SessionEvidence, new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            c.settings.takes_directory = directory
+            take_id = new_project_id()
+            RecordingManifestJournal(directory).create(take_id, SessionEvidence())
+            c.recording._stale_journal_scan_done = False
+            c.recording._recover_stale_evidence_journals_once()
+
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("interrupted recording", message)
+        self.assertIn("Open Studio", message)
+        self.assertNotIn(take_id, message)
+
+    def test_unsafe_storage_blocks_before_the_record_worker_starts(self):
+        c = self.controller
+        c.settings.server_rpc_secret_file = "/tmp/secret"
+        c._jamulus_connected = True
+        c.participants = {1: SimpleNamespace(role="Guitar")}
+        blocked = SimpleNamespace(
+            can_start=False,
+            detail="There isn't enough free storage to safely start this take.",
+            status="action_needed",
+        )
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.check_recording_storage",
+            return_value=blocked,
+        ), patch.object(c, "_record_toggle_worker") as worker:
+            c._on_record_requested()
+
+        worker.assert_not_called()
+        self.assertEqual(c.recording.phase.value, "error")
+        c._show_actionable_error.assert_called_once()
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Storage Needs Attention")
+        self.assertIn("No recording was started", kwargs["next_action"])
+        self.assertIn("end this session", kwargs["next_action"].lower())
         c._jamulus_connected = False
         c.participants = {}
 
@@ -394,6 +513,90 @@ class TestRecordButtonWiring(unittest.TestCase):
         )
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(any("confirmed" in m for m in msgs), msgs)
+
+    def test_confirmed_server_times_are_shared_with_peer_and_take_evidence(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        c.recording._take_id = new_project_id()
+        c.recording._local_participant_id = new_project_id()
+        c.settings.musician_name = "Test Host"
+        c.recording._reset_session_evidence()
+        with patch.object(c, "signal_peer_recording_started") as peer_started, \
+             patch.object(c, "signal_peer_recording_stopped") as peer_stopped, \
+             patch.object(c.recording, "_begin_take_validation"):
+            c.recording.apply_toggle_result(True)
+            start_evidence = c.recording._current_session_evidence()
+            c.recording.apply_toggle_result(False)
+        evidence = c.recording._current_session_evidence()
+
+        self.assertTrue(start_evidence.started_utc)
+        self.assertTrue(evidence.ended_utc)
+        self.assertEqual(evidence.host.display_name, "Test Host")
+        self.assertIn("jamulus-3.12.2", evidence.protocol_version)
+        self.assertEqual(
+            peer_started.call_args.kwargs["started_utc"], evidence.started_utc
+        )
+        self.assertEqual(
+            peer_stopped.call_args.kwargs["stopped_utc"], evidence.ended_utc
+        )
+        self.assertEqual(
+            [item.event for item in evidence.timeline],
+            ["recording_requested", "recording_started", "recording_stopped"],
+        )
+
+    def test_recording_evidence_redacts_lifecycle_detail_and_marks_failed_recovery(self):
+        from core.take_project import RecoveryStatus, new_project_id
+
+        c = self.controller
+        c.recording._take_id = new_project_id()
+        c.recording._local_participant_id = new_project_id()
+        c.recording._reset_session_evidence()
+        with patch.object(c, "signal_peer_recording_started"):
+            c.recording.apply_toggle_result(True)
+        c.recording.record_lifecycle_event(
+            "reconnecting",
+            reason=(
+                "Retry webjam://join?token=private-token at 192.168.10.9 "
+                "with Bearer private-secret"
+            ),
+            recovery_attempt=2,
+        )
+        c.recording.record_lifecycle_event(
+            "connected", reason="The connection returned."
+        )
+        recovered = c.recording._current_session_evidence()
+        rendered = " ".join(item.detail for item in recovered.timeline)
+        self.assertEqual(recovered.recovery_status, RecoveryStatus.RECOVERED)
+        self.assertNotIn("webjam://", rendered)
+        self.assertNotIn("192.168.10.9", rendered)
+        self.assertNotIn("private-secret", rendered)
+
+        c.recording.record_lifecycle_event(
+            "failed_recoverable", reason="The reconnect did not finish."
+        )
+        self.assertEqual(
+            c.recording._current_session_evidence().recovery_status,
+            RecoveryStatus.NEEDS_ATTENTION,
+        )
+
+    def test_lifecycle_transition_forwards_redacted_event_to_active_recorder(self):
+        from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
+
+        c = self.controller
+        c.session_lifecycle = SessionLifecycle(role="host")
+        with patch.object(c.recording, "record_lifecycle_event") as record_event:
+            self.assertTrue(
+                c._transition_lifecycle(
+                    SessionLifecyclePhase.PREPARING,
+                    "Preparing webjam://join?token=private-token",
+                )
+            )
+
+        record_event.assert_called_once()
+        self.assertEqual(record_event.call_args.args[0], SessionLifecyclePhase.PREPARING)
+        self.assertNotIn("webjam://", record_event.call_args.kwargs["reason"])
+        self.assertEqual(record_event.call_args.kwargs["recovery_attempt"], 0)
 
     def test_worker_failure_offers_actionable_retry(self):
         c = self.controller

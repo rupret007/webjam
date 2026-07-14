@@ -42,6 +42,7 @@ from core.take_project import (
     Participant,
     ProjectStatus,
     ProjectTrack,
+    RecoveryStatus,
     SourceQuality,
     SourceType,
     TakeProject,
@@ -432,6 +433,11 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         complete = load_take_project(take_dir)
         assert not complete.errors
         assert complete.status is ProjectStatus.COMPLETE
+        assert complete.session_evidence.recovery_status is RecoveryStatus.RECOVERED
+        assert any(
+            event.event == "peer_original_recovered"
+            for event in complete.session_evidence.timeline
+        )
         attached = next(
             track for track in complete.tracks
             if track.primary_segment.segment_id == descriptor.segment_id

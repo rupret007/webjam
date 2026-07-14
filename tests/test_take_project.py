@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -16,10 +17,14 @@ from core.take_project import (
     ProjectMarker,
     ProjectStatus,
     ProjectTrack,
+    RecoveryStatus,
+    SessionEvidence,
+    SessionTimelineEvent,
     SourceQuality,
     SourceType,
     TakeProject,
     TakeProjectError,
+    HostIdentity,
     load_take_project,
     migrate_v1_manifest,
     new_project_id,
@@ -106,6 +111,91 @@ def test_schema_v2_round_trip_preserves_identity_segments_gaps_and_alignment(tmp
     assert data["schema_version"] == 2
     assert data["tracks"][0]["filename"] == "media/guitar-01.wav"
     assert data["tracks"][0]["offset_s"] == pytest.approx(-0.123)
+    assert "session" not in data
+
+
+def test_session_evidence_round_trip_preserves_recording_provenance(tmp_path):
+    original = _project()
+    host = original.participants[0]
+    evidence = SessionEvidence(
+        protocol_version="jamulus-3.12.2 / webjam-v2",
+        started_utc="2026-07-14T01:02:03Z",
+        ended_utc="2026-07-14T01:07:45Z",
+        host=HostIdentity(host.participant_id, host.display_name),
+        recovery_status=RecoveryStatus.RECOVERED,
+        recovery_notes=("Recorder reconnect completed.",),
+        timeline=(
+            SessionTimelineEvent(
+                "reconnecting",
+                occurred_utc="2026-07-14T01:04:00Z",
+                detail="The music engine retried once.",
+            ),
+            SessionTimelineEvent(
+                "media_gap",
+                at_s=12.5,
+                participant_id=host.participant_id,
+                detail="queue_overflow",
+            ),
+        ),
+    )
+    project = replace(original, session_evidence=evidence)
+
+    write_take_project(tmp_path, project)
+    loaded = load_take_project(tmp_path)
+    payload = json.loads((tmp_path / "webjam-take.json").read_text())
+
+    assert loaded.session_evidence == evidence
+    assert payload["session"]["host"]["participant_id"] == host.participant_id
+    assert payload["session"]["timeline"][1]["event"] == "media_gap"
+    assert loaded.effective_status is ProjectStatus.COMPLETE
+
+
+def test_session_evidence_requires_known_host_and_fails_closed_for_unknown_status():
+    original = _project()
+    with pytest.raises(TakeProjectError, match="unknown participant"):
+        replace(
+            original,
+            session_evidence=SessionEvidence(
+                host=HostIdentity(new_project_id(), "Unknown Host")
+            ),
+        )
+
+    payload = original.to_dict()
+    payload["session"] = {"recovery_status": "not-a-real-status"}
+    loaded = TakeProject.from_dict(payload)
+
+    assert loaded.session_evidence.recovery_status is RecoveryStatus.NEEDS_ATTENTION
+    assert loaded.effective_status is ProjectStatus.NEEDS_ATTENTION
+    assert "unreadable" in loaded.session_evidence.recovery_notes[0].lower()
+
+
+def test_session_evidence_redacts_invites_addresses_and_credentials():
+    host_id = new_project_id()
+    evidence = SessionEvidence(
+        protocol_version="jamulus-3.12.2",
+        host=HostIdentity(
+            host_id,
+            "webjam://join?token=private-token at 192.168.10.9",
+        ),
+        recovery_notes=(
+            "Retry webjam://join?token=private-token at 192.168.10.9 ",
+        ),
+        timeline=(
+            SessionTimelineEvent(
+                "reconnecting",
+                detail="Authorization: Bearer private-secret",
+            ),
+        ),
+    )
+    payload = evidence.to_dict()
+    rendered = json.dumps(payload)
+
+    assert "webjam://" not in rendered
+    assert "192.168.10.9" not in rendered
+    assert "private-token" not in rendered
+    assert "private-secret" not in rendered
+    assert payload["host"]["participant_id"] == host_id
+    assert payload["host"]["display_name"] == "Private host"
 
 
 def test_manual_nudge_is_separate_and_restore_is_idempotent():

@@ -1,16 +1,18 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-13 (v0.11.0 private candidate)
+> **Last updated:** 2026-07-14 (current source after the v0.11.0 private candidate)
 
 ## Overview
 
 WebJam is a creative-collaboration shell that runs **Jamulus** as its
 low-latency music engine and can optionally launch native **Webex**
-(speech/video) alongside its Conductor window. The normal product flow is one
-Host/Join choice, then Band Check when the setup is new or changed, not
-music-engine configuration. Notes, multitrack Studio, settings, conversation,
-and diagnostics remain progressively disclosed under **More**. WebJam does not
-embed or control the native meeting.
+(speech/video) alongside its Conductor window. In current source, the normal
+product flow is one Host/Join choice, a concise sound confirmation, then Band
+Check when the setup is new or changed—not music-engine configuration. The
+frozen v0.11 test-night package goes directly from Host/Join to Band Check.
+Notes, multitrack Studio, settings, conversation, and diagnostics remain
+progressively disclosed under **More**. WebJam does not embed or control the
+native meeting.
 
 The primary runtime is a **Qt/PySide6 Conductor UI**. A legacy Tkinter UI (`legacy/webjam_app_enhanced.py`) is quarantined for archive/fallback use and is not part of the pilot release path.
 
@@ -58,8 +60,8 @@ webjam_qt_main.py          ← entry point
 | `app.py` | `QApplication` bootstrap, bundled font, stylesheet, Host/Join gate, and fatal-error boundary |
 | `windows/launch_dialog.py` | Responsive two-choice launch plus one-field invitation validation |
 | `windows/conductor_window.py` | Main application window — header, `SessionHud`, `ParticipantGrid`, workspaces, and bottom controls |
-| `windows/simple_settings.py` | Progressive preferences for the displayed name and optional conversation URL |
-| `windows/recording_setup.py` | Focused Studio output and explicit two-input local-original consent for the host or an active-v2 guest |
+| `windows/simple_settings.py` | Current-source progressive preferences for displayed name, Band input, Band output & review, and an optional conversation URL; macOS saves stable route IDs for the next Jamulus launch without claiming audibility. The frozen v0.11 package has only name/conversation settings. |
+| `windows/recording_setup.py` | Focused Studio playback-output/Takes-folder selection and explicit two-input local-original consent for the host or an active-v2 guest |
 | `windows/ready_check.py` | Permanent guided Band Check; pre-session actions and non-invasive live observation |
 | `windows/support_bundle_preview.py` | Preview and save one immutable allowlisted, redacted support artifact |
 | `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.11.0 musician path |
@@ -181,13 +183,17 @@ path. Both paths use `core/jamulus_server_rpc.py`.
 ## Data Flow: Recording completion
 
 ```
-Record button → RecordingCoordinator (preflight)
+Record button → RecordingCoordinator (preflight + roster-aware storage reserve)
   → host opt-in: open LocalInputCapture inputs 1–2 at 48 kHz
   → authenticated loopback JSON-RPC → recorderState (recording + timer)
+  → on recorder-confirmed start/end only: retain host/protocol and bounded,
+    redacted lifecycle/recovery evidence; atomically checkpoint it in a private
+    in-progress journal below Takes
   → guest opt-in: observe authenticated host state, then open LocalInputCapture
   → peer outage never deliberately stops that guest's local writer
   → Stop RPC → finalize atomic host WAVs → wait for stable server files
-  → finalize host local segments and write the initial schema-v2 manifest
+  → finalize host local segments and write the initial schema-v2 manifest,
+    then remove the journal only after publication
   → register expected guest media as missing/receiving truth in that manifest
   → resume guest upload from its verified byte offset
   → require size/SHA/PCM agreement, attach the host copy, and revise atomically
@@ -198,7 +204,8 @@ Studio Export for Logic
   → render each source onto one common-origin project timeline
   → atomically publish equal-length PCM24 stems plus server/Studio references
   → write markers, recording/alignment reports, independent analysis,
-    source/export manifests, checksums, and import instructions
+    source/export manifests (including nonempty session evidence), checksums,
+    and import instructions
 ```
 
 Local-original capture never participates in the live mix. If it fails,
@@ -206,15 +213,20 @@ Jamulus audio and server-recorder shutdown remain authoritative; WebJam keeps
 the original/recovered/partial files visible and blocks false completion or
 export while required media needs attention.
 
+The recording-session evidence is separate from media metadata: it accepts no
+invitation, network address, credential, or raw device identifier.
+
 ### `core/` — Domain models
 
 | Module | Responsibility |
 |--------|----------------|
 | `settings.py` | `AppSettings` dataclass, `load_settings()` / `save_settings()` — `~/.webjam_config.json` |
-| `band_check.py` / `band_check_audio.py` | Typed readiness outcomes plus explicit input, output, scratch-recording, host, and Studio checks |
+| `band_check.py` / `band_check_audio.py` | Typed readiness outcomes plus explicit input, output, scratch-recording, recording-storage, host, and Studio checks |
+| `recording_readiness.py` | Path-safe writable-folder and conservative PCM24 storage-reserve checks; Band Check estimates a small band and Record rechecks against the actual roster before arming |
 | `local_capture.py` | PCM24/48-kHz two-channel local originals with absolute-frame gaps, writer ownership, and crash recovery |
 | `session_transfer.py` / `session_transfer_runtime.py` | Authenticated same-RFC1918-LAN presence and resumable verified guest-original delivery |
-| `take_project.py` / `take_library.py` | Schema-v2 identity, segments, media truth, discovery, and validation |
+| `take_project.py` / `take_library.py` | Schema-v2 identity, segments, media truth, discovery, validation, and optional bounded/redacted session evidence |
+| `recording_manifest_journal.py` | Private, crash-safe in-progress checkpoint below the selected Takes folder; stores typed session evidence only and fails closed to recovery-needed truth |
 | `take_alignment.py` | Non-destructive bounded offset/drift evidence and manual restoration |
 | `take_export.py` | Atomic common-origin PCM24 Logic package with references, reports, analysis, and checksums |
 | `take_player.py` | Non-destructive multi-segment/mixed-rate project-clock review with seek, gain, pan, mute, and solo |
@@ -223,17 +235,18 @@ export while required media needs attention.
 | `templates.py` | Per-mode quick-start templates |
 | `audio_routing.py` | Loopback-device detection for advanced audience-bridge mode only |
 | `audio_route_profile.py` | Immutable OS-stable route identity, evidence levels, deterministic invalidation, and strict Jamulus 3.12.2 CoreAudio/ASIO/JACK config adapter |
+| `coreaudio_devices.py` / `macos_audio_route.py` | Read-only CoreAudio UID discovery plus macOS-only resolution, protected WebJam route staging, and frozen reconnect plans for Jamulus |
 | `jamulus_protocol.py` | Low-level Jamulus UDP packet encode/decode |
 | `ui/services.py` / `MetricsService` | Local counters, session-brief export, diagnostics-bundle export |
 
 ### Audio-route truth boundary
 
-`AudioRouteProfile` is the immutable route contract shared by future Band
-Check, Jamulus launch, capture, and Studio wiring. Its invalidation fingerprint
-uses stable OS device identities, channel maps, buffer request/observation,
-device generation, app/Jamulus binary versions, and Linux JACK ownership.
-Display names remain part of the fingerprint because Jamulus 3.12.2 can select
-CoreAudio and ASIO only by name.
+`AudioRouteProfile` is the immutable route contract used by the current macOS
+Jamulus launch boundary. Its invalidation fingerprint uses stable OS device
+identities, channel maps, buffer request/observation, device generation,
+app/Jamulus binary versions, and Linux JACK ownership. Display names remain
+part of the fingerprint because Jamulus 3.12.2 can select CoreAudio and ASIO
+only by name.
 
 Evidence is deliberately explicit:
 
@@ -245,11 +258,14 @@ Evidence is deliberately explicit:
 
 Jamulus 3.12.2 cannot report the active CoreAudio/ASIO device, channel map,
 sample rate, or buffer through JSON-RPC, so macOS and Windows are never called
-graph-confirmed. `Jamulus3122AudioRouteAdapter` writes a protected mode-0600
-inifile atomically with backup/rollback, translates macOS to the exact
-`in: <display>/out: <display>` selector, requires one Windows ASIO identity,
-and gives Linux explicit `JACK_DEFAULT_SERVER`, `--nojackconnect`, and graph
-connections.
+graph-confirmed. On macOS, `MacOSJamulusRouteManager` re-resolves persisted
+CoreAudio UIDs before launch, rejects missing/duplicate/non-48-kHz selectors,
+writes only `WebJam-route-v1.ini` below Jamulus's Data container, launches with
+the filename and that directory as `cwd`, and revalidates the frozen plan on
+reconnect rather than switching defaults. `Jamulus3122AudioRouteAdapter` still
+requires one Windows ASIO identity and gives Linux explicit
+`JACK_DEFAULT_SERVER`, `--nojackconnect`, and desired graph connections; those
+platforms are not yet runtime-managed in the same way.
 
 ### `storage/` — Persistence
 
@@ -325,17 +341,20 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot candidate, not broad-release-ready. The exact v0.11 source and
-  package-integrity/no-input-cleanup gates pass; the earlier v1/v2 engine has
-  native one-hour longevity evidence. Exact-package live CoreAudio, two-Mac
+- Closed-pilot candidate, not broad-release-ready. The preserved exact v0.11
+  package integrity/no-input-cleanup gates pass; current source storage and
+  recording-provenance/journal hardening are not in that package. The earlier
+  v1/v2 engine has native one-hour longevity evidence. Exact-package live CoreAudio, two-Mac
   audio/reconnect/originals, human Studio checks, and Logic import remain
   physical evidence gates.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
   Windows CI artifacts supply the official client installer). v0.11.0's private
   physical pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one
-  invitation field; `SimpleSettingsDialog` contains only the musician name and
-  optional conversation link. Source runs still require compatible Jamulus
-  apps separately.
+  invitation field. Current source then opens `SimpleSettingsDialog` for name,
+  Band input, Band output & review, and an optional conversation link; the
+  frozen v0.11 package does not. Current source controls the next macOS Jamulus
+  route through the preflighted WebJam-owned config. Source runs still require
+  compatible Jamulus apps separately.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
 - Guest-original control and transfer use authenticated plain HTTP on one
   private RFC1918 IPv4 LAN. There is no TLS, IPv6, Internet, VPN, NAT-traversal,

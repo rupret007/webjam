@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,7 +23,22 @@ from core.take_library import (
     write_take_manifest,
     wait_for_take_files_stable,
 )
-from core.take_project import new_project_id
+from core.recording_manifest_journal import (
+    RecordingManifestJournal,
+    RecordingManifestJournalError,
+)
+from core.redaction import redact_text
+from core.take_project import (
+    HostIdentity,
+    RecoveryStatus,
+    SessionEvidence,
+    SessionTimelineEvent,
+    new_project_id,
+)
+from core.recording_readiness import (
+    RecordingStorageStatus,
+    check_recording_storage,
+)
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -74,6 +91,26 @@ class RecordingCoordinator:
         # all hand off the capture; the lock makes the hand-off atomic so the
         # stream is finalized exactly once.
         self._capture_lock = threading.Lock()
+        # One active take keeps its own bounded, privacy-safe recording facts.
+        # Server-confirmed start/stop times are deliberately separate from the
+        # optional local-input capture timestamps.
+        self._evidence_lock = threading.Lock()
+        self._recording_started_utc = ""
+        self._recording_ended_utc = ""
+        self._recording_host = HostIdentity()
+        self._recording_protocol_version = ""
+        self._recording_recovery_status = RecoveryStatus.NOT_NEEDED
+        self._recording_recovery_notes: list[str] = []
+        self._recording_events: list[SessionTimelineEvent] = []
+        self._recording_had_recovery = False
+        self._recording_recovery_in_progress = False
+        # A private, fsynced checkpoint exists while a recording is being
+        # started or is active.  The finished take manifest replaces it only
+        # after source media and its final manifest were safely published.
+        self._evidence_journal: RecordingManifestJournal | None = None
+        self._evidence_journal_take_id = ""
+        self._evidence_journal_failed = False
+        self._stale_journal_scan_done = False
 
     def _take_local_capture(self):
         """Atomically claim the active capture (or None)."""
@@ -81,6 +118,316 @@ class RecordingCoordinator:
             capture = self._local_capture
             self._local_capture = None
             return capture
+
+    @staticmethod
+    def _utc_timestamp() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+            "+00:00", "Z"
+        )
+
+    @staticmethod
+    def _safe_evidence_detail(value: str) -> str:
+        """Bound recording evidence before it reaches a durable manifest."""
+        safe = redact_text(str(value or ""))
+        # Diagnostics may retain a redacted URL scheme for context. A take
+        # manifest needs no invitation context at all, so remove that remaining
+        # shape rather than persisting even a redacted invite reference.
+        safe = re.sub(
+            r"(?i)\bwebjam:(?://)?\[redacted\]",
+            "private invite",
+            safe,
+        )
+        return " ".join(safe.split())[:240]
+
+    def _append_evidence_event_locked(
+        self,
+        event: str,
+        *,
+        detail: str = "",
+        occurred_utc: str = "",
+    ) -> None:
+        item = SessionTimelineEvent(
+            event,
+            occurred_utc=occurred_utc or self._utc_timestamp(),
+            detail=self._safe_evidence_detail(detail),
+        )
+        if self._recording_events:
+            previous = self._recording_events[-1]
+            if previous.event == item.event and previous.detail == item.detail:
+                return
+        self._recording_events.append(item)
+        del self._recording_events[:-100]
+
+    def _set_recovery_locked(
+        self, status: RecoveryStatus, note: str = ""
+    ) -> None:
+        if (
+            status is RecoveryStatus.NEEDS_ATTENTION
+            or self._recording_recovery_status is not RecoveryStatus.NEEDS_ATTENTION
+        ):
+            self._recording_recovery_status = status
+        safe_note = self._safe_evidence_detail(note)
+        if safe_note and safe_note not in self._recording_recovery_notes:
+            self._recording_recovery_notes.append(safe_note)
+            del self._recording_recovery_notes[:-20]
+
+    def _reset_session_evidence(self) -> None:
+        """Begin a new take-local evidence context before requesting record."""
+        peer_control = "webjam-v2-private-peer" if self._c.host_peer.active else "none"
+        with self._evidence_lock:
+            self._recording_started_utc = ""
+            self._recording_ended_utc = ""
+            self._recording_host = HostIdentity(
+                participant_id=self._local_participant_id,
+                display_name=self._c.settings.musician_name,
+            )
+            self._recording_protocol_version = (
+                f"jamulus-3.12.2; peer-control={peer_control}"
+            )
+            self._recording_recovery_status = RecoveryStatus.NOT_NEEDED
+            self._recording_recovery_notes = []
+            self._recording_events = []
+            self._recording_had_recovery = False
+            self._recording_recovery_in_progress = False
+            self._evidence_journal = None
+            self._evidence_journal_take_id = ""
+            self._evidence_journal_failed = False
+            self._append_evidence_event_locked(
+                "recording_requested",
+                detail="Waiting for the band server to confirm recording.",
+            )
+
+    def _current_session_evidence(self) -> SessionEvidence:
+        """Return an immutable evidence snapshot for one manifest write."""
+        with self._evidence_lock:
+            return SessionEvidence(
+                protocol_version=self._recording_protocol_version,
+                started_utc=self._recording_started_utc,
+                ended_utc=self._recording_ended_utc,
+                host=self._recording_host,
+                recovery_status=self._recording_recovery_status,
+                recovery_notes=tuple(self._recording_recovery_notes),
+                timeline=tuple(self._recording_events),
+            )
+
+    def _create_evidence_journal(self) -> bool:
+        """Durably checkpoint a requested take before asking the server to roll."""
+        root = (self._c.settings.takes_directory or "").strip()
+        take_id = self._take_id
+        if not root or not take_id:
+            return False
+        journal = RecordingManifestJournal(root)
+        try:
+            journal.create(take_id, self._current_session_evidence())
+        except (FileExistsError, OSError, RecordingManifestJournalError, ValueError):
+            # UUID take IDs make an existing entry unexpected.  Do not replace
+            # it: it may be recovery evidence from a previous interrupted take.
+            LOGGER.warning(
+                "Could not create a private recording-evidence checkpoint."
+            )
+            return False
+        with self._evidence_lock:
+            if self._take_id != take_id:
+                # A newer request took ownership while the disk write ran. The
+                # just-created checkpoint remains recoverable instead of being
+                # accidentally associated with the later take.
+                return False
+            self._evidence_journal = journal
+            self._evidence_journal_take_id = take_id
+            self._evidence_journal_failed = False
+        return True
+
+    def _checkpoint_evidence_journal(self) -> None:
+        """Update the live checkpoint after an evidence mutation.
+
+        A checkpoint failure never fabricates success.  The final manifest
+        receives a NEEDS_ATTENTION fact if it can still be published, while
+        the prior on-disk checkpoint is deliberately left intact for recovery.
+        """
+        with self._evidence_lock:
+            journal = self._evidence_journal
+            take_id = self._evidence_journal_take_id
+            failed = self._evidence_journal_failed
+        if not journal or not take_id or failed or take_id != self._take_id:
+            return
+        try:
+            journal.update(take_id, self._current_session_evidence())
+        except (OSError, RecordingManifestJournalError, ValueError):
+            LOGGER.warning("Could not update the private recording-evidence checkpoint.")
+            with self._evidence_lock:
+                if self._evidence_journal is journal and self._take_id == take_id:
+                    self._evidence_journal_failed = True
+                    self._set_recovery_locked(
+                        RecoveryStatus.NEEDS_ATTENTION,
+                        "Recording evidence checkpoint could not be updated.",
+                    )
+                    self._append_evidence_event_locked(
+                        "recording_evidence_checkpoint_failed",
+                        detail="The final take needs recovery review.",
+                    )
+
+    def _remove_evidence_journal_after_manifest(self) -> None:
+        """Retire the temporary checkpoint only after a manifest is published."""
+        with self._evidence_lock:
+            journal = self._evidence_journal
+            take_id = self._evidence_journal_take_id
+        if not journal or not take_id:
+            return
+        try:
+            journal.remove(take_id)
+        except (OSError, RecordingManifestJournalError, ValueError):
+            # The final manifest is already durable.  Retaining the journal is
+            # safer than deleting unknown recovery evidence; the next launch
+            # will surface it for review without exposing private paths.
+            LOGGER.warning("Could not remove the completed recording-evidence checkpoint.")
+        finally:
+            with self._evidence_lock:
+                if self._evidence_journal is journal:
+                    self._evidence_journal = None
+                    self._evidence_journal_take_id = ""
+
+    def _recover_stale_evidence_journals_once(self) -> None:
+        """Surface interrupted recordings without trusting journal contents."""
+        if self._stale_journal_scan_done:
+            return
+        self._stale_journal_scan_done = True
+        root = (self._c.settings.takes_directory or "").strip()
+        if not root:
+            return
+        try:
+            scan = RecordingManifestJournal(root).list_pending()
+        except (OSError, RecordingManifestJournalError, ValueError):
+            LOGGER.warning("Could not scan private recording recovery evidence.")
+            return
+        pending = len(scan.journals) + len(scan.untrusted_entries)
+        if not pending:
+            return
+        noun = "recording" if pending == 1 else "recordings"
+        self._c.window.flash_message(
+            "WebJam found interrupted "
+            f"{noun}. Open Studio and review the saved tracks before export.",
+            ms=10000,
+        )
+        try:
+            self._c.window.recording_studio.set_takes_directory(root)
+            self._c.window.recording_studio.reload()
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
+
+    def recover_interrupted_recordings(self) -> None:
+        """Run the bounded local-audio and evidence recovery discovery once."""
+        self._recover_stale_captures_once()
+        self._recover_stale_evidence_journals_once()
+
+    def _confirmed_recording_started(self) -> tuple[str, bool]:
+        """Record the one server-confirmed start time, never a local proxy."""
+        if not self._take_id:
+            return "", False
+        with self._evidence_lock:
+            if self._recording_started_utc:
+                return self._recording_started_utc, False
+            started_utc = self._utc_timestamp()
+            self._recording_started_utc = started_utc
+            self._append_evidence_event_locked(
+                "recording_started",
+                detail="Confirmed by the band server.",
+                occurred_utc=started_utc,
+            )
+        self._checkpoint_evidence_journal()
+        return started_utc, True
+
+    def _confirmed_recording_stopped(
+        self, *, unexpected: bool = False, detail: str = ""
+    ) -> tuple[str, bool]:
+        """Record the one server-confirmed stop time without fabricating start."""
+        if not self._take_id:
+            return "", False
+        with self._evidence_lock:
+            if self._recording_ended_utc:
+                return self._recording_ended_utc, False
+            stopped_utc = self._utc_timestamp()
+            self._recording_ended_utc = stopped_utc
+            if not self._recording_started_utc:
+                self._set_recovery_locked(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    "The band server stop was confirmed, but start was not.",
+                )
+            if self._recording_recovery_in_progress:
+                self._set_recovery_locked(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    "Recording stopped while connection recovery was incomplete.",
+                )
+            if unexpected:
+                self._set_recovery_locked(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    detail or "The band server stopped recording unexpectedly.",
+                )
+            self._append_evidence_event_locked(
+                "recording_stopped_unexpectedly" if unexpected else "recording_stopped",
+                detail=(
+                    detail
+                    or (
+                        "The band server stopped before WebJam requested it."
+                        if unexpected
+                        else "Confirmed by the band server."
+                    )
+                ),
+                occurred_utc=stopped_utc,
+            )
+        self._checkpoint_evidence_journal()
+        return stopped_utc, True
+
+    def _mark_recording_recovery(
+        self, status: RecoveryStatus, note: str, *, event: str = "recovery"
+    ) -> None:
+        if not self._take_id:
+            return
+        with self._evidence_lock:
+            self._set_recovery_locked(status, note)
+            self._append_evidence_event_locked(event, detail=note)
+        self._checkpoint_evidence_journal()
+
+    def record_lifecycle_event(
+        self,
+        phase: object,
+        *,
+        reason: str = "",
+        recovery_attempt: int | None = None,
+    ) -> None:
+        """Keep relevant, already-redacted session recovery facts with a take."""
+        if not self._take_id:
+            return
+        phase_value = str(getattr(phase, "value", phase) or "").strip().lower()
+        if not phase_value:
+            return
+        with self._evidence_lock:
+            # The recorder cannot claim a lifecycle event belongs to a take
+            # until the server actually confirmed that take started.
+            if not self._recording_started_utc:
+                return
+            detail = self._safe_evidence_detail(reason)
+            if recovery_attempt is not None:
+                attempt = max(0, int(recovery_attempt))
+                detail = f"{detail} (attempt {attempt}).".strip()
+            self._append_evidence_event_locked(
+                f"lifecycle:{phase_value}", detail=detail
+            )
+            if phase_value in {"degraded", "reconnecting"}:
+                self._recording_had_recovery = True
+                self._recording_recovery_in_progress = True
+            elif phase_value == "connected" and self._recording_had_recovery:
+                self._recording_recovery_in_progress = False
+                self._set_recovery_locked(
+                    RecoveryStatus.RECOVERED,
+                    "Connection recovered while recording.",
+                )
+            elif phase_value in {"failed_recoverable", "failed_final"}:
+                self._recording_recovery_in_progress = False
+                self._set_recovery_locked(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    detail or "Connection recovery did not complete while recording.",
+                )
+        self._checkpoint_evidence_journal()
 
     def _salvage_capture(self) -> tuple[Path | None, tuple[str, ...]]:
         """Preserve an in-flight capture instead of discarding it.
@@ -110,6 +457,11 @@ class RecordingCoordinator:
 
     def salvage_on_shutdown(self) -> None:
         """Quitting while recording must keep the audio, not abort it away."""
+        self._mark_recording_recovery(
+            RecoveryStatus.NEEDS_ATTENTION,
+            "WebJam closed before normal take validation finished.",
+            event="recording_interrupted_by_shutdown",
+        )
         self._salvage_capture()
 
     @property
@@ -201,7 +553,25 @@ class RecordingCoordinator:
                         self._c._server_recording = False
                         self._c.window.set_status_recording(False)
                         if self._take_id:
-                            self._c.signal_peer_recording_stopped(self._take_id)
+                            stopped_utc, newly_confirmed = (
+                                self._confirmed_recording_stopped(
+                                    unexpected=True,
+                                    detail=(
+                                        "WebJam stopped the recorder while the "
+                                        "host was shutting down."
+                                    ),
+                                )
+                            )
+                            if newly_confirmed:
+                                self._c.signal_peer_recording_stopped(
+                                    self._take_id,
+                                    stopped_utc=stopped_utc,
+                                    needs_attention=True,
+                                    message=(
+                                        "Host shutdown interrupted normal take "
+                                        "validation."
+                                    ),
+                                )
                         LOGGER.info(
                             "Hosted-server recording stopped and confirmed"
                         )
@@ -225,6 +595,11 @@ class RecordingCoordinator:
             # The validation worker owns the capture and will finish the take.
             return
         recovered, errors = self._salvage_capture()
+        self._mark_recording_recovery(
+            RecoveryStatus.NEEDS_ATTENTION,
+            "This Mac stopped audio before normal take validation finished.",
+            event="recording_interrupted_by_audio_stop",
+        )
         self._c._recorder_armed = False
         self._c._server_recording = False
         self._c.window.set_status_recording(False)
@@ -285,6 +660,32 @@ class RecordingCoordinator:
                     retry_callback=self.on_record_requested,
                 )
                 return
+            storage = check_recording_storage(
+                self._c.settings.takes_directory,
+                expected_server_tracks=len(real_participants),
+                local_originals_enabled=bool(
+                    self._c.settings.local_capture_enabled
+                ),
+            )
+            if not storage.can_start:
+                self._set_phase(RecorderPhase.ERROR)
+                self._c._show_actionable_error(
+                    "Recording Storage Needs Attention",
+                    what_failed=(
+                        "WebJam can't safely start this take with the available "
+                        "recording storage."
+                    ),
+                    likely_cause=storage.detail,
+                    next_action=(
+                        "Free up space, or end this session and choose another Takes "
+                        "folder in Recording Setup before starting again. No recording "
+                        "was started."
+                    ),
+                    retry_callback=self.on_record_requested,
+                )
+                return
+            if storage.status is RecordingStorageStatus.WARNING:
+                self._c.window.flash_message(storage.detail, ms=8000)
             self._before_takes = snapshot_take_directories(
                 self._c.settings.takes_directory
             )
@@ -317,7 +718,33 @@ class RecordingCoordinator:
                 self._participant_ids[channel_id] = durable
             self._take_id = new_project_id()
             self._session_title = self._c.window.session_strip.current_title()
+            self._reset_session_evidence()
             if not self._start_local_capture():
+                return
+            if not self._create_evidence_journal():
+                # A server take is not allowed to begin without a durable,
+                # privacy-safe recovery checkpoint.  Preserve any local input
+                # that was already opened instead of aborting it away.
+                recovered, errors = self._salvage_capture()
+                self._set_phase(RecorderPhase.ERROR)
+                self._c._show_actionable_error(
+                    "Recording Recovery Setup Failed",
+                    what_failed=(
+                        "WebJam couldn't prepare the private recovery record for "
+                        "this take."
+                    ),
+                    likely_cause=(
+                        "The selected Takes folder is no longer writable or could "
+                        "not safely store recording recovery evidence."
+                    ),
+                    next_action=(
+                        "Choose a writable Takes folder in Recording Setup, then "
+                        "try Record Take again. No server recording was started."
+                    ),
+                    retry_callback=self.on_record_requested,
+                )
+                if recovered is not None:
+                    self._notify_recovered(recovered, errors)
                 return
             self._set_phase(RecorderPhase.STARTING)
         else:
@@ -331,7 +758,7 @@ class RecordingCoordinator:
 
     def _start_local_capture(self) -> bool:
         """Start optional isolated local-input capture independently of Webex."""
-        self._recover_stale_captures_once()
+        self.recover_interrupted_recordings()
         if not self._c.settings.local_capture_enabled:
             self._local_capture = None
             return True
@@ -409,7 +836,7 @@ class RecordingCoordinator:
         )
         try:
             self._c.window.recording_studio.set_takes_directory(root)
-            self._c.window.recording_studio.refresh_takes()
+            self._c.window.recording_studio.reload()
         except Exception:  # noqa: BLE001
             LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
 
@@ -466,7 +893,11 @@ class RecordingCoordinator:
             # do not leave the UI hanging if a notification is delayed/lost.
             self._set_phase(RecorderPhase.RECORDING)
             if self._take_id:
-                self._c.signal_peer_recording_started(self._take_id)
+                started_utc, newly_confirmed = self._confirmed_recording_started()
+                if newly_confirmed:
+                    self._c.signal_peer_recording_started(
+                        self._take_id, started_utc=started_utc
+                    )
             self._c.window.flash_message(
                 "Recording confirmed by the band server.",
                 ms=5000,
@@ -477,7 +908,11 @@ class RecordingCoordinator:
                 LOGGER.debug("recording metric failed", exc_info=True)
         else:
             if self._take_id:
-                self._c.signal_peer_recording_stopped(self._take_id)
+                stopped_utc, newly_confirmed = self._confirmed_recording_stopped()
+                if newly_confirmed:
+                    self._c.signal_peer_recording_stopped(
+                        self._take_id, stopped_utc=stopped_utc
+                    )
             self._set_phase(RecorderPhase.VALIDATING)
             self._begin_take_validation()
 
@@ -494,6 +929,11 @@ class RecordingCoordinator:
             # stop; normal stop confirmation then validates the server take and
             # finalizes this still-running local capture.
             self._c._recorder_armed = True
+            self._mark_recording_recovery(
+                RecoveryStatus.NEEDS_ATTENTION,
+                "WebJam could not confirm whether recording started.",
+                event="recording_start_unconfirmed",
+            )
         still_armed = bool(self._c._recorder_armed or self._c._server_recording)
         self._c.session_health.mark_rpc_result("recorder", False, message)
         self._set_phase(
@@ -532,15 +972,42 @@ class RecordingCoordinator:
         if recording:
             self._c._recorder_armed = True
             self._set_phase(RecorderPhase.RECORDING)
+            if self._take_id:
+                started_utc, newly_confirmed = self._confirmed_recording_started()
+                if newly_confirmed:
+                    self._c.signal_peer_recording_started(
+                        self._take_id, started_utc=started_utc
+                    )
             self._c.window.flash_message(
                 "● Server is recording — every musician gets their own track.",
                 ms=5000,
             )
-        elif self.phase is not RecorderPhase.STOPPING:
-            self._c._recorder_armed = False
-            self._set_phase(RecorderPhase.VALIDATING)
-            if prior_phase is RecorderPhase.RECORDING:
-                self._begin_take_validation()
+        else:
+            if self._take_id:
+                stopped_utc, newly_confirmed = self._confirmed_recording_stopped(
+                    unexpected=prior_phase is not RecorderPhase.STOPPING,
+                    detail=(
+                        "The band server stopped recording before WebJam requested it."
+                        if prior_phase is not RecorderPhase.STOPPING
+                        else "Confirmed by the band server after Stop Rec."
+                    ),
+                )
+                if newly_confirmed:
+                    self._c.signal_peer_recording_stopped(
+                        self._take_id,
+                        stopped_utc=stopped_utc,
+                        needs_attention=prior_phase is not RecorderPhase.STOPPING,
+                        message=(
+                            "The band server stopped recording unexpectedly."
+                            if prior_phase is not RecorderPhase.STOPPING
+                            else ""
+                        ),
+                    )
+            if self.phase is not RecorderPhase.STOPPING:
+                self._c._recorder_armed = False
+                self._set_phase(RecorderPhase.VALIDATING)
+                if prior_phase is RecorderPhase.RECORDING:
+                    self._begin_take_validation()
         if not recording:
             self._c.window.flash_message("Server recording stopped.", ms=3000)
 
@@ -607,6 +1074,11 @@ class RecordingCoordinator:
     def _begin_take_validation(self) -> None:
         root = self._c.settings.takes_directory
         if not root:
+            self._mark_recording_recovery(
+                RecoveryStatus.NEEDS_ATTENTION,
+                "No local Takes folder was configured when recording stopped.",
+                event="takes_folder_missing",
+            )
             self._c.window.flash_message(
                 "Recording stopped, but no local Takes folder is configured.", ms=7000
             )
@@ -673,6 +1145,11 @@ class RecordingCoordinator:
         # are polling for the take directory.
         required_local = 1 if self._local_capture is not None else 0
         if take_dir is None:
+            self._mark_recording_recovery(
+                RecoveryStatus.NEEDS_ATTENTION,
+                "No new Jamulus take folder appeared after recording stopped.",
+                event="server_take_missing",
+            )
             recovered = Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
@@ -694,6 +1171,7 @@ class RecordingCoordinator:
             if recovered.is_dir():
                 from webjam_qt import __version__
                 self._post_validation_stage("ALIGNING HOST TRACKS…")
+                self._checkpoint_evidence_journal()
                 result = write_take_manifest(
                     recovered,
                     expected_tracks=self._expected_tracks,
@@ -715,7 +1193,10 @@ class RecordingCoordinator:
                     capture_device=capture_device,
                     capture_gaps=capture_gaps,
                     local_total_frames=local_total_frames,
+                    session_evidence=self._current_session_evidence(),
                 )
+                if result.take is not None:
+                    self._remove_evidence_journal_after_manifest()
             else:
                 result = TakeValidationResult(
                     None,
@@ -743,8 +1224,14 @@ class RecordingCoordinator:
             stable = wait_for_take_files_stable(take_dir, polls=20, interval_s=0.25)
             if not stable:
                 capture_errors = (*capture_errors, "Take files did not become stable in time.")
+                self._mark_recording_recovery(
+                    RecoveryStatus.NEEDS_ATTENTION,
+                    "Take files did not become stable in time.",
+                    event="take_files_unstable",
+                )
             from webjam_qt import __version__
             self._post_validation_stage("ALIGNING HOST TRACKS…")
+            self._checkpoint_evidence_journal()
             result = write_take_manifest(
                 take_dir,
                 expected_tracks=self._expected_tracks,
@@ -763,7 +1250,10 @@ class RecordingCoordinator:
                 capture_device=capture_device,
                 capture_gaps=capture_gaps,
                 local_total_frames=local_total_frames,
+                session_evidence=self._current_session_evidence(),
             )
+            if result.take is not None:
+                self._remove_evidence_journal_after_manifest()
         return result
 
     def _show_validation_result(self, result: TakeValidationResult) -> None:

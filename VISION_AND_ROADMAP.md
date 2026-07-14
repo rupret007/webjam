@@ -73,12 +73,16 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Implemented in source — v0.11.0 private candidate (2026-07-13)
+### ✅ Implemented in current source after the v0.11.0 private candidate (2026-07-14)
+
+The preserved v0.11.0 test-night ZIP is a frozen earlier artifact, not a claim
+that every item in this section has been packaged or physically tested.
 
 - **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
-  opens one invitation field. A new or changed setup proceeds through Band
-  Check and **Start Session**; a matching stored check starts the bundled
-  server/client directly.
+  opens one invitation field. Current source then asks for one concise name and
+  band-sound confirmation before Band Check and **Start Session**; the frozen
+  v0.11 ZIP goes directly to Band Check. A matching stored check starts the
+  bundled server/client directly.
 - **Permanent Band Check** — required checks after Host/Join on a new or changed
   setup, plus F2, Settings, and live troubleshooting, share one guided input/
   headphone/scratch-recording/Studio path with typed Ready, Warning, and Action
@@ -108,12 +112,13 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 - **Accessibility and narrow-window support** — visible focus, task-ordered
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
-- **Tonight's boundary** — private Apple Silicon two-Mac same-LAN candidate.
-  The v1/v2 engine baseline has native one-hour longevity evidence; the exact
-  v0.11 package passes integrity plus two no-input server/normal-close cleanup
-  cycles. Packaged CoreAudio client/roster audio, physical reconnect and
-  guest-original delivery, Logic import, and two-Mac cleanup remain explicit
-  gates; no automated result fills those physical fields.
+- **Tonight's boundary** — the preserved private Apple Silicon v0.11 package
+  remains the two-Mac same-LAN candidate. The v1/v2 engine baseline has native
+  one-hour longevity evidence; that exact package passes integrity plus two
+  no-input server/normal-close cleanup cycles. Packaged CoreAudio client/roster
+  audio, physical reconnect and guest-original delivery, Logic import, and
+  two-Mac cleanup remain explicit gates; no automated result fills those
+  physical fields.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 

@@ -19,15 +19,53 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Recorded the current v1 last-mile acceptance boundary and manual gates in
   `docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
 
+### Recording safety
+
+- Added a fail-closed recording-storage guard. Band Check checks the selected
+  folder before the session starts, and **Record** rechecks free space using the
+  actual roster before opening local capture or arming the server recorder.
+  An unsafe result starts no take and gives one recovery path; low storage is a
+  warning to make room before a long rehearsal, not a guarantee of one. This is
+  current source hardening, not evidence for the frozen v0.11 test-night ZIP.
+
+### Recording evidence and recovery
+
+- Current source schema-v2 take manifests now retain optional recording-session
+  evidence: start/end timestamps only after recorder-server confirmation, host
+  identity and protocol label, plus a bounded redacted lifecycle/recovery
+  timeline. Invitations, network addresses, credentials, and raw device
+  identifiers are excluded.
+- While a take is live, current source writes that evidence to a private,
+  crash-safe checkpoint below the chosen Takes folder. An untrusted or
+  unfinished checkpoint is recovery-needed truth, never a completed-take
+  claim; it is removed only after final manifest publication. The final Logic
+  export copies nonempty evidence into `webjam-logic-export.json`. These are
+  source changes, not claims about the frozen v0.11 test-night ZIP.
+
 ### Simpler musician setup
 
+- Added a one-screen current-source confirmation after Host/Join: musician
+  name plus Band input and Band output & review are saved before Band Check.
+  The preserved v0.11 test-night ZIP predates this screen.
 - Reworked in-session **Settings** into a short musician-first page: name,
-  Band Check input, review-playback output, and a collapsed optional
-  conversation link. On macOS it links directly to Audio MIDI Setup for the
-  system-owned live output device.
+  Band input, Band output & review, and a collapsed optional conversation link.
+  On current macOS source, a complete pair persists as CoreAudio UIDs and is
+  staged for the next Jamulus session; the frozen v0.11 ZIP predates this.
 - Removed Band Check's empty technical-details disclosure. Private diagnostics
   remain available only through the quieter **Save Support Bundle** action;
   **Audio Settings** is now the obvious correction path.
+
+### macOS Jamulus route ownership
+
+- Added read-only native CoreAudio discovery without PyObjC or a helper binary.
+  WebJam resolves persistent UIDs, rejects duplicate Jamulus selector names,
+  missing channels, and non-48-kHz devices before launch.
+- Added a protected WebJam-owned `WebJam-route-v1.ini` in Jamulus's allowed
+  container. The macOS client receives only the filename with that directory as
+  its working directory; WebJam never overwrites a musician's `Jamulus.ini`.
+- Route configuration is deliberately not audibility proof. A frozen route plan
+  is revalidated on reconnect instead of silently switching defaults; a local
+  PortAudio meter is skipped while Jamulus owns the live pair.
 
 ---
 
