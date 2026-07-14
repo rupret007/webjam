@@ -89,11 +89,22 @@ def _descriptor(
 class _FakeCapture:
     instances: list["_FakeCapture"] = []
 
-    def __init__(self, root, *, device, samplerate, blocksize) -> None:
+    def __init__(
+        self,
+        root,
+        *,
+        device,
+        samplerate,
+        blocksize,
+        take_id,
+        session_id,
+    ) -> None:
         self.root = Path(root)
         self.device = device
         self.samplerate = samplerate
         self.blocksize = blocksize
+        self.take_id = take_id
+        self.session_id = session_id
         self.started = False
         self.stop_calls = 0
         self.__class__.instances.append(self)
@@ -269,6 +280,8 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     capture = _FakeCapture.instances[0]
     assert capture.started
     assert guest.active_take_id == take_id
+    assert capture.take_id == take_id
+    assert capture.session_id == credentials.session_id
 
     original_state = guest.client.state
     guest.client.state = lambda _enrollment: (_ for _ in ()).throw(

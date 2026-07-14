@@ -9,7 +9,11 @@ from core.remote_invitation import issue_remote_invitation
 from core.session_transport import SessionRole, TransportPath
 from services import native_remote_transport as native
 from services.remote_invitation_owner import RemoteInvitationOwnerError
-from services.remote_session_runtime import RemoteSessionPhase
+from services.remote_session_runtime import (
+    RemoteBackendError,
+    RemoteSessionErrorCode,
+    RemoteSessionPhase,
+)
 from services.transport_runtime import TransportEvent
 
 
@@ -121,6 +125,50 @@ def test_guest_backend_returns_only_authenticated_loopback_facts(monkeypatch) ->
     backend.stop()
     assert FakeProcess.instances[-1].closed == 1
     assert FakeProcess.instances[-1].stopped == 1
+
+
+def test_guest_backend_allows_same_invitation_retry_only_before_open_guest(
+    monkeypatch,
+) -> None:
+    class StartFailsProcess(FakeProcess):
+        def start(self):
+            self.running = False
+            raise RuntimeError("sidecar did not start")
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", StartFailsProcess)
+    unavailable = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+    )
+
+    with pytest.raises(RemoteBackendError) as start_error:
+        unavailable.start_guest(_invitation(), generation=1)
+
+    assert start_error.value.code is RemoteSessionErrorCode.UNAVAILABLE
+    start_process = FakeProcess.instances[-1]
+    assert start_process.guest_generations == []
+    assert start_process.stopped == 1
+
+    class OpenGuestFailsProcess(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            self.guest_generations.append(generation)
+            raise RuntimeError("enrollment outcome is private")
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", OpenGuestFailsProcess)
+    uncertain = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+    )
+
+    with pytest.raises(RemoteBackendError) as open_error:
+        uncertain.start_guest(_invitation(), generation=2)
+
+    assert open_error.value.code is RemoteSessionErrorCode.INVITATION_UNUSABLE
+    open_process = FakeProcess.instances[-1]
+    assert open_process.guest_generations == [2]
+    assert open_process.stopped == 1
 
 
 def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(

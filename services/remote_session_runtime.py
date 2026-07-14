@@ -38,6 +38,7 @@ class RemoteSessionErrorCode(str, Enum):
     EXPIRED = "expired"
     UNAVAILABLE = "unavailable"
     ENROLLMENT_REJECTED = "enrollment_rejected"
+    INVITATION_UNUSABLE = "invitation_unusable"
     TRANSPORT_FAILED = "transport_failed"
     STOP_FAILED = "stop_failed"
 
@@ -77,6 +78,22 @@ class RemoteSessionSnapshot:
     path: TransportPath | None = None
     quality: ConnectionQuality = ConnectionQuality.UNKNOWN
     error_code: RemoteSessionErrorCode | None = None
+
+    @property
+    def invitation_retry_safe(self) -> bool:
+        """Whether the same guest invitation is safe to try one more time.
+
+        ``UNAVAILABLE`` is reserved for a sidecar that could not start before
+        it received ``open_guest``. Every other guest failure is conservative:
+        the reference service may have consumed the one-use enrollment value,
+        so the controller must require a fresh invitation.
+        """
+
+        return bool(
+            self.phase is RemoteSessionPhase.FAILED
+            and self.role is SessionRole.GUEST
+            and self.error_code is RemoteSessionErrorCode.UNAVAILABLE
+        )
 
     @property
     def musician_status(self) -> str:
@@ -271,7 +288,10 @@ class RemoteSessionRuntime:
                 "Remote session backend failed; exception_type=%s",
                 type(exc).__name__,
             )
-            error = RemoteSessionErrorCode.TRANSPORT_FAILED
+            # A backend that cannot prove a failure happened before it entered
+            # ``open_guest`` may already have handed the one-use enrollment
+            # value to the service. Do not offer a capability replay.
+            error = RemoteSessionErrorCode.INVITATION_UNUSABLE
         finally:
             # Drop the runtime's last invitation reference immediately after
             # enrollment returns. Backend implementations must do the same.

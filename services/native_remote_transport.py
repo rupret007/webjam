@@ -9,6 +9,7 @@ lab-only until a public rendezvous profile is provisioned.
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 import os
 from pathlib import Path
 import platform
@@ -40,6 +41,7 @@ REFERENCE_LOCAL_OPT_IN = "WEBJAM_ENABLE_REFERENCE_LOCAL"
 TRANSPORT_BINARY_OVERRIDE = "WEBJAM_TRANSPORT_BINARY"
 DEFAULT_REMOTE_CONNECT_TIMEOUT_SECONDS = 30.0
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+LOGGER = logging.getLogger("webjam.services.native_remote_transport")
 
 
 def reference_local_host_requested() -> bool:
@@ -137,7 +139,14 @@ def _integrity_options(binary: Path) -> dict[str, object]:
 
 
 class NativeGuestTransportBackend:
-    """One-use guest backend that returns only authenticated loopback facts."""
+    """One-use guest backend that returns only authenticated loopback facts.
+
+    A guest capability is one-use at the reference service. The only failure
+    that is safe to retry with the same invitation is one before
+    :meth:`TransportProcess.open_guest` is entered. Once that call begins,
+    cleanup intentionally reports the invitation as unusable even when the
+    sidecar cannot prove whether the service consumed it.
+    """
 
     def __init__(
         self,
@@ -160,31 +169,58 @@ class NativeGuestTransportBackend:
     ) -> RemoteGuestConnection:
         if not isinstance(invitation, RemoteInvitation):
             raise TypeError("invitation must be a RemoteInvitation")
-        with self._lock:
-            if self._process is not None:
-                raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
-            process = TransportProcess(
-                self._binary,
-                expected_build=self._expected_build,
-                command_timeout=self._connect_timeout,
-                **_integrity_options(self._binary),
-            )
-            self._process = process
+        try:
+            with self._lock:
+                if self._process is not None:
+                    raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+                process = TransportProcess(
+                    self._binary,
+                    expected_build=self._expected_build,
+                    command_timeout=self._connect_timeout,
+                    **_integrity_options(self._binary),
+                )
+                self._process = process
+        except RemoteBackendError:
+            raise
+        except Exception:  # noqa: BLE001 - fixed safe failure boundary
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE) from None
+
         try:
             process.start()
+        except Exception:  # noqa: BLE001 - no enrollment command was sent
+            self._discard_failed_process(process)
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE) from None
+
+        try:
+            # From this call onward the service may have atomically consumed
+            # the enrollment value. Never retry the invitation on uncertainty.
             connected = process.open_guest(invitation, generation=generation)
-            return RemoteGuestConnection(
-                loopback_port=connected.loopback_port,
-                path=TransportPath.SECURE_RELAY,
-                quality=ConnectionQuality.UNKNOWN,
-                generation=connected.generation,
-            )
-        except Exception:
+        except Exception:  # noqa: BLE001 - preserve no sidecar detail
+            self._discard_failed_process(process)
+            raise RemoteBackendError(
+                RemoteSessionErrorCode.INVITATION_UNUSABLE
+            ) from None
+        return RemoteGuestConnection(
+            loopback_port=connected.loopback_port,
+            path=TransportPath.SECURE_RELAY,
+            quality=ConnectionQuality.UNKNOWN,
+            generation=connected.generation,
+        )
+
+    def _discard_failed_process(self, process: TransportProcess) -> None:
+        """Best-effort cleanup without masking the safe enrollment result."""
+
+        try:
             process.stop()
+        except Exception as exc:  # noqa: BLE001 - child cleanup is best effort
+            LOGGER.error(
+                "Remote guest transport cleanup failed; exception_type=%s",
+                type(exc).__name__,
+            )
+        finally:
             with self._lock:
                 if self._process is process:
                     self._process = None
-            raise
 
     def stop(self) -> None:
         with self._lock:

@@ -198,7 +198,14 @@ def test_logic_export_write_failure_leaves_no_visible_or_hidden_package(tmp_path
     assert list(root.iterdir()) == []
 
 
-def _project_segment(path: Path, take_dir: Path, *, start: int = 0, gaps=()):
+def _project_segment(
+    path: Path,
+    take_dir: Path,
+    *,
+    start: int = 0,
+    gaps=(),
+    has_signal: bool | None = True,
+):
     info = sf.info(path)
     return MediaSegment(
         segment_id=new_project_id(),
@@ -211,7 +218,7 @@ def _project_segment(path: Path, take_dir: Path, *, start: int = 0, gaps=()):
         media_status=MediaStatus.AVAILABLE,
         sha256=_digest(path),
         size_bytes=path.stat().st_size,
-        has_signal=True,
+        has_signal=has_signal,
         gaps=tuple(gaps),
     )
 
@@ -224,7 +231,8 @@ def _project_track(
     order: int,
     source_type=SourceType.LOCAL_ISOLATED,
     quality=SourceQuality.VERIFIED_ISOLATED,
-    alignment=AlignmentState(),
+    alignment=AlignmentState(confidence=1.0, method="test-alignment"),
+    selected_for_export=True,
 ):
     return ProjectTrack(
         track_id=new_project_id(),
@@ -238,6 +246,7 @@ def _project_track(
         order=order,
         segments=tuple(segments),
         alignment=alignment,
+        selected_for_export=selected_for_export,
     )
 
 
@@ -419,6 +428,208 @@ def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):
 
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert "session_evidence" not in manifest
+
+
+def test_schema2_logic_handoff_blocks_explicitly_silent_selected_segment(tmp_path):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    silent = take_dir / "silent-guitar.wav"
+    _write(silent, np.zeros(2048), rate=48_000)
+    participant_id = new_project_id()
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(participant_id, "Alex"),),
+        tracks=(
+            _project_track(
+                "Alex guitar",
+                participant_id,
+                [_project_segment(silent, take_dir, has_signal=False)],
+                order=0,
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = TakeInfo(
+        take_dir,
+        "Take",
+        [TrackInfo(silent, "Alex guitar", samplerate=48_000)],
+        take_id=project.take_id,
+    )
+    root = tmp_path / "exports"
+
+    with pytest.raises(TakeExportError, match="explicitly silent segments") as exc:
+        export_logic_package(take, destination_root=root)
+
+    assert "Alex guitar" in str(exc.value)
+    assert "Review the recording or intentionally deselect" in str(exc.value)
+    assert not root.exists()
+
+
+def test_schema2_logic_handoff_allows_unknown_signal_and_deselected_silent_track(
+    tmp_path,
+):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    unknown = take_dir / "unknown-guitar.wav"
+    silent = take_dir / "silent-drums.wav"
+    _write(unknown, np.full(2048, 0.1), rate=48_000)
+    _write(silent, np.zeros(2048), rate=48_000)
+    participant_id = new_project_id()
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(participant_id, "Alex"),),
+        tracks=(
+            _project_track(
+                "Alex unknown guitar",
+                participant_id,
+                [_project_segment(unknown, take_dir, has_signal=None)],
+                order=0,
+            ),
+            _project_track(
+                "Alex silent drums",
+                participant_id,
+                [_project_segment(silent, take_dir, has_signal=False)],
+                order=1,
+                selected_for_export=False,
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = TakeInfo(
+        take_dir,
+        "Take",
+        [
+            TrackInfo(unknown, "Alex unknown guitar", samplerate=48_000),
+            TrackInfo(silent, "Alex silent drums", samplerate=48_000),
+        ],
+        take_id=project.take_id,
+    )
+
+    result = export_logic_package(take, destination_root=tmp_path / "exports")
+
+    assert len(result.stems) == 1
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert [track["name"] for track in manifest["tracks"]] == ["Alex unknown guitar"]
+
+
+def test_schema2_logic_handoff_blocks_unaligned_transferred_guest_original(tmp_path):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    server = take_dir / "server.wav"
+    guest = take_dir / "guest-original.wav"
+    _write(server, np.ones(2048) * 0.1, rate=48_000)
+    _write(guest, np.ones(2048) * 0.2, rate=48_000)
+    host_id = new_project_id()
+    guest_id = new_project_id()
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(
+            Participant(host_id, "Morgan"),
+            Participant(guest_id, "Riley"),
+        ),
+        tracks=(
+            _project_track(
+                "Morgan server track",
+                host_id,
+                [_project_segment(server, take_dir)],
+                order=0,
+                source_type=SourceType.JAMULUS_SERVER,
+                quality=SourceQuality.NETWORK_TRACK,
+                alignment=AlignmentState(
+                    confidence=1.0,
+                    method="server-origin",
+                ),
+            ),
+            _project_track(
+                "Riley local original",
+                guest_id,
+                [_project_segment(guest, take_dir)],
+                order=1,
+                source_type=SourceType.LOCAL_ISOLATED,
+                quality=SourceQuality.UNVERIFIED,
+                alignment=AlignmentState(
+                    confidence=0.0,
+                    method="peer-local-original-unverified-alignment",
+                ),
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = TakeInfo(
+        take_dir,
+        "Take",
+        [
+            TrackInfo(server, "Morgan server track", samplerate=48_000),
+            TrackInfo(guest, "Riley local original", samplerate=48_000),
+        ],
+        take_id=project.take_id,
+    )
+    root = tmp_path / "exports"
+
+    with pytest.raises(TakeExportError, match="no verified timeline alignment") as exc:
+        export_logic_package(take, destination_root=root)
+
+    assert "Keep the Jamulus server track" in str(exc.value)
+    assert not root.exists()
+
+
+def test_schema2_logic_handoff_allows_aligned_host_local_capture(tmp_path):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    local = take_dir / "host-guitar.wav"
+    _write(local, np.ones(2048) * 0.1, rate=48_000)
+    host_id = new_project_id()
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(host_id, "Morgan"),),
+        tracks=(
+            _project_track(
+                "Morgan local guitar",
+                host_id,
+                [_project_segment(local, take_dir)],
+                order=0,
+                source_type=SourceType.LOCAL_ISOLATED,
+                quality=SourceQuality.UNVERIFIED,
+                alignment=AlignmentState(
+                    automatic_offset_s=-0.03,
+                    confidence=0.91,
+                    method="envelope+refine-v2",
+                ),
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = TakeInfo(
+        take_dir,
+        "Take",
+        [TrackInfo(local, "Morgan local guitar", samplerate=48_000)],
+        take_id=project.take_id,
+    )
+
+    result = export_logic_package(take, destination_root=tmp_path / "exports")
+
+    assert len(result.stems) == 1
+    assert result.stems[0].is_file()
 
 
 def test_schema2_logic_handoff_blocks_missing_or_changed_media_atomically(tmp_path):

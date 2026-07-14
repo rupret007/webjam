@@ -18,6 +18,7 @@ import logging
 import os
 import queue
 import shutil
+import stat
 import threading
 import time
 import uuid
@@ -40,7 +41,13 @@ _WRITER_JOIN_TIMEOUT_S = 10.0
 _SILENCE_CHUNK_FRAMES = 48_000
 _DEFERRED_RECOVERY_GRACE_S = 0.25
 _RECOVERY_METADATA = "webjam-local-capture.json"
+_RECOVERY_REPORT = "RECOVERY.json"
 _RECOVERY_SCHEMA = 1
+# A real local take must survive more than an in-memory writer queue.  One
+# second at the fixed capture rate is frequent enough to make a sudden process
+# exit recoverable without putting any I/O on PortAudio's callback thread.
+_DURABLE_CHECKPOINT_FRAMES = 48_000
+_RECOVERY_GAP_CAP = 128
 
 
 class LocalCaptureError(RuntimeError):
@@ -78,6 +85,7 @@ class LocalCaptureResult:
     total_frames: int = 0
     recovery_dir: Path | None = None
     capture_device: object | None = None
+    durable_frames: int = 0
 
     @property
     def gap_count(self) -> int:
@@ -92,6 +100,14 @@ class RecoveredLocalCapture:
     recovery_dir: Path
     files: tuple[Path, ...]
     errors: tuple[str, ...] = ()
+    take_id: str = ""
+    session_id: str = ""
+    started_utc: str = ""
+    total_frames: int = 0
+    durable_frames: int = 0
+    sample_rate: int = 0
+    gaps: tuple[LocalCaptureGap, ...] = ()
+    capture_device: object | None = None
 
 
 @dataclass(frozen=True)
@@ -107,12 +123,25 @@ class _QueuedBlock:
 class LocalInputCapture:
     """Record two device channels to atomic mono WAV files."""
 
-    def __init__(self, root: str | Path, *, device: int = -1,
-                 samplerate: int = 48000, blocksize: int = 0) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        device: int = -1,
+        samplerate: int = 48000,
+        blocksize: int = 0,
+        take_id: str = "",
+        session_id: str = "",
+    ) -> None:
         self.root = Path(root).expanduser()
         self.device = None if device < 0 else device
         self.samplerate = int(samplerate)
         self.blocksize = max(0, int(blocksize))
+        # These opaque IDs bind a recovered local capture to the matching
+        # recording-evidence journal.  Invalid values are discarded rather
+        # than copied into durable recovery metadata.
+        self.take_id = _canonical_optional_uuid(take_id)
+        self.session_id = _canonical_optional_uuid(session_id)
         self._stream = None
         self._writers: list[object] = []
         self._temp_dir: Path | None = None
@@ -136,6 +165,8 @@ class LocalInputCapture:
         self._started_utc = ""
         self._capture_device = None
         self._recovery_thread: threading.Thread | None = None
+        self._durable_frames = 0
+        self._durability_failed = False
 
     def start(self) -> None:
         if self.samplerate != 48000:
@@ -200,10 +231,18 @@ class LocalInputCapture:
             ) from exc
 
     def _write_recovery_checkpoint(self) -> None:
+        """Atomically record what media is safe to recover after interruption.
+
+        This is called before the stream starts and again only from the writer
+        thread after the WAV data has been flushed and fsynced.  The checkpoint
+        never claims that frames beyond ``durable_frames`` survived a crash.
+        """
         if self._temp_dir is None:
             return
         from core.file_io import atomic_write_text
 
+        device_payload = _capture_device_payload(self._capture_device)
+        gaps = self._snapshot_gaps()[-_RECOVERY_GAP_CAP:]
         payload = {
             "schema": _RECOVERY_SCHEMA,
             "pid": os.getpid(),
@@ -211,12 +250,50 @@ class LocalInputCapture:
             "sample_rate": self.samplerate,
             "channels": 2,
             "parts": [path.name for path in self._parts],
+            "take_id": self.take_id,
+            "session_id": self.session_id,
+            "total_frames": max(0, int(self._next_input_frame)),
+            "durable_frames": max(0, int(self._durable_frames)),
+            "writer_frames": [max(0, int(value)) for value in self._writer_frames],
+            "gaps": _capture_gaps_payload(gaps),
         }
+        if device_payload is not None:
+            payload["capture_device"] = device_payload
         atomic_write_text(
             self._temp_dir / _RECOVERY_METADATA,
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             mode=0o600,
         )
+
+    def _checkpoint_audio_durability(self, *, force: bool = False) -> bool:
+        """Flush and fsync both stems before advancing recovery metadata.
+
+        ``soundfile.flush`` commits libsndfile's buffered frames; an explicit
+        file fsync then commits the resulting WAV bytes.  Both happen on the
+        dedicated writer thread, never the audio callback.  A failure leaves
+        the audio in place but records a bounded recovery-needed fact so the
+        final manifest cannot pretend the local original was crash-durable.
+        """
+        durable_frames = min(self._writer_frames, default=0)
+        if not force and durable_frames - self._durable_frames < _DURABLE_CHECKPOINT_FRAMES:
+            return True
+        try:
+            for path, writer in zip(self._parts, self._writers):
+                flush = getattr(writer, "flush", None)
+                if not callable(flush):
+                    raise LocalCaptureError("writer does not support flush")
+                flush()
+                _fsync_regular_file(path)
+            self._durable_frames = max(0, int(durable_frames))
+            self._write_recovery_checkpoint()
+            return True
+        except Exception:  # noqa: BLE001 - preserve media and surface safe truth
+            self._durability_failed = True
+            self._record_error(
+                "Local capture could not save a durable audio checkpoint; "
+                "this take needs recovery review."
+            )
+            return False
 
     def _describe_capture_device(self, sounddevice):
         """Snapshot the source configuration once, before recording starts."""
@@ -281,6 +358,7 @@ class LocalInputCapture:
                     channel, start_frame, queued.samples[:, channel]
                 )
             timeline_frame = max(timeline_frame, end_frame)
+            self._checkpoint_audio_durability()
 
         target = self._final_input_frame
         if target is None:
@@ -301,6 +379,7 @@ class LocalInputCapture:
                     f"Local capture channel {channel + 1} ended at frame "
                     f"{self._writer_frames[channel]} instead of {target}."
                 )
+        self._checkpoint_audio_durability(force=True)
 
     def _writer_position(self, channel: int, *, expected: int | None = None) -> int:
         """Refresh a writer's position when its implementation exposes it."""
@@ -560,14 +639,22 @@ class LocalInputCapture:
             "started_utc": self._started_utc,
             "sample_rate": self.samplerate,
             "total_frames_expected": self._next_input_frame,
+            "total_frames": self._next_input_frame,
+            "durable_frames": self._durable_frames,
+            "take_id": self.take_id,
+            "session_id": self.session_id,
+            "gaps": _capture_gaps_payload(self._snapshot_gaps()),
             "files": [path.name for path in self._parts],
             "errors": list(errors),
         }
+        device_payload = _capture_device_payload(self._capture_device)
+        if device_payload is not None:
+            recovery_payload["capture_device"] = device_payload
         try:
             from core.file_io import atomic_write_text
 
             atomic_write_text(
-                recovered / "RECOVERY.json",
+                recovered / _RECOVERY_REPORT,
                 json.dumps(recovery_payload, indent=2, sort_keys=True) + "\n",
                 mode=0o600,
             )
@@ -599,7 +686,7 @@ class LocalInputCapture:
                     (), self._started_utc, self._started_monotonic,
                     max(0.0, self._stopped_monotonic - self._started_monotonic),
                     tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                    recovery_dir, self._capture_device,
+                    recovery_dir, self._capture_device, self._durable_frames,
                 )
 
             self._finalized = True
@@ -620,7 +707,7 @@ class LocalInputCapture:
                     (), self._started_utc, self._started_monotonic,
                     max(0.0, self._stopped_monotonic - self._started_monotonic),
                     tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                    recovery_dir, self._capture_device,
+                    recovery_dir, self._capture_device, self._durable_frames,
                 )
 
             destination = Path(take_dir)
@@ -664,7 +751,7 @@ class LocalInputCapture:
                 tuple(final_files), self._started_utc, self._started_monotonic,
                 max(0.0, self._stopped_monotonic - self._started_monotonic),
                 tuple(errors), self._snapshot_gaps(), self._next_input_frame,
-                None, self._capture_device,
+                None, self._capture_device, self._durable_frames,
             )
 
     def _cleanup_temp_dir(self, *, preserve: bool, errors: list[str]) -> None:
@@ -730,6 +817,183 @@ def _process_may_be_alive(pid: object) -> bool:
     return True
 
 
+def _canonical_optional_uuid(value: object) -> str:
+    """Return a canonical opaque UUID or an empty value for recovery metadata."""
+    try:
+        return str(uuid.UUID(str(value)))
+    except (AttributeError, TypeError, ValueError):
+        return ""
+
+
+def _metadata_nonnegative_int(value: object) -> int:
+    try:
+        if isinstance(value, bool):
+            return 0
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _capture_device_payload(device: object | None) -> dict | None:
+    """Return bounded, serializable device facts for private recovery state."""
+    to_dict = getattr(device, "to_dict", None)
+    if not callable(to_dict):
+        return None
+    try:
+        candidate = to_dict()
+    except Exception:  # noqa: BLE001 - recovery metadata is optional
+        return None
+    return candidate if isinstance(candidate, dict) else None
+
+
+def _capture_gaps_payload(gaps: tuple[LocalCaptureGap, ...] | list[LocalCaptureGap]) -> list[dict]:
+    """Serialize only bounded, frame-exact local-capture gap evidence."""
+    return [
+        {
+            "start_frame": item.start_frame,
+            "frame_count": item.frame_count,
+            "channels": list(item.channels),
+            "reason": item.reason,
+        }
+        for item in tuple(gaps)[-_RECOVERY_GAP_CAP:]
+    ]
+
+
+def _fsync_regular_file(path: Path) -> None:
+    """Durably flush one capture part without following an unexpected link."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        file_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise LocalCaptureError("capture part is not a regular file")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _recovered_capture_device(metadata: dict) -> object | None:
+    """Restore bounded device facts only when the stored shape is trustworthy."""
+    value = metadata.get("capture_device")
+    if not isinstance(value, dict):
+        return None
+    try:
+        from core.take_project import CaptureDevice
+
+        return CaptureDevice.from_dict(value)
+    except Exception:  # noqa: BLE001 - old/corrupt metadata remains recoverable
+        return None
+
+
+def _recovered_capture_gaps(metadata: dict) -> tuple[LocalCaptureGap, ...]:
+    """Parse bounded interval facts without trusting malformed checkpoint data."""
+    value = metadata.get("gaps")
+    if not isinstance(value, list):
+        return ()
+    recovered: list[LocalCaptureGap] = []
+    for item in value[:_RECOVERY_GAP_CAP]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            channels_raw = item.get("channels", ())
+            if not isinstance(channels_raw, (list, tuple)):
+                continue
+            channels = tuple(int(channel) for channel in channels_raw)
+            recovered.append(
+                LocalCaptureGap(
+                    start_frame=int(item.get("start_frame")),
+                    frame_count=int(item.get("frame_count")),
+                    channels=channels,
+                    reason=str(item.get("reason") or "recovery_gap"),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return tuple(recovered)
+
+
+def _read_recovery_metadata(path: Path, errors: list[str], *, label: str) -> dict:
+    """Read one private recovery record without reflecting untrusted content."""
+    if not path.is_file() or path.is_symlink():
+        errors.append(f"The {label} was missing.")
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        errors.append(f"The {label} was unreadable.")
+        return {}
+    if not isinstance(value, dict) or value.get("schema") != _RECOVERY_SCHEMA:
+        errors.append(f"The {label} was malformed.")
+        return {}
+    return value
+
+
+def _recovery_audio_files(directory: Path) -> tuple[Path, ...]:
+    """List direct recovery audio only; never follow links or nested paths."""
+    try:
+        entries = tuple(sorted(directory.iterdir(), key=lambda item: item.name))
+    except OSError:
+        return ()
+    files: list[Path] = []
+    for path in entries:
+        if path.is_symlink() or not path.is_file():
+            continue
+        name = path.name.lower()
+        if name.endswith(".recovered-partial.wav") or name.endswith(".wav.part"):
+            files.append(path)
+    return tuple(files)
+
+
+def _has_final_recovery_project(directory: Path) -> bool:
+    """Return true only after the atomic schema-v2 project was published."""
+    manifest = directory / "webjam-take.json"
+    if manifest.is_symlink() or not manifest.is_file():
+        return False
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(value, dict) and value.get("schema_version") == 2
+
+
+def _visible_recovery_candidate(directory: Path) -> RecoveredLocalCapture | None:
+    """Return an unmanifested visible recovery folder for a safe reattempt."""
+    if directory.is_symlink() or not directory.is_dir() or _has_final_recovery_project(directory):
+        return None
+    files = _recovery_audio_files(directory)
+    if not files:
+        return None
+    errors: list[str] = []
+    metadata = _read_recovery_metadata(
+        directory / _RECOVERY_METADATA,
+        errors,
+        label="capture checkpoint",
+    )
+    if not metadata:
+        # The human report can still retain canonical IDs after a partial
+        # promotion. Its free-text errors are intentionally not re-published.
+        metadata = _read_recovery_metadata(
+            directory / _RECOVERY_REPORT,
+            errors,
+            label="recovery report",
+        )
+    errors.append("Recovered local media is awaiting manifest reconciliation.")
+    return RecoveredLocalCapture(
+        source_dir=directory,
+        recovery_dir=directory,
+        files=files,
+        errors=tuple(dict.fromkeys(errors)),
+        take_id=_canonical_optional_uuid(metadata.get("take_id")),
+        session_id=_canonical_optional_uuid(metadata.get("session_id")),
+        started_utc=str(metadata.get("started_utc", ""))[:64],
+        total_frames=_metadata_nonnegative_int(metadata.get("total_frames")),
+        durable_frames=_metadata_nonnegative_int(metadata.get("durable_frames")),
+        sample_rate=_metadata_nonnegative_int(metadata.get("sample_rate")),
+        gaps=_recovered_capture_gaps(metadata),
+        capture_device=_recovered_capture_device(metadata),
+    )
+
+
 def recover_stale_local_captures(
     root: str | Path,
     *,
@@ -758,20 +1022,12 @@ def recover_stale_local_captures(
                 continue
         except OSError:
             continue
-        metadata: dict = {}
         errors: list[str] = []
-        checkpoint = source / _RECOVERY_METADATA
-        if checkpoint.is_file() and not checkpoint.is_symlink():
-            try:
-                value = json.loads(checkpoint.read_text(encoding="utf-8"))
-                if isinstance(value, dict) and value.get("schema") == _RECOVERY_SCHEMA:
-                    metadata = value
-                else:
-                    errors.append("The capture checkpoint was malformed.")
-            except (OSError, json.JSONDecodeError):
-                errors.append("The capture checkpoint was unreadable.")
-        else:
-            errors.append("The capture checkpoint was missing.")
+        metadata = _read_recovery_metadata(
+            source / _RECOVERY_METADATA,
+            errors,
+            label="capture checkpoint",
+        )
         if metadata and _process_may_be_alive(metadata.get("pid")):
             continue
 
@@ -830,14 +1086,22 @@ def recover_stale_local_captures(
             "source_working_folder": source.name,
             "started_utc": str(metadata.get("started_utc", ""))[:64],
             "sample_rate": metadata.get("sample_rate"),
+            "take_id": _canonical_optional_uuid(metadata.get("take_id")),
+            "session_id": _canonical_optional_uuid(metadata.get("session_id")),
+            "total_frames": _metadata_nonnegative_int(metadata.get("total_frames")),
+            "durable_frames": _metadata_nonnegative_int(metadata.get("durable_frames")),
+            "gaps": _capture_gaps_payload(_recovered_capture_gaps(metadata)),
             "files": [path.name for path in files],
             "errors": errors,
         }
+        device_payload = _capture_device_payload(_recovered_capture_device(metadata))
+        if device_payload is not None:
+            payload["capture_device"] = device_payload
         try:
             from core.file_io import atomic_write_text
 
             atomic_write_text(
-                destination / "RECOVERY.json",
+                destination / _RECOVERY_REPORT,
                 json.dumps(payload, indent=2, sort_keys=True) + "\n",
                 mode=0o600,
             )
@@ -849,6 +1113,29 @@ def recover_stale_local_captures(
                 recovery_dir=destination,
                 files=tuple(files),
                 errors=tuple(errors),
+                take_id=_canonical_optional_uuid(metadata.get("take_id")),
+                session_id=_canonical_optional_uuid(metadata.get("session_id")),
+                started_utc=str(metadata.get("started_utc", ""))[:64],
+                total_frames=_metadata_nonnegative_int(metadata.get("total_frames")),
+                durable_frames=_metadata_nonnegative_int(metadata.get("durable_frames")),
+                sample_rate=_metadata_nonnegative_int(metadata.get("sample_rate")),
+                gaps=_recovered_capture_gaps(metadata),
+                capture_device=_recovered_capture_device(metadata),
             )
         )
+    # A process can die after promoting a hidden capture but before the
+    # coordinator publishes its schema-v2 recovery project. Revisit those
+    # visible folders on every startup until final publication proves the
+    # media is attached to durable project truth.
+    already_recovered = {item.recovery_dir.name for item in recovered_items}
+    try:
+        visible_directories = tuple(sorted(base.glob("Recovered-local-*")))
+    except OSError:
+        visible_directories = ()
+    for directory in visible_directories:
+        if directory.name in already_recovered:
+            continue
+        candidate = _visible_recovery_candidate(directory)
+        if candidate is not None:
+            recovered_items.append(candidate)
     return tuple(recovered_items)

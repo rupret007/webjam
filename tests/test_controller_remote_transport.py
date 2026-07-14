@@ -16,7 +16,9 @@ from core.remote_invitation import issue_remote_invitation
 from core.session_transport import ConnectionQuality, SessionRole, TransportPath
 from core.settings import AppSettings, save_settings
 from services.remote_session_runtime import (
+    RemoteBackendError,
     RemoteGuestConnection,
+    RemoteSessionErrorCode,
     RemoteSessionPhase,
     RemoteSessionSnapshot,
 )
@@ -107,11 +109,14 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     controller.shutdown()
 
 
-def test_v3_guest_failure_never_falls_through_to_legacy_jamulus(
+def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_through(
     qapp, tmp_path, monkeypatch
 ) -> None:
+    attempts = []
+
     class Backend:
         def start_guest(self, invitation, *, generation):
+            attempts.append(invitation)
             raise RuntimeError("PRIVATE-CAPABILITY-SENTINEL")
 
         def stop(self):
@@ -124,18 +129,101 @@ def test_v3_guest_failure_never_falls_through_to_legacy_jamulus(
         Backend,
     )
 
-    assert controller.accept_invitation(_invitation())
+    invitation = _invitation()
+    assert controller.accept_invitation(invitation)
     _drain_until(
         qapp,
         lambda: (
             controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
             and controller._remote_invitation is None
+            and controller._remote_invitation_requires_replacement
+            and "Fresh invitation required"
+            in controller.window.session_hud._status.text()
         ),
     )
 
-    assert controller._remote_invitation is None
+    # The guest backend entered enrollment, so this one-use invitation may have
+    # been consumed. The UI cannot replay it or fall back to a LAN/localhost
+    # Jamulus start behind the musician's back.
+    assert attempts == [invitation]
+    assert not controller.window.participant_grid._empty_primary.isEnabled()
+    assert controller.window.participant_grid._empty_primary.text() == "New invite needed"
+    assert controller.window.session_hud._action.isHidden()
+    controller.audio.on_launch_toggle = mock.MagicMock(return_value=True)
+    controller._retry_session()
+    controller._on_launch_audio()
+    controller.start_session_or_band_check()
+    assert attempts == [invitation]
+    controller.audio.on_launch_toggle.assert_not_called()
     controller.bridge.launch_jamulus.assert_not_called()
-    assert "temporarily unreachable" in controller.window.session_hud._status.text()
+    controller.shutdown()
+
+
+def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    attempts = []
+
+    class Backend:
+        def start_guest(self, invitation, *, generation):
+            attempts.append(invitation)
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+
+        def stop(self):
+            return None
+
+    invitation = _invitation()
+    controller = _controller(tmp_path)
+    controller.bridge.launch_jamulus = mock.MagicMock()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        Backend,
+    )
+
+    assert controller.accept_invitation(invitation)
+    _drain_until(
+        qapp,
+        lambda: (
+            controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
+            and controller._remote_invitation is invitation
+            and "Private connection unavailable"
+            in controller.window.session_hud._status.text()
+        ),
+    )
+
+    # A routine HUD refresh preserves the one retry because the backend proved
+    # the sidecar failed before it entered open_guest().
+    controller._update_session_hud()
+    assert controller.window.participant_grid._empty_primary.text() == "Try Again"
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_hud._action.text() == "Try Again"
+    assert controller.window.session_hud._action_kind == "retry"
+
+    # Exercise the real connected controls after the proven pre-enrollment
+    # failure. Both route back to v3 enrollment, never Band Check or legacy
+    # localhost Jamulus.
+    controller.window.participant_grid._empty_primary.click()
+    _drain_until(
+        qapp,
+        lambda: (
+            len(attempts) == 2
+            and controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
+            and controller._remote_invitation is invitation
+            and controller.window.session_hud._action_kind == "retry"
+        ),
+    )
+    controller.window.session_hud._action.click()
+    _drain_until(
+        qapp,
+        lambda: (
+            len(attempts) == 3
+            and controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
+            and controller._remote_invitation is invitation
+        ),
+    )
+
+    assert attempts == [invitation, invitation, invitation]
+    controller.bridge.launch_jamulus.assert_not_called()
     controller.shutdown()
 
 

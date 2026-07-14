@@ -428,6 +428,7 @@ def write_take_manifest(
     local_participant_id: str = "", local_participant_name: str = "Host",
     capture_device=None, capture_gaps: tuple[object, ...] = (),
     local_total_frames: int = 0,
+    local_durable_frames: int | None = None,
     session_evidence: "SessionEvidence | None" = None,
 ) -> TakeValidationResult:
     """Validate a take and atomically publish schema-v2 project truth.
@@ -466,6 +467,17 @@ def write_take_manifest(
     else:
         raise TypeError("session_evidence must be a SessionEvidence instance.")
 
+    durable_frame_limit: int | None = None
+    if local_durable_frames is not None:
+        try:
+            durable_frame_limit = (
+                0
+                if isinstance(local_durable_frames, bool)
+                else max(0, int(local_durable_frames))
+            )
+        except (TypeError, ValueError):
+            durable_frame_limit = 0
+
     # Write a preliminary manifest so load_take can classify supplemental files.
     manifest_path = path / "webjam-take.json"
     preliminary = {
@@ -494,6 +506,8 @@ def write_take_manifest(
             for p in sorted(path.glob("*.wav"))
         ],
     }
+    if durable_frame_limit is not None:
+        preliminary["local_capture"]["durable_frames"] = durable_frame_limit
     if not final_session_evidence.is_empty:
         # A crash before final classification still leaves bounded recording
         # provenance beside the source media. This is a receipt, not a claim
@@ -611,11 +625,32 @@ def write_take_manifest(
                     errors.append(
                         f"{track.name} has unreadable local gap metadata."
                     )
+            if durable_frame_limit is not None:
+                durable_for_track = min(frame_count, durable_frame_limit)
+                if durable_for_track < frame_count:
+                    gaps.append(GapInterval(
+                        start_frame=durable_for_track,
+                        frame_count=frame_count - durable_for_track,
+                        reason="unverified_after_crash_checkpoint",
+                        channels=(0,),
+                    ))
+                    errors.append(
+                        f"{track.name} contains {frame_count} frames, but only the "
+                        f"first {durable_for_track} were durably checkpointed before "
+                        "interruption."
+                    )
         segment_status = (
             MediaStatus.AVAILABLE
             if track.path.is_file() and evidence["sample_rate"] > 0
             else MediaStatus.DAMAGED
         )
+        if (
+            local
+            and durable_frame_limit is not None
+            and durable_frame_limit < frame_count
+            and segment_status is MediaStatus.AVAILABLE
+        ):
+            segment_status = MediaStatus.PARTIAL
         segment = MediaSegment(
             segment_id=_child_id(f"segment:{order}:{track.path.name}:0"),
             path=track.path.name,

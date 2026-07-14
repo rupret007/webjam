@@ -81,6 +81,7 @@ class ApplicationController(QObject):
         # dedicated session transport consumes it; it is never copied into
         # AppSettings, Jamulus arguments, logs, or the Session HUD.
         self._remote_invitation = remote_invitation
+        self._remote_invitation_requires_replacement = False
         self._remote_session = None
         self._remote_invite_owner = None
         self._remote_host_preparing = False
@@ -1161,6 +1162,10 @@ class ApplicationController(QObject):
         closed into the guided check.
         """
 
+        if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            self._render_remote_fresh_invitation_hud()
+            return
+
         self._transition_lifecycle(
             SessionLifecyclePhase.PREPARING,
             "Preparing the session",
@@ -1526,6 +1531,12 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
+        if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            # An attempted v3 enrollment may have consumed its one-use
+            # capability. Do not let a generic Start Audio action turn that
+            # failure into a legacy Jamulus launch.
+            self._render_remote_fresh_invitation_hud()
+            return
         if not self._is_jamulus_running():
             self._transition_lifecycle(
                 (
@@ -1650,6 +1661,13 @@ class ApplicationController(QObject):
         if runtime is not None:
             try:
                 runtime.stop()
+                from services.remote_session_runtime import RemoteSessionErrorCode
+
+                if (
+                    getattr(getattr(runtime, "snapshot", None), "error_code", None)
+                    is RemoteSessionErrorCode.STOP_FAILED
+                ):
+                    cleanup_ok = False
             except Exception as exc:  # noqa: BLE001 - never log private detail
                 LOGGER.error(
                     "Remote transport cleanup failed; exception_type=%s",
@@ -1676,6 +1694,10 @@ class ApplicationController(QObject):
             old_settings = self.settings
             self._replace_settings_object(base_settings)
             self._reconfigure_services_after_settings(old_settings)
+        if cleanup_ok:
+            # A deliberate replacement/leave has released the old v3 state.
+            # A new invitation may now begin a separate enrollment attempt.
+            self._remote_invitation_requires_replacement = False
         return cleanup_ok
 
     def _show_private_session_cleanup_failure(self) -> None:
@@ -1767,8 +1789,11 @@ class ApplicationController(QObject):
 
         A remote session cannot be passed into the legacy settings/Jamulus
         launch path: doing so would start Jamulus against a loopback port that
-        has no authenticated peer.  The transport coordinator owns the later
-        enrollment and clears this capability only after an acknowledgement.
+        has no authenticated peer. The transport coordinator owns the later
+        enrollment and keeps the capability memory-only until the route opens
+        or enrollment outcome is known. Retry remains available only when the
+        sidecar could not start before it received the capability; any later
+        failure requires a fresh invitation and never falls into legacy audio.
         """
 
         if invitation.advisory_expired():
@@ -1968,6 +1993,12 @@ class ApplicationController(QObject):
         return True
 
     def _retry_session(self) -> None:
+        if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            self._render_remote_fresh_invitation_hud()
+            return
+        if self._remote_join_retry_pending():
+            self._begin_remote_join()
+            return
         if self._is_jamulus_running():
             # A running host may only be missing its Wi-Fi address. Re-evaluate
             # that truth in place instead of pretending the audio must restart.
@@ -2022,12 +2053,13 @@ class ApplicationController(QObject):
                 "Remote transport startup failed; exception_type=%s",
                 type(exc).__name__,
             )
-            self._remote_invitation = None
-            self._show_remote_session_failure()
+            self._show_remote_session_failure(
+                guest_enrollment=True,
+                retry_safe=True,
+            )
             return
         self._remote_session = runtime
-        if not runtime.start_guest(invitation):
-            self._remote_invitation = None
+        runtime.start_guest(invitation)
 
     def _begin_remote_host(self) -> None:
         """Prepare the opt-in local reference host before Band Check starts."""
@@ -2130,8 +2162,12 @@ class ApplicationController(QObject):
                 self._update_session_hud()
             return
         if snapshot.phase is RemoteSessionPhase.FAILED:
-            self._remote_invitation = None
-            self._show_remote_session_failure()
+            self._show_remote_session_failure(
+                guest_enrollment=(snapshot.role.value == "guest"),
+                retry_safe=bool(
+                    getattr(snapshot, "invitation_retry_safe", False)
+                ),
+            )
 
     def _activate_remote_guest_route(self, snapshot) -> None:
         """Point Jamulus at the authenticated proxy without persisting it."""
@@ -2166,28 +2202,91 @@ class ApplicationController(QObject):
             invalidation=invalidation,
         )
         self._remote_invitation = None
+        self._remote_invitation_requires_replacement = False
         self.window.session_hud.set_state(
             snapshot.musician_status,
             "Run Band Check, then play.",
         )
         self.start_session_or_band_check()
 
-    def _show_remote_session_failure(self) -> None:
+    def _show_remote_session_failure(
+        self,
+        *,
+        guest_enrollment: bool = False,
+        retry_safe: bool = False,
+    ) -> None:
+        """Render a remote failure without replaying an uncertain invitation."""
+
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "The private music path could not open",
         )
-        self.window.participant_grid.set_session_state(
-            SessionUiState.session_unavailable()
-        )
-        self.window.session_hud.set_state(
-            "The host is temporarily unreachable",
-            "Ask the host for a fresh invitation, then try again.",
-        )
+        if (
+            guest_enrollment
+            and retry_safe
+            and getattr(self, "_remote_invitation", None) is not None
+        ):
+            self._remote_invitation_requires_replacement = False
+            self.window.participant_grid.set_session_state(
+                SessionUiState.remote_session_retry_available()
+            )
+            self._render_remote_retry_hud()
+            flash_message = "Try Again to start the private connection."
+        elif guest_enrollment:
+            # The sidecar entered open_guest(), so the reference service may
+            # have atomically consumed this one-use capability. Remove the
+            # controller copy before any generic start path can see it.
+            self._remote_invitation = None
+            self._remote_invitation_requires_replacement = True
+            self.window.participant_grid.set_session_state(
+                SessionUiState.remote_session_fresh_invitation_required()
+            )
+            self._render_remote_fresh_invitation_hud()
+            flash_message = "Ask the host for a fresh private invitation."
+        else:
+            self.window.participant_grid.set_session_state(
+                SessionUiState.session_unavailable()
+            )
+            self.window.session_hud.set_state(
+                "The private music path could not open",
+                "Ask the host to confirm the session, then try again.",
+                action_visible=False,
+            )
+            flash_message = "The private music connection couldn’t open."
         self.window.session_strip.set_tools_enabled(True)
         self.window.flash_message(
-            "The private music connection couldn’t open. Try a fresh invitation.",
+            flash_message,
             ms=7000,
+        )
+
+    def _remote_join_retry_pending(self) -> bool:
+        """Return whether a failed v3 enrollment proved no invite was used."""
+
+        runtime = getattr(self, "_remote_session", None)
+        snapshot = getattr(runtime, "snapshot", None)
+        return bool(
+            getattr(self, "_remote_invitation", None) is not None
+            and getattr(snapshot, "invitation_retry_safe", False)
+        )
+
+    def _render_remote_retry_hud(self) -> None:
+        """Offer retry only after a proven pre-enrollment failure."""
+
+        self.window.session_hud.set_state(
+            "Private connection unavailable",
+            "WebJam could not start its secure connection. Try again with this invitation.",
+            action_text="Try Again",
+            action_visible=True,
+            action_kind="retry",
+        )
+
+    def _render_remote_fresh_invitation_hud(self) -> None:
+        """Keep a consumed-or-uncertain v3 invite out of generic retry paths."""
+
+        self.window.session_hud.set_state(
+            "Fresh invitation required",
+            "This invitation cannot be reused safely. Ask the host for a new link, then open it here.",
+            action_visible=False,
         )
 
     def _reset_remote_invite(self) -> None:
@@ -2362,6 +2461,12 @@ class ApplicationController(QObject):
                     else "The band can keep playing without you."
                 ),
             )
+            return
+        if self._remote_join_retry_pending():
+            self._render_remote_retry_hud()
+            return
+        if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            self._render_remote_fresh_invitation_hud()
             return
         from webjam_qt.platform_permissions import microphone_permission_status
 
@@ -2769,6 +2874,10 @@ class ApplicationController(QObject):
             and self.bridge.jamulus_state in terminal_states
             and not self.audio.ended_by_user
             and not self.audio.stopping
+            and not self._remote_join_retry_pending()
+            and not bool(
+                getattr(self, "_remote_invitation_requires_replacement", False)
+            )
         ):
             self.audio.recovering = False
             from webjam_qt.platform_permissions import microphone_permission_status

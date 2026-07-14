@@ -352,6 +352,127 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertIn("Open Studio", message)
         self.assertNotIn(take_id, message)
 
+    def test_recovered_local_capture_publishes_recovery_manifest_and_retires_trusted_journal(self):
+        """Recovered PCM is bound to its original opaque take, not left orphaned."""
+        from core.recording_manifest_journal import RecordingManifestJournal
+        from core.take_project import RecoveryStatus, SessionEvidence, new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            recovery_dir = Path(directory) / "Recovered-local-test"
+            recovery_dir.mkdir()
+            recovered_audio = recovery_dir / "host-guitar.recovered-partial.wav"
+            recovered_audio.write_bytes(b"preserved media")
+            take_id = new_project_id()
+            session_id = new_project_id()
+            journal = RecordingManifestJournal(directory)
+            journal.create(take_id, SessionEvidence(protocol_version="jamulus-3.12.2"))
+            item = SimpleNamespace(
+                recovery_dir=recovery_dir,
+                files=(recovered_audio,),
+                take_id=take_id,
+                session_id=session_id,
+                started_utc="2026-07-14T00:00:00Z",
+                total_frames=48_000,
+                errors=("Local writer stopped unexpectedly.",),
+                gaps=(),
+                capture_device=None,
+            )
+            complete = SimpleNamespace(take=SimpleNamespace(path=recovery_dir))
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.write_take_manifest",
+                return_value=complete,
+            ) as write_manifest:
+                c.recording._publish_recovered_local_capture(item, directory)
+
+            kwargs = write_manifest.call_args.kwargs
+            self.assertEqual(kwargs["session_id"], session_id)
+            self.assertEqual(kwargs["take_id"], take_id)
+            self.assertIn("recovered after an interrupted recording", kwargs["capture_errors"][0])
+            self.assertEqual(
+                kwargs["session_evidence"].recovery_status,
+                RecoveryStatus.NEEDS_ATTENTION,
+            )
+            self.assertIn(
+                "local_capture_recovered",
+                [event.event for event in kwargs["session_evidence"].timeline],
+            )
+            self.assertIsNone(journal.load(take_id))
+
+    def test_recovered_local_capture_writes_a_partial_project_with_durable_boundary(self):
+        """Recovered WAVs become review-only schema-v2 projects on startup."""
+        import struct
+        import wave
+
+        from core.local_capture import RecoveredLocalCapture
+        from core.recording_manifest_journal import RecordingManifestJournal
+        from core.take_project import RecoveryStatus, SessionEvidence, new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            recovery_dir = Path(directory) / "Recovered-local-test"
+            recovery_dir.mkdir()
+            recovered_audio = recovery_dir / "host-guitar.recovered-partial.wav"
+            with wave.open(str(recovered_audio), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(48_000)
+                output.writeframes(struct.pack("<480h", *([800] * 480)))
+            take_id = new_project_id()
+            session_id = new_project_id()
+            journal = RecordingManifestJournal(directory)
+            journal.create(take_id, SessionEvidence(protocol_version="jamulus-3.12.2"))
+            item = RecoveredLocalCapture(
+                source_dir=recovery_dir,
+                recovery_dir=recovery_dir,
+                files=(recovered_audio,),
+                take_id=take_id,
+                session_id=session_id,
+                started_utc="2026-07-14T00:00:00Z",
+                total_frames=480,
+                durable_frames=240,
+                sample_rate=48_000,
+            )
+
+            c.recording._publish_recovered_local_capture(item, directory)
+            payload = json.loads((recovery_dir / "webjam-take.json").read_text())
+            self.assertIsNone(journal.load(take_id))
+
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["take_id"], take_id)
+        self.assertEqual(payload["session_id"], session_id)
+        self.assertEqual(payload["session"]["recovery_status"], RecoveryStatus.NEEDS_ATTENTION.value)
+        segment = payload["tracks"][0]["segments"][0]
+        self.assertEqual(segment["media_status"], "partial")
+        self.assertIn(
+            {
+                "start_frame": 240,
+                "frame_count": 240,
+                "reason": "unverified_after_crash_checkpoint",
+                "channels": [0],
+            },
+            segment["gaps"],
+        )
+
+    def test_salvage_reports_the_capture_recovery_folder_not_a_guess(self):
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            c.settings.takes_directory = directory
+            actual = Path(directory) / "Recovered-local-actual"
+            actual.mkdir()
+            fake_capture = MagicMock()
+            fake_capture.stop_into.return_value = SimpleNamespace(
+                errors=(),
+                recovery_dir=actual,
+                files=(),
+            )
+            c.recording._local_capture = fake_capture
+
+            recovered, errors = c.recording._salvage_capture()
+
+        self.assertEqual(recovered, actual)
+        self.assertEqual(errors, ())
+
     def test_unsafe_storage_blocks_before_the_record_worker_starts(self):
         c = self.controller
         c.settings.server_rpc_secret_file = "/tmp/secret"

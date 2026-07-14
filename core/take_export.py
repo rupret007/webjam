@@ -452,6 +452,48 @@ def _project_timeline_frames(project) -> int:
     return latest
 
 
+def _unaligned_local_original_names(tracks) -> list[str]:
+    """Return local originals that cannot truthfully share the export timeline.
+
+    A transferred guest original is intentionally attached with an explicit
+    ``peer-local-original-unverified-alignment`` marker until WebJam has a
+    defensible project-time transform for it.  Rendering that media at zero
+    would make a convenient-looking but false Logic handoff.  The host's
+    existing local-capture path may remain ``UNVERIFIED`` while still carrying
+    a positive automatic alignment confidence, so quality alone is not enough
+    to reject it.
+    """
+    from core.take_project import SourceQuality, SourceType
+
+    blocked: list[str] = []
+    for track in tracks:
+        if track.source_type is not SourceType.LOCAL_ISOLATED:
+            continue
+        confidence = float(track.alignment.confidence)
+        method = str(track.alignment.method or "").strip().lower()
+        peer_unverified = (
+            method.startswith("peer-local-original")
+            and track.quality is SourceQuality.UNVERIFIED
+        )
+        if confidence <= 0.0 or peer_unverified:
+            blocked.append(track.name)
+    return blocked
+
+
+def _explicitly_silent_track_names(tracks) -> list[str]:
+    """Return selected tracks with a segment known to contain no signal.
+
+    ``None`` means WebJam could not determine whether the segment contains
+    signal, so it remains exportable.  Only an explicit ``False`` is enough to
+    stop a musician-facing performance-stem export.
+    """
+    return [
+        track.name
+        for track in tracks
+        if any(segment.has_signal is False for segment in track.segments)
+    ]
+
+
 def _write_checksum_manifest(folder: Path, destination: Path) -> None:
     files = sorted(
         path
@@ -499,6 +541,23 @@ def _export_project_logic_package(
     if blocked:
         raise TakeExportError(
             "Restore or review unavailable media before export: " + ", ".join(blocked)
+        )
+    explicitly_silent_tracks = _explicitly_silent_track_names(selected)
+    if explicitly_silent_tracks:
+        raise TakeExportError(
+            "WebJam found explicitly silent segments in selected performance tracks: "
+            + ", ".join(explicitly_silent_tracks)
+            + ". Review the recording or intentionally deselect the affected track "
+            "before export."
+        )
+    unaligned_local_originals = _unaligned_local_original_names(selected)
+    if unaligned_local_originals:
+        raise TakeExportError(
+            "WebJam cannot create a timing-ready Logic export because these "
+            "local originals have no verified timeline alignment: "
+            + ", ".join(unaligned_local_originals)
+            + ". Keep the Jamulus server track for this take, or align and "
+            "verify each local original before export."
         )
     total_frames = _project_timeline_frames(project)
     if total_frames <= 0:

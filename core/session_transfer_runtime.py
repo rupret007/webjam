@@ -747,13 +747,23 @@ class GuestPeerSession:
         with self._lock:
             self._bound_presence = desired
 
-    def _new_capture(self, root: Path, device: int, rate: int, blocksize: int):
+    def _new_capture(
+        self,
+        root: Path,
+        device: int,
+        rate: int,
+        blocksize: int,
+        *,
+        take_id: str,
+    ):
         if self.capture_factory is not None:
             return self.capture_factory(
                 root,
                 device=device,
                 samplerate=rate,
                 blocksize=blocksize,
+                take_id=take_id,
+                session_id=self.invite.session_id,
             )
         from core.local_capture import LocalInputCapture
 
@@ -762,6 +772,8 @@ class GuestPeerSession:
             device=device,
             samplerate=rate,
             blocksize=blocksize,
+            take_id=take_id,
+            session_id=self.invite.session_id,
         )
 
     def _start_capture(self, take_id: str) -> None:
@@ -774,7 +786,13 @@ class GuestPeerSession:
         originals = self.queue_path.parent
         originals.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(originals, 0o700)
-        capture = self._new_capture(originals, int(device), int(rate), int(blocksize))
+        capture = self._new_capture(
+            originals,
+            int(device),
+            int(rate),
+            int(blocksize),
+            take_id=take_id,
+        )
         capture.start()
         self._capture = capture
         self._active_take_id = take_id

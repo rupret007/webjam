@@ -79,7 +79,7 @@ def test_expired_invitation_never_reaches_backend() -> None:
     assert backend.seen is None
 
 
-def test_backend_exception_text_is_not_logged_or_published(caplog) -> None:
+def test_uncertain_backend_failure_requires_a_fresh_invitation(caplog) -> None:
     sentinel = "PRIVATE-CAPABILITY-SENTINEL"
 
     class FailingBackend(Backend):
@@ -92,7 +92,8 @@ def test_backend_exception_text_is_not_logged_or_published(caplog) -> None:
     runtime.start_guest(_invitation())
     settled = runtime.wait_until_settled()
 
-    assert settled.error_code is RemoteSessionErrorCode.TRANSPORT_FAILED
+    assert settled.error_code is RemoteSessionErrorCode.INVITATION_UNUSABLE
+    assert not settled.invitation_retry_safe
     assert sentinel not in caplog.text
     assert sentinel not in repr(settled)
 
@@ -108,6 +109,24 @@ def test_allowlisted_backend_error_is_preserved_without_freeform_detail() -> Non
     assert runtime.wait_until_settled().error_code is (
         RemoteSessionErrorCode.ENROLLMENT_REJECTED
     )
+    assert not runtime.snapshot.invitation_retry_safe
+
+
+def test_only_explicit_pre_enrollment_unavailable_failure_is_retry_safe() -> None:
+    class UnavailableBackend(Backend):
+        def start_guest(self, invitation, *, generation):
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+
+    runtime = RemoteSessionRuntime(
+        UnavailableBackend(),
+        on_snapshot=lambda _value: None,
+    )
+    runtime.start_guest(_invitation())
+
+    settled = runtime.wait_until_settled()
+
+    assert settled.error_code is RemoteSessionErrorCode.UNAVAILABLE
+    assert settled.invitation_retry_safe
 
 
 def test_only_one_enrollment_worker_can_be_active() -> None:

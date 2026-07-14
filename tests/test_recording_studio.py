@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget, QWidget
 
 from core.settings import AppSettings
 from core.network_invite import local_band_address
+from core.take_library import TakeInfo, TrackInfo
 from core.take_player import TakePlayer
 from webjam_qt.widgets.recording_studio import (
     _CompositeWaveformSpec,
@@ -515,6 +516,151 @@ def test_logic_export_failure_keeps_take_available_and_actionable():
             assert "read-only" not in studio._hint.text()
             assert studio._take_list.isEnabled()
             assert studio._export_btn.isEnabled()
+        finally:
+            studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    (
+        (
+            "WebJam found explicitly silent segments in selected performance tracks: "
+            "private-guitar. Review the recording or intentionally deselect the "
+            "affected track before export.",
+            "explicitly silent segment",
+        ),
+        (
+            "WebJam cannot create a timing-ready Logic export because these local "
+            "originals have no verified timeline alignment: private-guitar. Keep "
+            "the Jamulus server track for this take, or align and verify each local "
+            "original before export.",
+            "no verified timeline alignment",
+        ),
+    ),
+)
+def test_logic_export_safety_blocks_are_actionable_without_raw_details(error, expected):
+    with tempfile.TemporaryDirectory() as tmp:
+        take = Path(tmp) / "Take 01"
+        take.mkdir()
+        _wav(take / "guitar.wav")
+        _mark_verified(take, "guitar.wav")
+        studio = RecordingStudio(
+            tmp,
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+            studio._exporting = True
+            studio._take_list.setEnabled(False)
+            studio._finish_export(None, error)
+            hint = studio._hint.text().lower()
+            assert expected in hint
+            assert "original take is safe" in hint
+            assert "private-guitar" not in hint
+            assert studio._take_list.isEnabled()
+            assert studio._export_btn.isEnabled()
+        finally:
+            studio.shutdown()
+
+
+def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path):
+    take_dir = tmp_path / "Take 01"
+    take_dir.mkdir()
+    guitar = take_dir / "guitar.wav"
+    drums = take_dir / "drums.wav"
+    _wav(guitar, 220)
+    _wav(drums, 440)
+    guitar_id = "11111111-1111-4111-8111-111111111111"
+    drums_id = "22222222-2222-4222-8222-222222222222"
+    take = TakeInfo(
+        path=take_dir,
+        name="Take 01",
+        tracks=[
+            TrackInfo(guitar, "Guitar", samplerate=RATE, track_id=guitar_id),
+            TrackInfo(drums, "Drums", samplerate=RATE, track_id=drums_id),
+        ],
+        validation_status="complete",
+        take_id="33333333-3333-4333-8333-333333333333",
+    )
+    result = SimpleNamespace(
+        folder=take_dir / "Logic Export",
+        stems=(),
+        samplerate=RATE,
+    )
+    called = threading.Event()
+    with patch(
+        "webjam_qt.widgets.recording_studio.discover_takes",
+        return_value=[take],
+    ), patch(
+        "webjam_qt.widgets.recording_studio.export_logic_package",
+        side_effect=lambda *_args, **_kwargs: (called.set() or result),
+    ) as export:
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+            guitar_lane = studio._lanes[0]
+            drums_lane = studio._lanes[1]
+            assert not guitar_lane._logic_export_include.isHidden()
+            assert guitar_lane._logic_export_include.accessibleName() == (
+                "Include Guitar in Logic export"
+            )
+            assert guitar_lane._logic_export_include.isChecked()
+
+            drums_lane._logic_export_include.setChecked(False)
+            assert "left out" in studio._hint.text().lower()
+            assert studio._export_btn.isEnabled()
+            studio._export_for_logic()
+            assert _wait_until(called.is_set)
+            assert export.call_args.kwargs["selected_track_ids"] == {guitar_id}
+            assert not (take_dir / "webjam-take.json").exists()
+        finally:
+            studio.shutdown()
+
+
+def test_logic_export_requires_one_included_track_when_selection_is_available(tmp_path):
+    take_dir = tmp_path / "Take 01"
+    take_dir.mkdir()
+    guitar = take_dir / "guitar.wav"
+    drums = take_dir / "drums.wav"
+    _wav(guitar, 220)
+    _wav(drums, 440)
+    take = TakeInfo(
+        path=take_dir,
+        name="Take 01",
+        tracks=[
+            TrackInfo(
+                guitar,
+                "Guitar",
+                samplerate=RATE,
+                track_id="11111111-1111-4111-8111-111111111111",
+            ),
+            TrackInfo(
+                drums,
+                "Drums",
+                samplerate=RATE,
+                track_id="22222222-2222-4222-8222-222222222222",
+            ),
+        ],
+        validation_status="complete",
+        take_id="33333333-3333-4333-8333-333333333333",
+    )
+    with patch(
+        "webjam_qt.widgets.recording_studio.discover_takes",
+        return_value=[take],
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+            studio._lanes[0]._logic_export_include.setChecked(False)
+            studio._lanes[1]._logic_export_include.setChecked(False)
+            assert not studio._export_btn.isEnabled()
+            assert "choose at least one track" in studio._hint.text().lower()
         finally:
             studio.shutdown()
 

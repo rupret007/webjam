@@ -264,6 +264,36 @@ class TestTakeValidation(unittest.TestCase):
             text = (take / "webjam-take.json").read_text()
         self.assertNotIn("secret", text.lower())
 
+    def test_recovery_manifest_marks_audio_beyond_durable_checkpoint_partial(self):
+        """Recovered PCM never claims frames after the last fsynced checkpoint."""
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "Recovered-local"
+            take.mkdir()
+            _write_wav(take / "host-guitar.recovered-partial.wav", seconds=0.01)
+            result = write_take_manifest(
+                take,
+                expected_tracks=0,
+                required_local_stems=0,
+                local_total_frames=480,
+                local_durable_frames=240,
+            )
+            data = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertFalse(result.ok)
+        track = data["tracks"][0]
+        self.assertEqual(track["media_status"], "partial")
+        self.assertEqual(track["segments"][0]["media_status"], "partial")
+        self.assertIn(
+            {
+                "start_frame": 240,
+                "frame_count": 240,
+                "reason": "unverified_after_crash_checkpoint",
+                "channels": [0],
+            },
+            track["segments"][0]["gaps"],
+        )
+        self.assertTrue(any("durably checkpointed" in error for error in result.errors))
+
     def test_final_manifest_v2_has_stable_ids_exact_media_hash_and_capture_gap(self):
         import hashlib
         import uuid

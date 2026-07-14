@@ -7,6 +7,8 @@ import queue
 import sys
 import tempfile
 import threading
+import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
@@ -92,6 +94,47 @@ class TestLocalInputCapture(TestCase):
             with self.assertRaises(LocalCaptureError):
                 capture.start()
             self.assertFalse(list(root.glob(".webjam-capture-*")))
+
+    def test_durable_checkpoint_binds_capture_to_take_and_session(self):
+        """A live capture publishes only fsynced frames as crash-recoverable."""
+
+        class _OneSecondStream(_FakeStream):
+            def start(self):
+                block = np.column_stack((
+                    np.full(48_000, 0.25, dtype="float32"),
+                    np.full(48_000, -0.125, dtype="float32"),
+                ))
+                self.callback(block, len(block), None, "")
+
+        take_id = str(uuid.uuid4())
+        session_id = str(uuid.uuid4())
+        with tempfile.TemporaryDirectory() as d, patch.dict(
+            sys.modules,
+            {"sounddevice": _fake_sd(lambda **kwargs: _OneSecondStream(**kwargs))},
+        ):
+            root = Path(d)
+            capture = LocalInputCapture(
+                root,
+                samplerate=48_000,
+                take_id=take_id,
+                session_id=session_id,
+            )
+            capture.start()
+            checkpoint = next(root.glob(".webjam-capture-*/webjam-local-capture.json"))
+            deadline = time.time() + 2
+            payload: dict = {}
+            while time.time() < deadline:
+                payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+                if payload.get("durable_frames", 0) >= 48_000:
+                    break
+                time.sleep(0.01)
+            result = capture.stop_into(root / "take")
+
+        self.assertFalse(result.errors)
+        self.assertEqual(payload["take_id"], take_id)
+        self.assertEqual(payload["session_id"], session_id)
+        self.assertEqual(payload["durable_frames"], 48_000)
+        self.assertEqual(payload["writer_frames"], [48_000, 48_000])
 
     def test_device_open_failure_cleans_partial_files(self):
         fake_sd = SimpleNamespace(
@@ -467,10 +510,13 @@ class TestLocalInputCapture(TestCase):
             release_write.set()
             capture._writer_thread.join(timeout=1)
             self.assertFalse(capture._writer_thread.is_alive())
+            # Once the writer owns no active write, it safely flushes its own
+            # final durable checkpoint before the caller retries attachment.
+            self.assertEqual(len(flush_calls), 2)
             retried = capture.stop_into(root / "retry-take")
 
         self.assertEqual(len(retried.files), 2)
-        self.assertEqual(len(flush_calls), 2)
+        self.assertEqual(len(flush_calls), 4)
         self.assertEqual(len(close_calls), 2)
         self.assertFalse(ownership_violations)
 
@@ -589,6 +635,116 @@ class TestLocalInputCapture(TestCase):
             self.assertEqual(payload["status"], "recovered_partial")
             self.assertEqual(payload["reason"], "startup_recovery")
             self.assertEqual(os.stat(report).st_mode & 0o777, 0o600)
+
+    def test_startup_recovery_preserves_opaque_ids_durable_frames_and_gaps(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            hidden = root / ".webjam-capture-linked"
+            hidden.mkdir(mode=0o700)
+            for name, value in (("host-guitar.wav.part", 0.2), ("host-vocal.wav.part", -0.1)):
+                sf.write(
+                    hidden / name,
+                    np.full(480, value, dtype="float32"),
+                    48_000,
+                    format="WAV",
+                    subtype="PCM_24",
+                )
+            take_id = str(uuid.uuid4())
+            session_id = str(uuid.uuid4())
+            (hidden / "webjam-local-capture.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "pid": 99999999,
+                        "started_utc": "2026-07-14T00:00:00Z",
+                        "sample_rate": 48_000,
+                        "take_id": take_id,
+                        "session_id": session_id,
+                        "total_frames": 600,
+                        "durable_frames": 480,
+                        "gaps": [
+                            {
+                                "start_frame": 480,
+                                "frame_count": 120,
+                                "channels": [0, 1],
+                                "reason": "queue_overflow",
+                            }
+                        ],
+                        "capture_device": {
+                            "device_id": "portaudio:test:0:Interface",
+                            "display_name": "Interface",
+                            "backend": "Test",
+                            "sample_rate": 48_000,
+                            "channel_indices": [0, 1],
+                            "channel_labels": ["Input 1", "Input 2"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            recovered = recover_stale_local_captures(root, minimum_age_s=0)
+
+            self.assertEqual(len(recovered), 1)
+            item = recovered[0]
+            self.assertEqual(item.take_id, take_id)
+            self.assertEqual(item.session_id, session_id)
+            self.assertEqual(item.total_frames, 600)
+            self.assertEqual(item.durable_frames, 480)
+            self.assertEqual(item.sample_rate, 48_000)
+            self.assertEqual(
+                [(gap.start_frame, gap.frame_count, gap.channels, gap.reason) for gap in item.gaps],
+                [(480, 120, (0, 1), "queue_overflow")],
+            )
+            self.assertEqual(item.capture_device.display_name, "Interface")
+            report = json.loads((item.recovery_dir / "RECOVERY.json").read_text())
+            self.assertEqual(report["take_id"], take_id)
+            self.assertEqual(report["durable_frames"], 480)
+
+    def test_visible_recovery_without_final_project_is_reoffered_for_reconciliation(self):
+        """A crash after promotion must not leave playable PCM orphaned."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            recovered_dir = root / "Recovered-local-existing"
+            recovered_dir.mkdir(mode=0o700)
+            audio = recovered_dir / "host-guitar.recovered-partial.wav"
+            sf.write(
+                audio,
+                np.full(480, 0.2, dtype="float32"),
+                48_000,
+                format="WAV",
+                subtype="PCM_24",
+            )
+            take_id = str(uuid.uuid4())
+            session_id = str(uuid.uuid4())
+            (recovered_dir / "webjam-local-capture.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "take_id": take_id,
+                        "session_id": session_id,
+                        "started_utc": "2026-07-14T00:00:00Z",
+                        "sample_rate": 48_000,
+                        "total_frames": 600,
+                        "durable_frames": 480,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            first = recover_stale_local_captures(root, minimum_age_s=0)
+            self.assertEqual(len(first), 1)
+            item = first[0]
+            self.assertEqual(item.recovery_dir, recovered_dir)
+            self.assertEqual(item.take_id, take_id)
+            self.assertEqual(item.session_id, session_id)
+            self.assertEqual(item.durable_frames, 480)
+            self.assertEqual(item.files, (audio,))
+
+            (recovered_dir / "webjam-take.json").write_text(
+                json.dumps({"schema_version": 2}), encoding="utf-8"
+            )
+            self.assertFalse(recover_stale_local_captures(root, minimum_age_s=0))
 
     def test_startup_recovery_never_touches_a_live_writer_or_follows_symlink(self):
         with tempfile.TemporaryDirectory() as d:

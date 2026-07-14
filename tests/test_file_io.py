@@ -7,6 +7,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.file_io import atomic_write_text
 
@@ -72,6 +73,16 @@ class TestAtomicWriteText(unittest.TestCase):
             atomic_write_text(target, "")
             self.assertTrue(target.exists())
             self.assertEqual(target.read_text(), "")
+
+    def test_posix_write_syncs_the_parent_after_replacement(self):
+        if os.name != "posix":
+            self.skipTest("directory fsync is only available through the POSIX path")
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "core.file_io._fsync_parent_directory"
+        ) as sync_parent:
+            target = Path(tmp) / "durable.json"
+            atomic_write_text(target, "{}")
+        sync_parent.assert_called_once_with(target.parent)
 
 
 if __name__ == "__main__":

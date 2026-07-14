@@ -1,11 +1,12 @@
 """Band-server recording lifecycle, validation, and completion feedback."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -92,8 +93,9 @@ class RecordingCoordinator:
         # stream is finalized exactly once.
         self._capture_lock = threading.Lock()
         # One active take keeps its own bounded, privacy-safe recording facts.
-        # Server-confirmed start/stop times are deliberately separate from the
-        # optional local-input capture timestamps.
+        # WebJam-observed timestamps after recorder-state confirmation are
+        # deliberately separate from the optional local-input capture times.
+        # Jamulus does not provide a server clock in this RPC protocol.
         self._evidence_lock = threading.Lock()
         self._recording_started_utc = ""
         self._recording_ended_utc = ""
@@ -320,7 +322,11 @@ class RecordingCoordinator:
         self._recover_stale_evidence_journals_once()
 
     def _confirmed_recording_started(self) -> tuple[str, bool]:
-        """Record the one server-confirmed start time, never a local proxy."""
+        """Record when WebJam observed a confirmed recorder start.
+
+        The authenticated recorder response confirms state, not a server-clock
+        timestamp, so this deliberately records WebJam's UTC observation time.
+        """
         if not self._take_id:
             return "", False
         with self._evidence_lock:
@@ -330,7 +336,7 @@ class RecordingCoordinator:
             self._recording_started_utc = started_utc
             self._append_evidence_event_locked(
                 "recording_started",
-                detail="Confirmed by the band server.",
+                detail="WebJam observed the band server confirm recording.",
                 occurred_utc=started_utc,
             )
         self._checkpoint_evidence_journal()
@@ -339,7 +345,11 @@ class RecordingCoordinator:
     def _confirmed_recording_stopped(
         self, *, unexpected: bool = False, detail: str = ""
     ) -> tuple[str, bool]:
-        """Record the one server-confirmed stop time without fabricating start."""
+        """Record when WebJam observed a confirmed recorder stop.
+
+        As for start, the stored timestamp is WebJam's UTC observation time;
+        it is not represented as a clock reading returned by the band server.
+        """
         if not self._take_id:
             return "", False
         with self._evidence_lock:
@@ -350,7 +360,7 @@ class RecordingCoordinator:
             if not self._recording_started_utc:
                 self._set_recovery_locked(
                     RecoveryStatus.NEEDS_ATTENTION,
-                    "The band server stop was confirmed, but start was not.",
+                    "WebJam observed a confirmed server stop, but not a start.",
                 )
             if self._recording_recovery_in_progress:
                 self._set_recovery_locked(
@@ -369,7 +379,7 @@ class RecordingCoordinator:
                     or (
                         "The band server stopped before WebJam requested it."
                         if unexpected
-                        else "Confirmed by the band server."
+                        else "WebJam observed the band server confirm stop."
                     )
                 ),
                 occurred_utc=stopped_utc,
@@ -446,10 +456,28 @@ class RecordingCoordinator:
         recovered = base / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
             result = capture.stop_into(recovered)
-            LOGGER.info("Isolated host stems preserved in %s", recovered)
+            actual = Path(getattr(result, "recovery_dir", None) or recovered)
+            # A stalled writer promotes itself later. Its hidden work folder is
+            # not a Finder-safe destination and must never be shown as if it
+            # were already a finished recovery folder.
+            if actual.name.startswith(".webjam-capture-"):
+                LOGGER.warning(
+                    "Isolated host recovery is waiting for the writer to release."
+                )
+                for error in result.errors:
+                    LOGGER.warning("Capture salvage: %s", error)
+                return None, result.errors
+            published = self._publish_local_result_recovery(
+                result,
+                str(base),
+                actual,
+            )
+            if published is not None:
+                actual = published
+            LOGGER.info("Isolated host stems preserved in %s", actual)
             for error in result.errors:
                 LOGGER.warning("Capture salvage: %s", error)
-            return recovered, result.errors
+            return actual, result.errors
         except Exception:  # noqa: BLE001
             LOGGER.exception("Could not salvage isolated host stems")
             capture.abort()
@@ -784,6 +812,8 @@ class RecordingCoordinator:
                 device=self._c.settings.audio_input_device_index,
                 samplerate=self._c.settings.audio_samplerate,
                 blocksize=self._c.settings.audio_blocksize,
+                take_id=self._take_id,
+                session_id=self._session_id,
             )
             capture.start()
             with self._capture_lock:
@@ -829,6 +859,7 @@ class RecordingCoordinator:
             LOGGER.warning(
                 "Recovered abandoned local capture in %s", item.recovery_dir
             )
+            self._publish_recovered_local_capture(item, root)
         self._c.window.flash_message(
             "WebJam recovered unfinished local audio from an earlier session. "
             "Open Studio to review it.",
@@ -839,6 +870,167 @@ class RecordingCoordinator:
             self._c.window.recording_studio.reload()
         except Exception:  # noqa: BLE001
             LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
+
+    def _publish_recovered_local_capture(self, item, root: str) -> None:
+        """Turn recovered local media into a durable, review-only project.
+
+        A crash can leave valid local PCM while the Jamulus server folder is
+        absent or incomplete.  Do not leave that media as anonymous files: a
+        recovery project binds it to the opaque take/session IDs checkpointed
+        at Record time, carries any safe session evidence, and deliberately
+        remains ``needs_attention``.  It is never presented as a completed
+        multitrack take or timing-ready Logic export.
+        """
+        if not getattr(item, "files", ()):
+            return
+        recovery_dir = Path(item.recovery_dir)
+        manifest_path = recovery_dir / "webjam-take.json"
+        if manifest_path.is_file() and not manifest_path.is_symlink():
+            try:
+                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing_manifest = None
+            if isinstance(existing_manifest, dict) and existing_manifest.get("schema_version") == 2:
+                return
+
+        take_id = str(getattr(item, "take_id", "") or "")
+        session_id = str(getattr(item, "session_id", "") or "")
+        journal = RecordingManifestJournal(root)
+        journal_result = None
+        if take_id:
+            try:
+                journal_result = journal.load(take_id)
+            except (OSError, RecordingManifestJournalError, ValueError):
+                LOGGER.warning("Could not read recovery evidence for local capture.")
+
+        if journal_result is not None:
+            evidence = journal_result.evidence
+        else:
+            evidence = SessionEvidence()
+        if journal_result is not None and not journal_result.trusted:
+            recovery_note = (
+                "Recording evidence could not be read safely; the recovered local "
+                "audio needs manual review."
+            )
+        else:
+            recovery_note = (
+                "Local isolated audio was recovered after an interrupted recording; "
+                "it is not verified as a completed multitrack take."
+            )
+        notes = tuple(dict.fromkeys((*evidence.recovery_notes, recovery_note)))
+        timeline = tuple(
+            dict.fromkeys(
+                (*evidence.timeline, SessionTimelineEvent(
+                    "local_capture_recovered",
+                    detail=recovery_note,
+                ))
+            )
+        )
+        evidence = replace(
+            evidence,
+            recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+            recovery_notes=notes,
+            timeline=timeline,
+        )
+        try:
+            from webjam_qt import __version__
+
+            frames = max(0, int(getattr(item, "total_frames", 0) or 0))
+            durable_frames = min(
+                frames,
+                max(0, int(getattr(item, "durable_frames", 0) or 0)),
+            )
+            device = getattr(item, "capture_device", None)
+            sample_rate = int(
+                getattr(device, "sample_rate", 0)
+                or getattr(item, "sample_rate", 0)
+                or 0
+            )
+            duration_s = frames / sample_rate if frames and sample_rate else 0.0
+            result = write_take_manifest(
+                recovery_dir,
+                expected_tracks=0,
+                required_local_stems=0,
+                local_started_utc=str(getattr(item, "started_utc", "") or ""),
+                local_duration_s=duration_s,
+                capture_errors=(
+                    recovery_note,
+                    *tuple(getattr(item, "errors", ()) or ()),
+                ),
+                app_version=__version__,
+                participant_names={},
+                session_title="Recovered local audio",
+                session_id=session_id,
+                take_id=take_id,
+                local_participant_id=evidence.host.participant_id,
+                local_participant_name=evidence.host.display_name or "Recovered host",
+                capture_device=device,
+                capture_gaps=tuple(getattr(item, "gaps", ()) or ()),
+                local_total_frames=frames,
+                local_durable_frames=durable_frames,
+                session_evidence=evidence,
+            )
+        except Exception:  # noqa: BLE001 - media stays visible even if manifest fails
+            LOGGER.exception("Could not publish recovered local capture manifest")
+            return
+
+        if result.take is not None and journal_result is not None and journal_result.trusted:
+            try:
+                journal.remove(take_id)
+            except (OSError, RecordingManifestJournalError, ValueError):
+                LOGGER.warning("Could not retire recovery evidence after manifest publish.")
+
+    def _publish_local_result_recovery(self, result, root: str, fallback_dir: Path) -> Path | None:
+        """Publish a visible local-result recovery without inventing media.
+
+        ``LocalInputCapture`` may already have promoted a partial capture to a
+        visible recovery folder. A normal interrupted stop writes finished WAVs
+        directly into ``fallback_dir``. Both cases need one recovery-only
+        project, while a hidden writer directory must stay untouched until its
+        deferred promotion completes.
+        """
+        recovery_dir = Path(getattr(result, "recovery_dir", None) or fallback_dir)
+        if recovery_dir.name.startswith(".webjam-capture-") or not recovery_dir.is_dir():
+            return None
+        files = tuple(
+            path
+            for path in tuple(getattr(result, "files", ()) or ())
+            if Path(path).is_file() and not Path(path).is_symlink()
+        )
+        if not files:
+            try:
+                files = tuple(
+                    path
+                    for path in sorted(recovery_dir.glob("*.recovered-partial.wav"))
+                    if path.is_file() and not path.is_symlink()
+                )
+            except OSError:
+                files = ()
+        if not files:
+            return recovery_dir
+        from core.local_capture import RecoveredLocalCapture
+
+        capture_device = getattr(result, "capture_device", None)
+        self._publish_recovered_local_capture(
+            RecoveredLocalCapture(
+                source_dir=recovery_dir,
+                recovery_dir=recovery_dir,
+                files=tuple(Path(path) for path in files),
+                errors=tuple(getattr(result, "errors", ()) or ()),
+                take_id=self._take_id,
+                session_id=self._session_id,
+                started_utc=str(getattr(result, "started_utc", "") or ""),
+                total_frames=max(0, int(getattr(result, "total_frames", 0) or 0)),
+                durable_frames=max(
+                    0, int(getattr(result, "durable_frames", 0) or 0)
+                ),
+                sample_rate=max(0, int(getattr(capture_device, "sample_rate", 0) or 0)),
+                gaps=tuple(getattr(result, "gaps", ()) or ()),
+                capture_device=capture_device,
+            ),
+            root,
+        )
+        return recovery_dir
 
     def toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         from core.jamulus_server_rpc import (
@@ -989,7 +1181,7 @@ class RecordingCoordinator:
                     detail=(
                         "The band server stopped recording before WebJam requested it."
                         if prior_phase is not RecorderPhase.STOPPING
-                        else "Confirmed by the band server after Stop Rec."
+                        else "WebJam observed server confirmation after Stop Rec."
                     ),
                 )
                 if newly_confirmed:
@@ -1150,7 +1342,9 @@ class RecordingCoordinator:
                 "No new Jamulus take folder appeared after recording stopped.",
                 event="server_take_missing",
             )
-            recovered = Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
+            recovered: Path | None = (
+                Path(root).expanduser() / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
+            )
             capture_errors: tuple[str, ...] = ()
             started_utc = ""
             duration_s = 0.0
@@ -1168,7 +1362,18 @@ class RecordingCoordinator:
                     getattr(local_result, "total_frames", 0) or 0
                 )
                 capture_device = getattr(local_result, "capture_device", None)
-            if recovered.is_dir():
+                actual_recovery_dir = getattr(local_result, "recovery_dir", None)
+                if actual_recovery_dir is not None:
+                    candidate = Path(actual_recovery_dir)
+                    # Deferred local recovery still owns hidden ``.part``
+                    # media. Leave it untouched until its writer promotes a
+                    # visible folder that startup reconciliation can publish.
+                    recovered = (
+                        candidate
+                        if not candidate.name.startswith(".webjam-capture-")
+                        else None
+                    )
+            if recovered is not None and recovered.is_dir():
                 from webjam_qt import __version__
                 self._post_validation_stage("ALIGNING HOST TRACKS…")
                 self._checkpoint_evidence_journal()

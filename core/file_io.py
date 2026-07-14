@@ -8,9 +8,11 @@ atomic**: a crash mid-write can leave a half-written file that the next
 launch fails to parse, corrupting the user's saved state.
 
 ``atomic_write_text()`` writes to a sibling ``*.tmp`` file in the same
-directory, fsyncs, then ``os.replace()``s onto the target — which is an
-atomic rename on every supported OS.  Optional ``mode`` parameter sets
-file permissions before the rename (use ``0o600`` for files containing
+directory, fsyncs it, then ``os.replace()``s onto the target — which is an
+atomic rename on every supported OS.  On POSIX it also fsyncs the parent
+directory after the rename, so a successful return includes the directory
+entry needed to recover that replacement after power loss. Optional ``mode``
+sets file permissions before the rename (use ``0o600`` for files containing
 secrets).
 
 Errors are surfaced to the caller; this module does not log or swallow.
@@ -73,9 +75,28 @@ def atomic_write_text(
 
         # os.replace is atomic on POSIX and Windows (Python 3.3+).
         os.replace(tmp_path, target)
+        _fsync_parent_directory(parent)
     finally:
         if tmp_path.exists():
             try:
                 tmp_path.unlink()
             except OSError:
                 pass
+
+
+def _fsync_parent_directory(parent: Path) -> None:
+    """Commit a successful POSIX rename's directory entry before returning.
+
+    Windows does not expose a portable directory-handle fsync through
+    ``os.open``. Its replacement still stays atomic, while the POSIX paths
+    used for take/recovery metadata receive the stronger crash-durability
+    guarantee.
+    """
+    if os.name != "posix":
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(parent, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
