@@ -4,8 +4,9 @@ This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
 evidence, but the active package and historical-package boundary is
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The preserved
-v0.12.0 package remains evidence for itself; the v0.13.0 package has its own
-package checks but no inherited physical claims.
+v0.12.0 and v0.13.0 packages remain evidence only for themselves. The active
+private candidate is v0.14.0; its exact package and physical-evidence boundary
+is maintained in [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md).
 
 ## Product promise
 
@@ -37,7 +38,10 @@ package checks but no inherited physical claims.
   WebJam's peer recording service is same-LAN HTTP over RFC1918 IPv4 only; it
   does not provide TLS, Internet exposure, VPN traversal, or IPv6 support.
 
-## Current v0.13 package addendum — physical evidence still separate
+## Historical v0.13 package addendum — physical evidence still separate
+
+This section records the v0.13 implementation/package boundary. It is not the
+current candidate status: use the v0.14.0 last-mile record for that.
 
 - **Interrupted local capture:** the writer periodically flushes and
   synchronizes its audio before recording opaque IDs, durable frames, gaps, and
@@ -57,10 +61,10 @@ package checks but no inherited physical claims.
   not change the reusable v2 same-LAN invitation described in the historical
   architecture below, nor does it establish public remote service.
 
-The v0.13.0 artifact, fresh-extraction package smoke, ad-hoc signing result,
-and two isolated launch/TERM cycles are recorded in the active last-mile plan.
-Physical interruption recovery, two-Mac results, and Logic Pro results remain
-**NOT RUN**.
+The v0.13.0 artifact remains historical package evidence. The active v0.14.0
+artifact's fresh-extraction package smoke, ad-hoc signing result, and isolated
+launch/TERM cycles are recorded in the active last-mile plan. Physical
+interruption recovery, two-Mac results, and Logic Pro results remain **NOT RUN**.
 
 ## Repository and preserved baseline — 2026-07-13
 
@@ -657,7 +661,7 @@ Logic Pro import:        NOT RUN
 
 ## Historical continuation point
 
-For the active v0.13 package and historical v0.12 package baseline,
+For the active v0.14 package and historical v0.13/v0.12 package baselines,
 use `TEST-NIGHT-READ-ME.txt`,
 [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md), and
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps

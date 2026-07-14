@@ -1,4 +1,4 @@
-# WebJam v0.13.0 two-Mac certification worksheet
+# WebJam v0.14.0 two-Mac certification worksheet
 
 **Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
 Do not pre-check boxes from automated tests or an earlier rollback build. This
@@ -11,14 +11,15 @@ The goal is deliberately simple:
 
 ## Evidence header
 
-Fill this in before opening either app. The source target is v0.13.0; do not
-invent, copy, or reuse an earlier archive identity.
+Fill this in before opening either app. The source target is v0.14.0; do not
+invent, copy, or reuse an earlier archive identity. The prefilled values below
+identify the exact package; verify the installed version and hash on both Macs.
 
-- Installed app version: ______________________________________________
-- Artifact filename: ___________________________________________________
-- Artifact absolute path: ______________________________________________
-- SHA-256: _____________________________________________________________
-- Source/build commit: _________________________________________________
+- Installed app version: `0.14.0` (verify on each Mac)
+- Artifact filename: `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`
+- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`
+- SHA-256: `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`
+- Source/build commit: `045c5acb01687a4088b0bd618dab4d0ab6200804`
 - Test date/time/timezone: ___________________________________________
 - Host Mac model / macOS: ___________________________________________
 - Bandmate Mac model / macOS: _______________________________________
@@ -31,20 +32,22 @@ invent, copy, or reuse an earlier archive identity.
 Both Macs must use the same artifact hash. If either filename/hash differs,
 stop and replace it before testing.
 
-> **Artifact boundary:** This exact ZIP must include the confirmation screen,
+> **Artifact boundary:** This exact ZIP includes the confirmation screen,
 > CoreAudio route preflight, recording-storage guard, private in-progress
 > evidence journal, periodic durable local-capture checkpoints, recovery
-> reconciliation, and conservative Logic-export checks. Automated source/package
-> checks establish only that these features are present; this worksheet is where
-> the actual hardware, musician, interruption, crash-recovery, and Logic
-> outcomes are recorded.
+> reconciliation, conservative Logic-export checks, and the Studio review
+> workspace. The package-only gates passed: **1,719 passed, 18 skipped, one
+> known warning, and 6 subtests**; transport `go test ./...` and `go vet ./...`;
+> fresh-extraction strict/deep signature, nested-app, and exact fabric-ID
+> checks; and two isolated six-second offscreen launch/TERM cycles. This
+> worksheet is where the actual hardware, musician, CoreAudio, recording,
+> interruption/recovery, and Logic outcomes are recorded.
 >
-> **Studio v0.14 boundary:** The source-next Studio workspace adds a shared
-> elapsed-seconds ruler, selected-track inspection, compact lanes, and a
-> non-destructive per-take sidecar. It is not evidence about this recorded
-> v0.13.0 ZIP. Leave every Studio v0.14 physical result **NOT RUN** until the
-> exact newer package identity is written in this worksheet and musicians run
-> the rows below.
+> **Studio v0.14 boundary:** This package ships a shared elapsed-seconds ruler,
+> selected-track inspection, compact lanes, and a non-destructive per-take
+> sidecar keyed by schema-v2 IDs. It is not a full DAW or evidence of real
+> hardware behavior. Leave every physical Studio, CoreAudio, recording/recovery,
+> and Logic result **NOT RUN** until musicians run the rows below.
 
 ## Know what this test proves
 

@@ -1,10 +1,14 @@
 # WebJam help routing map
 
-Maps common musician questions to the v0.13.0 test-night interface. Host and
-Join both use the short sound confirmation before Band Check. Earlier packages
-are rollback history only. Setup Wizard, **Start Audio**, raw server fields,
-and color-named buttons are legacy paths. Physical two-Mac audio and Logic
-results remain **NOT RUN** until recorded in the pilot worksheet.
+Maps common musician questions to the v0.14.0 test-night interface. Host and
+Join both use the short sound confirmation before Band Check. The active package
+is `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
+`045c5acb01687a4088b0bd618dab4d0ab6200804`, SHA-256
+`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+The v0.13.0 and earlier packages are rollback history only. Setup Wizard,
+**Start Audio**, raw server fields, and color-named buttons are legacy paths.
+Physical CoreAudio, two-Mac, recording/recovery, and Logic results remain
+**NOT RUN** until recorded in the pilot worksheet.
 
 | User need | Current path |
 |---|---|
@@ -16,7 +20,7 @@ results remain **NOT RUN** until recorded in the pilot worksheet.
 | Record the whole band | Live bottom bar → **Record** |
 | Review tracks and takes | **More → Multitrack Studio** |
 | Choose Studio output / keep this Mac's isolated inputs | **More → Multitrack Studio → Recording Setup** |
-| Review a take before export | **More → Multitrack Studio** → open the take → read the shared elapsed-time ruler → select a lane → inspect source, timing, and known gaps → review its non-destructive gain/pan/mute/solo mix |
+| Review a take before export | **More → Multitrack Studio** → open the take → read the shared elapsed-time ruler → select a lane → inspect source, timing, and known gaps → review its non-destructive gain/pan/mute/solo mix; Studio saves that local review state separately from WAVs and `webjam-take.json` |
 | Prepare aligned Logic stems | In the open Studio take, review each track's saved **Logic export** choice → **Export for Logic** → **Show Logic Export**; the choice is used for future exports until changed and never changes WAVs or `webjam-take.json`; a selected silent track or unaligned local original pauses export until reviewed |
 | Capture rehearsal notes | **More → Session Notes** |
 | Add optional video/conversation | **More → Add Video or Conversation** |

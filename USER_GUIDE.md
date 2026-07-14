@@ -23,8 +23,18 @@ service is deployed or configured in the app.
 name-and-sound confirmation, CoreAudio route preflight, and Band Check. Before
 Record, it checks the selected folder and conservative free space, checkpoints
 redacted in-progress evidence, and creates durable local-capture checkpoints.
-Those features still require the physical two-Mac and Logic checks; automated
-results do not substitute for that evidence.
+Those features still require physical evidence; automated results do not
+substitute for it.
+
+**Current candidate:** `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
+`045c5acb01687a4088b0bd618dab4d0ab6200804`, has SHA-256
+`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+The source gate recorded 1,719 passed, 18 skipped, one known warning, and 6
+subtests; native transport `go test ./...` and `go vet ./...` passed. A
+fresh extraction passed strict/deep signatures, nested-app inspection, exact
+native-fabric build-ID verification, and two isolated six-second offscreen
+launch/TERM cycles. Physical CoreAudio, two-Mac, recording/recovery, and Logic
+import results remain **NOT RUN**. The v0.13.0 ZIP is rollback history only.
 
 ## Install
 
@@ -156,7 +166,9 @@ a manifest that preserves the musician names WebJam observed. In Studio, open
 the take, read the shared elapsed-time ruler, and select a lane to inspect its
 source, timing, and any known gaps. You can then play, pause, scrub, choose a
 wired output, and change each track's gain, pan, mute, or solo without
-modifying the source WAVs.
+modifying the source WAVs. Studio saves those review and Logic-export choices
+in a separate durable local sidecar keyed by schema-v2 track ID; it does not
+rewrite `webjam-take.json`.
 
 Open **Recording Setup** inside Studio to select its playback output or change
 the Takes folder. The host, or a guest connected through an active v2 invite,

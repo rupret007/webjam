@@ -53,7 +53,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 |------|-------------|-------|
 | **Companion API (documented & stable)** | Document and stabilize the local bridge API so DAWs, editors, and other tools can read room state, mode, goal, mixer. WebJam as hub. | 1 |
 | **Optional E2E encrypted canvas** | Mode where only people in the room can ever read notes/artifacts; no server-side plaintext. | 3 |
-| **Multitrack Studio review workspace** | Next-candidate source pass: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and a safer Logic handoff. It is not a tempo grid or a full DAW claim. | 1 |
+| **Multitrack Studio review workspace** | Shipped in the private v0.14.0 candidate: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and a safer Logic handoff. It is not a tempo grid or a full DAW claim. | 1 |
 | **Recording + timeline** | Optional recording; timeline for time-linked notes and replay. | 3 |
 
 ### 5. Community & human layer
@@ -74,102 +74,51 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Packaged in the private v0.13.0 candidate
+### ✅ Packaged in the private v0.14.0 candidate (2026-07-14)
 
-These changes are in the v0.13.0 package. Its fresh-extraction, ad-hoc-signing,
-sidecar, and bounded launch/stop checks pass. They are not physical-audio,
-recording-recovery, or Logic Pro claims.
+The exact v0.14.0 test-night ZIP is
+`WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`, built
+from `045c5acb01687a4088b0bd618dab4d0ab6200804`.
 
-- **Durable local recovery** — local original capture records a durable checkpoint
-  while writing. Interrupted media is surfaced as a visible **Needs Attention**
-  recovery project; data past the last durable checkpoint is explicitly
-  unverified instead of being presented as a finished take. Guest recovery stays
-  local until a musician reviews it; it is not silently delivered to the host.
-- **Truthful Logic choice** — Studio lets a musician select export tracks without
-  changing the take manifest. An explicitly silent selected track or an
-  unaligned guest/local original stops the export with one corrective choice:
-  deselect it, use the aligned server track, or align and verify it first.
-- **One-use remote invitations** — a retry is safe only before the native sidecar
-  starts enrollment. After an enrollment attempt, WebJam requires a fresh
-  invitation. This changes no ordinary same-LAN flow and does not make remote v3
-  a public or deployed service.
+Its package-only evidence is complete: **1,719 passed, 18 skipped, one known
+warning, and 6 subtests**; transport `go test ./...` and `go vet ./...`;
+fresh-extraction strict/deep signature, nested-app, and exact fabric-ID checks;
+and two isolated six-second offscreen launch/TERM cycles. This is not a claim
+that physical two-Mac audio, CoreAudio routing, recording/recovery, or Logic
+Pro import has run; all of those results are **NOT RUN**.
 
-### 🟡 Source-next: Studio v0.14 review workspace (not a package or pilot result)
+- **Five-second launch and Band Check** — Host a Jam is the clear primary
+  action; Join a Jam opens one invitation field. One concise name-and-band-sound
+  confirmation leads into the guided Band Check and **Start Session** path.
+- **Distinct visual identity** — near-black surfaces, white type, and burnt
+  orange (`#BF5700`) replace the former purple/teal palette. An original
+  three-part mark represents conversation, live music, and production without
+  reusing a third-party logo.
+- **Studio review workspace** — every completed lane shares an elapsed-seconds
+  ruler and seek point; no bars, beats, tempo, automation, or full-DAW claim is
+  invented. Selecting a track exposes its source, media/alignment evidence,
+  recorded gaps, and export inclusion. Compact controls remain usable at
+  760×600.
+- **Safe Studio continuity** — gain, pan, mute, solo, and export inclusion live
+  in an atomic private `.webjam-studio-state.json` sidecar keyed by schema-v2
+  `track_id`. It never rewrites the take manifest or source WAVs, and a
+  reordered/reconciled lane cannot inherit another musician's export choice.
+- **Durable local recovery and Logic truth** — interrupted media remains a
+  visible **Needs Attention** recovery project. Explicitly silent or unaligned
+  selected tracks block misleading Logic export until the musician makes the
+  safe choice; source media stays unchanged.
+- **Private local originals and lifecycle truth** — supported v2 guests can
+  retain local originals through a peer outage and resume a verified same-LAN
+  transfer. A v1 guest has no false local-capture claim; a running process is
+  never presented as proof of connection.
+- **Privacy, accessibility, and narrow-window support** — support output is
+  allowlisted/redacted; focus and keyboard order are explicit; state meaning is
+  not color-only; and the live-session floor is 760×600.
 
-This work is intentionally a musician-friendly review layer, not an imitation
-of a full DAW. It does not change the exact v0.13.0 archive, its hash, or its
-physical-pilot status.
-
-- **One truthful time axis** — all completed lanes share an elapsed-seconds
-  ruler and seek point. We will not fake bars, beats, tempo, automation, or a
-  click track that the session did not record.
-- **Context when it matters** — selecting a track reveals its real source,
-  media/alignment evidence, recorded gaps, and next-export inclusion. A meter
-  or waveform does not become proof of audibility or musical alignment.
-- **A compact working surface** — track identity, M/S, level, gain, pan,
-  transport, and export survive the 760×600 floor; richer inspection yields
-  space before core controls do.
-- **Safe continuity** — a hidden, atomic `.webjam-studio-state.json` sidecar
-  keeps gain, pan, mute, solo, and export inclusion attached to durable
-  schema-v2 track identities. It never rewrites the take manifest or WAVs.
-- **A dependable handoff** — an export choice follows the identified source
-  through a reordered/reconciled project rather than following a lane number.
-  Existing silence, missing-media, and alignment safety blocks still apply.
-
-Source tests and visual review can validate these boundaries, but the next
-package, live two-Mac use, interruption review, and actual Logic Pro import are
-all **NOT RUN** until musicians record them in the pilot worksheet.
-
-### ✅ Included in the v0.13.0 private test-night candidate (2026-07-14)
-
-The exact v0.13.0 test-night ZIP is
-`WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`, built
-from `4d09810d7fb3c7f7355ca1d88e8218bb8ea784dd`. It passed the documented
-fresh-extraction/package checks. This is not a claim that the physical two-Mac,
-real-audio, recording-recovery, or Logic gates have run. The v0.12.0 ZIP is a
-preserved rollback artifact.
-
-- **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
-  opens one invitation field. The v0.13.0 candidate then asks for one concise
-  name-and-band-sound confirmation before Band Check and **Start Session**. A
-  matching stored check starts the bundled server/client directly.
-- **Permanent Band Check** — required checks after Host/Join on a new or changed
-  setup, plus F2, Settings, and live troubleshooting, share one guided input/
-  headphone/scratch-recording/Studio path with typed Ready, Warning, and Action
-  Needed outcomes. A separate footer action previews the support bundle.
-- **Distinct visual identity** — near-black surfaces, white type, and official
-  burnt orange (`#BF5700`) replace the previous purple/teal control palette.
-  An original three-part mark represents conversation, live music, and
-  production without reusing a third-party logo.
-- **Meeting-style live hierarchy** — responsive musician tiles and one bottom
-  control bar for Copy Invite, Record, More, and role-aware End Session or
-  Leave Jam.
-- **Lifecycle truth** — permission, connecting, interrupted, unavailable,
-  offline, ending/leaving, recoverable, and fatal states have plain-language
-  next actions. A running process is not treated as proof of connection.
-- **Private local originals** — the host, or a guest connected through an active
-  v2 private invite, can explicitly retain its first two interface inputs. That
-  guest keeps recording through peer outage and resumes a size/SHA/PCM-verified
-  same-LAN transfer without deleting its original. A v1 guest has no
-  WebJam-orchestrated local capture or delivery.
-- **Schema-v2 Studio and Logic handoff** — stable identities, segments, gaps,
-  media truth, offset/drift evidence, mixed-rate playback, common-origin PCM24
-  stems, references, reports, analysis, and checksums share one project model.
-- **Privacy-safe support bundle** — preview and save use one immutable
-  allowlisted artifact that excludes recordings, notes, transcripts, Webex
-  content, private invites, secrets, and home paths by default. The diagnostics
-  shortcut separately creates a short sanitized clipboard summary.
-- **Accessibility and narrow-window support** — visible focus, task-ordered
-  keyboard navigation, accessible descriptions/announcements, state meaning
-  beyond color, and a 760×600 live-session floor.
-- **Tonight's boundary** — the private Apple Silicon v0.13.0 package is the
-  two-Mac same-LAN candidate. The v1/v2 engine baseline has native one-hour
-  longevity evidence; the exact package passes fresh-extraction signature,
-  nested-app, sidecar build/hash/IPC, and bounded launch/cleanup checks.
-  Packaged CoreAudio client/roster audio, physical reconnect and guest-original
-  delivery, recording recovery, Logic import, and two-Mac cleanup remain
-  explicit gates; no automated result fills those physical fields.
+The v0.13.0 ZIP is preserved rollback history, not evidence that the v0.14.0
+Studio workspace existed in that earlier artifact. The v0.12.0 ZIP remains an
+older historical rollback artifact.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
@@ -185,8 +134,9 @@ preserved rollback artifact.
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.13.0
-package and v0.12.0 historical-package sections above. v0.8.0
+work. It is retained as implementation history; current status is the v0.14.0
+package, with v0.13.0 and v0.12.0 retained as historical rollback artifacts.
+v0.8.0
 remains the latest published build at
 [Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
 gates pass.
@@ -221,14 +171,13 @@ gates pass.
 
 ### 🔜 Next — closed pilot gates
 
-- Retain the completed v0.13.0 artifact package inspection, then complete the
-  planned two-Apple-Silicon-Mac
+- Complete the planned two-Apple-Silicon-Mac
   same-LAN physical pilot. The v1/v2 engine's native Jamulus/JACK 3,600-second
   evidence remains historical engine evidence, not package certification.
-- Build and identify the next Studio candidate, then physically verify its
-  seconds-only ruler, seek alignment, selected-track inspection, compact layout,
-  immutable-sidecar reopen behavior, and durable-ID Logic selection. Those
-  observations are **NOT RUN** until recorded against that exact package.
+- Physically verify the exact v0.14.0 candidate's seconds-only ruler, seek
+  alignment, selected-track inspection, compact layout, immutable-sidecar
+  reopen behavior, and durable-ID Logic selection. Those observations are
+  **NOT RUN** until recorded against that exact package.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

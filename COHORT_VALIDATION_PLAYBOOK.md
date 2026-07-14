@@ -1,4 +1,4 @@
-# WebJam v0.13.0 closed-pilot playbook
+# WebJam v0.14.0 closed-pilot playbook
 
 This is the coordination guide for a small musician cohort. The exact physical
 acceptance evidence belongs in
@@ -6,18 +6,20 @@ acceptance evidence belongs in
 short guide for that gate. Physical audio, interruption, and Logic results
 start as **NOT RUN** until musicians record them there.
 
-The next Studio v0.14 workspace checks are also physical rows, not an upgrade
-to the recorded v0.13.0 package claim. Until the exact newer package is
-identified and exercised in the worksheet, Studio ruler, sidecar, and Logic
-handoff observations remain **NOT RUN**.
+The Studio v0.14 workspace is in this exact package: one seconds-only ruler,
+selected-track inspection, gain/pan/mute/solo/export choices, and a durable
+schema-v2 sidecar. Its source/package checks passed, but Studio use, CoreAudio,
+recording/recovery, and Logic handoff observations remain **NOT RUN** until
+musicians exercise the exact package in the worksheet.
 
 ## Message to send before the rehearsal
 
 ```text
-We're testing the WebJam v0.13.0 candidate tonight.
+We're testing the WebJam v0.14.0 candidate tonight.
 
-1. Download the exact ZIP and verify both the filename and SHA-256 supplied by
-   the host for this run. Do not reuse an earlier artifact identity.
+1. Download `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip` and verify SHA-256
+   `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+   Do not reuse an earlier artifact identity.
 2. Unzip it, move WebJam.app to Applications, then Control-click it and choose
    Open the first time. The private build is ad-hoc signed, not notarized.
 3. Connect your interface and wired headphones. In macOS Sound, choose the
@@ -37,7 +39,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Host
 
-1. Open the exact v0.13.0 candidate recorded for this run and choose **Host a
+1. Open the exact v0.14.0 candidate recorded for this run and choose **Host a
    Jam** once.
 2. Confirm your name and band sound, complete Band Check, then choose **Start
    Session**.
@@ -78,7 +80,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 3. On the host and each v2-connected guest that should retain interface
    originals, open **More → Multitrack Studio → Recording Setup**, explicitly
    enable inputs 1 and 2, and select the intended shareable 48-kHz interface.
-   The host still controls the shared take. The v0.13.0 candidate checks the
+   The host still controls the shared take. The v0.14.0 candidate checks the
    selected Takes folder and conservative free-space reserve before Record;
    write down any warning or block rather than treating it as an acoustic pass.
 4. The host records at least 60 seconds. With an active v2 invite, briefly
@@ -131,7 +133,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
   do not send them directly.
 - Record the Studio v0.14 ruler/inspection/sidecar and durable-ID export rows
   as **NOT RUN** unless this exact candidate was physically exercised. A source
-  test or a prior v0.13.0 package is not a substitute.
+  or package check, or the prior v0.13.0 rollback package, is not a substitute.
 - Use **More → Band Check → Save Support Bundle** for the previewed, allowlisted,
   redacted support archive. `Ctrl+Shift+D` copies a short redacted summary.
 - Do not widen the cohort until every item in the exact two-Mac pilot passes.

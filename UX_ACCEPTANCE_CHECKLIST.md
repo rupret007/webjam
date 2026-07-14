@@ -1,6 +1,6 @@
 # WebJam UX acceptance checklist
 
-Use this checklist for the v0.13.0 Qt/package candidate. It includes the
+Use this checklist for the v0.14.0 Qt/package candidate. It includes the
 sound-confirmation screen, CoreAudio route preflight, recording-storage guard,
 durable local-capture checkpoints, recovery truth, and conservative Logic
 export checks. The exact hardware and musician outcomes remain **NOT RUN** in
@@ -9,10 +9,14 @@ history. Setup Wizard, Ready Check, raw endpoints, **Start Audio**, **Host &
 Start Audio**, and a visible Jamulus window are legacy paths, not current
 acceptance criteria.
 
-The Studio v0.14 rows below are next-candidate source and UI checks. They do
-not revise the recorded v0.13.0 archive claim, and neither a passing offscreen
-test nor a rendered screenshot turns a physical musician or Logic result into
-anything other than **NOT RUN**.
+The exact package is `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`, built
+from `045c5acb01687a4088b0bd618dab4d0ab6200804`. Its source, transport,
+fresh-extraction, signature/nested-app/fabric-ID, and two isolated launch/TERM
+package checks passed. The Studio v0.14 rows below describe shipped UI behavior;
+neither those checks nor a rendered screenshot turns a physical musician,
+CoreAudio, recording/recovery, or Logic result into anything other than
+**NOT RUN**.
 
 ## Launch: understandable in five seconds
 
@@ -52,7 +56,7 @@ anything other than **NOT RUN**.
 ## Host and invitation
 
 - [ ] **Host a Jam** opens one concise name and band-sound confirmation in the
-      v0.13.0 macOS candidate. A new or changed setup then opens Band Check;
+      v0.14.0 macOS candidate. A new or changed setup then opens Band Check;
       **Start Session** starts the bundled server and client in the background.
 - [ ] **Starting your jam…** is real lifecycle state, not a fake delay.
 - [ ] Copy Invite stays unavailable until the hosted service is alive and a
@@ -80,7 +84,7 @@ anything other than **NOT RUN**.
 ## Join and connection truth
 
 - [ ] Cold-start link activation and paste-then-Join use the same strict
-      invitation parser, fill/accept the same connection, and—in the v0.13.0
+      invitation parser, fill/accept the same connection, and—in the v0.14.0
       candidate—show the same concise sound confirmation before Band
       Check and **Start Session**. An already-running deep link uses the same
       parser but honors the current-session/active-take guard before switching.
@@ -124,7 +128,7 @@ anything other than **NOT RUN**.
 
 ## Permission and error states
 
-- [ ] In the v0.13.0 candidate, Host/Join on a new or changed setup
+- [ ] In the v0.14.0 candidate, Host/Join on a new or changed setup
       first shows the concise sound confirmation, then Band Check; F2, **More
       → Band Check**, and **Settings → Run Band Check** open the same guided
       readiness flow. During a live jam it observes the running session without
@@ -132,7 +136,7 @@ anything other than **NOT RUN**.
 - [ ] Band Check reports **Ready to Jam**, **Ready with a Warning**, or
       **Action Needed** in words and keeps technical detail collapsed by
       default.
-- [ ] In v0.13.0, an unusable folder or dangerously low free space reports one
+- [ ] In v0.14.0, an unusable folder or dangerously low free space reports one
       corrective action and starts neither local capture nor the server
       recorder. Low storage renders a warning; it is not a claim that a long
       rehearsal is safe.
@@ -142,7 +146,7 @@ anything other than **NOT RUN**.
       off** with one **Open System Settings** action.
 - [ ] After opening settings, WebJam explains how to return and offers **Try
       Again**. The user is not sent to an unrelated preferences form.
-- [ ] In the v0.13.0 candidate, a missing, ambiguous, or non-48-kHz
+- [ ] In the v0.14.0 candidate, a missing, ambiguous, or non-48-kHz
       selected macOS band device blocks client/server launch before any external
       process starts, gives one safe correction path, and never exposes a raw
       path or CoreAudio error. An automatic reconnect never silently chooses a
@@ -228,9 +232,10 @@ anything other than **NOT RUN**.
       the project adds or reorders lanes; they cannot silently move to an
       adjacent musician. Legacy take behavior remains explicit rather than
       pretending a positional setting is a durable identity.
-- [ ] These are candidate/source acceptance checks. Two-Mac Studio use,
-      interruption review, and actual Logic Pro import remain **NOT RUN** until
-      they are recorded in `SUNDAY_TWO_MAC_PILOT.md` for the exact package.
+- [ ] These are shipped-candidate acceptance checks. Two-Mac Studio use,
+      physical CoreAudio/recording/recovery review, and actual Logic Pro import
+      remain **NOT RUN** until they are recorded in
+      `SUNDAY_TWO_MAC_PILOT.md` for the exact package.
 
 ## Keyboard and assistive technology
 
@@ -256,8 +261,10 @@ anything other than **NOT RUN**.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.
-- [ ] The exact v0.13.0 app passes fresh-extraction startup, Band Check,
-      Host/Join runtime, deep-link, cleanup, resource/version inspection, and
-      the signature/nested-app/sidecar build-hash-IPC package checks.
+- [x] The exact v0.14.0 app passed the package-only gates: **1,719 passed, 18
+      skipped, one known warning, and 6 subtests**; transport `go test ./...`
+      and `go vet ./...`; fresh-extraction strict/deep signature, nested-app,
+      and exact fabric-ID checks; and two isolated six-second offscreen
+      launch/TERM cycles. These are not physical audio or musician results.
 - [ ] The exact ZIP and SHA-256 used tonight are recorded in
       [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).

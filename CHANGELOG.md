@@ -4,7 +4,41 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [0.13.0] — 2026-07-14 private test-night candidate
+## [0.14.0] — 2026-07-14 private test-night candidate
+
+### Candidate verification
+
+- Built the exact Apple-Silicon package from
+  `045c5acb01687a4088b0bd618dab4d0ab6200804`:
+  `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+- The candidate is arm64 and bundles official Jamulus/JamulusServer 3.12.2.
+  Fresh extraction passed strict/deep signature checks, nested-app inspection,
+  exact native-fabric build-ID verification, and two isolated six-second
+  offscreen launch/TERM cycles. It is ad-hoc signed, not notarized.
+- The source gate recorded 1,719 passed, 18 skipped, one known warning, and
+  6 subtests. Native transport `go test ./...` and `go vet ./...` passed.
+- Physical CoreAudio, two-Mac audio, roster, reconnect, recording/recovery,
+  and Logic Pro import remain **NOT RUN**. The v0.13.0 ZIP is now retained only
+  as a rollback artifact; its record below is historical.
+
+### Studio take review
+
+- Reworked Studio into a focused take-review workspace: a shared elapsed-time
+  timeline, track lanes, selected-track inspector, compact level meter, and
+  non-destructive gain, pan, mute, solo, and Logic-export controls. It does not
+  claim tempo, bars, beats, beat editing, or a completed DAW import.
+- Added an atomic per-take Studio sidecar for schema-v2 projects. It stores
+  local mix and export choices separately from WAVs and `webjam-take.json`,
+  rejects mismatched or unsafe state, and reconciles tracks by durable ID.
+- Logic export now applies saved mix/export choices by durable schema-v2 track
+  ID, so reordering or selecting a subset of tracks cannot remap those choices
+  by position. Legacy projects retain positional compatibility only where no
+  durable ID exists.
+
+---
+
+## [0.13.0] — 2026-07-14 historical rollback candidate
 
 ### Candidate verification
 

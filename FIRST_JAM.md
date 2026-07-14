@@ -6,18 +6,24 @@ WebJam's normal path is four short moves:
 
 There is no server setup for the band to perform. Band Check guides each
 musician through input, headphones, and a short recording before playing.
-The private macOS v0.13.0 candidate starts the music service in the background.
+The private macOS v0.14.0 candidate starts the music service in the background.
 This first-jam guide remains the ordinary same-private-LAN path. The separate
 v3 `reference-local` profile is a loopback developer lab, not a public remote
 service.
 
 **Artifact scope:** This guide's test-night steps apply to
-`WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, built from `4d09810`, SHA-256
-`6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`. It
+`WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
+`045c5acb01687a4088b0bd618dab4d0ab6200804`, SHA-256
+`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`. It
 includes the short sound-confirmation screen, CoreAudio route preflight,
 recording-storage guard, durable local-capture recovery, and conservative
-Logic-export safety checks. The v0.12.0 ZIP is preserved only as a rollback
-artifact.
+Logic-export safety checks, plus Studio's focused take-review workspace. The
+source gate recorded 1,719 passed, 18 skipped, one known warning, and 6
+subtests; native transport `go test ./...` and `go vet ./...` passed. Fresh
+extraction, strict/deep signatures, nested apps, exact native-fabric build ID,
+and two isolated six-second launch/TERM cycles also passed. Physical CoreAudio,
+two-Mac, recording/recovery, and Logic import results remain **NOT RUN**. The
+v0.13.0 and older ZIPs are preserved only as rollback artifacts.
 
 ## Before anyone opens WebJam
 
@@ -87,7 +93,7 @@ each Mac and confirm what the other person actually hears.
 Faders, **Mute Monitor**, and Solo change the current listener's monitor mix.
 They do not mute outgoing audio or rewrite the other musician's mix.
 
-In the v0.13.0 candidate, **Settings → Band input / Band output & review**
+In the v0.14.0 candidate, **Settings → Band input / Band output & review**
 preflights a stable CoreAudio pair and stages it for Jamulus before launch.
 WebJam's input meter and optional local-original recorder still use a separate
 Core Audio/PortAudio stream. A passing meter is useful, but only the other
@@ -116,7 +122,8 @@ Multitrack Studio** to watch lanes or review the take.
 5. Select the take in the Studio library. Read the shared elapsed-time ruler,
    select each lane you need to review, and inspect its source, timing, and any
    known gaps. Choose the wired playback output and test gain, pan, mute, and
-   solo; those review controls do not change the recording.
+   solo; those review controls are saved separately from the recording and do
+   not change its WAVs or `webjam-take.json`.
 6. Review each **Logic export** choice, then press **Export for Logic** and
    **Show Logic Export**. The choice is saved for that take and used by future
    exports until changed; it never changes the WAVs or `webjam-take.json`.

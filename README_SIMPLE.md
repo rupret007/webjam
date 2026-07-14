@@ -6,22 +6,28 @@ WebJam is designed around four short moves:
 
 Musicians do not configure servers, ports, virtual audio devices, or routing
 modes. WebJam starts the bundled music engine and keeps technical details out of
-the rehearsal. In the v0.13.0 candidate, the two Settings choices—**Band
+the rehearsal. In the v0.14.0 candidate, the two Settings choices—**Band
 input** and **Band output & review**—are the Jamulus route WebJam stages for the
 next session. WebJam still asks musicians to confirm what they hear.
 
-The private v0.13.0 candidate is deliberately spare: a black and white session with burnt
+The private v0.14.0 candidate is deliberately spare: a black and white session with burnt
 orange reserved for the next important action. Host and Join are the only
 choices at launch.
 
 > **Tonight's candidate:**
-> `WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, built from `4d09810`, is the
+> `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
+> `045c5acb01687a4088b0bd618dab4d0ab6200804`, is the
 > exact Apple-Silicon package for this run. Its SHA-256 is
-> `6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`.
+> `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
 > It includes the sound-confirmation screen, CoreAudio route preflight,
 > recording-storage guard, durable local-capture recovery, and conservative
-> Logic-export safety checks. The v0.12.0 ZIP is retained only as a rollback
-> artifact.
+> Logic-export safety checks, plus Studio's focused take-review timeline and
+> track controls. The source gate recorded 1,719 passed, 18 skipped, one known
+> warning, and 6 subtests; native transport `go test ./...` and `go vet ./...`
+> passed. Fresh extraction, strict/deep signatures, nested apps, exact
+> native-fabric build ID, and two isolated six-second launch/TERM cycles also
+> passed. Physical CoreAudio, two-Mac, recording/recovery, and Logic import
+> results remain **NOT RUN**. The v0.13.0 and older ZIPs are rollback artifacts.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed
@@ -106,8 +112,9 @@ available, WebJam stays silent; it does not animate a fake signal.
 
 The host can click **Record** in the bottom control bar. The host server records
 one synchronized track per connected musician. Open **More → Multitrack
-Studio** to see live lanes and completed takes with waveform playback,
-scrubbing, selectable headphone output, gain, pan, mute, and solo.
+Studio** to see live lanes and completed takes with waveform playback, a shared
+elapsed-time timeline, track selection details, selectable headphone output,
+gain, pan, mute, and solo.
 
 Before recording, WebJam checks that the selected Takes folder is writable and
 has a conservative amount of free space. It blocks an unsafe start and warns
@@ -164,7 +171,7 @@ Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
 
 Choose **Band input** and **Band output & review** in **Settings** before a
-session. The v0.13.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
+session. The v0.14.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
 it to stage Jamulus; the review choice follows the selected output. A moving
 local meter still is not proof that your bandmate hears you.
 
