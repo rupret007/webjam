@@ -588,7 +588,7 @@ command injection, loopback-only RPC + SSH tunnel, Host-header guard). Fixes:
   WAV per musician plus a ready-to-open Reaper project. JSON-RPC stays on
   loopback (SSH-tunnel only) — the foundation for the upcoming Record
   button.
-- **Vision** — see WEBJAM_VISION.md for the roadmap this release starts
+- **Vision** — see VISION_AND_ROADMAP.md for the roadmap this release starts
   (Session Record concept, server browser, Webex intelligence).
 
 - **Fresh installs start unconfigured** — the dead default Jamulus server
@@ -1330,7 +1330,12 @@ Vote for features you want to see:
 
 ---
 
-## Known Issues
+## Historical v2.0-era notes (archived)
+
+The following notes were preserved from a 2024 planning document. They do not
+describe the current v0.11 Host/Join UI, Webex handoff boundary, or packaging
+claims; use the Unreleased entry, README, and v1 last-mile readiness record
+above for current behavior.
 
 ### Current Limitations
 
@@ -1351,15 +1356,15 @@ Vote for features you want to see:
 
 ### Bug Reports
 
-Found a bug? Please report:
-1. Go to: https://github.com/yourusername/webjam/issues
+For a current issue, report it at:
+1. Go to: https://github.com/rupret007/webjam/issues
 2. Click "New Issue"
 3. Describe the problem with steps to reproduce
 4. Include your system info (Windows version, audio interface, etc.)
 
 ---
 
-## Credits and Acknowledgments
+## Historical credits and acknowledgments
 
 ### WebJam Team
 - **Development**: [Your Name]
@@ -1407,8 +1412,6 @@ SOFTWARE.
 
 ---
 
-**Last Updated**: October 9, 2024
-**Version**: 2.0.0
-**Status**: Release Candidate
+**Historical metadata**: October 9, 2024 · Version 2.0.0 · Release Candidate
 
-For the latest updates, visit: **[github.com/yourusername/webjam](https://github.com/yourusername/webjam)**
+For current updates, visit: **[WebJam on GitHub](https://github.com/rupret007/webjam)**

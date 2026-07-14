@@ -80,9 +80,10 @@ lsof -nP -iTCP:22240 -sTCP:LISTEN
 tail -f "$HOME/Library/Logs/WebJam/jamulus-server.log"
 ```
 
-The TCP listener must report `127.0.0.1:22240`, never `*:22240`. Give the Mac
-a DHCP reservation, disable its VPN during the pilot, allow Jamulus through
-the macOS firewall, and forward **UDP 22124 only** from the router. Never
+The TCP listener must report `127.0.0.1:22240`, never `*:22240`. For the
+current same-LAN pilot, disable VPN software and allow Jamulus through the
+macOS firewall if prompted. Do **not** configure router forwarding: public
+Internet, NAT, and router-traversal behavior are outside this pilot. Never
 forward TCP 22222 or 22240.
 
 For source/developer runs, configure the host Mac's stored settings with:

@@ -248,8 +248,11 @@ result remains **NOT RUN**.
 - [x] Build/install/exercise a fresh v0.11.0 candidate and record exact SHA and
   signature evidence. Package integrity and no-input cleanup pass; live client
   audio remains **NOT RUN** because no input device is attached.
-- [ ] Commit, push the dedicated branch, merge to `master` only after all
-  automatable release gates pass, and push `master` without force.
+- [x] Commit and push the dedicated branch after all automatable release gates
+  pass. `codex/vnext-last-mile-readiness` is intentionally separate from
+  `master` pending the manual two-Mac and Logic gates.
+- [ ] Merge to `master` only after the recorded manual gates pass; then push
+  `master` without force.
 
 ### Current native reference proof — 2026-07-13
 

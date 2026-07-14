@@ -1,9 +1,9 @@
 # WebJam real-session certification v1
 
-This is the recovery record, architecture truth, evidence ledger, and exact
-continuation point for the v1 certification effort. Update it after every
-completed vertical slice and before every commit that changes certification
-evidence.
+This is the historical recovery record, architecture truth, and evidence
+ledger for the v0.10 certification effort. Its results remain valid historical
+evidence, but the active v0.11 readiness boundary is
+[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md).
 
 ## Product promise
 
@@ -268,7 +268,7 @@ server tracks, not an independently captured acoustic/live-output feed.
 | Diagnostics | Immutable allowlist preview/saved-ZIP parity, separate sanitized clipboard summary, and adversarial redaction pass | Fresh packaged-button check pending |
 | Long session | Exact-source native run `29269188463` passed 3,602.851 measured seconds, 396 cycles, three recording/restart cycles, reconnect, signal/resource/xrun gates, and zero cleanup errors | Local Docker ARM failure and cancelled runs remain preserved but do not count; physical long-session review remains separate |
 | Physical two-Mac | Worksheet is ready | **NOT RUN** |
-| New candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, two bundled client/server authenticated lifecycles, normal Qt close, and cleanup pass at source `8ee8908` | Human Band Check/Join/recording/Studio/support matrix remains physical work |
+| Historical v0.10 candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, two bundled client/server authenticated lifecycles, normal Qt close, and cleanup pass at source `8ee8908` | Superseded by the v0.11 private test-night handoff; its historical physical matrix remains evidence only |
 
 ## Defect log
 
@@ -588,7 +588,7 @@ lifecycles with exit 0 and no forced termination. Bundled Jamulus client/server
 `caffeinate` were observed in each run; the Qt close timer fired; zero audio
 files were created; no child processes or ports remained.
 
-## New-candidate artifact handoff
+## Historical v0.10 candidate artifact handoff (superseded)
 
 Do not copy the preserved v0.9.0 values into these fields.
 
@@ -609,7 +609,12 @@ Two-Mac worksheet:       NOT RUN
 Logic Pro import:        NOT RUN
 ```
 
-## Exact continuation point
+## Historical continuation point
+
+For active v0.11 work, use `TEST-NIGHT-READ-ME.txt`,
+[`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md), and
+[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps
+below are retained only to explain what remained after the v0.10 package.
 
 1. Complete the remaining human-confirmed packaged Band Check, Join, recording,
    Studio, support-button, and interface-route checks on the pilot Macs.

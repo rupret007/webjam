@@ -169,6 +169,10 @@ Additional reading:
 - [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md) — safe Jamulus music, Webex conversation, and audience-bridge signal flows
 - [RECORDING_AND_LOGIC.md](RECORDING_AND_LOGIC.md) — take integrity, Studio mixing, per-Mac isolated originals, and the aligned Logic handoff
 - [SUNDAY_TWO_MAC_PILOT.md](SUNDAY_TWO_MAC_PILOT.md) — exact-artifact two-Mac and Logic certification worksheet
+- [TEST_PROCEDURE.md](TEST_PROCEDURE.md) — repeatable source and package checks
+- [FIRST_JAM.md](FIRST_JAM.md) and [USER_GUIDE.md](USER_GUIDE.md) — musician setup and everyday workflow
+- [COHORT_VALIDATION_PLAYBOOK.md](COHORT_VALIDATION_PLAYBOOK.md) — facilitated pilot evidence
+- [HELP_ROUTING_MAP.md](HELP_ROUTING_MAP.md) — where support and operator questions belong
 - [legacy/CODE_REVIEW_FINDINGS.md](legacy/CODE_REVIEW_FINDINGS.md) — archived Tkinter-era review (not current open issues)
 
 ---

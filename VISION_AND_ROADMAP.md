@@ -158,8 +158,9 @@ gates pass.
 ### 🔜 Next — closed pilot gates
 
 - Carry forward the v1/v2 engine's native Jamulus/JACK 3,600-second evidence,
-  then finish exact v0.11.0 artifact startup/resource/signature/runtime
-  inspection and the planned two-Apple-Silicon-Mac same-LAN physical pilot.
+  retain the completed v0.11.0 artifact startup/resource/signature/runtime
+  inspection, and complete the planned two-Apple-Silicon-Mac same-LAN physical
+  pilot.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

@@ -48,9 +48,10 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     nested beside the client so a designated host needs no separate install.
     WebJam launches each as an independent process.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
-    (no portable binary), so WebJam ships that unmodified installer inside
-    its own install directory (`Jamulus/jamulus_3.12.2_win.exe`) and offers
-    an "Install Jamulus now" button in the Setup Wizard that simply runs it.
+    (no portable binary), so Windows packaging carries the unmodified installer
+    as a distribution dependency. The current v0.11 Host/Join flow does not
+    invoke the former Setup Wizard installer button; Windows packaging and
+    install behavior remain a separate release-certification gate.
 - **Why this doesn't require relicensing WebJam:** Redistributing a
   third-party binary that is invoked as a separate process
   (never statically or dynamically linked into WebJam's own executable)

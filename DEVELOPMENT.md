@@ -119,7 +119,10 @@ The project uses `pytest`. Run the full suite:
 python -m pytest tests/ -v
 ```
 
-Expected result: all tests pass (800+ pass, plus platform-dependent skips). The skips are mostly platform-specific tests that auto-skip when the host cannot run them. See `CHANGELOG.md` for the exact count as of the latest release — it grows with nearly every change, so treat any hardcoded number as approximate.
+Expected result: the complete suite passes, with a small number of
+platform-dependent skips. Test totals intentionally change; use the current CI
+run and the validation section of `docs/WEBJAM_V1_LAST_MILE_PLAN.md` rather
+than a hardcoded count in this guide.
 
 ### Running tests locally (CI-equivalent)
 
@@ -274,70 +277,24 @@ End-to-end recipes for the changes that come up most often when extending
 the Conductor UI. Each tutorial points at the real files, real method
 names, and shows the exact code change needed.
 
-### Tutorial 1: Adding a field to `ParticipantPresentation`
+### Tutorial 1: Adding participant data
 
-The view-model that drives every participant card is the
-`ParticipantPresentation` dataclass in
-`webjam_qt/widgets/participant_card.py`. Adding a new field — say, an
-`instrument_color` accent shown on the card — is a four-file change.
+The authoritative Jamulus model is `JamulusParticipant` in
+`jamulus_state_manager.py`; the UI model is `ParticipantPresentation` in
+`webjam_qt/widgets/participant_card.py`. Add a new field to both only when it
+has real Jamulus or session data behind it.
 
-**1. Add the field to the dataclass** (`webjam_qt/widgets/participant_card.py`):
+1. Add the field, default, and tests to `JamulusParticipant`.
+2. Add the presentation field only if the participant card needs it.
+3. Map it in `AudioCoordinator.apply_participants`
+   (`webjam_qt/controllers/audio_coordinator.py`) for both new and existing
+   participants.
+4. Render it in `ParticipantCard` and update the card's presentation-update
+   path. Keep role and identity semantics in
+   `ApplicationController._role_label` and `_apply_jamulus_participants`.
 
-```python
-@dataclass
-class ParticipantPresentation:
-    channel_id: int
-    name: str
-    role: str = ""
-    fader_level: int = 100
-    muted: bool = False
-    solo: bool = False
-    is_connected: bool = True
-    is_local: bool = False
-    video_connected: bool = False
-    audio_level: float = 0.0
-    instrument_color: str = ""   # NEW — hex like "#E6B800"
-```
-
-**2. Add the parallel field on `JamulusParticipant`** in `jamulus_controller.py`
-(top of the file, around line 22). The shape mirrors the view-model so
-`_apply_jamulus_participants` can copy 1:1:
-
-```python
-@dataclass
-class JamulusParticipant:
-    ...
-    instrument: str = ""
-    instrument_color: str = ""   # NEW
-```
-
-**3. Propagate it** in
-`webjam_qt/controllers/application_controller.py::_apply_jamulus_participants`.
-The upsert branch already maps Jamulus → presentation; add one line in
-both the new-participant and existing-participant paths:
-
-```python
-self.participants[jp.channel_id] = ParticipantPresentation(
-    ...,
-    is_local=getattr(jp, "is_local", jp.channel_id == 0),
-    instrument_color=getattr(jp, "instrument_color", ""),
-)
-```
-
-**4. Surface it in the card body** inside `ParticipantCard._compose_layout`:
-
-```python
-self._color_chip = QLabel(self._presentation.instrument_color or "")
-self._color_chip.setObjectName("InstrumentColorChip")
-identity_col.addWidget(self._color_chip)
-```
-
-Mirror it in `update_presentation` so live updates flow through.
-
-**5. Update the demo data.** `_DEMO_PARTICIPANTS` at the top of
-`application_controller.py` (line 42) seeds the grid before Jamulus
-connects — give each entry an `instrument_color` so the demo state shows
-the new field too.
+There is no `_DEMO_PARTICIPANTS` production seed. Do not add fake musicians to
+validate a UI field; cover real roster objects in focused tests instead.
 
 ### Tutorial 2: Adding a Jamulus JSON-RPC method call
 
@@ -397,7 +354,7 @@ the UI keeps moving. This is intentional — Jamulus may not be running yet.
 
 Window-bound shortcuts and controller-bound shortcuts use slightly
 different patterns. Both are registered in
-`webjam_qt/windows/conductor_window.py::_setup_shortcuts` (line 139).
+`webjam_qt/windows/conductor_window.py::_setup_shortcuts`.
 
 **Pattern A — handled inside the window** (e.g. F11 toggles fullscreen).
 Pass the callback directly to the `QShortcut` constructor:
@@ -408,8 +365,7 @@ QShortcut(QKeySequence("Ctrl+X"), self, self._do_something)
 
 **Pattern B — consumed by the controller** (e.g. Ctrl+S for save mix).
 Store the shortcut as `self._whatever_shortcut`, then connect its
-`activated` signal in `application_controller.py::_wire_signals`
-(line 154):
+`activated` signal in `application_controller.py::_wire_signals`:
 
 ```python
 # conductor_window.py — _setup_shortcuts
@@ -425,12 +381,12 @@ Both patterns are already in use side-by-side in `_setup_shortcuts`:
 F11/F1/Esc use Pattern A; Ctrl+S, Ctrl+O, Ctrl+M, and Ctrl+, use Pattern B.
 
 **Update the F1 help dialog.** Add a row to the body string in
-`ConductorWindow._show_help` (line 164) so users discover the new key:
+`ConductorWindow._show_help` so users discover the new key:
 
 ```python
 "&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
 ```
 
 **Update the README table.** The user-facing list lives at the
-"Qt Conductor Keyboard Shortcuts" section of `README.md` (line 75) —
+"Qt Conductor Keyboard Shortcuts" section of `README.md` —
 add a row there too so the docs match the help dialog.
