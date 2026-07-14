@@ -58,6 +58,7 @@ class ApplicationController(QObject):
     _LEVEL_POLL_MS = 100  # how often to push meter updates to the grid
     _METER_TICK_MS = 40  # global LevelMeter decay tick (was per-meter)
     _CONNECTION_TIMEOUT_MS = 30_000
+    _WAKE_REVALIDATION_GAP_SECONDS = 12.0
 
     def __init__(
         self,
@@ -226,6 +227,7 @@ class ApplicationController(QObject):
         self._reconnect_timer.setInterval(3_000)
         self._reconnect_timer.timeout.connect(self._on_reconnect_tick)
         self._reconnect_timer.start()
+        self._last_reconnect_tick_monotonic = time.monotonic()
 
         # Single global LevelMeter decay tick — replaces N per-card timers.
         # See LevelMeter docstring; started in _bootstrap_ui, stopped in shutdown.
@@ -2850,6 +2852,47 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Auto-reconnect
     # ------------------------------------------------------------------
+    def _revalidate_after_wake_gap(self) -> None:
+        """Drop stale live truth after a long event-loop pause.
+
+        A Mac can sleep while the Jamulus process object still exists. Process
+        existence alone is not connection evidence after wake, so a delayed
+        reconnect timer clears the roster/connected claim and waits for fresh
+        RPC/roster evidence. This is intentionally conservative and portable;
+        it does not claim to distinguish every platform sleep notification.
+        """
+
+        now = time.monotonic()
+        previous = float(getattr(self, "_last_reconnect_tick_monotonic", now))
+        self._last_reconnect_tick_monotonic = now
+        if now - previous < self._WAKE_REVALIDATION_GAP_SECONDS:
+            return
+        if (
+            self._shutdown
+            or self.audio.stopping
+            or not self.bridge.jamulus_launch_intended
+            or not self._jamulus_connected
+        ):
+            return
+        self.audio.connected = False
+        self.audio.recovering = True
+        self._local_audio_seen = False
+        self._remote_audio_seen = False
+        self.participants.clear()
+        self._push_participants_to_grid()
+        self.window.set_status_audio("Checking connection…")
+        self.window.set_status_latency("Checking after wake")
+        self.window.participant_grid.set_session_state(SessionUiState.reconnecting())
+        self._transition_lifecycle(
+            SessionLifecyclePhase.RECONNECTING,
+            "WebJam is rechecking the music connection after a long pause",
+        )
+        self._connection_timer.start()
+        try:
+            self.metrics.increment("metric_session_wake_revalidation")
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("wake revalidation metric failed", exc_info=True)
+
     def _on_reconnect_tick(self) -> None:
         """Called every 3 s; lets BridgeService retry dropped services.
 
@@ -2857,6 +2900,8 @@ class ApplicationController(QObject):
         conductor knows something is happening (auto-reconnect is otherwise
         invisible).
         """
+        self._revalidate_after_wake_gap()
+
         # Detect Jamulus dying: launch was intended, process exists but exited.
         proc = self.bridge.jamulus_process
         if (

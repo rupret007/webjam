@@ -49,7 +49,7 @@ port, router change, or Webex credential.
 | Milestone | Source status | Evidence / boundary |
 | --- | --- | --- |
 | Minimal Host/Join and progressive Band Check | Implemented | Qt coverage exercises the first screen, invitation ingress, and preflight gate. |
-| Owned Jamulus host/client lifecycle | Implemented | Host server authentication, private secret permissions, duplicate prevention, idempotent stop, and reconnect coverage exist. |
+| Owned Jamulus host/client lifecycle | Implemented | Host server authentication, private secret permissions, duplicate prevention, idempotent stop, and reconnect coverage exist. A long event-loop pause (including likely sleep/wake) clears the connected/roster claim until fresh live evidence arrives. |
 | Authoritative session lifecycle | Implemented on this branch | `core/session_lifecycle.py` records preflight, host/join, private-LAN share readiness, roster-confirmed connection, degraded/reconnect, recording finalization, cleanup, and recoverable failure. An active cancellation closes through ending/completed/idle rather than leaving stale state. It supplies the diagnostics timeline. |
 | Honest pre-share readiness | Implemented on this branch | `core/host_share_readiness.py` fails closed when the server, UDP listener, or private Wi-Fi address is missing. It does not call that an Internet reachability test. |
 | LAN address-change truth | Implemented on this branch | A copied v1/v2 LAN invite is process-locally tied to its advertised address. A changed private address produces a plain **Copy New Invite** recovery state; no address is persisted or added to diagnostics. |
@@ -66,6 +66,7 @@ port, router change, or Webex credential.
 | Host server cannot start or UDP listener is absent | Invite stays unavailable; the HUD provides one next action. | Automated local state |
 | No private Wi-Fi address | Invite stays unavailable and asks the host to connect to the band Wi-Fi. | Automated local state |
 | Wi-Fi/interface change after sharing | HUD calls out the old LAN invite and requires one new copy action before calling the host ready again. | Automated local state |
+| Sleep/wake or long app pause | Live roster/connected evidence is cleared and WebJam rechecks the music connection before returning to a connected state. | Automated source state; physical sleep/wake remains NOT RUN |
 | Process exit or silent RPC | Lifecycle becomes degraded/reconnecting; bounded retry keeps mix state and ends in one retry action if exhausted. | Automated |
 | Stale terminal callback | Lifecycle rejects a transition that would resurrect a completed/failed-final session. | Automated |
 | End Session during an active host take | Recording finalizes before owned processes are released; a failed finalization leaves the session protected. | Automated; physical media review pending |
@@ -88,8 +89,8 @@ QT_QPA_PLATFORM=offscreen ./.venv/bin/python ux_smoke_test.py
 The focused source checks added for this milestone cover lifecycle transitions,
 support-bundle redaction, pre-share refusal when a local fact is missing, and a
 copied LAN invite after a private Wi-Fi address changes. On this branch, the
-local Python suite completed with **1,627 passed, 18 skipped, 1 existing
-Starlette/httpx deprecation warning, and 6 subtests** in 49.50 seconds. GitHub
+local Python suite completed with **1,628 passed, 18 skipped, 1 existing
+Starlette/httpx deprecation warning, and 6 subtests** in 49.92 seconds. GitHub
 Actions run `29310376638` also passed its reference
 service, Python/UX, transport, real-Jamulus integration, and macOS arm64/x64
 plus Windows x64 packaging jobs. The downloaded CI artifacts identify build

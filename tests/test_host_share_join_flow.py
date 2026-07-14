@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -445,6 +446,46 @@ def test_copying_replacement_lan_invite_acknowledges_current_address(qapp, tmp_p
     assert controller._last_shared_lan_address == "192.168.1.43"
     assert not controller._lan_invite_needs_refresh(readiness)
     controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.shutdown()
+
+
+def test_wake_gap_revalidates_live_connection_before_claiming_it_is_connected(
+    qapp, tmp_path
+):
+    from core.session_lifecycle import SessionLifecyclePhase
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_server="192.168.1.42",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Wake Revalidation",
+    )
+    controller = ApplicationController(window, settings=settings)
+    alive = MagicMock()
+    alive.poll.return_value = None
+    controller.bridge.jamulus_process = alive
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.attempt_auto_reconnects = MagicMock()
+    controller._transition_lifecycle(SessionLifecyclePhase.JOINING)
+    controller._transition_lifecycle(SessionLifecyclePhase.CONNECTED)
+    controller._jamulus_connected = True
+    controller._last_reconnect_tick_monotonic = (
+        time.monotonic() - controller._WAKE_REVALIDATION_GAP_SECONDS - 1
+    )
+
+    controller._on_reconnect_tick()
+
+    assert controller._jamulus_connected is False
+    assert controller.audio.recovering is True
+    assert controller.session_lifecycle.phase is SessionLifecyclePhase.RECONNECTING
+    assert controller.window._status_audio.text() == "Audio: Checking connection…"
+    controller.bridge.attempt_auto_reconnects.assert_called_once()
     controller.shutdown()
 
 
