@@ -178,6 +178,44 @@ No client-mode packaged probe was possible on this Mac at baseline because no
 usable two-input/two-output CoreAudio interface was attached. That physical
 result remains **NOT RUN**.
 
+## Exact v0.11.0 candidate evidence — 2026-07-13
+
+- Source/build commit:
+  `1a03927e3ea8eb76557617aa59e985a551c35e0b`.
+- Artifact:
+  `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`.
+- Artifact SHA-256:
+  `11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f`.
+- The exact local build environment and resolved Python package inventory are
+  preserved beside the ZIP as `WebJam-v0.11.0-build-environment.txt` and
+  `WebJam-v0.11.0-build-dependencies.txt` (Python 3.12.13, PyInstaller 6.21.0,
+  PySide6 6.11.1, Go 1.25.12).
+- Installed candidate: `/Applications/WebJam.app`, version `0.11.0`, arm64.
+- Rollback app:
+  `/Applications/WebJam-v0.10.0-before-v0.11.0-TEST-NIGHT.app`.
+- The preserved v0.10.0 ZIP and its earlier SHA remain unchanged.
+- The pinned official Jamulus 3.12.2 DMG matched SHA-256
+  `adf185aaf78e27d9f603daa6895e7698b4bdffee18fe29ad789cd7c1021d6bd0`.
+- The fresh extraction and installed copy pass strict and deep-strict outer
+  verification, strict nested Jamulus/client/server/sidecar verification,
+  canonical signed-sidecar hash validation, exact arm64/build-ID validation,
+  and bounded ready/hello/shutdown IPC. The sidecar SHA-256 is
+  `4ab81da324d01c6fb62ad4bb664ee6a220bd421d4ad7939df2eac8aa26a16e3f`.
+- Final source validation is `1613 passed, 18 skipped, 1 warning, 6 subtests
+  passed`; Ruff, compileall, pip check, UX smoke, workflow YAML, and diff checks
+  pass. The warning is the existing Starlette/httpx deprecation.
+- The exact installed app completed two isolated-home, 20-second normal Qt
+  close cycles. In both cycles the bundled server/RPC initialized, recording
+  stayed off, mode-0600 secrets were enforced, cleanup released all child
+  processes and ports, relaunch was clean, and no audio files were created.
+- This Mac exposes output-only devices and no CoreAudio input. The bundled
+  Jamulus client therefore truthfully stopped with “couldn't find a usable
+  CoreAudio audio device”; the two-cycle check observed a zero-client roster.
+  A packaged live-client/roster/audio pass remains **NOT RUN**, not failed or
+  inferred. Attach the test interface and complete the two-Mac worksheet.
+- The app is ad-hoc signed for private testing, not Developer ID signed or
+  notarized. No tag or public release was created.
+
 ## Implementation ledger
 
 - [x] Establish repository, artifact, installed-app, CI, and source-test truth.
@@ -203,9 +241,13 @@ result remains **NOT RUN**.
 - [ ] Complete privacy, dependency, license, accessibility, and resource audits.
   Python and Go dependency audits plus the transport license inventory pass;
   final accessibility and resource audits remain open.
-- [ ] Pass focused, full, real-Jamulus, soak, container, and package gates.
-- [ ] Build/install/exercise a fresh v0.11.0 candidate and record exact SHA and
-  signature evidence.
+- [x] Pass focused/full source, independent native-sidecar, dependency,
+  reference-container, and exact-package integrity gates. Prior exact-engine
+  Jamulus/JACK longevity evidence remains preserved; current two-Mac acoustic,
+  Logic, accessibility, and physical-resource gates remain open.
+- [x] Build/install/exercise a fresh v0.11.0 candidate and record exact SHA and
+  signature evidence. Package integrity and no-input cleanup pass; live client
+  audio remains **NOT RUN** because no input device is attached.
 - [ ] Commit, push the dedicated branch, merge to `master` only after all
   automatable release gates pass, and push `master` without force.
 

@@ -1,7 +1,7 @@
-# WebJam v0.10.0 certification procedure
+# WebJam v0.11.0 certification procedure
 
 **Last updated:** 2026-07-13
-**Current target:** private Apple Silicon two-Mac v0.10.0 candidate
+**Current target:** private Apple Silicon two-Mac v0.11.0 candidate
 
 The product path is:
 
@@ -109,26 +109,30 @@ client/server bundles using the existing packaging workflow:
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Do not overwrite the preserved v0.9.0 ZIP. Record these values only after the
-v0.10.0 ZIP is final:
+Do not overwrite the preserved v0.10.0 ZIP. These values identify the final
+private v0.11.0 candidate:
 
 ```text
-Source commit:          8ee89081802fe5998f71299c4755b21ae5218cb9
-Artifact filename:      WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
-Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip
-SHA-256:                f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411
-Fresh extraction path:  /tmp/webjam-v010-final-install.gOTCiQ/WebJam.app
+Source commit:          1a03927e3ea8eb76557617aa59e985a551c35e0b
+Artifact filename:      WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip
+Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip
+SHA-256:                11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f
+Fresh extraction path:  /tmp/webjam-v011-fresh.1a03927/WebJam.app
 Installed test app:      /Applications/WebJam.app
+Rollback app:            /Applications/WebJam-v0.10.0-before-v0.11.0-TEST-NIGHT.app
 ```
 
 Inspect that exact fresh extraction:
 
-- `Info.plist` reports `0.10.0` and registers the `webjam` URL scheme.
+- `Info.plist` reports `0.11.0` and registers the `webjam` URL scheme.
 - The bundle contains Band Check, private session transfer, schema-v2 project,
   Studio, export, support preview, brand assets, licenses, Inter, and official
   Jamulus/JamulusServer 3.12.2 resources.
 - The app and nested bundles have the intended architecture/version.
 - `codesign --verify --deep --strict` succeeds for the complete app.
+- The signed arm64 `webjam-fabric` matches its canonical manifest under
+  `Contents/Resources`, embeds the exact source commit, and passes bounded
+  ready/hello/shutdown IPC through the production validator.
 - The frozen executable starts only the intended background music processes.
 - Host opens expected service ports, Record finalizes, End/quit releases them,
   and relaunch can host again with no stale process or port.
@@ -139,7 +143,15 @@ missing/invalid sealed resource or “damaged app” result fails packaging.
 
 ## 4. Frozen-flow smoke
 
-Use an isolated preferences/home profile and the exact extracted v0.10.0 app.
+Use an isolated preferences/home profile and the exact extracted v0.11.0 app.
+
+The installed candidate completed two normal-close, 20-second isolated-home
+cycles with its bundled server/RPC, mode-0600 secrets, recording off, clean
+relaunch, no orphan process/port, and no audio output files. This Mac currently
+has no CoreAudio input device, so Jamulus truthfully rejected its client route
+and the roster stayed empty. That is a passed no-input safety/cleanup check,
+not a packaged live-audio pass. Attach the test interface before completing
+the remaining Host/Join and musician steps below.
 
 1. Launch shows the original three-part WebJam mark and the restrained black,
    white, neutral, and burnt-orange system. No purple or teal remains.
@@ -189,7 +201,7 @@ a trusted LAN; do not test it by exposing a router port.
 ## 5. Physical two-Mac and Logic gate
 
 Complete [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) with the exact
-v0.10.0 ZIP and record:
+v0.11.0 ZIP and record:
 
 - both Mac/interface/driver routes and 48-kHz configuration;
 - musician-confirmed two-way audibility, not just meters;
@@ -205,15 +217,14 @@ At the time this procedure was updated, two-Mac audibility and Logic import are
 
 ## 6. Pass rule
 
-The build is ready for the private physical test only after the final source,
-real-harness, at-least-60-minute, exact-bundle, and frozen-flow gates pass. It is
-ready to advance beyond the test only after both musicians and Logic Pro pass
-the physical worksheet. Preserve failed takes, local originals, exports,
-reports, and the support bundle before changing a device, network, or build.
-Do not merge or push this candidate to the default branch until the native
-at-least-60-minute report passes every threshold. GitHub Actions run
-`29269188463` satisfies that source-handoff gate for commit `8ee8908`; this does
-not satisfy the separate two-Mac or Logic Pro worksheet.
+The private candidate may reach the default branch after its exact source,
+normal CI, exact-bundle, and installed cleanup gates pass; that integration is
+not a release, tag, or physical certification. It is ready to advance beyond
+the private test only after both musicians and Logic Pro pass the worksheet.
+Preserve failed takes, originals, exports, reports, and the support bundle
+before changing a device, network, or build. GitHub Actions run `29269188463`
+remains the 3,600-second Jamulus/JACK longevity evidence for the v1/v2 engine
+baseline; it does not certify v0.11 remote v3, CoreAudio, two Macs, or Logic.
 
 The retired 2024 harness remains in
 [`legacy/TEST_PROCEDURE_2024.md`](legacy/TEST_PROCEDURE_2024.md) for history.

@@ -21,7 +21,7 @@ two-Mac acoustic test and Logic Pro import are still **NOT RUN**.
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. The release gate runs the full automated suite plus packaged-runtime and two-Mac physical checks. |
+| **Core data model** (participants, mixer, sessions, modes) | ✅ Works. The full automated suite passes; exact-package and two-Mac physical evidence remain separately tracked and are never inferred from unit tests. |
 | **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` opens a black, white, neutral, and burnt-orange Host/Join experience with a responsive meeting-style stage and an original three-part WebJam mark. There is no purple or teal. Downloadable builds remain at [Releases](https://github.com/rupret007/webjam/releases). |
 | **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
 | **Jamulus integration** | ✅ **Authenticated JSON-RPC with the bundled Jamulus 3.12.2.** Faders (`setFaderLevel`), per-channel monitor mute, live participant list, honest 0–9 level meters, and incoming chat use the client’s authenticated local interface. The pinned build has no live-send mute API; use the audio-interface mute or end the session before speaking in Webex. Auto-reconnect retries dropped sessions. **Bundled with downloadable builds** — macOS is zero-install; running from source still requires installing Jamulus separately (see `THIRD_PARTY_NOTICES.md`). |
@@ -35,14 +35,14 @@ two-Mac acoustic test and Logic Pro import are still **NOT RUN**.
 | **Webex integration** | ✅ **Optional external launch.** Video/conversation is absent from startup and lives under More. WebJam opens a configured room in native Webex/default browser and truthfully reports only that it opened. |
 | **Session canvas + Pulse** | ✅ Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
 | **Audio defaults and truth** | ⚠️ Jamulus runs headlessly using its own saved/default hardware route. WebJam does not inspect or choose that PCM device. Its local meter/isolated recorder opens a separate PortAudio/Core Audio stream, so only a musician hearing both directions proves the live route. Roster presence proves connection; observed levels prove only the source they actually measure. |
-| **Certification evidence** | ⚠️ GitHub Actions run [`29269188463`](https://github.com/rupret007/webjam/actions/runs/29269188463) passed the exact-source native Ubuntu Jamulus 3.12.2/JACK certification: 3,602.851 seconds of measured transport, 396 cycles, three recording/restart cycles, forced reconnect in 34.526 seconds, zero decoded dropout windows, bounded resources/xruns, 12 WAV stems, and zero cleanup errors. The earlier 667.201-second Docker ARM failure remains preserved evidence, not a pass. Two-Mac audibility and Logic Pro import remain **NOT RUN**. |
-| **Builds** | ⚠️ CI passes Windows x64, macOS ARM64, and macOS Intel x64 for source `8ee89081802fe5998f71299c4755b21ae5218cb9`. The fresh private Apple Silicon artifact is `WebJam-v0.10.0-TEST-NIGHT-macos-arm64.zip`, SHA-256 `f955419909dc014b7172032b00524417983c09e8586c2217691c19838a0b3411`; strict/deep ad-hoc signature verification, fresh extraction, and two packaged Host lifecycle runs pass. It is not Developer ID signed or notarized. Do not reuse the preserved v0.9.0 handoff. |
+| **Certification evidence** | ⚠️ For the v1/v2 engine baseline, GitHub Actions run [`29269188463`](https://github.com/rupret007/webjam/actions/runs/29269188463) passed the native Ubuntu Jamulus 3.12.2/JACK certification: 3,602.851 seconds of measured transport, 396 cycles, three recording/restart cycles, forced reconnect in 34.526 seconds, zero decoded dropout windows, bounded resources/xruns, 12 WAV stems, and zero cleanup errors. That run is not evidence for remote v3, CoreAudio, or the v0.11 package. The earlier 667.201-second Docker ARM failure remains preserved evidence, not a pass. Two-Mac audibility and Logic Pro import remain **NOT RUN**. |
+| **Builds** | ⚠️ The fresh private Apple Silicon artifact is `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`, SHA-256 `11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f`, built from `1a03927e3ea8eb76557617aa59e985a551c35e0b`. Its fresh extraction and installed copy pass strict/deep ad-hoc signature checks, exact sidecar hash/build/IPC validation, and two normal-close cleanup cycles. This Mac currently has no CoreAudio input, so a packaged client/roster audio pass remains **NOT RUN** until an interface is attached. It is not Developer ID signed or notarized; the preserved v0.10.0 ZIP remains the rollback. |
 | **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
 
-In practice today: the preserved **v0.10.0 candidate** takes a musician from two
+In practice today: the installed private **v0.11.0 candidate** takes a musician from two
 launch choices through any required Band Check and into a hosted or joined
 rehearsal without a server form. Jamulus client/server processes stay in the
-background.
+background when a usable wired audio interface is attached.
 The live window shows aggregate readiness, one private invite action, real band
 members, and one More menu. The same-RFC1918-LAN flow is implemented; public
 Internet, VPN, NAT traversal, and IPv6 are not claimed for the ordinary app.
@@ -59,7 +59,7 @@ playback, aligned Logic export/import, reconnect, and owned-process cleanup.
 
 See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Near-term engineering phases:
 
-1. **Certification gates** — two-Mac bidirectional audio/outage/originals and exact-package Logic import using the verified v0.10.0 artifact
+1. **Certification gates** — two-Mac bidirectional audio/outage/originals and exact-package Logic import using the verified v0.11.0 artifact
 2. **Distribution** — signing/notarization and a published artifact only after the private gates pass
 3. **Architecture cleanup** — continue splitting `ApplicationController` into session/audio/video/recording/settings/API coordinators
 4. **Remote v3 external validation** — keep the reference path local/CI until a separately reviewed public profile, service deployment, ordinary-home NAT tests, and physical acoustic evidence exist

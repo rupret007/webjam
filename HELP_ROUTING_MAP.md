@@ -1,4 +1,4 @@
-# WebJam help routing map (v0.10.0 Qt app)
+# WebJam help routing map (v0.11.0 Qt app)
 
 Maps common musician questions to the current interface. Setup Wizard,
 **Start Audio**, raw server fields, and color-named buttons are legacy paths.

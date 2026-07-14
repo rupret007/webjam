@@ -1,4 +1,4 @@
-# WebJam v0.10.0 two-Mac certification worksheet
+# WebJam v0.11.0 two-Mac certification worksheet
 
 **Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
 Do not pre-check boxes from automated tests or from the preserved v0.9.0 build.
@@ -11,11 +11,11 @@ The goal is deliberately simple:
 
 Fill this in before opening either app. Do not invent or copy an old hash.
 
-- Candidate version: `0.10.0`
-- Artifact filename: _________________________________________________
-- Artifact absolute path: ____________________________________________
-- SHA-256: ___________________________________________________________
-- Source commit: ____________________________________________________
+- Candidate version: `0.11.0`
+- Artifact filename: `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`
+- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`
+- SHA-256: `11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f`
+- Source commit: `1a03927e3ea8eb76557617aa59e985a551c35e0b`
 - Test date/time/timezone: ___________________________________________
 - Host Mac model / macOS: ___________________________________________
 - Bandmate Mac model / macOS: _______________________________________
@@ -52,7 +52,7 @@ stop and replace it before testing.
 
 - [ ] Remove or rename every older WebJam copy on both Macs.
 - [ ] Extract the exact candidate and put **WebJam.app** in `/Applications`.
-- [ ] Verify the app reports **v0.10.0** on both Macs.
+- [ ] Verify the app reports **v0.11.0** on both Macs.
 - [ ] First launch succeeds using the private-build Gatekeeper instructions.
   A “damaged” or “incomplete” app warning is a packaging failure.
 - [ ] The app uses black, white, neutral gray, and burnt orange. There is no

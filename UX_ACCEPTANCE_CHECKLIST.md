@@ -1,8 +1,8 @@
-# WebJam v0.10.0 UX acceptance checklist
+# WebJam v0.11.0 UX acceptance checklist
 
 Use this checklist for the current Qt app. Setup Wizard, Ready Check, raw
 endpoints, **Start Audio**, **Host & Start Audio**, and a visible Jamulus window
-are legacy paths, not v0.10.0 acceptance criteria.
+are legacy paths, not v0.11.0 acceptance criteria.
 
 ## Launch: understandable in five seconds
 
@@ -175,7 +175,7 @@ are legacy paths, not v0.10.0 acceptance criteria.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.
-- [ ] The exact frozen v0.10.0 app passes packaged startup, Band Check,
+- [ ] The exact frozen v0.11.0 app passes packaged startup, Band Check,
       Host/Join runtime,
       deep-link, cleanup, and resource/version inspection.
 - [ ] The exact ZIP and SHA-256 used tonight are recorded in

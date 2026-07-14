@@ -73,7 +73,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Implemented in source — v0.10.0 certification candidate (2026-07-13)
+### ✅ Implemented in source — v0.11.0 private candidate (2026-07-13)
 
 - **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
   opens one invitation field. A new or changed setup proceeds through Band
@@ -109,10 +109,11 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
 - **Tonight's boundary** — private Apple Silicon two-Mac same-LAN candidate.
-  Exact-source native one-hour longevity and fresh-package runtime pass.
-  Physical audio/reconnect/guest-original delivery, Logic import, and observed
-  cleanup remain explicit gates; no automated result fills those physical
-  fields.
+  The v1/v2 engine baseline has native one-hour longevity evidence; the exact
+  v0.11 package passes integrity plus two no-input server/normal-close cleanup
+  cycles. Packaged CoreAudio client/roster audio, physical reconnect and
+  guest-original delivery, Logic import, and two-Mac cleanup remain explicit
+  gates; no automated result fills those physical fields.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
@@ -121,7 +122,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.10.0
+work. It is retained as implementation history; current status is the v0.11.0
 section above. v0.8.0 remains the latest published build at
 [Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
 gates pass.
@@ -156,9 +157,9 @@ gates pass.
 
 ### 🔜 Next — closed pilot gates
 
-- Native Jamulus/JACK 3,600-second certification plus exact v0.10.0 artifact
-  startup/resource/signature/runtime inspection and the planned
-  two-Apple-Silicon-Mac same-LAN physical pilot.
+- Carry forward the v1/v2 engine's native Jamulus/JACK 3,600-second evidence,
+  then finish exact v0.11.0 artifact startup/resource/signature/runtime
+  inspection and the planned two-Apple-Silicon-Mac same-LAN physical pilot.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

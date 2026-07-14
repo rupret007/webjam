@@ -1,4 +1,4 @@
-# WebJam v0.10.0 closed-pilot playbook
+# WebJam v0.11.0 closed-pilot playbook
 
 This is the coordination guide for a small musician cohort. The exact physical
 acceptance evidence belongs in
@@ -8,7 +8,7 @@ short guide for that gate.
 ## Message to send before the rehearsal
 
 ```text
-We're testing WebJam v0.10.0 tonight.
+We're testing WebJam v0.11.0 tonight.
 
 1. Download the exact ZIP and verify both the filename and SHA-256 I send you.
 2. Unzip it, move WebJam.app to Applications, then Control-click it and choose
@@ -29,7 +29,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Host
 
-1. Open the exact v0.10.0 app and choose **Host a Jam** once.
+1. Open the exact v0.11.0 app and choose **Host a Jam** once.
 2. Complete Band Check if WebJam asks, then choose **Start Session**.
 3. If macOS requests microphone or incoming-network access, allow it. If
    microphone access was previously denied, use WebJam's **Open System

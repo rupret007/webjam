@@ -374,8 +374,8 @@ exposure paths without changing v1/v2 compatibility:
 - recursive runtime redaction covers raw addresses and exact sentinels, and
   Sentry applies the same scrubber to events and breadcrumbs;
 - frozen v3 startup ignores environment binary/build-ID overrides and validates
-  the sibling sidecar's package-manifest SHA-256, expected architecture, safe
-  owner/mode, native platform signature, and exact embedded build ID;
+  the packaged sidecar's signed-bundle manifest SHA-256, expected architecture,
+  safe owner/mode, native platform signature, and exact embedded build ID;
 - v3 Jamulus host and guest launches omit `--clientname`; the musician name is
   applied only through authenticated loopback `jamulusclient/setName` after
   local-session proof;

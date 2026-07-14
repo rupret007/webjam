@@ -1,6 +1,6 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-13 (v0.10.0 certified baseline plus v3 pre-release work)
+> **Last updated:** 2026-07-13 (v0.11.0 private candidate)
 
 ## Overview
 
@@ -62,7 +62,7 @@ webjam_qt_main.py          ← entry point
 | `windows/recording_setup.py` | Focused Studio output and explicit two-input local-original consent for the host or an active-v2 guest |
 | `windows/ready_check.py` | Permanent guided Band Check; pre-session actions and non-invasive live observation |
 | `windows/support_bundle_preview.py` | Preview and save one immutable allowlisted, redacted support artifact |
-| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.10.0 musician path |
+| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.11.0 musician path |
 | `widgets/participant_card.py` | Per-channel fader, monitor mute, solo, accessible state, and observed level meter |
 | `widgets/participant_grid.py` | Viewport-driven participant layout plus intentional empty/recovery states |
 | `widgets/level_meter.py` | Truthful observed level meter with coarse accessible signal descriptions |
@@ -98,8 +98,10 @@ packets do not cross Python IPC. Process readiness or an open loopback proxy is
 not connection evidence; the desktop may report a remote connection only after
 the authenticated peer session is established and its pumps are running.
 Frozen desktop builds ignore sidecar/build-ID environment overrides and accept
-only the sibling executable after package-manifest SHA-256, thin architecture,
-safe owner/mode, native platform signature, and embedded build-ID validation.
+only the packaged executable after signed-bundle manifest SHA-256, thin
+architecture, safe owner/mode, native platform signature, and embedded build-ID
+validation. macOS seals that manifest under `Contents/Resources`; Windows keeps
+it beside the executable in its flat bundle.
 
 `reference_service/` is the smallest self-hostable control and exact-pair relay
 used by local and CI proof. Its native protocol is bounded TCP NDJSON plus an
@@ -173,7 +175,7 @@ If TCP 22240 is already occupied, WebJam adopts the endpoint only after the
 configured secret authenticates and `getRecorderStatus` proves it is a
 Jamulus recorder. Adopted processes are reported as external and are never
 terminated—or have recording stopped—when WebJam quits. Remote Linux hosting
-remains a developer/legacy-compatible recipe, not the v0.10.0 same-LAN pilot
+remains a developer/legacy-compatible recipe, not the v0.11.0 same-LAN pilot
 path. Both paths use `core/jamulus_server_rpc.py`.
 
 ## Data Flow: Recording completion
@@ -323,11 +325,13 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot candidate, not broad-release-ready. Exact-source native one-hour
-  longevity and fresh-package runtime pass. Two-Mac audio/reconnect/originals,
-  human Studio checks, and Logic import remain physical evidence gates.
+- Closed-pilot candidate, not broad-release-ready. The exact v0.11 source and
+  package-integrity/no-input-cleanup gates pass; the earlier v1/v2 engine has
+  native one-hour longevity evidence. Exact-package live CoreAudio, two-Mac
+  audio/reconnect/originals, human Studio checks, and Logic import remain
+  physical evidence gates.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
-  Windows CI artifacts supply the official client installer). v0.10.0's private
+  Windows CI artifacts supply the official client installer). v0.11.0's private
   physical pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one
   invitation field; `SimpleSettingsDialog` contains only the musician name and
   optional conversation link. Source runs still require compatible Jamulus

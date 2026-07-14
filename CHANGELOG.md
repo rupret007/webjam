@@ -24,9 +24,11 @@ No changes yet.
   now builds the sidecar for macOS arm64, macOS x64, and Windows x64 and stages
   it beside the packaged desktop executable.
 - Frozen builds ignore environment path/build-ID overrides and require the
-  sibling sidecar, a canonical package-generated SHA-256 manifest, the expected
-  architecture, safe owner/mode, its native platform signature, and the exact
-  embedded build ID before accepting it.
+  packaged sidecar, a canonical package-generated SHA-256 manifest, the
+  expected architecture, safe owner/mode, its native platform signature, and
+  the exact embedded build ID before accepting it. On macOS the manifest is
+  sealed as data under `Contents/Resources`; placing text in `Contents/MacOS`
+  would make strict code-signature verification treat it as unsigned code.
 - Remote Jamulus host and guest launches omit the musician name from process
   arguments. The name is applied only after authenticated loopback JSON-RPC is
   available; legacy v1/v2 launch behavior remains unchanged.
@@ -57,6 +59,14 @@ No changes yet.
   Public Internet deployment, two independent homes/NATs, two-musician
   acoustic audibility, physical interface routing, Logic Pro import, and
   packaged VoiceOver/NVDA review remain **NOT RUN**.
+- The private Apple Silicon candidate is
+  `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f`,
+  built from `1a03927e3ea8eb76557617aa59e985a551c35e0b`. Fresh-extraction,
+  installed-copy, strict/deep signature, sidecar integrity/IPC, and two
+  no-input normal-close cleanup cycles pass. This Mac has no CoreAudio input,
+  so packaged live-client/roster audio remains **NOT RUN**. The candidate is
+  ad-hoc signed, not Developer ID signed or notarized.
 
 ---
 

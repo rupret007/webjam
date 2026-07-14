@@ -137,7 +137,7 @@ resampler.
    file with the Logic project.
 
 WebJam does not generate or automate Logic's proprietary `.logicx` format.
-Physical Logic Pro import for the v0.10.0 candidate is **NOT RUN** until the
+Physical Logic Pro import for the v0.11.0 candidate is **NOT RUN** until the
 two-Mac worksheet records it.
 
 ## Acceptance gate
