@@ -15,9 +15,9 @@ instrument / vocal ──> audio interface ──> Jamulus ──> wired headpho
 conversation microphone ─────────────────> Webex ─────> same headphones
 ```
 
-1. In current macOS source, choose the musician's audio interface in
+1. In the v0.12.0 candidate, choose the musician's audio interface in
    **Settings → Band input** and **Band output & review** before starting the
-   jam. For the frozen v0.11.0 test-night ZIP or a manual Jamulus fallback,
+   jam. For the preserved v0.11.0 rollback ZIP or a manual Jamulus fallback,
    select that interface in Jamulus instead.
 2. In Webex, select a dedicated webcam, headset, or USB microphone for speech
    when possible. The music-interface input is an acceptable fallback, but do
@@ -53,9 +53,9 @@ Webex audio, otherwise they will hear a delayed duplicate of the music.
 
 On macOS, create a Multi-Output Device containing the physical interface and
 BlackHole. Use the interface as clock source and drift correction only on
-BlackHole. In current macOS source, choose that Multi-Output Device in
-**Settings → Band output & review** before starting the jam. For the frozen
-v0.11.0 test-night ZIP or a manual Jamulus fallback, set Jamulus output to the
+BlackHole. In the v0.12.0 candidate, choose that Multi-Output Device in
+**Settings → Band output & review** before starting the jam. For the preserved
+v0.11.0 rollback ZIP or a manual Jamulus fallback, set Jamulus output to the
 Multi-Output Device instead. Set the Webex microphone to BlackHole and its
 speaker to the physical interface. Exclude every real microphone from Webex,
 enable **Music Mode**, and prove the feed from a second device using headphones

@@ -1,16 +1,16 @@
-# WebJam v0.11.0 certification procedure
+# WebJam v0.12.0 certification procedure
 
 **Last updated:** 2026-07-14
-**Current target:** private Apple Silicon two-Mac v0.11.0 candidate
+**Current target:** private Apple Silicon two-Mac v0.12.0 candidate
 
 The current-source product path is:
 
 > Host choice → Confirm sound → Band Check → Invite → Join choice → Confirm sound → Band Check → Play → Record → Studio → Export → End
 
-The exact frozen v0.11.0 package used tonight omits the source-only
-confirmation screen and goes directly from each Host/Join choice to Band Check.
-Keep those two flows separate in the worksheet; a package test cannot credit a
-current-source-only screen.
+The exact v0.12.0 package used tonight follows this same flow. It includes the
+sound-confirmation screen, CoreAudio route preflight, recording-storage guard,
+and private in-progress recording-evidence journal. The v0.11.0 ZIP is a
+preserved rollback artifact only.
 
 This procedure separates deterministic source evidence, real Jamulus/JACK
 evidence, packaged macOS evidence, and physical musician evidence. Passing one
@@ -36,6 +36,8 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q
 
 Record exact counts and failures. An interim focused or full run before all
 concurrent edits landed is useful slice evidence, not the final source gate.
+The final v0.12.0 source gate recorded **1,687 passed, 18 skipped, one known
+Starlette/httpx warning, and 6 subtests**, with no failures or errors.
 The final run must include:
 
 - strict v1/v2 invitation parsing and credential redaction;
@@ -55,10 +57,9 @@ The final run must include:
 - owned-process/port cleanup and fresh-host restart;
 - the three-part black/white/burnt-orange brand assets.
 
-### Source-only recording durability hardening
+### Recording durability coverage included in v0.12.0
 
-Current `master` adds recording-storage readiness. Run its focused checks before
-packaging:
+Run the focused recording checks before packaging:
 
 ```bash
 .venv/bin/python -m pytest -q \
@@ -73,14 +74,13 @@ packaging:
   tests/test_ready_check_ui.py
 ```
 
-This source-only group covers the writable-folder/storage reserve, private
+This group covers the writable-folder/storage reserve, private
 0600 in-progress evidence journal, start/stop/lifecycle checkpoint integration,
 private-name/invite/address/credential redaction, hidden-work-directory take
 discovery exclusion, final-manifest retirement, and Logic-export propagation.
-The preserved v0.11 ZIP below was built before these safeguards existed; do not
-mark its worksheet as proving a block/warning/journal recovery. A fresh package
-must repeat the package and physical gates before that behavior is credited to a
-test-night build.
+The v0.12.0 package contains this code. Package inspection confirms presence;
+the physical worksheet remains the only place to credit actual recording,
+interruption recovery, audibility, and Logic import.
 
 ## 2. Real Jamulus/JACK boundary gate
 
@@ -144,59 +144,59 @@ client/server bundles using the existing packaging workflow:
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Do not overwrite the preserved v0.10.0 ZIP. These values identify the final
-private v0.11.0 candidate:
+Do not overwrite the preserved v0.10.0 or v0.11.0 rollback ZIPs. These values
+identify the active private v0.12.0 candidate:
 
 ```text
-Source commit:          1a03927e3ea8eb76557617aa59e985a551c35e0b
-Artifact filename:      WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip
-Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip
-SHA-256:                11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f
-Fresh extraction path:  /tmp/webjam-v011-fresh.1a03927/WebJam.app
+Source/build commit:    796e9a4ddebe79f430b0ded8cf8034bc27836dd0
+Artifact filename:      WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip
+Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip
+SHA-256:                01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c
+Architecture:           arm64 (Apple Silicon)
 Installed test app:      /Applications/WebJam.app
-Rollback app:            /Applications/WebJam-v0.10.0-before-v0.11.0-TEST-NIGHT.app
+Rollback artifacts:      preserved v0.11.0 and v0.10.0 test-night packages
 ```
 
-The exact v0.11.0 ZIP predates the source-only recording-storage guard. It is
-still the correct artifact for its existing worksheet, but it cannot certify
-that newer behavior.
+The bundled official Jamulus 3.12.2 DMG checksum was verified before staging
+the nested client and server apps. The exact v0.12.0 archive was fresh-extracted
+and verified; it is the only candidate this procedure credits.
 
 Inspect that exact fresh extraction:
 
-- `Info.plist` reports `0.11.0` and registers the `webjam` URL scheme.
+- `Info.plist` reports `0.12.0` and registers the `webjam` URL scheme.
 - The bundle contains Band Check, private session transfer, schema-v2 project,
-  Studio, export, support preview, brand assets, licenses, Inter, and official
-  Jamulus/JamulusServer 3.12.2 resources.
+  Studio, export, support preview, brand assets, licenses, Inter, the
+  confirmation/route/storage/journal path, and official Jamulus/JamulusServer
+  3.12.2 resources.
 - The app and nested bundles have the intended architecture/version.
 - `codesign --verify --deep --strict` succeeds for the complete app.
 - The signed arm64 `webjam-fabric` matches its canonical manifest under
   `Contents/Resources`, embeds the exact source commit, and passes bounded
   ready/hello/shutdown IPC through the production validator.
-- The frozen executable starts only the intended background music processes.
-- Host opens expected service ports, Record finalizes, End/quit releases them,
-  and relaunch can host again with no stale process or port.
+- The package gate passed strict/deep signature verification, nested-app
+  inspection, sidecar build/hash/IPC validation, and two isolated six-second
+  offscreen launch/TERM cycles.
+- Host service ports, live recording, End/quit cleanup with hardware, and a
+  fresh host after a real musician run remain physical worksheet checks.
 
 This private candidate may be ad-hoc signed and not notarized. Control-click →
 Open or Privacy & Security → Open Anyway is an acceptable first-launch step. A
 missing/invalid sealed resource or “damaged app” result fails packaging.
 
-## 4. Frozen-flow smoke
+## 4. Candidate-flow smoke
 
-Use an isolated preferences/home profile and the exact extracted v0.11.0 app.
+Use an isolated preferences/home profile and the exact extracted v0.12.0 app.
 
-The installed candidate completed two normal-close, 20-second isolated-home
-cycles with its bundled server/RPC, mode-0600 secrets, recording off, clean
-relaunch, no orphan process/port, and no audio output files. This Mac currently
-has no CoreAudio input device, so Jamulus truthfully rejected its client route
-and the roster stayed empty. That is a passed no-input safety/cleanup check,
-not a packaged live-audio pass. Attach the test interface before completing
-the remaining Host/Join and musician steps below.
+The fresh package completed two isolated six-second offscreen launch/TERM
+cycles. That verifies startup and bounded cleanup only; it is not a live-audio,
+route, roster, recording, reconnect, or Logic result. Attach the test
+interfaces before completing the musician steps below.
 
 1. Launch shows the original three-part WebJam mark and the restrained black,
-   white, neutral, and burnt-orange system. No purple or teal remains.
-   A rebuilt source candidate additionally exposes **Band input** and **Band
-   output & review** in Settings; the frozen v0.11 ZIP does not contain the
-   CoreAudio route manager described below.
+   white, neutral, and burnt-orange system. No purple or teal remains. After
+   Host or Join, the candidate shows the short name-and-sound confirmation;
+   **Band input** and **Band output & review** expose the intended CoreAudio
+   route without claiming it is audible.
 2. Band Check performs explicit input/output/scratch actions, separates its
    local PortAudio evidence from Jamulus send/receive observations, and reports
    one typed outcome. Blank Webex remains optional.
@@ -205,8 +205,8 @@ the remaining Host/Join and musician steps below.
    peer-start failure visibly falls back to v1 with guest local-original capture
    and delivery off while preserving join/play and host-side server recording.
 4. A valid cold-start link fills and accepts the connection, then proceeds
-   through any required Band Check and **Start Session** before joining. A valid
-   already-running deep link is accepted by the same parser and switches only
+   through confirmation, Band Check, and **Start Session** before joining. A
+   valid already-running deep link is accepted by the same parser and switches only
    after its current-session guard. Malformed/ambiguous links fail safely; a
    legacy v1 link joins without claiming any WebJam guest local capture or the
    private recording plane.
@@ -243,7 +243,7 @@ a trusted LAN; do not test it by exposing a router port.
 ## 5. Physical two-Mac and Logic gate
 
 Complete [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) with the exact
-v0.11.0 ZIP and record:
+v0.12.0 ZIP and record:
 
 - both Mac/interface/driver routes and 48-kHz configuration;
 - musician-confirmed two-way audibility, not just meters;
@@ -266,7 +266,7 @@ the private test only after both musicians and Logic Pro pass the worksheet.
 Preserve failed takes, originals, exports, reports, and the support bundle
 before changing a device, network, or build. GitHub Actions run `29269188463`
 remains the 3,600-second Jamulus/JACK longevity evidence for the v1/v2 engine
-baseline; it does not certify v0.11 remote v3, CoreAudio, two Macs, or Logic.
+baseline; it does not certify v0.12 remote v3, CoreAudio, two Macs, or Logic.
 
 The retired 2024 harness remains in
 [`legacy/TEST_PROCEDURE_2024.md`](legacy/TEST_PROCEDURE_2024.md) for history.

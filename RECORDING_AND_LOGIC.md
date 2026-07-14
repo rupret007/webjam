@@ -5,12 +5,11 @@ JamulusServer supplies a post-network track for each connected musician. The
 host, and a guest connected through an active v2 private invite, can explicitly
 opt in to keeping interface inputs 1 and 2 as local isolated originals.
 
-**Artifact scope:** The preserved v0.11.0 test-night ZIP predates the current
-source-only recording-storage guard and recording-provenance journal. Its
-test-night operator must verify free space manually before starting a session,
-and cannot attribute the current source's session-evidence behavior to that
-package. A new package and physical run are required before the app itself can
-be credited with either hardening measure below.
+**Artifact scope:** The exact v0.12.0 test-night ZIP includes the
+recording-storage guard and recording-provenance journal. It was
+fresh-extraction verified, but the physical recording, interruption recovery,
+and Logic Pro import checks remain **NOT RUN** until the two-Mac worksheet is
+completed. The v0.11.0 ZIP is retained only as rollback history.
 
 ## Know the sources
 
@@ -61,11 +60,10 @@ guest local-original capture or delivery.
 ## Record and verify a take
 
 1. Join the session and confirm the actual musicians appear once.
-2. In the frozen test-night package, the host manually confirms free storage
-   before Record. Current source adds a pre-arm writable-folder/free-space check
-   for the actual band: an unsafe result starts nothing, while a low-storage
-   result is a warning to make room before a long rehearsal. If a running
-   session is unsafe, end it before choosing another Takes folder and restarting.
+2. The v0.12.0 candidate runs a pre-arm writable-folder/free-space check for
+   the actual band: an unsafe result starts nothing, while a low-storage result
+   is a warning to make room before a long rehearsal. If a running session is
+   unsafe, end it before choosing another Takes folder and restarting.
 3. Wait until recording is confirmed, play, then stop from the host.
 4. Keep both apps open while server files finalize and any guest originals
    transfer.
@@ -78,8 +76,8 @@ final upload. An unavailable host leaves that media and queue on the guest Mac.
 
 The schema-v2 `webjam-take.json` records stable take/participant/track/segment
 IDs, source type and quality, project placement, media rate/channels/format,
-hashes, device facts, gap intervals, and alignment evidence. Current source
-also adds optional session evidence: recorder start and end timestamps only
+hashes, device facts, gap intervals, and alignment evidence. v0.12.0 also adds
+optional session evidence: recorder start and end timestamps only
 after server confirmation, the host identity and protocol label, and a bounded,
 redacted lifecycle/recovery timeline. That session-evidence portion
 intentionally excludes invitation links, network addresses, credentials, and
@@ -87,12 +85,11 @@ raw device identifiers. A reconnect
 or dropped local block does not pull later audio earlier to hide time: missing
 frames stay on the timeline as a disclosed gap/silence interval.
 
-While a take is in progress, current source atomically checkpoints that same
+While a take is in progress, v0.12.0 atomically checkpoints that same
 bounded session evidence in a private, crash-safe journal below the selected
 **Takes** folder. The journal is only a recovery checkpoint, not a completed
 take claim: a malformed or unfinished checkpoint is treated as needing
 attention, and it is removed only after the final take manifest is published.
-The frozen v0.11.0 package does not contain this journal.
 
 If a local writer cannot finish normally, WebJam preserves visible recovered
 media and recovery metadata. Missing, receiving, partial, recovered, damaged,
@@ -132,7 +129,7 @@ succeeds. A schema-v2 package contains:
   WAV and measuring its rate, channels, frames, duration, RMS/peak, and clips;
 - `webjam-project-source.json`, preserving the source project evidence;
 - `webjam-logic-export.json`, including project rate, tempo, time signature,
-  selected source identity, transform, and output facts; current source also
+  selected source identity, transform, and output facts; v0.12.0 also
   carries the nonempty bounded/redacted session evidence when the source take
   has it;
 - `CHECKSUMS.sha256`;
@@ -163,7 +160,7 @@ resampler.
    file with the Logic project.
 
 WebJam does not generate or automate Logic's proprietary `.logicx` format.
-Physical Logic Pro import for the v0.11.0 candidate is **NOT RUN** until the
+Physical Logic Pro import for the v0.12.0 candidate is **NOT RUN** until the
 two-Mac worksheet records it.
 
 ## Acceptance gate

@@ -1,21 +1,21 @@
-# WebJam v0.11.0 two-Mac certification worksheet
+# WebJam v0.12.0 two-Mac certification worksheet
 
 **Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
 Do not pre-check boxes from automated tests or from the preserved v0.10.0 rollback build.
 
 The goal is deliberately simple:
 
-> Host choice → Band Check → Invite → Join choice → Band Check → Play → Record → Review → Export → End
+> Host choice → Confirm sound → Band Check → Invite → Join choice → Confirm sound → Band Check → Play → Record → Review → Export → End
 
 ## Evidence header
 
 Fill this in before opening either app. Do not invent or copy an old hash.
 
-- Candidate version: `0.11.0`
-- Artifact filename: `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`
-- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip`
-- SHA-256: `11bc573a28c9804163d34deb5fbf3779dd6aaa2338f3a25e6e70819776b41e4f`
-- Source commit: `1a03927e3ea8eb76557617aa59e985a551c35e0b`
+- Candidate version: `0.12.0` (Apple Silicon / arm64)
+- Artifact filename: `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`
+- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`
+- SHA-256: `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`
+- Source/build commit: `796e9a4ddebe79f430b0ded8cf8034bc27836dd0`
 - Test date/time/timezone: ___________________________________________
 - Host Mac model / macOS: ___________________________________________
 - Bandmate Mac model / macOS: _______________________________________
@@ -28,10 +28,12 @@ Fill this in before opening either app. Do not invent or copy an old hash.
 Both Macs must use the same artifact hash. If either filename/hash differs,
 stop and replace it before testing.
 
-> **Artifact boundary:** This exact ZIP predates the source-only
-> recording-storage guard. Do not record a PASS for an app-level storage block
-> or warning in this worksheet; a rebuilt candidate needs its own exact hash and
-> physical run.
+> **Artifact boundary:** This exact ZIP includes the confirmation screen,
+> CoreAudio route preflight, recording-storage guard, and private in-progress
+> evidence journal. Automated source/package checks establish that they are in
+> this artifact; this worksheet is where the actual hardware, musician,
+> interruption, and Logic outcomes are recorded. The v0.11.0 ZIP is rollback
+> history, not the active test target.
 
 ## Know what this test proves
 
@@ -39,11 +41,10 @@ stop and replace it before testing.
   meter and isolated recorder open a **separate PortAudio/Core Audio stream**.
   A passing meter does not prove Jamulus chose the same device. Your ears and
   the resulting track inventory must prove the real route.
-- A rebuilt candidate from current source adds **Band input** and **Band output
-  & review**. Before launch it resolves their stable CoreAudio UIDs, rejects an
-  ambiguous or non-48-kHz pair, and stages a WebJam-owned Jamulus config. That
-  is still configuration/preflight evidence, not audibility. Do not record this
-  behavior for the exact frozen v0.11 ZIP above.
+- **Band input** and **Band output & review** resolve their stable CoreAudio
+  UIDs, reject an ambiguous or non-48-kHz pair, and stage a WebJam-owned
+  Jamulus config before launch. That is configuration/preflight evidence, not
+  audibility.
 - Webex is optional for video/conversation. Keep its microphone muted while
   playing so it does not add a delayed copy of the music.
 - Guest isolated-original delivery uses authenticated plain HTTP on the same
@@ -62,7 +63,7 @@ stop and replace it before testing.
 
 - [ ] Remove or rename every older WebJam copy on both Macs.
 - [ ] Extract the exact candidate and put **WebJam.app** in `/Applications`.
-- [ ] Verify the app reports **v0.11.0** on both Macs.
+- [ ] Verify the app reports **v0.12.0** on both Macs.
 - [ ] First launch succeeds using the private-build Gatekeeper instructions.
   A “damaged” or “incomplete” app warning is a packaging failure.
 - [ ] The app uses black, white, neutral gray, and burnt orange. There is no
@@ -88,11 +89,17 @@ Expected local-original setting:
 - Host: ON / OFF; input 1 = ______________; input 2 = ______________
 - Bandmate: ON / OFF; input 1 = ___________; input 2 = ______________
 
-## 3. Host Band Check
+## 3. Host confirmation and Band Check
 
-On the host, choose **Host a Jam** once. If its stored verification is missing
-or changed, WebJam opens Band Check before starting the session.
+On the host, choose **Host a Jam** once, confirm the name and band sound, then
+complete Band Check. If the stored verification is still valid, WebJam may keep
+the check short; do not skip an action that is shown.
 
+- [ ] The confirmation screen appears after **Host a Jam** and records the
+  intended name and band-sound choices before Band Check.
+- [ ] If a route is changed, **Band input** and **Band output & review** name
+  the intended CoreAudio devices; the app rejects an ambiguous/missing/non-48-
+  kHz selection instead of silently substituting another device.
 - [ ] Host music-engine and server checks finish without an unexplained blocker.
 - [ ] The host's selected local input meter moves when the host plays and rests
   near silence when they stop.
@@ -107,7 +114,7 @@ or changed, WebJam opens Band Check before starting the session.
 
 Host Band Check result/details: _________________________________________
 
-## 4. Private invite and bandmate Band Check
+## 4. Private invite, bandmate confirmation, and Band Check
 
 - [ ] Wait until WebJam says the host jam is ready before copying the invite.
 - [ ] **Copy Invite** produces one complete `webjam://join?...` link.
@@ -119,13 +126,14 @@ Host Band Check result/details: _________________________________________
 - [ ] On the bandmate Mac, open the link from a cold start. Confirm WebJam fills
   and accepts the connection before the readiness/start step; opening the link
   alone does not count as joined.
-- [ ] If WebJam asks, complete Band Check on that Mac before joining: verify its
-  music engine, input/clipping, left/right headphones, five-second recording,
-  and **That sounds right** confirmation. Then choose **Start Session**.
+- [ ] Confirm the bandmate name and band sound after Join, then complete Band
+  Check: verify its music engine, input/clipping, left/right headphones,
+  five-second recording, and **That sounds right** confirmation. Then choose
+  **Start Session**.
 - [ ] Record the bandmate result below; do not reuse the host's confirmation.
 - [ ] Leave, confirm the host remains alive, then paste the same link through
-  **Join a Jam**, complete any required Band Check, choose **Start Session**,
-  and rejoin.
+  **Join a Jam**, confirm sound, complete any required Band Check, choose
+  **Start Session**, and rejoin.
 - [ ] Both participant names appear once. Renaming/reconnecting does not create
   a duplicate musician card or duplicate recording identity.
 
@@ -173,13 +181,15 @@ section.
   shareable two-channel 48-kHz input.
 - [ ] If an interface has only one meaningful source, record which input is
   expected to be silent; do not mislabel that lane as another source.
-- [ ] Before starting the session, manually confirm enough free storage on the
-  selected Takes drive for this test and record the amount below. This frozen
-  artifact predates the app-level storage guard, so do not claim an automated
-  block or warning from this run.
+- [ ] Confirm the selected Takes drive has enough free storage and record the
+  amount below. WebJam must allow Record only after its writable-folder and
+  roster-aware storage preflight passes; record any warning or block verbatim.
+  Do not deliberately exhaust the drive merely to force a warning during this
+  musician run.
 - [ ] Start one take on the host. Wait until recording is confirmed.
 
 - Host free storage before take: ___________________________________________
+- Storage-preflight message/warning: _______________________________________
 - [ ] Play a short identifiable phrase on each source and say “before outage.”
 - [ ] While recording, turn Wi-Fi off on the bandmate Mac for 10–15 seconds.
 - [ ] WebJam shows an interruption/reconnect state instead of stale readiness.

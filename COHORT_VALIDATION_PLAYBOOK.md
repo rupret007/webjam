@@ -1,4 +1,4 @@
-# WebJam v0.11.0 closed-pilot playbook
+# WebJam v0.12.0 closed-pilot playbook
 
 This is the coordination guide for a small musician cohort. The exact physical
 acceptance evidence belongs in
@@ -8,7 +8,7 @@ short guide for that gate.
 ## Message to send before the rehearsal
 
 ```text
-We're testing WebJam v0.11.0 tonight.
+We're testing WebJam v0.12.0 tonight.
 
 1. Download the exact ZIP and verify both the filename and SHA-256 I send you.
 2. Unzip it, move WebJam.app to Applications, then Control-click it and choose
@@ -16,12 +16,13 @@ We're testing WebJam v0.11.0 tonight.
 3. Connect your interface and wired headphones. In macOS Sound, choose the
    interface for both input and output. Turn speakers off.
 4. Put your Mac on the same Wi-Fi as the host and turn off VPN software.
-5. Host: choose Host a Jam, complete Band Check if it appears, and choose Start
-   Session. Bandmate: wait for the host's complete webjam:// invitation.
-6. Open the private invite, or choose Join a Jam and paste it. Complete Band
-   Check when WebJam asks, including input, left/right headphones, five-second
-   recording, and playback, then choose Start Session. Do not screenshot, post,
-   or paste the invite into support notes.
+5. Host: choose Host a Jam, confirm your name and band sound, complete Band
+   Check, and choose Start Session. Bandmate: wait for the host's complete
+   webjam:// invitation.
+6. Open the private invite, or choose Join a Jam and paste it. Confirm your
+   name and band sound, then complete Band Check, including input, left/right
+   headphones, five-second recording, and playback, then choose Start Session.
+   Do not screenshot, post, or paste the invite into support notes.
 
 You should never be asked for a server, port, process path, or routing setup.
 If anything fails, stop and capture what WebJam says before changing settings.
@@ -29,8 +30,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Host
 
-1. Open the exact v0.11.0 app and choose **Host a Jam** once.
-2. Complete Band Check if WebJam asks, then choose **Start Session**.
+1. Open the exact v0.12.0 app and choose **Host a Jam** once.
+2. Confirm your name and band sound, complete Band Check, then choose **Start
+   Session**.
 3. If macOS requests microphone or incoming-network access, allow it. If
    microphone access was previously denied, use WebJam's **Open System
    Settings** recovery action.
@@ -46,7 +48,8 @@ If anything fails, stop and capture what WebJam says before changing settings.
 ## Bandmate
 
 1. Open the invite, or use the one-field **Join a Jam** screen.
-2. Complete Band Check if WebJam asks, then choose **Start Session**.
+2. Confirm your name and band sound, complete Band Check, then choose **Start
+   Session**.
 3. Wait for the real participant state. A running process or spinner is not a
    connection claim.
 4. If joining times out, confirm both Macs are on the same non-guest Wi-Fi and
@@ -62,9 +65,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 3. On the host and each v2-connected guest that should retain interface
    originals, open **More → Multitrack Studio → Recording Setup**, explicitly
    enable inputs 1 and 2, and select the intended shareable 48-kHz interface.
-   The host still controls the shared take. For the frozen v0.11 ZIP, manually
-   confirm free space before starting the session; its app-level storage guard
-   is source-only and cannot be counted in this cohort run.
+   The host still controls the shared take. The v0.12.0 candidate checks the
+   selected Takes folder and conservative free-space reserve before Record;
+   write down any warning or block rather than treating it as an acoustic pass.
 4. The host records at least 60 seconds. With an active v2 invite, briefly
    interrupt the guest's Wi-Fi, keep playing, reconnect, and wait for validation
    and resumed guest-original transfer before ending. If the host reported the
@@ -93,7 +96,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Evidence and escalation
 
-- Record the exact ZIP filename and SHA-256 before starting.
+- Record the exact ZIP filename and SHA-256 before starting. The active
+  candidate is `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`.
 - Capture screenshots of any unclear state before retrying.
 - Preserve the take folder and each Mac's local originals. Keep raw logs local;
   do not send them directly.

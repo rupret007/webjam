@@ -1,7 +1,9 @@
 # Remote session threat model
 
 - Status: pre-release security contract
-- Applies to: WebJam v0.11.0 remote pilot, one host plus one guest
+- Applies to: WebJam v0.12.0 private candidate's v3 remote-session design, one
+  host plus one guest. The profile remains loopback-only and is not a deployed
+  public service.
 - Architecture: [ADR 0001](../adr/0001-remote-session-transport.md)
 - Last reviewed: 2026-07-13
 

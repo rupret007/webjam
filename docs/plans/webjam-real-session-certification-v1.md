@@ -2,7 +2,7 @@
 
 This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
-evidence, but the active v0.11 readiness boundary is
+evidence, but the active v0.12 readiness boundary is
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md).
 
 ## Product promise
@@ -268,7 +268,7 @@ server tracks, not an independently captured acoustic/live-output feed.
 | Diagnostics | Immutable allowlist preview/saved-ZIP parity, separate sanitized clipboard summary, and adversarial redaction pass | Fresh packaged-button check pending |
 | Long session | Exact-source native run `29269188463` passed 3,602.851 measured seconds, 396 cycles, three recording/restart cycles, reconnect, signal/resource/xrun gates, and zero cleanup errors | Local Docker ARM failure and cancelled runs remain preserved but do not count; physical long-session review remains separate |
 | Physical two-Mac | Worksheet is ready | **NOT RUN** |
-| Historical v0.10 candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, two bundled client/server authenticated lifecycles, normal Qt close, and cleanup pass at source `8ee8908` | Superseded by the v0.11 private test-night handoff; its historical physical matrix remains evidence only |
+| Historical v0.10 candidate | v0.10.0 build, nested signing, ZIP, hash, fresh extraction, two bundled client/server authenticated lifecycles, normal Qt close, and cleanup pass at source `8ee8908` | Superseded by the v0.12 private test-night handoff; its historical physical matrix remains evidence only |
 
 ## Defect log
 
@@ -615,7 +615,7 @@ Logic Pro import:        NOT RUN
 
 ## Historical continuation point
 
-For active v0.11 work, use `TEST-NIGHT-READ-ME.txt`,
+For active v0.12 work, use `TEST-NIGHT-READ-ME.txt`,
 [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md), and
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps
 below are retained only to explain what remained after the v0.10 package.

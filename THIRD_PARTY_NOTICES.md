@@ -49,7 +49,7 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     WebJam launches each as an independent process.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so Windows packaging carries the unmodified installer
-    as a distribution dependency. The current v0.11 Host/Join flow does not
+    as a distribution dependency. The current v0.12 Host/Join flow does not
     invoke the former Setup Wizard installer button; Windows packaging and
     install behavior remain a separate release-certification gate.
 - **Why this doesn't require relicensing WebJam:** Redistributing a

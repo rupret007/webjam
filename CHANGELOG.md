@@ -6,6 +6,26 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
+No changes have been recorded after the private v0.12.0 test-night candidate.
+
+---
+
+## [0.12.0] — 2026-07-14 private test-night candidate
+
+### Candidate verification
+
+- Built the exact Apple-Silicon package from
+  `796e9a4ddebe79f430b0ded8cf8034bc27836dd0`:
+  `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`.
+- The candidate is arm64 and bundles official Jamulus/JamulusServer 3.12.2.
+  Fresh extraction passed strict/deep signature checks, nested-app inspection,
+  exact sidecar build/hash/IPC validation, and two isolated six-second
+  offscreen launch/TERM cycles. It is ad-hoc signed, not notarized.
+- The final source gate recorded 1,687 passed, 18 skipped, one known
+  Starlette/httpx warning, and 6 subtests. Physical CoreAudio, two-Mac audio,
+  roster, reconnect, recording recovery, and Logic import remain **NOT RUN**.
+
 ### Last-mile session trust
 
 - Added one privacy-safe authoritative session lifecycle record for Host/Join,
@@ -25,32 +45,32 @@ All notable improvements and features for the WebJam music collaboration platfor
   folder before the session starts, and **Record** rechecks free space using the
   actual roster before opening local capture or arming the server recorder.
   An unsafe result starts no take and gives one recovery path; low storage is a
-  warning to make room before a long rehearsal, not a guarantee of one. This is
-  current source hardening, not evidence for the frozen v0.11 test-night ZIP.
+  warning to make room before a long rehearsal, not a guarantee of one. This
+  behavior is included in v0.12.0; its physical drive-full result remains a
+  separate **NOT RUN** gate.
 
 ### Recording evidence and recovery
 
-- Current source schema-v2 take manifests now retain optional recording-session
+- The v0.12.0 schema-v2 take manifests retain optional recording-session
   evidence: start/end timestamps only after recorder-server confirmation, host
   identity and protocol label, plus a bounded redacted lifecycle/recovery
   timeline. Invitations, network addresses, credentials, and raw device
   identifiers are excluded.
-- While a take is live, current source writes that evidence to a private,
+- While a take is live, v0.12.0 writes that evidence to a private,
   crash-safe checkpoint below the chosen Takes folder. An untrusted or
   unfinished checkpoint is recovery-needed truth, never a completed-take
   claim; it is removed only after final manifest publication. The final Logic
-  export copies nonempty evidence into `webjam-logic-export.json`. These are
-  source changes, not claims about the frozen v0.11 test-night ZIP.
+  export copies nonempty evidence into `webjam-logic-export.json`. Physical
+  recovery and Logic-import results remain **NOT RUN**.
 
 ### Simpler musician setup
 
-- Added a one-screen current-source confirmation after Host/Join: musician
-  name plus Band input and Band output & review are saved before Band Check.
-  The preserved v0.11 test-night ZIP predates this screen.
+- Added a one-screen v0.12.0 confirmation after Host/Join: musician name plus
+  Band input and Band output & review are saved before Band Check.
 - Reworked in-session **Settings** into a short musician-first page: name,
   Band input, Band output & review, and a collapsed optional conversation link.
-  On current macOS source, a complete pair persists as CoreAudio UIDs and is
-  staged for the next Jamulus session; the frozen v0.11 ZIP predates this.
+  On macOS, a complete pair persists as CoreAudio UIDs and is staged for the
+  next Jamulus session.
 - Removed Band Check's empty technical-details disclosure. Private diagnostics
   remain available only through the quieter **Save Support Bundle** action;
   **Audio Settings** is now the obvious correction path.
@@ -1381,7 +1401,7 @@ Vote for features you want to see:
 ## Historical v2.0-era notes (archived)
 
 The following notes were preserved from a 2024 planning document. They do not
-describe the current v0.11 Host/Join UI, Webex handoff boundary, or packaging
+describe the current v0.12 Host/Join UI, Webex handoff boundary, or packaging
 claims; use the Unreleased entry, README, and v1 last-mile readiness record
 above for current behavior.
 

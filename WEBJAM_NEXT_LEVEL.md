@@ -4,7 +4,7 @@
 **Status:** Historical memo. Its market comparison and protocol history remain
 useful, but current status lives in `README.md` and
 `docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
-The memo predates the current v0.11.0 Band Check/Host/Join experience,
+The memo predates the current v0.12.0 Band Check/Host/Join experience,
 automatic same-Mac hosting, responsive black/white/burnt-orange interface,
 guest originals, and integrated Studio.
 Do not treat the old release recommendations below as current work.
@@ -86,8 +86,8 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: use the distinct v0.11.0 candidate privately, complete
+Current recommendation: use the distinct v0.12.0 candidate privately, complete
 the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the
 exact artifact passes physical audio, recording, reconnect, role-aware cleanup,
 and Logic import gates. The v1/v2 engine baseline has native one-hour longevity
-evidence; it does not certify the v0.11.0 package or remote v3.
+evidence; it does not certify the v0.12.0 package or remote v3.

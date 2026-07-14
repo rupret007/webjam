@@ -1,6 +1,6 @@
 # WebJam Architecture
 
-> **Last updated:** 2026-07-14 (current source after the v0.11.0 private candidate)
+> **Last updated:** 2026-07-14 (v0.12.0 private test-night candidate)
 
 ## Overview
 
@@ -9,7 +9,7 @@ low-latency music engine and can optionally launch native **Webex**
 (speech/video) alongside its Conductor window. In current source, the normal
 product flow is one Host/Join choice, a concise sound confirmation, then Band
 Check when the setup is new or changed—not music-engine configuration. The
-frozen v0.11 test-night package goes directly from Host/Join to Band Check.
+v0.12.0 test-night package follows that same flow.
 Notes, multitrack Studio, settings, conversation, and diagnostics remain
 progressively disclosed under **More**. WebJam does not embed or control the
 native meeting.
@@ -60,11 +60,11 @@ webjam_qt_main.py          ← entry point
 | `app.py` | `QApplication` bootstrap, bundled font, stylesheet, Host/Join gate, and fatal-error boundary |
 | `windows/launch_dialog.py` | Responsive two-choice launch plus one-field invitation validation |
 | `windows/conductor_window.py` | Main application window — header, `SessionHud`, `ParticipantGrid`, workspaces, and bottom controls |
-| `windows/simple_settings.py` | Current-source progressive preferences for displayed name, Band input, Band output & review, and an optional conversation URL; macOS saves stable route IDs for the next Jamulus launch without claiming audibility. The frozen v0.11 package has only name/conversation settings. |
+| `windows/simple_settings.py` | Progressive preferences for displayed name, Band input, Band output & review, and an optional conversation URL; macOS saves stable route IDs for the next Jamulus launch without claiming audibility. |
 | `windows/recording_setup.py` | Focused Studio playback-output/Takes-folder selection and explicit two-input local-original consent for the host or an active-v2 guest |
 | `windows/ready_check.py` | Permanent guided Band Check; pre-session actions and non-invasive live observation |
 | `windows/support_bundle_preview.py` | Preview and save one immutable allowlisted, redacted support artifact |
-| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.11.0 musician path |
+| `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the v0.12.0 musician path |
 | `widgets/participant_card.py` | Per-channel fader, monitor mute, solo, accessible state, and observed level meter |
 | `widgets/participant_grid.py` | Viewport-driven participant layout plus intentional empty/recovery states |
 | `widgets/level_meter.py` | Truthful observed level meter with coarse accessible signal descriptions |
@@ -177,7 +177,7 @@ If TCP 22240 is already occupied, WebJam adopts the endpoint only after the
 configured secret authenticates and `getRecorderStatus` proves it is a
 Jamulus recorder. Adopted processes are reported as external and are never
 terminated—or have recording stopped—when WebJam quits. Remote Linux hosting
-remains a developer/legacy-compatible recipe, not the v0.11.0 same-LAN pilot
+remains a developer/legacy-compatible recipe, not the v0.12.0 same-LAN pilot
 path. Both paths use `core/jamulus_server_rpc.py`.
 
 ## Data Flow: Recording completion
@@ -341,20 +341,20 @@ JamulusController background thread
 
 ## Current Limitations
 
-- Closed-pilot candidate, not broad-release-ready. The preserved exact v0.11
-  package integrity/no-input-cleanup gates pass; current source storage and
-  recording-provenance/journal hardening are not in that package. The earlier
-  v1/v2 engine has native one-hour longevity evidence. Exact-package live CoreAudio, two-Mac
+- Closed-pilot candidate, not broad-release-ready. The exact v0.12 package
+  includes storage and recording-provenance/journal hardening and passes
+  fresh-extraction signature/deep, nested-app, sidecar build/hash/IPC, and two
+  isolated offscreen launch/TERM gates. The earlier v1/v2 engine has native
+  one-hour longevity evidence. Exact-package live CoreAudio, two-Mac
   audio/reconnect/originals, human Studio checks, and Logic import remain
   physical evidence gates.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
-  Windows CI artifacts supply the official client installer). v0.11.0's private
+  Windows CI artifacts supply the official client installer). v0.12.0's private
   physical pilot is Apple Silicon macOS only. `LaunchDialog` offers Host or one
-  invitation field. Current source then opens `SimpleSettingsDialog` for name,
-  Band input, Band output & review, and an optional conversation link; the
-  frozen v0.11 package does not. Current source controls the next macOS Jamulus
-  route through the preflighted WebJam-owned config. Source runs still require
-  compatible Jamulus apps separately.
+  invitation field, then opens `SimpleSettingsDialog` for name, Band input,
+  Band output & review, and an optional conversation link. The package controls
+  the next macOS Jamulus route through the preflighted WebJam-owned config.
+  Source runs still require compatible Jamulus apps separately.
 - The bundled Jamulus version is pinned to WebJam's own release cadence — an upstream Jamulus fix won't reach bundled-copy users until the next WebJam release; the Browse-button/`WEBJAM_JAMULUS_CANDIDATES` manual override remains available.
 - Guest-original control and transfer use authenticated plain HTTP on one
   private RFC1918 IPv4 LAN. There is no TLS, IPv6, Internet, VPN, NAT-traversal,

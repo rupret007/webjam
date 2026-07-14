@@ -73,16 +73,17 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Implemented in current source after the v0.11.0 private candidate (2026-07-14)
+### ✅ Included in the v0.12.0 private test-night candidate (2026-07-14)
 
-The preserved v0.11.0 test-night ZIP is a frozen earlier artifact, not a claim
-that every item in this section has been packaged or physically tested.
+The exact v0.12.0 test-night ZIP contains the code in this section and passed
+the documented fresh-extraction/package checks. It is not a claim that the
+physical two-Mac, real-audio, recording-recovery, or Logic gates have run.
+The v0.11.0 ZIP is a preserved rollback artifact.
 
 - **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
-  opens one invitation field. Current source then asks for one concise name and
-  band-sound confirmation before Band Check and **Start Session**; the frozen
-  v0.11 ZIP goes directly to Band Check. A matching stored check starts the
-  bundled server/client directly.
+  opens one invitation field. The v0.12.0 candidate then asks for one concise
+  name-and-band-sound confirmation before Band Check and **Start Session**. A
+  matching stored check starts the bundled server/client directly.
 - **Permanent Band Check** — required checks after Host/Join on a new or changed
   setup, plus F2, Settings, and live troubleshooting, share one guided input/
   headphone/scratch-recording/Studio path with typed Ready, Warning, and Action
@@ -112,13 +113,13 @@ that every item in this section has been packaged or physically tested.
 - **Accessibility and narrow-window support** — visible focus, task-ordered
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
-- **Tonight's boundary** — the preserved private Apple Silicon v0.11 package
-  remains the two-Mac same-LAN candidate. The v1/v2 engine baseline has native
-  one-hour longevity evidence; that exact package passes integrity plus two
-  no-input server/normal-close cleanup cycles. Packaged CoreAudio client/roster
-  audio, physical reconnect and guest-original delivery, Logic import, and
-  two-Mac cleanup remain explicit gates; no automated result fills those
-  physical fields.
+- **Tonight's boundary** — the private Apple Silicon v0.12.0 package is the
+  two-Mac same-LAN candidate. The v1/v2 engine baseline has native one-hour
+  longevity evidence; the exact package passes fresh-extraction signature,
+  nested-app, sidecar build/hash/IPC, and bounded launch/cleanup checks.
+  Packaged CoreAudio client/roster audio, physical reconnect and guest-original
+  delivery, recording recovery, Logic import, and two-Mac cleanup remain
+  explicit gates; no automated result fills those physical fields.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
@@ -127,7 +128,7 @@ that every item in this section has been packaged or physically tested.
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.11.0
+work. It is retained as implementation history; current status is the v0.12.0
 section above. v0.8.0 remains the latest published build at
 [Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
 gates pass.
@@ -163,9 +164,8 @@ gates pass.
 ### 🔜 Next — closed pilot gates
 
 - Carry forward the v1/v2 engine's native Jamulus/JACK 3,600-second evidence,
-  retain the completed v0.11.0 artifact startup/resource/signature/runtime
-  inspection, and complete the planned two-Apple-Silicon-Mac same-LAN physical
-  pilot.
+  retain the completed v0.12.0 artifact package inspection, and complete the
+  planned two-Apple-Silicon-Mac same-LAN physical pilot.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

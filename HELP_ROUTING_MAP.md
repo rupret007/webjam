@@ -1,15 +1,14 @@
 # WebJam help routing map
 
-Maps common musician questions to the current-source interface. The frozen
-v0.11.0 test-night package goes directly from Host/Join to Band Check; the
-current-source short sound confirmation and CoreAudio route choices need a new
-package before they apply to a test-night run. Setup Wizard, **Start Audio**,
-raw server fields, and color-named buttons are legacy paths.
+Maps common musician questions to the v0.12.0 test-night interface. Host and
+Join both use the short sound confirmation before Band Check. The preserved
+v0.11.0 package is rollback history only. Setup Wizard, **Start Audio**, raw
+server fields, and color-named buttons are legacy paths.
 
 | User need | Current path |
 |---|---|
-| Start a new band session | Current source: Launch WebJam → **Host a Jam** → confirm name and band sound → complete Band Check → **Start Session**. Frozen v0.11: Host → Band Check if shown → Start Session. |
-| Join a band session | Current source: open/paste the invite → confirm name and band sound → Band Check → Start Session. Frozen v0.11: open/paste invite → Band Check if shown → Start Session. |
+| Start a new band session | Launch WebJam → **Host a Jam** → confirm name and band sound → complete Band Check → **Start Session**. |
+| Join a band session | Open or paste the invite → confirm name and band sound → Band Check → **Start Session**. |
 | Check input, headphones, scratch recording, or live readiness | `F2`, **More → Band Check**, or **Settings → Run Band Check** |
 | Share the session | Live bottom bar → **Copy Invite** → send the complete link only to the intended bandmate; it is normally a reusable session-scoped v2 bearer credential, not a one-use token, while an **Automatic Local Originals are off** warning identifies a v1 guest with join/play plus a server track, but no WebJam local-original capture/delivery |
 | Change this Mac's monitor mix | Participant cards → fader / **Mute Monitor** / **Solo** |
@@ -20,7 +19,7 @@ raw server fields, and color-named buttons are legacy paths.
 | Capture rehearsal notes | **More → Session Notes** |
 | Add optional video/conversation | **More → Add Video or Conversation** |
 | Speak during rehearsal | Mute the audio interface before unmuting Webex; if that is unavailable, end the WebJam session first |
-| Change display name or conversation link | **More → Settings** or **Ctrl+,**; current source additionally exposes Band input and Band output & review |
+| Change display name or conversation link | **More → Settings** or **Ctrl+,**; it also exposes Band input and Band output & review |
 | Resolve a connection/device problem | Follow the one stage action; run live-observe **Band Check** with `F2` for details without restarting the session |
 | Allow a denied microphone | Stage → **Open System Settings** → Privacy & Security → Microphone → return → **Try Again** |
 | Retry after Wi-Fi interruption | Restore the same network → stage **Try Again** if automatic reconnect times out |

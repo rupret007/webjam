@@ -6,20 +6,21 @@ WebJam is designed around four short moves:
 
 Musicians do not configure servers, ports, virtual audio devices, or routing
 modes. WebJam starts the bundled music engine and keeps technical details out of
-the rehearsal. In current macOS source, the two Settings choices—**Band input**
-and **Band output & review**—are the Jamulus route WebJam stages for the next
-session. WebJam still asks musicians to confirm what they hear.
+the rehearsal. In the v0.12.0 candidate, the two Settings choices—**Band
+input** and **Band output & review**—are the Jamulus route WebJam stages for the
+next session. WebJam still asks musicians to confirm what they hear.
 
-The private v0.11.0 candidate is deliberately spare: a black and white session with burnt
+The private v0.12.0 candidate is deliberately spare: a black and white session with burnt
 orange reserved for the next important action. Host and Join are the only
 choices at launch.
 
-> **Artifact scope:** The frozen
-> `WebJam-v0.11.0-TEST-NIGHT-macos-arm64.zip` package built from `1a03927`
-> remains tonight's test artifact. It goes directly from Host/Join to Band
-> Check; the short sound-confirmation screen, CoreAudio route preflight, and
-> recording-storage guard below are current-source behavior only until a new
-> package is built and tested.
+> **Tonight's candidate:**
+> `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, built from `796e9a4`, is the
+> exact Apple-Silicon package for this run. Its SHA-256 is
+> `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`.
+> It includes the sound-confirmation screen, CoreAudio route preflight,
+> recording-storage guard, and private in-progress recording-evidence journal.
+> The v0.11.0 ZIP is retained only as a rollback artifact.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed
@@ -37,9 +38,8 @@ BlackHole, VB-CABLE, and Webex are not required to start playing.
 
 ## Band Check
 
-In current source, a new or changed setup opens one short screen to confirm
-your name, **Band input**, and **Band output & review** before Band Check. The
-frozen v0.11 app opens Band Check directly. Band Check walks each musician through the
+After Host or Join, confirm your name and band sound, then complete Band Check.
+Band Check walks each musician through the
 local input meter, left/right headphones, a five-second recording, and playback, then says
 **Ready to Jam**, **Ready with a Warning**, or **Action Needed**. Press `F2` to
 run it again. A passing local meter is useful, but only your bandmate's ears
@@ -49,9 +49,8 @@ prove the live Jamulus route.
 
 1. Open WebJam.
 2. Click **Host a Jam**.
-3. In current source, confirm your name and band sound; in the frozen v0.11
-   app, continue directly to Band Check. Complete Band Check and choose
-   **Start Session**. If macOS
+3. Confirm your name and band sound. Complete Band Check and choose **Start
+   Session**. If macOS
    asks for microphone access, allow it. If access was previously
    denied, use WebJam's **Open System Settings** action, allow access, return,
    and choose **Try Again**.
@@ -75,18 +74,16 @@ Preferred:
 
 1. Open the host's invite link.
 2. WebJam launches and fills in and accepts the connection.
-3. In current source, confirm your name and band sound; in the frozen v0.11
-   app, continue directly to Band Check. Complete Band Check and choose
-   **Start Session**.
+3. Confirm your name and band sound. Complete Band Check and choose **Start
+   Session**.
 
 Manual fallback:
 
 1. Open WebJam and click **Join a Jam**.
 2. Paste the invite link.
 3. Click **Join Jam**.
-4. In current source, confirm your name and band sound; in the frozen v0.11
-   app, continue directly to Band Check. Complete Band Check and choose
-   **Start Session**.
+4. Confirm your name and band sound. Complete Band Check and choose **Start
+   Session**.
 
 ## Know when it is working
 
@@ -111,11 +108,13 @@ one synchronized track per connected musician. Open **More → Multitrack
 Studio** to see live lanes and completed takes with waveform playback,
 scrubbing, selectable headphone output, gain, pan, mute, and solo.
 
-For the frozen test-night ZIP, check that the selected drive has enough free
-space before you start the session. If you need a different Takes folder, choose
-it before starting the jam; a running session does not allow the folder to
-change. The source-only guard noted above will block an unsafe start and warn
-about low space only after it is shipped in a new candidate.
+Before recording, WebJam checks that the selected Takes folder is writable and
+has a conservative amount of free space. It blocks an unsafe start and warns
+when space is low; Record recalculates against the actual roster. If you need a
+different Takes folder, choose it before starting the jam; a running session
+does not allow the folder to change. This package behavior still needs the
+physical two-Mac recording run; do not infer it from a meter or an automated
+test alone.
 
 In Studio, **Recording Setup** can optionally keep this Mac's first two
 interface inputs as separate PCM24/48-kHz originals. The host can opt in; a
@@ -142,18 +141,17 @@ Everything that is not required to play is under **More**:
 - Session Notes
 - Multitrack Studio
 - Add Video or Conversation
-- Settings (in current source: name, Band input, Band output & review, and an
-  optional conversation link; in frozen v0.11: name and optional conversation)
+- Settings (name, Band input, Band output & review, and an optional
+  conversation link)
 - Band Check
 
 Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
 
 Choose **Band input** and **Band output & review** in **Settings** before a
-session. Current macOS source verifies a unique 48-kHz CoreAudio pair and uses
+session. The v0.12.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
 it to stage Jamulus; the review choice follows the selected output. A moving
-local meter still is not proof that your bandmate hears you. The frozen v0.11
-test-night ZIP predates this source-only routing behavior.
+local meter still is not proof that your bandmate hears you.
 
 ## End the jam
 
