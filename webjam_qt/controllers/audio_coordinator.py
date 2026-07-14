@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.session_state import SessionUiState
+from core.session_lifecycle import SessionLifecyclePhase
 
 if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
@@ -48,6 +49,10 @@ class AudioCoordinator:
 
             permission = microphone_permission_status()
             if permission == "not_determined" and not self.permission_explained:
+                self._c._transition_lifecycle(
+                    SessionLifecyclePhase.CHECKING_PERMISSIONS,
+                    "Waiting for microphone permission",
+                )
                 self.permission_explained = True
                 self._c.window.participant_grid.set_session_state(
                     SessionUiState.permission_required()
@@ -59,6 +64,10 @@ class AudioCoordinator:
                 self._c.window.session_strip.set_tools_enabled(True)
                 return False
             if permission in {"denied", "restricted"}:
+                self._c._transition_lifecycle(
+                    SessionLifecyclePhase.FAILED_RECOVERABLE,
+                    "Microphone permission needs attention",
+                )
                 self._c.window.participant_grid.set_session_state(
                     SessionUiState.permission_denied()
                 )
@@ -82,6 +91,14 @@ class AudioCoordinator:
             self._c.window.participant_grid.set_session_state(
                 SessionUiState.connecting(self._c.bridge.effective_server())
             )
+            self._c._transition_lifecycle(
+                (
+                    SessionLifecyclePhase.STARTING_HOST
+                    if bool(getattr(self._c.settings, "host_server_enabled", False))
+                    else SessionLifecyclePhase.JOINING
+                ),
+                "Starting the music engine",
+            )
             if bool(getattr(self._c.settings, "host_server_enabled", False)):
                 self._c.window.session_hud.set_state(
                     "Starting your jam…",
@@ -95,6 +112,11 @@ class AudioCoordinator:
             accepted = bool(self._c.bridge.launch_jamulus(manual=True))
             if not accepted:
                 return False
+            if bool(getattr(self._c.settings, "host_server_enabled", False)):
+                self._c._transition_lifecycle(
+                    SessionLifecyclePhase.WAITING_FOR_REACHABILITY,
+                    "Waiting for the hosted server and private LAN invitation",
+                )
             self._c._connection_timer.start()
             return True
 
@@ -106,6 +128,11 @@ class AudioCoordinator:
             )
             return
         self._c.window.set_status_audio("Starting practice…")
+        self._c._transition_lifecycle(
+            SessionLifecyclePhase.STARTING_HOST,
+            "Starting private practice",
+            role="practice",
+        )
         self._c.window.session_strip.set_audio_state("Starting…", enabled=False)
         self._c.window.participant_grid.set_session_state(SessionUiState.practice())
         self._c.window.flash_message(
@@ -172,6 +199,10 @@ class AudioCoordinator:
         self._c.window.participant_grid.set_session_state(
             SessionUiState.ending(hosting=hosting)
         )
+        self._c._transition_lifecycle(
+            SessionLifecyclePhase.ENDING,
+            "Ending the hosted jam" if hosting else "Leaving the jam",
+        )
         self._c.window.session_hud.set_state(
             "Ending this jam…" if hosting else "Leaving the jam…",
             (
@@ -204,6 +235,10 @@ class AudioCoordinator:
         self._c.window.session_strip.set_tools_enabled(True)
         self.stopping = False
         if error:
+            self._c._transition_lifecycle(
+                SessionLifecyclePhase.FAILED_RECOVERABLE,
+                "Session cleanup needs attention",
+            )
             self.ended_by_user = False
             self._c.window.participant_grid.set_session_state(
                 SessionUiState.stop_failed()
@@ -230,6 +265,10 @@ class AudioCoordinator:
         # then restore any in-memory loopback route to its saved local profile.
         self._c._stop_remote_transport()
         self._c.recording.on_audio_session_stopped()
+        self._c._transition_lifecycle(
+            SessionLifecyclePhase.COMPLETED,
+            "Session resources were released",
+        )
         self.reset_to_idle()
         self._c._reconnect_banner_shown = False
         self._c._rpc_hang_banner_shown = False
@@ -239,6 +278,10 @@ class AudioCoordinator:
         """Stop in data-safe order without freezing the Qt event loop."""
         failures: list[str] = []
         if hosting:
+            self._c._transition_lifecycle(
+                SessionLifecyclePhase.FINALIZING_RECORDINGS,
+                "Finalizing hosted recordings before shutdown",
+            )
             try:
                 recording_stopped = (
                     self._c.recording.stop_server_recording_for_shutdown()
@@ -274,6 +317,7 @@ class AudioCoordinator:
 
     def reset_to_idle(self) -> None:
         self._c.session_health.reset_live_truth()
+        self._c.session_lifecycle.reset(reason="Ready for a new session")
         # The session is over, so any confirmed transmit-mute died with the
         # Jamulus client.  A relaunched client always starts unmuted; carrying
         # TALK/muted state forward would render a fail-open lie.
@@ -313,6 +357,10 @@ class AudioCoordinator:
                 self._c.window.participant_grid.set_session_state(
                     SessionUiState.reconnecting()
                 )
+                self._c._transition_lifecycle(
+                    SessionLifecyclePhase.RECONNECTING,
+                    "The music engine lost its roster",
+                )
                 if self._c.bridge.jamulus_launch_intended:
                     self._c._connection_timer.start()
             return
@@ -351,6 +399,10 @@ class AudioCoordinator:
             self._c.window.session_strip.start_session_clock()
             self._c.window.session_strip.set_tools_enabled(True)
             self._c.session_health.mark_rpc_result("participants", True)
+            self._c._transition_lifecycle(
+                SessionLifecyclePhase.CONNECTED,
+                "This Mac is present in the live Jamulus roster",
+            )
             self._c.jamulus.set_name(self._c.settings.musician_name)
             self._c.participants.clear()
             self._c._level_timer.start()

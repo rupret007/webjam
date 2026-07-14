@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import zipfile
 
 from core.settings import AppSettings
+from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from webjam_qt import __version__
 from webjam_qt.controllers.diagnostics import DiagnosticsExporter
 
@@ -166,6 +167,28 @@ class TestDiagnosticsExporter(unittest.TestCase):
         self.assertTrue(
             all(item["released"] for item in report["cleanup"]["ports"])
         )
+
+    def test_structured_report_includes_only_allowlisted_lifecycle_timeline(self):
+        lifecycle = SessionLifecycle(role="host")
+        lifecycle.transition(
+            SessionLifecyclePhase.PREPARING,
+            reason="invitation token=private-value",
+        )
+        lifecycle.transition(
+            SessionLifecyclePhase.STARTING_HOST,
+            reason="starting local host",
+        )
+        exporter = _make_exporter()
+        exporter.session_lifecycle = lifecycle
+
+        transitions = exporter.artifact().structured_report["session"]["transitions"]
+
+        assert len(transitions) == 2
+        assert transitions[-1]["to_state"] == "starting_host"
+        assert set(transitions[-1]) == {
+            "at", "component", "event", "from_state", "to_state", "status", "reason"
+        }
+        assert "private-value" not in str(transitions)
 
 
 if __name__ == "__main__":

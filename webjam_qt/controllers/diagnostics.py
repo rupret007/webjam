@@ -45,6 +45,7 @@ class DiagnosticsExporter:
         build_id: str = "",
         jamulus_version: str = "",
         session_health: Any = None,
+        session_lifecycle: Any = None,
         recording_coordinator: Any = None,
         metrics_service: Any = None,
     ) -> None:
@@ -55,6 +56,7 @@ class DiagnosticsExporter:
         self.build_id = build_id
         self.jamulus_version = jamulus_version
         self.session_health = session_health
+        self.session_lifecycle = session_lifecycle
         self.recording = recording_coordinator
         self.metrics = metrics_service
         self._artifact_cache: SupportBundleArtifact | None = None
@@ -158,6 +160,7 @@ class DiagnosticsExporter:
             jamulus_state=str(
                 _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
             ),
+            session_transitions=self._session_transitions(),
             engine_capabilities=engine_capabilities,
             sample_rate_hz=(
                 sample_rate
@@ -173,6 +176,21 @@ class DiagnosticsExporter:
             port_cleanup=port_cleanup,
         )
         return build_support_bundle(facts, log_excerpts=self._log_excerpts())
+
+    def _session_transitions(self) -> tuple[dict[str, str], ...]:
+        """Return only the lifecycle's explicit, allowlisted timeline."""
+
+        lifecycle = self.session_lifecycle
+        timeline = getattr(lifecycle, "public_timeline", None)
+        if not callable(timeline):
+            return ()
+        try:
+            values = timeline()
+        except Exception:  # noqa: BLE001 - diagnostics remains best effort
+            return ()
+        if not isinstance(values, tuple):
+            return ()
+        return tuple(value for value in values if isinstance(value, dict))
 
     def _metric_values(self) -> dict[str, Any]:
         try:

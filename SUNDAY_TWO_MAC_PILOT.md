@@ -1,7 +1,7 @@
 # WebJam v0.11.0 two-Mac certification worksheet
 
 **Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
-Do not pre-check boxes from automated tests or from the preserved v0.9.0 build.
+Do not pre-check boxes from automated tests or from the preserved v0.10.0 rollback build.
 
 The goal is deliberately simple:
 

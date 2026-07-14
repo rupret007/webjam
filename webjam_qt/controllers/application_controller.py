@@ -27,6 +27,7 @@ from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.session_health import SessionHealth
+from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_intelligence import build_session_pulse
 from core.settings import AppSettings, load_settings
 from core.session_transfer_runtime import (
@@ -93,6 +94,13 @@ class ApplicationController(QObject):
         # queued start signal that was produced from it.
         self._settings_generation = 0
         self.session_health = SessionHealth()
+        self.session_lifecycle = SessionLifecycle(
+            role=(
+                "host"
+                if bool(getattr(self.settings, "host_server_enabled", False))
+                else "join"
+            )
+        )
 
         self._ui_invoker = UiThreadInvoker(self)
 
@@ -730,6 +738,59 @@ class ApplicationController(QObject):
     def _jamulus_connected(self, value: bool) -> None:
         self.audio.connected = value
 
+    def _transition_lifecycle(
+        self,
+        phase: SessionLifecyclePhase,
+        reason: str = "",
+        *,
+        recovery_attempt: int | None = None,
+        role: str | None = None,
+    ) -> bool:
+        """Record one controller-owned, secret-free lifecycle fact.
+
+        Process and UI callbacks may race during shutdown.  The lifecycle
+        rejects stale terminal transitions rather than letting a late worker
+        turn a completed session back into a false live state.
+        """
+
+        lifecycle = getattr(self, "session_lifecycle", None)
+        if lifecycle is None:
+            # Focused controller tests and lightweight extensions sometimes
+            # construct a controller shell without running QObject.__init__.
+            # Give those paths the same truthful lifecycle behavior instead of
+            # making diagnostics instrumentation a new launch dependency.
+            settings = getattr(self, "settings", None)
+            lifecycle = SessionLifecycle(
+                role=(
+                    "host"
+                    if bool(getattr(settings, "host_server_enabled", False))
+                    else "join"
+                )
+            )
+            self.session_lifecycle = lifecycle
+        lifecycle.set_role(
+            role
+            if role is not None
+            else (
+                "host"
+                if bool(
+                    getattr(getattr(self, "settings", None), "host_server_enabled", False)
+                )
+                else "join"
+            )
+        )
+        accepted = lifecycle.transition(
+            phase,
+            reason=reason,
+            recovery_attempt=recovery_attempt,
+        )
+        if not accepted:
+            LOGGER.debug(
+                "Ignored stale session lifecycle transition to %s",
+                phase.value,
+            )
+        return accepted
+
     def _snapshot_participants(self) -> list:
         """Copy the participants list; retries the copy if the UI thread
         mutates the dict mid-iteration (the companion API reads from its own
@@ -767,6 +828,7 @@ class ApplicationController(QObject):
             "participant_count": str(len(self._snapshot_participants())),
             "jamulus_server": f"{self.settings.jamulus_server}:{self.settings.jamulus_port}",
             "session_health": self.session_health.to_public_dict(),
+            "session_lifecycle": self.session_lifecycle.snapshot.to_public_dict(),
         }
 
     def _attach_jamulus_callbacks(self) -> None:
@@ -926,6 +988,12 @@ class ApplicationController(QObject):
         """Open Band Check; optionally make it the unverified-start gate."""
         from core.band_check import BandCheckMode
 
+        if start_session_when_ready and not self._is_jamulus_running():
+            self._transition_lifecycle(
+                SessionLifecyclePhase.RUNNING_PREFLIGHT,
+                "Band Check is verifying this setup before audio starts",
+            )
+
         existing = getattr(self, "_ready_check_dialog", None)
         if existing is not None and existing.isVisible():
             generation = getattr(self, "_settings_generation", 0)
@@ -1044,6 +1112,11 @@ class ApplicationController(QObject):
         closed into the guided check.
         """
 
+        self._transition_lifecycle(
+            SessionLifecyclePhase.PREPARING,
+            "Preparing the session",
+        )
+
         if getattr(self, "_remote_invitation", None) is not None:
             self._begin_remote_join()
             return
@@ -1083,6 +1156,10 @@ class ApplicationController(QObject):
                 if remote_band_check_required
                 else "WebJam is confirming whether your verified audio setup changed."
             ),
+        )
+        self._transition_lifecycle(
+            SessionLifecyclePhase.RUNNING_PREFLIGHT,
+            "Checking saved Band Check evidence",
         )
 
         def worker() -> None:
@@ -1400,6 +1477,21 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
+        if not self._is_jamulus_running():
+            self._transition_lifecycle(
+                (
+                    SessionLifecyclePhase.STARTING_HOST
+                    if bool(
+                        getattr(
+                            getattr(self, "settings", None),
+                            "host_server_enabled",
+                            False,
+                        )
+                    )
+                    else SessionLifecyclePhase.JOINING
+                ),
+                "Starting band audio",
+            )
         if not self._is_jamulus_running():
             owner = getattr(self, "_remote_invite_owner", None)
             try:
@@ -1846,6 +1938,10 @@ class ApplicationController(QObject):
         invitation = getattr(self, "_remote_invitation", None)
         if invitation is None or getattr(self, "_shutdown", False):
             return
+        self._transition_lifecycle(
+            SessionLifecyclePhase.PREPARING,
+            "Preparing the private music path",
+        )
         runtime = getattr(self, "_remote_session", None)
         if runtime is not None and runtime.snapshot.phase in {
             RemoteSessionPhase.PREPARING,
@@ -1883,6 +1979,10 @@ class ApplicationController(QObject):
 
         if getattr(self, "_remote_host_preparing", False):
             return
+        self._transition_lifecycle(
+            SessionLifecyclePhase.PREPARING,
+            "Preparing the private host path",
+        )
         self._remote_host_preparing = True
         self.window.session_hud.set_state(
             "Preparing your jam",
@@ -2018,6 +2118,10 @@ class ApplicationController(QObject):
         self.start_session_or_band_check()
 
     def _show_remote_session_failure(self) -> None:
+        self._transition_lifecycle(
+            SessionLifecyclePhase.FAILED_RECOVERABLE,
+            "The private music path could not open",
+        )
         self.window.participant_grid.set_session_state(
             SessionUiState.session_unavailable()
         )
@@ -2061,6 +2165,10 @@ class ApplicationController(QObject):
         if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
             return
         self.audio.connection_timed_out = True
+        self._transition_lifecycle(
+            SessionLifecyclePhase.FAILED_RECOVERABLE,
+            "The music engine did not establish a verified connection in time",
+        )
         self.window.participant_grid.set_session_state(self._connection_failure_state())
         self.window.session_hud.set_state(
             "Something needs attention",
@@ -2078,17 +2186,39 @@ class ApplicationController(QObject):
             return SessionUiState.host_start_failed()
         return SessionUiState.session_unavailable()
 
-    def _current_invite_url(self) -> str:
-        """Return one private Jamulus + isolated-recording invitation."""
+    def _host_share_readiness(self):
+        """Return observable pre-share truth for the supported LAN topology."""
+
+        from core.host_share_readiness import evaluate_host_share_readiness
+        from core.network_invite import local_band_address
+
+        server_alive = bool(self.bridge.hosted_server_alive())
+        port_bound: bool | None = None
+        if server_alive:
+            probe = getattr(self.bridge, "_port_free", None)
+            if callable(probe):
+                try:
+                    free = probe(int(self.settings.jamulus_port), udp=True)
+                    if isinstance(free, bool):
+                        port_bound = not free
+                except Exception:  # noqa: BLE001 - fail closed before sharing
+                    port_bound = None
+        return evaluate_host_share_readiness(
+            server_alive=server_alive,
+            audio_port_bound=port_bound,
+            private_lan_address=local_band_address() if server_alive else "",
+        )
+
+    def _current_invite_url(self, *, readiness=None) -> str:
+        """Return one invite only after same-LAN pre-share facts are true."""
         if not bool(getattr(self.settings, "host_server_enabled", False)):
             return ""
-        if not self.bridge.hosted_server_alive():
+        readiness = readiness or self._host_share_readiness()
+        if not readiness.shareable:
             return ""
-        from core.network_invite import create_invite_link, local_band_address
+        from core.network_invite import create_invite_link
 
-        address = local_band_address()
-        if not address:
-            return ""
+        address = readiness.address
         try:
             if self._ensure_host_peer(address):
                 return self.host_peer.invite_link(
@@ -2119,8 +2249,15 @@ class ApplicationController(QObject):
         remote_invite_available = bool(
             hosting and remote_owner is not None and remote_owner.invitation_available
         )
+        share_readiness = (
+            self._host_share_readiness()
+            if hosting and remote_owner is None
+            else None
+        )
         invite_url = (
-            self._current_invite_url() if hosting and remote_owner is None else ""
+            self._current_invite_url(readiness=share_readiness)
+            if share_readiness is not None
+            else ""
         )
         invite_available = remote_invite_available or bool(invite_url)
         self.window.session_strip.set_invite_available(invite_available)
@@ -2194,6 +2331,10 @@ class ApplicationController(QObject):
                 return
             server_ready = self.bridge.hosted_server_alive()
             if not server_ready:
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.WAITING_FOR_REACHABILITY,
+                    "Waiting for the hosted server to become available",
+                )
                 stopped = self.bridge.jamulus_state in {
                     "Stopped",
                     "Launch failed",
@@ -2220,6 +2361,19 @@ class ApplicationController(QObject):
                         action_visible=False,
                     )
                     return
+                if share_readiness is not None:
+                    self._transition_lifecycle(
+                        SessionLifecyclePhase.WAITING_FOR_REACHABILITY,
+                        share_readiness.detail,
+                    )
+                    self.window.session_hud.set_state(
+                        share_readiness.title,
+                        share_readiness.detail,
+                        action_text=share_readiness.action,
+                        action_visible=(share_readiness.action != "Wait for WebJam"),
+                        action_kind="retry",
+                    )
+                    return
                 self.window.session_hud.set_state(
                     "Something needs attention",
                     "Connect this Mac to Wi-Fi, then try again.",
@@ -2228,6 +2382,21 @@ class ApplicationController(QObject):
                     action_kind="retry",
                 )
                 return
+            bandmates = sum(
+                1 for person in participants if not self._is_local_participant(person)
+            )
+            self._transition_lifecycle(
+                (
+                    SessionLifecyclePhase.CONNECTED
+                    if bandmates and connected
+                    else SessionLifecyclePhase.READY_TO_SHARE
+                ),
+                (
+                    "A bandmate is present in the live roster"
+                    if bandmates and connected
+                    else "A private same-LAN invitation is ready to share"
+                ),
+            )
             if self._host_peer_warning:
                 self.window.session_hud.set_state(
                     "Automatic Local Originals are off",
@@ -2237,9 +2406,6 @@ class ApplicationController(QObject):
                     ready=connected,
                 )
                 return
-            bandmates = sum(
-                1 for person in participants if not self._is_local_participant(person)
-            )
             if bandmates and not connected:
                 self.window.session_hud.set_state(
                     "Connecting your audio…",
@@ -2662,6 +2828,11 @@ class ApplicationController(QObject):
             self.window.participant_grid.set_session_state(
                 SessionUiState.reconnecting(attempts)
             )
+            self._transition_lifecycle(
+                SessionLifecyclePhase.RECONNECTING,
+                "The music engine exited and WebJam is retrying",
+                recovery_attempt=attempts,
+            )
             self._connection_timer.start()
             self._reconnect_banner_shown = True
         elif (
@@ -2689,6 +2860,11 @@ class ApplicationController(QObject):
             self.window.session_strip.set_audio_state("Start Session", enabled=True)
             self.window.participant_grid.set_session_state(
                 SessionUiState.reconnect_failed()
+            )
+            self._transition_lifecycle(
+                SessionLifecyclePhase.FAILED_RECOVERABLE,
+                "Automatic reconnect attempts were exhausted",
+                recovery_attempt=self.bridge.jamulus_reconnect_attempts,
             )
             self.window.flash_message(
                 "Couldn't reconnect after 5 tries — press Start Session to try again.",
@@ -2720,6 +2896,10 @@ class ApplicationController(QObject):
                 self._push_participants_to_grid()
                 self.window.participant_grid.set_session_state(
                     SessionUiState.reconnecting()
+                )
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.DEGRADED,
+                    "The music engine stopped responding",
                 )
                 self.window.session_hud.set_state(
                     "Connection interrupted",
@@ -2830,6 +3010,7 @@ class ApplicationController(QObject):
             window_version=__version__,
             build_id=build_id(),
             session_health=self.session_health,
+            session_lifecycle=self.session_lifecycle,
             recording_coordinator=self.recording,
             metrics_service=self.metrics,
         )

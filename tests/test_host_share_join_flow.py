@@ -297,7 +297,10 @@ def test_peer_bind_failure_keeps_jamulus_invite_with_persistent_plain_warning(
         initial_title="Fallback Truth",
     )
     controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller.bridge._port_free = MagicMock(return_value=False)
     controller._jamulus_connected = True
     controller.host_peer.start = MagicMock(
         side_effect=SessionTransferError("address already in use")
@@ -321,6 +324,39 @@ def test_peer_bind_failure_keeps_jamulus_invite_with_persistent_plain_warning(
     assert not controller.window.session_strip._invite_button.isHidden()
     assert controller.host_peer.start.call_count >= 1
 
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_host_never_serializes_lan_invite_until_expected_udp_port_is_bound(
+    qapp, tmp_path
+):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Listener Gate",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    # `_port_free=True` means no listener owns the expected Jamulus UDP port.
+    controller.bridge._port_free = MagicMock(return_value=True)
+
+    with patch("core.network_invite.local_band_address", return_value="192.168.1.42"):
+        assert controller._current_invite_url() == ""
+        controller._update_session_hud()
+
+    assert controller.window.session_hud._status.text() == "Getting your jam ready"
+    assert controller.window.session_strip._invite_button.isHidden()
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 

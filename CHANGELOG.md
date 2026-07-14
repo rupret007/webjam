@@ -6,7 +6,18 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [Unreleased]
 
-No changes yet.
+### Last-mile session trust
+
+- Added one privacy-safe authoritative session lifecycle record for Host/Join,
+  Band Check, launch, roster-confirmed connection, recovery, recording
+  finalization, and shutdown. The support bundle now includes only its
+  allowlisted/redacted transition timeline.
+- Added fail-closed private-LAN pre-share readiness. A legacy v1/v2 host does
+  not enable **Copy Invite** until WebJam observes its authenticated local
+  server, expected UDP listener, and a private LAN address. This is not a
+  public-Internet, NAT, or remote-home reachability claim.
+- Recorded the current v1 last-mile acceptance boundary and manual gates in
+  `docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
 
 ---
 
