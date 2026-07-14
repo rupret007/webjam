@@ -1,16 +1,19 @@
-# WebJam v0.12.0 certification procedure
+# WebJam v0.13.0 test-night certification procedure
 
 **Last updated:** 2026-07-14
-**Current target:** private Apple Silicon two-Mac v0.12.0 candidate
+**Current target:** private Apple Silicon v0.13.0 test-night candidate.
+Physical two-Mac audio, interruption, and Logic results are **NOT RUN** until
+they are recorded in the worksheet.
 
 The current-source product path is:
 
 > Host choice → Confirm sound → Band Check → Invite → Join choice → Confirm sound → Band Check → Play → Record → Studio → Export → End
 
-The exact v0.12.0 package used tonight follows this same flow. It includes the
-sound-confirmation screen, CoreAudio route preflight, recording-storage guard,
-and private in-progress recording-evidence journal. The v0.11.0 ZIP is a
-preserved rollback artifact only.
+The current source adds durable local-capture checkpoints, truthful recovery
+projects, and conservative Logic-export selection checks to the confirmation,
+CoreAudio-route, storage-preflight, and private-journal path. Earlier packages
+are rollback history only; never reuse their build ID, filename, or checksum
+for this candidate.
 
 This procedure separates deterministic source evidence, real Jamulus/JACK
 evidence, packaged macOS evidence, and physical musician evidence. Passing one
@@ -36,14 +39,17 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q
 
 Record exact counts and failures. An interim focused or full run before all
 concurrent edits landed is useful slice evidence, not the final source gate.
-The final v0.12.0 source gate recorded **1,687 passed, 18 skipped, one known
+The final v0.13.0 source gate recorded **1,706 passed, 18 skipped, one known
 Starlette/httpx warning, and 6 subtests**, with no failures or errors.
 The final run must include:
 
-- strict v1/v2 invitation parsing and credential redaction;
+- strict v1/v2/v3 invitation parsing and credential redaction;
+- v3 retry truth: reuse an invitation only when the sidecar failed before
+  guest enrollment began; otherwise discard it and require a fresh invitation;
 - Band Check input/output/scratch/host/Studio/support outcomes;
 - stable participant identity and authenticated presence generations;
-- local capture absolute-frame gaps, writer timeout, recovery, and shutdown;
+- local capture absolute-frame gaps, periodic durable checkpoints, writer
+  timeout, recovery-project reconciliation, and shutdown;
 - recording-folder write probes, conservative free-storage reserves, visible
   nonblocking warnings, and the guarantee that an unsafe Record attempt arms
   neither recorder;
@@ -51,13 +57,14 @@ The final run must include:
 - schema-v2 missing/partial/damaged/segment/rate/project truth;
 - Studio seek/waveform/mixer/output/reopen behavior;
 - offset/drift/rate/gap alignment and non-destructive manual restoration;
-- atomic Logic exports, independent analysis, source checks, and checksums;
+- atomic Logic exports, independent analysis, source checks, checksums, and
+  blocks for selected explicitly silent or unaligned local-original tracks;
 - support preview/saved-ZIP parity, separate sanitized clipboard-summary
   coverage, and adversarial redaction;
 - owned-process/port cleanup and fresh-host restart;
 - the three-part black/white/burnt-orange brand assets.
 
-### Recording durability coverage included in v0.12.0
+### Recording durability coverage included in v0.13.0
 
 Run the focused recording checks before packaging:
 
@@ -74,13 +81,13 @@ Run the focused recording checks before packaging:
   tests/test_ready_check_ui.py
 ```
 
-This group covers the writable-folder/storage reserve, private
-0600 in-progress evidence journal, start/stop/lifecycle checkpoint integration,
-private-name/invite/address/credential redaction, hidden-work-directory take
-discovery exclusion, final-manifest retirement, and Logic-export propagation.
-The v0.12.0 package contains this code. Package inspection confirms presence;
-the physical worksheet remains the only place to credit actual recording,
-interruption recovery, audibility, and Logic import.
+This group covers the writable-folder/storage reserve, private 0600
+in-progress evidence journal, start/stop/lifecycle checkpoint integration,
+periodic writer flush/fsync evidence, private-name/invite/address/credential
+redaction, hidden-work-directory discovery exclusion, recovery-project
+reconciliation, final-manifest retirement, and Logic-export propagation.
+Source tests establish this behavior; the physical worksheet remains the only
+place to credit actual recording, crash recovery, audibility, and Logic import.
 
 ## 2. Real Jamulus/JACK boundary gate
 
@@ -144,26 +151,21 @@ client/server bundles using the existing packaging workflow:
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Do not overwrite the preserved v0.10.0 or v0.11.0 rollback ZIPs. These values
-identify the active private v0.12.0 candidate:
+Do not overwrite an earlier rollback ZIP or copy its identity into a new test.
+After the v0.13.0 archive is built, fresh-extract it and record its exact build
+commit, filename, SHA-256, architecture, install location, and package-gate
+result in the release record and
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md). Until then, the physical
+worksheet remains **NOT RUN**.
 
-```text
-Source/build commit:    796e9a4ddebe79f430b0ded8cf8034bc27836dd0
-Artifact filename:      WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip
-Artifact absolute path: /Users/jeffstory/Documents/WebJam 2/WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip
-SHA-256:                01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c
-Architecture:           arm64 (Apple Silicon)
-Installed test app:      /Applications/WebJam.app
-Rollback artifacts:      preserved v0.11.0 and v0.10.0 test-night packages
-```
-
-The bundled official Jamulus 3.12.2 DMG checksum was verified before staging
-the nested client and server apps. The exact v0.12.0 archive was fresh-extracted
-and verified; it is the only candidate this procedure credits.
+Verify the bundled official Jamulus 3.12.2 DMG checksum before staging the
+nested client and server apps. Only the exact fresh-extracted archive named in
+that completed release record may receive package or musician credit.
 
 Inspect that exact fresh extraction:
 
-- `Info.plist` reports `0.12.0` and registers the `webjam` URL scheme.
+- `Info.plist` reports the recorded v0.13.0 version and registers the `webjam`
+  URL scheme.
 - The bundle contains Band Check, private session transfer, schema-v2 project,
   Studio, export, support preview, brand assets, licenses, Inter, the
   confirmation/route/storage/journal path, and official Jamulus/JamulusServer
@@ -173,9 +175,9 @@ Inspect that exact fresh extraction:
 - The signed arm64 `webjam-fabric` matches its canonical manifest under
   `Contents/Resources`, embeds the exact source commit, and passes bounded
   ready/hello/shutdown IPC through the production validator.
-- The package gate passed strict/deep signature verification, nested-app
+- The package gate must pass strict/deep signature verification, nested-app
   inspection, sidecar build/hash/IPC validation, and two isolated six-second
-  offscreen launch/TERM cycles.
+  offscreen launch/TERM cycles before this archive receives package credit.
 - Host service ports, live recording, End/quit cleanup with hardware, and a
   fresh host after a real musician run remain physical worksheet checks.
 
@@ -185,12 +187,11 @@ missing/invalid sealed resource or “damaged app” result fails packaging.
 
 ## 4. Candidate-flow smoke
 
-Use an isolated preferences/home profile and the exact extracted v0.12.0 app.
+Use an isolated preferences/home profile and the exact extracted v0.13.0 app.
 
-The fresh package completed two isolated six-second offscreen launch/TERM
-cycles. That verifies startup and bounded cleanup only; it is not a live-audio,
-route, roster, recording, reconnect, or Logic result. Attach the test
-interfaces before completing the musician steps below.
+An isolated launch/TERM smoke verifies startup and bounded cleanup only; it is
+not a live-audio, route, roster, recording, reconnect, crash-recovery, or Logic
+result. Attach the test interfaces before completing the musician steps below.
 
 1. Launch shows the original three-part WebJam mark and the restrained black,
    white, neutral, and burnt-orange system. No purple or teal remains. After
@@ -200,10 +201,14 @@ interfaces before completing the musician steps below.
 2. Band Check performs explicit input/output/scratch actions, separates its
    local PortAudio evidence from Jamulus send/receive observations, and reports
    one typed outcome. Blank Webex remains optional.
-3. Host reaches ready state before exposing Copy Invite. A v2 link is treated
-   as a private enrollment credential and never appears in support output. A
-   peer-start failure visibly falls back to v1 with guest local-original capture
-   and delivery off while preserving join/play and host-side server recording.
+3. Host reaches ready state before exposing Copy Invite. A same-LAN v2 link is
+   treated as a private enrollment credential and never appears in support
+   output. A peer-start failure visibly falls back to v1 with guest
+   local-original capture and delivery off while preserving join/play and
+   host-side server recording. The separate lab-only v3 path is never a public
+   remote-hosting claim: it offers **Try Again** only when the sidecar failed
+   before guest enrollment began; once enrollment may have begun it discards the
+   link and requires a fresh invitation, never a legacy fallback.
 4. A valid cold-start link fills and accepts the connection, then proceeds
    through confirmation, Band Check, and **Start Session** before joining. A
    valid already-running deep link is accepted by the same parser and switches only
@@ -214,14 +219,20 @@ interfaces before completing the musician steps below.
    changes. No duplicate musician appears.
 6. With local originals explicitly enabled, host capture starts during safe
    preflight before server START; guest capture starts after authenticated host
-   recording state. Peer outage does not stop an active local writer, and v2
-   verified transfer resumes without deleting the guest original.
+   recording state. The local writer periodically flushes and fsyncs durable
+   checkpoint evidence. A peer outage does not stop an active local writer, and
+   v2 verified transfer resumes without deleting the guest original. After an
+   abnormal stop, recovered local media must surface as a **NEEDS ATTENTION**
+   project for manual review; it is never silently marked complete or claimed
+   transferred.
 7. Studio shows missing/partial/damaged/transferring truth, plays mixed-rate
    multi-segment projects with gaps, seeks while active, and releases output on
    close.
-8. Logic export blocks uncertain required media and otherwise produces the
-   schema-v2 package described in
-   [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+8. Logic export blocks uncertain required media, a selected explicitly silent
+   performance track, and a selected local original without verified timeline
+   alignment. Studio may non-destructively leave a reviewed track out of the
+   next export; it does not alter the take. Keep the Jamulus server track or
+   align and verify a local original before treating an export as timing-ready.
 9. Support preview and saved archive match and exclude recordings, notes,
    transcripts, Webex content, invitations, secrets, meeting links, and home
    paths.
@@ -243,19 +254,21 @@ a trusted LAN; do not test it by exposing a router port.
 ## 5. Physical two-Mac and Logic gate
 
 Complete [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) with the exact
-v0.12.0 ZIP and record:
+recorded v0.13.0 archive and record:
 
 - both Mac/interface/driver routes and 48-kHz configuration;
 - musician-confirmed two-way audibility, not just meters;
 - host and opted-in guest originals through an actual Wi-Fi interruption when
-  the v2 peer plane is active;
+  the v2 peer plane is active, plus any recovery project as **NEEDS ATTENTION**
+  until a musician manually reviews it;
 - stable identity, resumed verified delivery, and truthful timeline gaps;
 - Studio playback/seek/mixer/output/reopen evidence;
 - exact exported inventory/checksums and actual Logic Pro import at `0:00`;
 - private support bundle and zero-owned-process cleanup.
 
-At the time this procedure was updated, two-Mac audibility and Logic import are
-**NOT RUN**. Keep that state until the worksheet contains real observations.
+At the time this procedure was updated, two-Mac audibility, physical
+interruption recovery, and Logic import are **NOT RUN**. Keep that state until
+the worksheet contains real observations.
 
 ## 6. Pass rule
 
@@ -266,7 +279,7 @@ the private test only after both musicians and Logic Pro pass the worksheet.
 Preserve failed takes, originals, exports, reports, and the support bundle
 before changing a device, network, or build. GitHub Actions run `29269188463`
 remains the 3,600-second Jamulus/JACK longevity evidence for the v1/v2 engine
-baseline; it does not certify v0.12 remote v3, CoreAudio, two Macs, or Logic.
+baseline; it does not certify v0.13 lab-only v3, CoreAudio, two Macs, or Logic.
 
 The retired 2024 harness remains in
 [`legacy/TEST_PROCEDURE_2024.md`](legacy/TEST_PROCEDURE_2024.md) for history.

@@ -6,21 +6,22 @@ WebJam is designed around four short moves:
 
 Musicians do not configure servers, ports, virtual audio devices, or routing
 modes. WebJam starts the bundled music engine and keeps technical details out of
-the rehearsal. In the v0.12.0 candidate, the two Settings choices—**Band
+the rehearsal. In the v0.13.0 candidate, the two Settings choices—**Band
 input** and **Band output & review**—are the Jamulus route WebJam stages for the
 next session. WebJam still asks musicians to confirm what they hear.
 
-The private v0.12.0 candidate is deliberately spare: a black and white session with burnt
+The private v0.13.0 candidate is deliberately spare: a black and white session with burnt
 orange reserved for the next important action. Host and Join are the only
 choices at launch.
 
 > **Tonight's candidate:**
-> `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, built from `796e9a4`, is the
+> `WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, built from `4d09810`, is the
 > exact Apple-Silicon package for this run. Its SHA-256 is
-> `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`.
+> `6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`.
 > It includes the sound-confirmation screen, CoreAudio route preflight,
-> recording-storage guard, and private in-progress recording-evidence journal.
-> The v0.11.0 ZIP is retained only as a rollback artifact.
+> recording-storage guard, durable local-capture recovery, and conservative
+> Logic-export safety checks. The v0.12.0 ZIP is retained only as a rollback
+> artifact.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed
@@ -114,20 +115,30 @@ when space is low; Record recalculates against the actual roster. If you need a
 different Takes folder, choose it before starting the jam; a running session
 does not allow the folder to change. This package behavior still needs the
 physical two-Mac recording run; do not infer it from a meter or an automated
-test alone.
+test alone. While recording, local-input writers periodically flush and fsync
+their WAVs before advancing a recovery checkpoint. That checkpoint carries
+opaque IDs and a durable-frame boundary only; it never turns an interrupted
+capture into a completed take.
 
 In Studio, **Recording Setup** can optionally keep this Mac's first two
 interface inputs as separate PCM24/48-kHz originals. The host can opt in; a
 guest can do so only with an active v2 private invite. Those guest originals
-remain on the guest Mac through an outage and transfer a verified copy to the
-host when the private-LAN connection returns. A v1 guest has no
-WebJam-orchestrated local-original capture or delivery.
+remain on the guest Mac through an outage and a normal transfer resumes a
+verified copy to the host when the private-LAN connection returns. Recovered
+guest media stays on that guest Mac for manual review; WebJam does not
+automatically upload or reconcile recovery media with the host take. A v1
+guest has no WebJam-orchestrated local-original capture or delivery.
 
-After a take verifies, select it and press **Export for Logic**. WebJam writes
-new numbered PCM24 stems that all start at `0:00` and have the same length,
-plus server/Studio references, reports, analysis, checksums, and import
-instructions. Drag the numbered stems into Logic together. The original
-recorder files remain unchanged. See
+After a take verifies, select it and press **Export for Logic**. The Studio
+checkboxes choose tracks only for that next export; the original recorder files
+remain unchanged. WebJam writes new numbered PCM24 stems that all start at
+`0:00` and have the same length, plus server/Studio references, reports,
+analysis, checksums, and import instructions. An explicitly silent selected
+performance track pauses export until you review it or deliberately deselect
+it. An unaligned or unverified selected guest/local original also pauses a
+timing-ready export: keep the Jamulus server track, or align and verify the
+original first. Studio states those actions without exposing local paths. Drag
+the numbered stems into Logic together. See
 [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
 
 The host controls the shared take. A joining musician's network audio becomes a
@@ -149,7 +160,7 @@ Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
 
 Choose **Band input** and **Band output & review** in **Settings** before a
-session. The v0.12.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
+session. The v0.13.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
 it to stage Jamulus; the review choice follows the selected output. A moving
 local meter still is not proof that your bandmate hears you.
 
@@ -166,7 +177,9 @@ disconnecting; if the host is unavailable, the original and resumable queue
 remain on that guest Mac. Closing WebJam uses the same role-aware cleanup.
 If guest originals are enabled, wait until Studio reports them verified and
 arrived before **End Session**. Otherwise, preserve the originals on the guest
-Mac for recovery.
+Mac for recovery. On the host, recovered local audio is reopened as a visible
+Studio project marked **Needs Attention**, not as a completed take or a
+timing-ready Logic export.
 
 ## If joining fails
 

@@ -4,7 +4,8 @@
 **Status:** Historical memo. Its market comparison and protocol history remain
 useful, but current status lives in `README.md` and
 `docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
-The memo predates the current v0.12.0 Band Check/Host/Join experience,
+The memo predates the current v0.13.0 test-night package and v0.12.0
+historical Band Check/Host/Join baseline,
 automatic same-Mac hosting, responsive black/white/burnt-orange interface,
 guest originals, and integrated Studio.
 Do not treat the old release recommendations below as current work.
@@ -67,7 +68,9 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 - **In-session chat** via `jamulusclient/sendChatText` + `chatTextReceived` → put it in the session canvas (low effort, high "we're together" value).
 - ✅ **Server-side recording and Studio** via `jamulusserver/startRecording` /
   `getRecorderStatus`, with verified per-musician takes, non-destructive stereo
-  review, and an aligned 24-bit Logic export.
+  review, and an aligned 24-bit Logic export. Current source also blocks an
+  explicitly silent selected track or an unaligned guest/local original rather
+  than creating a misleading export.
 
 **P2 — lower the setup barrier (the real adoption blocker)**
 - ✅ **In-app macOS band-server hosting** now verifies and supervises the
@@ -86,8 +89,9 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: use the distinct v0.12.0 candidate privately, complete
-the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`, and publish only after the
-exact artifact passes physical audio, recording, reconnect, role-aware cleanup,
-and Logic import gates. The v1/v2 engine baseline has native one-hour longevity
-evidence; it does not certify the v0.12.0 package or remote v3.
+Current recommendation: treat the v0.12.0 candidate as preserved historical
+package evidence and use the separately packaged v0.13.0 candidate for the
+two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`. Do not publish
+until that exact artifact passes physical audio, recording/recovery, reconnect,
+role-aware cleanup, and Logic import gates. The v1/v2 engine baseline has native
+one-hour longevity evidence; it does not certify a package or remote v3.

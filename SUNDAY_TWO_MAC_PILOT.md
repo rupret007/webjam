@@ -1,7 +1,9 @@
-# WebJam v0.12.0 two-Mac certification worksheet
+# WebJam v0.13.0 two-Mac certification worksheet
 
 **Status: NOT RUN.** Complete this worksheet with the exact fresh candidate.
-Do not pre-check boxes from automated tests or from the preserved v0.10.0 rollback build.
+Do not pre-check boxes from automated tests or an earlier rollback build. This
+worksheet is the only place to turn physical two-Mac audio, interruption, and
+Logic observations into a pass.
 
 The goal is deliberately simple:
 
@@ -9,13 +11,14 @@ The goal is deliberately simple:
 
 ## Evidence header
 
-Fill this in before opening either app. Do not invent or copy an old hash.
+Fill this in before opening either app. The source target is v0.13.0; do not
+invent, copy, or reuse an earlier archive identity.
 
-- Candidate version: `0.12.0` (Apple Silicon / arm64)
-- Artifact filename: `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`
-- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`
-- SHA-256: `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`
-- Source/build commit: `796e9a4ddebe79f430b0ded8cf8034bc27836dd0`
+- Installed app version: ______________________________________________
+- Artifact filename: ___________________________________________________
+- Artifact absolute path: ______________________________________________
+- SHA-256: _____________________________________________________________
+- Source/build commit: _________________________________________________
 - Test date/time/timezone: ___________________________________________
 - Host Mac model / macOS: ___________________________________________
 - Bandmate Mac model / macOS: _______________________________________
@@ -28,12 +31,13 @@ Fill this in before opening either app. Do not invent or copy an old hash.
 Both Macs must use the same artifact hash. If either filename/hash differs,
 stop and replace it before testing.
 
-> **Artifact boundary:** This exact ZIP includes the confirmation screen,
-> CoreAudio route preflight, recording-storage guard, and private in-progress
-> evidence journal. Automated source/package checks establish that they are in
-> this artifact; this worksheet is where the actual hardware, musician,
-> interruption, and Logic outcomes are recorded. The v0.11.0 ZIP is rollback
-> history, not the active test target.
+> **Artifact boundary:** This exact ZIP must include the confirmation screen,
+> CoreAudio route preflight, recording-storage guard, private in-progress
+> evidence journal, periodic durable local-capture checkpoints, recovery
+> reconciliation, and conservative Logic-export checks. Automated source/package
+> checks establish only that these features are present; this worksheet is where
+> the actual hardware, musician, interruption, crash-recovery, and Logic
+> outcomes are recorded.
 
 ## Know what this test proves
 
@@ -56,6 +60,12 @@ stop and replace it before testing.
   screenshots/support notes. It is reusable for that host-peer session, not a
   one-use token; anyone holding it on the LAN can enroll. Ending/restarting the
   host peer session rotates the credential.
+- The separate v3 path is lab-only and loopback-profiled; it is not an Internet
+  or public-hosting feature for this pilot. If a v3 trial is explicitly added,
+  the same invitation may be retried only when WebJam says the sidecar failed
+  before enrollment began. Any later or uncertain failure must show **Fresh
+  invitation required**; ask the host for a new link and do not fall back to a
+  legacy/local connection.
 - Use wired headphones, not speakers. Set both interfaces to 48 kHz where the
   hardware control panel allows it.
 
@@ -63,7 +73,7 @@ stop and replace it before testing.
 
 - [ ] Remove or rename every older WebJam copy on both Macs.
 - [ ] Extract the exact candidate and put **WebJam.app** in `/Applications`.
-- [ ] Verify the app reports **v0.12.0** on both Macs.
+- [ ] Verify both Macs report the installed version recorded above.
 - [ ] First launch succeeds using the private-build Gatekeeper instructions.
   A “damaged” or “incomplete” app warning is a packaging failure.
 - [ ] The app uses black, white, neutral gray, and burnt orange. There is no
@@ -123,6 +133,12 @@ Host Band Check result/details: _________________________________________
 - [ ] If the host shows **Automatic Local Originals are off**, record that the
   v1 fallback can join/play and receives a host-side server track, but WebJam
   guest local-original capture and delivery are unavailable.
+- [ ] If an explicitly approved lab-only v3 invitation is tested, record the
+  exact state: **Try Again** is acceptable only for a sidecar failure before
+  guest enrollment begins. A later/uncertain failure must say **Fresh invitation
+  required** and use a new host link; it must not silently join a legacy or
+  localhost session. This v3 observation is optional and does not substitute
+  for the same-LAN two-Mac test.
 - [ ] On the bandmate Mac, open the link from a cold start. Confirm WebJam fills
   and accepts the connection before the readiness/start step; opening the link
   alone does not count as joined.
@@ -201,6 +217,11 @@ section.
   host and wait for validation and transfer to settle.
 - [ ] If transfer is interrupted, retry/resume without deleting the bandmate's
   original. Repeating the action does not create duplicate attached media.
+- [ ] If either app unexpectedly stops, relaunch before attempting another take.
+  Preserve the recovered local folder/project, which must remain **NEEDS
+  ATTENTION** until manually reviewed. Do not call it a completed take, an
+  aligned source, or a delivered guest original merely because media files are
+  present.
 
 - Interruption start/end time: _________________________________________
 - Reconnect time/message: ______________________________________________
@@ -220,6 +241,10 @@ section.
 - [ ] Playback reaches both headphone channels through the chosen output.
 - [ ] Closing/leaving Studio stops playback and releases that output.
 - [ ] Reopen the take and repeat a seek/play check.
+- [ ] If crash recovery occurred, the recovered project remains visibly **NEEDS
+  ATTENTION** with its checkpoint/gap evidence available for manual review.
+  It is a recovery result, not proof of complete capture or automatic guest
+  transfer.
 
 Track inventory (one row per displayed track):
 
@@ -234,8 +259,15 @@ Take ID/folder: __________________________________________________________
 
 ## 8. Export and Logic Pro
 
-- [ ] Export the completed take. An uncertain/missing required source blocks
-  a false Logic-ready package and explains what must be fixed.
+- [ ] Export the completed take. An uncertain/missing required source, selected
+  explicitly silent performance track, or selected local original without
+  verified timeline alignment blocks a false Logic-ready package and explains
+  what must be fixed.
+- [ ] If Studio offers **Logic export** track checkboxes, use them only after
+  reviewing the affected source. Deselecting a track changes only this export,
+  never the recorded take. Keep the Jamulus server track or align and verify a
+  local original before calling the export timing-ready; disclose any expected
+  track intentionally left out.
 - [ ] A successful package contains numbered PCM24 stems of equal project
   length, `WebJam Server Reference.wav`, `WebJam Studio Reference.wav`,
   `MARKERS.csv`, alignment/recording reports, source manifest, independent
@@ -271,6 +303,8 @@ If Logic was not actually opened, leave the result **NOT RUN**.
 - [ ] When the guest chooses **Leave Jam**, confirm WebJam finalizes any active
   opted-in guest original, persists its resumable queue, and attempts a final
   upload. If the host is unreachable, the media and queue remain on the guest.
+  Crash-recovered guest media remains local for manual review; do not claim an
+  automatic transfer or a completed shared take.
 - [ ] End the host session only after recording/transfer is settled.
 - [ ] Leave/end messages remain visible until real cleanup finishes.
 - [ ] Quit both apps. No WebJam-owned Jamulus client, JamulusServer, recorder,

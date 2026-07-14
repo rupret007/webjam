@@ -1,11 +1,13 @@
 # WebJam UX acceptance checklist
 
-Use this checklist for the v0.12.0 Qt/package candidate. It includes the
-sound-confirmation screen, CoreAudio route preflight, and recording-storage
-guard; the exact hardware and musician outcomes remain in the test-night
-worksheet. The v0.11.0 package is rollback history. Setup Wizard, Ready Check, raw
-endpoints, **Start Audio**, **Host & Start Audio**, and a visible Jamulus window
-are legacy paths, not current acceptance criteria.
+Use this checklist for the v0.13.0 Qt/package candidate. It includes the
+sound-confirmation screen, CoreAudio route preflight, recording-storage guard,
+durable local-capture checkpoints, recovery truth, and conservative Logic
+export checks. The exact hardware and musician outcomes remain **NOT RUN** in
+the test-night worksheet until people record them. Earlier packages are rollback
+history. Setup Wizard, Ready Check, raw endpoints, **Start Audio**, **Host &
+Start Audio**, and a visible Jamulus window are legacy paths, not current
+acceptance criteria.
 
 ## Launch: understandable in five seconds
 
@@ -45,7 +47,7 @@ are legacy paths, not current acceptance criteria.
 ## Host and invitation
 
 - [ ] **Host a Jam** opens one concise name and band-sound confirmation in the
-      v0.12.0 macOS candidate. A new or changed setup then opens Band Check;
+      v0.13.0 macOS candidate. A new or changed setup then opens Band Check;
       **Start Session** starts the bundled server and client in the background.
 - [ ] **Starting your jam…** is real lifecycle state, not a fake delay.
 - [ ] Copy Invite stays unavailable until the hosted service is alive and a
@@ -61,13 +63,19 @@ are legacy paths, not current acceptance criteria.
       startup fails, **Automatic Local Originals are off** truthfully labels a
       v1 fallback that still joins/plays and receives a server track but has no
       WebJam-orchestrated guest local capture or delivery.
+- [ ] The separate v3 private path remains a lab-only loopback-profile feature,
+      not public or Internet hosting. Its one-use enrollment link is offered a
+      **Try Again** action only when the sidecar failed before enrollment began.
+      A later or uncertain failure clears that link, shows **Fresh invitation
+      required**, and asks for a new link; it never falls back to a legacy or
+      localhost connection.
 - [ ] The host is represented as **You** from authoritative session data; no
       preview or phantom participant is rendered as connected.
 
 ## Join and connection truth
 
 - [ ] Cold-start link activation and paste-then-Join use the same strict
-      invitation parser, fill/accept the same connection, and—in the v0.12.0
+      invitation parser, fill/accept the same connection, and—in the v0.13.0
       candidate—show the same concise sound confirmation before Band
       Check and **Start Session**. An already-running deep link uses the same
       parser but honors the current-session/active-take guard before switching.
@@ -78,8 +86,10 @@ are legacy paths, not current acceptance criteria.
       Real local session evidence is required before the UI reports connected.
 - [ ] Connecting, connected, local-input-seen, bandmate-connected, and
       ready-to-play states reflect real roster and meter facts.
-- [ ] The connection timeout stops an unproductive attempt and presents exactly
-      one **Try Again** action in the primary stage.
+- [ ] A v1/v2 connection timeout stops an unproductive attempt and presents
+      exactly one **Try Again** action in the primary stage. A v3 link is
+      retried only after a proved pre-enrollment sidecar failure; any other v3
+      enrollment failure instead requires a fresh invitation.
 - [ ] Offline or isolated Wi-Fi guidance is visible and does not ask a musician
       to inspect ports, addresses, or executables.
 
@@ -109,7 +119,7 @@ are legacy paths, not current acceptance criteria.
 
 ## Permission and error states
 
-- [ ] In the v0.12.0 candidate, Host/Join on a new or changed setup
+- [ ] In the v0.13.0 candidate, Host/Join on a new or changed setup
       first shows the concise sound confirmation, then Band Check; F2, **More
       → Band Check**, and **Settings → Run Band Check** open the same guided
       readiness flow. During a live jam it observes the running session without
@@ -117,7 +127,7 @@ are legacy paths, not current acceptance criteria.
 - [ ] Band Check reports **Ready to Jam**, **Ready with a Warning**, or
       **Action Needed** in words and keeps technical detail collapsed by
       default.
-- [ ] In v0.12.0, an unusable folder or dangerously low free space reports one
+- [ ] In v0.13.0, an unusable folder or dangerously low free space reports one
       corrective action and starts neither local capture nor the server
       recorder. Low storage renders a warning; it is not a claim that a long
       rehearsal is safe.
@@ -127,7 +137,7 @@ are legacy paths, not current acceptance criteria.
       off** with one **Open System Settings** action.
 - [ ] After opening settings, WebJam explains how to return and offers **Try
       Again**. The user is not sent to an unrelated preferences form.
-- [ ] In the v0.12.0 candidate, a missing, ambiguous, or non-48-kHz
+- [ ] In the v0.13.0 candidate, a missing, ambiguous, or non-48-kHz
       selected macOS band device blocks client/server launch before any external
       process starts, gives one safe correction path, and never exposes a raw
       path or CoreAudio error. An automatic reconnect never silently chooses a
@@ -135,6 +145,11 @@ are legacy paths, not current acceptance criteria.
 - [ ] **Connection interrupted** clears stale participant/audio truth, announces
       that recovery is in progress, and restores readiness only after real
       reconnection evidence.
+- [ ] After an abnormal local-capture stop, WebJam retains the recoverable
+      media, surfaces a **NEEDS ATTENTION** recovery project on its recovery
+      scan, and requires manual review of checkpoint/gap evidence. It never
+      calls that media complete, aligned, or automatically transferred merely
+      because files survived.
 - [ ] Recoverable failures have one next action. Appropriate process/RPC detail
       stays in sanitized logs or collapsed Band Check technical details; raw
       exceptions and secrets never render, and support output redacts them.
@@ -163,9 +178,16 @@ are legacy paths, not current acceptance criteria.
 - [ ] **Leave Jam** finalizes any active opted-in guest original, persists the
       resumable upload queue, and attempts a final upload before disconnecting.
       An unreachable host leaves truthful recoverable media on the guest Mac.
+- [ ] A crash-recovered guest original remains local for manual review; recovery
+      alone does not claim a successful shared-take attachment or upload.
 - [ ] A finished take exposes gain, pan, mute, solo, wired-output selection,
       and **Export for Logic**. Export stays responsive, never rewrites source
       audio, and reports either the ready folder or an actionable safe failure.
+- [ ] Logic export pauses if a selected performance track has an explicitly
+      silent segment, or if a selected local original lacks verified timeline
+      alignment. Studio explains the safe next step: review and intentionally
+      leave that track out of this export, or keep the Jamulus server track /
+      align and verify the original. Track selection never modifies the take.
 - [ ] A cleanup failure produces **WebJam couldn’t finish cleanly** and never a
       false success state.
 - [ ] Closing a live window uses the same role-aware confirmation and cleanup
@@ -193,7 +215,7 @@ are legacy paths, not current acceptance criteria.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.
-- [ ] The exact v0.12.0 app passes fresh-extraction startup, Band Check,
+- [ ] The exact v0.13.0 app passes fresh-extraction startup, Band Check,
       Host/Join runtime, deep-link, cleanup, resource/version inspection, and
       the signature/nested-app/sidecar build-hash-IPC package checks.
 - [ ] The exact ZIP and SHA-256 used tonight are recorded in

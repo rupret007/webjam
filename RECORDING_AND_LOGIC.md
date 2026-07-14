@@ -5,11 +5,11 @@ JamulusServer supplies a post-network track for each connected musician. The
 host, and a guest connected through an active v2 private invite, can explicitly
 opt in to keeping interface inputs 1 and 2 as local isolated originals.
 
-**Artifact scope:** The exact v0.12.0 test-night ZIP includes the
-recording-storage guard and recording-provenance journal. It was
-fresh-extraction verified, but the physical recording, interruption recovery,
-and Logic Pro import checks remain **NOT RUN** until the two-Mac worksheet is
-completed. The v0.11.0 ZIP is retained only as rollback history.
+**Test status:** Current source includes the recording-storage guard,
+recording-provenance journal, durable local-capture checkpoints, and
+recovery-only take publication. Automated checks do not replace the physical
+recording, interruption-recovery, two-Mac, or Logic Pro import checks; those
+remain **NOT RUN** until the worksheet records them.
 
 ## Know the sources
 
@@ -51,8 +51,11 @@ IPv6 service, and it has no upload quota or rate limiting. Use it only with a
 trusted bandmate on a trusted LAN. The complete link is a reusable
 session-scoped bearer credential, not a one-use token; anyone holding it on
 that LAN can enroll until the host peer restarts. The guest's original is never
-moved or deleted. Interrupted delivery resumes from the verified byte offset,
-and the host publishes an attached copy only after size, SHA-256, and PCM facts agree.
+moved or deleted. A normal interrupted delivery resumes from the verified byte
+offset, and the host publishes an attached copy only after size, SHA-256, and
+PCM facts agree. If WebJam later recovers a guest's interrupted local capture,
+it preserves that media on the guest Mac for manual review; recovery does not
+automatically upload or reconcile it with the host take.
 If the host warns **Automatic Local Originals are off**, the v1 fallback still
 joins/plays and receives a host-side server track, but has no WebJam-orchestrated
 guest local-original capture or delivery.
@@ -60,7 +63,7 @@ guest local-original capture or delivery.
 ## Record and verify a take
 
 1. Join the session and confirm the actual musicians appear once.
-2. The v0.12.0 candidate runs a pre-arm writable-folder/free-space check for
+2. Current source runs a pre-arm writable-folder/free-space check for
    the actual band: an unsafe result starts nothing, while a low-storage result
    is a warning to make room before a long rehearsal. If a running session is
    unsafe, end it before choosing another Takes folder and restarting.
@@ -74,27 +77,35 @@ is blocked while a take is recording or validating. **Leave Jam** finalizes any
 active opted-in guest original, persists its resumable queue, and attempts one
 final upload. An unavailable host leaves that media and queue on the guest Mac.
 
-The schema-v2 `webjam-take.json` records stable take/participant/track/segment
-IDs, source type and quality, project placement, media rate/channels/format,
-hashes, device facts, gap intervals, and alignment evidence. v0.12.0 also adds
-optional session evidence: recorder start and end timestamps only
-after server confirmation, the host identity and protocol label, and a bounded,
-redacted lifecycle/recovery timeline. That session-evidence portion
+The schema-v2 `webjam-take.json` records stable opaque take/participant/track/
+segment IDs, source type and quality, project placement, media rate/channels/
+format, hashes, device facts, gap intervals, and alignment evidence. Optional
+session evidence includes **WebJam-observed UTC timestamps recorded after
+server confirmation**, the host identity and protocol label, and a bounded,
+redacted lifecycle/recovery timeline. Those timestamps describe when WebJam
+observed recorder state; they are not a claim about the server clock. That
+session-evidence portion
 intentionally excludes invitation links, network addresses, credentials, and
 raw device identifiers. A reconnect
 or dropped local block does not pull later audio earlier to hide time: missing
 frames stay on the timeline as a disclosed gap/silence interval.
 
-While a take is in progress, v0.12.0 atomically checkpoints that same
-bounded session evidence in a private, crash-safe journal below the selected
-**Takes** folder. The journal is only a recovery checkpoint, not a completed
-take claim: a malformed or unfinished checkpoint is treated as needing
-attention, and it is removed only after the final take manifest is published.
+While a take is in progress, WebJam atomically checkpoints that same bounded
+session evidence in a private, crash-safe journal below the selected **Takes**
+folder. Each local-input writer also periodically flushes and fsyncs both WAV
+stems before advancing an opaque-ID recovery checkpoint. The checkpoint records
+only the durable frame boundary; it never claims that later buffered frames
+survived a crash. Neither checkpoint is a completed-take claim: a malformed,
+unfinished, or interrupted checkpoint is treated as needing attention and is
+retired only after a final manifest is published.
 
 If a local writer cannot finish normally, WebJam preserves visible recovered
-media and recovery metadata. Missing, receiving, partial, recovered, damaged,
-or failed-transfer media remains visible in project truth. It is not silently
-dropped while the take is called complete.
+media and recovery metadata. On a host recovery scan, readable local audio is
+published as a recovery-only project with **NEEDS ATTENTION** status, any known
+gaps and durable boundary, and its opaque take/session IDs. It is not a
+completed multitrack take or a timing-ready Logic export. Missing, receiving,
+partial, recovered, damaged, or failed-transfer media remains visible in
+project truth; it is never silently dropped while the take is called complete.
 
 ## Review in Studio
 
@@ -113,9 +124,11 @@ and playback check before accepting it.
 
 ## Export for Logic Pro
 
-Select a trustworthy take and press **Export for Logic**. WebJam publishes a
-new `Logic Export`, `Logic Export 2`, and so on only after every required output
-succeeds. A schema-v2 package contains:
+Select a trustworthy take and press **Export for Logic**. In schema-v2 Studio,
+the per-track **Logic export** checkboxes control only the next export; the
+recorded take remains unchanged. WebJam publishes a new `Logic Export`, `Logic
+Export 2`, and so on only after every required output succeeds. A schema-v2
+package contains:
 
 - numbered, musician/source-named **PCM24 WAV stems** rendered from the same
   project origin and to the same project length;
@@ -129,15 +142,21 @@ succeeds. A schema-v2 package contains:
   WAV and measuring its rate, channels, frames, duration, RMS/peak, and clips;
 - `webjam-project-source.json`, preserving the source project evidence;
 - `webjam-logic-export.json`, including project rate, tempo, time signature,
-  selected source identity, transform, and output facts; v0.12.0 also
-  carries the nonempty bounded/redacted session evidence when the source take
-  has it;
+  selected source identity, transform, and output facts; it carries nonempty
+  bounded/redacted session evidence when the source take has it;
 - `CHECKSUMS.sha256`;
 - `IMPORT INTO LOGIC PRO.md`.
 
-Original source hashes are checked before rendering. Logic exports never rewrite the original recorder WAVs.
-Missing, changed, damaged, or incomplete selected media blocks the atomic export
-instead of producing a false Logic-ready folder.
+Original source hashes are checked before rendering. Logic exports never
+rewrite the original recorder WAVs. Missing, changed, damaged, or incomplete
+selected media blocks the atomic export instead of producing a false
+Logic-ready folder. An explicitly silent segment in a selected performance
+track also pauses export until you review it or intentionally deselect that
+track. A selected local original with no verified timeline alignment (including
+an unaligned or unverified guest original) pauses a timing-ready export: keep
+the Jamulus server track for that take, or align and verify the local original
+before exporting. Studio shows these as fixed, actionable messages and never
+exposes local paths or worker diagnostics in the musician-facing error.
 
 Mixed-rate/drift conversion uses the disclosed deterministic linear affine
 method `deterministic-linear-affine-v1`. It keeps the same project clock and is
@@ -160,8 +179,8 @@ resampler.
    file with the Logic project.
 
 WebJam does not generate or automate Logic's proprietary `.logicx` format.
-Physical Logic Pro import for the v0.12.0 candidate is **NOT RUN** until the
-two-Mac worksheet records it.
+Physical Logic Pro import remains **NOT RUN** until the two-Mac worksheet
+records it.
 
 ## Acceptance gate
 

@@ -47,9 +47,12 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     `JamulusServer.app` from the same release is prepared the same way and
     nested beside the client so a designated host needs no separate install.
     WebJam launches each as an independent process.
+    The resulting nested apps, and the private WebJam artifact that contains
+    them, are ad-hoc signed and are **not notarized**; do not describe the
+    prepared copies as upstream-notarized nested apps.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so Windows packaging carries the unmodified installer
-    as a distribution dependency. The current v0.12 Host/Join flow does not
+    as a distribution dependency. The current private Host/Join flow does not
     invoke the former Setup Wizard installer button; Windows packaging and
     install behavior remain a separate release-certification gate.
 - **Why this doesn't require relicensing WebJam:** Redistributing a

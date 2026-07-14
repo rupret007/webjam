@@ -1,16 +1,18 @@
-# WebJam v0.12.0 closed-pilot playbook
+# WebJam v0.13.0 closed-pilot playbook
 
 This is the coordination guide for a small musician cohort. The exact physical
 acceptance evidence belongs in
 [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md); do not substitute this
-short guide for that gate.
+short guide for that gate. Physical audio, interruption, and Logic results
+start as **NOT RUN** until musicians record them there.
 
 ## Message to send before the rehearsal
 
 ```text
-We're testing WebJam v0.12.0 tonight.
+We're testing the WebJam v0.13.0 candidate tonight.
 
-1. Download the exact ZIP and verify both the filename and SHA-256 I send you.
+1. Download the exact ZIP and verify both the filename and SHA-256 supplied by
+   the host for this run. Do not reuse an earlier artifact identity.
 2. Unzip it, move WebJam.app to Applications, then Control-click it and choose
    Open the first time. The private build is ad-hoc signed, not notarized.
 3. Connect your interface and wired headphones. In macOS Sound, choose the
@@ -30,7 +32,8 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Host
 
-1. Open the exact v0.12.0 app and choose **Host a Jam** once.
+1. Open the exact v0.13.0 candidate recorded for this run and choose **Host a
+   Jam** once.
 2. Confirm your name and band sound, complete Band Check, then choose **Start
    Session**.
 3. If macOS requests microphone or incoming-network access, allow it. If
@@ -55,6 +58,11 @@ If anything fails, stop and capture what WebJam says before changing settings.
 4. If joining times out, confirm both Macs are on the same non-guest Wi-Fi and
    use the single **Try Again** action. If the jam is unavailable, ask the host
    for a fresh invite.
+5. A separately approved lab-only v3 link is not a public/Internet connection
+   option. **Try Again** is safe only when WebJam says its sidecar failed before
+   guest enrollment began. If it says **Fresh invitation required**, ask the
+   host for a new link; do not retry the old link or accept a legacy/local
+   fallback.
 
 ## Play and record
 
@@ -65,7 +73,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 3. On the host and each v2-connected guest that should retain interface
    originals, open **More → Multitrack Studio → Recording Setup**, explicitly
    enable inputs 1 and 2, and select the intended shareable 48-kHz interface.
-   The host still controls the shared take. The v0.12.0 candidate checks the
+   The host still controls the shared take. The v0.13.0 candidate checks the
    selected Takes folder and conservative free-space reserve before Record;
    write down any warning or block rather than treating it as an acoustic pass.
 4. The host records at least 60 seconds. With an active v2 invite, briefly
@@ -75,15 +83,23 @@ If anything fails, stop and capture what WebJam says before changing settings.
    AVAILABLE** instead of claiming that recovery test passed.
 5. Confirm one server WAV per musician and every opted-in local original is
    present or truthfully disclosed. Check Studio playback and pan/mute/solo,
-   then use **Export for Logic**. Require equal-length numbered PCM24 stems,
-   references, reports, analysis, and checksums; import the numbered stems
-   together at `0:00` and use references only for comparison.
+   then use **Export for Logic**. A selected explicitly silent performance
+   track, or selected local original without verified timeline alignment, must
+   block the export. Review it; leave it out only with the per-track export
+   control and a written disclosure, or keep the Jamulus server track / align
+   and verify the original. This never changes the recorded take. Require
+   equal-length numbered PCM24 stems, references, reports, analysis, and
+   checksums; import the numbered stems together at `0:00` and use references
+   only for comparison.
 
 ## Recovery and finish
 
-1. Confirm the recorded interruption showed **Connection interrupted**, no stale
-   ready claim, stable participant identity, continued opted-in local capture,
-   and automatic or one-action recovery.
+1. Confirm the recorded interruption showed **Connection interrupted**, no
+   stale ready claim, stable participant identity, continued opted-in local
+   capture, and only the recovery action WebJam actually offers. For an
+   unexpected stop, preserve the local recovery result: on relaunch it must
+   remain **NEEDS ATTENTION** for manual review, not be called a completed or
+   automatically transferred take.
 2. The guest uses **Leave Jam**; confirm any active opted-in guest original was
    finalized, its resumable queue persisted, and a final upload was attempted.
    Confirm the host session remains available. An unreachable host must leave
@@ -96,9 +112,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Evidence and escalation
 
-- Record the exact ZIP filename and SHA-256 before starting. The active
-  candidate is `WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-  `01427316820b884d61546d40a9327a49cedf43d6a60a4d88b5b29ab4c693a24c`.
+- Record the exact ZIP filename, SHA-256, installed version, and source/build
+  commit before starting. Do not proceed with a missing or mismatched artifact
+  record.
 - Capture screenshots of any unclear state before retrying.
 - Preserve the take folder and each Mac's local originals. Keep raw logs local;
   do not send them directly.

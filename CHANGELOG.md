@@ -4,9 +4,53 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [Unreleased]
+## [0.13.0] — 2026-07-14 private test-night candidate
 
-No changes have been recorded after the private v0.12.0 test-night candidate.
+### Candidate verification
+
+- Built the exact Apple-Silicon package from
+  `4d09810d7fb3c7f7355ca1d88e8218bb8ea784dd`:
+  `WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`.
+- The candidate is arm64 and bundles official Jamulus/JamulusServer 3.12.2.
+  Fresh extraction passed strict/deep signature checks, nested-app inspection,
+  exact sidecar build/hash/IPC validation, and two isolated six-second
+  offscreen launch/TERM cycles. It is ad-hoc signed, not notarized.
+- The final source gate recorded 1,706 passed, 18 skipped, one known
+  Starlette/httpx warning, and 6 subtests. Physical CoreAudio, two-Mac audio,
+  roster, reconnect, recording recovery, and Logic import remain **NOT RUN**.
+
+### Durable recovery and truthful takes
+
+- Local isolated capture now checkpoints about once per second: it flushes the
+  writer, synchronizes the audio file, and records opaque take/session IDs,
+  durable frame count, gaps, and capture facts. Parent-directory synchronization
+  closes the atomic-publication durability gap on supported POSIX filesystems.
+- Startup recovery safely promotes abandoned hidden captures to visible recovery
+  folders without following symlinks or adopting a live writer. A recovered
+  project is **Needs Attention**, never a completed take. Audio beyond the last
+  confirmed durable frame is disclosed as an unverified crash gap and blocks a
+  false-complete export.
+- A recovered guest original is preserved on that guest Mac for review. It is
+  not silently re-uploaded or represented as having reached the host.
+
+#### Conservative Logic handoff
+
+- Studio's Logic export now refuses a selected track explicitly marked silent,
+  and refuses an unaligned guest/local original. The musician can intentionally
+  deselect a track, or retain the aligned Jamulus server track, rather than
+  producing an apparently complete but misleading package.
+- Per-track Logic-export selection is local Studio state; it does not mutate the
+  take manifest. The UI gives a short safe explanation instead of exposing a
+  path, credential, or other internal failure detail.
+
+#### One-use remote invitation truth
+
+- A v3 remote invitation may be retried only when the sidecar fails before
+  `open_guest` begins enrollment. Once enrollment was attempted, WebJam clears
+  the invitation and requires a fresh one; it does not fall through to a legacy
+  LAN launch or imply that a consumed credential remains usable. The v3 profile
+  remains a loopback/CI laboratory boundary, not a deployed remote service.
 
 ---
 
@@ -472,19 +516,23 @@ No changes have been recorded after the private v0.12.0 test-night candidate.
 Removes the "leave WebJam, find jamulus.io, download, install, come back"
 detour for most users. Both platforms bundle the same pinned Jamulus
 version (`3.12.2` / tag `r3_12_2`) already used by the `integration-jamulus`
-CI job, unmodified, under GPL/AGPL "mere aggregation" terms — see the new
-`THIRD_PARTY_NOTICES.md` for the full licensing rationale.
+CI job, under GPL/AGPL "mere aggregation" terms — see the new
+`THIRD_PARTY_NOTICES.md` for the full licensing rationale. Current macOS
+packaging prepares and re-signs its nested copies ad hoc; it does not preserve a
+notarized nested-app signature.
 
 > Packaging note: 0.8.1 supersedes the original macOS signature-preservation
 > approach below. The current test build prepares the same upstream app
 > contents with ad-hoc, non-sandboxed signatures as documented above and in
 > `THIRD_PARTY_NOTICES.md`.
 
-- **macOS: zero-install.** CI downloads and checksum-verifies the official,
-  Apple-signed and notarized `jamulus_3.12.2_mac.dmg`, extracts the
-  unmodified `Jamulus.app`, and nests it (via `ditto`, never re-signed) into
-  `WebJam.app/Contents/Resources/Jamulus.app`. A fresh install finds it
-  automatically with zero configuration.
+- **macOS: zero-install.** The original 0.8.0 plan downloaded and
+  checksum-verified the official Apple-signed/notarized
+  `jamulus_3.12.2_mac.dmg`. Current private-candidate packaging extracts that
+  release, prepares the nested client/server copies for WebJam's loopback-only
+  orchestration, and re-signs them ad hoc. The nested copies and WebJam artifact
+  are therefore not notarized. A fresh install still finds the pinned bundled
+  client automatically with zero configuration.
 - **Windows: bundled installer.** Jamulus only ships an NSIS installer on
   Windows (no portable binary), so CI downloads and checksum-verifies
   `jamulus_3.12.2_win.exe` and `webjam.spec`'s new `Jamulus/` datas block

@@ -15,10 +15,10 @@ instrument / vocal ──> audio interface ──> Jamulus ──> wired headpho
 conversation microphone ─────────────────> Webex ─────> same headphones
 ```
 
-1. In the v0.12.0 candidate, choose the musician's audio interface in
+1. In the v0.13.0 candidate, choose the musician's audio interface in
    **Settings → Band input** and **Band output & review** before starting the
-   jam. For the preserved v0.11.0 rollback ZIP or a manual Jamulus fallback,
-   select that interface in Jamulus instead.
+   jam. For an earlier rollback ZIP or a manual Jamulus fallback, select that
+   interface in Jamulus instead.
 2. In Webex, select a dedicated webcam, headset, or USB microphone for speech
    when possible. The music-interface input is an acceptable fallback, but do
    not play while that Webex microphone is open.
@@ -53,9 +53,9 @@ Webex audio, otherwise they will hear a delayed duplicate of the music.
 
 On macOS, create a Multi-Output Device containing the physical interface and
 BlackHole. Use the interface as clock source and drift correction only on
-BlackHole. In the v0.12.0 candidate, choose that Multi-Output Device in
-**Settings → Band output & review** before starting the jam. For the preserved
-v0.11.0 rollback ZIP or a manual Jamulus fallback, set Jamulus output to the
+BlackHole. In the v0.13.0 candidate, choose that Multi-Output Device in
+**Settings → Band output & review** before starting the jam. For an earlier
+rollback ZIP or a manual Jamulus fallback, set Jamulus output to the
 Multi-Output Device instead. Set the Webex microphone to BlackHole and its
 speaker to the physical interface. Exclude every real microphone from Webex,
 enable **Music Mode**, and prove the feed from a second device using headphones
@@ -78,6 +78,12 @@ or a guest connected through an active v2 private invite, may opt in; the host
 still controls the shared take. A v1 guest has no WebJam-orchestrated local
 capture or delivery.
 
+While capture is active, WebJam records periodic durable checkpoints. If the
+app or Mac stops unexpectedly, surviving local media is recovered as **NEEDS
+ATTENTION** and must be manually reviewed for checkpoint/gap truth before it is
+called complete, aligned, exported, or delivered. Recovery does not configure
+Webex and does not automatically transfer a recovered guest original.
+
 ## Safety rules
 
 - Never send the Webex return into Jamulus.
@@ -85,5 +91,7 @@ capture or delivery.
   interface first, or end the WebJam session before unmuting Webex.
 - Never interpret **Opened externally** as confirmation that Webex joined.
 - Never expose Jamulus client RPC 22222 or recorder RPC 22240 through a router.
+- The lab-only v3 private path is not a Webex bridge, Internet-hosting option,
+  or public remote-audio service. Do not expose it through a router.
 - If routing becomes ambiguous, mute Webex first and keep Jamulus as the known
   music path.

@@ -73,15 +73,38 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Included in the v0.12.0 private test-night candidate (2026-07-14)
+### ✅ Packaged in the private v0.13.0 candidate
 
-The exact v0.12.0 test-night ZIP contains the code in this section and passed
-the documented fresh-extraction/package checks. It is not a claim that the
-physical two-Mac, real-audio, recording-recovery, or Logic gates have run.
-The v0.11.0 ZIP is a preserved rollback artifact.
+These changes are in the v0.13.0 package. Its fresh-extraction, ad-hoc-signing,
+sidecar, and bounded launch/stop checks pass. They are not physical-audio,
+recording-recovery, or Logic Pro claims.
+
+- **Durable local recovery** — local original capture records a durable checkpoint
+  while writing. Interrupted media is surfaced as a visible **Needs Attention**
+  recovery project; data past the last durable checkpoint is explicitly
+  unverified instead of being presented as a finished take. Guest recovery stays
+  local until a musician reviews it; it is not silently delivered to the host.
+- **Truthful Logic choice** — Studio lets a musician select export tracks without
+  changing the take manifest. An explicitly silent selected track or an
+  unaligned guest/local original stops the export with one corrective choice:
+  deselect it, use the aligned server track, or align and verify it first.
+- **One-use remote invitations** — a retry is safe only before the native sidecar
+  starts enrollment. After an enrollment attempt, WebJam requires a fresh
+  invitation. This changes no ordinary same-LAN flow and does not make remote v3
+  a public or deployed service.
+
+### ✅ Included in the v0.13.0 private test-night candidate (2026-07-14)
+
+The exact v0.13.0 test-night ZIP is
+`WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`, built
+from `4d09810d7fb3c7f7355ca1d88e8218bb8ea784dd`. It passed the documented
+fresh-extraction/package checks. This is not a claim that the physical two-Mac,
+real-audio, recording-recovery, or Logic gates have run. The v0.12.0 ZIP is a
+preserved rollback artifact.
 
 - **Five-second launch** — Host a Jam is the clear primary action; Join a Jam
-  opens one invitation field. The v0.12.0 candidate then asks for one concise
+  opens one invitation field. The v0.13.0 candidate then asks for one concise
   name-and-band-sound confirmation before Band Check and **Start Session**. A
   matching stored check starts the bundled server/client directly.
 - **Permanent Band Check** — required checks after Host/Join on a new or changed
@@ -113,7 +136,7 @@ The v0.11.0 ZIP is a preserved rollback artifact.
 - **Accessibility and narrow-window support** — visible focus, task-ordered
   keyboard navigation, accessible descriptions/announcements, state meaning
   beyond color, and a 760×600 live-session floor.
-- **Tonight's boundary** — the private Apple Silicon v0.12.0 package is the
+- **Tonight's boundary** — the private Apple Silicon v0.13.0 package is the
   two-Mac same-LAN candidate. The v1/v2 engine baseline has native one-hour
   longevity evidence; the exact package passes fresh-extraction signature,
   nested-app, sidecar build/hash/IPC, and bounded launch/cleanup checks.
@@ -123,13 +146,21 @@ The v0.11.0 ZIP is a preserved rollback artifact.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
-- **Bundled Jamulus** — downloadable builds ship Jamulus itself: macOS is zero-install (unmodified, notarized `Jamulus.app` nested in the bundle), Windows offers an in-wizard "Install Jamulus now" button that runs the bundled official installer. Removes the "leave WebJam, find jamulus.io, download, come back" step for most users; the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who needs a different install. See `THIRD_PARTY_NOTICES.md`.
+- **Bundled Jamulus** — downloadable macOS builds nest the official Jamulus
+  release app after preparing and re-signing it ad hoc for WebJam's
+  loopback-only orchestration. It is not a notarized nested app or a claim that
+  the private WebJam artifact is Developer ID signed. Windows carries the
+  official installer as a distribution dependency. This removes the "leave
+  WebJam, find jamulus.io, download, come back" step for the supported package;
+  the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who
+  needs a different install. See `THIRD_PARTY_NOTICES.md`.
 
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.12.0
-section above. v0.8.0 remains the latest published build at
+work. It is retained as implementation history; current status is the v0.13.0
+package and v0.12.0 historical-package sections above. v0.8.0
+remains the latest published build at
 [Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
 gates pass.
 
@@ -163,9 +194,10 @@ gates pass.
 
 ### 🔜 Next — closed pilot gates
 
-- Carry forward the v1/v2 engine's native Jamulus/JACK 3,600-second evidence,
-  retain the completed v0.12.0 artifact package inspection, and complete the
-  planned two-Apple-Silicon-Mac same-LAN physical pilot.
+- Retain the completed v0.13.0 artifact package inspection, then complete the
+  planned two-Apple-Silicon-Mac
+  same-LAN physical pilot. The v1/v2 engine's native Jamulus/JACK 3,600-second
+  evidence remains historical engine evidence, not package certification.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
   per musician, Studio stereo playback, aligned Logic-package import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,

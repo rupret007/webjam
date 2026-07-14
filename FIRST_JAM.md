@@ -6,16 +6,18 @@ WebJam's normal path is four short moves:
 
 There is no server setup for the band to perform. Band Check guides each
 musician through input, headphones, and a short recording before playing.
-The private macOS v0.12.0 candidate starts the music service in the background.
+The private macOS v0.13.0 candidate starts the music service in the background.
 This first-jam guide remains the ordinary same-private-LAN path. The separate
 v3 `reference-local` profile is a loopback developer lab, not a public remote
 service.
 
 **Artifact scope:** This guide's test-night steps apply to
-`WebJam-v0.12.0-TEST-NIGHT-macos-arm64.zip`, built from `796e9a4`. It includes
-the short sound-confirmation screen, CoreAudio route preflight,
-recording-storage guard, and private in-progress recording-evidence journal.
-The v0.11.0 ZIP is preserved only as a rollback artifact.
+`WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`, built from `4d09810`, SHA-256
+`6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`. It
+includes the short sound-confirmation screen, CoreAudio route preflight,
+recording-storage guard, durable local-capture recovery, and conservative
+Logic-export safety checks. The v0.12.0 ZIP is preserved only as a rollback
+artifact.
 
 ## Before anyone opens WebJam
 
@@ -85,7 +87,7 @@ each Mac and confirm what the other person actually hears.
 Faders, **Mute Monitor**, and Solo change the current listener's monitor mix.
 They do not mute outgoing audio or rewrite the other musician's mix.
 
-In the v0.12.0 candidate, **Settings → Band input / Band output & review**
+In the v0.13.0 candidate, **Settings → Band input / Band output & review**
 preflights a stable CoreAudio pair and stages it for Jamulus before launch.
 WebJam's input meter and optional local-original recorder still use a separate
 Core Audio/PortAudio stream. A passing meter is useful, but only the other
@@ -108,7 +110,9 @@ Multitrack Studio** to watch lanes or review the take.
    choose it before starting the session; that setting stays fixed while a jam
    is running.
 4. Click **Record**, play, then stop. Wait while WebJam validates and saves the
-   take.
+   take. WebJam records WebJam-observed UTC timestamps after recorder
+   confirmation; those timestamps are not a claim about the band server's
+   clock.
 5. Select the take in the Studio library to view its waveforms, choose the
    wired playback output, and test gain, pan, mute, and solo.
 6. Press **Export for Logic**, then **Show Logic Export**. Drag every numbered
@@ -120,7 +124,16 @@ Multitrack Studio** to watch lanes or review the take.
 
 Do not quit or end the session while a take is still being checked. If a
 capture problem occurs, WebJam preserves recoverable audio rather than
-silently deleting it.
+silently deleting it. Host startup recovery publishes readable local media as a
+visible Studio project marked **Needs Attention**; it is not a completed take
+or timing-ready Logic export.
+
+Before exporting, look at the Studio track choices. They affect only the next
+export, never the recorded take. An explicitly silent selected performance
+track pauses export until you review it or intentionally deselect it. An
+unaligned or unverified selected guest/local original also pauses a
+timing-ready export: retain the Jamulus server track, or align and verify the
+original. The Studio message gives that action without exposing local paths.
 
 ## Optional tools
 
@@ -138,7 +151,10 @@ WebJam says it is reconnecting rather than showing stale readiness. With an
 active v2 invite, an opted-in local original keeps recording even while the
 peer control plane is offline; after reconnect, WebJam resumes verified
 delivery without deleting that local file. If the attempt times out, restore
-the same-network connection and use the single **Try Again** action.
+the same-network connection and use the single **Try Again** action. If a
+guest capture itself must be recovered after interruption, it remains on that
+guest Mac for manual review; recovery is not automatically uploaded or joined
+to the host take.
 
 ## Finish
 

@@ -2,8 +2,10 @@
 
 This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
-evidence, but the active v0.12 readiness boundary is
-[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md).
+evidence, but the active package and historical-package boundary is
+[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The preserved
+v0.12.0 package remains evidence for itself; the v0.13.0 package has its own
+package checks but no inherited physical claims.
 
 ## Product promise
 
@@ -34,6 +36,31 @@ evidence, but the active v0.12 readiness boundary is
 - An authenticated transport is not automatically an encrypted transport.
   WebJam's peer recording service is same-LAN HTTP over RFC1918 IPv4 only; it
   does not provide TLS, Internet exposure, VPN traversal, or IPv6 support.
+
+## Current v0.13 package addendum — physical evidence still separate
+
+- **Interrupted local capture:** the writer periodically flushes and
+  synchronizes its audio before recording opaque IDs, durable frames, gaps, and
+  capture facts. Recovery promotes only safe abandoned capture directories to
+  visible **Needs Attention** projects. Frames past the final durable checkpoint
+  are declared unverified/partial; they are not called a completed take.
+- **Guest recovery:** a crash-recovered guest original is preserved locally for
+  review. It is not automatically queued for transfer or represented as having
+  reached the host.
+- **Logic export:** Studio keeps track-selection state outside the immutable
+  manifest and fails closed for a selected explicitly silent track or an
+  unaligned guest/local original. The musician must deselect it, use the
+  aligned server track, or align and verify it first.
+- **Remote v3 invitation:** the separate loopback/CI laboratory profile may
+  retry only before `open_guest` begins enrollment. Once enrollment has been
+  attempted, the invitation is cleared and a fresh one is required. This does
+  not change the reusable v2 same-LAN invitation described in the historical
+  architecture below, nor does it establish public remote service.
+
+The v0.13.0 artifact, fresh-extraction package smoke, ad-hoc signing result,
+and two isolated launch/TERM cycles are recorded in the active last-mile plan.
+Physical interruption recovery, two-Mac results, and Logic Pro results remain
+**NOT RUN**.
 
 ## Repository and preserved baseline — 2026-07-13
 
@@ -333,6 +360,11 @@ visible recovered partial WAVs and recovery metadata. Startup recovery moves
 abandoned hidden capture directories into visible recovery folders, skips live
 PIDs, and does not follow symlinks.
 
+Current v0.13 source further distinguishes frames safely synchronized before an
+interruption from later buffered frames. Recovery records that durable boundary
+and marks any later media unverified/partial rather than silently treating the
+whole WAV as final. This is source behavior, not physical recovery evidence.
+
 ### Server/reference recording path
 
 JamulusServer writes one post-network track per visible channel plus its native
@@ -354,6 +386,11 @@ one-use or one-guest token: every installation presenting it on the LAN can
 enroll until the host peer restarts. Legacy v1 links still join Jamulus and
 receive a host-side server track, but do not enable WebJam-orchestrated guest
 local capture or the private recording/transfer plane.
+
+The reusable v2 LAN invitation above is not the same as the v3 remote-lab
+invitation. Current v0.13 source retains a v3 invitation only when its native
+sidecar fails before enrollment starts; after `open_guest` is attempted it
+requires a fresh invitation rather than retrying a possibly consumed credential.
 
 The host peer service binds only to a private RFC1918 IPv4 address and an
 ephemeral port. It uses authenticated plain HTTP, not HTTPS/TLS. It does not
@@ -386,6 +423,11 @@ PCM24 WAVs, optional processed stems, server/studio reference mixes, musical
 metadata, source/alignment/recording/analysis evidence, and SHA-256 checksums.
 Original source media is hash-checked and never modified. Logic Pro physical
 verification remains false until the worksheet is completed.
+
+Current v0.13 source also stops the package before publication if a selected
+track is explicitly silent or if a selected guest/local original is unaligned.
+The Studio selection can be changed without altering the manifest; a musician
+can deselect that track, use the aligned server track, or align and verify it.
 
 ### Band Check and support bundle
 
@@ -615,7 +657,8 @@ Logic Pro import:        NOT RUN
 
 ## Historical continuation point
 
-For active v0.12 work, use `TEST-NIGHT-READ-ME.txt`,
+For the active v0.13 package and historical v0.12 package baseline,
+use `TEST-NIGHT-READ-ME.txt`,
 [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md), and
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps
 below are retained only to explain what remained after the v0.10 package.

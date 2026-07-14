@@ -1,11 +1,11 @@
 # Remote session threat model
 
 - Status: pre-release security contract
-- Applies to: WebJam v0.12.0 private candidate's v3 remote-session design, one
+- Applies to: WebJam's current-source private v3 remote-session design, one
   host plus one guest. The profile remains loopback-only and is not a deployed
   public service.
 - Architecture: [ADR 0001](../adr/0001-remote-session-transport.md)
-- Last reviewed: 2026-07-13
+- Last reviewed: 2026-07-14
 
 This document defines the security and privacy boundary for the v3 remote
 session. It is an implementation and release gate, not evidence that a public
@@ -206,6 +206,15 @@ risk.
 An application or sidecar restart ends the current reference session. The
 current slice does not restore certificate/session seeds or reconnect state;
 the host must create a fresh invitation and generation.
+
+The desktop distinguishes the one case in which retrying an invitation is
+safe: the sidecar could not start before `open_guest` was entered. Once
+`open_guest` begins, the desktop cannot prove whether the reference service
+consumed the one-use enrollment value, so it immediately treats that link as
+unusable and requires a fresh invitation. It never turns this failure into a
+legacy same-LAN or localhost Jamulus connection. The user-facing state exposes
+only **Try Again** for the safe pre-`open_guest` failure and **Fresh invitation
+required** for every later or unknown guest failure.
 
 ## Session data plane
 
