@@ -432,7 +432,7 @@ jobs:
             if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
               expected_machine="x86_64"
             fi
-            python tests/support/verify_packaged_transport.py \
+            python -m tests.support.verify_packaged_transport \
               --binary dist/WebJam.app/Contents/MacOS/webjam-fabric \
               --manifest dist/WebJam.app/Contents/Resources/webjam-fabric.sha256 \
               --build-id "$build_id" \
@@ -508,7 +508,7 @@ jobs:
             mkdir -p "$fresh_dir"
             ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
             codesign --verify --deep --strict "$fresh_dir/WebJam.app"
-            python tests/support/verify_packaged_transport.py \
+            python -m tests.support.verify_packaged_transport \
               --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
               --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
