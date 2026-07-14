@@ -315,7 +315,14 @@ class SessionLifecycle:
         """Close the prior lifecycle into an idle, startable session."""
 
         if self._phase not in _TERMINAL and self._phase is not SessionLifecyclePhase.IDLE:
-            self.transition(SessionLifecyclePhase.COMPLETED, reason=reason)
+            # Reset is used after cancellation and failed preflight as well as
+            # a normal End Session.  Those active phases cannot jump straight
+            # to COMPLETED without weakening the transition contract, so close
+            # them through the same explicit ending path first.
+            if self._phase is not SessionLifecyclePhase.ENDING:
+                self.transition(SessionLifecyclePhase.ENDING, reason=reason)
+            if self._phase is SessionLifecyclePhase.ENDING:
+                self.transition(SessionLifecyclePhase.COMPLETED, reason=reason)
         result = self.transition(SessionLifecyclePhase.IDLE, reason=reason)
         self._recovery_attempt = 0
         return result

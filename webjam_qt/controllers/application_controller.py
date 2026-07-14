@@ -161,6 +161,11 @@ class ApplicationController(QObject):
         # Host service binding is lazy until a real private Wi-Fi address is
         # known; joiners enroll in a worker so startup/UI never blocks on LAN.
         self._host_peer_warning = ""
+        # A LAN invite is only useful while this Mac advertises the same
+        # private address.  Keep this tiny, memory-only fact out of settings
+        # and diagnostics: it exists solely to make a Wi-Fi/interface change
+        # visible before a host sends an already-stale link.
+        self._last_shared_lan_address = ""
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
@@ -1656,7 +1661,8 @@ class ApplicationController(QObject):
                 )
                 return
         else:
-            invite_url = self._current_invite_url()
+            readiness = self._host_share_readiness()
+            invite_url = self._current_invite_url(readiness=readiness)
         if not invite_url:
             self._update_session_hud()
             self.window.flash_message(
@@ -1666,6 +1672,11 @@ class ApplicationController(QObject):
             return
         QApplication.clipboard().setText(invite_url)
         invite_url = ""
+        if owner is None:
+            # Mark the address only after the complete link was copied. A
+            # failed link generation must not suppress the Wi-Fi-change
+            # warning for a link the musician never received.
+            self._last_shared_lan_address = readiness.address
         if self._host_peer_warning:
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
@@ -2240,6 +2251,29 @@ class ApplicationController(QObject):
         except ValueError:
             return ""
 
+    def _lan_invite_needs_refresh(self, readiness) -> bool:
+        """Return whether a copied same-LAN invite names an old address.
+
+        A legacy/v2 invite embeds the advertised host address. WebJam cannot
+        revoke a link that a musician has already received, but it can avoid
+        presenting the host as simply ready after Wi-Fi, sleep/wake, or a
+        network-interface change. The address stays process-local and is
+        deliberately absent from lifecycle/support evidence.
+        """
+
+        previous = str(getattr(self, "_last_shared_lan_address", "") or "")
+        return bool(
+            previous
+            and readiness is not None
+            and readiness.shareable
+            and readiness.address != previous
+        )
+
+    def _clear_lan_invite_address(self) -> None:
+        """Forget the prior share only after a session cleanly returns idle."""
+
+        self._last_shared_lan_address = ""
+
     def _update_session_hud(self) -> None:
         """Render one musician-friendly summary from real lifecycle facts."""
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
@@ -2352,6 +2386,23 @@ class ApplicationController(QObject):
                         "Starting your jam…",
                         "WebJam is getting the band audio ready.",
                     )
+                return
+            if (
+                remote_owner is None
+                and self._lan_invite_needs_refresh(share_readiness)
+            ):
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.DEGRADED,
+                    "The private Wi-Fi address changed; a new invite is required",
+                )
+                self.window.session_hud.set_state(
+                    "Your Wi-Fi changed",
+                    "Copy a new invite before asking your bandmate to join.",
+                    invite_available=True,
+                    action_text="Copy New Invite",
+                    action_visible=True,
+                    action_kind="invite",
+                )
                 return
             if not invite_available:
                 if remote_owner is not None:
@@ -2917,6 +2968,12 @@ class ApplicationController(QObject):
                 )
 
         self.bridge.attempt_auto_reconnects()
+        # A private LAN address may change on Wi-Fi roaming, sleep/wake, or
+        # interface changes without killing the local Jamulus process. Polling
+        # the small, fail-closed pre-share check keeps an old copied link from
+        # silently looking current; it never claims Internet reachability.
+        if bool(getattr(self.settings, "host_server_enabled", False)):
+            self._update_session_hud()
 
     def _on_token_refresh_tick(self) -> None:
         """Compatibility no-op: native Webex owns its authentication."""

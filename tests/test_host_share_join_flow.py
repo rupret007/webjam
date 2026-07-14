@@ -361,6 +361,93 @@ def test_host_never_serializes_lan_invite_until_expected_udp_port_is_bound(
     controller.shutdown()
 
 
+def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(
+    qapp, tmp_path
+):
+    from core.host_share_readiness import (
+        HostShareReadiness,
+        HostShareReadinessStatus,
+    )
+    from core.session_lifecycle import SessionLifecyclePhase
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Network Change",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller._transition_lifecycle(SessionLifecyclePhase.STARTING_HOST)
+    controller._transition_lifecycle(SessionLifecyclePhase.READY_TO_SHARE)
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller._last_shared_lan_address = "192.168.1.42"
+    controller._host_share_readiness = MagicMock(
+        return_value=HostShareReadiness(
+            HostShareReadinessStatus.READY_PRIVATE_LAN, "192.168.1.43"
+        )
+    )
+    controller._current_invite_url = MagicMock(
+        return_value=create_invite_link("192.168.1.43")
+    )
+
+    with patch(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        return_value="granted",
+    ):
+        controller._update_session_hud()
+
+    assert controller.window.session_hud._status.text() == "Your Wi-Fi changed"
+    assert controller.window.session_hud._action.text() == "Copy New Invite"
+    assert controller.window.session_hud._invite_available is True
+    assert controller.session_lifecycle.phase is SessionLifecyclePhase.DEGRADED
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_copying_replacement_lan_invite_acknowledges_current_address(qapp, tmp_path):
+    from core.host_share_readiness import (
+        HostShareReadiness,
+        HostShareReadinessStatus,
+    )
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Fresh Invite",
+    )
+    controller = ApplicationController(window, settings=settings)
+    readiness = HostShareReadiness(
+        HostShareReadinessStatus.READY_PRIVATE_LAN, "192.168.1.43"
+    )
+    controller._last_shared_lan_address = "192.168.1.42"
+    controller._host_share_readiness = MagicMock(return_value=readiness)
+    controller._current_invite_url = MagicMock(
+        return_value=create_invite_link("192.168.1.43")
+    )
+
+    controller._copy_band_invite()
+
+    assert controller._last_shared_lan_address == "192.168.1.43"
+    assert not controller._lan_invite_needs_refresh(readiness)
+    controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.shutdown()
+
+
 def test_peer_take_update_is_marshaled_into_open_studio(qapp, tmp_path):
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
