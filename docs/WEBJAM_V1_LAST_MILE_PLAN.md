@@ -1,7 +1,8 @@
 # WebJam v1 last-mile readiness record
 
 **Working branch:** `codex/vnext-last-mile-readiness`
-**Version:** `0.11.0` source candidate; no new package has been made from this branch
+**Version:** `0.11.0` source candidate; CI packages exist for this branch, but no
+new private test-night package has been promoted
 **Last verified baseline:** `master` at `a3ba8498ed87529589cd4738903695d7cba18219`
 **Baseline CI:** GitHub Actions run `29296365785` passed on 2026-07-14.
 
@@ -51,7 +52,7 @@ port, router change, or Webex credential.
 | Band Check | Implemented | Ready / Warning / Action Needed results retain independent local, production, and musician-confirmed evidence. |
 | Recording and Logic handoff | Implemented in source | Schema-v2 manifests, atomic output/recovery, alignment evidence, common-origin PCM24 stems, checksums, and import instructions exist. Physical Logic import is still NOT RUN. |
 | Privacy-safe diagnostics | Implemented | Preview, clipboard, JSON, and ZIP derive from one allowlisted/redacted snapshot. The lifecycle timeline contains no invitation, address, device, or path data. |
-| v0.11 macOS arm64 package | Existing private artifact | Exact artifact/build evidence is in `README.md`, `TEST_PROCEDURE.md`, and the test-night handoff. No new artifact is implied by this branch. |
+| v0.11 macOS arm64 package | Existing private artifact plus CI candidate | The preserved private test-night package remains the only test-night artifact. CI run `29310376638` built this branch for macOS arm64/x64 and Windows x64; its downloaded packages are build-verified but have not had a clean-install or physical musician run. |
 
 ## Highest-risk failure modes and response
 
@@ -83,8 +84,12 @@ The focused source checks added for this milestone cover lifecycle transitions,
 support-bundle redaction, and pre-share refusal when a local fact is missing.
 On this branch, the local Python suite completed with **1,624 passed, 18
 skipped, 1 existing Starlette/httpx deprecation warning, and 6 subtests** in
-54.86 seconds. The full CI matrix remains the authoritative cross-platform
-build evidence.
+54.86 seconds. GitHub Actions run `29310376638` also passed its reference
+service, Python/UX, transport, real-Jamulus integration, and macOS arm64/x64
+plus Windows x64 packaging jobs. The downloaded CI artifacts identify build
+`f4d719a541ca736e501e36aab976dce334498fd2`; they are candidate evidence, not
+test-night certification. The full CI matrix remains the authoritative
+cross-platform build evidence.
 
 ## Manual certification gates — never inferred from source tests
 
