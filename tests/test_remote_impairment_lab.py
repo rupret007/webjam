@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import socket
 import sys
@@ -386,6 +387,30 @@ def assert_no_datagram_with_short_polls(
         )
 
 
+def assert_udp_address_released(
+    address: tuple[object, ...], *, timeout_s: float = 0.5
+) -> None:
+    """Allow an in-flight Linux recvfrom poll to release its closed socket."""
+    deadline = time.monotonic() + timeout_s
+    last_error: OSError | None = None
+    while True:
+        rebound = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            rebound.bind(address)
+            return
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            last_error = exc
+        finally:
+            rebound.close()
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                "rotated UDP address was not released within the test bound"
+            ) from last_error
+        time.sleep(0.003)
+
+
 def test_proxy_and_process_counts_are_bounded_before_allocation() -> None:
     lab = RemoteImpairmentLab(max_proxies=1, max_processes=1)
     endpoint = lab.bind_udp_endpoint()
@@ -438,11 +463,7 @@ def test_proxy_address_rotation_changes_generation_and_releases_old_port() -> No
 
         assert new_address != old_address
         assert proxy.generation == 2
-        rebound = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            rebound.bind(old_address)
-        finally:
-            rebound.close()
+        assert_udp_address_released(old_address)
 
 
 def test_channel_and_endpoint_ownership_have_aggregate_hard_bounds() -> None:

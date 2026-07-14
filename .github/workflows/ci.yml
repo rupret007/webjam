@@ -190,7 +190,7 @@ jobs:
       - name: Verify protocol, package, and privacy gates
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest ruff build
+          python -m pip install ruff build "./reference_service[test]"
           ruff check reference_service
           python -m compileall -q reference_service/webjam_reference reference_service/tests
           pytest -q reference_service/tests
