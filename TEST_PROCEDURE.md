@@ -49,8 +49,8 @@ Review at minimum:
 ## v0.16 package evidence
 
 - Source: `a36789978efbaac5e85fbc5c6ef55abae4ed42e3`.
-- Final source gate: **1,807 passed**, 18 environment-bound skips, zero
-  failures/errors, 53.745 seconds.
+- Final source gate: **1,783 passed**, 18 environment-bound skips, 6 subtests,
+  and zero failures/errors.
 - Archive: `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`; SHA-256
   `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
 - A fresh extraction passed strict/deep outer and nested Jamulus/JamulusServer

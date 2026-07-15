@@ -11,7 +11,7 @@ source SHA, or test count from v0.15.0.
 | Source SHA | `a36789978efbaac5e85fbc5c6ef55abae4ed42e3` |
 | Archive filename | `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip` |
 | Archive SHA-256 | `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b` |
-| Automated evidence | 1,807 passed; 18 environment-bound skips; 0 failures/errors |
+| Automated evidence | 1,783 passed; 18 environment-bound skips; 6 subtests; 0 failures/errors |
 | Package evidence | Fresh extraction, signatures, transport, and frozen Host smoke passed |
 | Rollback | v0.15.0 package/app preserved before install |
 
