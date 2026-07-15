@@ -104,7 +104,7 @@ def _default_version_probe(binary: str) -> str:
     except (OSError, subprocess.SubprocessError):
         return "unverified"
     match = re.search(
-        r"(?:version\\s+)?(\\d+\\.\\d+\\.\\d+)",
+        r"(?:version\s+)?(\d+\.\d+\.\d+)",
         f"{completed.stdout}\\n{completed.stderr}",
         flags=re.IGNORECASE,
     )

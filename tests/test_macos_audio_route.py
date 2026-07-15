@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree
 
 import pytest
@@ -13,6 +14,7 @@ from core.macos_audio_route import (
     WEBJAM_ROUTE_INIFILE,
     JamulusAudioRouteError,
     MacOSJamulusRouteManager,
+    _default_version_probe,
     jamulus_macos_config_directory,
 )
 from core.settings import AppSettings
@@ -51,6 +53,22 @@ def _manager(
 def _xml_settings(path: Path) -> dict[str, str]:
     root = ElementTree.fromstring(path.read_bytes())
     return {element.tag: element.text or "" for element in root}
+
+
+def test_default_version_probe_parses_official_jamulus_banner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bundled 3.12.2 client prints this banner for ``--version``."""
+
+    monkeypatch.setattr(
+        "core.macos_audio_route.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=" *** Jamulus, Version 3.12.2\n",
+            stderr="",
+        ),
+    )
+
+    assert _default_version_probe("/bundle/Jamulus") == "3.12.2"
 
 
 def test_prepare_uses_defaults_writes_owned_config_and_keeps_name_neutral(
