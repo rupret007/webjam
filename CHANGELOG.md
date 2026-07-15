@@ -4,7 +4,7 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [0.16.0] — 2026-07-14 test-night candidate
+## [0.16.0] — 2026-07-15 test-night package
 
 ### Jamulus-first startup
 
@@ -33,9 +33,15 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Verification
 
-- Final source SHA, automated test result, package filename, package SHA-256,
-  and installed-package verification are recorded with the release handoff
-  after the package gate completes.
+- Built the final private Apple-Silicon package from
+  `a36789978efbaac5e85fbc5c6ef55abae4ed42e3`:
+  `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
+- The final source gate passed **1,807 tests**, with 18 environment-bound
+  skips and zero failures/errors in 53.745 seconds. The ad-hoc-signed,
+  non-notarized archive passed fresh-extraction strict/deep outer and nested
+  Jamulus/JamulusServer 3.12.2 signature checks, transport verification, and a
+  frozen Host smoke. v0.15.0 is preserved as the rollback ZIP and app.
 - Physical two-Mac audio, hardware change/recovery, recording, and external
   editor import remain **NOT RUN** until musicians perform those checks.
 

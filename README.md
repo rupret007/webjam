@@ -55,11 +55,15 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-v0.16.0 is the source release candidate. Its final package filename, source
-commit, SHA-256, and package-gate result are recorded after the final build in
-[`TEST_PROCEDURE.md`](TEST_PROCEDURE.md) and the test-night handoff. The
-previous v0.15.0 package remains the rollback artifact until that verification
-is complete.
+v0.16.0 is the final private test-night package, built from
+`a36789978efbaac5e85fbc5c6ef55abae4ed42e3`:
+`WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
+The final source gate passed **1,807 tests** with 18 environment-bound skips
+and zero failures/errors in 53.745 seconds. A fresh extracted package passed
+strict/deep outer and nested-app signature checks, transport verification, and
+a frozen Host smoke. The v0.15.0 ZIP and prior installed app are preserved as
+rollback.
 
 Automated source checks are evidence for code behavior. Real two-Mac audio,
 interface changes, sleep/wake, interruption/recovery, and external-editor

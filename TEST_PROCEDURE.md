@@ -46,6 +46,18 @@ Review at minimum:
    1024×768, and 1440×900.
 6. Preserve v0.15.0 as rollback before installing the verified v0.16.0 app.
 
+## v0.16 package evidence
+
+- Source: `a36789978efbaac5e85fbc5c6ef55abae4ed42e3`.
+- Final source gate: **1,807 passed**, 18 environment-bound skips, zero
+  failures/errors, 53.745 seconds.
+- Archive: `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`; SHA-256
+  `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
+- A fresh extraction passed strict/deep outer and nested Jamulus/JamulusServer
+  3.12.2 signature checks, transport verification, and a frozen Host smoke.
+  The verified app is installed at `/Applications/WebJam.app`; the v0.15.0 app
+  and ZIP are preserved as rollback.
+
 ## Physical pilot ledger
 
 Mark each item PASS, FAIL, or NOT RUN:
@@ -58,5 +70,4 @@ Mark each item PASS, FAIL, or NOT RUN:
 - Studio review and import of exported stems into an external editor;
 - Webex optional behavior without duplicated music.
 
-Release metadata—final source SHA, test count, artifact filename, and
-SHA-256—belongs in the package handoff after this gate completes.
+This package evidence does not replace the physical ledger below.

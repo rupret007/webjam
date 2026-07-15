@@ -2,12 +2,12 @@
 
 This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
-evidence, but the active v0.15.0 package and physical-evidence boundary is
+evidence, but the active v0.16.0 package and physical-evidence boundary is
 [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md). The preserved
 v0.12.0, v0.13.0, and v0.14.0 packages remain evidence only for themselves.
 Historical references below to a Logic export name do not describe the current
-product: v0.15 uses standalone **Track Export** and does not integrate with an
-external editor.
+product: v0.16 has a Logic-like Studio review surface and does not integrate
+with an external editor.
 
 ## Product promise
 
@@ -42,7 +42,7 @@ external editor.
 ## Historical v0.13 package addendum — physical evidence still separate
 
 This section records the v0.13 implementation/package boundary. It is not the
-current candidate status: use the v0.15.0 pilot worksheet for that.
+current candidate status: use the v0.16.0 pilot worksheet for that.
 
 - **Interrupted local capture:** the writer periodically flushes and
   synchronizes its audio before recording opaque IDs, durable frames, gaps, and
@@ -62,7 +62,7 @@ current candidate status: use the v0.15.0 pilot worksheet for that.
   not change the reusable v2 same-LAN invitation described in the historical
   architecture below, nor does it establish public remote service.
 
-The v0.13.0 artifact remains historical package evidence. The active v0.15.0
+The v0.13.0 artifact remains historical package evidence. The active v0.16.0
 artifact's fresh-extraction package smoke, ad-hoc signing result, and isolated
 launch/TERM cycles are recorded in the pilot worksheet. Physical interruption
 recovery, two-Mac results, and external-editor import remain **NOT RUN**.

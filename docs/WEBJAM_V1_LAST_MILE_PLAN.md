@@ -5,7 +5,7 @@
 > [CLOSED_PILOT_PLAYBOOK.md](../../CLOSED_PILOT_PLAYBOOK.md),
 > [SUNDAY_TWO_MAC_PILOT.md](../../SUNDAY_TWO_MAC_PILOT.md), and
 > [RECORDING_AND_STUDIO.md](../../RECORDING_AND_STUDIO.md) for the current
-> v0.15 conductor, Test Night, and standalone Track Export boundary.
+> v0.16 Jamulus-first test-night flow and Logic-like Studio boundary.
 
 **Working branch at the time:** `master`
 **Historical package candidate:** `0.14.0` private Apple-Silicon test-night
