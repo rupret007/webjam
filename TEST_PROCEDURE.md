@@ -2,9 +2,10 @@
 
 **Last updated:** 2026-07-14
 **Current target:** private Apple Silicon v0.15.0 candidate.
-**Exact package:** record the filename, SHA-256, source/build commit, and
-package-gate result in [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md)
-after the v0.15.0 bundle is built.
+**Exact package:** `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. The package-only gate passed;
+see [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) for the full record.
 
 The v0.14.0 package is rollback history only. Its source counts, hash, and
 package result are not evidence for v0.15.0. Physical two-Mac audio,
@@ -216,11 +217,11 @@ client/server bundles using the existing packaging workflow:
 ```
 
 Do not overwrite an earlier rollback ZIP or copy its identity into a new test.
-After an archive is built, fresh-extract it and record its exact build commit,
-filename, SHA-256, architecture, install location, and package-gate result in
-the release record and [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
-Until those v0.15.0 facts are recorded, the package and physical worksheets
-remain **NOT RUN**.
+The current exact archive has passed fresh extraction, strict/deep signatures,
+nested-app inspection, native-fabric build-ID verification, and two isolated
+launch/cleanup cycles; it is ad-hoc signed, not notarized. Record any rebuilt
+archive as a new identity before use. Those package checks do not change the
+physical worksheet from **NOT RUN**.
 
 Verify the bundled official Jamulus 3.12.2 DMG checksum before staging the
 nested client and server apps. Only the exact fresh-extracted archive named in

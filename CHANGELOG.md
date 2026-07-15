@@ -6,15 +6,23 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.15.0] — 2026-07-14 private test-night candidate
 
-### Source candidate verification
+### Release verification
 
-- Package filename, source commit, SHA-256, fresh-extraction signature checks,
-  nested-app checks, native-fabric build-ID verification, and isolated launch
-  cycles are recorded only after the exact macOS bundle is built. Until then,
-  v0.14.0 remains the rollback package.
-- The full source gate passed **1,751 tests**, with 18 environment-bound skips
-  and 6 subtests. `transport` `make check`, `go test ./...`, `go vet ./...`,
-  `go mod verify`, and `go mod tidy -diff` passed on the release Mac.
+- Built the exact Apple-Silicon package from
+  `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`:
+  `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`.
+  The v0.14.0 ZIP remains the rollback package.
+- The ad-hoc-signed, non-notarized archive passed fresh-extraction strict/deep
+  signature checks, nested Jamulus/JamulusServer 3.12.2 checks, arm64 native
+  fabric checksum/build-ID verification, and two isolated six-second launch
+  and ordinary-cleanup cycles. The isolated launch machine had no default band
+  input, which was truthfully reported as a route-setup block rather than an
+  audio pass.
+- The full source gate passed **1,752 tests**, with 18 environment-bound skips,
+  1 known warning, and 6 subtests. `transport` `make check`, `go test ./...`,
+  `go vet ./...`, `go mod verify`, and `go mod tidy -diff` passed on the
+  release Mac.
 - Physical CoreAudio, two-Mac audio, recording/recovery, outage/reconnect, and
   import in an external editor remain **NOT RUN**. No source or package check
   is presented as evidence of those observations.

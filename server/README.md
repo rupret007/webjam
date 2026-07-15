@@ -1,24 +1,26 @@
 # WebJam band server
 
 A private Jamulus server for your band with **multitrack recording**: every
-musician gets their own track, and every take lands as a ready-to-open
-**Reaper project** (`.rpp` + per-musician WAVs). This is the band-server
-setup used by WebJam's pilot **● Record** button; recordings can also be
-started from a connected Jamulus client GUI or via JSON-RPC.
+musician gets their own server track. WebJam's musician workflow reviews those
+tracks in Studio and creates a portable **Track Export**; it does not launch or
+integrate with an external editor. This is the band-server setup used by
+WebJam's pilot **● Record** button; recordings can also be started from a
+connected Jamulus client GUI or via JSON-RPC.
 
 ## macOS host + musician workstation (v0.15.0 private test-night candidate)
 
-The active source candidate is v0.15.0. Its exact Apple-Silicon package
-identity is recorded only after the fresh bundle passes source-commit,
-nested-Jamulus, signature, transport, and launch checks. The v0.14.0 ZIP
-remains the rollback artifact: `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`,
-SHA-256 `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+The active test-night candidate is v0.15.0. Its verified Apple-Silicon package
+is `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. It passed fresh-bundle,
+nested-Jamulus, signature, transport, and isolated-launch checks; v0.14.0 is
+the rollback artifact.
 
-The v0.15 source gate recorded 1,751 passed, 18 skipped, and 6 subtests;
-native transport `go test ./...` and `go vet ./...` passed. Physical CoreAudio,
-two-Mac audio, recording/recovery, and import in an external editor remain
-**NOT RUN**. WebJam does not create, launch, control, read, write, or integrate
-with Logic Pro or any other editor.
+The v0.15 source gate recorded 1,752 passed, 18 skipped, 1 known warning, and
+6 subtests; native transport `go test ./...` and `go vet ./...` passed.
+Physical CoreAudio, two-Mac audio, recording/recovery, and import in an
+external editor remain **NOT RUN**. WebJam does not create, launch, control,
+read, write, or integrate with Logic Pro or any other editor.
 
 **WebJam hosts the server automatically.** In the packaged macOS app, choose
 **Host a Jam**, confirm the name and band sound, complete Band Check, and

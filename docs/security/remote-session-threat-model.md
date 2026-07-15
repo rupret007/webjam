@@ -233,7 +233,7 @@ queues are bounded and prefer recent packets while counting every drop.
 Control messages use a strict version/type/generation/request-ID/length frame.
 Unknown types, invalid transitions, stale generations, duplicate forbidden
 fields, and oversized frames fail closed. Transport identifiers map to the
-existing participant, recording, take, Studio, and Logic models; the transport
+existing participant, recording, take, Studio, and Track Export models; the transport
 does not create a second identity or recording truth.
 
 Original media uses separate reliable streams and host-issued upload grants
@@ -436,7 +436,7 @@ The release suite must prove at least:
   during cleanup in the impairment lab;
 - real Jamulus 3.12.2 decoded 440/660-Hz identity, roster distinction,
   reconnect, stems, local-original preservation, secure resumed transfer,
-  Studio/Logic traversal, and complete owned-process/port cleanup for direct and
+  Studio/Track Export traversal, and complete owned-process/port cleanup for direct and
   forced-relay paths;
 - privacy sentinels shaped like capability, TURN credential, private invite,
   IPv4, IPv6, username, home path, recording name, notes, Webex link, and key
@@ -477,7 +477,7 @@ remain open.
 | Two-musician acoustic audibility | **NOT RUN** |
 | Physical macOS/Windows interface route and headphones | **NOT RUN** |
 | Guest original through a real Internet outage | **NOT RUN** |
-| Logic Pro import and heard playback | **NOT RUN** |
+| Manual external-editor import and heard playback | **NOT RUN** |
 | Packaged VoiceOver and NVDA review | **NOT RUN** |
 
 Simulation, loopback, containers, virtual networks, decoded PCM, meters,

@@ -14,11 +14,12 @@ orange, with Host and Join as the only launch choices and one clear next action
 while a session is running.
 
 > **Tonight's candidate:**
-> v0.15.0 is being packaged after its source and package checks complete. The
-> exact filename, source commit, and SHA-256 are recorded in the release notes
-> only after verification. Physical CoreAudio, two-Mac, recording/recovery, and
-> external-editor import results remain **NOT RUN**. v0.14.0 is the rollback
-> artifact.
+> `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` is verified from
+> `30ece85eb6a555dbcb2ef35753e4c6c9e8679770` (SHA-256
+> `58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`). It is
+> ad-hoc signed, not notarized, and its package-only checks passed. Physical
+> CoreAudio, two-Mac, recording/recovery, and external-editor import results
+> remain **NOT RUN**. v0.14.0 is the rollback artifact.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed

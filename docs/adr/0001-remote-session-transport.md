@@ -41,7 +41,7 @@ server loopback endpoint directly.
 The same QUIC connection provides separately framed, bounded reliable streams
 for session control and resumable original-media transfer. Media streams are
 paced and yield to live datagrams; they pause under live-path backpressure.
-Application recording, participant, take, alignment, Studio, and Logic models
+Application recording, participant, take, alignment, Studio, and Track Export models
 remain canonical and outside the sidecar.
 
 The transport core uses Pion ICE for direct and TURN paths, with candidate
@@ -349,7 +349,7 @@ Relevant primary specifications and implementation documentation:
 
 The remote implementation is behind the versioned transport factory. Disabling
 v3 or removing the sidecar returns the app to the preserved v1/v2 same-LAN path
-without changing participant, recording, take, Studio, or Logic data. A failed
+without changing participant, recording, take, Studio, or Track Export data. A failed
 or exhausted v3 session never opens public Jamulus or falls back to plaintext
 Internet transfer; it stops with one useful musician-facing action.
 

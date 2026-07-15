@@ -26,12 +26,13 @@ redacted in-progress evidence, and creates durable local-capture checkpoints.
 Those features still require physical evidence; automated results do not
 substitute for it.
 
-**Current candidate:** v0.15.0. Record the exact package filename, SHA-256,
-source/build commit, and package-gate result in
-[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) before a physical run.
-Physical CoreAudio, two-Mac, recording/recovery, and optional manual import
-into an external editor remain **NOT RUN** until musicians record them. Earlier
-ZIPs are rollback history only.
+**Current candidate:** v0.15.0. Use the verified package record in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md):
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. Physical CoreAudio, two-Mac,
+recording/recovery, and optional manual import into an external editor remain
+**NOT RUN** until musicians record them. Earlier ZIPs are rollback history only.
 
 ## Install
 

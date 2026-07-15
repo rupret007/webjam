@@ -12,11 +12,15 @@ background engine; video, notes, and Studio remain optional session tools.
 
 ## Current State
 
-As of 2026-07-14, `master` contains the **v0.15.0 private test-night source
-candidate**. The exact package identity is recorded only after the package is
-built and verified; v0.14.0 remains the rollback candidate. WebJam's supported
-musician path is still one private LAN, using v1/v2. The v3 path remains a
-loopback-only development profile—not public hosting or an Internet service.
+As of 2026-07-14, `master` contains the **v0.15.0 private test-night
+candidate**. The verified Apple-Silicon archive is
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` (SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`), built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. It is ad-hoc signed, not
+notarized; its package-only checks passed. v0.14.0 remains the rollback
+candidate. WebJam's supported musician path is still one private LAN, using
+v1/v2. The v3 path remains a loopback-only development profile—not public
+hosting or an Internet service.
 
 The normal flow is deliberately small:
 

@@ -16,16 +16,16 @@ The musician path should stay simple:
 
 ## 1. Evidence header
 
-Fill this in before opening either app. Do not copy an identity from the
-v0.14.0 rollback package. The v0.15.0 artifact filename, hash, source commit,
-and package-gate result must be recorded here before physical testing starts.
+Fill the hardware and human-observation fields before opening either app. Do
+not copy an identity from the v0.14.0 rollback package. The verified v0.15.0
+artifact record below must be the package used on both Macs.
 
 - Installed app version: `0.15.0` (verify on each Mac)
-- Artifact filename: ___________________________________________________
-- Artifact absolute path: ______________________________________________
-- SHA-256: _____________________________________________________________
-- Source/build commit: _________________________________________________
-- Package-gate result/reference: _______________________________________
+- Artifact filename: `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`
+- Artifact absolute path: `/Users/jeffstory/Documents/WebJam 2/WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`
+- SHA-256: `58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`
+- Source/build commit: `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`
+- Package-gate result/reference: PASS — ad-hoc signed/not notarized; fresh extraction, strict/deep signatures, nested Jamulus 3.12.2 apps, arm64 fabric/build ID, and two isolated launch/cleanup cycles passed. Not an audio pass.
 - Test date/time/timezone: _____________________________________________
 - Host Mac model / macOS: ______________________________________________
 - Bandmate Mac model / macOS: __________________________________________
@@ -38,11 +38,10 @@ and package-gate result must be recorded here before physical testing starts.
 Both Macs must use the same artifact hash. If the filename, hash, version, or
 source record differs, stop and replace the app before testing.
 
-> **Release boundary:** Until the v0.15.0 package is built and its exact
-> package-gate result is entered above, this worksheet remains **NOT RUN**.
-> Physical CoreAudio, two-Mac audibility, recording/recovery, and manual
-> external-editor import likewise remain **NOT RUN** until real musicians
-> complete the rows below.
+> **Release boundary:** The package-only gate above is complete. This worksheet
+> remains **NOT RUN** until real musicians complete the physical CoreAudio,
+> two-Mac audibility, recording/recovery, interruption, and manual
+> external-editor-import rows below.
 
 ## What this test does and does not prove
 

@@ -9,12 +9,14 @@ them in the physical worksheet. Setup Wizard, Ready Check, raw endpoints,
 **Start Audio**, **Host & Start Audio**, and a visible Jamulus window are legacy
 paths, not current acceptance criteria.
 
-Record the exact v0.15.0 package filename, SHA-256, source/build commit, and
-package-gate result in [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md)
-after packaging. The v0.14.0 artifact is rollback history only. Neither source
-or package checks nor a rendered screenshot turns a physical musician,
-CoreAudio, recording/recovery, or optional external-editor result into anything
-other than **NOT RUN**.
+The exact v0.15.0 package is
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`; its package-only gate is
+recorded in [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md). The v0.14.0
+artifact is rollback history only. Neither source or package checks nor a
+rendered screenshot turns a physical musician, CoreAudio, recording/recovery,
+or optional external-editor result into anything other than **NOT RUN**.
 
 ## Launch: understandable in five seconds
 

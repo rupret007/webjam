@@ -3,8 +3,8 @@
 > **Historical record:** This preserves the 2026-07-13 recovery chronology for
 > the v0.11.0 remote-session vertical slice. It is not the current branch or
 > release-status record. Use
-> [`../WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md) for active
-> source/package/physical proof boundaries.
+> [`../../SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) for the active
+> v0.15.0 source/package/physical proof boundary.
 
 ## Product promise
 

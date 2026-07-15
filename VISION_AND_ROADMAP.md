@@ -74,13 +74,16 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ v0.15.0 closed-pilot source candidate (2026-07-14)
+### ✅ v0.15.0 closed-pilot test-night candidate (2026-07-14)
 
-The v0.15.0 package identity is intentionally recorded only after the exact
-archive is built and verified. v0.14.0 remains the rollback candidate.
-Automated source and package gates do not establish two-Mac audio, CoreAudio
-routing, recording/recovery, or external-editor import; those outcomes remain
-**NOT RUN** until directly observed in a closed pilot.
+The verified Apple-Silicon package is
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` (SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`), built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. It passed source and
+package-only verification; v0.14.0 remains the rollback candidate. Those gates
+do not establish two-Mac audio, CoreAudio routing, recording/recovery, or
+external-editor import; those outcomes remain **NOT RUN** until directly
+observed in a closed pilot.
 
 - **Five-second launch and Band Check** — Host a Jam is the clear primary
   action; Join a Jam opens one invitation field. One concise name-and-band-sound

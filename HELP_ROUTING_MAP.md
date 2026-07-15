@@ -1,11 +1,14 @@
 # WebJam help routing map
 
 Maps common musician questions to the v0.15.0 test-night interface. Host and
-Join both use the short sound confirmation before Band Check. The exact package
-identity is added after packaging verification; v0.14.0 remains rollback
-history. Raw server fields and color-named buttons are legacy paths. Physical
-CoreAudio, two-Mac, recording/recovery, and external-editor observations remain
-**NOT RUN** until recorded in the pilot worksheet.
+Join both use the short sound confirmation before Band Check. The verified
+package is `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` from
+`30ece85eb6a555dbcb2ef35753e4c6c9e8679770` (SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`);
+v0.14.0 remains rollback history. Raw server fields and color-named buttons are
+legacy paths. Physical CoreAudio, two-Mac, recording/recovery, and
+external-editor observations remain **NOT RUN** until recorded in the pilot
+worksheet.
 
 | User need | Current path |
 |---|---|

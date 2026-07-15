@@ -11,15 +11,17 @@ This first-jam guide remains the ordinary same-private-LAN path. The separate
 v3 `reference-local` profile is a loopback developer lab, not a public remote
 service.
 
-**Artifact scope:** Before a physical test, record the exact v0.15.0 ZIP,
-SHA-256, source/build commit, and package-gate result in
-[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md). This candidate includes
-the short sound-confirmation screen, CoreAudio route preflight,
-recording-storage guard, durable local-capture recovery, one-primary-action
-session conductor, and Studio's focused Track Export workflow. Physical
-CoreAudio, two-Mac, recording/recovery, and optional external-editor import
-results remain **NOT RUN** until real musicians record them. Older ZIPs are
-rollback artifacts only.
+**Artifact scope:** Use the verified v0.15.0 record in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md):
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. This candidate includes the
+short sound-confirmation screen, CoreAudio route preflight, recording-storage
+guard, durable local-capture recovery, one-primary-action session conductor,
+and Studio's focused Track Export workflow. Physical CoreAudio, two-Mac,
+recording/recovery, and optional external-editor import results remain
+**NOT RUN** until real musicians record them. Older ZIPs are rollback artifacts
+only.
 
 ## Before anyone opens WebJam
 

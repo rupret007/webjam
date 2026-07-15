@@ -6,12 +6,13 @@ conversation path, video only, or an advanced one-way feed for an audience. WebJ
 opens the meeting but cannot inspect or change Webex's microphone, speaker,
 mute state, Mic Mode, or Smart Audio setting.
 
-This guidance applies to the v0.15.0 private candidate. Record its exact ZIP,
-SHA-256, and source/build commit in
-[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) before a physical run.
-Physical CoreAudio, two-Mac, recording/recovery, and optional external-editor
-observations remain **NOT RUN** until musicians record them. Earlier ZIPs are
-rollback artifacts only.
+This guidance applies to the verified v0.15.0 private candidate recorded in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md):
+`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
+from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. Physical CoreAudio, two-Mac,
+recording/recovery, and optional external-editor observations remain **NOT RUN**
+until musicians record them. Earlier ZIPs are rollback artifacts only.
 
 ## Musician conversation — recommended
 
