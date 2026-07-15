@@ -71,9 +71,13 @@ def test_bridge_uses_jamulus_native_profile_and_keeps_the_gui_visible(
     process = MagicMock()
     process.poll.return_value = None
 
-    with patch("services.bridge_service.subprocess.Popen", return_value=process) as popen, patch(
-        "core.file_io.atomic_write_text"
-    ):
+    with patch.dict(
+        "services.bridge_service.os.environ",
+        {"QT_QPA_PLATFORM": "offscreen"},
+        clear=False,
+    ), patch("services.bridge_service.sys.platform", "darwin"), patch(
+        "services.bridge_service.subprocess.Popen", return_value=process
+    ) as popen, patch("core.file_io.atomic_write_text"):
         assert bridge.launch_jamulus(manual=True) is True
 
     manager.prepare.assert_called_once_with(bridge.settings, "/Applications/Jamulus")
