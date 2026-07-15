@@ -1,8 +1,9 @@
 """The simple startup experience: Host a Jam or Join a Jam.
 
-A role choice is followed by one short musician-facing sound confirmation.
-It keeps host/join connection details automatic while making the name and band
-input/output that will be checked before launch explicit.
+This dialog is intentionally just the role decision (and one pasted invite
+when joining).  It does not ask WebJam to choose an audio device: Jamulus owns
+the live music route and the main window guides its native setup after this
+dialog closes.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -33,6 +35,7 @@ from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
     hosted_server_secret_path,
+    save_settings,
 )
 from webjam_qt.theme.brand import BrandMark
 from webjam_qt.theme.tokens import Space
@@ -111,7 +114,12 @@ def apply_remote_join_defaults(settings: AppSettings) -> None:
 
 
 class LaunchDialog(QDialog):
-    """Two choices on launch; one pasted link after choosing Join."""
+    """Two choices on launch; one pasted link after choosing Join.
+
+    The selected role is persisted once before the main window opens.  The
+    invitation bearer remains memory-only; only the non-secret host/port
+    fields needed by the legacy LAN client are saved for a returning musician.
+    """
 
     def __init__(
         self,
@@ -132,16 +140,30 @@ class LaunchDialog(QDialog):
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
-        self.setMinimumSize(460, 600)
-        self.resize(620, 660)
+        self.setMinimumSize(460, 520)
+        self.resize(620, 600)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.XL, Space.XXL, Space.XL)
         root.setSpacing(Space.MD)
 
-        self._logo = BrandMark(48)
+        brand_row = QHBoxLayout()
+        brand_row.setContentsMargins(0, 0, 0, 0)
+        brand_row.setSpacing(Space.SM)
+        self._logo = BrandMark(30)
         self._logo.setObjectName("LaunchBrandMark")
-        root.addWidget(self._logo, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._wordmark = QLabel(
+            'Web<span style="color: #BF5700;">Jam</span>'
+        )
+        self._wordmark.setObjectName("LaunchLogo")
+        self._wordmark.setTextFormat(Qt.TextFormat.RichText)
+        self._wordmark.setAccessibleName("WebJam")
+        self._wordmark.setAccessibleDescription("WebJam")
+        brand_row.addStretch(1)
+        brand_row.addWidget(self._logo)
+        brand_row.addWidget(self._wordmark)
+        brand_row.addStretch(1)
+        root.addLayout(brand_row)
 
         self._pages = QStackedWidget()
         self._choice_page = self._build_choice_page()
@@ -301,34 +323,26 @@ class LaunchDialog(QDialog):
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
 
-    def _confirm_sound_setup(
-        self,
-        candidate: AppSettings,
-        *,
-        primary_action_label: str,
-    ) -> bool:
-        """Save one short musician-facing setup before the session gate."""
+    def _persist_role_choice(self, candidate: AppSettings) -> bool:
+        """Commit the non-audio role intent before starting the main journey."""
 
-        from webjam_qt.windows.simple_settings import SimpleSettingsDialog
-
-        dialog = SimpleSettingsDialog(
-            candidate,
-            parent=self,
-            primary_action_label=primary_action_label,
-            show_band_check_action=False,
-        )
-        dialog.setWindowTitle("Check your sound")
-        return dialog.exec() == SimpleSettingsDialog.DialogCode.Accepted
+        try:
+            save_settings(candidate)
+        except OSError:
+            self._choice_error.setText(
+                "WebJam couldn’t save this choice. Check available disk space and try again."
+            )
+            self._announce_error(self._choice_error)
+            return False
+        self._settings = candidate
+        return True
 
     def _host(self) -> None:
         if not self._begin_submission(self._host_button, "Starting…"):
             return
         candidate = deepcopy(self._settings)
         apply_host_defaults(candidate)
-        if not self._confirm_sound_setup(
-            candidate,
-            primary_action_label="Continue to Band Check",
-        ):
+        if not self._persist_role_choice(candidate):
             self._restore_submission()
             return
         self.selected_role = "host"
@@ -388,10 +402,7 @@ class LaunchDialog(QDialog):
         else:
             apply_join_invite(candidate, invitation)
             session_name = invitation.session_name
-        if not self._confirm_sound_setup(
-            candidate,
-            primary_action_label="Join Session",
-        ):
+        if not self._persist_role_choice(candidate):
             self._pages.setCurrentWidget(self._join_page)
             self._invite_input.clear()
             self._restore_submission()

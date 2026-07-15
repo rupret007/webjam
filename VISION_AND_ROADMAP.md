@@ -1,224 +1,39 @@
-# WebJam Vision & Roadmap
+# WebJam vision and roadmap — v0.16
 
-**Goal: Make WebJam unlike any collaboration app before or after.**
+## Product direction
 
-Not "video call + shared doc." WebJam is the app that **knows we're making something together**: one room, one goal, one shared artifact (the canvas), with context that carries across sessions. Modes, templates, and review states are the spine; low-latency audio and video are the senses.
+WebJam should feel like a bandmate who gets a rehearsal ready, not a technical
+control panel. The core promise is **Host or Join, set up sound in Jamulus, and
+play.**
 
----
+v0.16 establishes the boundary:
 
-## North Star
+- WebJam conducts private sessions, invitations, recording, Studio, export,
+  recovery, and support.
+- Jamulus owns the live music engine and all audio configuration.
+- Webex remains optional conversation/video.
+- Studio is Logic-like multitrack review, not Logic integration.
 
-> **"The app knows we're making something together."**
+## Shipped in v0.16 source
 
-- One room = one goal + one canvas + one conversation (audio + video).
-- The canvas is the source of truth for what we decided and what we're doing next.
-- Sessions have shape (rituals, checkpoints, handoffs), not endless calls.
-- Modes change how the app looks and behaves so each discipline gets the right tool.
+- Simple Host/Join first screen.
+- Non-modal role-aware startup journey.
+- Visible Jamulus native setup with a dedicated, Jamulus-owned profile.
+- Human audibility confirmation and exact-profile returning fast path.
+- Optional Webex after music readiness.
+- First-Record Local Originals choice and Studio-only playback output.
+- Private, allowlisted restart recovery state.
+- Burnt-orange three-loop WebJam mark and black/white/orange UI.
 
----
+## Next evidence
 
-## Themes & Features
+The next work is physical validation, not invention of more startup screens:
 
-### 1. Audio as the main object
+- two-Mac rehearsals with real interfaces;
+- device loss, sleep/wake, and interruption recovery;
+- shared/local take completion and transfer;
+- Studio/export import in a real editor;
+- packaged-code-signing and installation evidence.
 
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **Per-participant "room sound"** | Each participant can pick a small room reverb (e.g. garage, studio, hall) so the band feels in the same space. | 2 |
-| **Shared click / metronome + visual pulse** | One source of truth for tempo and downbeat; subtle visual pulse in the UI so everyone stays in time even when video lags. | 2 |
-| **Listening profiles (first-class)** | Save and name mixes ("Rehearsal", "Recording", "Focus on drums"); share or attach to modes/templates. | 2 |
-| **Direct Jamulus control** | Control mixer programmatically (already on README roadmap). | 1 |
-| **Effects per channel** | Reverb, compression, EQ per channel (README roadmap). | 3 |
-
-### 2. Creative modes that change the app
-
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **Mode-specific layouts** | Music Jam: big mixer, minimal canvas. Writer's Room: big notes, small audio. Design Critique: references + timestamps. Same app, different instrument per mode. | 2 |
-| **One-click session templates** | "Band rehearsal", "Feedback on a track", "Co-writing a script" – each sets goal, template, and suggested defaults. | 1 |
-| **In-session rituals** | Guided steps: "Sound check" → "First run" → "Feedback round" → "Save and close", with optional timers and checkboxes. | 2 |
-| **Rituals drive next session** | On reopen: "Continue from 'In review'" or "Start a new round" so the canvas drives what happens next. | 2 |
-
-### 3. Session canvas as the shared artifact
-
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **Time-linked notes and references** | Pin a note or link to "what's happening now" (e.g. "from 12:34" or "during chorus"); support recap/replay when recording exists. | 2 |
-| **Exportable session brief** | Local Markdown brief now ships from the Session Canvas with decisions, actions, blockers, questions, references, and raw notes. PDF, artifact embedding, and richer attendee detail remain future work. | 1/2 |
-| **Review states drive next session** | Draft → In review → Approved; on next open, suggest "Continue from In review" or "Start new round." (Partially in place.) | 1 |
-| **Offline-first notes** | Notes and artifacts save locally and sync when back online so bad connectivity doesn't lose the "minutes" of the session. | 2 |
-
-### 4. Technical differentiators
-
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **Companion API (documented & stable)** | Document and stabilize the local bridge API so DAWs, editors, and other tools can read room state, mode, goal, mixer. WebJam as hub. | 1 |
-| **Optional E2E encrypted canvas** | Mode where only people in the room can ever read notes/artifacts; no server-side plaintext. | 3 |
-| **Multitrack Studio review workspace** | Shipped in the private v0.15.0 candidate: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and portable Track Export. It is not a tempo grid, a full DAW, or an external-editor integration. | 1 |
-| **Recording + timeline** | Optional recording; timeline for time-linked notes and replay. | 3 |
-
-### 5. Community & human layer
-
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **Cohort & mode analytics** | Privacy-respecting dashboards: which modes are used, where Host/Join sessions stall, which templates win. (Build on existing metrics.) | 2 |
-| **Community room templates** | Users can publish/share templates; small gallery so best practices spread without building every workflow. | 3 |
-| **Accessibility as differentiator** | Double down on high contrast, scalable UI, keyboard flow, screen-reader-friendly structure; say it clearly in positioning. | 1 |
-
-### 6. Positioning & messaging
-
-| Idea | Description | Phase |
-|------|-------------|-------|
-| **"We're making something together"** | Marketing and in-app copy that frames WebJam as the room with a goal and a shared artifact, not "another meeting app." | 1 |
-
----
-
-## Delivery Status
-
-### ✅ v0.15.0 closed-pilot test-night candidate (2026-07-14)
-
-The verified Apple-Silicon package is
-`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` (SHA-256
-`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`), built
-from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. It passed source and
-package-only verification; v0.14.0 remains the rollback candidate. Those gates
-do not establish two-Mac audio, CoreAudio routing, recording/recovery, or
-external-editor import; those outcomes remain **NOT RUN** until directly
-observed in a closed pilot.
-
-- **Five-second launch and Band Check** — Host a Jam is the clear primary
-  action; Join a Jam opens one invitation field. One concise name-and-band-sound
-  confirmation leads into the guided Band Check and **Start Session** path.
-- **Distinct visual identity** — near-black surfaces, white type, and burnt
-  orange (`#BF5700`) replace the former purple/teal palette. An original
-  three-part mark represents conversation, live music, and production without
-  reusing a third-party logo.
-- **Studio review workspace** — every completed lane shares an elapsed-seconds
-  ruler and seek point; no bars, beats, tempo, automation, or full-DAW claim is
-  invented. Selecting a track exposes its source, media/alignment evidence,
-  recorded gaps, and export inclusion. Compact controls remain usable at
-  760×600.
-- **Safe Studio continuity** — gain, pan, mute, solo, and export inclusion live
-  in an atomic private `.webjam-studio-state.json` sidecar keyed by schema-v2
-  `track_id`. It never rewrites the take manifest or source WAVs, and a
-  reordered/reconciled lane cannot inherit another musician's export choice.
-- **Durable local recovery and export truth** — interrupted media remains a
-  visible **Needs Attention** recovery project. Explicitly silent or unaligned
-  selected tracks block misleading Track Export until the musician makes the
-  safe choice; source media stays unchanged.
-- **Canonical session conductor** — a pure fact-derived state model produces
-  one dominant musician action and rejects stale/duplicate lifecycle work.
-- **Closed-pilot evidence** — a hidden `--test-night` workflow records bounded
-  automatic facts separately from explicit human answers; it is local-only,
-  append-only, and restart-safe.
-- **Private local originals and lifecycle truth** — supported v2 guests can
-  retain local originals through a peer outage and resume a verified same-LAN
-  transfer. A v1 guest has no false local-capture claim; a running process is
-  never presented as proof of connection.
-- **Privacy, accessibility, and narrow-window support** — support output is
-  allowlisted/redacted; focus and keyboard order are explicit; state meaning is
-  not color-only; and the live-session floor is 760×600.
-
-The v0.14.0 ZIP is preserved rollback history. The v0.13.0 and v0.12.0 ZIPs
-remain older historical rollback artifacts.
-
-### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
-
-- **Bundled Jamulus** — downloadable macOS builds nest the official Jamulus
-  release app after preparing and re-signing it ad hoc for WebJam's
-  loopback-only orchestration. It is not a notarized nested app or a claim that
-  the private WebJam artifact is Developer ID signed. Windows carries the
-  official installer as a distribution dependency. This removes the "leave
-  WebJam, find jamulus.io, download, come back" step for the supported package;
-  the manual Browse/`WEBJAM_JAMULUS_CANDIDATES` override remains for anyone who
-  needs a different install. See `THIRD_PARTY_NOTICES.md`.
-
-### Historical implementation checkpoint — v0.8.1
-
-Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.15.0
-source candidate, with v0.14.0, v0.13.0, and v0.12.0 retained as historical
-rollback artifacts.
-v0.8.0
-remains the latest published build at
-[Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
-gates pass.
-
-- **Qt Conductor UI** — `webjam_qt_main.py` is the primary entry point; legacy Tkinter UI is quarantined under `legacy/`
-- **Focused first run** — two-step Host/Join, identity, Webex, and optional
-  capture. Conversation is the default; video-only and advanced audience-bridge
-  roles remain in Settings.
-- **Jamulus protocol layer** — `core/jamulus_rpc_client.py` (JSON-RPC) + `core/jamulus_protocol.py` (UDP binary adapter, CRC-16-CCITT, fader/mute commands)
-- **Native Webex handoff** — opens the configured room externally and reports
-  only launch truth; it never claims to inspect or control meeting membership,
-  devices, mute, leave, or reconnect state
-- **Two-lane conversation safety** — Jamulus remains the only music path and
-  native Webex stays muted while playing. Jamulus 3.12.2 has no live-send mute
-  API, so speaking requires an audio-interface mute or ending the WebJam
-  session first
-- **Role-aware readiness** — native Webex selections are manual `VERIFY` rows;
-  `core/audio_routing.py` scans VB-CABLE / BlackHole / JACK / Loopback only for
-  advanced audience-bridge mode
-- **Independent local capture** — supplemental isolated input stems can be
-  enabled in any Webex mode and retain recovery, alignment, and take validation
-- **macOS all-in-one host** — a centered lobby can start/supervise the official
-  JamulusServer.app 3.12.2 before the host client joins. Stop Audio leaves the
-  server available; authenticated external servers are observed but not owned
-- **Session canvas** — shared notes, local Session Pulse, Markdown brief export, artifact types, review states (Draft→In review→Approved)
-- **Session repository** — `increment_setting`, mix profiles, audit log, room context persistence
-- **Companion API** — localhost bridge (`api/local_bridge.py`) for DAW/editor integration
-- **Three downloadable builds** — Windows x64, macOS ARM64, and macOS Intel x64
-- **CI/CD** — Ruff, UX smoke, full pytest, real Jamulus integration, and
-  PyInstaller artifacts on every push; tag pushes additionally create drafts
-- **Accessibility** — `setAccessibleName` on all major panels, keyboard shortcuts, focus rings in QSS
-
-### 🔜 Next — closed pilot gates
-
-- Complete the planned two-Apple-Silicon-Mac
-  same-LAN physical pilot. The v1/v2 engine's native Jamulus/JACK 3,600-second
-  evidence remains historical engine evidence, not package certification.
-- Physically verify the exact v0.15.0 candidate's seconds-only ruler, seek
-  alignment, selected-track inspection, compact layout, immutable-sidecar
-  reopen behavior, and durable-ID Track Export selection. Those observations are
-  **NOT RUN** until recorded against that exact package.
-- Host/link/paste/deep-link paths, real bidirectional audio, one server track
-  per musician, Studio stereo playback, aligned portable-track import,
-  reconnection truth, guest-original outage delivery, role-aware End/Leave,
-  and clean relaunch.
-- Developer ID macOS signing/notarization and Windows signing before broad
-  distribution; the private candidate remains ad-hoc signed.
-- Architecture split after pilot-readiness fixes: audio/session, video, recording, settings, and companion API coordinators.
-
-### Phase 2 – Differentiation (mid term)
-
-- Mode-specific layouts (UI changes per mode — Music Jam vs Writer's Room vs Design Critique).
-- Per-participant room sound; shared click/metronome + visual pulse.
-- In-session rituals (sound check, first run, feedback round, save and close).
-- Time-linked notes and references; exportable session brief (PDF/doc).
-- Offline-first session notes (local-first sync).
-- Cohort & mode analytics (dashboards from existing metrics).
-
-### Phase 3 – Ecosystem (longer term)
-
-- Effects per channel (reverb, compression, EQ).
-- Optional E2E encrypted canvas.
-- Recording + timeline; replay and recap.
-- Community room templates gallery.
-
----
-
-## How to use this doc
-
-- **Product / prioritization:** Use themes and phases to decide what to build next.
-- **Implementation:** Each row can become an issue or spec; Phase 1 items are the first batch.
-- **Consistency:** New features should align with the North Star: one room, one goal, one canvas, sessions with shape.
-
----
-
-## Related docs
-
-- `CREATIVE_MODES_MVP_SPEC.md` – Mode metadata, canvas, room context (already implemented).
-- `COHORT_VALIDATION_PLAYBOOK.md` – Pilot and validation.
-- `WEBEX_AUDIO_MODES.md` – Canonical music/conversation signal flows and safety rules.
-- `README.md` – User-facing roadmap and quick start.
-
-*WebJam – The app that knows we're making something together.*
+No future feature should pull Jamulus device controls, Webex meeting controls,
+or Local Originals choices back into Host/Join.

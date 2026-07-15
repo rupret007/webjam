@@ -1,326 +1,68 @@
-# WebJam User Guide
+# WebJam musician guide — v0.16
 
-## The whole idea
+## What each app does
 
-**Host or Join. Confirm your sound. Band Check. Play.**
+WebJam conducts the rehearsal. It starts or joins the private session, creates
+and checks invitations, keeps recording truth, and provides Studio.
 
-WebJam wraps the low-latency Jamulus engine in a musician-facing session. It
-starts the needed processes, creates the invitation, watches the connection, and
-records synchronized tracks without asking musicians to understand the
-plumbing. In current source, WebJam stages the selected **Band input**
-and **Band output & review** CoreAudio pair before it starts Jamulus. That
-configuration does not prove that a bandmate can hear the route.
+Jamulus is the live music engine. It owns your interface, inputs, outputs,
+channels, buffer, jitter, feedback protection, and musician mix. Configure
+those in Jamulus, not in WebJam.
 
-The current interface uses near-black surfaces, white text, and restrained burnt
-orange for the next important action. Purple, teal, technical setup panels, and
-competing session controls are not part of the normal path.
+Webex is optional talking/video. WebJam can validate and open a link, but it
+does not claim that Webex joined, muted, selected devices, or sees anyone.
 
-This guide covers the ordinary v1/v2 same-private-LAN musician flow. The v3
-`reference-local` profile is a loopback-only developer lab; no public remote
-service is deployed or configured in the app.
+## Host a Jam
 
-**Current source scope:** The normal path goes from Host/Join through the short
-name-and-sound confirmation, CoreAudio route preflight, and Band Check. Before
-Record, it checks the selected folder and conservative free space, checkpoints
-redacted in-progress evidence, and creates durable local-capture checkpoints.
-Those features still require physical evidence; automated results do not
-substitute for it.
+Choosing **Host a Jam** is authorization to start the private session—there is
+no extra Start Session click. WebJam starts the server first, then opens a
+visible Jamulus client against it. Finish sound setup in Jamulus, return to
+WebJam, and confirm audibility. A returning musician with an unchanged,
+Jamulus-owned profile can take the fast path to the invite.
 
-**Current candidate:** v0.15.0. Use the verified package record in
-[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md):
-`WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`, built
-from `30ece85eb6a555dbcb2ef35753e4c6c9e8679770`. Physical CoreAudio, two-Mac,
-recording/recovery, and optional manual import into an external editor remain
-**NOT RUN** until musicians record them. Earlier ZIPs are rollback history only.
+If setup is interrupted, WebJam keeps only a private, bounded recovery record.
+It reuses progress only when the role and dedicated Jamulus profile fingerprint
+still match. Otherwise it returns safely to native Jamulus setup.
 
-## Install
+## Join a Jam
 
-1. Download the build for your Mac and unzip it.
-2. On the first launch, Control-click **WebJam.app**, choose **Open**, then
-   confirm **Open**. The test build is ad-hoc signed, not notarized.
-3. Allow microphone access if macOS asks. WebJam explains why before the
-   system prompt. If access was denied previously, use **Open System Settings**
-   in WebJam, enable it under Privacy & Security → Microphone, return, and
-   choose **Try Again**.
-4. Use wired headphones and connect the interface before launching.
+Paste one WebJam invite or open it from Finder. WebJam parses it at ingress,
+does not leave the bearer visible in the interface, and starts only the guest
+services required for that invitation. If setup fails, the in-memory intent is
+preserved only while it is safe to retry; WebJam never pretends an uncertain
+invitation succeeded.
 
-The downloadable macOS app contains its own Jamulus client and server.
-Ordinary rehearsals do not require BlackHole, VB-CABLE, Webex, a Terminal
-command, or a separate server setup.
+## More menu
 
-## Run Band Check
+| Item | What it does |
+| --- | --- |
+| Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
+| Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
+| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Studio | Reviews takes and exposes playback output only for review |
+| Notes | Opens session notes |
+| Band Check / Verify Sound | Observes an already-live session without restarting it |
+| Support | Creates a sanitized bundle only when you ask |
 
-Band Check is the one readiness path for both musicians. A new or changed
-**Host a Jam** or accepted invite first opens a short name-and-sound
-confirmation, then Band Check. Open it again at any time with `F2`, **More →
-Band Check**, or **Settings → Run Band Check**.
+## Recording
 
-Follow the prompts to confirm the local input meter, left/right headphones, a
-five-second isolated recording, and playback. Band Check says **Ready to Jam**,
-**Ready with a Warning**, or **Action Needed** in words. WebJam also verifies
-the saved CoreAudio band-input/output pair before it launches Jamulus. Its
-local input meter still proves only what WebJam's
-separate PortAudio stream can hear; the other musician's ears must confirm the
-live route.
+The host controls the shared multitrack take. At the first Record click, choose
+either **Record Shared Jam Only** or **Also Keep This Mac’s Inputs**. The first
+choice begins the shared take. The second opens Recording Setup so the musician
+can explicitly choose an eligible two-channel local-capture device. A guest is
+never blocked from joining because Local Originals are not configured.
 
-## Start a jam
+## Studio and Track Export
 
-### Host
-
-1. Launch WebJam.
-2. Choose **Host a Jam**.
-3. Confirm your name and band sound; use **Band input** and **Band output &
-   review** when you need to select the intended route. WebJam saves that setup
-   before Band Check.
-4. Complete Band Check, then choose **Start Session**.
-5. WebJam displays **Starting your jam** while it starts the bundled server and
-   connects the host in the background.
-6. When **Ready to share** appears, click **Copy Invite**.
-7. Send the complete `webjam://join?...` link to the bandmate.
-
-The test-night invitation is for Macs on the same private IPv4 LAN. A v2 link
-normally contains a random private enrollment credential for guest-original
-delivery. It is reusable during this host-peer session, not a one-use token;
-anyone holding it on the LAN can enroll. Send the whole link only to the
-intended bandmate; do not put it in screenshots, notes, logs, or support
-messages. It never contains the recorder RPC secret or local file paths, and
-WebJam masks it when pasted. If the host
-warns **Automatic Local Originals are off**, its v1 fallback still joins the
-music session and receives a host-side server track, but WebJam provides no
-local-original capture or delivery path on that guest Mac.
-
-### Join from the link
-
-Open the host's invite link. macOS launches WebJam and fills in and accepts the
-connection; opening the link alone is not a readiness result. Confirm your
-name and band sound, then complete Band Check and choose **Start Session**.
-
-If clicking the link is unavailable, launch WebJam, choose **Join a Jam**, paste
-the link into the single field, and click **Join Jam**. Confirm your name and
-band sound, then complete Band Check and choose **Start Session**.
-
-## Read the session state
-
-The calm session HUD is authoritative. It gives one next action at a time
-instead of making you decode multiple status controls:
-
-| Message | Meaning |
-|---|---|
-| Starting your jam | Host services are starting. |
-| Ready to share | The host server passed its readiness check; copy the invite. |
-| Joining your jam | The client is connecting. |
-| You’re connected | The band connection exists; play a note to verify input. |
-| You’re ready | WebJam detected a real local input signal. |
-| Bandmate connected | Another musician is in the roster. |
-| Ready to play | A bandmate is connected and local input has been detected. |
-| Connection interrupted | The previous connection is no longer being treated as live; WebJam is reconnecting. |
-| This jam isn’t available | Confirm the host is still running and ask for a fresh invite. |
-| Microphone access is off | Open macOS microphone settings from the visible action, allow WebJam, then retry. |
-| Something needs attention | Follow the one visible recovery action. |
-| Review take / Export Tracks | The music session is complete enough to review or make a portable track package. |
-
-WebJam does not claim that someone can hear audio merely because a process
-started. Real participant data establishes the connection, and real observed
-levels establish input activity. When local metering is unavailable, the meter
-stays still instead of displaying synthetic motion. Host **Copy Invite** appears
-only when the hosted service is ready; the interface does not show a duplicate
-invite control elsewhere.
-
-## Your live mix
-
-Each connected musician gets a card with:
-
-- a real observed level meter;
-- a fader that changes only your monitor mix;
-- **Mute Monitor** and **Solo** for your monitor mix.
-
-Your card is marked **You**. A moving local meter proves input activity WebJam
-can observe; remote moving meters prove those musicians are sending signal.
-
-Press `Ctrl+S` to save the current monitor mix and `Ctrl+O` to restore it.
-WebJam also restores the saved default mix after reconnecting.
-
-## Multitrack recording
-
-Recording belongs to the host and requires no routing form.
-
-1. WebJam checks that the selected Takes folder is writable and reserves
-   conservative PCM24 space before Record arms. Choose another folder before
-   the session if needed; a running session keeps its folder stable.
-2. Click **Record** in the bottom control bar, or open **More → Multitrack
-   Studio** first if you want to watch the armed lanes.
-3. Play.
-4. Click **Stop Rec**.
-5. WebJam waits for stable files, validates the take, and opens it in Studio.
-
-Current source tests the selected folder before any recorder arms, blocks an
-unsafe start, renders low storage as a warning, and retains bounded redacted
-recording-session evidence in a private journal until the final manifest is
-published. Local-input writers also periodically flush and fsync their WAVs
-before advancing an opaque-ID recovery checkpoint. A checkpoint says only what
-was durable at that boundary; it is not a claim that later buffered audio
-survived. The physical recording/recovery and optional manual external-editor
-checks are still **NOT RUN**.
-
-The resulting take contains synchronized server tracks—one per musician—plus
-a manifest that preserves the musician names WebJam observed. In Studio, open
-the take, read the shared elapsed-time ruler, and select a lane to inspect its
-source, timing, and any known gaps. You can then play, pause, scrub, choose a
-wired output, and change each track's gain, pan, mute, or solo without
-modifying the source WAVs. Studio saves those review and Track Export choices
-in a separate durable local sidecar keyed by schema-v2 track ID; it does not
-rewrite `webjam-take.json`.
-
-Open **Recording Setup** inside Studio to select its playback output or change
-the Takes folder. The host, or a guest connected through an active v2 invite,
-can explicitly keep two isolated interface inputs there—for example, guitar on
-input 1 and vocal on input 2. WebJam saves that choice and records two local
-PCM24/48-kHz originals while the host's take is active; the live Jamulus path is
-unchanged. With an active v2 private invite, a guest original stays on that
-guest Mac, continues through a peer outage, and a normal transfer resumes a
-verified copy to the host when the private-LAN service is available again. If
-WebJam recovers that guest media after an interrupted capture, it remains on
-the guest Mac for manual review; recovery is not automatically uploaded or
-reconciled with the host take. A v1 guest has no WebJam-orchestrated
-local-original capture or delivery.
-
-For a portable Track Export, select the finished take, review its lanes, and
-click **Export Tracks**. Each export checkbox is a saved Studio choice for
-that take and is used for future exports until changed; it never changes the
-WAVs or `webjam-take.json`. WebJam creates a new atomic export containing
-numbered, musician-named PCM24 WAV stems that all start at `0:00` and have the
-same length, server and Studio references, markers, recording/alignment
-reports, independent audio analysis, source evidence, checksums, and generic
-import instructions. An explicitly silent selected performance track pauses
-export until you review it or intentionally deselect it. A selected guest or
-local original without verified timeline alignment also pauses a timing-ready
-export; keep the Jamulus server track, or align and verify that original first.
-Studio gives a safe actionable message, never a local path or raw worker error.
-It is a focused recording-review workspace with familiar transport, track
-headers, mute, solo, gain, pan, and inspection—not a DAW or another editor’s
-integration—so its shared ruler is elapsed time only. There is no invented
-tempo, bar/beat grid, or beat editing. If you choose to import elsewhere, drag
-the numbered stems into a new project together and leave the references as
-comparison material. The original take is never rewritten.
-See [`RECORDING_AND_STUDIO.md`](RECORDING_AND_STUDIO.md).
-
-A joining musician sees the Studio but does not control the host recorder.
-Their live audio is captured as its own host-side server track. With an active
-v2 invite, they can separately opt in to keeping this Mac's two local interface
-originals.
-
-## More
-
-The live session keeps secondary features in one **More** menu:
-
-- **Live Session** — return to the band cards.
-- **Session Notes** — capture notes and export a local brief.
-- **Multitrack Studio** — record and review takes.
-- **Add Video or Conversation** — optionally open a configured Webex link.
-- **Settings** — change your displayed name, **Band input**, **Band output &
-  review**, or optional conversation link. WebJam stages that CoreAudio pair
-  for the next Jamulus session; it never treats this configuration as proof of
-  audibility.
-- **Band Check** — rerun or observe the guided readiness check (`F2`).
-
-Webex is not part of the startup path. If used for conversation, keep the
-Webex microphone muted while playing so its delayed audio does not duplicate
-the low-latency music path. Before speaking, mute the audio interface or end
-the WebJam session; WebJam cannot live-mute the Jamulus 3.12.2 send.
-
-## End the session
-
-The host clicks **End Session**; a joined musician clicks **Leave Jam**. The
-host action ends the jam for everyone, while Leave Jam disconnects only that
-Mac. WebJam keeps **Ending…** or **Leaving…** on screen until work is complete.
-If the host take is recording or still validating, **End Session** is blocked:
-press **Stop Rec** if needed, wait for **Take saved**, then end the jam. A guest
-**Leave Jam** finalizes any active opted-in local original, persists its upload
-queue, and makes a final upload attempt before disconnecting. If the host is
-unavailable, that original and its resumable queue stay on the guest Mac.
-Quitting uses the same ownership-aware cleanup.
-If guest originals are enabled, wait until Studio reports them verified and
-arrived before **End Session**. Otherwise, preserve the originals on the guest
-Mac for recovery.
+Studio is designed for familiar multitrack review: track lanes, simple level,
+pan, mute, solo, waveform, and aligned export. It deliberately is not a DAW
+and does not integrate with or control Logic. It produces portable recordings
+that can be imported into an editor at the start of the timeline.
 
 ## Recovery
 
-### Could not reach the jam
-
-Make sure both Macs are on the same Wi-Fi and that guest-device isolation is
-off, then click **Try Again**. WebJam stops an unproductive connection attempt
-after 30 seconds rather than spinning forever.
-
-### Connection interrupted
-
-Do not rely on the old participant cards or meters. WebJam clears stale audio
-truth and reconnects automatically. It reports ready again only after the local
-session is actually present. If automatic recovery times out, use the single
-**Try Again** action.
-
-### Recovered local audio
-
-After an interrupted local capture, WebJam keeps readable media in a visible
-recovery folder rather than calling the take complete. On the host, startup
-recovery republishes it as a recovery-only Studio project marked **Needs
-Attention**, with any known gaps and durable-frame boundary. Review it
-manually; do not treat it as a completed multitrack take or timing-ready Track
-Export. Recovered guest media remains on that guest Mac for manual handling.
-
-### Fresh invitation required
-
-The v3 `reference-local` profile is a loopback developer lab, not the ordinary
-same-LAN musician flow. In that lab, retrying the same invitation is safe only
-when the sidecar failed before it entered `open_guest`. If WebJam says **Fresh
-invitation required**, ask the host for a new link. Do not retry the consumed
-link or fall back to a localhost or legacy connection.
-
-### This jam isn't available
-
-Ask the host to confirm WebJam is still running and send a fresh invite. A
-stale link cannot create a session after its host has ended the jam.
-
-### Input meter does not move
-
-Play directly into the connected interface. If macOS asks, allow microphone
-access. Open **More → Band Check** if the meter still does not move; it keeps
-technical detail collapsed unless you choose to inspect it.
-
-### Microphone access is off
-
-Choose **Open System Settings**, enable WebJam under Privacy & Security →
-Microphone, return to WebJam, and choose **Try Again**. Reinstalling Jamulus or
-editing a port will not fix a macOS permission denial.
-
-### Invite opens the wrong session
-
-Opening a new invite while WebJam is running asks once before safely ending
-the current jam and switching to the new one. If a hosted take is active or
-validating, WebJam refuses the switch until **Stop Rec** and **Take saved**.
-
-### App will not open
-
-Control-click the app and choose **Open**. If macOS says the downloaded test
-app is damaged or incomplete, stop: that is a packaging failure. Record the
-exact ZIP filename and SHA-256, preserve the app unchanged, and report the
-message instead of removing quarantine or bypassing the bundle check.
-
-## Useful shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Ctrl+L` | Edit the session title |
-| `Ctrl+S` / `Ctrl+O` | Save / load the default monitor mix |
-| `Ctrl+Shift+S` / `Ctrl+Shift+O` | Save / load a named monitor mix |
-| `Ctrl+M` | Mute or unmute all remote channels in your monitor |
-| `Ctrl+T` | Insert a timestamp in Session Notes |
-| `Ctrl+Shift+R` | Reset all faders to unity |
-| `Ctrl+Shift+D` | Copy redacted diagnostics |
-| `Ctrl+,` | Open preferences |
-| `F2` | Open Band Check |
-| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Live / Notes / Studio |
-| `F11` / `Esc` | Enter / leave fullscreen |
-
-For the two-Mac physical acceptance run, use
-[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
+If music disconnects, WebJam shows what it can prove and keeps hosting and
+recording truth conservative. Use **Audio Settings in Jamulus** for device or
+native setup problems. Use **End Session** or **Leave Jam** for safe cleanup;
+WebJam stops only processes it owns and finalizes a hosted take before ending
+the server.

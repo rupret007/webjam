@@ -317,7 +317,7 @@ def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(
         initial_title="Remote Host",
     )
     controller = ApplicationController(window, settings=settings)
-    controller.start_session_or_band_check = mock.Mock()
+    controller.begin_startup_journey = mock.Mock()
     owner = mock.Mock()
     controller._install_remote_invite_owner(owner)
 

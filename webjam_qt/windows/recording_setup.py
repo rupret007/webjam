@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.audio_routing import list_input_devices, list_output_devices
+from core.audio_routing import list_input_devices
 from core.settings import AppSettings, save_settings
 from webjam_qt.theme.tokens import Space
 
@@ -28,8 +28,70 @@ from webjam_qt.theme.tokens import Space
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
 
 
+class LocalOriginalsChoiceDialog(QDialog):
+    """Ask the one first-recording question without touching live audio.
+
+    The shared Jamulus take is always available on the host.  Keeping this
+    Mac's first two interface inputs is a separate, explicit recording choice
+    and therefore belongs here—not in Host, Join, or Jamulus setup.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.choice = ""
+        self.setObjectName("LocalOriginalsChoiceDialog")
+        self.setWindowTitle("Keep a local original?")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self.resize(600, 310)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
+        root.setSpacing(Space.MD)
+
+        title = QLabel("Keep a local original?")
+        title.setObjectName("SimpleSettingsTitle")
+        root.addWidget(title)
+
+        detail = QLabel(
+            "WebJam will record the shared Jamulus take either way. You can "
+            "also keep this Mac’s first two interface inputs as separate "
+            "Local Originals for Studio later. This does not change Jamulus "
+            "audio settings."
+        )
+        detail.setObjectName("SimpleSettingsSubtitle")
+        detail.setWordWrap(True)
+        root.addWidget(detail)
+        root.addStretch(1)
+
+        shared = QPushButton("Record Shared Jam Only")
+        shared.setObjectName("PrimaryButton")
+        shared.setAccessibleName("Record shared Jamulus take only")
+        shared.clicked.connect(self._record_shared)
+        root.addWidget(shared)
+
+        local = QPushButton("Also Keep This Mac’s Inputs")
+        local.setObjectName("GhostButton")
+        local.setAccessibleName("Configure Local Originals from this Mac")
+        local.clicked.connect(self._configure_local)
+        root.addWidget(local)
+
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("GhostButton")
+        cancel.clicked.connect(self.reject)
+        root.addWidget(cancel, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _record_shared(self) -> None:
+        self.choice = "shared"
+        self.accept()
+
+    def _configure_local(self) -> None:
+        self.choice = "local"
+        self.accept()
+
+
 class RecordingSetupDialog(QDialog):
-    """Configure review output and explicit local-original recording consent."""
+    """Configure explicit local-original recording consent and storage."""
 
     def __init__(
         self,
@@ -49,7 +111,7 @@ class RecordingSetupDialog(QDialog):
         self.setWindowTitle("WebJam Recording Setup")
         self.setModal(True)
         self.setMinimumWidth(560)
-        self.resize(620, 500)
+        self.resize(620, 440)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XL, Space.XL, Space.XL, Space.LG)
@@ -59,38 +121,20 @@ class RecordingSetupDialog(QDialog):
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
             (
-                "The host records the synchronized Jamulus take. Choose where "
-                "Studio plays and whether this Mac also keeps its first two "
-                "interface inputs as local originals."
+                "The host records the synchronized Jamulus take. Choose whether "
+                "this Mac also keeps its first two interface inputs as Local "
+                "Originals. Studio chooses its own playback output when you review a take."
             )
             if self._local_originals_available
             else (
-                "The host records the synchronized Jamulus take. Choose where "
-                "Studio plays it back on this Mac."
+                "The host records the synchronized Jamulus take. Studio chooses "
+                "its playback output when you review a take."
             )
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
         root.addWidget(title)
         root.addWidget(subtitle)
-
-        output_label = QLabel("Studio playback output")
-        output_label.setObjectName("SimpleSettingsFieldLabel")
-        self._output = QComboBox()
-        self._output.setAccessibleName("Studio playback output")
-        self._output.addItem("System Default", "")
-        for device in list_output_devices():
-            name = str(device.get("name") or "").strip()
-            if name and self._output.findData(name) < 0:
-                self._output.addItem(name, name)
-        saved_output = str(settings.take_playback_output_device or "")
-        output_index = self._output.findData(saved_output)
-        if output_index < 0 and saved_output:
-            self._output.addItem(f"{saved_output} (unavailable)", saved_output)
-            output_index = self._output.count() - 1
-        self._output.setCurrentIndex(max(0, output_index))
-        root.addWidget(output_label)
-        root.addWidget(self._output)
 
         self._capture = QCheckBox(
             "Keep interface inputs 1 and 2 as isolated local originals"
@@ -233,11 +277,9 @@ class RecordingSetupDialog(QDialog):
                 "Connect a two-channel input interface, then reopen Recording Setup."
             )
             return
-        self._settings.take_playback_output_device = str(
-            self._output.currentData() or ""
-        )
         if self._local_originals_available:
             self._settings.local_capture_enabled = capture
+            self._settings.local_capture_choice_made = True
         if capture:
             self._settings.audio_input_device_index = int(input_index)
         try:

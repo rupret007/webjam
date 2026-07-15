@@ -178,7 +178,11 @@ def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
         assert hud._invite_available is True
         assert not hasattr(hud, "_invite")
         assert not hasattr(hud, "_invite_url")
-        assert hud.findChildren(QLineEdit) == []
+        # The inline field exists only for the optional Webex step and is
+        # hidden for an invite-ready HUD; it never receives invite material.
+        assert all(
+            not field.isVisibleTo(hud) for field in hud.findChildren(QLineEdit)
+        )
         rendered = "\n".join(
             (
                 hud._action.text(),
@@ -202,12 +206,9 @@ def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
 def test_host_activation_is_guarded_against_duplicate_submission(tmp_path):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
-    with patch.object(dialog, "_confirm_sound_setup", return_value=True) as confirm, patch.object(
-        dialog, "accept"
-    ) as accept:
+    with patch.object(dialog, "accept") as accept:
         dialog._host()
         dialog._host()
-    confirm.assert_called_once()
     accept.assert_called_once()
     assert dialog.selected_role == "host"
     assert dialog._submitting is True
@@ -217,22 +218,19 @@ def test_host_activation_is_guarded_against_duplicate_submission(tmp_path):
 def test_join_activation_is_guarded_against_duplicate_submission(tmp_path):
     dialog = LaunchDialog(_settings(tmp_path))
     link = create_invite_link("192.168.1.42", session_name="Drummer Test")
-    with patch.object(dialog, "_confirm_sound_setup", return_value=True) as confirm, patch.object(
-        dialog, "accept"
-    ) as accept:
+    with patch.object(dialog, "accept") as accept:
         assert dialog.accept_invite(link) is True
         assert dialog.accept_invite(link) is False
-    confirm.assert_called_once()
     accept.assert_called_once()
     assert dialog.selected_role == "join"
     assert dialog._submitting is True
     _destroy(dialog)
 
 
-def test_host_canceled_sound_confirmation_is_recoverable(tmp_path):
+def test_host_choice_save_failure_is_recoverable(tmp_path):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
-    with patch.object(dialog, "_confirm_sound_setup", return_value=False):
+    with patch.object(dialog, "_persist_role_choice", return_value=False):
         dialog._host()
     assert dialog.selected_role == ""
     assert dialog._submitting is False

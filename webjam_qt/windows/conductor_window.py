@@ -324,6 +324,8 @@ class ConductorWindow(QMainWindow):
         strip = self.session_strip
         order = [
             strip._title_input,
+            self.session_hud._input,
+            self.session_hud._secondary_action,
             self.session_hud._action,
             self.participant_grid._empty_primary,
         ]

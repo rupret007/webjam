@@ -83,7 +83,7 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
 
     remote = _invitation()
     controller = _controller(tmp_path)
-    controller.start_session_or_band_check = mock.MagicMock()
+    controller.begin_startup_journey = mock.MagicMock()
     monkeypatch.setattr(
         "services.native_remote_transport.NativeGuestTransportBackend",
         Backend,
@@ -101,7 +101,7 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     assert controller.settings.jamulus_server == "127.0.0.1"
     assert controller.bridge.remote_guest_mode_enabled
     assert controller._remote_band_check_required()
-    controller.start_session_or_band_check.assert_called_once_with()
+    controller.begin_startup_journey.assert_called_once_with()
 
     controller._stop_remote_transport()
     assert controller.settings.jamulus_port == 22124
@@ -248,7 +248,7 @@ def test_v3_guest_replaces_idle_v2_peer_before_enrollment(
     controller.guest_peer = old_peer
     controller._guest_invite = mock.sentinel.v2_invitation
     controller._guest_peer_configuration_failed = True
-    controller.start_session_or_band_check = mock.MagicMock()
+    controller.begin_startup_journey = mock.MagicMock()
     monkeypatch.setattr(
         "services.native_remote_transport.NativeGuestTransportBackend",
         Backend,
@@ -332,7 +332,7 @@ def test_legacy_invite_replaces_pending_v3_guest_and_remote_mode(
     controller._remote_invitation = pending
     controller._remote_session = runtime
     controller.bridge.enable_remote_guest_mode()
-    controller.start_session_or_band_check = mock.MagicMock()
+    controller.begin_startup_journey = mock.MagicMock()
     save_settings(controller.settings)
 
     assert controller.accept_invite_url(
@@ -344,7 +344,7 @@ def test_legacy_invite_replaces_pending_v3_guest_and_remote_mode(
     assert controller._remote_session is None
     assert not controller.bridge.remote_guest_mode_enabled
     assert controller.settings.jamulus_server == "192.168.1.42"
-    controller.start_session_or_band_check.assert_called_once_with()
+    controller.begin_startup_journey.assert_called_once_with()
     controller.shutdown()
 
 
@@ -353,7 +353,7 @@ def test_legacy_invite_fails_closed_when_v3_cleanup_fails(tmp_path) -> None:
     runtime = mock.MagicMock()
     runtime.stop.side_effect = RuntimeError("cleanup failed")
     controller._remote_session = runtime
-    controller.start_session_or_band_check = mock.MagicMock()
+    controller.begin_startup_journey = mock.MagicMock()
     controller.window.flash_message = mock.MagicMock()
     save_settings(controller.settings)
 
@@ -362,7 +362,7 @@ def test_legacy_invite_fails_closed_when_v3_cleanup_fails(tmp_path) -> None:
     )
 
     runtime.stop.assert_called_once_with()
-    controller.start_session_or_band_check.assert_not_called()
+    controller.begin_startup_journey.assert_not_called()
     assert controller.settings.jamulus_server == "127.0.0.1"
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
     controller.shutdown()
@@ -430,7 +430,7 @@ def test_lab_host_owner_is_installed_before_any_audio_launch(
             events.append("owner-stopped")
 
     controller = _controller(tmp_path, hosting=True)
-    controller.start_session_or_band_check = mock.MagicMock()
+    controller.begin_startup_journey = mock.MagicMock()
     original_enable = controller.bridge.enable_remote_host_mode
 
     def enable():
@@ -450,7 +450,7 @@ def test_lab_host_owner_is_installed_before_any_audio_launch(
     assert controller.bridge.remote_host_mode_enabled
     assert controller.bridge.jamulus_process is None
     assert controller._remote_band_check_required()
-    controller.start_session_or_band_check.assert_called_once_with()
+    controller.begin_startup_journey.assert_called_once_with()
     controller.shutdown()
 
 

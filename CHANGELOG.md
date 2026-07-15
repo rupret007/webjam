@@ -4,6 +4,43 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.16.0] — 2026-07-14 test-night candidate
+
+### Jamulus-first startup
+
+- Replaced the startup device wizard with one simple choice: **Host a Jam** or
+  **Join a Jam**. The private server starts before the visible Jamulus client
+  for a host; a guest starts one visible Jamulus client from one parsed invite.
+- Jamulus now owns its interface, input/output channels, buffer, jitter, and
+  musician mix. WebJam launches the supported filename-only profile
+  `WebJam-native-v0.16.ini`, never writes its contents, and leaves the normal
+  `Jamulus.ini` untouched.
+- Connection proof requires an owned process, authenticated Jamulus RPC, the
+  expected connection, and exactly one local musician. Audibility remains an
+  explicit human confirmation; Webex is optional only after music is ready.
+- Startup recovery persists only allowlisted phase/profile facts and fails
+  closed when that profile truth no longer matches.
+
+### Recording, Studio, and identity
+
+- The first host recording choice is now clear: record the shared Jamulus take
+  only, or explicitly open Recording Setup to keep this Mac's Local Originals.
+  This does not alter Jamulus audio settings.
+- Studio remains a Logic-like multitrack review surface—not a Logic
+  integration—and offers playback-output selection only while reviewing a take.
+- Replaced the old WJ monogram with WebJam's native three-loop trinity mark and
+  standardized the interface on black, white, neutral gray, and burnt orange.
+
+### Verification
+
+- Final source SHA, automated test result, package filename, package SHA-256,
+  and installed-package verification are recorded with the release handoff
+  after the package gate completes.
+- Physical two-Mac audio, hardware change/recovery, recording, and external
+  editor import remain **NOT RUN** until musicians perform those checks.
+
+---
+
 ## [0.15.0] — 2026-07-14 private test-night candidate
 
 ### Release verification

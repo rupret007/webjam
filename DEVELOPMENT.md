@@ -1,398 +1,54 @@
-# WebJam Development Setup
+# Developing WebJam v0.16
 
-Guide for setting up a development environment on Windows (or macOS/Linux).
+## Local setup
 
-## Prerequisites
-
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.10+ | Download from https://www.python.org/downloads/ |
-| Go | 1.25.12 | Required for v3 transport tests and release packaging; ordinary Python UI work does not use it unless a v3 session is started. |
-| Git | Latest | https://git-scm.com/downloads |
-| Jamulus | 3.12.2 | **Install this exact version separately for development** — free at [jamulus.io](https://jamulus.io). Band Check rejects a different client version. Downloadable release *builds* supply Jamulus (the current private macOS build contains prepared client/server apps; earlier Windows builds supplied the official installer — see `THIRD_PARTY_NOTICES.md`), but packaging has no effect when running from source with `python webjam_qt_main.py`. |
-| VB-Cable | Latest | Optional, Windows only — advanced audience-bridge mode; not musician talkback |
-
-When installing Python on Windows, check **"Add python.exe to PATH"** during the installer.
-
-## Clone the Repository
-
-**From GitHub:**
+Use the repository virtual environment:
 
 ```bash
-git clone https://github.com/rupret007/webjam.git
-cd webjam
+.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
+.venv/bin/python -m py_compile webjam_qt/controllers/application_controller.py
+.venv/bin/pytest -q
 ```
 
-## Create a Virtual Environment
+Normal app development starts from Host/Join. Do not make a new startup path
+that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
+jitter settings.
 
-### Windows (PowerShell)
+## Integration rules
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
+- Launch Jamulus directly and visibly; do not use `--nogui` for the musician
+  client.
+- Use the supported dedicated `--inifile WebJam-native-v0.16.ini` contract.
+- Never write that profile’s content or the musician’s normal `Jamulus.ini`.
+- Do not automate Jamulus through screen coordinates, pixel inspection, or
+  window-text scraping.
+- JSON-RPC is for process, authentication, roster, connection, chat, and
+  recorder facts—not device configuration.
+- Keep Webex external and truthful: opening a URL is not a joined/muted claim.
+- Keep Local Originals behind explicit Recording Setup and Studio output in
+  Studio.
 
-### Windows (Command Prompt)
+## UI rules
 
-```cmd
-python -m venv .venv
-.venv\Scripts\activate.bat
-```
-
-### macOS / Linux
+Use black, white, neutral gray, and burnt orange only. The native three-loop
+brand mark lives in `webjam_qt/theme/brand.py`; regenerate `.icns` and `.ico`
+with:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m webjam_qt.theme.generate_brand_icons
 ```
 
-## Install Dependencies
+The normal session surface has one dominant next action. Avoid adding device
+forms, server fields, or technical diagnostics to Host/Join.
+
+## Packaging
+
+The authoritative build is:
 
 ```bash
-pip install -r requirements.txt
+.venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-All dependencies are listed in `requirements.txt`. Key dependencies:
-- `PySide6>=6.6.0` -- Qt framework for the Conductor UI
-- `httpx` -- async HTTP client for API calls
-- `customtkinter` -- modern themed UI widgets (legacy Tkinter UI)
-- `sounddevice` / `numpy` -- audio level monitoring
-- `fastapi` / `uvicorn` -- companion localhost API
-
-## Run the Application
-
-```bash
-python webjam_qt_main.py          # Qt Conductor UI (current)
-python legacy/webjam_app_enhanced.py  # Legacy Tkinter UI (archive/fallback)
-```
-
-Every launch begins with the responsive **Host a Jam** / **Join a Jam** dialog.
-Either choice then opens one short name and band-sound confirmation. A new or
-changed setup goes through Band Check and **Start Session** before the
-server/client starts. Join fills and accepts one strict `webjam://` invitation,
-then follows the same required readiness/start step. Ordinary Settings contains
-the displayed musician name, Band input, Band output & review, and an optional
-conversation URL; technical readiness is handled by the permanent **Band Check**
-flow from first run, `F2`, Settings, or the live **More** menu. On macOS, a
-complete CoreAudio pair is resolved by stable UID and staged in a WebJam-owned
-Jamulus config before client launch. The result is OS-level configuration—not a
-claim that a musician has heard the route.
-
-The current UI contract is documented in
-[`UX_ACCEPTANCE_CHECKLIST.md`](UX_ACCEPTANCE_CHECKLIST.md). When adding a state,
-keep one primary action, use plain musician-facing copy, preserve the
-black/white/burnt-orange token system, and add keyboard/accessibility coverage.
-
-Release artifacts bundle prepared Jamulus client/server apps 3.12.2. WebJam
-keeps its own runtime data under `~/Library/Application Support/WebJam/`; on
-current macOS source, its dedicated Jamulus route file intentionally lives in
-Jamulus's allowed container at
-`~/Library/Containers/app.jamulussoftware.Jamulus/Data/.config/Jamulus/`.
-Source-run hosting uses the compatible sandboxed app in `/Applications`. Use
-`tests/test_hosted_server.py` for the ownership/adoption matrix. The manual
-hardware lifecycle in `TEST_PROCEDURE.md` still uses the official server app's
-sandbox container for its secret and recordings.
-
-### Reference-local v3 lab
-
-`reference-local` is a loopback-only developer profile, not a musician or
-Internet configuration. Build the sidecar from the same committed source ID,
-start the reference service on loopback, then explicitly opt the source-run
-host into the lab path:
-
-```bash
-make -C transport build-darwin-arm64 VERSION="$(git rev-parse HEAD)"
-cd reference_service
-python3.12 -m webjam_reference
-```
-
-Leave that service running. In a second terminal at the repository root:
-
-```bash
-WEBJAM_ENABLE_REFERENCE_LOCAL=1 python webjam_qt_main.py
-```
-
-Use the matching `build-darwin-amd64` or `build-windows-amd64` target on other
-supported machines. Do not expose ports 47131–47133, edit the compiled profile,
-or interpret this same-machine path as ordinary-home NAT evidence. The Go
-subprocess integration tests are the canonical two-sidecar reference proof.
-
-## Run Tests
-
-The project uses `pytest`. Run the full suite:
-
-```bash
-python -m pytest tests/ -v
-```
-
-Expected result: the complete suite passes, with a small number of
-platform-dependent skips. Test totals intentionally change; use the current CI
-run and the validation section of `docs/WEBJAM_V1_LAST_MILE_PLAN.md` rather
-than a hardcoded count in this guide.
-
-### Running tests locally (CI-equivalent)
-
-CI runs the suite headlessly on every push. To match the `test` job's
-"Run test suite" step exactly (see `.github/workflows/ci.yml`):
-
-```bash
-QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ -v
-```
-
-A single failing test fails the CI job, so always run this before pushing.
-
-The native v3 transport has independent format, unit, vet, race, dependency,
-and cross-build gates:
-
-```bash
-make -C transport check
-(cd transport && go test -race -count=1 ./... && go mod verify && go mod tidy -diff)
-make -C transport build-all VERSION="$(git rev-parse HEAD)"
-```
-
-The self-hostable reference service is a separate Python 3.12 package and must
-remain loopback-only during ordinary local verification:
-
-```bash
-python3.12 -m pytest -q reference_service/tests
-python3.12 -m ruff check reference_service
-python3.12 -m build reference_service
-```
-
-### Code style (ruff)
-
-CI runs `ruff check` against the first-party source roots. Match that gate locally:
-
-```bash
-python3 -m ruff check webjam_qt/ core/ ui/ services/ api/
-```
-
-Fix every warning before you commit — the lint job is the first to fail
-on a dirty PR, and it blocks the build / release jobs that follow.
-
-### Running the UX smoke gate
-
-`ux_smoke_test.py` is a fast static UX-contract check: it compiles the current
-Python entry points and checks the expected launch/session copy and assets. It
-does not boot Qt. The pytest suite performs the real offscreen widget and
-controller checks. The static smoke runs in CI between lint and pytest (the
-`test` job's "Run UX smoke gate" step):
-
-```bash
-python3 ux_smoke_test.py
-```
-
-Set `QT_QPA_PLATFORM=offscreen` for the pytest UI suite when no display is
-available (the CI workflow does the same).
-
-## Build a Developer Executable
-
-```bash
-pip install pyinstaller
-
-python -m PyInstaller --clean --noconfirm webjam.spec
-# Produces dist/WebJam/WebJam.exe (Windows) or dist/WebJam.app (macOS)
-```
-
-PyInstaller bundles the transport notices and licenses, but the platform
-sidecar itself is deliberately staged beside the executable after PyInstaller.
-For example, an Apple Silicon developer build uses:
-
-```bash
-make -C transport build-darwin-arm64 VERSION="$(git rev-parse HEAD)"
-cp transport/build/darwin-arm64/webjam-fabric \
-  dist/WebJam.app/Contents/MacOS/webjam-fabric
-chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
-codesign --force --sign - dist/WebJam.app/Contents/MacOS/webjam-fabric
-shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
-  | awk '{print $1}' \
-  > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
-codesign --force --sign - dist/WebJam.app
-```
-
-The macOS manifest is bundle data under `Contents/Resources`; putting a text
-manifest in `Contents/MacOS` makes strict code-signature verification treat it
-as an unsigned executable. Windows keeps the manifest beside the executable in
-its flat PyInstaller directory.
-
-A release artifact must also stage and verify the pinned Jamulus apps, refresh
-the outer macOS signature, run the packaged sidecar smoke check, and verify
-every nested signature. `.github/workflows/ci.yml` is the executable source of
-truth for all three supported targets. A PyInstaller-only directory is not a
-release artifact. A frozen Windows build without a valid Authenticode signature
-still supports the legacy v1/v2 path, but v3 fails closed at its native-signature
-gate. `build_webjam.py` remains legacy installer tooling.
-
-## Environment Variables
-
-Override defaults without editing code:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEBJAM_JAMULUS_SERVER` | empty | Jamulus server hostname or IP |
-| `WEBJAM_JAMULUS_PORT` | `22124` | Jamulus server port |
-| `WEBJAM_WEBEX_URL` | empty | HTTPS `webex.com` meeting URL |
-| `WEBJAM_WEBEX_AUDIO_MODE` | `talkback` | `talkback`, `video_only`, or `audience_bridge` |
-| `WEBJAM_LOCAL_CAPTURE_ENABLED` | `false` | Explicitly keep this Mac's local interface originals independently of Webex mode |
-| `WEBJAM_JAMULUS_CANDIDATES` | (macOS + Windows default paths) | Semicolon-separated Jamulus executable paths |
-| `WEBJAM_ENABLE_REFERENCE_LOCAL` | unset | Source/developer-only opt-in to host through the loopback v3 reference lab; never a public endpoint |
-| `WEBJAM_ENABLE_SENTRY` | `false` | Enable Sentry error reporting |
-| `WEBJAM_LOG_LEVEL` | `INFO` | Logging level |
-
-## Project Structure
-
-```
-webjam_qt_main.py          Primary entry point — Qt Conductor UI
-webjam_qt/                 Qt application (windows, widgets, controllers)
-legacy/                    Quarantined Tkinter/customtkinter UI and old installer
-core/                      Settings, models, creative modes, templates, protocol
-services/                  Jamulus, transport, invitation, and session lifecycles
-transport/                 Static Go v3 transport and deterministic labs
-reference_service/         Local/CI native rendezvous and exact-pair relay
-storage/                   SQLite repository for users, settings, canvas, audit
-ui/                        Auth controller, services, dialogs, views, theme
-api/                       Optional FastAPI companion API
-tests/                     Unit and edge-case test modules
-VB/                        VB-Cable driver INFs (Windows audio routing)
-.github/workflows/ci.yml   CI: Python/Go/reference/Jamulus gates + desktop builds
-```
-
-## Windows-Specific Notes
-
-- **VB-Cable**: bundled installers support advanced audience-bridge mode only.
-  Normal musician talkback uses native Webex plus Jamulus and needs no virtual cable.
-- **Admin detection**: `utils/installer_helpers.py` uses `ctypes.windll` to check for admin privileges -- this only activates on Windows.
-- **SmartScreen**: Downloaded `.exe` files trigger a "Windows protected your PC" warning. Click "More info" then "Run anyway".
-
-## Cursor IDE Setup
-
-When you open this project in Cursor, the `.cursor/rules/webjam.mdc` file provides automatic context about the project architecture, conventions, and commands. No additional Cursor configuration is needed.
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| `ModuleNotFoundError: No module named 'tkinter'` | Reinstall Python with the "tcl/tk" option checked |
-| `python` not found (Windows) | Reinstall Python and check "Add python.exe to PATH" |
-| Tests hang or timeout | Ensure no other Jamulus/WebJam instance is running |
-| `ImportError` on startup | Run `pip install -r requirements.txt` to ensure all deps are installed |
-
-## Tutorials
-
-End-to-end recipes for the changes that come up most often when extending
-the Conductor UI. Each tutorial points at the real files, real method
-names, and shows the exact code change needed.
-
-### Tutorial 1: Adding participant data
-
-The authoritative Jamulus model is `JamulusParticipant` in
-`jamulus_state_manager.py`; the UI model is `ParticipantPresentation` in
-`webjam_qt/widgets/participant_card.py`. Add a new field to both only when it
-has real Jamulus or session data behind it.
-
-1. Add the field, default, and tests to `JamulusParticipant`.
-2. Add the presentation field only if the participant card needs it.
-3. Map it in `AudioCoordinator.apply_participants`
-   (`webjam_qt/controllers/audio_coordinator.py`) for both new and existing
-   participants.
-4. Render it in `ParticipantCard` and update the card's presentation-update
-   path. Keep role and identity semantics in
-   `ApplicationController._role_label` and `_apply_jamulus_participants`.
-
-There is no `_DEMO_PARTICIPANTS` production seed. Do not add fake musicians to
-validate a UI field; cover real roster objects in focused tests instead.
-
-### Tutorial 2: Adding a Jamulus JSON-RPC method call
-
-The RPC client lives in `core/jamulus_rpc_client.py`. It speaks real
-Jamulus JSON-RPC: newline-delimited JSON-RPC 2.0 over a single raw TCP
-socket, authenticated with `jamulus/apiAuth`. `start()` spawns one
-background reader thread (`_run_loop` → `_serve_once`) that connects,
-authenticates, then loops reading NDJSON lines and dispatching them;
-callbacks (`on_participants_changed`, `on_levels`, etc.) fire on that
-worker thread, so anything UI-bound has to hop back via
-`UiThreadInvoker`.
-
-Commands are fire-and-forget: `_send(method, params)` writes one
-JSON-RPC request and returns the request id it assigned (or `None` if
-there's no live socket) — it does **not** wait for or return the
-response. Failures are silenced with a debug log — by design, so a
-missing/older Jamulus client doesn't spam the UI.
-
-**1. Add the new command** alongside `set_channel_gain`:
-
-```python
-def set_channel_pan(self, channel_id: int, pan_0_to_100: int) -> bool:
-    """Set stereo pan for ``channel_id``. 0=left, 50=center, 100=right."""
-    pan = max(0, min(100, int(pan_0_to_100)))
-    return self._send("jamulusclient/setChannelPan", {
-        "channelIndex": channel_id,
-        "pan": pan,
-    }) is not None
-```
-
-(Confirm the exact method name and param shape against
-[JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs/JSON-RPC.md)
-before shipping — `setChannelPan` is illustrative here, not a method
-WebJam currently calls.)
-
-**2. Fire-and-forget from the controller.** UI-triggered calls must not
-block the Qt thread. Mirror `_send_rpc_gain` in `jamulus_controller.py`
-— wrap the call in a daemon thread:
-
-```python
-def _send_rpc_pan(self, channel_id: int, pan: int) -> None:
-    if not self.rpc_client.available:
-        return
-    def _go() -> None:
-        try:
-            self.rpc_client.set_channel_pan(channel_id, pan)
-        except Exception:
-            pass
-    threading.Thread(target=_go, daemon=True).start()
-```
-
-Call `_send_rpc_pan` from `set_pan` the same way `set_fader_level` calls
-`_send_rpc_gain`. Failures are silenced with a debug log inside `_send`;
-the UI keeps moving. This is intentional — Jamulus may not be running yet.
-
-### Tutorial 3: Wiring a new keyboard shortcut
-
-Window-bound shortcuts and controller-bound shortcuts use slightly
-different patterns. Both are registered in
-`webjam_qt/windows/conductor_window.py::_setup_shortcuts`.
-
-**Pattern A — handled inside the window** (e.g. F11 toggles fullscreen).
-Pass the callback directly to the `QShortcut` constructor:
-
-```python
-QShortcut(QKeySequence("Ctrl+X"), self, self._do_something)
-```
-
-**Pattern B — consumed by the controller** (e.g. Ctrl+S for save mix).
-Store the shortcut as `self._whatever_shortcut`, then connect its
-`activated` signal in `application_controller.py::_wire_signals`:
-
-```python
-# conductor_window.py — _setup_shortcuts
-self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
-```
-
-```python
-# application_controller.py — _wire_signals
-self.window._reset_faders_shortcut.activated.connect(self._on_reset_faders)
-```
-
-Both patterns are already in use side-by-side in `_setup_shortcuts`:
-F11/F1/Esc use Pattern A; Ctrl+S, Ctrl+O, Ctrl+M, and Ctrl+, use Pattern B.
-
-**Update the F1 help dialog.** Add a row to the body string in
-`ConductorWindow._show_help` so users discover the new key:
-
-```python
-"&nbsp;&nbsp;<b>Ctrl+Shift+R</b> — Reset all faders to 0 dB<br>"
-```
-
-**Update the README table.** The user-facing list lives at the
-"Qt Conductor Keyboard Shortcuts" section of `README.md` —
-add a row there too so the docs match the help dialog.
+Use the macOS staging/signing/transport verification in `.github/workflows/ci.yml`.
+Do not use the retired `build_webjam.py` release path. Package and visual
+verification are required before replacing the installed test-night app.

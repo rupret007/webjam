@@ -565,10 +565,10 @@ QLineEdit#CanvasChatInput {
 }
 
 #LaunchLogo {
-    color: ${COLOR_ACCENT_PRIMARY};
-    font-size: 18px;
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: 22px;
     font-weight: ${FONT_WEIGHT_BOLD};
-    letter-spacing: 0.18em;
+    letter-spacing: 0.02em;
 }
 
 #LaunchTitle {

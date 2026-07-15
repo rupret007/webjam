@@ -9,6 +9,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from core.band_check import BandCheckMode  # noqa: E402
+from core.jamulus_profile import (  # noqa: E402
+    StartupAttemptRecord,
+    StartupClientPhase,
+    StartupConnectionState,
+    StartupNextAction,
+    StartupRole,
+    StartupServerPhase,
+    StartupWebexDecision,
+)
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
@@ -476,6 +485,146 @@ def test_v1_recording_setup_never_claims_local_originals() -> None:
     assert "local originals are unavailable" in message
 
 
+def test_first_host_record_can_start_shared_take_without_local_originals(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+    )
+    controller.window = SimpleNamespace(flash_message=mock.Mock())
+    controller.recording = SimpleNamespace(on_record_requested=mock.Mock())
+
+    with mock.patch(
+        "webjam_qt.windows.recording_setup.LocalOriginalsChoiceDialog"
+    ) as choice_type:
+        choice = choice_type.return_value
+        choice.exec.return_value = choice_type.DialogCode.Accepted
+        choice.choice = "shared"
+
+        controller._on_record_requested()
+
+    assert controller.settings.local_capture_choice_made is True
+    assert controller.settings.local_capture_enabled is False
+    controller.recording.on_record_requested.assert_called_once_with()
+    from core.settings import load_settings
+
+    saved = load_settings(controller.settings.config_file)
+    assert saved.local_capture_choice_made is True
+    assert saved.local_capture_enabled is False
+
+
+def test_first_host_record_opens_local_original_setup_only_when_requested(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+    )
+    controller.window = SimpleNamespace(flash_message=mock.Mock())
+    controller.recording = SimpleNamespace(on_record_requested=mock.Mock())
+    controller._open_recording_setup = mock.Mock()
+
+    with mock.patch(
+        "webjam_qt.windows.recording_setup.LocalOriginalsChoiceDialog"
+    ) as choice_type:
+        choice = choice_type.return_value
+        choice.exec.return_value = choice_type.DialogCode.Accepted
+        choice.choice = "local"
+
+        controller._on_record_requested()
+
+    assert controller.settings.local_capture_choice_made is True
+    controller._open_recording_setup.assert_called_once_with()
+    controller.recording.on_record_requested.assert_not_called()
+
+
+def test_saved_local_original_preference_never_interrupts_later_host_take(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        local_capture_enabled=True,
+    )
+    controller.window = SimpleNamespace(flash_message=mock.Mock())
+    controller.recording = SimpleNamespace(on_record_requested=mock.Mock())
+
+    with mock.patch(
+        "webjam_qt.windows.recording_setup.LocalOriginalsChoiceDialog"
+    ) as choice_type:
+        controller._on_record_requested()
+
+    choice_type.assert_not_called()
+    controller.recording.on_record_requested.assert_called_once_with()
+
+
+def test_matching_recovery_only_restores_the_next_safe_native_prompt() -> None:
+    controller = _bare_controller()
+    record = StartupAttemptRecord.new(
+        generation=4,
+        role=StartupRole.GUEST,
+        server_phase=StartupServerPhase.NOT_REQUIRED,
+        client_phase=StartupClientPhase.VERIFYING,
+        profile_fingerprint="a" * 64,
+        connection_state=StartupConnectionState.CONNECTED,
+        human_confirmed=False,
+        webex_decision=StartupWebexDecision.SKIPPED,
+        next_action=StartupNextAction.CONFIRM_AUDIBLE,
+        entropy=b"recovery-test",
+    )
+    attempt = {
+        "role": "guest",
+        "setup_finished": False,
+        "human_confirmed": False,
+        "fast_path": False,
+        "webex_decision": None,
+        "recovery_record": record,
+    }
+
+    controller._apply_matching_startup_recovery(
+        attempt,
+        SimpleNamespace(profile_fingerprint="a" * 64),
+    )
+
+    assert attempt["setup_finished"] is True
+    assert attempt["human_confirmed"] is False
+    assert attempt["fast_path"] is False
+    assert attempt["webex_decision"] == "skipped"
+    assert attempt["resumed"] is True
+
+
+def test_changed_profile_fails_closed_to_native_setup_after_restart() -> None:
+    controller = _bare_controller()
+    record = StartupAttemptRecord.new(
+        generation=4,
+        role=StartupRole.HOST,
+        server_phase=StartupServerPhase.READY,
+        client_phase=StartupClientPhase.READY,
+        profile_fingerprint="a" * 64,
+        connection_state=StartupConnectionState.CONNECTED,
+        human_confirmed=True,
+        webex_decision=StartupWebexDecision.SKIPPED,
+        next_action=StartupNextAction.COPY_INVITE,
+        entropy=b"changed-profile-test",
+    )
+    attempt = {
+        "role": "host",
+        "setup_finished": False,
+        "human_confirmed": False,
+        "fast_path": False,
+        "webex_decision": None,
+        "recovery_record": record,
+    }
+
+    controller._apply_matching_startup_recovery(
+        attempt,
+        SimpleNamespace(profile_fingerprint="b" * 64),
+    )
+
+    assert attempt["setup_finished"] is False
+    assert attempt["human_confirmed"] is False
+    assert attempt["fast_path"] is False
+    assert "resumed" not in attempt
+
+
 def test_pre_session_takes_change_rebuilds_v2_guest_peer(tmp_path) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
@@ -578,45 +727,18 @@ def test_failed_inline_output_save_restores_live_setting() -> None:
     assert "do-not-show" not in controller.window.flash_message.call_args.args[0]
 
 
-def test_use_system_input_saves_and_reopens_current_gate(tmp_path) -> None:
+def test_legacy_system_input_action_foregrounds_jamulus_without_mutation(tmp_path) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         audio_input_device_index=7,
     )
-    controller.window = SimpleNamespace(flash_message=mock.Mock())
-    controller._invalidate_band_check_evidence = mock.Mock(
-        return_value=(True, True)
-    )
-    controller._reopen_invalidated_band_check = mock.Mock()
+    controller._bring_jamulus_forward = mock.Mock()
 
     controller._use_system_input()
 
-    assert controller.settings.audio_input_device_index == -1
-    controller._reopen_invalidated_band_check.assert_called_once_with(True, True)
-    from core.settings import load_settings
-
-    assert load_settings(controller.settings.config_file).audio_input_device_index == -1
-
-
-def test_use_system_input_failed_save_rolls_back(tmp_path) -> None:
-    controller = _bare_controller()
-    controller.settings = AppSettings(
-        config_file=str(tmp_path / "settings.json"),
-        audio_input_device_index=7,
-    )
-    controller.window = SimpleNamespace(flash_message=mock.Mock())
-    controller._invalidate_band_check_evidence = mock.Mock()
-
-    with mock.patch(
-        "core.settings.save_settings",
-        side_effect=OSError("token=do-not-show /tmp/settings"),
-    ):
-        controller._use_system_input()
-
     assert controller.settings.audio_input_device_index == 7
-    controller._invalidate_band_check_evidence.assert_not_called()
-    assert "do-not-show" not in controller.window.flash_message.call_args.args[0]
+    controller._bring_jamulus_forward.assert_called_once_with()
 
 
 def test_actionable_error_never_renders_paths_or_secrets() -> None:

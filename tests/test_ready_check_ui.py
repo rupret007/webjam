@@ -106,7 +106,9 @@ class TestReadyCheckShortcut(unittest.TestCase):
         self.assertEqual(received, [True])
 
     def test_handler_runs_report_without_blocking(self):
-        with mock.patch("core.preflight.run_ready_check") as run:
+        with mock.patch.object(
+            self.controller, "_is_jamulus_running", return_value=True
+        ), mock.patch("core.preflight.run_ready_check") as run:
             run.return_value = mock.Mock(
                 all_ok=True, to_text=lambda: "Ready Check\n  ✓ ok"
             )
@@ -120,7 +122,9 @@ class TestReadyCheckShortcut(unittest.TestCase):
 
     def test_failed_report_close_does_not_open_settings(self):
         self.controller._open_settings_wizard = mock.Mock()
-        with mock.patch("core.preflight.run_ready_check") as run:
+        with mock.patch.object(
+            self.controller, "_is_jamulus_running", return_value=True
+        ), mock.patch("core.preflight.run_ready_check") as run:
             run.return_value = mock.Mock(
                 all_ok=False, to_text=lambda: "Ready Check\n  ✗ missing"
             )
@@ -130,16 +134,29 @@ class TestReadyCheckShortcut(unittest.TestCase):
             _app.processEvents()
         self.controller._open_settings_wizard.assert_not_called()
 
-    def test_failed_report_open_settings_action_runs_wizard(self):
-        self.controller._open_settings_wizard = mock.Mock()
-        with mock.patch("core.preflight.run_ready_check") as run:
+    def test_failed_report_audio_action_brings_jamulus_forward(self):
+        self.controller._bring_jamulus_forward = mock.Mock()
+        with mock.patch.object(
+            self.controller, "_is_jamulus_running", return_value=True
+        ), mock.patch("core.preflight.run_ready_check") as run:
             run.return_value = mock.Mock(
                 all_ok=False, to_text=lambda: "Ready Check\n  ✗ missing"
             )
             self.controller._on_ready_check()
             _app.processEvents()
             self.controller._ready_check_dialog.settings_requested.emit()
-        self.controller._open_settings_wizard.assert_called_once()
+        self.controller._bring_jamulus_forward.assert_called_once()
+
+    def test_idle_verify_sound_keeps_setup_in_jamulus(self):
+        self.controller.window.flash_message = mock.Mock()
+        with mock.patch.object(
+            self.controller, "_is_jamulus_running", return_value=False
+        ):
+            self.controller._on_ready_check()
+
+        self.assertIsNone(self.controller._ready_check_dialog)
+        message = self.controller.window.flash_message.call_args.args[0]
+        self.assertIn("Jamulus owns your sound setup", message)
 
     def test_practice_button_label_matches_checks_menu(self):
         """One name everywhere: the Checks menu calls it 'Practice Solo'."""

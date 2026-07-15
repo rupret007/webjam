@@ -193,7 +193,7 @@ class BandCheckDialog(QDialog):
         root.addWidget(self._report, stretch=1)
 
         footer = QHBoxLayout()
-        settings = QPushButton("Audio Settings")
+        settings = QPushButton("Jamulus Audio Settings")
         settings.setObjectName("GhostButton")
         settings.clicked.connect(self.settings_requested.emit)
         footer.addWidget(settings)
@@ -424,8 +424,14 @@ class BandCheckDialog(QDialog):
             if step.next_action == "Recording Setup":
                 self.recording_settings_requested.emit()
                 return
-            if step.next_action == "Use System Input":
-                self.system_input_requested.emit()
+            if step.next_action in {
+                "Use System Input",  # one-release extension compatibility
+                "Open Jamulus Audio Settings",
+            }:
+                # Keep the legacy signal surface, but never use it to change
+                # a live device. Jamulus is the one place musicians configure
+                # interface input, channels, headphones, and buffer.
+                self.settings_requested.emit()
                 return
             if step.next_action == "Open Settings":
                 self.settings_requested.emit()
@@ -579,22 +585,15 @@ class BandCheckDialog(QDialog):
                     next_action="Open System Settings",
                 )
             else:
-                selected_index = _input_device_index(settings)
                 session.update_step(
                     BandCheckStepKey.AUDIO_INPUT,
                     status=BandCheckStatus.ACTION_NEEDED,
                     detail=(
-                        "The saved input is unavailable. Use the Mac's system "
-                        "input, then Band Check will try again."
-                        if selected_index >= 0
-                        else (
-                            "WebJam couldn't open the Mac's system input. "
-                            "Reconnect an input, then choose Try Again."
-                        )
+                        "Jamulus needs an available instrument input. Open "
+                        "Jamulus Audio Settings, check your interface, then "
+                        "return here."
                     ),
-                    next_action=(
-                        "Use System Input" if selected_index >= 0 else "Try Again"
-                    ),
+                    next_action="Open Jamulus Audio Settings",
                 )
             self._render_session()
             return

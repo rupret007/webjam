@@ -312,15 +312,15 @@ def _run_app() -> int:
                 lambda invitation=late_invitation: _deliver_live_invite(invitation),
             )
     window.show()
-    # A matching Band Check verification keeps returning musicians on the
-    # one-click path. New or changed audio setups are checked before WebJam
-    # starts the production music engine. Frozen smoke validation deliberately
-    # bypasses this human confirmation gate.
+    # The role choice is already authorization to begin. The main window owns
+    # one non-modal Jamulus-native journey; it never presents WebJam input or
+    # output choices before launching the real music engine. Frozen smoke
+    # validation still uses the direct lifecycle hook for bounded packaging.
     QTimer.singleShot(
         0,
         controller._on_launch_audio
         if smoke_autostart
-        else controller.start_session_or_band_check,
+        else controller.begin_startup_journey,
     )
     if smoke_autostart:
         # Frozen-build validation needs to exercise the real Host lifecycle

@@ -319,6 +319,12 @@ class AudioCoordinator:
         self._c.session_health.reset_live_truth()
         self._c.session_lifecycle.reset(reason="Ready for a new session")
         self._c._clear_lan_invite_address()
+        clear_startup_recovery = getattr(self._c, "_clear_startup_recovery", None)
+        if callable(clear_startup_recovery):
+            # End/Leave is a clean terminal state. Keep recovery only for a
+            # genuinely interrupted setup, never for a session the musician
+            # intentionally finished.
+            clear_startup_recovery()
         reset_conductor = getattr(self._c, "_reset_session_conductor_attempt", None)
         if callable(reset_conductor):
             reset_conductor()

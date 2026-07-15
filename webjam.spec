@@ -148,7 +148,7 @@ a = Analysis(
     datas=[
         # QSS stylesheet and theme assets
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
-        # Canonical WebJam mark plus packaged OS icon containers.
+        # Portable WebJam vector companion plus packaged OS icon containers.
         (str(ROOT / "webjam_qt" / "theme" / "assets"), "webjam_qt/theme/assets"),
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
@@ -175,7 +175,6 @@ a = Analysis(
         "PySide6.QtWebEngineWidgets",
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebChannel",
-        "PySide6.QtSvg",
         # Core modules
         "core.settings",
         "core.audio_engine",
@@ -199,7 +198,7 @@ a = Analysis(
         # The conductor is imported at normal startup; the private Test Night
         # ledger and dialog are intentionally imported only when an operator
         # invokes that hidden workflow.  Keep all three explicit so a frozen
-        # candidate includes the complete v0.15 path even if module-graph
+        # candidate includes the complete v0.16 path even if module-graph
         # analysis changes how it follows function-local imports.
         "core.session_conductor",
         "core.pilot_evidence",

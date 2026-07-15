@@ -1,7 +1,7 @@
 # WebJam modernization plan
 
 > Historical implementation log through the pre-v0.9 work. For the current
-> Host/Join flow, release state, and acceptance gates, use `README.md`,
+> v0.16 Host/Join flow, release state, and acceptance gates, use `README.md`,
 > `CHANGELOG.md`, `UX_ACCEPTANCE_CHECKLIST.md`, and `TEST_PROCEDURE.md`.
 
 ## Audited baseline

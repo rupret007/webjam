@@ -46,7 +46,10 @@ from webjam_qt.widgets.recording_studio import (
     _waveform_peaks,
     _waveform_source_key,
 )
-from webjam_qt.windows.recording_setup import RecordingSetupDialog
+from webjam_qt.windows.recording_setup import (
+    LocalOriginalsChoiceDialog,
+    RecordingSetupDialog,
+)
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
 
@@ -885,6 +888,28 @@ def test_live_lane_hides_playback_only_pan_control():
         studio.shutdown()
 
 
+def test_studio_output_is_first_shown_when_a_take_is_opened(tmp_path):
+    studio = RecordingStudio(
+        tmp_path,
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        # A live jam has no review output decision at all.
+        assert studio._output_picker.isHidden()
+
+        take = tmp_path / "Take 01"
+        take.mkdir()
+        _wav(take / "guitar.wav")
+        _mark_verified(take, "guitar.wav")
+        studio.reload()
+        studio._take_list.setCurrentRow(0)
+
+        assert not studio._output_picker.isHidden()
+        assert studio._output_picker.accessibleName() == "Studio playback output"
+    finally:
+        studio.shutdown()
+
+
 def test_output_change_resets_playback_label_and_position():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"
@@ -1080,68 +1105,32 @@ def test_simple_settings_does_not_disable_existing_recording_setup(tmp_path):
     assert data["audio_input_device_index"] == 7
 
 
-def test_simple_settings_exposes_basic_audio_choices_and_saves_them(tmp_path):
-    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
-    with patch(
-        "webjam_qt.windows.simple_settings.list_input_devices",
-        return_value=[{"name": "SSL 2+", "channels": 2, "index": 7}],
-    ), patch(
-        "webjam_qt.windows.simple_settings.list_output_devices",
-        return_value=[{"name": "Studio Monitors", "channels": 2, "index": 4}],
-    ):
-        dialog = SimpleSettingsDialog(settings)
+def test_simple_settings_has_no_live_audio_choices_and_opens_jamulus(tmp_path):
+    dialog = SimpleSettingsDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    opened = MagicMock()
+    dialog.audio_settings_requested.connect(opened)
 
-    assert dialog._input.findData(7) >= 0
-    assert dialog._output.findData("Studio Monitors") >= 0
-    dialog._input.setCurrentIndex(dialog._input.findData(7))
-    dialog._output.setCurrentIndex(dialog._output.findData("Studio Monitors"))
+    assert not hasattr(dialog, "_input")
+    assert not hasattr(dialog, "_output")
+    assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
+    dialog._open_jamulus.click()
+    opened.assert_called_once()
+
+
+def test_simple_settings_preserves_legacy_live_route_without_displaying_it(tmp_path):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_audio_input_uid="coreaudio-input",
+        jamulus_audio_output_uid="coreaudio-output",
+        audio_input_device_index=7,
+        take_playback_output_device="Studio Monitors",
+    )
+    dialog = SimpleSettingsDialog(settings)
     dialog._save()
 
     data = json.loads(Path(settings.config_file).read_text())
-    assert data["audio_input_device_index"] == 7
-    assert data["take_playback_output_device"] == "Studio Monitors"
-
-
-def test_simple_settings_uses_stable_coreaudio_pair_for_live_band_audio(tmp_path):
-    from core.coreaudio_devices import CoreAudioDevice, CoreAudioScan
-
-    interface = CoreAudioDevice(
-        uid="coreaudio-input",
-        name="SSL 2+",
-        object_id=10,
-        input_channels=2,
-        output_channels=0,
-        nominal_rate=48_000,
-    )
-    speakers = CoreAudioDevice(
-        uid="coreaudio-output",
-        name="Studio Monitors",
-        object_id=11,
-        input_channels=0,
-        output_channels=2,
-        nominal_rate=48_000,
-    )
-    scan = CoreAudioScan(
-        devices=(interface, speakers),
-        default_input_uid=interface.uid,
-        default_output_uid=speakers.uid,
-    )
-    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
-    with patch("webjam_qt.windows.simple_settings.sys.platform", "darwin"), patch(
-        "webjam_qt.windows.simple_settings.scan_coreaudio_devices",
-        return_value=scan,
-    ), patch(
-        "webjam_qt.windows.simple_settings.list_input_devices",
-        return_value=[{"name": "SSL 2+", "channels": 2, "index": 7}],
-    ):
-        dialog = SimpleSettingsDialog(settings)
-        dialog._input.setCurrentIndex(dialog._input.findData(interface.uid))
-        dialog._output.setCurrentIndex(dialog._output.findData(speakers.uid))
-        dialog._save()
-
-    data = json.loads(Path(settings.config_file).read_text())
-    assert data["jamulus_audio_input_uid"] == interface.uid
-    assert data["jamulus_audio_output_uid"] == speakers.uid
+    assert data["jamulus_audio_input_uid"] == "coreaudio-input"
+    assert data["jamulus_audio_output_uid"] == "coreaudio-output"
     assert data["audio_input_device_index"] == 7
     assert data["take_playback_output_device"] == "Studio Monitors"
 
@@ -1183,16 +1172,14 @@ def test_simple_settings_contains_no_blackhole_or_rpc_language(tmp_path):
     assert "port" not in rendered
 
 
-def test_recording_setup_saves_output_and_two_channel_capture(tmp_path):
+def test_recording_setup_saves_two_channel_capture_without_moving_studio_output(tmp_path):
     settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         host_server_enabled=True,
         takes_directory=str(tmp_path / "takes"),
+        take_playback_output_device="Studio Monitors",
     )
     with patch(
-        "webjam_qt.windows.recording_setup.list_output_devices",
-        return_value=[{"name": "SSL 2+", "channels": 2, "index": 4}],
-    ), patch(
         "webjam_qt.windows.recording_setup.list_input_devices",
         return_value=[
             {"name": "Webcam Mic", "channels": 1, "index": 2},
@@ -1201,13 +1188,31 @@ def test_recording_setup_saves_output_and_two_channel_capture(tmp_path):
     ):
         dialog = RecordingSetupDialog(settings)
     assert dialog._error.isHidden()
-    dialog._output.setCurrentIndex(dialog._output.findData("SSL 2+"))
+    assert not hasattr(dialog, "_output")
     dialog._capture.setChecked(True)
     dialog._save()
     data = json.loads(Path(settings.config_file).read_text())
-    assert data["take_playback_output_device"] == "SSL 2+"
+    assert data["take_playback_output_device"] == "Studio Monitors"
     assert data["local_capture_enabled"] is True
+    assert data["local_capture_choice_made"] is True
     assert data["audio_input_device_index"] == 7
+
+
+def test_local_originals_choice_is_a_recording_time_decision():
+    dialog = LocalOriginalsChoiceDialog()
+
+    assert "shared Jamulus take" in " ".join(
+        widget.text() for widget in dialog.findChildren(QLabel)
+    )
+    dialog._record_shared()
+
+    assert dialog.choice == "shared"
+    assert dialog.result() == dialog.DialogCode.Accepted
+
+    local = LocalOriginalsChoiceDialog()
+    local._configure_local()
+    assert local.choice == "local"
+    assert local.result() == local.DialogCode.Accepted
 
 
 def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp_path):
@@ -1217,8 +1222,6 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
         local_capture_enabled=True,
     )
     with patch(
-        "webjam_qt.windows.recording_setup.list_output_devices", return_value=[]
-    ), patch(
         "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
     ):
         dialog = RecordingSetupDialog(settings)
@@ -1235,8 +1238,6 @@ def test_legacy_invite_disables_false_local_original_claim(tmp_path):
         local_capture_enabled=True,
     )
     with patch(
-        "webjam_qt.windows.recording_setup.list_output_devices", return_value=[]
-    ), patch(
         "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
     ):
         dialog = RecordingSetupDialog(
@@ -1262,13 +1263,9 @@ def test_recording_setup_failed_save_does_not_mutate_live_settings(tmp_path):
         local_capture_enabled=False,
     )
     with patch(
-        "webjam_qt.windows.recording_setup.list_output_devices",
-        return_value=[{"name": "New Output", "channels": 2, "index": 3}],
-    ), patch(
         "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
     ):
         dialog = RecordingSetupDialog(settings)
-    dialog._output.setCurrentIndex(dialog._output.findData("New Output"))
 
     with patch(
         "webjam_qt.windows.recording_setup.save_settings",
@@ -1289,8 +1286,6 @@ def test_recording_setup_can_choose_a_new_takes_folder(tmp_path):
     )
     chosen = tmp_path / "new-takes"
     with patch(
-        "webjam_qt.windows.recording_setup.list_output_devices", return_value=[]
-    ), patch(
         "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
     ):
         dialog = RecordingSetupDialog(settings)

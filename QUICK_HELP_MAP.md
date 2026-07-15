@@ -1,19 +1,18 @@
-# WebJam quick help
+# WebJam quick help — v0.16
 
-| If you need to… | Use this path |
-|---|---|
-| Start a band session | Launch → **Host a Jam** → confirm sound → Band Check → follow the one HUD action |
-| Join a band session | Open/paste the private invite → confirm sound → Band Check → follow the one HUD action |
-| Share the session | Follow **Copy Invite** only after WebJam says the invite is ready |
-| Check your route | `F2` or **More → Band Check** |
-| Record the band | Use the single **Record** action in the live room |
-| Review a saved take | **More → Multitrack Studio** → choose the take |
-| Export portable tracks | Studio → review the selected lanes → **Export Tracks** |
-| Change monitor mix | Use the participant card fader, monitor mute, or solo controls |
-| Add conversation/video | **More → Add Video or Conversation** |
-| Leave or end safely | Stop recording first, wait for take validation, then use **Leave Jam** or **End Session** |
-| Run a closed pilot | Launch with `--test-night` → **More → Test Night** |
-| Get deeper help | [README_SIMPLE.md](README_SIMPLE.md), [RECORDING_AND_STUDIO.md](RECORDING_AND_STUDIO.md), or [CLOSED_PILOT_PLAYBOOK.md](CLOSED_PILOT_PLAYBOOK.md) |
+| Need | Use |
+| --- | --- |
+| Start a rehearsal | Launch WebJam → **Host a Jam** |
+| Join a rehearsal | Launch WebJam → **Join a Jam** → paste one invite |
+| Change live sound | **More → Audio Settings in Jamulus** |
+| Invite a bandmate | Host setup → **Copy Invite** |
+| Add talk/video | After music is ready, choose **Add Webex** or **More → Webex / Conversation** |
+| Record the band | Host → **Record** |
+| Keep local interface stems | First host Record → **Also Keep This Mac’s Inputs** |
+| Review a take | **More → Studio** |
+| Select a review speaker/output | Open a take in Studio |
+| Verify a live session | **More → Band Check / Verify Sound** |
+| End safely | **End Session** or **Leave Jam** |
 
-WebJam uses black, burnt orange, and white; text—not color alone—explains
-state. A meter or open process is not proof another musician heard you.
+Jamulus carries music. Webex is optional conversation/video. Studio is a
+Logic-like review experience, not Logic integration.

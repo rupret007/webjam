@@ -177,7 +177,7 @@ class ApplicationController(QObject):
                 "show_message": self._show_message,
                 "shutdown_requested": lambda: self._shutdown,
                 "schedule_ui_callback": self._ui_invoker.invoke,
-                "retry_audio_launch": self.start_session_or_band_check,
+                "retry_audio_launch": self.begin_startup_journey,
             },
         )
 
@@ -260,6 +260,21 @@ class ApplicationController(QObject):
         self._conductor_studio_reviewing = False
         self._conductor_export = ExportState.IDLE
         self._last_session_conductor = None
+        # One role-aware, generation-scoped startup journey replaces the old
+        # modal device picker + pre-session Band Check chain. Its durable
+        # confirmation record is deliberately profile-hash-only: no invite,
+        # Webex link, device identifier, or local path can enter it.
+        self._startup_generation = 0
+        self._startup_attempt: dict[str, object] | None = None
+        self._startup_profile_plan = None
+        from core.jamulus_profile import StartupAttemptStore, StartupReadinessStore
+
+        self._startup_readiness_store = StartupReadinessStore()
+        self._startup_attempt_store = StartupAttemptStore()
+        # A prior incomplete journey may be resumed only after its dedicated
+        # Jamulus profile is proven identical.  The record contains no invite,
+        # Webex link, device choice, path, or raw diagnostic text.
+        self._startup_recovery_record = self._startup_attempt_store.load()
 
         # Timers
         self._level_timer = QTimer(self)
@@ -953,6 +968,9 @@ class ApplicationController(QObject):
         self.window.session_hud.action_requested.connect(
             self._on_conductor_action_requested
         )
+        self.window.session_hud.secondary_action_requested.connect(
+            self._on_conductor_secondary_action_requested
+        )
         # Both launch affordances share URL validation and truthful state.
         self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
         self.window.close_requested.connect(self.shutdown)
@@ -1089,7 +1107,14 @@ class ApplicationController(QObject):
         )
 
     def _on_ready_check(self) -> None:
-        """F2 — open the guided Band Check without disrupting a live jam."""
+        """F2 — observe a live jam; Jamulus owns setup before it starts."""
+        if not self._is_jamulus_running():
+            self.window.flash_message(
+                "Start or join a jam first. Jamulus owns your sound setup; "
+                "Verify Sound is available once music is connected.",
+                ms=7000,
+            )
+            return
         self._open_band_check()
 
     def _open_band_check(self, *, start_session_when_ready: bool = False) -> None:
@@ -1159,9 +1184,11 @@ class ApplicationController(QObject):
             ),
         )
         dialog._settings_generation = getattr(self, "_settings_generation", 0)
-        dialog.settings_requested.connect(self._open_settings_wizard)
+        dialog.settings_requested.connect(self._bring_jamulus_forward)
         dialog.recording_settings_requested.connect(self._open_recording_setup)
-        dialog.system_input_requested.connect(self._use_system_input)
+        # Old extensions may still emit this compatibility signal. It must
+        # never mutate a live-music device choice; foreground Jamulus instead.
+        dialog.system_input_requested.connect(self._bring_jamulus_forward)
         dialog.microphone_settings_requested.connect(self._open_microphone_settings)
         dialog.practice_requested.connect(self._on_practice_requested)
         dialog.support_requested.connect(self._on_save_support_bundle)
@@ -1220,13 +1247,840 @@ class ApplicationController(QObject):
         self._start_after_band_check(settings_generation)
 
     def _on_session_audio_requested(self) -> None:
-        """Route idle starts through Band Check; preserve the live End action."""
+        """Start/cancel the native journey, or end an already live jam."""
         if bool(getattr(getattr(self, "audio", None), "stopping", False)):
+            return
+        # Lightweight legacy/controller-extension fixtures may construct this
+        # QObject without the normal initializer. Keep that narrow compatibility
+        # path on the old verifier instead of inventing incomplete startup
+        # state for a partially constructed controller.
+        if not hasattr(self, "_startup_generation"):
+            if self._is_jamulus_running():
+                self._on_launch_audio()
+            else:
+                self.start_session_or_band_check()
+            return
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is not None:
+            phase = str(attempt.get("phase", ""))
+            if phase in {"invite_ready", "live"} and self._is_jamulus_running():
+                self._on_launch_audio()
+            else:
+                self._cancel_startup_journey()
             return
         if self._is_jamulus_running():
             self._on_launch_audio()
             return
-        self.start_session_or_band_check()
+        self.begin_startup_journey()
+
+    # ------------------------------------------------------------------
+    # Jamulus-native startup journey
+    # ------------------------------------------------------------------
+    def begin_startup_journey(self) -> None:
+        """Start one non-modal host/join journey without a WebJam device gate."""
+
+        if getattr(self, "_shutdown", False) or bool(
+            getattr(getattr(self, "audio", None), "stopping", False)
+        ):
+            return
+        active = getattr(self, "_startup_attempt", None)
+        if active is not None and str(active.get("phase", "")) not in {"failed"}:
+            return
+        if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            self._render_remote_fresh_invitation_hud()
+            return
+        # The v3 transport has its own authenticated enrollment state. It is
+        # intentionally kept out of the LAN/Jamulus-native profile flow.
+        if getattr(self, "_remote_invitation", None) is not None:
+            self._begin_remote_join()
+            return
+        if bool(getattr(self.settings, "host_server_enabled", False)):
+            from services.native_remote_transport import reference_local_host_requested
+
+            if (
+                reference_local_host_requested()
+                and getattr(self, "_remote_invite_owner", None) is None
+            ):
+                self._begin_remote_host()
+                return
+
+        role = (
+            "host"
+            if bool(getattr(self.settings, "host_server_enabled", False))
+            else "guest"
+        )
+        recovery = getattr(self, "_startup_recovery_record", None)
+        if recovery is None:
+            recovery = self._startup_attempt_store.load()
+            self._startup_recovery_record = recovery
+        try:
+            stored_generation = self._startup_attempt_store.next_generation()
+        except Exception:  # noqa: BLE001 - a fresh in-memory generation is safe
+            stored_generation = self._startup_generation + 1
+        self._startup_generation = max(
+            self._startup_generation + 1,
+            int(stored_generation),
+        )
+        generation = self._startup_generation
+        self._startup_attempt = {
+            "generation": generation,
+            "role": role,
+            "phase": "starting_server" if role == "host" else "launching_client",
+            "cancel_event": threading.Event(),
+            "started_at": time.monotonic(),
+            "setup_finished": False,
+            "human_confirmed": False,
+            "fast_path": False,
+            "webex_decision": None,
+        }
+        if recovery is not None and str(getattr(recovery.role, "value", recovery.role)) == role:
+            # The record is not trusted yet—only copied into this transient
+            # attempt so the profile comparison below can decide whether it is
+            # safe to resume.  It is deliberately never shown to the user.
+            self._startup_attempt["recovery_record"] = recovery
+            self._startup_attempt["attempt_id"] = recovery.attempt_id
+        self._startup_profile_plan = None
+        self._conductor_setup_requested = True
+        self._conductor_band_check = EvidenceState.NOT_STARTED
+        self.window.session_strip.set_recording_available(False)
+        self._render_startup_journey()
+
+        if role == "host":
+            self._transition_lifecycle(
+                SessionLifecyclePhase.STARTING_HOST,
+                "Starting the private band server before native sound setup",
+                role="host",
+            )
+            self._start_hosted_server_for_startup(generation)
+        else:
+            self._transition_lifecycle(
+                SessionLifecyclePhase.JOINING,
+                "Opening Jamulus for the invited band",
+                role="join",
+            )
+            self._launch_native_jamulus_for_startup(generation)
+
+    def _startup_attempt_for(self, generation: int) -> dict[str, object] | None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if (
+            attempt is None
+            or int(attempt.get("generation", -1)) != int(generation)
+            or getattr(self, "_shutdown", False)
+        ):
+            return None
+        return attempt
+
+    def _start_hosted_server_for_startup(self, generation: int) -> None:
+        """Start the host's private server off the UI thread exactly once."""
+
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None:
+            return
+        cancel_event = attempt.get("cancel_event")
+
+        def cancelled() -> bool:
+            current = self._startup_attempt_for(generation)
+            if current is not attempt or str(attempt.get("phase", "")) == "cancelling":
+                return True
+            return bool(getattr(cancel_event, "is_set", lambda: False)())
+
+        def worker() -> None:
+            if cancelled():
+                return
+            try:
+                ok, _detail = self.bridge.ensure_hosted_server(
+                    cancel_requested=cancelled,
+                )
+            except Exception:  # noqa: BLE001 - fixed-copy recovery below
+                LOGGER.exception("Hosted server startup failed")
+                ok = False
+
+            def deliver() -> None:
+                if cancelled():
+                    return
+                if not ok:
+                    self._fail_startup_journey(
+                        generation,
+                        "WebJam couldn't start your private jam. Try again, or close another WebJam window first.",
+                    )
+                    return
+                self._launch_native_jamulus_for_startup(generation)
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                LOGGER.debug("Hosted server startup finished after Qt shutdown")
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-startup-host-server",
+        ).start()
+
+    def _launch_native_jamulus_for_startup(self, generation: int) -> None:
+        """Launch the visible Jamulus client without WebJam permission/device UI."""
+
+        attempt = self._startup_attempt_for(generation)
+        if (
+            attempt is None
+            or str(attempt.get("phase", "")) == "cancelling"
+            or bool(getattr(attempt.get("cancel_event"), "is_set", lambda: False)())
+        ):
+            return
+        attempt["phase"] = "native_sound_setup"
+        self._transition_lifecycle(
+            (
+                SessionLifecyclePhase.STARTING_HOST
+                if attempt["role"] == "host"
+                else SessionLifecyclePhase.JOINING
+            ),
+            "Opening Jamulus for native sound setup",
+        )
+        self._render_startup_journey()
+        if not self._is_jamulus_running():
+            self.audio.ended_by_user = False
+            self.audio.connection_timed_out = False
+            self.audio.recovering = False
+            self._local_audio_seen = False
+            self._remote_audio_seen = False
+            accepted = bool(self.bridge.launch_jamulus(manual=True))
+            if not accepted:
+                self._fail_startup_journey(
+                    generation,
+                    "WebJam couldn't open Jamulus. Reinstall this WebJam build, then try again.",
+                )
+                return
+            self._connection_timer.start()
+        self._schedule_startup_poll(generation)
+
+    def _schedule_startup_poll(self, generation: int) -> None:
+        QTimer.singleShot(
+            350,
+            lambda current_generation=generation: self._poll_startup_connection(
+                current_generation
+            ),
+        )
+
+    def _poll_startup_connection(self, generation: int) -> None:
+        """Advance only on proven process/RPC/roster truth, never a meter."""
+
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None:
+            return
+        phase = str(attempt.get("phase", ""))
+        if phase in {"failed", "cancelling", "invite_ready", "live"}:
+            return
+        terminal = {"Stopped", "Launch failed", "Not found", "Port in use"}
+        state = str(getattr(self.bridge, "jamulus_state", "") or "")
+        if state in terminal:
+            self._fail_startup_journey(
+                generation,
+                "Jamulus couldn't open the music connection. Check Jamulus, then try again.",
+            )
+            return
+
+        plan = getattr(self.bridge, "native_profile_plan", None)
+        if plan is not None:
+            self._startup_profile_plan = plan
+            self._apply_matching_startup_recovery(attempt, plan)
+            try:
+                from core.jamulus_profile import StartupRole
+
+                fast_path = self._startup_readiness_store.is_current(
+                    plan,
+                    StartupRole(str(attempt["role"])),
+                )
+            except Exception:  # noqa: BLE001 - safe fallback is native setup
+                fast_path = False
+            attempt["fast_path"] = bool(
+                attempt.get("fast_path", False) or fast_path
+            )
+            if fast_path:
+                attempt["setup_finished"] = True
+                attempt["human_confirmed"] = True
+
+        if not self._is_jamulus_running() or not self._startup_music_is_proven(attempt):
+            if bool(attempt.get("setup_finished", False)):
+                attempt["phase"] = "verifying_music"
+            else:
+                attempt["phase"] = "native_sound_setup"
+            self._render_startup_journey()
+            self._schedule_startup_poll(generation)
+            return
+
+        # A v2 invitation's authenticated peer plane carries only enrollment,
+        # durable presence, and opt-in Local Originals. Start it only after
+        # this exact native Jamulus connection is proven—never at app boot or
+        # before a cancelled launch has a chance to clean up.
+        self._start_guest_peer_for_native_startup(attempt)
+        if (
+            str(attempt.get("phase", "")) == "cancelling"
+            or bool(getattr(attempt.get("cancel_event"), "is_set", lambda: False)())
+        ):
+            return
+
+        if not bool(attempt.get("setup_finished", False)):
+            attempt["phase"] = "native_sound_setup"
+            self._render_startup_journey()
+            return
+        if bool(attempt.get("fast_path", False)):
+            self._continue_after_music_ready(generation)
+            return
+        attempt["phase"] = "confirm_sound"
+        self._render_startup_journey()
+
+    def _start_guest_peer_for_native_startup(
+        self, attempt: dict[str, object]
+    ) -> None:
+        """Start a v2 recording peer after Jamulus identity is proven.
+
+        This stays out of v3, Host, and disconnected paths.  The peer has no
+        live-music device authority; it only enrolls and later follows a
+        host-confirmed recording signal for opted-in Local Originals.
+        """
+
+        if (
+            attempt.get("role") != "guest"
+            or bool(attempt.get("peer_started", False))
+            or str(attempt.get("phase", "")) == "cancelling"
+            or bool(getattr(attempt.get("cancel_event"), "is_set", lambda: False)())
+            or getattr(self, "_remote_invitation", None) is not None
+            or getattr(self, "_remote_session", None) is not None
+            or getattr(self, "_remote_invite_owner", None) is not None
+            or getattr(self.bridge, "remote_guest_mode_enabled", False) is True
+        ):
+            return
+        guest = getattr(self, "guest_peer", None)
+        invite = getattr(self, "_guest_invite", None)
+        if guest is None and invite is not None:
+            self._configure_guest_peer(invite)
+            guest = getattr(self, "guest_peer", None)
+        # A broken optional Local Originals path must never retry in a poll
+        # loop or block the musician from playing the shared Jamulus take.
+        attempt["peer_started"] = True
+        if guest is None:
+            return
+        try:
+            guest.start()
+        except Exception:  # noqa: BLE001 - peer transfer cannot block music
+            LOGGER.exception("Could not start guest recording transfer")
+
+    def _apply_matching_startup_recovery(self, attempt: dict[str, object], plan) -> None:
+        """Resume only a strictly matching, path-free prior journey record.
+
+        A process can survive a desktop restart, but an old profile cannot
+        establish sound readiness by itself.  Matching profile evidence may
+        restore the *next safe prompt*; any changed/missing profile returns to
+        native Jamulus setup without consuming or exposing private session data.
+        """
+
+        if bool(attempt.get("recovery_checked", False)):
+            return
+        attempt["recovery_checked"] = True
+        record = attempt.get("recovery_record")
+        if record is None:
+            return
+        try:
+            from core.jamulus_profile import (
+                StartupClientPhase,
+                StartupConnectionState,
+                StartupRole,
+            )
+
+            role = StartupRole(str(attempt["role"]))
+            if (
+                record.role is not role
+                or record.profile_fingerprint != plan.profile_fingerprint
+            ):
+                return
+            if record.client_phase in {
+                StartupClientPhase.VERIFYING,
+                StartupClientPhase.READY,
+            }:
+                attempt["setup_finished"] = True
+            if bool(record.human_confirmed) and record.connection_state in {
+                StartupConnectionState.CONNECTED,
+                StartupConnectionState.CONNECTING,
+            }:
+                # A current profile plus a fresh live proof below makes this a
+                # real returning-musician fast path, not a blind replay.
+                attempt["human_confirmed"] = True
+                attempt["fast_path"] = True
+            decision = getattr(record.webex_decision, "value", record.webex_decision)
+            if decision in {"skipped", "open_requested"}:
+                attempt["webex_decision"] = decision
+            attempt["resumed"] = True
+        except Exception:  # noqa: BLE001 - recovery must fail closed
+            LOGGER.info("Startup recovery did not match the active profile", exc_info=True)
+
+    def _clear_startup_recovery(self) -> None:
+        """Forget only completed/cancelled operational recovery state."""
+
+        self._startup_attempt = None
+        self._startup_profile_plan = None
+        self._startup_recovery_record = None
+        try:
+            self._startup_attempt_store.clear()
+        except Exception:  # noqa: BLE001 - a stale private prompt is harmless
+            LOGGER.debug("Could not clear completed startup recovery", exc_info=True)
+
+    def _startup_music_is_proven(self, attempt: dict[str, object]) -> bool:
+        """Return only software facts WebJam can honestly verify."""
+
+        rpc = getattr(self.jamulus, "rpc_client", None)
+        if not (
+            self._is_jamulus_running()
+            and bool(getattr(rpc, "available", False))
+            and bool(self._jamulus_connected)
+        ):
+            return False
+        if attempt.get("role") == "host" and not self.bridge.hosted_server_alive():
+            return False
+        local = [
+            person
+            for person in self.participants.values()
+            if self._is_local_participant(person)
+        ]
+        # Require exactly one local identity rather than guessing from a
+        # process or an input meter.
+        return len(local) == 1
+
+    def _finish_native_sound_setup(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        attempt["setup_finished"] = True
+        attempt["phase"] = "verifying_music"
+        self._render_startup_journey()
+        self._schedule_startup_poll(int(attempt["generation"]))
+
+    def _confirm_startup_audible(self) -> None:
+        """Persist one explicit human audibility confirmation after proof."""
+
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        generation = int(attempt["generation"])
+        if not self._startup_music_is_proven(attempt):
+            attempt["phase"] = "verifying_music"
+            self._render_startup_journey()
+            self._schedule_startup_poll(generation)
+            return
+        try:
+            refreshed = self.bridge.refresh_native_profile_plan()
+            if refreshed is not None:
+                self._startup_profile_plan = refreshed
+                from core.jamulus_profile import StartupRole
+
+                self._startup_readiness_store.save_for_plan(
+                    refreshed,
+                    StartupRole(str(attempt["role"])),
+                    human_confirmed=True,
+                )
+        except Exception:  # noqa: BLE001 - confirmation remains useful this run
+            LOGGER.info("Could not save native sound readiness", exc_info=True)
+        attempt["human_confirmed"] = True
+        self._continue_after_music_ready(generation)
+
+    def _continue_after_music_ready(self, generation: int) -> None:
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None:
+            return
+        if str(attempt.get("phase", "")) in {
+            "conversation",
+            "conversation_link",
+            "invite_ready",
+            "live",
+        }:
+            return
+        # A returning musician already made a human confirmation for this
+        # exact profile. Do not make the optional conversation question a new
+        # gate on every launch.
+        if bool(attempt.get("fast_path", False)):
+            attempt["webex_decision"] = "skipped"
+            self._show_startup_invite_ready(generation)
+            return
+        attempt["phase"] = "conversation"
+        self._render_startup_journey()
+
+    def _show_startup_conversation_input(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        attempt["phase"] = "conversation_link"
+        self._render_startup_journey()
+        self.window.session_hud.focus_input()
+
+    def _save_startup_webex_link(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        from core.settings import save_settings
+        from core.webex_url import normalize_webex_url, webex_url_error
+
+        raw = self.window.session_hud.input_text()
+        value = normalize_webex_url(raw)
+        error = webex_url_error(value) if value else "Paste a valid Webex link, or choose Not now."
+        if error:
+            attempt["input_error"] = error
+            self._render_startup_journey()
+            return
+        previous_url = self.settings.webex_url
+        previous_mode = self.settings.webex_audio_mode
+        try:
+            self.settings.webex_url = value
+            self.settings.webex_audio_mode = "talkback"
+            save_settings(self.settings)
+        except OSError:
+            self.settings.webex_url = previous_url
+            self.settings.webex_audio_mode = previous_mode
+            attempt["input_error"] = "WebJam couldn't save that link. Try again or choose Not now."
+            self._render_startup_journey()
+            return
+        self.webex.meeting_url = value
+        self.bridge.webex_controller = self.webex
+        self.window.session_strip.set_video_configured(True)
+        attempt["webex_decision"] = "open_requested"
+        attempt.pop("input_error", None)
+        self._show_startup_invite_ready(int(attempt["generation"]))
+
+    def _skip_startup_webex(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        attempt["webex_decision"] = "skipped"
+        self._show_startup_invite_ready(int(attempt["generation"]))
+
+    def _show_startup_invite_ready(self, generation: int) -> None:
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None:
+            return
+        attempt["phase"] = "invite_ready"
+        self.window.session_strip.set_recording_available(
+            bool(attempt["role"] == "host" and self._jamulus_connected)
+        )
+        self._render_startup_journey()
+
+    def _enter_startup_jam(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        self._clear_startup_recovery()
+        self._update_session_hud()
+
+    def _fail_startup_journey(self, generation: int, message: str) -> None:
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None:
+            return
+        attempt["phase"] = "failed"
+        attempt["failure"] = str(message)
+        self._transition_lifecycle(
+            SessionLifecyclePhase.FAILED_RECOVERABLE,
+            "Jamulus-native startup needs attention",
+        )
+        self._render_startup_journey()
+
+    def _retry_startup_journey(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            self.begin_startup_journey()
+            return
+        role = str(attempt.get("role", "guest"))
+        self._startup_attempt = None
+        self._startup_profile_plan = None
+        # A healthy owned host server remains available while only the client
+        # is retried. This avoids duplicate servers and preserves invite truth.
+        if role == "host" and self.bridge.hosted_server_alive():
+            self._startup_generation += 1
+            generation = self._startup_generation
+            self._startup_attempt = {
+                "generation": generation,
+                "role": "host",
+                "phase": "launching_client",
+                "cancel_event": threading.Event(),
+                "started_at": time.monotonic(),
+                "setup_finished": False,
+                "human_confirmed": False,
+                "fast_path": False,
+                "webex_decision": None,
+            }
+            self._launch_native_jamulus_for_startup(generation)
+            return
+        self.begin_startup_journey()
+
+    def _cancel_startup_journey(self) -> None:
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        generation = int(attempt["generation"])
+        role = str(attempt.get("role", "guest"))
+        cancel_event = attempt.get("cancel_event")
+        cancel = getattr(cancel_event, "set", None)
+        if callable(cancel):
+            cancel()
+        attempt["phase"] = "cancelling"
+        self._render_startup_journey()
+
+        def worker() -> None:
+            try:
+                self._stop_session_peer()
+                self.bridge.stop_jamulus()
+                if role == "host":
+                    self.bridge.stop_hosted_server()
+            except Exception:  # noqa: BLE001 - cleanup state remains conservative
+                LOGGER.exception("Startup cancellation cleanup failed")
+
+            def deliver() -> None:
+                if self._startup_attempt_for(generation) is None:
+                    return
+                self._clear_startup_recovery()
+                self.audio.ended_by_user = False
+                self.audio.reset_to_idle()
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                LOGGER.debug("Startup cancellation finished after Qt shutdown")
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-startup-cancel",
+        ).start()
+
+    def _bring_jamulus_forward(self) -> None:
+        brought_forward = bool(self.bridge.bring_jamulus_forward())
+        if brought_forward:
+            self.window.flash_message(
+                "Jamulus is in front. In Jamulus, choose Settings → Audio/Network Settings.",
+                ms=7000,
+            )
+            return
+        self.window.flash_message(
+            "Jamulus is still opening. Try Bring Jamulus Forward again in a moment.",
+            ms=6000,
+        )
+
+    def _persist_startup_attempt(self, attempt: dict[str, object]) -> None:
+        """Write only the allowlisted recovery facts once a profile exists."""
+
+        plan = self._startup_profile_plan or getattr(
+            self.bridge, "native_profile_plan", None
+        )
+        if plan is None:
+            return
+        try:
+            from core.jamulus_profile import (
+                StartupAttemptRecord,
+                StartupClientPhase,
+                StartupConnectionState,
+                StartupNextAction,
+                StartupRole,
+                StartupServerPhase,
+                StartupWebexDecision,
+            )
+
+            phase = str(attempt.get("phase", ""))
+            role = StartupRole(str(attempt.get("role", "guest")))
+            server_phase = (
+                StartupServerPhase.NOT_REQUIRED
+                if role is StartupRole.GUEST
+                else (
+                    StartupServerPhase.STARTING
+                    if phase == "starting_server"
+                    else StartupServerPhase.FAILED
+                    if phase == "failed"
+                    else StartupServerPhase.READY
+                )
+            )
+            client_phase = {
+                "native_sound_setup": StartupClientPhase.NATIVE_SOUND_SETUP,
+                "verifying_music": StartupClientPhase.VERIFYING,
+                "confirm_sound": StartupClientPhase.VERIFYING,
+                "conversation": StartupClientPhase.READY,
+                "conversation_link": StartupClientPhase.READY,
+                "invite_ready": StartupClientPhase.READY,
+                "failed": StartupClientPhase.FAILED,
+            }.get(phase, StartupClientPhase.LAUNCHING)
+            connection = (
+                StartupConnectionState.CONNECTED
+                if self._startup_music_is_proven(attempt)
+                else StartupConnectionState.FAILED
+                if phase == "failed"
+                else StartupConnectionState.CONNECTING
+            )
+            next_action = {
+                "starting_server": StartupNextAction.WAIT_FOR_SERVER,
+                "launching_client": StartupNextAction.OPEN_JAMULUS,
+                "native_sound_setup": StartupNextAction.FINISH_SOUND_SETUP,
+                "verifying_music": StartupNextAction.FINISH_SOUND_SETUP,
+                "confirm_sound": StartupNextAction.CONFIRM_AUDIBLE,
+                "conversation": StartupNextAction.OPTIONAL_WEBEX,
+                "conversation_link": StartupNextAction.OPTIONAL_WEBEX,
+                "invite_ready": (
+                    StartupNextAction.COPY_INVITE
+                    if role is StartupRole.HOST
+                    else StartupNextAction.ENTER_JAM
+                ),
+                "failed": StartupNextAction.RETRY,
+            }.get(phase, StartupNextAction.NONE)
+            decision = attempt.get("webex_decision")
+            webex_decision = (
+                StartupWebexDecision(decision)
+                if decision in {"skipped", "open_requested"}
+                else None
+            )
+            record_kwargs = {
+                "generation": int(attempt["generation"]),
+                "role": role,
+                "server_phase": server_phase,
+                "client_phase": client_phase,
+                "profile_fingerprint": plan.profile_fingerprint,
+                "connection_state": connection,
+                "human_confirmed": bool(attempt.get("human_confirmed", False)),
+                "webex_decision": webex_decision,
+                "next_action": next_action,
+            }
+            attempt_id = attempt.get("attempt_id")
+            if attempt_id:
+                record = StartupAttemptRecord(
+                    attempt_id=str(attempt_id),
+                    **record_kwargs,
+                )
+            else:
+                record = StartupAttemptRecord.new(**record_kwargs)
+                attempt["attempt_id"] = record.attempt_id
+            self._startup_attempt_store.save(record)
+        except Exception:  # noqa: BLE001 - recovery persistence must not block music
+            LOGGER.info("Could not persist startup recovery state", exc_info=True)
+
+    def _render_startup_journey(self) -> None:
+        """Project the one current setup step into the always-visible HUD."""
+
+        attempt = getattr(self, "_startup_attempt", None)
+        if attempt is None:
+            return
+        role = str(attempt.get("role", "guest"))
+        phase = str(attempt.get("phase", ""))
+        end_label = "End Session" if role == "host" else "Leave Jam"
+        self.window.session_strip.set_audio_state(
+            end_label,
+            enabled=phase != "cancelling",
+        )
+        if phase == "starting_server":
+            self.window.session_hud.set_state(
+                "Starting your private jam",
+                "WebJam is starting the band server. Your sound setup comes next in Jamulus.",
+                action_visible=False,
+            )
+        elif phase in {"launching_client", "native_sound_setup"}:
+            self.window.session_hud.set_state(
+                "Set up your sound in Jamulus",
+                "Choose your interface, input channels, headphones, and buffer in Jamulus. WebJam will watch the connection here.",
+                action_text="I Finished Sound Setup",
+                action_visible=True,
+                action_kind="native_setup_finished",
+                secondary_action_text="Bring Jamulus Forward",
+                secondary_action_visible=True,
+                secondary_action_kind="bring_jamulus",
+            )
+        elif phase == "verifying_music":
+            self.window.session_hud.set_state(
+                "Checking your music connection",
+                "WebJam is confirming the Jamulus client, private server, and your place in the band.",
+                action_visible=False,
+                secondary_action_text="Bring Jamulus Forward",
+                secondary_action_visible=True,
+                secondary_action_kind="bring_jamulus",
+            )
+        elif phase == "confirm_sound":
+            self.window.session_hud.set_state(
+                "Listen for your instrument",
+                "Can you hear your instrument returning cleanly from the jam?",
+                action_text="Yes, It Sounds Right",
+                action_visible=True,
+                action_kind="sound_confirmed",
+                secondary_action_text="Fix Audio in Jamulus",
+                secondary_action_visible=True,
+                secondary_action_kind="fix_audio",
+            )
+        elif phase == "conversation":
+            self.window.session_hud.set_state(
+                "Add conversation if you use it",
+                "Jamulus carries the music. Webex is optional for talking or video.",
+                action_text="Add Webex",
+                action_visible=True,
+                action_kind="add_webex",
+                secondary_action_text="Not Now",
+                secondary_action_visible=True,
+                secondary_action_kind="skip_webex",
+            )
+        elif phase == "conversation_link":
+            error = str(attempt.get("input_error", "") or "")
+            detail = (
+                error
+                or "Paste a Webex link if your band uses one. WebJam will only open it when you ask."
+            )
+            self.window.session_hud.set_state(
+                "Add Webex",
+                detail,
+                action_text="Save Webex",
+                action_visible=True,
+                action_kind="save_webex",
+                secondary_action_text="Not Now",
+                secondary_action_visible=True,
+                secondary_action_kind="skip_webex",
+                input_visible=True,
+                input_placeholder="https://…",
+                input_value=self.window.session_hud.input_text(),
+                input_accessible_name="Optional Webex meeting link",
+            )
+        elif phase == "invite_ready":
+            if role == "host":
+                self.window.session_hud.set_state(
+                    "Your jam is ready",
+                    "Invite your band when you are ready. Jamulus carries the music.",
+                    invite_available=True,
+                    action_text="Copy Invite",
+                    action_visible=True,
+                    action_kind="copy_invite",
+                    ready=True,
+                    secondary_action_text="Enter Jam",
+                    secondary_action_visible=True,
+                    secondary_action_kind="enter_jam",
+                )
+            else:
+                self.window.session_hud.set_state(
+                    "Ready to play",
+                    "Your Jamulus connection is ready. Enter the jam when you are ready.",
+                    action_text="Enter Jam",
+                    action_visible=True,
+                    action_kind="enter_jam",
+                    ready=True,
+                )
+        elif phase == "cancelling":
+            self.window.session_hud.set_state(
+                "Closing this setup",
+                "WebJam is safely releasing the private music session.",
+                action_visible=False,
+            )
+        else:
+            self.window.session_hud.set_state(
+                "Music setup needs attention",
+                str(
+                    attempt.get(
+                        "failure",
+                        "WebJam couldn't finish this music setup. Try again.",
+                    )
+                ),
+                action_text="Try Again",
+                action_visible=True,
+                action_kind="retry_startup",
+                secondary_action_text="Cancel",
+                secondary_action_visible=True,
+                secondary_action_kind="cancel_startup",
+            )
+        self._persist_startup_attempt(attempt)
 
     def start_session_or_band_check(self) -> None:
         """Reuse a matching verification or gate startup with Band Check.
@@ -1785,7 +2639,49 @@ class ApplicationController(QObject):
         )
 
     def _on_record_requested(self) -> None:
-        """Compatibility entry point; RecordingCoordinator owns the lifecycle."""
+        """Start a take after the one explicit Local Originals decision.
+
+        The shared host take is the default.  A first-time host can opt into
+        separate interface stems here, at the moment recording matters,
+        without turning Host/Join or Jamulus setup into a recording wizard.
+        """
+
+        settings = getattr(self, "settings", None)
+        needs_choice = bool(
+            settings is not None
+            and getattr(settings, "host_server_enabled", False)
+            and not getattr(settings, "local_capture_enabled", False)
+            and not getattr(settings, "local_capture_choice_made", False)
+        )
+        if needs_choice:
+            from webjam_qt.windows.recording_setup import LocalOriginalsChoiceDialog
+
+            choice_dialog = LocalOriginalsChoiceDialog(parent=self.window)
+            if choice_dialog.exec() != LocalOriginalsChoiceDialog.DialogCode.Accepted:
+                return
+            choice = choice_dialog.choice
+            if choice not in {"shared", "local"}:
+                return
+            previous_choice = bool(settings.local_capture_choice_made)
+            previous_capture = bool(settings.local_capture_enabled)
+            settings.local_capture_choice_made = True
+            if choice == "shared":
+                settings.local_capture_enabled = False
+            try:
+                from core.settings import save_settings
+
+                save_settings(settings)
+            except OSError:
+                settings.local_capture_choice_made = previous_choice
+                settings.local_capture_enabled = previous_capture
+                self.window.flash_message(
+                    "WebJam couldn't save your recording choice. Try again.",
+                    ms=6000,
+                )
+                return
+            if choice == "local":
+                self._open_recording_setup()
+                return
         self.recording.on_record_requested()
 
     def _copy_band_invite(self) -> None:
@@ -1971,8 +2867,8 @@ class ApplicationController(QObject):
                 return False
             # Clear all v3 guest state, including a pending capability or an
             # orphaned remote-mode marker, before the v1/v2 settings and peer
-            # are installed. Otherwise start_session_or_band_check() could
-            # re-enter the stopped v3 join after applying the legacy invite.
+            # are installed. Otherwise a new startup journey could re-enter
+            # the stopped v3 join after applying the legacy invite.
             if not self._stop_remote_transport():
                 self._show_private_session_cleanup_failure()
                 return False
@@ -2021,7 +2917,7 @@ class ApplicationController(QObject):
             self.audio.stopping = False
             self.audio.ended_by_user = False
             self.audio.reset_to_idle()
-            self.start_session_or_band_check()
+            self.begin_startup_journey()
             return True
 
         if not busy:
@@ -2087,7 +2983,13 @@ class ApplicationController(QObject):
                     "WebJam still can’t see the band network. Check Wi-Fi and try again."
                 )
             return
-        self.start_session_or_band_check()
+        # Keep narrow compatibility for lightweight extension/test fixtures
+        # that predate the Jamulus-native journey and intentionally construct
+        # only the old Band Check surface.
+        if not hasattr(self, "_startup_generation"):
+            self.start_session_or_band_check()
+            return
+        self.begin_startup_journey()
 
     def _begin_remote_join(self) -> None:
         """Enroll a v3 guest before Jamulus can see its loopback proxy."""
@@ -2196,7 +3098,7 @@ class ApplicationController(QObject):
                         connected=False,
                     )
                 self._update_session_hud()
-                self.start_session_or_band_check()
+                self.begin_startup_journey()
 
             try:
                 self._ui_invoker.invoke(deliver)
@@ -2252,7 +3154,7 @@ class ApplicationController(QObject):
         if snapshot.generation == getattr(self, "_remote_route_generation", 0):
             if self._mark_remote_band_check_path(snapshot, connected=True):
                 if not self._is_jamulus_running():
-                    self.start_session_or_band_check()
+                    self.begin_startup_journey()
             return
         from copy import deepcopy
 
@@ -2282,9 +3184,9 @@ class ApplicationController(QObject):
         self._remote_invitation_requires_replacement = False
         self.window.session_hud.set_state(
             snapshot.musician_status,
-            "Run Band Check, then play.",
+            "Jamulus is opening your music connection.",
         )
-        self.start_session_or_band_check()
+        self.begin_startup_journey()
 
     def _show_remote_session_failure(
         self,
@@ -3129,6 +4031,9 @@ class ApplicationController(QObject):
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
 
+        if getattr(self, "_startup_attempt", None) is not None:
+            self._render_startup_journey()
+            return
         self._update_session_hud_legacy()
         self._render_session_conductor()
 
@@ -3136,7 +4041,19 @@ class ApplicationController(QObject):
         """Route the one visible conductor action to its real owner."""
 
         action = str(action_kind or "").strip().lower()
-        if action in {"invite", "copy_invite"}:
+        if action == "native_setup_finished":
+            self._finish_native_sound_setup()
+        elif action == "sound_confirmed":
+            self._confirm_startup_audible()
+        elif action == "add_webex":
+            self._show_startup_conversation_input()
+        elif action == "save_webex":
+            self._save_startup_webex_link()
+        elif action == "retry_startup":
+            self._retry_startup_journey()
+        elif action == "enter_jam":
+            self._enter_startup_jam()
+        elif action in {"invite", "copy_invite"}:
             self._copy_band_invite()
         elif action in {"retry", "try_reconnect", "check_session"}:
             self._retry_session()
@@ -3156,6 +4073,25 @@ class ApplicationController(QObject):
             self._on_session_audio_requested()
         elif action == "open_details":
             self._on_ready_check()
+
+    def _on_conductor_secondary_action_requested(self, action_kind: str) -> None:
+        """Route quiet journey actions without adding a second primary path."""
+
+        action = str(action_kind or "").strip().lower()
+        if action in {"bring_jamulus", "fix_audio"}:
+            self._bring_jamulus_forward()
+            if action == "fix_audio":
+                attempt = getattr(self, "_startup_attempt", None)
+                if attempt is not None:
+                    attempt["setup_finished"] = False
+                    attempt["phase"] = "native_sound_setup"
+                    self._render_startup_journey()
+        elif action == "skip_webex":
+            self._skip_startup_webex()
+        elif action == "enter_jam":
+            self._enter_startup_jam()
+        elif action == "cancel_startup":
+            self._cancel_startup_journey()
 
     def _on_recorder_phase_changed(self, _phase=None) -> None:
         """Refresh the conductor after recorder-owned state changes."""
@@ -3835,35 +4771,9 @@ class ApplicationController(QObject):
         self.audio.on_practice_requested()
 
     def _use_system_input(self) -> None:
-        """Recover a stale saved device with one safe, reversible choice."""
-        from core.settings import save_settings
+        """Compatibility shim: live device changes belong to Jamulus."""
 
-        previous = int(getattr(self.settings, "audio_input_device_index", -1))
-        if previous < 0:
-            dialog = getattr(self, "_ready_check_dialog", None)
-            if dialog is not None:
-                dialog.run_checks()
-            return
-        self.settings.audio_input_device_index = -1
-        try:
-            save_settings(self.settings)
-        except Exception:  # noqa: BLE001
-            self.settings.audio_input_device_index = previous
-            LOGGER.exception("Could not switch Band Check to the system input")
-            self.window.flash_message(
-                "WebJam couldn't switch inputs. Your saved interface is still "
-                "selected; reconnect it, then close and reopen Band Check.",
-                ms=7000,
-            )
-            return
-        reopen_band_check, reopen_start_when_ready = (
-            self._invalidate_band_check_evidence()
-        )
-        self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
-        self.window.flash_message(
-            "Using the Mac's system input. Band Check is running again.",
-            ms=5000,
-        )
+        self._bring_jamulus_forward()
 
     def _open_microphone_settings(self) -> None:
         """Open the only advanced surface needed to recover a TCC denial."""
@@ -4602,6 +5512,7 @@ class ApplicationController(QObject):
         # In-session reopen — skip the welcome page since the user already
         # knows what WebJam is and is here to change a specific setting.
         wizard = SimpleSettingsDialog(self.settings, parent=self.window)
+        wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
 
@@ -4769,6 +5680,12 @@ class ApplicationController(QObject):
 
         if key == "diagnostics":
             self._on_ready_check()
+        elif key == "audio_settings":
+            self._bring_jamulus_forward()
+        elif key == "recording_setup":
+            self._open_recording_setup()
+        elif key == "support":
+            self._on_save_support_bundle()
         elif key == "settings":
             # Restore rail to the previous content view before opening wizard
             prev = getattr(self, "_last_content_key", "stage")

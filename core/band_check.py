@@ -920,23 +920,30 @@ def build_band_check_session(
         server_action = "Check again after the session starts"
         server_technical = tuple(getattr(item, "detail", "") for item in server_items)
 
-    input_status = state(selected_input, pending_on_success=True)
-    input_detail = (
-        "Press Check Input, then play or sing. Metering listens for level and saves nothing."
-        if selected_input is not None and selected_input.ok
-        else "The selected input cannot be opened with this setup."
-    )
-    try:
-        selected_input_index = int(getattr(settings, "audio_input_device_index", -1))
-    except (TypeError, ValueError):
-        selected_input_index = -1
-    input_action = (
-        "Check Input"
-        if input_status is BandCheckStatus.PENDING
-        else "Use System Input"
-        if selected_input_index >= 0
-        else "Try Again"
-    )
+    if mode is BandCheckMode.LIVE_OBSERVE:
+        # A live Jamulus client owns the instrument device. Do not open a
+        # second PortAudio stream or offer a competing system-input choice
+        # while observing a real jam.
+        input_status = BandCheckStatus.WARNING
+        input_detail = (
+            "Jamulus owns the live instrument input. Use Jamulus Audio "
+            "Settings if your sound needs attention."
+        )
+        input_action = ""
+        input_required = False
+    else:
+        input_status = state(selected_input, pending_on_success=True)
+        input_detail = (
+            "Press Check Input, then play or sing. Metering listens for level and saves nothing."
+            if selected_input is not None and selected_input.ok
+            else "The selected input cannot be opened with this setup."
+        )
+        input_action = (
+            "Check Input"
+            if input_status is BandCheckStatus.PENDING
+            else "Open Jamulus Audio Settings"
+        )
+        input_required = True
 
     recording_problem = next(
         (
@@ -1016,6 +1023,7 @@ def build_band_check_session(
             input_detail,
             input_action,
             (getattr(selected_input, "detail", ""),) if selected_input else (),
+            required=input_required,
         ),
         BandCheckStep(
             BandCheckStepKey.HEADPHONES,

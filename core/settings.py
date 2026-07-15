@@ -31,8 +31,13 @@ def _coerce_settings_data(data: dict) -> None:
                 data[key] = defaults[key]
                 _logger.debug("Invalid %s in config; using default", key)
     # Boolean fields
-    for key in ("enable_sentry", "companion_api_enabled", "local_capture_enabled",
-                "host_server_enabled"):
+    for key in (
+        "enable_sentry",
+        "companion_api_enabled",
+        "local_capture_enabled",
+        "local_capture_choice_made",
+        "host_server_enabled",
+    ):
         if key in data:
             data[key] = _as_bool(data[key])
     if "webex_audio_mode" in data:
@@ -98,6 +103,10 @@ class AppSettings:
     webex_audio_mode: str = "talkback"
     # Supplemental isolated input capture is independent of the Webex role.
     local_capture_enabled: bool = False
+    # The first host Record click asks whether this Mac should retain isolated
+    # interface inputs.  This records only that the musician made a choice;
+    # it never selects or identifies a live-audio device.
+    local_capture_choice_made: bool = False
     enable_sentry: bool = False
     sentry_dsn: str = ""
     log_level: str = "INFO"
@@ -207,8 +216,13 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             if key in {"companion_api_port", "server_rpc_port"} and not (1 <= parsed <= 65535):
                 continue
             data[key] = parsed
-        elif key in {"enable_sentry", "companion_api_enabled", "local_capture_enabled",
-                     "host_server_enabled"}:
+        elif key in {
+            "enable_sentry",
+            "companion_api_enabled",
+            "local_capture_enabled",
+            "local_capture_choice_made",
+            "host_server_enabled",
+        }:
             data[key] = _as_bool(raw)
         elif key == "jamulus_candidates":
             data[key] = [item.strip() for item in raw.split(";") if item.strip()]

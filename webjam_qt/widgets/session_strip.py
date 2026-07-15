@@ -183,20 +183,38 @@ class SessionStrip(QFrame):
             QToolButton.ToolButtonPopupMode.InstantPopup
         )
         tools_menu = QMenu(self._tools_button)
-        live_action = QAction("Live Session", tools_menu)
-        live_action.triggered.connect(lambda: self.tool_requested.emit("stage"))
-        notes_action = QAction("Session Notes", tools_menu)
-        notes_action.triggered.connect(lambda: self.tool_requested.emit("canvas"))
-        studio_action = QAction("Multitrack Studio", tools_menu)
+        audio_action = QAction("Audio Settings in Jamulus", tools_menu)
+        audio_action.setToolTip(
+            "Bring Jamulus forward. Jamulus owns your instrument, headphones, and buffer."
+        )
+        audio_action.triggered.connect(
+            lambda: self.tool_requested.emit("audio_settings")
+        )
+        conversation_action = QAction("Webex / Conversation", tools_menu)
+        conversation_action.triggered.connect(self.join_video_requested.emit)
+        recording_action = QAction("Recording Setup", tools_menu)
+        recording_action.triggered.connect(
+            lambda: self.tool_requested.emit("recording_setup")
+        )
+        studio_action = QAction("Studio", tools_menu)
         studio_action.triggered.connect(lambda: self.tool_requested.emit("takes"))
-        tools_menu.addAction(live_action)
-        tools_menu.addAction(notes_action)
+        notes_action = QAction("Notes", tools_menu)
+        notes_action.triggered.connect(lambda: self.tool_requested.emit("canvas"))
+        diagnostics_action = QAction("Band Check / Verify Sound\tF2", tools_menu)
+        diagnostics_action.triggered.connect(
+            lambda: self.tool_requested.emit("diagnostics")
+        )
+        support_action = QAction("Support", tools_menu)
+        support_action.triggered.connect(lambda: self.tool_requested.emit("support"))
+
+        tools_menu.addAction(audio_action)
+        tools_menu.addAction(conversation_action)
+        tools_menu.addAction(recording_action)
         tools_menu.addAction(studio_action)
+        tools_menu.addAction(notes_action)
         tools_menu.addSeparator()
-        self._video_action = QAction("Add Video or Conversation", tools_menu)
-        self._video_action.triggered.connect(self.join_video_requested.emit)
-        tools_menu.addAction(self._video_action)
-        tools_menu.addSeparator()
+        tools_menu.addAction(diagnostics_action)
+        tools_menu.addAction(support_action)
         self._reset_invite_action = QAction("Reset Invite", tools_menu)
         self._reset_invite_action.setToolTip(
             "Revoke the current private invitation and create a new one."
@@ -206,14 +224,12 @@ class SessionStrip(QFrame):
             self.reset_invite_requested.emit
         )
         tools_menu.addAction(self._reset_invite_action)
-        settings_action = QAction("Settings", tools_menu)
+        settings_action = QAction("WebJam Settings", tools_menu)
         settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
         tools_menu.addAction(settings_action)
-        diagnostics_action = QAction("Band Check\tF2", tools_menu)
-        diagnostics_action.triggered.connect(
-            lambda: self.tool_requested.emit("diagnostics")
-        )
-        tools_menu.addAction(diagnostics_action)
+        # Backward-compatible reference used by set_video_state().  The
+        # conversation action lives under More and is intentionally optional.
+        self._video_action = conversation_action
         self._test_night_action: QAction | None = None
         if self.operator_mode:
             tools_menu.addSeparator()
@@ -290,7 +306,7 @@ class SessionStrip(QFrame):
             f"Webex video action. Current action: {label}."
         )
         menu_label = (
-            "Open Video or Conversation"
+            "Webex / Conversation"
             if label in {"Open Webex", "Open Again"}
             else label
         )
@@ -299,7 +315,7 @@ class SessionStrip(QFrame):
 
     def set_video_configured(self, configured: bool) -> None:
         if not configured:
-            self._video_action.setText("Add Video or Conversation")
+            self._video_action.setText("Add Webex / Conversation")
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_button.setEnabled(bool(enabled))

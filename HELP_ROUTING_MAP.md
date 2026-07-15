@@ -1,44 +1,15 @@
-# WebJam help routing map
+# WebJam help routing — v0.16
 
-Maps common musician questions to the v0.15.0 test-night interface. Host and
-Join both use the short sound confirmation before Band Check. The verified
-package is `WebJam-v0.15.0-TEST-NIGHT-macos-arm64.zip` from
-`30ece85eb6a555dbcb2ef35753e4c6c9e8679770` (SHA-256
-`58ff7a6071d319a11119547028f454b579fd149912d17dfc0fc20ef3cef10152`);
-v0.14.0 remains rollback history. Raw server fields and color-named buttons are
-legacy paths. Physical CoreAudio, two-Mac, recording/recovery, and
-external-editor observations remain **NOT RUN** until recorded in the pilot
-worksheet.
+| Musician says | Answer / action |
+| --- | --- |
+| “I can’t find my interface.” | Open **More → Audio Settings in Jamulus**. Choose it in Jamulus, not WebJam. |
+| “I need to change buffer or channels.” | Use Jamulus Audio/Network Settings. |
+| “Where is the Start Session button?” | Host or Join already starts the required session work. Finish Jamulus setup and confirm sound. |
+| “Can WebJam mute Webex?” | No. WebJam can open a link; Webex owns its meeting controls. Keep Webex muted while playing. |
+| “Do I need recording setup to play?” | No. Recording is optional and appears only at Record time. |
+| “Where do I choose a Studio speaker?” | Open a take in Studio. Playback output is a Studio choice. |
+| “Why is WebJam asking whether sound is right?” | Software can prove connection, not audibility. Answer only after listening. |
+| “Jamulus closed or lost sound.” | Bring Jamulus forward, fix sound there, then return to WebJam’s safe retry path. |
 
-| User need | Current path |
-|---|---|
-| Start a new band session | Launch WebJam → **Host a Jam** → confirm name and band sound → complete Band Check → **Start Session**. |
-| Join a band session | Open or paste the invite → confirm name and band sound → Band Check → **Start Session**. |
-| Check input, headphones, scratch recording, or live readiness | `F2`, **More → Band Check**, or **Settings → Run Band Check** |
-| Share the session | Live bottom bar → **Copy Invite** → send the complete same-LAN v2 link only to the intended bandmate; it is normally a reusable session-scoped bearer credential, while an **Automatic Local Originals are off** warning identifies a v1 guest with join/play plus a server track, but no WebJam local-original capture/delivery |
-| Change this Mac's monitor mix | Participant cards → fader / **Mute Monitor** / **Solo** |
-| Record the whole band | Live bottom bar → **Record** |
-| Review tracks and takes | **More → Multitrack Studio** |
-| Choose Studio output / keep this Mac's isolated inputs | **More → Multitrack Studio → Recording Setup** |
-| Review a take before export | **More → Multitrack Studio** → open the take → read the shared elapsed-time ruler → select a lane → inspect source, timing, and known gaps → review its non-destructive gain/pan/mute/solo mix; Studio saves that local review state separately from WAVs and `webjam-take.json` |
-| Prepare aligned portable tracks | In the open Studio take, review each track's saved **Export** choice → **Export Tracks** → **Show Track Export**; the choice is used for future exports until changed and never changes WAVs or `webjam-take.json`; a selected silent track or unaligned local original pauses export until reviewed |
-| Capture rehearsal notes | **More → Session Notes** |
-| Add optional video/conversation | **More → Add Video or Conversation** |
-| Speak during rehearsal | Mute the audio interface before unmuting Webex; if that is unavailable, end the WebJam session first |
-| Change display name or conversation link | **More → Settings** or **Ctrl+,**; it also exposes Band input and Band output & review |
-| Resolve a connection/device problem | Follow the one stage action; run live-observe **Band Check** with `F2` for details without restarting the session |
-| Allow a denied microphone | Stage → **Open System Settings** → Privacy & Security → Microphone → return → **Try Again** |
-| Retry after Wi-Fi interruption | Restore the same network → stage **Try Again** if automatic reconnect times out |
-| Retry a lab-only v3 private link | Use **Try Again** only when WebJam says the sidecar failed before guest enrollment. If it says **Fresh invitation required**, ask the host for a new link; do not retry the old link or fall back to a local/legacy session. v3 is not public or Internet hosting. |
-| Recover an interrupted local recording | Relaunch WebJam → open the recovered **NEEDS ATTENTION** project in Multitrack Studio → manually review its checkpoint/gap evidence. Do not treat recovered guest media as automatically uploaded or export-ready. |
-| Leave without ending the host's jam | Guest bottom bar → **Leave Jam**; active opted-in local capture is finalized, queued, and given a final upload attempt |
-| End the jam for everyone | Host: **Stop Rec** if needed → wait for **Take saved** → bottom bar **End Session** |
-| Save / load monitor mix | **Ctrl+S** / **Ctrl+O** |
-| Copy a short redacted diagnostics summary | **Ctrl+Shift+D** |
-| Preview and save a privacy-safe support bundle | **Band Check (`F2`) → Save Support Bundle** |
-| Keyboard shortcut reference | **F1** |
-| Exact two-Mac test-night run | [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) and [`CLOSED_PILOT_PLAYBOOK.md`](CLOSED_PILOT_PLAYBOOK.md) |
-| Recording and Studio workflow | [`RECORDING_AND_STUDIO.md`](RECORDING_AND_STUDIO.md) |
-| Why Studio has no beat grid | Studio is a recording-review workspace, not a DAW; its ruler is elapsed time only and it does not invent tempo, bars, beats, or beat editing. |
-| Developer band-server detail | [`server/README.md`](server/README.md) |
-| Companion API for external tools | [`COMPANION_API.md`](COMPANION_API.md) |
+Do not ask a musician for ports, CoreAudio UIDs, JSON-RPC details, Jamulus
+profile filenames, or server process information.

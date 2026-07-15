@@ -362,7 +362,7 @@ def test_permission_denied_during_mac_prompt_routes_to_system_settings() -> None
         dialog.close()
 
 
-def test_stale_saved_input_offers_system_input_with_matching_copy() -> None:
+def test_stale_saved_input_sends_musician_to_jamulus_settings() -> None:
     session = _session()
     dialog = _dialog(session)
     try:
@@ -378,9 +378,8 @@ def test_stale_saved_input_offers_system_input_with_matching_copy() -> None:
             dialog._run_primary_action()
 
         step = session.step(BandCheckStepKey.AUDIO_INPUT)
-        assert step.next_action == "Use System Input"
-        assert "system input" in step.detail
-        assert "Open Settings" not in step.detail
+        assert step.next_action == "Open Jamulus Audio Settings"
+        assert "Jamulus needs" in step.detail
     finally:
         dialog.close()
 
@@ -392,7 +391,7 @@ def test_band_check_wires_microphone_settings_to_controller_opener() -> None:
     controller.bridge = SimpleNamespace(hosted_server_alive=lambda: False)
     controller._is_jamulus_running = mock.Mock(return_value=False)
     controller._band_check_observations = mock.Mock()
-    controller._open_settings_wizard = mock.Mock()
+    controller._bring_jamulus_forward = mock.Mock()
     controller._open_microphone_settings = mock.Mock()
     controller._on_practice_requested = mock.Mock()
     controller._on_save_support_bundle = mock.Mock()
@@ -409,7 +408,7 @@ def test_band_check_wires_microphone_settings_to_controller_opener() -> None:
         controller._open_recording_setup
     )
     dialog_type.return_value.system_input_requested.connect.assert_called_once_with(
-        controller._use_system_input
+        controller._bring_jamulus_forward
     )
 
 
@@ -443,7 +442,7 @@ def test_scan_failure_try_again_restarts_the_scan() -> None:
 
 def test_recovery_actions_open_the_surface_that_can_fix_them() -> None:
     cases = (
-        (BandCheckStepKey.AUDIO_INPUT, "Use System Input", "system"),
+        (BandCheckStepKey.AUDIO_INPUT, "Open Jamulus Audio Settings", "settings"),
         (BandCheckStepKey.HEADPHONES, "Recording Setup", "recording"),
         (BandCheckStepKey.RECORDING_PATH, "Recording Setup", "recording"),
         (BandCheckStepKey.WEBEX, "Open Settings", "settings"),

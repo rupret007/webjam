@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -26,6 +27,7 @@ class SessionHud(QFrame):
     # The two no-argument signals remain for the controller paths that already
     # depend on them.
     action_requested = Signal(str)
+    secondary_action_requested = Signal(str)
     invite_requested = Signal()
     retry_requested = Signal()
 
@@ -48,10 +50,20 @@ class SessionHud(QFrame):
         self._detail = QLabel("WebJam is getting the music ready.")
         self._detail.setObjectName("SessionHudDetail")
         self._detail.setWordWrap(True)
+        self._input = QLineEdit()
+        self._input.setObjectName("SessionHudInput")
+        self._input.setVisible(False)
         status_layout.addWidget(self._status)
         status_layout.addWidget(self._detail)
+        status_layout.addWidget(self._input)
         layout.addLayout(status_layout)
         layout.addStretch(1)
+
+        self._secondary_action = QPushButton()
+        self._secondary_action.setObjectName("GhostButton")
+        self._secondary_action.setVisible(False)
+        self._secondary_action.clicked.connect(self._emit_secondary_action)
+        layout.addWidget(self._secondary_action)
 
         self._action = QPushButton("Copy Invite Link")
         self._action.setObjectName("PrimaryButton")
@@ -74,6 +86,13 @@ class SessionHud(QFrame):
         action_visible: bool | None = None,
         action_kind: str = "invite",
         ready: bool = False,
+        secondary_action_text: str = "",
+        secondary_action_visible: bool = False,
+        secondary_action_kind: str = "",
+        input_visible: bool = False,
+        input_placeholder: str = "",
+        input_value: str = "",
+        input_accessible_name: str = "",
     ) -> None:
         self._status.setText(str(status))
         self._detail.setText(str(detail))
@@ -92,6 +111,27 @@ class SessionHud(QFrame):
         self._action.setAccessibleDescription(action_description)
         self._action.setToolTip(action_description)
         self._action.setVisible(visible)
+        secondary_label = str(secondary_action_text or "")
+        self._secondary_action_kind = (
+            str(secondary_action_kind or "").strip().lower() or "secondary"
+        )
+        self._secondary_action.setText(secondary_label.replace("&", "&&"))
+        self._secondary_action.setAccessibleName(secondary_label)
+        self._secondary_action.setAccessibleDescription(
+            f"{secondary_label}. {detail}".strip()
+        )
+        self._secondary_action.setVisible(
+            bool(secondary_action_visible and secondary_label)
+        )
+        self._input.setVisible(bool(input_visible))
+        self._input.setPlaceholderText(str(input_placeholder or ""))
+        if input_visible and self._input.text() != str(input_value or ""):
+            self._input.setText(str(input_value or ""))
+        if not input_visible:
+            self._input.clear()
+        self._input.setAccessibleName(
+            str(input_accessible_name or input_placeholder or "Session detail")
+        )
         self.setProperty("ready", "true" if ready else "false")
         self.setAccessibleDescription(f"{status}. {detail}")
         style = self.style()
@@ -129,3 +169,15 @@ class SessionHud(QFrame):
             self.retry_requested.emit()
         elif self._action_kind == "invite":
             self.invite_requested.emit()
+
+    def input_text(self) -> str:
+        """Return inline setup text only to the controller that owns it."""
+
+        return self._input.text()
+
+    def focus_input(self) -> None:
+        if self._input.isVisible():
+            self._input.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _emit_secondary_action(self) -> None:
+        self.secondary_action_requested.emit(self._secondary_action_kind)

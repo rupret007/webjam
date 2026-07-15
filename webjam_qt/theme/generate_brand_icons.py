@@ -1,12 +1,12 @@
-"""Regenerate the packaged ``.ico`` and ``.icns`` from ``webjam-mark.svg``.
+"""Regenerate packaged ``.ico`` and ``.icns`` from the native brand renderer.
 
 Run from the repository root with::
 
     QT_QPA_PLATFORM=offscreen .venv/bin/python -m webjam_qt.theme.generate_brand_icons
 
-The SVG remains the canonical editable artwork.  The binary containers exist
-only because Windows Explorer and macOS Finder do not consume that SVG from a
-PyInstaller application bundle.
+The matching SVG is a portable documentation companion.  The live renderer is
+native QPainter geometry, and these binary containers exist because Windows
+Explorer and macOS Finder do not consume that geometry from a PyInstaller app.
 """
 
 from __future__ import annotations

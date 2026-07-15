@@ -12,7 +12,6 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -29,20 +28,11 @@ from core.settings import AppSettings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import LaunchDialog
 from webjam_qt.windows.launch_dialog import apply_join_invite
-from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
 
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
-
-
-def _save_confirmed_sound_setup(candidate: AppSettings, **_kwargs) -> bool:
-    """Stand in for the short launch sound dialog in launch-flow tests."""
-
-    save_settings(candidate)
-    return True
-
 
 def test_invite_link_round_trip_contains_only_public_connection_data():
     link = create_invite_link(
@@ -93,18 +83,12 @@ def test_launch_initially_shows_only_host_and_join_actions(qapp, tmp_path):
     dialog.close()
 
 
-def test_host_confirms_sound_setup_and_derives_every_technical_default(qapp, tmp_path):
+def test_host_choice_persists_role_without_a_webjam_audio_form(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-        with patch.object(
-            dialog,
-            "_confirm_sound_setup",
-            side_effect=_save_confirmed_sound_setup,
-        ) as confirm:
-            dialog._host_button.click()
+        dialog._host_button.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
-    assert confirm.call_args.kwargs["primary_action_label"] == "Continue to Band Check"
     assert dialog.selected_role == "host"
     assert data["host_server_enabled"] is True
     assert data["jamulus_server"] == "127.0.0.1"
@@ -112,26 +96,24 @@ def test_host_confirms_sound_setup_and_derives_every_technical_default(qapp, tmp
     assert data["audio_input_device_index"] == -1
     assert data["local_capture_enabled"] is False
     assert data["musician_name"] != "WebJam Musician"
+    visible_text = " ".join(
+        child.text()
+        for child in dialog.findChildren(QAbstractButton)
+        if hasattr(child, "text")
+    )
+    assert "Band input" not in visible_text
+    assert "Band output" not in visible_text
 
 
-def test_host_real_sound_confirmation_saves_before_leaving_launch(qapp, tmp_path):
+def test_host_choice_is_a_single_decision_without_a_modal_chain(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-
-    def accept_sound_setup() -> None:
-        setup = dialog.findChild(SimpleSettingsDialog)
-        assert setup is not None
-        setup._name.setText("Host Guitar")
-        setup._save_and_accept()
-
-    QTimer.singleShot(0, accept_sound_setup)
     dialog._host()
-
     saved = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
     assert dialog.selected_role == "host"
-    assert saved["musician_name"] == "Host Guitar"
     assert saved["host_server_enabled"] is True
+    assert dialog.findChildren(QLineEdit) == [dialog._invite_input]
 
 
 def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
@@ -143,12 +125,7 @@ def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
     )
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-        with patch.object(
-            dialog,
-            "_confirm_sound_setup",
-            side_effect=_save_confirmed_sound_setup,
-        ):
-            dialog._host_button.click()
+        dialog._host_button.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
     assert data["local_capture_enabled"] is True
     assert data["audio_input_device_index"] == 7
@@ -169,7 +146,7 @@ def test_join_preserves_explicit_local_original_recording_preference(tmp_path):
     assert settings.audio_input_device_index == 7
 
 
-def test_join_asks_for_one_link_then_confirms_sound_setup(qapp, tmp_path):
+def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     dialog = LaunchDialog(settings)
     dialog.show_join()
@@ -186,14 +163,8 @@ def test_join_asks_for_one_link_then_confirms_sound_setup(qapp, tmp_path):
             "192.168.1.42", session_name="Drummer Test"
         )
     )
-    with patch.object(
-        dialog,
-        "_confirm_sound_setup",
-        side_effect=_save_confirmed_sound_setup,
-    ) as confirm:
-        dialog._join_button_primary.click()
+    dialog._join_button_primary.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
-    assert confirm.call_args.kwargs["primary_action_label"] == "Join Session"
     assert dialog.selected_role == "join"
     assert dialog.session_name == "Drummer Test"
     assert data["host_server_enabled"] is False
@@ -784,7 +755,7 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
         initial_title="Old Jam",
     )
     controller = ApplicationController(window, settings=settings)
-    controller.start_session_or_band_check = MagicMock()
+    controller.begin_startup_journey = MagicMock()
     stale_visible = True
     stale_dialog = MagicMock()
     stale_dialog.isVisible.side_effect = lambda: stale_visible
@@ -806,7 +777,7 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
     assert window.session_strip.current_title() == "New Jam"
     assert controller._settings_generation == old_generation + 1
     stale_dialog.close.assert_called_once_with()
-    controller.start_session_or_band_check.assert_called_once()
+    controller.begin_startup_journey.assert_called_once()
     controller.shutdown()
 
 
@@ -842,8 +813,8 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     controller.bridge.stop_hosted_server = MagicMock(
         side_effect=lambda: events.append("server-stop") or True
     )
-    controller.start_session_or_band_check = MagicMock(
-        side_effect=lambda: events.append("new-join-gate")
+    controller.begin_startup_journey = MagicMock(
+        side_effect=lambda: events.append("new-join-start")
     )
     link = create_invite_link("192.168.1.42", session_name="New Join Jam")
     with patch.object(
@@ -864,7 +835,7 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
         "client-stop",
         "server-stop",
         "recording-reset",
-        "new-join-gate",
+        "new-join-start",
     ]
     assert controller.settings.host_server_enabled is False
     controller.bridge.hosted_server_alive.return_value = False
@@ -906,7 +877,7 @@ def test_running_host_must_finish_take_before_switching_invites(qapp, tmp_path):
     controller.shutdown()
 
 
-def test_returning_user_still_gets_host_join_gate_and_verification_gate(qapp):
+def test_returning_user_gets_host_join_gate_then_native_startup_journey(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/already/configured.json")
@@ -935,7 +906,7 @@ def test_returning_user_still_gets_host_join_gate_and_verification_gate(qapp):
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
     single_shot.assert_called_once_with(
-        0, controller.start_session_or_band_check
+        0, controller.begin_startup_journey
     )
 
 

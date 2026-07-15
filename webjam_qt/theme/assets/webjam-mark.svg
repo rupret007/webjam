@@ -1,21 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>WebJam</title>
-  <desc>Three connected paths represent conversation, live music, and production.</desc>
+  <desc>Three linked loops for musicians playing together.</desc>
   <!--
-    Original WebJam triad mark. The three identical, rotating paths share one
-    visual rhythm without borrowing the logo geometry of any integrated app.
-    A single stroke keeps the mark useful at 16 px and in one-color contexts.
+    Portable vector companion for the native QPainter WebJam mark. One
+    original continuous trefoil and three circular nodes stay independent of
+    any companion product or integration.
   -->
-  <g
+  <defs>
+    <linearGradient id="webjam-warm-ribbon" x1="16%" y1="10%" x2="84%" y2="90%">
+      <stop offset="0%" stop-color="#E87900"/>
+      <stop offset="30%" stop-color="#F28A00"/>
+      <stop offset="67%" stop-color="#F06A00"/>
+      <stop offset="100%" stop-color="#BF5700"/>
+    </linearGradient>
+    <radialGradient id="webjam-node" cx="34%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#F5A13A"/>
+      <stop offset="42%" stop-color="#E87900"/>
+      <stop offset="100%" stop-color="#E77600"/>
+    </radialGradient>
+  </defs>
+  <path
     fill="none"
-    stroke="#BF5700"
-    stroke-width="7"
+    stroke="url(#webjam-warm-ribbon)"
+    stroke-width="4.86"
     stroke-linecap="round"
     stroke-linejoin="round"
-  >
-    <path d="M32 7 C43 7 52 16 52 27 C52 34 48 40 42 44"/>
-    <path d="M32 7 C43 7 52 16 52 27 C52 34 48 40 42 44" transform="rotate(120 32 32)"/>
-    <path d="M32 7 C43 7 52 16 52 27 C52 34 48 40 42 44" transform="rotate(240 32 32)"/>
+    d="M32.00 24.43 L35.61 24.63 L39.12 25.23 L42.45 26.20 L45.52 27.51 L48.23 29.13 L50.54 30.99 L52.37 33.02 L53.70 35.17 L54.48 37.36 L54.72 39.50 L54.41 41.52 L53.58 43.36 L52.25 44.94 L50.48 46.19 L48.33 47.08 L45.86 47.55 L43.16 47.58 L40.31 47.15 L37.39 46.26 L34.50 44.92 L31.72 43.16 L29.13 41.01 L26.80 38.54 L24.81 35.79 L23.19 32.84 L22.00 29.76 L21.26 26.64 L20.98 23.57 L21.16 20.62 L21.77 17.87 L22.79 15.40 L24.16 13.28 L25.84 11.57 L27.76 10.31 L29.84 9.54 L32.00 9.28 L34.16 9.54 L36.24 10.31 L38.16 11.57 L39.84 13.28 L41.21 15.40 L42.23 17.87 L42.84 20.62 L43.02 23.57 L42.74 26.64 L42.00 29.76 L40.81 32.84 L39.19 35.79 L37.20 38.54 L34.87 41.01 L32.28 43.16 L29.50 44.92 L26.61 46.26 L23.69 47.15 L20.84 47.58 L18.14 47.55 L15.67 47.08 L13.52 46.19 L11.75 44.94 L10.42 43.36 L9.59 41.52 L9.28 39.50 L9.52 37.36 L10.30 35.17 L11.63 33.02 L13.46 30.99 L15.77 29.13 L18.48 27.51 L21.55 26.20 L24.88 25.23 L28.39 24.63 L32.00 24.43 Z"
+  />
+  <g fill="url(#webjam-node)">
+    <circle cx="32" cy="9.28" r="4.22"/>
+    <circle cx="52.86" cy="44.35" r="4.22"/>
+    <circle cx="11.14" cy="44.35" r="4.22"/>
+  </g>
+  <g fill="#0A0A0A">
+    <circle cx="32" cy="9.28" r="2.24"/>
+    <circle cx="52.86" cy="44.35" r="2.24"/>
+    <circle cx="11.14" cy="44.35" r="2.24"/>
   </g>
 </svg>

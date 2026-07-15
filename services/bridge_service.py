@@ -1,5 +1,4 @@
 import logging
-import os
 import subprocess
 import sys
 import threading
@@ -7,12 +6,12 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from webex_integration import WebexLaunchState
-from core.macos_audio_route import (
-    JamulusAudioRouteError,
-    MacOSJamulusRouteManager,
+from core.jamulus_profile import (
+    JamulusNativeProfileError,
+    JamulusNativeProfileManager,
 )
 from core.settings import AppSettings
 
@@ -196,6 +195,14 @@ class BridgeService:
         self.webex_state = WebexLaunchState.NOT_OPENED.value
         
         self.jamulus_launch_intended = False
+        # A launch is intentionally asynchronous, while Stop/Leave is allowed
+        # immediately.  Keep a cancellable request token so a queued worker
+        # can never open Jamulus after its originating startup was cancelled.
+        # The control lock is never held while acquiring a lifecycle lock:
+        # cancellation first marks the request, then waits for any in-flight
+        # worker to release the process lifecycle lock for normal cleanup.
+        self._jamulus_launch_control_lock = threading.Lock()
+        self._pending_jamulus_launch_cancel: threading.Event | None = None
         
         self.jamulus_reconnect_attempts = 0
         self.jamulus_next_reconnect_at = 0.0
@@ -205,12 +212,12 @@ class BridgeService:
         # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
         # cannot race the old process's port release.
         self._jamulus_lifecycle_lock = threading.Lock()
-        # A macOS route is frozen for the client lifecycle.  An automatic
-        # reconnect may revalidate that same CoreAudio UID pair, but it never
-        # silently swaps to whatever device happened to become the new default.
-        self._active_audio_route = None
-        self._audio_route_manager = (
-            MacOSJamulusRouteManager()
+        # The dedicated profile belongs to Jamulus, not WebJam's CoreAudio
+        # layer.  We only provide the supported filename-only --inifile launch
+        # contract; Jamulus writes its own device/channel/buffer choices.
+        self._active_native_profile = None
+        self._native_profile_manager = (
+            JamulusNativeProfileManager()
             if sys.platform == "darwin" and isinstance(settings, AppSettings)
             else None
         )
@@ -406,6 +413,54 @@ class BridgeService:
                     return resolved
         return None
 
+    @property
+    def native_profile_plan(self):
+        """Current Jamulus-owned profile facts, if this client prepared one."""
+
+        return self._active_native_profile
+
+    def refresh_native_profile_plan(self):
+        """Read Jamulus's profile fingerprint without writing configuration.
+
+        Used only after an explicit human sound confirmation so returning-user
+        evidence describes the profile Jamulus itself just saved.
+        """
+
+        plan = self._active_native_profile
+        manager = self._native_profile_manager
+        if plan is None or manager is None:
+            return plan
+        refreshed = manager.plan(jamulus_version=plan.jamulus_version)
+        self._active_native_profile = refreshed
+        return refreshed
+
+    def bring_jamulus_forward(self) -> bool:
+        """Best-effort normal app activation after direct owned launch.
+
+        This deliberately does not launch a second client, click controls, or
+        scrape Jamulus UI.  The musician chooses Audio/Network Settings inside
+        the real Jamulus window.
+        """
+
+        proc = self.jamulus_process
+        if proc is None or proc.poll() is not None:
+            return False
+        if sys.platform != "darwin":
+            return True
+        try:
+            subprocess.Popen(
+                [
+                    "/usr/bin/osascript",
+                    "-e",
+                    'tell application id "app.jamulussoftware.Jamulus" to activate',
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            return False
+        return True
+
     def launch_jamulus(
         self, manual: bool = True, reconnect: bool = False
     ) -> bool:
@@ -441,8 +496,15 @@ class BridgeService:
             self.jamulus_reconnect_inflight = False
             return False
             
+        with self._jamulus_launch_control_lock:
+            previous_launch = self._pending_jamulus_launch_cancel
+            if previous_launch is not None:
+                previous_launch.set()
+            launch_cancel = threading.Event()
+            self._pending_jamulus_launch_cancel = launch_cancel
+            if manual:
+                self.jamulus_launch_intended = True
         if manual:
-            self.jamulus_launch_intended = True
             self.jamulus_reconnect_attempts = 0
             self.jamulus_next_reconnect_at = 0.0
             self.metrics_service.increment("metric_jamulus_launch_attempt")
@@ -561,10 +623,30 @@ class BridgeService:
         def _do_launch() -> None:
             with self._jamulus_lifecycle_lock:
                 try:
+                    def cancelled(proc: Optional[subprocess.Popen] = None) -> bool:
+                        """Discard a stale queued launch without publishing it."""
+
+                        if not (launch_cancel.is_set() or self.shutdown_requested()):
+                            return False
+                        if proc is not None and proc.poll() is None:
+                            try:
+                                proc.terminate()
+                                proc.wait(timeout=2.0)
+                            except Exception:  # noqa: BLE001 - Stop will retry safely
+                                LOGGER.debug("Could not stop cancelled Jamulus launch", exc_info=True)
+                        self._close_jamulus_log_file()
+                        self._active_native_profile = None
+                        self._set_live_audio_route_owned(False)
+                        with self._reconnect_lock:
+                            self.jamulus_reconnect_inflight = False
+                        return True
+
                     # A second click/deep-link can queue another launch while
                     # the first worker is still starting. Re-check only after
                     # acquiring the lifecycle lock so two clients can never be
                     # spawned and one silently lose process ownership.
+                    if cancelled():
+                        return
                     if (
                         self.jamulus_process is not None
                         and self.jamulus_process.poll() is None
@@ -574,34 +656,29 @@ class BridgeService:
                             self.jamulus_reconnect_inflight = False
                         self.schedule_ui_callback(self.refresh_readiness)
                         return
-                    if self.shutdown_requested():
-                        with self._reconnect_lock:
-                            self.jamulus_reconnect_inflight = False
+                    if cancelled():
                         return
 
-                    audio_route = None
-                    if self._audio_route_manager is not None:
+                    native_profile = None
+                    if self._native_profile_manager is not None:
                         if reconnect:
-                            audio_route = self._active_audio_route
-                            if audio_route is None:
-                                raise JamulusAudioRouteError(
-                                    "Your band audio route needs a fresh start. End "
-                                    "this session, then start it again."
+                            native_profile = self._active_native_profile
+                            if native_profile is None:
+                                raise JamulusNativeProfileError(
+                                    "WebJam couldn't restore its Jamulus profile. "
+                                    "Start the jam again."
                                 )
-                            self._audio_route_manager.validate_active(audio_route)
+                            self._native_profile_manager.validate_active(native_profile)
                         else:
-                            audio_route = self._audio_route_manager.prepare(
+                            native_profile = self._native_profile_manager.prepare(
                                 self.settings,
                                 jamulus_path,
                             )
-                            self._active_audio_route = audio_route
-                        # Jamulus now owns the live input/output pair. The
-                        # optional PortAudio meter still supports Band Check
-                        # before launch, but it must not contend with the
-                        # performance route during a session.
-                        self._set_live_audio_route_owned(True)
-                    else:
-                        self._set_live_audio_route_owned(False)
+                            self._active_native_profile = native_profile
+                    # A live Jamulus client owns the hardware route on every
+                    # supported platform. WebJam's optional PortAudio meter
+                    # must not contend with the musician's native setup.
+                    self._set_live_audio_route_owned(True)
 
                     if (
                         self._hosting_enabled()
@@ -610,7 +687,7 @@ class BridgeService:
                         hosted_ok, hosted_detail = self.ensure_hosted_server()
                         if not hosted_ok:
                             LOGGER.error("Hosted server could not start: %s", hosted_detail)
-                            self._active_audio_route = None
+                            self._active_native_profile = None
                             self._set_live_audio_route_owned(False)
                             self._set_jamulus_state(JamulusState.STOPPED)
                             with self._reconnect_lock:
@@ -632,6 +709,13 @@ class BridgeService:
                             )
                             self.schedule_ui_callback(self.refresh_readiness)
                             return
+
+                    # Cancellation may have arrived while profile/server
+                    # preparation was running.  It must win before a process
+                    # is created, even if this worker already owns the
+                    # lifecycle lock.
+                    if cancelled():
+                        return
 
                     import secrets as _secrets
                     from core.file_io import atomic_write_text
@@ -668,10 +752,13 @@ class BridgeService:
                     ]
                     cmd = [
                         jamulus_path,
-                        # The music engine is infrastructure, not a second app
-                        # the musician must operate.
-                        "--nogui",
-                        *(audio_route.arguments if audio_route is not None else ()),
+                        # Show Jamulus normally: it is the authoritative native
+                        # sound setup. WebJam never recreates its device UI.
+                        *(
+                            native_profile.arguments
+                            if native_profile is not None
+                            else ()
+                        ),
                         "--connect", server,
                         # Legacy LAN sessions keep their pre-RPC identity.
                         # V3 applies the real name after authenticated local
@@ -699,13 +786,8 @@ class BridgeService:
                         "stdout": stdout_dest,
                         "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
                     }
-                    if audio_route is not None:
-                        popen_kwargs["cwd"] = str(audio_route.working_directory)
-                        if audio_route.environment:
-                            popen_kwargs["env"] = {
-                                **os.environ,
-                                **dict(audio_route.environment),
-                            }
+                    if native_profile is not None:
+                        popen_kwargs["cwd"] = str(native_profile.working_directory)
                     if sys.platform == "win32":
                         popen_kwargs["creationflags"] = (
                             getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -713,6 +795,8 @@ class BridgeService:
 
                     proc = None
                     for i in range(3):
+                        if cancelled():
+                            return
                         try:
                             proc = subprocess.Popen(cmd, **popen_kwargs)
                             break
@@ -733,14 +817,7 @@ class BridgeService:
                             f"(code {return_code}); see ~/.webjam_jamulus.log"
                         )
 
-                    if self.shutdown_requested():
-                        if proc:
-                            proc.terminate()
-                        self._close_jamulus_log_file()
-                        self._active_audio_route = None
-                        self._set_live_audio_route_owned(False)
-                        with self._reconnect_lock:
-                            self.jamulus_reconnect_inflight = False
+                    if cancelled(proc):
                         return
 
                     with self._reconnect_lock:
@@ -771,12 +848,12 @@ class BridgeService:
                             lambda m=msg: self.set_status_banner(m)
                         )
 
-                except JamulusAudioRouteError as exc:
+                except JamulusNativeProfileError as exc:
                     was_practice = self.practice_mode
-                    LOGGER.info("Jamulus audio-route preflight failed: %s", exc)
+                    LOGGER.info("Jamulus native-profile preflight failed: %s", exc)
                     self._close_jamulus_log_file()
                     self._set_live_audio_route_owned(False)
-                    self._active_audio_route = None
+                    self._active_native_profile = None
                     self._set_jamulus_state(
                         JamulusState.LAUNCH_FAILED
                         if not reconnect
@@ -785,9 +862,8 @@ class BridgeService:
                     with self._reconnect_lock:
                         self.jamulus_reconnect_inflight = False
                     if reconnect:
-                        # A reconnect must not try a newly chosen default route
-                        # behind the musician's back. Stop the retry loop and
-                        # explain the one recovery action instead.
+                        # A reconnect must never rewrite a musician's native
+                        # Jamulus setup behind their back.
                         self.jamulus_launch_intended = False
                         self.metrics_service.increment("metric_jamulus_reconnect_failed")
                     else:
@@ -801,12 +877,11 @@ class BridgeService:
                             "Band audio needs attention",
                             what_failed=message,
                             likely_cause=(
-                                "The selected device changed, is not ready at "
-                                "48 kHz, or WebJam could not safely prepare it."
+                                "Jamulus could not open its native sound profile."
                             ),
                             next_action=(
-                                "Open Settings, check the Band input and Band "
-                                "output, then try again."
+                                "Open Jamulus Audio Settings, check your interface, "
+                                "then try again."
                             ),
                             retry_callback=(
                                 None if was_practice else self.retry_audio_launch
@@ -820,7 +895,7 @@ class BridgeService:
                     # started, nothing's writing to it.
                     self._close_jamulus_log_file()
                     if not reconnect:
-                        self._active_audio_route = None
+                        self._active_native_profile = None
                         self._set_live_audio_route_owned(False)
                     self._set_jamulus_state(
                         JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
@@ -1282,7 +1357,11 @@ class BridgeService:
                 ports_released=ports_released,
             )
 
-    def ensure_hosted_server(self) -> tuple[bool, str]:
+    def ensure_hosted_server(
+        self,
+        *,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> tuple[bool, str]:
         """Start (or adopt) the band server on this Mac. Returns (ok, detail).
 
         Mirrors server/start_macos_pilot.sh: exact 3.12.2 version gate,
@@ -1290,7 +1369,20 @@ class BridgeService:
         container, and a caffeinate power assertion for the server's
         lifetime so the host Mac cannot sleep mid-session.
         """
+        def cancelled() -> bool:
+            if cancel_requested is None:
+                return False
+            try:
+                return bool(cancel_requested())
+            except Exception:  # noqa: BLE001 - cancellation must fail closed
+                return True
+
+        if cancelled():
+            return False, "Startup was cancelled."
+
         with self._hosted_lifecycle_lock:
+            if cancelled():
+                return False, "Startup was cancelled."
             remote_host_mode = self._remote_host_mode
             if self.hosted_server_owned():
                 return True, "already running"
@@ -1426,6 +1518,8 @@ class BridgeService:
                 stdout_dest = self._hosted_log_file
             except OSError:
                 pass
+            if cancelled():
+                return False, "Startup was cancelled."
             try:
                 self.hosted_server_process = subprocess.Popen(
                     cmd,
@@ -1442,10 +1536,17 @@ class BridgeService:
             self._hosted_server_adopted = False
             self._start_hosted_caffeinate()
 
+            if cancelled():
+                self.stop_hosted_server()
+                return False, "Startup was cancelled."
+
             # Wait for the recorder RPC listener so the client (and the
             # Record button) never race a half-started server.
             deadline = time.monotonic() + 6.0
             while time.monotonic() < deadline:
+                if cancelled():
+                    self.stop_hosted_server()
+                    return False, "Startup was cancelled."
                 if not self.hosted_server_owned():
                     self.stop_hosted_server()
                     return False, (
@@ -1454,6 +1555,9 @@ class BridgeService:
                     )
                 verified, _reason = self._probe_hosted_server_rpc()
                 if verified:
+                    if cancelled():
+                        self.stop_hosted_server()
+                        return False, "Startup was cancelled."
                     LOGGER.info(
                         "Hosted band server (%s) ready on UDP %s / RPC %s",
                         server_source, udp_port, rpc_port,
@@ -1587,9 +1691,18 @@ class BridgeService:
         stopped (including an already-stopped subprocess). A failed process
         remains owned so the UI cannot claim cleanup succeeded.
         """
+        # Signal first so a queued worker that has not acquired the lifecycle
+        # lock yet exits before Popen.  Release the control lock before taking
+        # the lifecycle lock so an in-flight worker can observe the signal and
+        # finish its cleanup without a lock-order cycle.
+        with self._jamulus_launch_control_lock:
+            self.jamulus_launch_intended = False
+            pending_launch = self._pending_jamulus_launch_cancel
+            if pending_launch is not None:
+                pending_launch.set()
+
         with self._jamulus_lifecycle_lock:
             # Disable any pending reconnect attempts — user explicitly asked to stop
-            self.jamulus_launch_intended = False
             self.jamulus_reconnect_attempts = 0
             self.jamulus_next_reconnect_at = 0.0
             with self._reconnect_lock:
@@ -1627,7 +1740,7 @@ class BridgeService:
             self.practice_mode = False
             stopped = monitoring_stopped and process_stopped and practice_stopped
             if stopped:
-                self._active_audio_route = None
+                self._active_native_profile = None
                 self._set_live_audio_route_owned(False)
             with self._reconnect_lock:
                 self.jamulus_state = (

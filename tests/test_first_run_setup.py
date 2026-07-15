@@ -216,7 +216,7 @@ def test_geometry_has_no_clipping_at_supported_sizes(qapp, settings, size):
     dialog.close()
 
 
-def test_startup_always_asks_host_or_join_then_checks_verification(qapp):
+def test_startup_always_asks_host_or_join_then_opens_native_journey(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/missing/config.json")
@@ -243,7 +243,7 @@ def test_startup_always_asks_host_or_join_then_checks_verification(qapp):
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
     qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
     single_shot.assert_called_once_with(
-        0, controller.start_session_or_band_check
+        0, controller.begin_startup_journey
     )
 
 

@@ -249,7 +249,9 @@ class TestLaunchCommandContract(unittest.TestCase):
         cmd = self._launch_and_capture_cmd(bridge)
 
         self.assertEqual(cmd[0], "/usr/bin/jamulus")
-        self.assertIn("--nogui", cmd)
+        # The real Jamulus window is the native sound setup; WebJam must not
+        # hide it behind a headless launch.
+        self.assertNotIn("--nogui", cmd)
         self.assertIn("--connect", cmd)
         self.assertIn("contract-probe.example.com:22124", cmd)
         self.assertIn("--jsonrpcport", cmd)
@@ -354,6 +356,43 @@ class TestLaunchCommandContract(unittest.TestCase):
             if "double-launch.example.com:22124" in call.args[0]
         ]
         self.assertEqual(len(own_calls), 1)
+
+    def test_stop_before_queued_worker_prevents_any_client_process(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "cancel-before-popen.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        queued = []
+
+        class _QueuedThread:
+            def __init__(self, *args, target=None, **_kwargs):
+                self._target = target
+
+            def start(self):
+                queued.append(self._target)
+
+        with patch(
+            "services.bridge_service.threading.Thread", _QueuedThread
+        ), patch("services.bridge_service.subprocess.Popen") as popen:
+            assert bridge.launch_jamulus(manual=True) is True
+            assert len(queued) == 1
+            assert bridge.stop_jamulus() is True
+            queued[0]()
+
+        popen.assert_not_called()
+
+
+class TestHostedServerCancellation(unittest.TestCase):
+    def test_cancelled_host_start_does_not_spawn_a_server(self):
+        bridge = _make_bridge()
+        bridge.settings.host_server_enabled = True
+
+        with patch("services.bridge_service.subprocess.Popen") as popen:
+            ok, detail = bridge.ensure_hosted_server(cancel_requested=lambda: True)
+
+        self.assertFalse(ok)
+        self.assertEqual(detail, "Startup was cancelled.")
+        popen.assert_not_called()
 
 
 class TestBundledJamulusCandidate(unittest.TestCase):

@@ -1,4 +1,4 @@
-"""BridgeService must apply a prepared macOS route before it owns a client."""
+"""BridgeService must let Jamulus own native audio configuration on macOS."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.macos_audio_route import JamulusAudioRouteError
+from core.jamulus_profile import JamulusNativeProfileError
 from core.settings import AppSettings
 from services.bridge_service import BridgeService
 
@@ -45,11 +45,12 @@ def _bridge() -> BridgeService:
     return bridge
 
 
-def _route_plan() -> SimpleNamespace:
+def _native_plan() -> SimpleNamespace:
     return SimpleNamespace(
-        arguments=("--inifile", "WebJam-route-v1.ini"),
-        environment={"WEBJAM_ROUTE_TEST": "1"},
-        working_directory=Path("/tmp/webjam-jamulus-route"),
+        arguments=("--inifile", "WebJam-native-v0.16.ini"),
+        working_directory=Path("/tmp/webjam-jamulus-native-profile"),
+        profile_fingerprint="a" * 64,
+        jamulus_version="3.12.2",
     )
 
 
@@ -58,15 +59,15 @@ def _route_plan() -> SimpleNamespace:
     side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
 )
 @patch("services.bridge_service.time.sleep")
-def test_bridge_provisions_route_before_popen_and_uses_filename_cwd(
+def test_bridge_uses_jamulus_native_profile_and_keeps_the_gui_visible(
     _sleep: MagicMock,
     _thread: MagicMock,
 ) -> None:
     bridge = _bridge()
-    plan = _route_plan()
+    plan = _native_plan()
     manager = MagicMock()
     manager.prepare.return_value = plan
-    bridge._audio_route_manager = manager
+    bridge._native_profile_manager = manager
     process = MagicMock()
     process.poll.return_value = None
 
@@ -78,15 +79,15 @@ def test_bridge_provisions_route_before_popen_and_uses_filename_cwd(
     manager.prepare.assert_called_once_with(bridge.settings, "/Applications/Jamulus")
     cmd = popen.call_args.args[0]
     kwargs = popen.call_args.kwargs
-    assert cmd[:4] == [
+    assert cmd[:3] == [
         "/Applications/Jamulus",
-        "--nogui",
         "--inifile",
-        "WebJam-route-v1.ini",
+        "WebJam-native-v0.16.ini",
     ]
+    assert "--nogui" not in cmd
     assert "band.example.test:22124" in cmd
     assert kwargs["cwd"] == str(plan.working_directory)
-    assert kwargs["env"]["WEBJAM_ROUTE_TEST"] == "1"
+    assert "env" not in kwargs
     bridge.jamulus_controller.set_live_audio_route_owned.assert_any_call(True)
 
 
@@ -94,17 +95,17 @@ def test_bridge_provisions_route_before_popen_and_uses_filename_cwd(
     "services.bridge_service.threading.Thread",
     side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
 )
-def test_route_failure_stops_host_and_client_before_any_external_process(
+def test_native_profile_error_stops_before_server_or_client_processes(
     _thread: MagicMock,
 ) -> None:
     bridge = _bridge()
     bridge.settings.host_server_enabled = True
     bridge.ensure_hosted_server = MagicMock()
     manager = MagicMock()
-    manager.prepare.side_effect = JamulusAudioRouteError(
-        "The selected band input is no longer connected."
+    manager.prepare.side_effect = JamulusNativeProfileError(
+        "WebJam couldn't prepare its Jamulus profile."
     )
-    bridge._audio_route_manager = manager
+    bridge._native_profile_manager = manager
 
     with patch("services.bridge_service.subprocess.Popen") as popen:
         assert bridge.launch_jamulus(manual=True) is True
@@ -119,17 +120,17 @@ def test_route_failure_stops_host_and_client_before_any_external_process(
     "services.bridge_service.threading.Thread",
     side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
 )
-def test_reconnect_revalidates_frozen_route_and_never_chooses_new_default(
+def test_reconnect_revalidates_native_profile_without_choosing_a_device(
     _thread: MagicMock,
 ) -> None:
     bridge = _bridge()
-    plan = _route_plan()
+    plan = _native_plan()
     manager = MagicMock()
-    manager.validate_active.side_effect = JamulusAudioRouteError(
-        "Your band audio device changed."
+    manager.validate_active.side_effect = JamulusNativeProfileError(
+        "WebJam couldn't restore its Jamulus profile."
     )
-    bridge._audio_route_manager = manager
-    bridge._active_audio_route = plan
+    bridge._native_profile_manager = manager
+    bridge._active_native_profile = plan
     bridge.jamulus_launch_intended = True
 
     with patch("services.bridge_service.subprocess.Popen") as popen:
@@ -140,4 +141,3 @@ def test_reconnect_revalidates_frozen_route_and_never_chooses_new_default(
     popen.assert_not_called()
     assert bridge.jamulus_launch_intended is False
     assert bridge.jamulus_state == "Not running"
-    assert bridge.show_actionable_error.call_args.args[0] == "Band audio needs attention"

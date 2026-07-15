@@ -16,7 +16,7 @@ from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 from core.remote_invitation import RemoteInvitation, issue_remote_invitation
-from core.settings import AppSettings, save_settings
+from core.settings import AppSettings
 from webjam_qt.app import WebJamApplication, _invite_from_arguments
 from webjam_qt.windows.launch_dialog import LaunchDialog
 
@@ -64,12 +64,7 @@ def test_remote_paste_clears_field_and_persists_no_invitation_material(
     dialog.show_join()
     dialog._invite_input.setText(raw)
 
-    def confirm(candidate: AppSettings, **_kwargs) -> bool:
-        save_settings(candidate)
-        return True
-
-    with patch.object(dialog, "_confirm_sound_setup", side_effect=confirm):
-        dialog._join()
+    dialog._join()
 
     assert dialog.selected_role == "join"
     assert dialog.band_invite is None
