@@ -34,5 +34,6 @@ a Logic integration:
 - inspect waveforms, gaps, and source state;
 - export aligned 24-bit stems and a rough mix for another editor.
 
-Studio does not alter source recordings. Local Originals remain separate,
-preserved media and appear only when real files are available.
+Studio does not alter source recordings. Export never rewrites the original take.
+Local Originals remain separate, preserved media and appear only when real
+files are available.

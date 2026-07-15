@@ -1,6 +1,6 @@
 # WebJam v0.16 UX acceptance checklist
 
-## Launch
+## Launch: understandable in five seconds
 
 - [ ] First screen shows only **Host a Jam** and **Join a Jam**.
 - [ ] Join shows exactly one invite field after the musician asks to join.
@@ -9,6 +9,14 @@
 - [ ] No extra Start Session decision follows Host/Join.
 - [ ] Host server starts before Jamulus client launch.
 - [ ] Jamulus opens visibly and can be foregrounded without UI automation.
+
+## Host and invitation
+
+- [ ] A host can copy an invitation only after the private server is ready.
+- [ ] A guest can paste one invitation without seeing host, port, or secret
+      details.
+- [ ] Invitation contents never appear in status text, accessibility labels,
+      recovery records, or support output.
 
 ## Music readiness
 
@@ -33,6 +41,14 @@
 - [ ] Studio feels like a compact multitrack workspace and does not claim
       Logic integration.
 
+## Permission and error states
+
+- [ ] Jamulus permission or sound setup problems point the musician back to
+      Jamulus instead of duplicating a WebJam device picker.
+- [ ] A missing music component, failed server, invalid invitation, or failed
+      optional Webex save states one plain next action without exposing private
+      connection details.
+
 ## Layout, accessibility, and recovery
 
 - [ ] One dominant action is visible for each startup step.
@@ -45,3 +61,19 @@
 - [ ] Cancel, retry, End, and Leave preserve safe process/recording truth.
 - [ ] Recovery data contains no invitation, URL, credential, device, path, or
       note content.
+
+## End, leave, and cleanup truth
+
+- [ ] Cancel during startup cannot leave a late Jamulus client or private
+      server running.
+- [ ] End/Leave stops only owned processes and preserves an unfinished local
+      original for review rather than calling it complete.
+
+## Release validation
+
+- [ ] CI-scope lint, compile, dependency, diff, UX-smoke, and full tests pass.
+- [ ] The package contains checksum-verified Jamulus/JamulusServer 3.12.2,
+      has verified signatures and transport provenance, and passes fresh
+      extraction.
+- [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
+      FAIL, or NOT RUN.
