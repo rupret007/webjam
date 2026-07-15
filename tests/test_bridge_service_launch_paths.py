@@ -9,6 +9,7 @@ reconnect-gating branches.  No real processes are spawned.
 """
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -304,6 +305,31 @@ class TestLaunchCommandContract(unittest.TestCase):
             "metric_jamulus_launch_failed"
         )
         bridge.show_actionable_error.assert_called_once()
+
+    def test_macos_child_does_not_inherit_test_only_offscreen_qt_platform(
+        self, _thread
+    ):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "native-ui-probe.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        captured = {}
+        process = MagicMock()
+        process.poll.return_value = None
+
+        def fake_popen(cmd, **kwargs):
+            if "native-ui-probe.example.com:22124" in cmd:
+                captured["env"] = kwargs["env"]
+            return process
+
+        with patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}), patch(
+            "services.bridge_service.sys.platform", "darwin"
+        ), patch(
+            "services.bridge_service.subprocess.Popen", side_effect=fake_popen
+        ), patch("services.bridge_service.time.sleep"):
+            bridge.launch_jamulus(manual=True, reconnect=False)
+
+        assert "QT_QPA_PLATFORM" not in captured["env"]
 
     def test_secret_write_failure_fails_closed_without_launch(self, _thread):
         bridge = _make_bridge()

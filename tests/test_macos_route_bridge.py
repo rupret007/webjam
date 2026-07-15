@@ -87,7 +87,11 @@ def test_bridge_uses_jamulus_native_profile_and_keeps_the_gui_visible(
     assert "--nogui" not in cmd
     assert "band.example.test:22124" in cmd
     assert kwargs["cwd"] == str(plan.working_directory)
-    assert "env" not in kwargs
+    # The test runner uses Qt offscreen, but bundled Jamulus on macOS ships
+    # Cocoa only. Its visible native setup must not inherit that test harness
+    # override.
+    assert "env" in kwargs
+    assert "QT_QPA_PLATFORM" not in kwargs["env"]
     bridge.jamulus_controller.set_live_audio_route_owned.assert_any_call(True)
 
 

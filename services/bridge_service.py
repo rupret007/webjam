@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -786,6 +787,19 @@ class BridgeService:
                         "stdout": stdout_dest,
                         "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
                     }
+                    # Qt's offscreen platform is useful for WebJam's automated
+                    # widget tests, but the official macOS Jamulus.app ships
+                    # only the Cocoa platform plugin. Never leak that
+                    # test-only parent setting into the native musician app.
+                    # Normal interactive launches leave the environment alone.
+                    child_environment = os.environ.copy()
+                    if (
+                        sys.platform == "darwin"
+                        and child_environment.get("QT_QPA_PLATFORM", "").strip().lower()
+                        == "offscreen"
+                    ):
+                        child_environment.pop("QT_QPA_PLATFORM", None)
+                    popen_kwargs["env"] = child_environment
                     if native_profile is not None:
                         popen_kwargs["cwd"] = str(native_profile.working_directory)
                     if sys.platform == "win32":
