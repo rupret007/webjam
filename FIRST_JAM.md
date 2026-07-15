@@ -6,24 +6,20 @@ WebJam's normal path is four short moves:
 
 There is no server setup for the band to perform. Band Check guides each
 musician through input, headphones, and a short recording before playing.
-The private macOS v0.14.0 candidate starts the music service in the background.
+The private macOS v0.15.0 candidate starts the music service in the background.
 This first-jam guide remains the ordinary same-private-LAN path. The separate
 v3 `reference-local` profile is a loopback developer lab, not a public remote
 service.
 
-**Artifact scope:** This guide's test-night steps apply to
-`WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
-`045c5acb01687a4088b0bd618dab4d0ab6200804`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`. It
-includes the short sound-confirmation screen, CoreAudio route preflight,
-recording-storage guard, durable local-capture recovery, and conservative
-Logic-export safety checks, plus Studio's focused take-review workspace. The
-source gate recorded 1,719 passed, 18 skipped, one known warning, and 6
-subtests; native transport `go test ./...` and `go vet ./...` passed. Fresh
-extraction, strict/deep signatures, nested apps, exact native-fabric build ID,
-and two isolated six-second launch/TERM cycles also passed. Physical CoreAudio,
-two-Mac, recording/recovery, and Logic import results remain **NOT RUN**. The
-v0.13.0 and older ZIPs are preserved only as rollback artifacts.
+**Artifact scope:** Before a physical test, record the exact v0.15.0 ZIP,
+SHA-256, source/build commit, and package-gate result in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md). This candidate includes
+the short sound-confirmation screen, CoreAudio route preflight,
+recording-storage guard, durable local-capture recovery, one-primary-action
+session conductor, and Studio's focused Track Export workflow. Physical
+CoreAudio, two-Mac, recording/recovery, and optional external-editor import
+results remain **NOT RUN** until real musicians record them. Older ZIPs are
+rollback artifacts only.
 
 ## Before anyone opens WebJam
 
@@ -93,7 +89,7 @@ each Mac and confirm what the other person actually hears.
 Faders, **Mute Monitor**, and Solo change the current listener's monitor mix.
 They do not mute outgoing audio or rewrite the other musician's mix.
 
-In the v0.14.0 candidate, **Settings → Band input / Band output & review**
+In the v0.15.0 candidate, **Settings → Band input / Band output & review**
 preflights a stable CoreAudio pair and stages it for Jamulus before launch.
 WebJam's input meter and optional local-original recorder still use a separate
 Core Audio/PortAudio stream. A passing meter is useful, but only the other
@@ -124,26 +120,26 @@ Multitrack Studio** to watch lanes or review the take.
    known gaps. Choose the wired playback output and test gain, pan, mute, and
    solo; those review controls are saved separately from the recording and do
    not change its WAVs or `webjam-take.json`.
-6. Review each **Logic export** choice, then press **Export for Logic** and
-   **Show Logic Export**. The choice is saved for that take and used by future
+6. Review each **Track Export** choice, then press **Export Tracks** and
+   **Show Track Export**. The choice is saved for that take and used by future
    exports until changed; it never changes the WAVs or `webjam-take.json`.
-   Drag every numbered stem WAV into separate Logic tracks together at `0:00`.
-   The stems are
-   rendered onto the same project timeline and length. Keep `WebJam Server
-   Reference.wav`, `WebJam Studio Reference.wav`, the reports, and checksums
-   as evidence, not as extra performance stems. See
-   [`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+   The package contains numbered stems on the same timeline and length. Keep
+   `WebJam Server Reference.wav`, `WebJam Studio Reference.wav`, the reports,
+   and checksums as evidence, not as extra performance stems. If you choose to
+   import elsewhere, drag the numbered stems together at `0:00` in your editor;
+   WebJam does not launch or integrate with that editor. See
+   [`RECORDING_AND_STUDIO.md`](RECORDING_AND_STUDIO.md).
 
 Do not quit or end the session while a take is still being checked. If a
 capture problem occurs, WebJam preserves recoverable audio rather than
 silently deleting it. Host startup recovery publishes readable local media as a
 visible Studio project marked **Needs Attention**; it is not a completed take
-or timing-ready Logic export.
+or timing-ready Track Export.
 
-Studio is a focused recording-review workspace, not a Logic clone: its shared
-ruler shows elapsed time and it does not invent tempo, bars, beats, or beat
-editing. An explicitly silent selected performance track pauses export until
-you review it or intentionally deselect it. An unaligned or unverified selected
+Studio is a focused recording-review workspace, not a DAW or editor
+integration: its shared ruler shows elapsed time and it does not invent tempo,
+bars, beats, or beat editing. An explicitly silent selected performance track
+pauses export until you review it or intentionally deselect it. An unaligned or unverified selected
 guest/local original also pauses a timing-ready export: retain the Jamulus
 server track, or align and verify the original. The Studio message gives that
 action without exposing local paths.

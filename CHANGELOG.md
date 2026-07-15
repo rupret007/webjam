@@ -4,6 +4,49 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.15.0] — 2026-07-14 private test-night candidate
+
+### Source candidate verification
+
+- Package filename, source commit, SHA-256, fresh-extraction signature checks,
+  nested-app checks, native-fabric build-ID verification, and isolated launch
+  cycles are recorded only after the exact macOS bundle is built. Until then,
+  v0.14.0 remains the rollback package.
+- The full source gate passed **1,751 tests**, with 18 environment-bound skips
+  and 6 subtests. `transport` `make check`, `go test ./...`, `go vet ./...`,
+  `go mod verify`, and `go mod tidy -diff` passed on the release Mac.
+- Physical CoreAudio, two-Mac audio, recording/recovery, outage/reconnect, and
+  import in an external editor remain **NOT RUN**. No source or package check
+  is presented as evidence of those observations.
+
+### Simpler session and Studio
+
+- Added the pure Session Conductor: one fact-derived musician-facing phase and
+  one dominant action across host readiness, joining, reconnecting, recording,
+  take validation, Studio review, Track Export, and cleanup. It rejects stale
+  callbacks and never promotes a process, meter, button press, or file into
+  false connection, audibility, saved-media, or import proof.
+- Rebuilt the session shell around a quiet meeting layout: original three-path
+  WebJam mark, restrained header, focused status HUD, responsive band tiles,
+  one bottom control bar, and progressive **More** controls. Runtime color is
+  black, white/neutral gray, and Longhorn burnt orange only.
+- Renamed the Studio handoff to **Track Export**. It keeps familiar multitrack
+  review cues—transport, elapsed-seconds ruler, track headers, mute/solo,
+  gain, pan, and inspector—without adding DAW editing or any Logic integration.
+  It produces a portable atomic WAV package, source reports, and checksums.
+
+### Closed pilot evidence
+
+- Added explicit `--test-night` operator mode. Normal musicians never see it;
+  the hidden dialog owns no persistence and merely asks the controller to
+  record safe observations.
+- Added a private, bounded, hash-linked local ledger and sanitized report.
+  Automatic facts and explicit human observations are separate, and evidence
+  cannot include audio, invitations, credentials, addresses, device IDs,
+  paths, names, or free-form notes. Interrupted runs restore paused.
+
+---
+
 ## [0.14.0] — 2026-07-14 private test-night candidate
 
 ### Candidate verification

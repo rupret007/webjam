@@ -387,6 +387,7 @@ class ParticipantGrid(QScrollArea):
             state.message,
             primary_text=state.primary_text,
             primary_enabled=state.primary_enabled,
+            show_primary=state.show_primary,
             show_ready_check=state.show_ready_check,
             show_practice=state.show_practice,
             hint=state.hint,

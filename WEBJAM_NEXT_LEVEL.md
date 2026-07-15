@@ -2,9 +2,9 @@
 
 **Date:** 2026-06-29
 **Status:** Historical memo. Its market comparison and protocol history remain
-useful, but current status lives in `README.md` and
-`docs/WEBJAM_V1_LAST_MILE_PLAN.md`.
-The memo predates the current v0.14.0 test-night package and the v0.13.0/v0.12.0
+useful, but current status lives in `README.md`, `CLOSED_PILOT_PLAYBOOK.md`,
+and `SUNDAY_TWO_MAC_PILOT.md`.
+The memo predates the v0.15.0 test-night candidate and the v0.14.0/v0.13.0/v0.12.0
 historical Band Check/Host/Join baselines,
 automatic same-Mac hosting, responsive black/white/burnt-orange interface,
 guest originals, and integrated Studio.

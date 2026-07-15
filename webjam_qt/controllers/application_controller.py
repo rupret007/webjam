@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -28,6 +29,23 @@ from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.session_health import SessionHealth
+from core.session_conductor import (
+    CleanupState,
+    EvidenceState,
+    ExportState,
+    FailureDisposition,
+    GuestMediaState,
+    MusicPathState,
+    ProcessState,
+    RecorderState,
+    ReviewState,
+    SessionConductorFacts,
+    SessionConductorPhase,
+    SessionPrimaryAction,
+    SessionRole,
+    TakeValidationState,
+    derive_session_conductor,
+)
 from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_intelligence import build_session_pulse
 from core.settings import AppSettings, load_settings
@@ -48,7 +66,7 @@ from webjam_qt.controllers.video_coordinator import VideoCoordinator
 from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
-from webjam_qt.session_state import SessionUiState
+from webjam_qt.session_state import SessionPhase, SessionUiState
 
 LOGGER = logging.getLogger("webjam.qt.application_controller")
 
@@ -67,10 +85,22 @@ class ApplicationController(QObject):
         settings: Optional[AppSettings] = None,
         session_invite: BandInvite | None = None,
         remote_invitation: RemoteInvitation | None = None,
+        *,
+        operator_mode: bool | None = None,
     ) -> None:
         super().__init__(window)
         self.window = window
         self.settings = settings or load_settings()
+        self._operator_mode = bool(
+            getattr(window, "operator_mode", False)
+            if operator_mode is None
+            else operator_mode
+        )
+        self._pilot_ledger = None
+        self._pilot_run_state = "not_started"
+        self._pilot_check_status: dict[str, str] = {}
+        self._pilot_last_conductor_phase = ""
+        self._test_night_dialog = None
         if session_invite is not None and remote_invitation is not None:
             raise ValueError("only one invitation may be active")
         if remote_invitation is not None and not isinstance(
@@ -218,6 +248,18 @@ class ApplicationController(QObject):
         # visible Band Check it opens); the raw toggle remains private to a
         # completed gate and the frozen-build smoke hook.
         self._band_check_start_pending = False
+        # The conductor is a pure projection of authoritative subsystem facts.
+        # These are the few controller-owned facts needed to bridge older
+        # lifecycle callbacks into that projection; no rendered label or
+        # provider detail is persisted here.
+        self._conductor_setup_requested = bool(
+            session_invite is not None or remote_invitation is not None
+        )
+        self._conductor_band_check = EvidenceState.NOT_STARTED
+        self._conductor_had_authenticated_connection = False
+        self._conductor_studio_reviewing = False
+        self._conductor_export = ExportState.IDLE
+        self._last_session_conductor = None
 
         # Timers
         self._level_timer = QTimer(self)
@@ -290,6 +332,10 @@ class ApplicationController(QObject):
     def shutdown(self) -> None:
         if self._shutdown:
             return  # closeEvent + app.py both call this; run teardown once
+        # An unfinished Test Night record is durable.  Mark it paused before
+        # the normal teardown begins so a restart never makes a physical
+        # pilot look complete or silently discards its earlier evidence.
+        self._pause_test_night()
         self._shutdown = True
         self._level_timer.stop()
         self._reconnect_timer.stop()
@@ -680,8 +726,8 @@ class ApplicationController(QObject):
         if bool(getattr(studio, "export_in_progress", False)):
             QMessageBox.information(
                 self.window,
-                "Logic export still running",
-                "Wait for ‘Logic export ready’ before quitting WebJam. "
+                "Track export still running",
+                "Wait for ‘Track export ready’ before quitting WebJam. "
                 "Your original take is safe.",
             )
             return False
@@ -839,6 +885,7 @@ class ApplicationController(QObject):
                         "Could not attach lifecycle evidence to active take",
                         exc_info=True,
                     )
+            self._record_pilot_lifecycle_completion(phase)
         return accepted
 
     def _snapshot_participants(self) -> list:
@@ -901,8 +948,11 @@ class ApplicationController(QObject):
         strip.invite_requested.connect(self._copy_band_invite)
         strip.reset_invite_requested.connect(self._reset_remote_invite)
         strip.tool_requested.connect(self._on_rail_view_changed)
-        self.window.session_hud.invite_requested.connect(self._copy_band_invite)
-        self.window.session_hud.retry_requested.connect(self._retry_session)
+        if self._operator_mode:
+            self.window.test_night_requested.connect(self._open_test_night)
+        self.window.session_hud.action_requested.connect(
+            self._on_conductor_action_requested
+        )
         # Both launch affordances share URL validation and truthful state.
         self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
         self.window.close_requested.connect(self.shutdown)
@@ -920,6 +970,14 @@ class ApplicationController(QObject):
         grid.start_audio_requested.connect(self._on_session_audio_requested)
         grid.practice_requested.connect(self._on_practice_requested)
         grid.microphone_settings_requested.connect(self._open_microphone_settings)
+
+        studio = self.window.recording_studio
+        export_started = getattr(studio, "export_started", None)
+        export_finished = getattr(studio, "export_finished", None)
+        if export_started is not None:
+            export_started.connect(self._on_studio_export_started)
+        if export_finished is not None:
+            export_finished.connect(self._on_studio_export_finished)
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -1038,6 +1096,9 @@ class ApplicationController(QObject):
         """Open Band Check; optionally make it the unverified-start gate."""
         from core.band_check import BandCheckMode
 
+        self._conductor_setup_requested = True
+        self._conductor_band_check = EvidenceState.IN_PROGRESS
+
         if start_session_when_ready and not self._is_jamulus_running():
             self._transition_lifecycle(
                 SessionLifecyclePhase.RUNNING_PREFLIGHT,
@@ -1068,7 +1129,7 @@ class ApplicationController(QObject):
                     existing._start_session_when_ready = True
                     existing.session_start_requested.connect(
                         lambda generation=getattr(existing, "_settings_generation", -1): (
-                            self._start_after_band_check(generation)
+                            self._on_band_check_session_start_requested(generation)
                         )
                     )
                     existing._refresh_action_button()
@@ -1107,7 +1168,7 @@ class ApplicationController(QObject):
         if start_session_when_ready:
             dialog.session_start_requested.connect(
                 lambda generation=dialog._settings_generation: (
-                    self._start_after_band_check(generation)
+                    self._on_band_check_session_start_requested(generation)
                 )
             )
 
@@ -1117,6 +1178,10 @@ class ApplicationController(QObject):
             # older signal discard the current dialog reference.
             if getattr(self, "_ready_check_dialog", None) is dialog:
                 self._ready_check_dialog = None
+                if self._conductor_band_check is EvidenceState.IN_PROGRESS:
+                    # Closing an unfinished check is not a failure or a pass.
+                    self._conductor_band_check = EvidenceState.NOT_STARTED
+                self._update_session_hud()
 
         dialog.finished.connect(_clear_dialog)
         self._ready_check_dialog = dialog
@@ -1145,6 +1210,15 @@ class ApplicationController(QObject):
             )
             self._on_launch_audio()
 
+    def _on_band_check_session_start_requested(
+        self, settings_generation: int | None = None
+    ) -> None:
+        """Promote completed Band Check evidence before starting audio."""
+
+        self._conductor_band_check = EvidenceState.VERIFIED
+        self._update_session_hud()
+        self._start_after_band_check(settings_generation)
+
     def _on_session_audio_requested(self) -> None:
         """Route idle starts through Band Check; preserve the live End action."""
         if bool(getattr(getattr(self, "audio", None), "stopping", False)):
@@ -1162,6 +1236,7 @@ class ApplicationController(QObject):
         closed into the guided check.
         """
 
+        self._conductor_setup_requested = True
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return
@@ -1195,6 +1270,7 @@ class ApplicationController(QObject):
             return
 
         self._band_check_start_pending = True
+        self._conductor_band_check = EvidenceState.IN_PROGRESS
         source_settings = self.settings
         settings = self._effective_band_check_settings()
         settings_generation = getattr(self, "_settings_generation", 0)
@@ -1259,6 +1335,7 @@ class ApplicationController(QObject):
                 ):
                     return
                 if verified:
+                    self._conductor_band_check = EvidenceState.VERIFIED
                     self._on_launch_audio()
                 else:
                     self._open_band_check(start_session_when_ready=True)
@@ -2417,8 +2494,15 @@ class ApplicationController(QObject):
 
         self._last_shared_lan_address = ""
 
-    def _update_session_hud(self) -> None:
-        """Render one musician-friendly summary from real lifecycle facts."""
+    def _update_session_hud_legacy(self) -> None:
+        """Maintain exceptional legacy status copy while facts are projected.
+
+        The conductor below owns the normal musician-facing lifecycle and its
+        single next action.  This retained renderer is intentionally limited
+        to established, topology-specific recovery copy (for example a
+        consumed one-use private invitation) that the compact conductor model
+        must not try to invent.
+        """
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
         connected = bool(self._jamulus_connected)
         participants = list(self.participants.values())
@@ -2437,6 +2521,7 @@ class ApplicationController(QObject):
             else ""
         )
         invite_available = remote_invite_available or bool(invite_url)
+        self._last_observed_invite_available = invite_available
         self.window.session_strip.set_invite_available(invite_available)
         self.window.session_strip.set_reset_invite_available(
             bool(hosting and remote_owner is not None)
@@ -2671,6 +2756,1071 @@ class ApplicationController(QObject):
                 "WebJam is connecting your music.",
             )
 
+    def _session_conductor_facts(self) -> SessionConductorFacts:
+        """Collect authoritative facts for the pure musician-facing conductor.
+
+        This adapter intentionally maps only bounded state from the existing
+        service owners.  It does not call a provider, inspect a path, or turn
+        a button press into recording/connection success.
+        """
+
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        practice = bool(getattr(getattr(self, "bridge", None), "practice_mode", False))
+        role = (
+            SessionRole.PRACTICE
+            if practice
+            else SessionRole.HOST
+            if hosting
+            else SessionRole.GUEST
+        )
+        bridge = getattr(self, "bridge", None)
+        audio = getattr(self, "audio", None)
+        lifecycle = getattr(getattr(self, "session_lifecycle", None), "snapshot", None)
+        lifecycle_phase = getattr(lifecycle, "phase", SessionLifecyclePhase.IDLE)
+        connected = bool(getattr(audio, "connected", False))
+        if connected:
+            self._conductor_had_authenticated_connection = True
+
+        jamulus_state = str(getattr(bridge, "jamulus_state", "") or "")
+        terminal_jamulus_states = {
+            "Stopped",
+            "Launch failed",
+            "Not found",
+            "Port in use",
+        }
+        launch_intended = bool(getattr(bridge, "jamulus_launch_intended", False))
+        setup_requested = bool(
+            getattr(self, "_conductor_setup_requested", False)
+            or launch_intended
+            or connected
+            or bool(getattr(audio, "recovering", False))
+            or bool(getattr(self, "_band_check_start_pending", False))
+            or lifecycle_phase is not SessionLifecyclePhase.IDLE
+            or getattr(self, "_remote_invitation", None) is not None
+            # A host-side v3 owner is explicit session intent too. Its
+            # invitation may already be valid before this Mac's Jamulus
+            # client reconnects, so keep the truthful Copy Invite action
+            # available rather than falling back to an idle lobby.
+            or getattr(self, "_remote_invite_owner", None) is not None
+        )
+
+        if bool(getattr(audio, "recovering", False)):
+            music_path = MusicPathState.RECONNECTING
+        elif connected:
+            # AudioCoordinator promotes this only after fresh roster truth,
+            # including the local host entry when hosting.
+            music_path = MusicPathState.AUTHENTICATED
+        elif launch_intended or jamulus_state in {"Running", "Already running"}:
+            music_path = MusicPathState.STARTING
+        elif self._conductor_had_authenticated_connection:
+            music_path = MusicPathState.DISCONNECTED
+        elif jamulus_state in terminal_jamulus_states and setup_requested:
+            music_path = MusicPathState.FAILED
+        else:
+            music_path = MusicPathState.NOT_STARTED
+
+        server_alive = False
+        if hosting and bridge is not None:
+            try:
+                server_alive = bool(bridge.hosted_server_alive())
+            except Exception:  # noqa: BLE001 - a missing probe is not proof
+                server_alive = False
+        if server_alive:
+            host_process = ProcessState.RUNNING
+        elif hosting and launch_intended:
+            host_process = ProcessState.STARTING
+        elif hosting and jamulus_state in terminal_jamulus_states and setup_requested:
+            host_process = ProcessState.FAILED
+        else:
+            host_process = ProcessState.NOT_STARTED
+
+        # ``ensure_hosted_server`` only exposes an owned server after its
+        # recorder RPC has authenticated; an adopted server follows the same
+        # probe.  Treating that service fact as verified is therefore stronger
+        # than merely observing a child PID.
+        host_rpc = EvidenceState.VERIFIED if server_alive else EvidenceState.NOT_STARTED
+        observed_invite = bool(getattr(self, "_last_observed_invite_available", False))
+        host_listener = (
+            EvidenceState.VERIFIED
+            if observed_invite
+            else EvidenceState.IN_PROGRESS
+            if server_alive
+            else EvidenceState.NOT_STARTED
+        )
+        invite = (
+            EvidenceState.VERIFIED
+            if observed_invite
+            else EvidenceState.NOT_STARTED
+        )
+
+        participants = list(getattr(self, "participants", {}).values())
+        remote_participant = (
+            EvidenceState.VERIFIED
+            if any(not self._is_local_participant(person) for person in participants)
+            else EvidenceState.NOT_STARTED
+        )
+        local_participant = (
+            EvidenceState.VERIFIED if connected else EvidenceState.NOT_STARTED
+        )
+        participant_identity = (
+            EvidenceState.VERIFIED
+            if remote_participant is EvidenceState.VERIFIED
+            else EvidenceState.NOT_STARTED
+        )
+
+        remote_session = getattr(self, "_remote_session", None)
+        remote_snapshot = getattr(remote_session, "snapshot", None)
+        remote_phase = str(getattr(getattr(remote_snapshot, "phase", None), "value", ""))
+        if remote_phase in {"preparing", "connecting"}:
+            guest_enrollment = EvidenceState.IN_PROGRESS
+        elif connected and not hosting:
+            guest_enrollment = EvidenceState.VERIFIED
+        elif remote_phase == "failed":
+            guest_enrollment = EvidenceState.FAILED
+        elif getattr(self, "_remote_invitation", None) is not None:
+            guest_enrollment = EvidenceState.IN_PROGRESS
+        else:
+            guest_enrollment = EvidenceState.NOT_STARTED
+
+        recorder = getattr(self, "recording", None)
+        recorder_phase = str(
+            getattr(getattr(recorder, "phase", None), "value", "idle") or "idle"
+        )
+        recorder_state = {
+            "preflight": RecorderState.REQUESTED,
+            "starting": RecorderState.STARTING,
+            "recording": RecorderState.RECORDING,
+            "stopping": RecorderState.STOPPING,
+            "validating": RecorderState.STOPPED,
+            "stop_failed": RecorderState.FAILED,
+            "error": RecorderState.FAILED,
+        }.get(recorder_phase, RecorderState.IDLE)
+        validation = getattr(recorder, "last_validation", None)
+        completed_take = getattr(recorder, "last_completed_take", None)
+        if recorder_phase == "validating":
+            take_validation = TakeValidationState.VALIDATING
+        elif recorder_phase == "needs_attention":
+            take_validation = TakeValidationState.NEEDS_ATTENTION
+        elif validation is not None:
+            take_validation = (
+                TakeValidationState.VALID
+                if bool(getattr(validation, "ok", False))
+                else TakeValidationState.NEEDS_ATTENTION
+            )
+        elif recorder_phase == "complete" and completed_take is not None:
+            take_validation = TakeValidationState.VALID
+        else:
+            take_validation = TakeValidationState.NOT_STARTED
+        take_available = completed_take is not None
+        media_preservation = (
+            EvidenceState.VERIFIED
+            if take_available
+            else EvidenceState.UNKNOWN
+            if recorder_state is RecorderState.FAILED
+            else EvidenceState.NOT_REQUIRED
+        )
+
+        band_check = getattr(
+            self, "_conductor_band_check", EvidenceState.NOT_STARTED
+        )
+        ready_dialog = getattr(self, "_ready_check_dialog", None)
+        if ready_dialog is not None and bool(getattr(ready_dialog, "isVisible", lambda: False)()):
+            band_check = EvidenceState.IN_PROGRESS
+        elif bool(getattr(self, "_band_check_start_pending", False)):
+            band_check = EvidenceState.IN_PROGRESS
+        elif (
+            band_check is EvidenceState.NOT_STARTED
+            and (launch_intended or connected)
+        ):
+            # A live/launching attempt cannot be sent backwards into an
+            # imaginary pre-session gate.  This means only that the old gate
+            # is no longer the current action; it does not claim a saved
+            # Band Check report or human audibility proof.
+            band_check = EvidenceState.NOT_REQUIRED
+
+        failure = FailureDisposition.NONE
+        if bool(getattr(audio, "connection_timed_out", False)) or self._remote_join_retry_pending():
+            failure = FailureDisposition.RETRYABLE
+        elif bool(getattr(self, "_remote_invitation_requires_replacement", False)):
+            failure = FailureDisposition.BLOCKED
+        elif lifecycle_phase is SessionLifecyclePhase.FAILED_FINAL:
+            failure = FailureDisposition.FINAL
+        elif lifecycle_phase is SessionLifecyclePhase.FAILED_RECOVERABLE:
+            failure = FailureDisposition.RETRYABLE
+
+        cleanup = (
+            CleanupState.ENDING
+            if bool(getattr(audio, "stopping", False))
+            or lifecycle_phase
+            in {SessionLifecyclePhase.ENDING, SessionLifecyclePhase.FINALIZING_RECORDINGS}
+            else CleanupState.COMPLETE
+            if lifecycle_phase is SessionLifecyclePhase.COMPLETED
+            else CleanupState.NOT_REQUESTED
+        )
+        return SessionConductorFacts(
+            role=role,
+            setup_requested=setup_requested,
+            # WebJam has no separate identity wizard in the production path;
+            # Band Check remains the real, explicit sound setup gate.
+            identity=EvidenceState.NOT_REQUIRED,
+            sound=EvidenceState.NOT_REQUIRED,
+            band_check=band_check,
+            host_server_process=host_process,
+            host_server_rpc=host_rpc,
+            host_listener=host_listener,
+            invite=invite,
+            guest_enrollment=guest_enrollment,
+            music_path=music_path,
+            local_participant=local_participant,
+            remote_participant=remote_participant,
+            participant_identity=participant_identity,
+            had_authenticated_connection=bool(
+                getattr(self, "_conductor_had_authenticated_connection", False)
+            ),
+            recorder=recorder_state,
+            take_validation=take_validation,
+            take_available=take_available,
+            guest_media=GuestMediaState.NOT_EXPECTED,
+            media_preservation=media_preservation,
+            studio=(
+                ReviewState.REVIEWING
+                if bool(getattr(self, "_conductor_studio_reviewing", False))
+                else ReviewState.IDLE
+            ),
+            export=getattr(self, "_conductor_export", ExportState.IDLE),
+            cleanup=cleanup,
+            failure=failure,
+        )
+
+    def _conductor_requires_legacy_copy(self, facts: SessionConductorFacts) -> bool:
+        """Keep topology-specific recovery copy out of the generic conductor."""
+
+        if self._remote_join_retry_pending() or bool(
+            getattr(self, "_remote_invitation_requires_replacement", False)
+        ):
+            return True
+        if bool(getattr(self, "_host_peer_warning", "")):
+            return True
+        try:
+            from webjam_qt.platform_permissions import microphone_permission_status
+
+            if (
+                facts.music_path is not MusicPathState.AUTHENTICATED
+                and microphone_permission_status() in {"denied", "restricted"}
+            ):
+                return True
+        except Exception:  # noqa: BLE001 - no permission observation is not a block
+            pass
+        status_widget = getattr(getattr(self.window, "session_hud", None), "_status", None)
+        status_text = str(getattr(status_widget, "text", lambda: "")())
+        return status_text in {
+            "Your Wi-Fi changed",
+            "Create a fresh invitation",
+        }
+
+    @staticmethod
+    def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+        if phase in {
+            SessionConductorPhase.RECONNECTING,
+            SessionConductorPhase.FAILED,
+            SessionConductorPhase.BLOCKED,
+            SessionConductorPhase.INDETERMINATE,
+            SessionConductorPhase.TAKE_NEEDS_ATTENTION,
+        }:
+            return SessionPhase.ERROR
+        if phase is SessionConductorPhase.ENDING:
+            return SessionPhase.ENDING
+        if phase in {
+            SessionConductorPhase.STARTING_HOST,
+            SessionConductorPhase.WAITING_FOR_HOST_READINESS,
+            SessionConductorPhase.JOINING,
+            SessionConductorPhase.BAND_CHECK_IN_PROGRESS,
+            SessionConductorPhase.RECORDING_STARTING,
+            SessionConductorPhase.RECORDING_STOPPING,
+            SessionConductorPhase.TAKE_VALIDATING,
+            SessionConductorPhase.GUEST_MEDIA_TRANSFERRING,
+            SessionConductorPhase.EXPORTING,
+        }:
+            return SessionPhase.CONNECTING
+        return SessionPhase.NOT_CONNECTED
+
+    @staticmethod
+    def _conductor_action_kind(action: SessionPrimaryAction) -> str:
+        return {
+            SessionPrimaryAction.START_SESSION: "start_session",
+            SessionPrimaryAction.CONFIRM_SOUND: "confirm_sound",
+            SessionPrimaryAction.RUN_BAND_CHECK: "run_band_check",
+            SessionPrimaryAction.COPY_INVITE: "copy_invite",
+            SessionPrimaryAction.TRY_RECONNECT: "try_reconnect",
+            SessionPrimaryAction.RECORD: "record",
+            SessionPrimaryAction.STOP_RECORDING: "stop_recording",
+            SessionPrimaryAction.REVIEW_TAKE: "review_take",
+            SessionPrimaryAction.EXPORT_TRACKS: "export_tracks",
+            SessionPrimaryAction.END_SESSION: "end_session",
+            SessionPrimaryAction.OPEN_DETAILS: "open_details",
+            SessionPrimaryAction.CHECK_SESSION: "check_session",
+        }.get(action, "primary")
+
+    def _render_session_conductor(self) -> None:
+        """Render the canonical conductor without replacing real UI evidence."""
+
+        facts = self._session_conductor_facts()
+        presentation = derive_session_conductor(facts)
+        self._last_session_conductor = presentation
+        self._record_pilot_conductor_presentation(presentation)
+        if self._conductor_requires_legacy_copy(facts):
+            return
+
+        action = presentation.primary_action
+        header_owned = action in {
+            SessionPrimaryAction.RECORD,
+            SessionPrimaryAction.STOP_RECORDING,
+            SessionPrimaryAction.END_SESSION,
+        }
+        action_visible = action not in {
+            SessionPrimaryAction.NONE,
+            SessionPrimaryAction.WAIT,
+        } and not header_owned
+        detail = presentation.message
+        if presentation.preservation:
+            detail = f"{detail} {presentation.preservation}"
+        # Keep the quiet lobby's useful one-line recording context even
+        # though its Start button is intentionally hidden in favor of the
+        # single HUD action.
+        stage_hint = ""
+        if presentation.phase is SessionConductorPhase.IDLE:
+            stage_hint = (
+                "Multitrack recording is ready on this Mac"
+                if facts.role is SessionRole.HOST
+                else "Your host records everyone as separate tracks"
+            )
+        self.window.session_hud.set_state(
+            presentation.title,
+            detail,
+            invite_available=action is SessionPrimaryAction.COPY_INVITE,
+            action_text=action.label,
+            action_visible=action_visible,
+            action_kind=self._conductor_action_kind(action),
+            ready=presentation.phase
+            in {SessionConductorPhase.LIVE, SessionConductorPhase.TAKE_READY},
+        )
+        # The HUD owns the focused action.  The empty stage stays explanatory
+        # so an initial 760x600 window never presents a Start/Check/Practice
+        # pile alongside the same action in the HUD.
+        self.window.participant_grid.set_session_state(
+            SessionUiState(
+                self._conductor_stage_phase(presentation.phase),
+                presentation.title,
+                presentation.message,
+                primary_text=action.label or "Continue",
+                primary_enabled=presentation.primary_enabled,
+                show_primary=False,
+                show_ready_check=False,
+                show_practice=False,
+                hint=stage_hint,
+                primary_action="start",
+            )
+        )
+        # The strip copy button is an older duplicate of the HUD action.  Its
+        # reset command remains under More when a v3 host owns that invite.
+        if action is SessionPrimaryAction.COPY_INVITE:
+            self.window.session_strip.set_invite_available(False)
+
+    def _update_session_hud(self) -> None:
+        """Refresh legacy exceptional copy, then the canonical conductor."""
+
+        self._update_session_hud_legacy()
+        self._render_session_conductor()
+
+    def _on_conductor_action_requested(self, action_kind: str) -> None:
+        """Route the one visible conductor action to its real owner."""
+
+        action = str(action_kind or "").strip().lower()
+        if action in {"invite", "copy_invite"}:
+            self._copy_band_invite()
+        elif action in {"retry", "try_reconnect", "check_session"}:
+            self._retry_session()
+        elif action in {"primary", "start_session"}:
+            self._on_session_audio_requested()
+        elif action in {"confirm_sound", "run_band_check"}:
+            self._open_band_check(start_session_when_ready=True)
+        elif action in {"record", "stop_recording"}:
+            self._on_record_requested()
+        elif action == "review_take":
+            self._on_rail_view_changed("takes")
+        elif action == "export_tracks":
+            export = getattr(self.window.recording_studio, "_export_tracks", None)
+            if callable(export):
+                export()
+        elif action == "end_session":
+            self._on_session_audio_requested()
+        elif action == "open_details":
+            self._on_ready_check()
+
+    def _on_recorder_phase_changed(self, _phase=None) -> None:
+        """Refresh the conductor after recorder-owned state changes."""
+
+        self._update_session_hud()
+
+    def _on_studio_export_started(self) -> None:
+        self._conductor_export = ExportState.EXPORTING
+        self._update_session_hud()
+
+    def _on_studio_export_finished(self, succeeded: bool) -> None:
+        self._conductor_export = (
+            ExportState.COMPLETE if succeeded else ExportState.NEEDS_ATTENTION
+        )
+        # Export callbacks can legitimately outlive an operator pausing or
+        # completing Test Night. They still refresh ordinary musician UI, but
+        # must not mutate a paused or completed pilot ledger.
+        if getattr(self, "_pilot_run_state", "not_started") != "running":
+            self._update_session_hud()
+            return
+        from core.pilot_evidence import (
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+        )
+
+        self._pilot_append_automatic(
+            PilotObservationClass.TRACK_EXPORT,
+            EvidenceOutcome.VERIFIED if succeeded else EvidenceOutcome.FAILED,
+            state_after=self._pilot_state_from_presentation(),
+            evidence_reference=EvidenceReference.EXPORT_MANIFEST,
+        )
+        self._update_session_hud()
+
+    def _reset_session_conductor_attempt(self) -> None:
+        """Forget live-attempt facts after owned cleanup reaches idle.
+
+        Completed-take facts remain with RecordingCoordinator so Studio can
+        still offer honest review after a session ends.
+        """
+
+        self._conductor_setup_requested = False
+        self._conductor_band_check = EvidenceState.NOT_STARTED
+        self._conductor_had_authenticated_connection = False
+        self._conductor_studio_reviewing = False
+        self._conductor_export = ExportState.IDLE
+
+    # ------------------------------------------------------------------
+    # Operator-only closed-pilot evidence
+    # ------------------------------------------------------------------
+    def _pilot_storage_dir(self) -> Path:
+        """Return the local-only application-support root for pilot records."""
+
+        from core.settings import webjam_application_support_dir
+
+        return webjam_application_support_dir() / "Pilot"
+
+    def _pilot_role(self):
+        from core.pilot_evidence import PilotRole
+
+        facts = self._session_conductor_facts()
+        return PilotRole.GUEST if facts.role is SessionRole.GUEST else PilotRole.HOST
+
+    @staticmethod
+    def _pilot_outcome_key(value) -> str:
+        """Turn a bounded ledger result into a dialog status key."""
+
+        return str(getattr(value, "value", value) or "waiting").lower().replace(
+            " ", "_"
+        )
+
+    def _pilot_state_from_presentation(self, presentation=None):
+        from core.pilot_evidence import PilotSessionState
+
+        if presentation is None:
+            presentation = getattr(self, "_last_session_conductor", None)
+        value = str(getattr(getattr(presentation, "phase", None), "value", ""))
+        try:
+            return PilotSessionState(value)
+        except ValueError:
+            return PilotSessionState.INDETERMINATE
+
+    def _pilot_current_state(self):
+        from core.pilot_evidence import PilotSessionState
+
+        ledger = getattr(self, "_pilot_ledger", None)
+        if ledger is not None and ledger.events:
+            return ledger.events[-1].state_after
+        return PilotSessionState.IDLE
+
+    def _pilot_refresh_dialog(self) -> None:
+        dialog = getattr(self, "_test_night_dialog", None)
+        if dialog is None:
+            return
+        dialog.set_run_state(self._pilot_run_state)
+        dialog.set_check_statuses(self._pilot_check_status)
+        dialog.set_export_available(getattr(self, "_pilot_ledger", None) is not None)
+
+    def _pilot_append_automatic(
+        self,
+        observation_class,
+        outcome,
+        *,
+        state_after,
+        evidence_reference,
+        limitations=(),
+    ) -> bool:
+        """Append one bounded automatic fact without exposing implementation data."""
+
+        from core.pilot_evidence import PilotEvidenceError, save_pilot_ledger
+
+        ledger = getattr(self, "_pilot_ledger", None)
+        if ledger is None:
+            return False
+        try:
+            updated = ledger.record_observation(
+                observation_class,
+                outcome,
+                state_before=self._pilot_current_state(),
+                state_after=state_after,
+                evidence_reference=evidence_reference,
+                limitations=limitations,
+            )
+            save_pilot_ledger(self._pilot_storage_dir(), updated)
+        except (OSError, PilotEvidenceError):
+            LOGGER.warning("Could not append private pilot evidence", exc_info=True)
+            if not getattr(self, "_shutdown", False):
+                self.window.flash_message(
+                    "WebJam couldn't save the local pilot record. The session is unchanged.",
+                    ms=7000,
+                )
+            return False
+        self._pilot_ledger = updated
+        return True
+
+    def _pilot_append_human(
+        self,
+        observation_class,
+        outcome,
+        *,
+        state_after,
+        limitations=(),
+    ) -> bool:
+        """Append an explicit operator assertion; never infer it from meters."""
+
+        from core.pilot_evidence import PilotEvidenceError, save_pilot_ledger
+
+        ledger = getattr(self, "_pilot_ledger", None)
+        if ledger is None:
+            return False
+        try:
+            updated = ledger.record_human_observation(
+                observation_class,
+                outcome,
+                state_before=self._pilot_current_state(),
+                state_after=state_after,
+                limitations=limitations,
+            )
+            save_pilot_ledger(self._pilot_storage_dir(), updated)
+        except (OSError, PilotEvidenceError):
+            LOGGER.warning("Could not append human pilot evidence", exc_info=True)
+            if not getattr(self, "_shutdown", False):
+                self.window.flash_message(
+                    "WebJam couldn't save the local pilot record. The session is unchanged.",
+                    ms=7000,
+                )
+            return False
+        self._pilot_ledger = updated
+        return True
+
+    def _pilot_rebuild_check_statuses(self) -> None:
+        """Restore fixed dialog rows from allowlisted ledger events only."""
+
+        from core.pilot_evidence import PilotObservationClass
+
+        mapping = {
+            PilotObservationClass.CONNECTION: "connection_truth",
+            PilotObservationClass.PARTICIPANT_PRESENCE: "connection_truth",
+            PilotObservationClass.RECORDING_REQUEST: "record_take",
+            PilotObservationClass.RECORDER_CONFIRMATION: "record_take",
+            PilotObservationClass.RECORDING_STOP: "record_take",
+            PilotObservationClass.TAKE_VALIDATION: "validate_take",
+            PilotObservationClass.STUDIO_SIDECAR: "studio_playback",
+            PilotObservationClass.OWNED_PROCESS_CLEANUP: "closeout",
+            PilotObservationClass.RECONNECTION: "failure_recovery",
+            PilotObservationClass.HUMAN_HOST_HEARD_BANDMATE: "hear_each_other",
+            PilotObservationClass.HUMAN_BANDMATE_HEARD_HOST: "hear_each_other",
+            PilotObservationClass.HUMAN_HEADPHONES_CORRECT: "headphones_correct",
+            PilotObservationClass.HUMAN_SESSION_PLAYABLE: "session_playable",
+            PilotObservationClass.HUMAN_STUDIO_PLAYBACK: "studio_playback",
+            PilotObservationClass.HUMAN_STUDIO_ALIGNMENT: "studio_alignment",
+            PilotObservationClass.HUMAN_REHEARSAL_USEFUL: "rehearsal_moment_useful",
+        }
+        statuses: dict[str, str] = {}
+        ledger = getattr(self, "_pilot_ledger", None)
+        for event in getattr(ledger, "events", ()):
+            key = mapping.get(event.observation_class)
+            if key:
+                statuses[key] = self._pilot_outcome_key(event.result)
+        self._pilot_check_status = statuses
+
+    def _pilot_restore_latest(self) -> bool:
+        """Offer the most recent durable run for resume after an app restart."""
+
+        from core.pilot_evidence import (
+            PilotEvidenceError,
+            PilotObservationClass,
+            list_pilot_ledgers,
+        )
+
+        if getattr(self, "_pilot_ledger", None) is not None:
+            return True
+        try:
+            ledgers = list_pilot_ledgers(self._pilot_storage_dir())
+        except PilotEvidenceError:
+            LOGGER.warning("Could not inspect local pilot evidence", exc_info=True)
+            self.window.flash_message(
+                "WebJam couldn't open the local pilot record. Start a new Test Night run.",
+                ms=7000,
+            )
+            return False
+        if not ledgers:
+            return False
+        ledger = ledgers[0]
+        self._pilot_ledger = ledger
+        last = ledger.events[-1] if ledger.events else None
+        if last is not None and last.observation_class is PilotObservationClass.PILOT_ABANDONED:
+            self._pilot_run_state = "abandoned"
+        elif (
+            last is not None
+            and last.observation_class is PilotObservationClass.OWNED_PROCESS_CLEANUP
+            and self._pilot_outcome_key(last.result) == "verified"
+        ):
+            self._pilot_run_state = "completed"
+        else:
+            # A running ledger recovered after process exit is deliberately
+            # paused until the operator explicitly resumes it.
+            self._pilot_run_state = "paused"
+        self._pilot_rebuild_check_statuses()
+        return True
+
+    def _open_test_night(self) -> None:
+        """Open the hidden operator workflow only when explicitly launched."""
+
+        if not self._operator_mode:
+            return
+        from webjam_qt.windows.test_night import TestNightDialog
+
+        dialog = getattr(self, "_test_night_dialog", None)
+        if dialog is not None and dialog.isVisible():
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        self._pilot_restore_latest()
+        dialog = TestNightDialog(self.window)
+        dialog.start_requested.connect(self._start_test_night)
+        dialog.pause_requested.connect(self._pause_test_night)
+        dialog.resume_requested.connect(self._resume_test_night)
+        dialog.abandon_requested.connect(self._abandon_test_night)
+        dialog.restart_requested.connect(self._restart_test_night)
+        dialog.manual_outcome_requested.connect(self._record_test_night_manual_outcome)
+        dialog.export_report_requested.connect(self._export_test_night_report)
+        dialog.finished.connect(lambda _result: setattr(self, "_test_night_dialog", None))
+        self._test_night_dialog = dialog
+        self._pilot_refresh_dialog()
+        dialog.show()
+
+    def _start_test_night(self) -> None:
+        """Create a new local-only ledger and record package availability."""
+
+        from core.build_info import build_id
+        from core.pilot_evidence import (
+            EvidenceLimitation,
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotEvidenceError,
+            PilotObservationClass,
+            create_pilot_ledger,
+            save_pilot_ledger,
+        )
+        from webjam_qt import __version__
+
+        if getattr(self, "_pilot_ledger", None) is not None:
+            if self._pilot_run_state == "paused":
+                self._resume_test_night()
+            return
+        artifact_identity = "not_available"
+        if getattr(sys, "frozen", False) and sys.platform == "darwin":
+            artifact_identity = f"webjam-v{__version__}-test-night-macos-arm64"
+        try:
+            ledger = create_pilot_ledger(
+                app_version=__version__,
+                build_commit=build_id() or "not_available",
+                artifact_identity=artifact_identity,
+                role=self._pilot_role(),
+            )
+            save_pilot_ledger(self._pilot_storage_dir(), ledger)
+        except (OSError, PilotEvidenceError):
+            LOGGER.warning("Could not create local pilot evidence", exc_info=True)
+            self.window.flash_message(
+                "WebJam couldn't start the local Test Night record.", ms=7000
+            )
+            return
+        self._pilot_ledger = ledger
+        self._pilot_run_state = "running"
+        self._pilot_check_status = {}
+        current_state = self._pilot_state_from_presentation()
+        self._pilot_append_automatic(
+            PilotObservationClass.APP_LAUNCHED,
+            EvidenceOutcome.VERIFIED,
+            state_after=current_state,
+            evidence_reference=EvidenceReference.PACKAGE_METADATA,
+        )
+        self._pilot_append_automatic(
+            PilotObservationClass.PACKAGE_IDENTITY,
+            (
+                EvidenceOutcome.VERIFIED
+                if artifact_identity != "not_available"
+                else EvidenceOutcome.NOT_AVAILABLE
+            ),
+            state_after=current_state,
+            evidence_reference=EvidenceReference.PACKAGE_METADATA,
+            limitations=(
+                ()
+                if artifact_identity != "not_available"
+                else (EvidenceLimitation.PARTIAL_EVIDENCE,)
+            ),
+        )
+        self._pilot_last_conductor_phase = ""
+        self._pilot_refresh_dialog()
+        self._record_pilot_conductor_presentation(self._last_session_conductor)
+
+    def _pause_test_night(self) -> None:
+        from core.pilot_evidence import (
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+            PilotSessionState,
+        )
+
+        if (
+            getattr(self, "_pilot_run_state", "not_started") != "running"
+            or getattr(self, "_pilot_ledger", None) is None
+        ):
+            return
+        if self._pilot_append_automatic(
+            PilotObservationClass.PILOT_PAUSED,
+            EvidenceOutcome.VERIFIED,
+            state_after=PilotSessionState.PAUSED,
+            evidence_reference=EvidenceReference.SESSION_STATE,
+        ):
+            self._pilot_run_state = "paused"
+            self._pilot_refresh_dialog()
+
+    def _resume_test_night(self) -> None:
+        from core.pilot_evidence import (
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+        )
+
+        if self._pilot_run_state != "paused" or self._pilot_ledger is None:
+            return
+        target = self._pilot_state_from_presentation()
+        if self._pilot_append_automatic(
+            PilotObservationClass.PILOT_RESUMED,
+            EvidenceOutcome.VERIFIED,
+            state_after=target,
+            evidence_reference=EvidenceReference.SESSION_STATE,
+        ):
+            self._pilot_run_state = "running"
+            self._pilot_last_conductor_phase = ""
+            self._pilot_refresh_dialog()
+            self._record_pilot_conductor_presentation(self._last_session_conductor)
+
+    def _abandon_test_night(self) -> None:
+        from core.pilot_evidence import (
+            EvidenceLimitation,
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+            PilotSessionState,
+        )
+
+        if self._pilot_run_state not in {"running", "paused"} or self._pilot_ledger is None:
+            return
+        if self._pilot_append_automatic(
+            PilotObservationClass.PILOT_ABANDONED,
+            EvidenceOutcome.NOT_RUN,
+            state_after=PilotSessionState.ABANDONED,
+            evidence_reference=EvidenceReference.SESSION_STATE,
+            limitations=(EvidenceLimitation.HARDWARE_NOT_EXERCISED,),
+        ):
+            self._pilot_run_state = "abandoned"
+            self._pilot_refresh_dialog()
+
+    def _restart_test_night(self) -> None:
+        if self._pilot_run_state not in {"abandoned", "completed"}:
+            return
+        self._pilot_ledger = None
+        self._pilot_run_state = "not_started"
+        self._pilot_check_status = {}
+        self._pilot_last_conductor_phase = ""
+        self._start_test_night()
+
+    def _record_test_night_manual_outcome(self, key: str, outcome_key: str) -> None:
+        """Record one selected human result under the explicit human API."""
+
+        from core.pilot_evidence import (
+            EvidenceLimitation,
+            EvidenceOutcome,
+            PilotObservationClass,
+        )
+
+        if (
+            getattr(self, "_pilot_run_state", "not_started") != "running"
+            or getattr(self, "_pilot_ledger", None) is None
+        ):
+            return
+        outcomes = {
+            "verified": EvidenceOutcome.VERIFIED,
+            "failed": EvidenceOutcome.FAILED,
+            "blocked": EvidenceOutcome.BLOCKED,
+            "not_run": EvidenceOutcome.NOT_RUN,
+            "indeterminate": EvidenceOutcome.INDETERMINATE,
+        }
+        outcome = outcomes.get(str(outcome_key).strip().lower())
+        if outcome is None:
+            return
+        observations = {
+            "hear_each_other": (
+                PilotObservationClass.HUMAN_HOST_HEARD_BANDMATE,
+                PilotObservationClass.HUMAN_BANDMATE_HEARD_HOST,
+            ),
+            "headphones_correct": (PilotObservationClass.HUMAN_HEADPHONES_CORRECT,),
+            "session_playable": (PilotObservationClass.HUMAN_SESSION_PLAYABLE,),
+            "studio_playback": (PilotObservationClass.HUMAN_STUDIO_PLAYBACK,),
+            "studio_alignment": (PilotObservationClass.HUMAN_STUDIO_ALIGNMENT,),
+            "rehearsal_moment_useful": (
+                PilotObservationClass.HUMAN_REHEARSAL_USEFUL,
+            ),
+        }.get(str(key).strip(), ())
+        if not observations:
+            return
+        limitations = (
+            (EvidenceLimitation.HARDWARE_NOT_EXERCISED,)
+            if outcome in {EvidenceOutcome.NOT_RUN, EvidenceOutcome.BLOCKED}
+            else ()
+        )
+        target = self._pilot_state_from_presentation()
+        if all(
+            self._pilot_append_human(
+                observation,
+                outcome,
+                state_after=target,
+                limitations=limitations,
+            )
+            for observation in observations
+        ):
+            self._pilot_check_status[str(key)] = self._pilot_outcome_key(outcome)
+            self._pilot_refresh_dialog()
+
+    def _record_pilot_conductor_presentation(self, presentation) -> None:
+        """Record one automatic fact after a real conductor phase transition."""
+
+        from core.pilot_evidence import (
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+        )
+
+        if (
+            getattr(self, "_pilot_run_state", "not_started") != "running"
+            or getattr(self, "_pilot_ledger", None) is None
+        ):
+            return
+        phase = str(getattr(getattr(presentation, "phase", None), "value", ""))
+        if not phase or phase == self._pilot_last_conductor_phase:
+            return
+        self._pilot_last_conductor_phase = phase
+        target = self._pilot_state_from_presentation(presentation)
+        event = None
+        status_key = None
+        if phase == SessionConductorPhase.BAND_CHECK_IN_PROGRESS.value:
+            event = (
+                PilotObservationClass.BAND_CHECK,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.BAND_CHECK_RESULT,
+            )
+        elif phase == SessionConductorPhase.READY_TO_START.value:
+            event = (
+                PilotObservationClass.BAND_CHECK,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.BAND_CHECK_RESULT,
+            )
+        elif phase in {
+            SessionConductorPhase.STARTING_HOST.value,
+            SessionConductorPhase.WAITING_FOR_HOST_READINESS.value,
+        }:
+            event = (
+                PilotObservationClass.SERVER_AUTHENTICATION,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.SESSION_STATE,
+            )
+        elif phase == SessionConductorPhase.INVITE_READY.value:
+            event = (
+                PilotObservationClass.INVITE_AVAILABILITY,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.SESSION_STATE,
+            )
+        elif phase in {
+            SessionConductorPhase.CONNECTED.value,
+            SessionConductorPhase.LIVE.value,
+        }:
+            event = (
+                PilotObservationClass.CONNECTION,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.SESSION_STATE,
+            )
+            status_key = "connection_truth"
+        elif phase == SessionConductorPhase.RECONNECTING.value:
+            event = (
+                PilotObservationClass.RECONNECTION,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.SESSION_STATE,
+            )
+            status_key = "failure_recovery"
+        elif phase == SessionConductorPhase.RECORDING_STARTING.value:
+            event = (
+                PilotObservationClass.RECORDING_REQUEST,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.RECORDER_STATE,
+            )
+            status_key = "record_take"
+        elif phase == SessionConductorPhase.RECORDING.value:
+            event = (
+                PilotObservationClass.RECORDER_CONFIRMATION,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.RECORDER_STATE,
+            )
+            status_key = "record_take"
+        elif phase == SessionConductorPhase.RECORDING_STOPPING.value:
+            event = (
+                PilotObservationClass.RECORDING_STOP,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.RECORDER_STATE,
+            )
+        elif phase == SessionConductorPhase.TAKE_VALIDATING.value:
+            event = (
+                PilotObservationClass.TAKE_VALIDATION,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.TAKE_MANIFEST,
+            )
+            status_key = "validate_take"
+        elif phase == SessionConductorPhase.TAKE_READY.value:
+            event = (
+                PilotObservationClass.TAKE_VALIDATION,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.TAKE_MANIFEST,
+            )
+            status_key = "validate_take"
+        elif phase == SessionConductorPhase.TAKE_NEEDS_ATTENTION.value:
+            event = (
+                PilotObservationClass.TAKE_VALIDATION,
+                EvidenceOutcome.FAILED,
+                EvidenceReference.TAKE_MANIFEST,
+            )
+            status_key = "validate_take"
+        elif phase == SessionConductorPhase.REVIEWING.value:
+            event = (
+                PilotObservationClass.STUDIO_SIDECAR,
+                EvidenceOutcome.VERIFIED,
+                EvidenceReference.STUDIO_STATE,
+            )
+        elif phase == SessionConductorPhase.EXPORTING.value:
+            event = (
+                PilotObservationClass.TRACK_EXPORT,
+                EvidenceOutcome.INDETERMINATE,
+                EvidenceReference.EXPORT_MANIFEST,
+            )
+        elif phase == SessionConductorPhase.FAILED.value:
+            event = (
+                PilotObservationClass.CONNECTION,
+                EvidenceOutcome.FAILED,
+                EvidenceReference.SESSION_STATE,
+            )
+            status_key = "connection_truth"
+        if event and self._pilot_append_automatic(
+            event[0],
+            event[1],
+            state_after=target,
+            evidence_reference=event[2],
+        ):
+            if status_key:
+                self._pilot_check_status[status_key] = self._pilot_outcome_key(event[1])
+            self._pilot_refresh_dialog()
+
+    def _record_pilot_lifecycle_completion(self, phase: SessionLifecyclePhase) -> None:
+        """Capture the one cleanup verdict that can precede the idle reset."""
+
+        from core.pilot_evidence import (
+            EvidenceOutcome,
+            EvidenceReference,
+            PilotObservationClass,
+            PilotSessionState,
+        )
+
+        if (
+            getattr(self, "_pilot_run_state", "not_started") != "running"
+            or getattr(self, "_pilot_ledger", None) is None
+        ):
+            return
+        if phase is SessionLifecyclePhase.ENDING:
+            self._pilot_append_automatic(
+                PilotObservationClass.OWNED_PROCESS_CLEANUP,
+                EvidenceOutcome.INDETERMINATE,
+                state_after=PilotSessionState.ENDING,
+                evidence_reference=EvidenceReference.PROCESS_CLEANUP,
+            )
+        elif phase is SessionLifecyclePhase.COMPLETED:
+            if self._pilot_append_automatic(
+                PilotObservationClass.OWNED_PROCESS_CLEANUP,
+                EvidenceOutcome.VERIFIED,
+                state_after=PilotSessionState.ENDED,
+                evidence_reference=EvidenceReference.PROCESS_CLEANUP,
+            ):
+                self._pilot_check_status["closeout"] = "verified"
+                self._pilot_run_state = "completed"
+                self._pilot_refresh_dialog()
+
+    def _export_test_night_report(self) -> None:
+        """Write an allowlisted report only after an operator asks for it."""
+
+        from PySide6.QtWidgets import QFileDialog
+
+        from core.file_io import atomic_write_text
+        from core.pilot_evidence import build_sanitized_pilot_report
+        import json
+
+        ledger = getattr(self, "_pilot_ledger", None)
+        if ledger is None or getattr(self, "_pilot_run_state", "not_started") not in {
+            "paused",
+            "abandoned",
+            "completed",
+        }:
+            return
+        destination = QFileDialog.getExistingDirectory(
+            self.window,
+            "Export WebJam Test Night report",
+        )
+        if not destination:
+            return
+        try:
+            report = build_sanitized_pilot_report(ledger)
+            atomic_write_text(
+                Path(destination) / "WebJam-private-pilot-report.json",
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                mode=0o600,
+            )
+        except (OSError, ValueError):
+            LOGGER.warning("Could not export local pilot report", exc_info=True)
+            self.window.flash_message("WebJam couldn't export the pilot report.", ms=7000)
+            return
+        self.window.flash_message("Private pilot report exported.", ms=5000)
+
     def _record_toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         self.recording.toggle_worker(target_armed, secret_file)
 
@@ -2681,6 +3831,7 @@ class ApplicationController(QObject):
         self.recording.apply_toggle_failure(message)
 
     def _on_practice_requested(self) -> None:
+        self._conductor_setup_requested = True
         self.audio.on_practice_requested()
 
     def _use_system_input(self) -> None:
@@ -3625,6 +4776,7 @@ class ApplicationController(QObject):
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
             self._last_content_key = key
+            self._conductor_studio_reviewing = key == "takes"
             self.window.session_strip.set_recording_available(
                 key != "takes"
                 and bool(getattr(self.settings, "host_server_enabled", False))
@@ -3648,6 +4800,7 @@ class ApplicationController(QObject):
                 self.window.workspace_stack.setCurrentWidget(
                     self.window.recording_studio
                 )
+            self._update_session_hud()
 
     # ------------------------------------------------------------------
     # Session notes persistence

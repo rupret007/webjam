@@ -22,6 +22,10 @@ from webjam_qt.theme.tokens import Space
 class SessionHud(QFrame):
     """Compact session truth with an explicit, credential-safe copy action."""
 
+    # New callers can handle every HUD action through one semantic signal.
+    # The two no-argument signals remain for the controller paths that already
+    # depend on them.
+    action_requested = Signal(str)
     invite_requested = Signal()
     retry_requested = Signal()
 
@@ -52,6 +56,9 @@ class SessionHud(QFrame):
         self._action = QPushButton("Copy Invite Link")
         self._action.setObjectName("PrimaryButton")
         self._action.setAccessibleName("Copy invite link")
+        self._action.setAccessibleDescription(
+            "Copies the complete invitation link to your clipboard."
+        )
         self._action_kind = "invite"
         self._action.clicked.connect(self._emit_action)
         self._action.setVisible(False)
@@ -71,23 +78,19 @@ class SessionHud(QFrame):
         self._status.setText(str(status))
         self._detail.setText(str(detail))
         self._invite_available = bool(invite_available)
-        visible = (
-            self._invite_available
-            if action_visible is None
-            else bool(action_visible)
+        self._action_kind = str(action_kind).strip().lower() or "primary"
+        default_visible = (
+            self._invite_available if self._action_kind == "invite" else True
         )
-        self._action.setText(str(action_text))
-        self._action.setAccessibleName(str(action_text))
-        self._action.setAccessibleDescription(
-            "Copies the complete invitation link to your clipboard."
-            if self._invite_available else str(detail)
-        )
-        self._action.setToolTip(
-            "Copy the private invitation to your clipboard."
-            if self._invite_available
-            else str(detail)
-        )
-        self._action_kind = str(action_kind)
+        visible = default_visible if action_visible is None else bool(action_visible)
+        action_label = str(action_text)
+        # A literal ampersand is part of the musician-facing label, not an
+        # accidental keyboard mnemonic.  Keep the accessible name unescaped.
+        self._action.setText(action_label.replace("&", "&&"))
+        self._action.setAccessibleName(action_label)
+        action_description = self._action_description(action_label, str(detail))
+        self._action.setAccessibleDescription(action_description)
+        self._action.setToolTip(action_description)
         self._action.setVisible(visible)
         self.setProperty("ready", "true" if ready else "false")
         self.setAccessibleDescription(f"{status}. {detail}")
@@ -112,8 +115,17 @@ class SessionHud(QFrame):
         if visible and self._action_kind == "retry" and self.isVisible():
             self._action.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _action_description(self, label: str, detail: str) -> str:
+        """Give every visible action a useful, action-specific label."""
+        if self._action_kind == "invite":
+            return "Copies the complete invitation link to your clipboard."
+        if self._action_kind == "retry":
+            return f"Retries the current session step. {detail}".strip()
+        return f"{label}. {detail}".strip()
+
     def _emit_action(self) -> None:
+        self.action_requested.emit(self._action_kind)
         if self._action_kind == "retry":
             self.retry_requested.emit()
-        else:
+        elif self._action_kind == "invite":
             self.invite_requested.emit()

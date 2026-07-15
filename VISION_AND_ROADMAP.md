@@ -53,7 +53,7 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 |------|-------------|-------|
 | **Companion API (documented & stable)** | Document and stabilize the local bridge API so DAWs, editors, and other tools can read room state, mode, goal, mixer. WebJam as hub. | 1 |
 | **Optional E2E encrypted canvas** | Mode where only people in the room can ever read notes/artifacts; no server-side plaintext. | 3 |
-| **Multitrack Studio review workspace** | Shipped in the private v0.14.0 candidate: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and a safer Logic handoff. It is not a tempo grid or a full DAW claim. | 1 |
+| **Multitrack Studio review workspace** | Shipped in the private v0.15.0 candidate: a shared seconds-only track ruler, truthful source/alignment/gap inspection, compact controls, durable non-destructive mix state, and portable Track Export. It is not a tempo grid, a full DAW, or an external-editor integration. | 1 |
 | **Recording + timeline** | Optional recording; timeline for time-linked notes and replay. | 3 |
 
 ### 5. Community & human layer
@@ -74,19 +74,13 @@ Not "video call + shared doc." WebJam is the app that **knows we're making somet
 
 ## Delivery Status
 
-### ✅ Packaged in the private v0.14.0 candidate (2026-07-14)
+### ✅ v0.15.0 closed-pilot source candidate (2026-07-14)
 
-The exact v0.14.0 test-night ZIP is
-`WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`, built
-from `045c5acb01687a4088b0bd618dab4d0ab6200804`.
-
-Its package-only evidence is complete: **1,719 passed, 18 skipped, one known
-warning, and 6 subtests**; transport `go test ./...` and `go vet ./...`;
-fresh-extraction strict/deep signature, nested-app, and exact fabric-ID checks;
-and two isolated six-second offscreen launch/TERM cycles. This is not a claim
-that physical two-Mac audio, CoreAudio routing, recording/recovery, or Logic
-Pro import has run; all of those results are **NOT RUN**.
+The v0.15.0 package identity is intentionally recorded only after the exact
+archive is built and verified. v0.14.0 remains the rollback candidate.
+Automated source and package gates do not establish two-Mac audio, CoreAudio
+routing, recording/recovery, or external-editor import; those outcomes remain
+**NOT RUN** until directly observed in a closed pilot.
 
 - **Five-second launch and Band Check** — Host a Jam is the clear primary
   action; Join a Jam opens one invitation field. One concise name-and-band-sound
@@ -104,10 +98,15 @@ Pro import has run; all of those results are **NOT RUN**.
   in an atomic private `.webjam-studio-state.json` sidecar keyed by schema-v2
   `track_id`. It never rewrites the take manifest or source WAVs, and a
   reordered/reconciled lane cannot inherit another musician's export choice.
-- **Durable local recovery and Logic truth** — interrupted media remains a
+- **Durable local recovery and export truth** — interrupted media remains a
   visible **Needs Attention** recovery project. Explicitly silent or unaligned
-  selected tracks block misleading Logic export until the musician makes the
+  selected tracks block misleading Track Export until the musician makes the
   safe choice; source media stays unchanged.
+- **Canonical session conductor** — a pure fact-derived state model produces
+  one dominant musician action and rejects stale/duplicate lifecycle work.
+- **Closed-pilot evidence** — a hidden `--test-night` workflow records bounded
+  automatic facts separately from explicit human answers; it is local-only,
+  append-only, and restart-safe.
 - **Private local originals and lifecycle truth** — supported v2 guests can
   retain local originals through a peer outage and resume a verified same-LAN
   transfer. A v1 guest has no false local-capture claim; a running process is
@@ -116,9 +115,8 @@ Pro import has run; all of those results are **NOT RUN**.
   allowlisted/redacted; focus and keyboard order are explicit; state meaning is
   not color-only; and the live-session floor is 760×600.
 
-The v0.13.0 ZIP is preserved rollback history, not evidence that the v0.14.0
-Studio workspace existed in that earlier artifact. The v0.12.0 ZIP remains an
-older historical rollback artifact.
+The v0.14.0 ZIP is preserved rollback history. The v0.13.0 and v0.12.0 ZIPs
+remain older historical rollback artifacts.
 
 ### ✅ Shipped — v0.8.0 bundled Jamulus (2026-07-08)
 
@@ -134,8 +132,9 @@ older historical rollback artifact.
 ### Historical implementation checkpoint — v0.8.1
 
 Everything below entered the source tree during the v0.8.1 release-candidate
-work. It is retained as implementation history; current status is the v0.14.0
-package, with v0.13.0 and v0.12.0 retained as historical rollback artifacts.
+work. It is retained as implementation history; current status is the v0.15.0
+source candidate, with v0.14.0, v0.13.0, and v0.12.0 retained as historical
+rollback artifacts.
 v0.8.0
 remains the latest published build at
 [Releases](https://github.com/rupret007/webjam/releases) until all closed-pilot
@@ -174,12 +173,12 @@ gates pass.
 - Complete the planned two-Apple-Silicon-Mac
   same-LAN physical pilot. The v1/v2 engine's native Jamulus/JACK 3,600-second
   evidence remains historical engine evidence, not package certification.
-- Physically verify the exact v0.14.0 candidate's seconds-only ruler, seek
+- Physically verify the exact v0.15.0 candidate's seconds-only ruler, seek
   alignment, selected-track inspection, compact layout, immutable-sidecar
-  reopen behavior, and durable-ID Logic selection. Those observations are
+  reopen behavior, and durable-ID Track Export selection. Those observations are
   **NOT RUN** until recorded against that exact package.
 - Host/link/paste/deep-link paths, real bidirectional audio, one server track
-  per musician, Studio stereo playback, aligned Logic-package import,
+  per musician, Studio stereo playback, aligned portable-track import,
   reconnection truth, guest-original outage delivery, role-aware End/Leave,
   and clean relaunch.
 - Developer ID macOS signing/notarization and Windows signing before broad

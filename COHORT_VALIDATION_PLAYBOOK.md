@@ -1,25 +1,31 @@
-# WebJam v0.14.0 closed-pilot playbook
+# WebJam v0.15.0 closed-pilot playbook
 
 This is the coordination guide for a small musician cohort. The exact physical
 acceptance evidence belongs in
 [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md); do not substitute this
-short guide for that gate. Physical audio, interruption, and Logic results
-start as **NOT RUN** until musicians record them there.
+short guide for that gate. Physical audio, interruption, recording/recovery,
+and optional manual external-editor results start as **NOT RUN** until
+musicians record them there.
 
-The Studio v0.14 workspace is in this exact package: one seconds-only ruler,
-selected-track inspection, gain/pan/mute/solo/export choices, and a durable
-schema-v2 sidecar. Its source/package checks passed, but Studio use, CoreAudio,
-recording/recovery, and Logic handoff observations remain **NOT RUN** until
-musicians exercise the exact package in the worksheet.
+Studio v0.15 is a standalone review workspace: one seconds-only ruler,
+selected-track inspection, transport, gain/pan/mute/solo, Track Export choices,
+and a durable schema-v2 sidecar. It uses familiar multitrack-editor patterns,
+but it does not integrate with Logic Pro or another editor. Studio use,
+CoreAudio, recording/recovery, and optional manual import observations remain
+**NOT RUN** until musicians exercise the exact package in the worksheet.
+
+If an operator launches WebJam with `--test-night`, **Test Night** can keep a
+bounded local pilot ledger and export a redacted report. It records automatic
+app transitions separately from explicit human observations; it never turns a
+physical row into a pass. Normal musicians do not need or see this control.
 
 ## Message to send before the rehearsal
 
 ```text
-We're testing the WebJam v0.14.0 candidate tonight.
+We're testing the WebJam v0.15.0 candidate tonight.
 
-1. Download `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip` and verify SHA-256
-   `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
-   Do not reuse an earlier artifact identity.
+1. Use the exact v0.15.0 ZIP and SHA-256 recorded by the host in the pilot
+   worksheet. Do not reuse an earlier artifact identity.
 2. Unzip it, move WebJam.app to Applications, then Control-click it and choose
    Open the first time. The private build is ad-hoc signed, not notarized.
 3. Connect your interface and wired headphones. In macOS Sound, choose the
@@ -39,7 +45,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 
 ## Host
 
-1. Open the exact v0.14.0 candidate recorded for this run and choose **Host a
+1. Open the exact v0.15.0 candidate recorded for this run and choose **Host a
    Jam** once.
 2. Confirm your name and band sound, complete Band Check, then choose **Start
    Session**.
@@ -80,7 +86,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
 3. On the host and each v2-connected guest that should retain interface
    originals, open **More → Multitrack Studio → Recording Setup**, explicitly
    enable inputs 1 and 2, and select the intended shareable 48-kHz interface.
-   The host still controls the shared take. The v0.14.0 candidate checks the
+   The host still controls the shared take. The v0.15.0 candidate checks the
    selected Takes folder and conservative free-space reserve before Record;
    write down any warning or block rather than treating it as an acoustic pass.
 4. The host records at least 60 seconds. With an active v2 invite, briefly
@@ -90,7 +96,7 @@ If anything fails, stop and capture what WebJam says before changing settings.
    AVAILABLE** instead of claiming that recovery test passed.
 5. Confirm one server WAV per musician and every opted-in local original is
    present or truthfully disclosed. Check Studio playback and pan/mute/solo,
-   then use **Export for Logic**. The Studio ruler is elapsed seconds only—not
+   then use **Export Tracks**. The Studio ruler is elapsed seconds only—not
    a bar, beat, or tempo map. Seek once and confirm the transport/ruler/lanes
    agree; select each important track and read its source, alignment, gap, and
    export evidence. At a narrow window, keep the compact track controls
@@ -102,8 +108,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
    choices must follow its durable source identity through the Studio sidecar,
    not a display position, and must not alter `webjam-take.json` or source WAVs.
    Require equal-length numbered PCM24 stems, references, reports, analysis,
-   and checksums; import the numbered stems together at `0:00` and use
-   references only for comparison.
+   and checksums. If an external editor is available, manually import the
+   numbered stems together at `0:00` and use references only for comparison;
+   that optional check is not a WebJam integration.
 
 ## Recovery and finish
 
@@ -131,9 +138,9 @@ If anything fails, stop and capture what WebJam says before changing settings.
 - Capture screenshots of any unclear state before retrying.
 - Preserve the take folder and each Mac's local originals. Keep raw logs local;
   do not send them directly.
-- Record the Studio v0.14 ruler/inspection/sidecar and durable-ID export rows
-  as **NOT RUN** unless this exact candidate was physically exercised. A source
-  or package check, or the prior v0.13.0 rollback package, is not a substitute.
+- Record the Studio v0.15 ruler/inspection/sidecar and durable-ID Track Export
+  rows as **NOT RUN** unless this exact candidate was physically exercised. A
+  source or package check, or an earlier rollback package, is not a substitute.
 - Use **More → Band Check → Save Support Bundle** for the previewed, allowlisted,
   redacted support archive. `Ctrl+Shift+D` copies a short redacted summary.
 - Do not widen the cohort until every item in the exact two-Mac pilot passes.

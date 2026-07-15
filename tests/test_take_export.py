@@ -11,8 +11,10 @@ import soundfile as sf
 
 from core.take_export import (
     TakeExportError,
+    TrackExportResult,
     TrackMixSettings,
     export_logic_package,
+    export_track_package,
 )
 from core.take_library import TakeInfo, TrackInfo
 from core.take_project import (
@@ -46,7 +48,7 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_logic_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
+def test_track_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
     take_dir = tmp_path / "Take 01"
     take_dir.mkdir()
     early = take_dir / "host-guitar.wav"
@@ -81,7 +83,7 @@ def test_logic_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
         ],
     )
 
-    result = export_logic_package(take, destination_root=tmp_path / "exports")
+    result = export_track_package(take, destination_root=tmp_path / "exports")
 
     assert result.frames == int(0.75 * RATE)
     assert len(result.stems) == 2
@@ -98,6 +100,7 @@ def test_logic_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
     payload = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert payload["all_stems_start_at_zero"] is True
     assert payload["original_files_modified"] is False
+    assert payload["external_editor_physically_verified"] is False
     assert payload["tracks"][0]["original_offset_s"] == -0.25
     assert payload["tracks"][0]["output_filename"].startswith(
         "01 Guitar - Lead"
@@ -105,7 +108,7 @@ def test_logic_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
     assert "0:00" in result.instructions.read_text(encoding="utf-8")
 
 
-def test_logic_export_rough_mix_honors_gain_pan_mute_and_solo(tmp_path):
+def test_track_export_rough_mix_honors_gain_pan_mute_and_solo(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     left = take_dir / "left.wav"
@@ -120,7 +123,7 @@ def test_logic_export_rough_mix_honors_gain_pan_mute_and_solo(tmp_path):
             TrackInfo(muted, "Drums", duration_s=0.25, samplerate=RATE),
         ],
     )
-    result = export_logic_package(
+    result = export_track_package(
         take,
         destination_root=tmp_path / "exports",
         mix_settings={
@@ -139,7 +142,7 @@ def test_logic_export_rough_mix_honors_gain_pan_mute_and_solo(tmp_path):
     assert payload["tracks"][0]["solo"] is True
 
 
-def test_logic_export_never_overwrites_an_existing_package(tmp_path):
+def test_track_export_never_overwrites_an_existing_package(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     track = take_dir / "guitar.wav"
@@ -150,14 +153,32 @@ def test_logic_export_never_overwrites_an_existing_package(tmp_path):
         [TrackInfo(track, "Guitar", duration_s=2048 / RATE, samplerate=RATE)],
     )
     root = tmp_path / "exports"
-    first = export_logic_package(take, destination_root=root)
-    second = export_logic_package(take, destination_root=root)
-    assert first.folder.name == "Logic Export"
-    assert second.folder.name == "Logic Export 2"
+    first = export_track_package(take, destination_root=root)
+    second = export_track_package(take, destination_root=root)
+    assert first.folder.name == "Track Export"
+    assert second.folder.name == "Track Export 2"
     assert first.manifest.exists()
 
 
-def test_logic_export_rejects_mixed_rates_without_partial_package(tmp_path):
+def test_legacy_export_api_still_returns_an_editor_neutral_package(tmp_path):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    track = take_dir / "guitar.wav"
+    _write(track, np.ones(2048) * 0.1)
+    take = TakeInfo(
+        take_dir,
+        "Take",
+        [TrackInfo(track, "Guitar", duration_s=2048 / RATE, samplerate=RATE)],
+    )
+
+    result = export_logic_package(take, destination_root=tmp_path / "exports")
+
+    assert isinstance(result, TrackExportResult)
+    assert result.folder.name == "Track Export"
+    assert result.manifest.name == "webjam-track-export.json"
+
+
+def test_track_export_rejects_mixed_rates_without_partial_package(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     first = take_dir / "a.wav"
@@ -174,11 +195,11 @@ def test_logic_export_rejects_mixed_rates_without_partial_package(tmp_path):
     )
     root = tmp_path / "exports"
     with pytest.raises(TakeExportError, match="mixed sample rates"):
-        export_logic_package(take, destination_root=root)
+        export_track_package(take, destination_root=root)
     assert not root.exists()
 
 
-def test_logic_export_write_failure_leaves_no_visible_or_hidden_package(tmp_path):
+def test_track_export_write_failure_leaves_no_visible_or_hidden_package(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     track = take_dir / "guitar.wav"
@@ -193,7 +214,7 @@ def test_logic_export_write_failure_leaves_no_visible_or_hidden_package(tmp_path
         "core.take_export._write_aligned_stem",
         side_effect=OSError("disk full"),
     ), pytest.raises(OSError, match="disk full"):
-        export_logic_package(take, destination_root=root)
+        export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
 
@@ -305,7 +326,7 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
-def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_path):
+def test_schema2_track_export_resamples_drift_segments_and_writes_evidence(tmp_path):
     take_dir = tmp_path / "Project Take"
     take_dir.mkdir()
     network = take_dir / "network.wav"
@@ -397,7 +418,7 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
         take_id=project.take_id,
     )
 
-    result = export_logic_package(
+    result = export_track_package(
         take,
         destination_root=tmp_path / "exports",
         mix_settings={1: TrackMixSettings(gain=0.75, pan=0.25)},
@@ -426,7 +447,7 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
     assert manifest["time_signature"] == {"numerator": 3, "denominator": 4}
     assert manifest["tracks"][1]["musician"] == "Riley"
     assert manifest["tracks"][1]["resampling"] == "deterministic-linear-affine-v1"
-    assert manifest["logic_pro_physically_verified"] is False
+    assert manifest["external_editor_physically_verified"] is False
     assert manifest["session_evidence"] == project.session_evidence.to_dict()
     assert "endpoint" not in manifest["session_evidence"]
     assert "invitation" not in manifest["session_evidence"]
@@ -440,20 +461,20 @@ def test_schema2_logic_handoff_resamples_drift_segments_and_writes_evidence(tmp_
 
     checksum_lines = result.checksums.read_text().splitlines()
     names = {line.split("  ", 1)[1] for line in checksum_lines}
-    assert "webjam-logic-export.json" in names
+    assert "webjam-track-export.json" in names
     assert "WebJam Server Reference.wav" in names
     for line in checksum_lines:
         digest, name = line.split("  ", 1)
         assert _digest(result.folder / name) == digest
 
 
-def test_schema2_logic_handoff_prefers_durable_mix_ids_after_selection_and_reorder(
+def test_schema2_track_export_prefers_durable_mix_ids_after_selection_and_reorder(
     tmp_path,
 ):
     take, (bass, _drums, guitar), source_audio = _reordered_project_take(tmp_path)
     before = {_digest(path) for path in source_audio}
 
-    result = export_logic_package(
+    result = export_track_package(
         take,
         destination_root=tmp_path / "exports",
         selected_track_ids={bass.track_id, guitar.track_id},
@@ -480,11 +501,11 @@ def test_schema2_logic_handoff_prefers_durable_mix_ids_after_selection_and_reord
     assert {_digest(path) for path in source_audio} == before
 
 
-def test_schema2_logic_handoff_keeps_legacy_mix_positions_in_project_order(tmp_path):
+def test_schema2_track_export_keeps_legacy_mix_positions_in_project_order(tmp_path):
     take, (_bass, _drums, guitar), source_audio = _reordered_project_take(tmp_path)
     before = {_digest(path) for path in source_audio}
 
-    result = export_logic_package(
+    result = export_track_package(
         take,
         destination_root=tmp_path / "exports",
         # Guitar is alone in this export but remains position two in the full
@@ -504,7 +525,7 @@ def test_schema2_logic_handoff_keeps_legacy_mix_positions_in_project_order(tmp_p
     assert {_digest(path) for path in source_audio} == before
 
 
-def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):
+def test_schema2_track_export_omits_empty_session_evidence(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     audio = take_dir / "source.wav"
@@ -528,7 +549,7 @@ def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):
         ),
     )
     write_take_project(take_dir, project)
-    result = export_logic_package(
+    result = export_track_package(
         TakeInfo(
             take_dir,
             "Take",
@@ -542,7 +563,7 @@ def test_schema2_logic_handoff_omits_empty_session_evidence(tmp_path):
     assert "session_evidence" not in manifest
 
 
-def test_schema2_logic_handoff_blocks_explicitly_silent_selected_segment(tmp_path):
+def test_schema2_track_export_blocks_explicitly_silent_selected_segment(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     silent = take_dir / "silent-guitar.wav"
@@ -575,14 +596,14 @@ def test_schema2_logic_handoff_blocks_explicitly_silent_selected_segment(tmp_pat
     root = tmp_path / "exports"
 
     with pytest.raises(TakeExportError, match="explicitly silent segments") as exc:
-        export_logic_package(take, destination_root=root)
+        export_track_package(take, destination_root=root)
 
     assert "Alex guitar" in str(exc.value)
     assert "Review the recording or intentionally deselect" in str(exc.value)
     assert not root.exists()
 
 
-def test_schema2_logic_handoff_allows_unknown_signal_and_deselected_silent_track(
+def test_schema2_track_export_allows_unknown_signal_and_deselected_silent_track(
     tmp_path,
 ):
     take_dir = tmp_path / "Take"
@@ -627,14 +648,14 @@ def test_schema2_logic_handoff_allows_unknown_signal_and_deselected_silent_track
         take_id=project.take_id,
     )
 
-    result = export_logic_package(take, destination_root=tmp_path / "exports")
+    result = export_track_package(take, destination_root=tmp_path / "exports")
 
     assert len(result.stems) == 1
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert [track["name"] for track in manifest["tracks"]] == ["Alex unknown guitar"]
 
 
-def test_schema2_logic_handoff_blocks_unaligned_transferred_guest_original(tmp_path):
+def test_schema2_track_export_blocks_unaligned_transferred_guest_original(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     server = take_dir / "server.wav"
@@ -694,13 +715,13 @@ def test_schema2_logic_handoff_blocks_unaligned_transferred_guest_original(tmp_p
     root = tmp_path / "exports"
 
     with pytest.raises(TakeExportError, match="no verified timeline alignment") as exc:
-        export_logic_package(take, destination_root=root)
+        export_track_package(take, destination_root=root)
 
     assert "Keep the Jamulus server track" in str(exc.value)
     assert not root.exists()
 
 
-def test_schema2_logic_handoff_allows_aligned_host_local_capture(tmp_path):
+def test_schema2_track_export_allows_aligned_host_local_capture(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     local = take_dir / "host-guitar.wav"
@@ -738,13 +759,13 @@ def test_schema2_logic_handoff_allows_aligned_host_local_capture(tmp_path):
         take_id=project.take_id,
     )
 
-    result = export_logic_package(take, destination_root=tmp_path / "exports")
+    result = export_track_package(take, destination_root=tmp_path / "exports")
 
     assert len(result.stems) == 1
     assert result.stems[0].is_file()
 
 
-def test_schema2_logic_handoff_blocks_missing_or_changed_media_atomically(tmp_path):
+def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_path):
     take_dir = tmp_path / "Take"
     take_dir.mkdir()
     audio = take_dir / "source.wav"
@@ -777,6 +798,6 @@ def test_schema2_logic_handoff_blocks_missing_or_changed_media_atomically(tmp_pa
     audio.write_bytes(audio.read_bytes() + b"changed")
     root = tmp_path / "exports"
     with pytest.raises(TakeExportError, match="changed size"):
-        export_logic_package(take, destination_root=root)
+        export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []

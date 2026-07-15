@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QTimer, Signal
@@ -25,6 +26,30 @@ from webjam_qt.invitation_ingress import (
 )
 from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
+
+
+TEST_NIGHT_ARGUMENT = "--test-night"
+
+
+def test_night_mode_from_arguments(arguments: Sequence[object]) -> bool:
+    """Return whether the explicit, local operator flag was supplied.
+
+    This reads the user's argument list without changing it.  The flag is
+    removed only from the private list handed to Qt because it is WebJam's
+    option, not a Qt option.
+    """
+
+    return any(str(argument) == TEST_NIGHT_ARGUMENT for argument in arguments[1:])
+
+
+def qt_arguments_without_test_night(arguments: Sequence[object]) -> list[str]:
+    """Make a Qt-only argument list without mutating ``sys.argv``."""
+
+    return [
+        str(argument)
+        for index, argument in enumerate(arguments)
+        if index == 0 or str(argument) != TEST_NIGHT_ARGUMENT
+    ]
 
 
 class WebJamApplication(QApplication):
@@ -151,12 +176,16 @@ def _request_smoke_quit(window: ConductorWindow) -> None:
 
 def _run_app() -> int:
     """Build and run the application after the fatal-error boundary."""
+    arguments = tuple(sys.argv)
+    operator_mode = test_night_mode_from_arguments(arguments)
     settings = load_settings()
     configure_logging(settings)
     logging.getLogger("webjam.qt").info("Starting Conductor UI")
 
     _configure_qt_attributes()
-    app = QApplication.instance() or WebJamApplication(sys.argv)
+    app = QApplication.instance() or WebJamApplication(
+        qt_arguments_without_test_night(arguments)
+    )
     app.setApplicationName("WebJam")
     app.setApplicationDisplayName("WebJam")
     app.setOrganizationName("WebJam")
@@ -170,7 +199,7 @@ def _run_app() -> int:
     smoke_autostart = os.environ.get("WEBJAM_SMOKE_AUTOSTART_AUDIO") == "1"
     launch = None
     if not smoke_autostart:
-        argument_invitation = _invite_from_arguments(sys.argv)
+        argument_invitation = _invite_from_arguments(arguments)
         pending_invitation = (
             app.take_pending_invitation()
             if isinstance(app, WebJamApplication)
@@ -237,6 +266,7 @@ def _run_app() -> int:
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
         initial_title="Band Rehearsal",
+        operator_mode=operator_mode,
     )
     remote_invitation = (
         launch.take_remote_invitation()
@@ -254,6 +284,7 @@ def _run_app() -> int:
             else None
         ),
         remote_invitation=remote_invitation,
+        operator_mode=operator_mode,
     )
     remote_invitation = None
     # Qt may terminate the native event loop without returning from exec() on
@@ -326,7 +357,7 @@ def run() -> int:
             app = QApplication.instance()
             if app is None:
                 _configure_qt_attributes()
-                app = WebJamApplication(sys.argv)
+                app = WebJamApplication(qt_arguments_without_test_night(sys.argv))
             QMessageBox.critical(
                 None,
                 "WebJam couldn’t open",

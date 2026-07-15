@@ -6,28 +6,19 @@ WebJam is designed around four short moves:
 
 Musicians do not configure servers, ports, virtual audio devices, or routing
 modes. WebJam starts the bundled music engine and keeps technical details out of
-the rehearsal. In the v0.14.0 candidate, the two Settings choices—**Band
-input** and **Band output & review**—are the Jamulus route WebJam stages for the
-next session. WebJam still asks musicians to confirm what they hear.
+the rehearsal. **Band input** and **Band output & review** are the route WebJam
+checks before the next session; only musicians can confirm what they hear.
 
-The private v0.14.0 candidate is deliberately spare: a black and white session with burnt
-orange reserved for the next important action. Host and Join are the only
-choices at launch.
+The private v0.15.0 candidate is deliberately spare: black, white, and burnt
+orange, with Host and Join as the only launch choices and one clear next action
+while a session is running.
 
 > **Tonight's candidate:**
-> `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
-> `045c5acb01687a4088b0bd618dab4d0ab6200804`, is the
-> exact Apple-Silicon package for this run. Its SHA-256 is
-> `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
-> It includes the sound-confirmation screen, CoreAudio route preflight,
-> recording-storage guard, durable local-capture recovery, and conservative
-> Logic-export safety checks, plus Studio's focused take-review timeline and
-> track controls. The source gate recorded 1,719 passed, 18 skipped, one known
-> warning, and 6 subtests; native transport `go test ./...` and `go vet ./...`
-> passed. Fresh extraction, strict/deep signatures, nested apps, exact
-> native-fabric build ID, and two isolated six-second launch/TERM cycles also
-> passed. Physical CoreAudio, two-Mac, recording/recovery, and Logic import
-> results remain **NOT RUN**. The v0.13.0 and older ZIPs are rollback artifacts.
+> v0.15.0 is being packaged after its source and package checks complete. The
+> exact filename, source commit, and SHA-256 are recorded in the release notes
+> only after verification. Physical CoreAudio, two-Mac, recording/recovery, and
+> external-editor import results remain **NOT RUN**. v0.14.0 is the rollback
+> artifact.
 
 This quick start covers the ordinary same-private-LAN flow. The v3
 `reference-local` profile is a loopback-only developer lab, not a deployed
@@ -96,14 +87,15 @@ Manual fallback:
 
 The readiness strip uses plain language:
 
-- **Starting your jam** — WebJam is starting the host services.
-- **Ready to share** — the host server is ready and the invite can be sent.
-- **You’re connected** — the app reached the band; play a note to verify input.
-- **You’re ready** — a real input signal was detected.
-- **Bandmate connected** — another musician joined.
-- **Connection interrupted** — WebJam is reconnecting and is not claiming the
-  stale session is ready.
-- **Something needs attention** — follow the single recommended action.
+- **Preparing the invite** — WebJam is verifying the host before it shares a
+  private invite.
+- **Invite ready** — copy the invite when the bandmate is ready.
+- **Joining the jam** — WebJam is connecting but has not claimed a live band.
+- **You’re connected** — the app has authenticated the music path.
+- **You’re live** — confirmed roster facts are present; musicians still confirm
+  what they hear.
+- **Reconnecting** — WebJam is not claiming stale readiness.
+- **Action needed** — follow the one recommended action.
 
 Participant cards show the real levels WebJam can observe. If metering is not
 available, WebJam stays silent; it does not animate a fake signal.
@@ -139,7 +131,7 @@ guest has no WebJam-orchestrated local-original capture or delivery.
 After a take verifies, open it in Studio and read the shared elapsed-time
 ruler. Select a lane to inspect its source, timing, and any known gaps, then
 use gain, pan, mute, or solo to review the mix without changing the recording.
-Each **Logic export** choice is saved for that take and used by future exports
+Each **Track Export** choice is saved for that take and used by future exports
 until you change it; it never changes the WAVs or `webjam-take.json`. WebJam
 writes new numbered PCM24 stems that all start at `0:00` and have the same
 length, plus server/Studio references, reports, analysis, checksums, and import
@@ -148,9 +140,9 @@ until you review it or deliberately deselect it. An unaligned or unverified
 selected guest/local original also pauses a timing-ready export: keep the
 Jamulus server track, or align and verify the original first. Studio states
 those actions without exposing local paths. It is a focused recording-review
-workspace, not a Logic clone: it does not invent tempo, bars, beats, or beat
-editing. Drag the numbered stems into Logic together. See
-[`RECORDING_AND_LOGIC.md`](RECORDING_AND_LOGIC.md).
+workspace, not a DAW: it does not invent tempo, bars, beats, or beat editing.
+Import the numbered stems together at `0:00` in your editor. See
+[`RECORDING_AND_STUDIO.md`](RECORDING_AND_STUDIO.md).
 
 The host controls the shared take. A joining musician's network audio becomes a
 separate host-side server track automatically. With an active v2 invite, that
@@ -167,11 +159,14 @@ Everything that is not required to play is under **More**:
   conversation link)
 - Band Check
 
+When explicitly launched with `--test-night`, **More** also contains the hidden
+operator-only Test Night checklist. Normal rehearsals do not show it.
+
 Webex is optional and opens externally. If the band uses it for conversation,
 keep its microphone muted while playing to avoid delayed duplicate music.
 
 Choose **Band input** and **Band output & review** in **Settings** before a
-session. The v0.14.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
+session. The v0.15.0 candidate verifies a unique 48-kHz CoreAudio pair and uses
 it to stage Jamulus; the review choice follows the selected output. A moving
 local meter still is not proof that your bandmate hears you.
 
@@ -190,7 +185,7 @@ If guest originals are enabled, wait until Studio reports them verified and
 arrived before **End Session**. Otherwise, preserve the originals on the guest
 Mac for recovery. On the host, recovered local audio is reopened as a visible
 Studio project marked **Needs Attention**, not as a completed take or a
-timing-ready Logic export.
+timing-ready track export.
 
 ## If joining fails
 

@@ -51,6 +51,7 @@ from webjam_qt.widgets import (
 
 class ConductorWindow(QMainWindow):
     close_requested = Signal()
+    test_night_requested = Signal()
 
     DEFAULT_WIDTH = 1440
     DEFAULT_HEIGHT = 900
@@ -61,6 +62,7 @@ class ConductorWindow(QMainWindow):
         mode_entries: list[tuple[str, str]],
         initial_mode_key: str,
         initial_title: str,
+        operator_mode: bool = False,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -73,13 +75,16 @@ class ConductorWindow(QMainWindow):
         self.setMinimumSize(760, 600)
         # Controller-injected veto (e.g. "a recording is running — quit?").
         self.confirm_close: Optional[Callable[[], bool]] = None
+        self.operator_mode = bool(operator_mode)
 
         # --- Central widgets
         self.session_strip = SessionStrip(
             mode_entries=mode_entries,
             initial_mode_key=initial_mode_key,
             initial_title=initial_title,
+            operator_mode=self.operator_mode,
         )
+        self.session_strip.test_night_requested.connect(self.test_night_requested.emit)
         self.session_hud = SessionHud()
         self.side_rail = SideRail()
         self.participant_grid = ParticipantGrid()

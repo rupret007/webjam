@@ -6,12 +6,12 @@ conversation path, video only, or an advanced one-way feed for an audience. WebJ
 opens the meeting but cannot inspect or change Webex's microphone, speaker,
 mute state, Mic Mode, or Smart Audio setting.
 
-This guidance applies to the v0.14.0 private candidate,
-`WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, built from
-`045c5acb01687a4088b0bd618dab4d0ab6200804`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
-Physical CoreAudio, two-Mac, recording/recovery, and Logic results remain
-**NOT RUN**. The v0.13.0 and earlier ZIPs are rollback artifacts only.
+This guidance applies to the v0.15.0 private candidate. Record its exact ZIP,
+SHA-256, and source/build commit in
+[`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) before a physical run.
+Physical CoreAudio, two-Mac, recording/recovery, and optional external-editor
+observations remain **NOT RUN** until musicians record them. Earlier ZIPs are
+rollback artifacts only.
 
 ## Musician conversation — recommended
 
@@ -22,7 +22,7 @@ instrument / vocal ──> audio interface ──> Jamulus ──> wired headpho
 conversation microphone ─────────────────> Webex ─────> same headphones
 ```
 
-1. In the v0.14.0 candidate, choose the musician's audio interface in
+1. In the v0.15.0 candidate, choose the musician's audio interface in
    **Settings → Band input** and **Band output & review** before starting the
    jam. For an earlier rollback ZIP or a manual Jamulus fallback, select that
    interface in Jamulus instead.
@@ -60,7 +60,7 @@ Webex audio, otherwise they will hear a delayed duplicate of the music.
 
 On macOS, create a Multi-Output Device containing the physical interface and
 BlackHole. Use the interface as clock source and drift correction only on
-BlackHole. In the v0.14.0 candidate, choose that Multi-Output Device in
+BlackHole. In the v0.15.0 candidate, choose that Multi-Output Device in
 **Settings → Band output & review** before starting the jam. For an earlier
 rollback ZIP or a manual Jamulus fallback, set Jamulus output to the
 Multi-Output Device instead. Set the Webex microphone to BlackHole and its

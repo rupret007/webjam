@@ -1,10 +1,9 @@
-"""Safe, non-destructive exports from a WebJam take.
+"""Safe, non-destructive multitrack exports from a WebJam take.
 
-WebJam cannot and should not manufacture Logic Pro's proprietary ``.logicx``
-project format.  Instead it prepares the interchange Logic handles best: one
-24-bit WAV per track, all rendered onto the same zero-based timeline, plus a
-stereo reference mix and a small evidence manifest.  Original recorder files
-are never modified.
+WebJam does not create projects for another editor.  It prepares a portable
+track package instead: one 24-bit WAV per track, all rendered onto the same
+zero-based timeline, plus a stereo reference mix and a small evidence
+manifest.  Original recorder files are never modified.
 """
 
 from __future__ import annotations
@@ -41,8 +40,8 @@ MixSettings = Mapping[int | str, TrackMixSettings]
 
 
 @dataclass(frozen=True)
-class LogicExportResult:
-    """Files produced by :func:`export_logic_package`."""
+class TrackExportResult:
+    """Files produced by :func:`export_track_package`."""
 
     folder: Path
     stems: tuple[Path, ...]
@@ -60,6 +59,11 @@ class LogicExportResult:
     source_manifest: Path | None = None
 
 
+# Kept for callers from the pre-editor-neutral API.  New code should use
+# ``TrackExportResult`` and ``export_track_package``.
+LogicExportResult = TrackExportResult
+
+
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._() -]+")
 
 
@@ -70,10 +74,10 @@ def _safe_name(value: str, fallback: str) -> str:
 
 
 def _next_export_folder(root: Path) -> Path:
-    candidate = root / "Logic Export"
+    candidate = root / "Track Export"
     number = 2
     while candidate.exists():
-        candidate = root / f"Logic Export {number}"
+        candidate = root / f"Track Export {number}"
         number += 1
     return candidate
 
@@ -461,7 +465,7 @@ def _unaligned_local_original_names(tracks) -> list[str]:
     A transferred guest original is intentionally attached with an explicit
     ``peer-local-original-unverified-alignment`` marker until WebJam has a
     defensible project-time transform for it.  Rendering that media at zero
-    would make a convenient-looking but false Logic handoff.  The host's
+    would make a convenient-looking but false track export.  The host's
     existing local-capture path may remain ``UNVERIFIED`` while still carrying
     a positive automatic alignment confidence, so quality alone is not enough
     to reject it.
@@ -519,7 +523,7 @@ def _project_track_mix_settings(
     """Resolve one schema-v2 mix state without coupling it to export rows.
 
     Schema-v2 track IDs are durable, unlike the temporary rows produced after
-    filtering tracks for a particular Logic export.  Prefer an explicit ID
+    filtering tracks for a particular track export.  Prefer an explicit ID
     entry so a selected subset or reordered project cannot borrow another
     lane's mix state.  Integer keys remain the legacy API and continue to
     address the track's position in the full, project-order track list.
@@ -529,7 +533,7 @@ def _project_track_mix_settings(
     return settings.get(legacy_position, TrackMixSettings())
 
 
-def _export_project_logic_package(
+def _export_project_track_package(
     take: TakeInfo,
     project,
     *,
@@ -538,8 +542,8 @@ def _export_project_logic_package(
     chunk_frames: int,
     selected_track_ids: set[str] | None,
     include_processed_stems: bool,
-) -> LogicExportResult:
-    """Create the evidence-rich schema-v2 handoff on one common timeline."""
+) -> TrackExportResult:
+    """Create the evidence-rich schema-v2 track package on one common timeline."""
     from core.take_project import MediaStatus, SourceType
 
     if project.take_id != take.take_id and take.take_id:
@@ -575,7 +579,7 @@ def _export_project_logic_package(
     unaligned_local_originals = _unaligned_local_original_names(selected)
     if unaligned_local_originals:
         raise TakeExportError(
-            "WebJam cannot create a timing-ready Logic export because these "
+            "WebJam cannot create a timing-ready track export because these "
             "local originals have no verified timeline alignment: "
             + ", ".join(unaligned_local_originals)
             + ". Keep the Jamulus server track for this take, or align and "
@@ -585,7 +589,7 @@ def _export_project_logic_package(
     if total_frames <= 0:
         raise TakeExportError("No audio remains on the project timeline after alignment.")
     project_rate = int(project.project_sample_rate)
-    root = Path(destination_root or (take.path / "Logic Exports")).expanduser()
+    root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     final_folder = _next_export_folder(root)
@@ -813,7 +817,7 @@ def _export_project_logic_package(
         )
         os.chmod(analysis, 0o600)
 
-        manifest = temporary / "webjam-logic-export.json"
+        manifest = temporary / "webjam-track-export.json"
         payload = {
             "schema_version": 2,
             "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -841,7 +845,7 @@ def _export_project_logic_package(
             "recording_report": recording_report.name,
             "audio_analysis": analysis.name,
             "source_manifest": source_manifest.name,
-            "logic_pro_physically_verified": False,
+            "external_editor_physically_verified": False,
         }
         if not project.session_evidence.is_empty:
             # SessionEvidence is deliberately bounded to recording provenance: it
@@ -855,16 +859,16 @@ def _export_project_logic_package(
         )
         os.chmod(manifest, 0o600)
 
-        instructions = temporary / "IMPORT INTO LOGIC PRO.md"
+        instructions = temporary / "IMPORT TRACKS.md"
         instructions.write_text(
-            "# Import this WebJam take into Logic Pro\n\n"
+            "# Import this WebJam multitrack export\n\n"
             f"- Sample rate: **{project_rate:,} Hz**\n"
             "- Stem format: **24-bit PCM WAV**\n"
             f"- Tempo: **{project.tempo_bpm:g} BPM**\n"
             f"- Time signature: **{project.time_signature_numerator}/"
             f"{project.time_signature_denominator}**\n"
             "- Origin: **every numbered stem begins at 0:00 and has the same length**\n\n"
-            "1. Create an empty Logic Pro project with the sample rate, tempo, and "
+            "1. Create an empty project in your editor with the sample rate, tempo, and "
             "time signature above.\n"
             "2. Select all numbered WAV files together and drag them to new audio "
             "tracks at 0:00. Do not move stems independently.\n"
@@ -877,7 +881,7 @@ def _export_project_logic_package(
             "or recovered material.\n"
             "7. Keep the JSON manifests and `CHECKSUMS.sha256` with the project.\n\n"
             "This package was analyzed by WebJam, but this export alone does not "
-            "claim that Logic Pro import was physically performed. Original recorder "
+            "claim that an external-editor import was physically performed. Original recorder "
             "files remain unchanged in the parent take folder.\n",
             encoding="utf-8",
         )
@@ -890,7 +894,7 @@ def _export_project_logic_package(
         shutil.rmtree(temporary, ignore_errors=True)
         raise
 
-    return LogicExportResult(
+    return TrackExportResult(
         folder=final_folder,
         stems=tuple(final_folder / path.name for path in stems),
         mixdown=final_folder / mixdown.name,
@@ -910,7 +914,7 @@ def _export_project_logic_package(
     )
 
 
-def export_logic_package(
+def export_track_package(
     take: TakeInfo,
     *,
     destination_root: Optional[Path] = None,
@@ -918,13 +922,13 @@ def export_logic_package(
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,
-) -> LogicExportResult:
-    """Create an atomic, zero-aligned Logic-ready package for ``take``.
+) -> TrackExportResult:
+    """Create an atomic, zero-aligned track package for ``take``.
 
     The package contains numbered 24-bit WAV stems of identical length.  A
     negative WebJam offset trims the local pre-roll; a positive offset becomes
-    leading silence.  This lets a musician drag every stem into Logic at
-    0:00 without manually interpreting the WebJam manifest.
+    leading silence.  This lets a musician import every stem together at 0:00
+    in an editor without manually interpreting the WebJam manifest.
     """
     if not take.tracks:
         raise TakeExportError("This take has no audio tracks to export.")
@@ -941,7 +945,7 @@ def export_logic_package(
             raise TakeExportError(
                 f"The take project manifest could not be verified: {exc}"
             ) from exc
-        return _export_project_logic_package(
+        return _export_project_track_package(
             take,
             project,
             destination_root=destination_root,
@@ -971,7 +975,7 @@ def export_logic_package(
     if len(rates) != 1:
         raise TakeExportError(
             f"The take uses mixed sample rates ({sorted(rates)}); fix that before "
-            "creating a Logic export."
+            "creating a track export."
         )
     samplerate = rates.pop()
     total_frames = max(
@@ -980,7 +984,7 @@ def export_logic_package(
     if total_frames <= 0:
         raise TakeExportError("No audio remains on the take timeline after alignment.")
 
-    root = Path(destination_root or (take.path / "Logic Exports")).expanduser()
+    root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     final_folder = _next_export_folder(root)
@@ -1041,7 +1045,7 @@ def export_logic_package(
             chunk_frames=chunk_frames,
         )
 
-        manifest = temporary / "webjam-logic-export.json"
+        manifest = temporary / "webjam-track-export.json"
         payload = {
             "schema_version": 1,
             "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -1055,25 +1059,28 @@ def export_logic_package(
             "original_files_modified": False,
             "tracks": evidence,
             "rough_mix": mixdown.name,
+            "external_editor_physically_verified": False,
         }
         manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         os.chmod(manifest, 0o600)
 
-        instructions = temporary / "IMPORT INTO LOGIC PRO.md"
+        instructions = temporary / "IMPORT TRACKS.md"
         instructions.write_text(
-            "# Import this WebJam take into Logic Pro\n\n"
+            "# Import this WebJam multitrack export\n\n"
             f"- Sample rate: **{samplerate:,} Hz**\n"
             "- Stem depth: **24-bit PCM WAV**\n"
             "- Alignment: **every numbered stem starts at 0:00 and has the same length**\n\n"
-            "1. Create an empty Logic Pro project at the sample rate above.\n"
+            "1. Create an empty project in your editor at the sample rate above.\n"
             "2. Select every numbered WAV stem (01, 02, …) and drag them together "
             "into the empty Tracks area at 0:00.\n"
             "3. Put each file on a new audio track. The files are already padded or "
             "trimmed to WebJam's verified timeline; do not move them independently.\n"
             "4. Use `WebJam Rough Mix.wav` only as a reference, not as another stem.\n"
-            "5. Keep `webjam-logic-export.json` with the project as the alignment and "
+            "5. Keep `webjam-track-export.json` with the project as the alignment and "
             "source record.\n\n"
-            "The original recorder WAVs remain unchanged in the parent take folder.\n",
+            "This export alone does not claim that an external-editor import was "
+            "physically performed. The original recorder WAVs remain unchanged in "
+            "the parent take folder.\n",
             encoding="utf-8",
         )
         os.chmod(instructions, 0o600)
@@ -1082,7 +1089,7 @@ def export_logic_package(
         shutil.rmtree(temporary, ignore_errors=True)
         raise
 
-    return LogicExportResult(
+    return TrackExportResult(
         folder=final_folder,
         stems=tuple(final_folder / path.name for path in stem_paths),
         mixdown=final_folder / mixdown.name,
@@ -1090,4 +1097,28 @@ def export_logic_package(
         instructions=final_folder / instructions.name,
         samplerate=samplerate,
         frames=total_frames,
+    )
+
+
+def export_logic_package(
+    take: TakeInfo,
+    *,
+    destination_root: Optional[Path] = None,
+    mix_settings: Optional[MixSettings] = None,
+    chunk_frames: int = 65536,
+    selected_track_ids: set[str] | None = None,
+    include_processed_stems: bool = False,
+) -> TrackExportResult:
+    """Backward-compatible alias for :func:`export_track_package`.
+
+    The generated package remains editor-neutral; this name is retained only
+    so existing callers continue to work during the API transition.
+    """
+    return export_track_package(
+        take,
+        destination_root=destination_root,
+        mix_settings=mix_settings,
+        chunk_frames=chunk_frames,
+        selected_track_ids=selected_track_ids,
+        include_processed_stems=include_processed_stems,
     )

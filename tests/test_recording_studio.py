@@ -310,7 +310,7 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
         lane._pan.setValue(-40)
         lane._mute.setChecked(True)
         lane._solo.setChecked(True)
-        lane._logic_export_include.setChecked(False)
+        lane._track_export_include.setChecked(False)
         studio._flush_studio_state()
     finally:
         studio.shutdown()
@@ -326,12 +326,12 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
 
     called = threading.Event()
     result = SimpleNamespace(
-        folder=take_dir / "Logic Export",
+        folder=take_dir / "Track Export",
         stems=(),
         samplerate=RATE,
     )
     with patch(
-        "webjam_qt.widgets.recording_studio.export_logic_package",
+        "webjam_qt.widgets.recording_studio.export_track_package",
         side_effect=lambda *_args, **_kwargs: (called.set() or result),
     ) as export:
         reopened = RecordingStudio(
@@ -345,8 +345,8 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
             assert lane._pan.value() == -40
             assert lane._mute.isChecked()
             assert lane._solo.isChecked()
-            assert not lane._logic_export_include.isChecked()
-            reopened._export_for_logic()
+            assert not lane._track_export_include.isChecked()
+            reopened._export_tracks()
             assert _wait_until(called.is_set)
             assert export.call_args.kwargs["selected_track_ids"] == {server_id}
             settings = export.call_args.kwargs["mix_settings"]
@@ -678,13 +678,13 @@ def test_studio_actions_fit_the_supported_compact_workspace():
             assert bounds.contains(top_left)
             assert bounds.contains(bottom_right)
         assert studio._export_btn.accessibleName() == (
-            "Export aligned stems for Logic Pro"
+            "Export aligned tracks"
         )
     finally:
         studio.shutdown()
 
 
-def test_logic_export_failure_keeps_take_available_and_actionable():
+def test_track_export_failure_keeps_take_available_and_actionable():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"
         take.mkdir()
@@ -717,7 +717,7 @@ def test_logic_export_failure_keeps_take_available_and_actionable():
             "explicitly silent segment",
         ),
         (
-            "WebJam cannot create a timing-ready Logic export because these local "
+            "WebJam cannot create a timing-ready track export because these local "
             "originals have no verified timeline alignment: private-guitar. Keep "
             "the Jamulus server track for this take, or align and verify each local "
             "original before export.",
@@ -725,7 +725,7 @@ def test_logic_export_failure_keeps_take_available_and_actionable():
         ),
     ),
 )
-def test_logic_export_safety_blocks_are_actionable_without_raw_details(error, expected):
+def test_track_export_safety_blocks_are_actionable_without_raw_details(error, expected):
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"
         take.mkdir()
@@ -750,7 +750,7 @@ def test_logic_export_safety_blocks_are_actionable_without_raw_details(error, ex
             studio.shutdown()
 
 
-def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path):
+def test_track_export_choices_are_accessible_and_non_destructive(tmp_path):
     take_dir = tmp_path / "Take 01"
     take_dir.mkdir()
     guitar = take_dir / "guitar.wav"
@@ -770,7 +770,7 @@ def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path)
         take_id="33333333-3333-4333-8333-333333333333",
     )
     result = SimpleNamespace(
-        folder=take_dir / "Logic Export",
+        folder=take_dir / "Track Export",
         stems=(),
         samplerate=RATE,
     )
@@ -779,7 +779,7 @@ def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path)
         "webjam_qt.widgets.recording_studio.discover_takes",
         return_value=[take],
     ), patch(
-        "webjam_qt.widgets.recording_studio.export_logic_package",
+        "webjam_qt.widgets.recording_studio.export_track_package",
         side_effect=lambda *_args, **_kwargs: (called.set() or result),
     ) as export:
         studio = RecordingStudio(
@@ -790,16 +790,16 @@ def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path)
             studio._take_list.setCurrentRow(0)
             guitar_lane = studio._lanes[0]
             drums_lane = studio._lanes[1]
-            assert not guitar_lane._logic_export_include.isHidden()
-            assert guitar_lane._logic_export_include.accessibleName() == (
-                "Include Guitar in Logic export"
+            assert not guitar_lane._track_export_include.isHidden()
+            assert guitar_lane._track_export_include.accessibleName() == (
+                "Include Guitar in track export"
             )
-            assert guitar_lane._logic_export_include.isChecked()
+            assert guitar_lane._track_export_include.isChecked()
 
-            drums_lane._logic_export_include.setChecked(False)
+            drums_lane._track_export_include.setChecked(False)
             assert "left out" in studio._hint.text().lower()
             assert studio._export_btn.isEnabled()
-            studio._export_for_logic()
+            studio._export_tracks()
             assert _wait_until(called.is_set)
             assert export.call_args.kwargs["selected_track_ids"] == {guitar_id}
             assert not (take_dir / "webjam-take.json").exists()
@@ -807,7 +807,7 @@ def test_logic_export_track_choices_are_accessible_and_non_destructive(tmp_path)
             studio.shutdown()
 
 
-def test_logic_export_requires_one_included_track_when_selection_is_available(tmp_path):
+def test_track_export_requires_one_included_track_when_selection_is_available(tmp_path):
     take_dir = tmp_path / "Take 01"
     take_dir.mkdir()
     guitar = take_dir / "guitar.wav"
@@ -844,8 +844,8 @@ def test_logic_export_requires_one_included_track_when_selection_is_available(tm
         )
         try:
             studio._take_list.setCurrentRow(0)
-            studio._lanes[0]._logic_export_include.setChecked(False)
-            studio._lanes[1]._logic_export_include.setChecked(False)
+            studio._lanes[0]._track_export_include.setChecked(False)
+            studio._lanes[1]._track_export_include.setChecked(False)
             assert not studio._export_btn.isEnabled()
             assert "choose at least one track" in studio._hint.text().lower()
         finally:
@@ -943,7 +943,7 @@ def test_leaving_studio_stops_playback_and_releases_output():
             stack.close()
 
 
-def test_missing_manifest_track_has_lane_and_blocks_logic_export():
+def test_missing_manifest_track_has_lane_and_blocks_track_export():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"
         take.mkdir()

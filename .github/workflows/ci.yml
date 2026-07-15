@@ -47,7 +47,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # pip-audit also evaluates the bootstrap packaging tools present in
+          # the runner.  Keep setuptools above the advisory's fixed version so
+          # a docs-only push cannot skip the actual product checks.
+          python -m pip install --upgrade pip "setuptools>=83.0.0"
           pip install -r requirements.txt
           pip install pytest ruff "pip-audit==2.10.1"
 

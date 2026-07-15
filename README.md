@@ -12,59 +12,30 @@ background engine; video, notes, and Studio remain optional session tools.
 
 ## Current State
 
-Being honest about where this app is **right now** (2026-07-14): `master`
-contains the **v0.14.0 private test-night candidate**, built from
-`045c5acb01687a4088b0bd618dab4d0ab6200804`. The exact private Apple-Silicon
-ZIP is `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
-It includes the sound-confirmation screen, CoreAudio route preflight,
-recording-storage guard, durable local-capture recovery, conservative
-Logic-export safety checks, and the Studio take-review workspace. Its ordinary
-musician path remains the proven v1/v2 same-LAN flow; v3 is still a
-loopback-only development slice, not an “anywhere” service. The preserved
-v0.13.0 and older ZIPs are rollback history only, and v0.8.0 is still the
-latest published download. Physical CoreAudio, two-Mac, recording/recovery,
-and Logic Pro import results are still **NOT RUN**.
+As of 2026-07-14, `master` contains the **v0.15.0 private test-night source
+candidate**. The exact package identity is recorded only after the package is
+built and verified; v0.14.0 remains the rollback candidate. WebJam's supported
+musician path is still one private LAN, using v1/v2. The v3 path remains a
+loopback-only development profile—not public hosting or an Internet service.
+
+The normal flow is deliberately small:
+
+> **Host or Join → Confirm Sound → Band Check → Play → Record → Review → Export → End**
 
 | Area | Status |
 |---|---|
-| **Core data model** (participants, mixer, sessions, modes) | ✅ The current source gate completed with 1,719 passed, 18 skipped, one known warning, and 6 subtests; there were no failures or errors. Exact-package and two-Mac physical evidence remain separately tracked and are never inferred from unit tests. |
-| **Qt Conductor UI** | ✅ **Primary app.** `webjam_qt_main.py` opens a black, white, neutral, and burnt-orange Host/Join experience with a responsive meeting-style stage and an original three-part WebJam mark. There is no purple or teal. Downloadable builds remain at [Releases](https://github.com/rupret007/webjam/releases). |
-| **Legacy Tkinter UI** | ⚠️ Quarantined in `legacy/`. Not part of the pilot release path. |
-| **Jamulus integration** | ✅ **Authenticated JSON-RPC with the pinned Jamulus 3.12.2.** Faders (`setFaderLevel`), per-channel monitor mute, live participant list, honest 0–9 level meters, and incoming chat use the client’s authenticated local interface. On current macOS source, WebJam resolves stable CoreAudio IDs, stages its own filename-only Jamulus route config, and fails closed for a missing, ambiguous, or non-48-kHz chosen device. The pinned build has no live-send mute API; use the audio-interface mute or end the session before speaking in Webex. Auto-reconnect retries dropped sessions without silently changing the selected route. **Bundled with downloadable builds** — macOS is zero-install; running from source still requires installing Jamulus separately (see `THIRD_PARTY_NOTICES.md`). |
-| **Band Check** | ✅ **Permanent readiness path.** In v0.14.0, Host/Join first confirms the musician's name and band sound, then a new or changed setup runs the guided engine/server, local input, headphone output, five-second recording/playback, and Studio checks before the session starts. Its stored evidence includes a non-identifying macOS route fingerprint when WebJam manages Jamulus. It also checks recording storage and renders low space as a warning. A separate footer action opens the support-bundle preview. F2 and Settings reopen Band Check; live troubleshooting observes without restarting. It reports Ready to Jam / Ready with a Warning / Action Needed. A separate PortAudio meter is never presented as proof that a bandmate can hear the route. |
-| **Host → Share → Join** | ✅ **Verified v0.10.0 v1/v2 baseline.** Launch shows **Host a Jam** and **Join a Jam**. Current source follows either choice with one short name and band-sound confirmation before Band Check and **Start Session**; a matching stored check continues directly. For the supported private-LAN host flow, **Copy Invite** stays unavailable until WebJam sees an authenticated hosted server, its expected UDP listener, and a private Wi-Fi address. That is a local pre-share check—not a public-Internet reachability claim. A cold-opened `webjam://join?...` link is parsed before that confirmation and readiness/start step. A v2 link normally includes a random private same-session enrollment credential. Treat the whole invite as private. If the host warns **Automatic Local Originals are off**, its legacy v1 fallback still joins Jamulus and receives a host-side server track, but WebJam provides no guest local-original capture or delivery path. |
-| **Remote v3 development slice** | ⚠️ Strict invitations, the native sidecar/security core, a bounded self-hostable reference service, authenticated native loopback integration, and deterministic direct/relay/impairment evidence exist in this source tree. The compiled `reference-local` profile is loopback-only and lab-only. **No public rendezvous/relay is deployed**, and local/CI evidence is not a two-home, real-Jamulus, packaged, or acoustic result. The ordinary musician path remains v1/v2 on one private LAN. |
-| **All-in-one band-server hosting** | ✅ WebJam verifies the bundled JamulusServer.app 3.12.2, binds recorder RPC to loopback, stores its mode-0600 secret/takes under Application Support, and supervises both processes. **End Session** is blocked while a host take is recording or validating; press **Stop Rec**, wait for **Take saved**, then end to clean up the client, server, and `caffeinate`. |
-| **Multitrack Studio** | ✅ JamulusServer records one synchronized post-network track per musician. v0.14.0 checks the selected recording folder and a conservative free-storage reserve before a take; it starts nothing when unsafe, renders low space as a warning, and checks again using the actual roster at Record time. The host—and a guest connected through an active v2 private invite—can explicitly keep interface inputs 1 and 2 as local PCM24/48-kHz originals. Schema-v2 projects retain stable identities, segments, gaps, device/hash/media status, and non-destructive offset/drift evidence. The Studio review workspace adds a shared elapsed-time timeline, selected-track inspector, per-track meter, and gain/pan/mute/solo/export controls. Its local state uses durable schema-v2 track IDs and an atomic sidecar; it does not change source WAVs or `webjam-take.json`. Session evidence contains only WebJam-observed UTC timestamps recorded after server confirmation, host/protocol, and a bounded redacted lifecycle/recovery timeline—never an invite, address, credential, or raw device identifier. Local capture periodically flushes and fsyncs audio; a crash recovery is published as a **NEEDS ATTENTION** project, never as a completed take. **Export for Logic** refuses an explicitly silent selected performance track or an unverified/unaligned guest-local original until it is reviewed, intentionally deselected, or aligned and verified; it otherwise produces common-origin PCM24 stems, references, reports, analysis, source evidence, checksums, and nonempty session evidence without changing the source take. Physical CoreAudio, two-Mac, recording/recovery, and Logic import results remain **NOT RUN**. |
-| **Private guest-original delivery** | ⚠️ Implemented and deterministically tested for the private pilot when the v2 peer service is active. Capture continues through peer outage and resumes size/SHA/PCM-verified transfer without deleting the guest original. **Leave Jam** finalizes an active guest original, persists its queue, and attempts one last upload; an unavailable host leaves resumable media on the guest Mac. A v1 fallback has no WebJam-orchestrated guest local capture or delivery. The authenticated service is plain HTTP on the same RFC1918 IPv4 LAN—no TLS, IPv6, Internet, VPN, NAT traversal, quota/rate limiting, or public-exposure claim. The v2 link is a reusable session bearer, not a one-use token; anyone holding it on that LAN can enroll until the host peer restarts. Physical two-Mac proof is **NOT RUN**. |
-| **Support bundle** | ✅ The preview and saved ZIP share one immutable allowlisted artifact. `Ctrl+Shift+D` separately creates a short sanitized clipboard summary. The private archive excludes audio, notes, transcripts, Webex content, meeting/invite links, settings/environment dumps, secrets, home paths, and arbitrary personal files by default; bounded log text is recursively redacted. Fresh packaged-button verification is pending. |
-| **Webex integration** | ✅ **Optional external launch.** Video/conversation is absent from startup and lives under More. WebJam opens a configured room in native Webex/default browser and truthfully reports only that it opened. |
-| **Session canvas + Pulse** | ✅ Notes persist locally. Session Pulse derives decisions, actions, blockers, questions, references, and next checkpoints locally; **Export… → Session brief…** writes a Markdown handoff without sending notes to a service. |
-| **Audio defaults and truth** | ⚠️ In v0.14.0, **Settings → Band input / Band output & review** resolves persistent CoreAudio IDs, verifies a unique 48-kHz pair, writes only WebJam’s protected route file, and launches Jamulus with that file’s basename. That is configuration and OS preflight—not graph or hearing proof. The local meter/isolated recorder remains a separate PortAudio/Core Audio stream, so only musicians hearing both directions prove the live route. |
-| **Certification evidence** | ⚠️ For the v1/v2 engine baseline, GitHub Actions run [`29269188463`](https://github.com/rupret007/webjam/actions/runs/29269188463) passed the native Ubuntu Jamulus 3.12.2/JACK certification: 3,602.851 seconds of measured transport, 396 cycles, three recording/restart cycles, forced reconnect in 34.526 seconds, zero decoded dropout windows, bounded resources/xruns, 12 WAV stems, and zero cleanup errors. That run is not evidence for remote v3, CoreAudio, or the exact v0.14 package. The earlier 667.201-second Docker ARM failure remains preserved evidence, not a pass. Two-Mac audibility and Logic Pro import remain **NOT RUN**. |
-| **Builds** | ⚠️ The fresh private Apple Silicon artifact is `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256 `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`, built from `045c5acb01687a4088b0bd618dab4d0ab6200804`. It is arm64 and bundles official Jamulus/JamulusServer 3.12.2. The source gate recorded 1,719 passed, 18 skipped, one known warning, and 6 subtests; native transport `go test ./...` and `go vet ./...` passed. A fresh extraction passed strict/deep signature checks, nested-app inspection, exact native-fabric build-ID verification, and two isolated six-second offscreen launch/TERM cycles. Physical CoreAudio input, roster, two-Mac audio, reconnect, recording/recovery, and Logic results remain **NOT RUN**. It is not Developer ID signed or notarized; v0.13.0 and older ZIPs remain rollback artifacts. |
-| **Local Companion API** | ⚠️ Read-only localhost bridge, off by default and opt-in. See [COMPANION_API.md](COMPANION_API.md). |
+| **Session Conductor** | ✅ Derives one musician-facing state and one dominant action from real host, Jamulus, recorder, take, Studio, export, and cleanup facts. It never treats a process, meter, or button press as proof of connection, audibility, saved media, or export validity. |
+| **Meeting-style session UI** | ✅ Black, white, neutral, and burnt orange only. The original three-path WebJam mark replaces the old abbreviation. The focused HUD owns the next action; details live under **More**. |
+| **Band Check** | ✅ Stable local route evidence is reused only while it remains valid; changed, missing, stale, or reconfigured routes require an honest new check. It still distinguishes setup evidence from human two-way audibility. |
+| **Multitrack Studio** | ✅ A simple, editor-like review workspace: transport, seconds-only ruler, horizontal waveform lanes, track headers, mute/solo/gain/pan, and selected-track inspection. It is intentionally not a DAW and never invents bars, beats, plug-ins, or edits. |
+| **Track Export** | ✅ WebJam produces an atomic, portable package of aligned PCM24 WAV tracks, references, reports, analysis, and checksums. It does **not** create, launch, control, or integrate with Logic or any other editor. |
+| **Closed-pilot evidence** | ✅ `--test-night` exposes a hidden operator checklist with a bounded, local-only append-only ledger. Automatic facts and explicit human observations remain separate; a missing second Mac or audio interface stays **NOT RUN** or **BLOCKED**. |
+| **Physical certification** | ⚠️ This Mac has no proven two-Mac or recording-interface setup. Two-way audibility, physical recording/recovery, interruption, and external-editor import remain **NOT RUN** until observed and recorded. |
 
-In practice today: v0.14.0 takes a musician from two launch choices
-through sound confirmation, any required Band Check, and into a hosted or joined
-rehearsal without a server form. Jamulus client/server processes stay in the
-background when a usable wired audio interface is attached. The exact package
-still needs its separate two-Mac and Logic gates before those physical outcomes
-can be credited.
-The live window shows aggregate readiness, one private invite action, real band
-members, and one More menu. The same-RFC1918-LAN flow is implemented; public
-Internet, VPN, NAT traversal, and IPv6 are not claimed for the ordinary app.
-The separate v3 work has a loopback-only reference profile for automated and
-developer evidence; it does not create a public service or an “anywhere” claim.
-The candidate itself checks storage and checkpoints redacted in-progress
-recording evidence. The remaining boundary is physical: actual interfaces,
-musician audibility, interruption recovery, a real roster, and Logic import
-must be recorded in the two-Mac worksheet.
-
-Before widening the closed pilot, validate the exact artifact on two Macs:
-link launch, bidirectional physical audio, a named two-musician take, Studio
-playback, aligned Logic export/import, reconnect, and owned-process cleanup.
+For a musician, WebJam keeps Jamulus and the host service in the background,
+shows only the next safe action, and preserves recording truth when something
+is missing or uncertain. It does not claim public Internet, VPN, NAT traversal,
+IPv6, or remote v3 readiness.
 
 ---
 
@@ -72,11 +43,11 @@ playback, aligned Logic export/import, reconnect, and owned-process cleanup.
 
 See [VISION_AND_ROADMAP.md](VISION_AND_ROADMAP.md) for the long-form vision. Near-term engineering phases:
 
-1. **Certification gates** — two-Mac bidirectional audio/outage/originals and exact-package Logic import using the v0.14.0 candidate
+1. **Certification gates** — two-Mac bidirectional audio/outage/originals and exact-package external-editor import using the v0.15.0 candidate
 2. **Distribution** — signing/notarization and a published artifact only after the private gates pass
 3. **Architecture cleanup** — continue splitting `ApplicationController` into session/audio/video/recording/settings/API coordinators
 4. **Remote v3 external validation** — keep the reference path local/CI until a separately reviewed public profile, service deployment, ordinary-home NAT tests, and physical acoustic evidence exist
-5. **Post-pilot expansion** — overdub workflows, deeper editing, broader DAW handoffs, and richer creative modes
+5. **Post-pilot expansion** — overdub workflows, deeper editing, broader editor-friendly interchange, and richer creative modes
 
 ---
 
@@ -172,7 +143,7 @@ webjam/
 
 Additional reading:
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system diagram and component responsibilities
-- [v1 last-mile readiness record](docs/WEBJAM_V1_LAST_MILE_PLAN.md) — current trust, recovery, and physical-certification boundary
+- [v0.14 historical last-mile record](docs/WEBJAM_V1_LAST_MILE_PLAN.md) — retained rollback package evidence
 - [DEVELOPMENT.md](DEVELOPMENT.md) — dev environment setup
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [COMPANION_API.md](COMPANION_API.md) — localhost API for external tools
@@ -180,8 +151,10 @@ Additional reading:
 - [Remote threat model](docs/security/remote-session-threat-model.md) — v3 security contract and required evidence
 - [Reference service](reference_service/README.md) — local/CI native rendezvous and exact-pair relay; no public deployment
 - [WEBEX_AUDIO_MODES.md](WEBEX_AUDIO_MODES.md) — safe Jamulus music, Webex conversation, and audience-bridge signal flows
-- [RECORDING_AND_LOGIC.md](RECORDING_AND_LOGIC.md) — take integrity, Studio mixing, per-Mac isolated originals, and the aligned Logic handoff
-- [SUNDAY_TWO_MAC_PILOT.md](SUNDAY_TWO_MAC_PILOT.md) — exact-artifact two-Mac and Logic certification worksheet
+- [RECORDING_AND_STUDIO.md](RECORDING_AND_STUDIO.md) — take integrity, Studio mixing, per-Mac isolated originals, and portable track export
+- [CLOSED_PILOT_PLAYBOOK.md](CLOSED_PILOT_PLAYBOOK.md) — hidden Test Night, local evidence, and truthful human observations
+- [SUNDAY_TWO_MAC_PILOT.md](SUNDAY_TWO_MAC_PILOT.md) — exact-artifact two-Mac certification worksheet
+- [QUICK_HELP_MAP.md](QUICK_HELP_MAP.md) — concise musician paths through the app
 - [TEST_PROCEDURE.md](TEST_PROCEDURE.md) — repeatable source and package checks
 - [FIRST_JAM.md](FIRST_JAM.md) and [USER_GUIDE.md](USER_GUIDE.md) — musician setup and everyday workflow
 - [COHORT_VALIDATION_PLAYBOOK.md](COHORT_VALIDATION_PLAYBOOK.md) — facilitated pilot evidence

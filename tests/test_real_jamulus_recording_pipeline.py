@@ -1,4 +1,4 @@
-"""Real recorder -> project -> Studio core -> Logic handoff certification."""
+"""Real recorder -> project -> Studio core -> track-export certification."""
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +15,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from core.take_export import export_logic_package
+from core.take_export import export_track_package
 from core.local_capture import LocalInputCapture
 from core.session_transfer import (
     EnrollmentRegistry,
@@ -222,7 +222,7 @@ def _exercise_resumable_http_transfer(
     reason="real JACK/Jamulus recording pipeline is opt-in",
 )
 @pytest.mark.skipif(sys.platform != "linux", reason="real Jamulus pipeline is Linux-only")
-def test_real_server_stems_reach_studio_and_logic_without_relabeling() -> None:
+def test_real_server_stems_reach_studio_and_track_export_without_relabeling() -> None:
     import soundfile as sf  # type: ignore
 
     harness = JamulusJackHarness.from_environment()
@@ -446,9 +446,9 @@ def test_real_server_stems_reach_studio_and_logic_without_relabeling() -> None:
         assert np.isfinite(studio_block).all()
         assert float(np.max(np.abs(studio_block))) > 0.01
 
-        export = export_logic_package(
+        export = export_track_package(
             take,
-            destination_root=harness.root / "logic-handoffs",
+            destination_root=harness.root / "track-exports",
             chunk_frames=4096,
         )
         assert len(export.stems) == 4
@@ -461,7 +461,7 @@ def test_real_server_stems_reach_studio_and_logic_without_relabeling() -> None:
         assert handoff["schema_version"] == 2
         assert handoff["source_take_id"] == project.take_id
         assert handoff["original_files_modified"] is False
-        assert handoff["logic_pro_physically_verified"] is False
+        assert handoff["external_editor_physically_verified"] is False
         assert {track["source_type"] for track in handoff["tracks"]} == {
             "jamulus_server",
             "local_isolated",
@@ -530,7 +530,7 @@ def test_real_server_stems_reach_studio_and_logic_without_relabeling() -> None:
                 }
                 for name, metrics in local_metrics.items()
             },
-            "logic_frames": export.frames,
+            "track_export_frames": export.frames,
             "studio_peak": float(np.max(np.abs(studio_block))),
             "transport_xruns": transport.xrun_count,
             "source_hashes_preserved": True,
@@ -541,7 +541,7 @@ def test_real_server_stems_reach_studio_and_logic_without_relabeling() -> None:
             "resumable_http_transfer": transfer_evidence,
         }
 
-    assert pipeline_evidence["logic_frames"]
+    assert pipeline_evidence["track_export_frames"]
     assert not harness.cleanup_errors
     assert all(process.proc.poll() is not None for process in harness.processes)
     print("JAMULUS_PIPELINE_EVIDENCE=" + json.dumps(pipeline_evidence, sort_keys=True))

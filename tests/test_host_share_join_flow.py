@@ -205,8 +205,10 @@ def test_session_hud_has_semantic_copy_and_retry_actions(qapp):
     hud = SessionHud()
     copied = MagicMock()
     retried = MagicMock()
+    requested: list[str] = []
     hud.invite_requested.connect(copied)
     hud.retry_requested.connect(retried)
+    hud.action_requested.connect(requested.append)
     hud.set_state(
         "Ready to share",
         "Waiting for bandmates.",
@@ -224,9 +226,38 @@ def test_session_hud_has_semantic_copy_and_retry_actions(qapp):
     )
     hud._action.click()
     retried.assert_called_once()
+    assert requested == ["invite", "retry"]
 
 
-def test_host_invite_stays_hidden_until_real_server_readiness(qapp, tmp_path):
+def test_session_hud_primary_action_is_generic_and_accessible(qapp):
+    hud = SessionHud()
+    copied = MagicMock()
+    retried = MagicMock()
+    requested: list[str] = []
+    hud.invite_requested.connect(copied)
+    hud.retry_requested.connect(retried)
+    hud.action_requested.connect(requested.append)
+
+    hud.set_state(
+        "Ready when you are",
+        "Start when the band is ready.",
+        action_text="Start & Invite",
+        action_kind="primary",
+    )
+
+    assert not hud._action.isHidden()
+    assert hud._action.text().replace("&&", "&") == "Start & Invite"
+    assert hud._action.accessibleName() == "Start & Invite"
+    assert "Start & Invite" in hud._action.accessibleDescription()
+    hud._action.click()
+    assert requested == ["primary"]
+    copied.assert_not_called()
+    retried.assert_not_called()
+
+
+def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
+    qapp, tmp_path
+):
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -256,8 +287,13 @@ def test_host_invite_stays_hidden_until_real_server_readiness(qapp, tmp_path):
     ):
         controller._update_session_hud()
     assert controller.window.session_hud._invite_available is True
-    assert controller.window.session_hud._action.isHidden()
-    assert not controller.window.session_strip._invite_button.isHidden()
+    assert controller.window.session_hud._status.text() == "Invite ready"
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_hud._action.text() == "Copy Invite"
+    # The conductor owns the one clear next step.  The older strip and stage
+    # controls must not repeat the same Copy Invite action.
+    assert controller.window.session_strip._invite_button.isHidden()
+    assert controller.window.participant_grid._empty_primary.isHidden()
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
@@ -312,7 +348,9 @@ def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
 
     assert copied.startswith("webjam://join?v=3")
     assert copied not in repr(vars(controller))
-    assert not controller.window.session_strip._invite_button.isHidden()
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_hud._action.text() == "Copy Invite"
+    assert controller.window.session_strip._invite_button.isHidden()
     assert controller.window.session_strip._reset_invite_action.isVisible()
     assert "same Wi-Fi" not in controller.window.session_hud._detail.text()
 
@@ -402,8 +440,11 @@ def test_host_never_serializes_lan_invite_until_expected_udp_port_is_bound(
         assert controller._current_invite_url() == ""
         controller._update_session_hud()
 
-    assert controller.window.session_hud._status.text() == "Getting your jam ready"
+    assert controller.window.session_hud._status.text() == "Preparing the invite"
+    assert "verifying the host session" in controller.window.session_hud._detail.text()
+    assert controller.window.session_hud._action.isHidden()
     assert controller.window.session_strip._invite_button.isHidden()
+    assert controller.window.participant_grid._empty_primary.isHidden()
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
@@ -561,9 +602,8 @@ def test_peer_take_update_is_marshaled_into_open_studio(qapp, tmp_path):
     controller.shutdown()
 
 
-def test_one_local_host_is_ready_to_share_not_a_bandmate(qapp, tmp_path):
+def test_host_invite_is_ready_without_its_own_roster_entry(qapp, tmp_path):
     from webjam_qt.controllers.application_controller import ApplicationController
-    from webjam_qt.widgets.participant_card import ParticipantPresentation
     from webjam_qt.windows.conductor_window import ConductorWindow
 
     settings = AppSettings(
@@ -577,19 +617,25 @@ def test_one_local_host_is_ready_to_share_not_a_bandmate(qapp, tmp_path):
         initial_title="Local Truth",
     )
     controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=True)
-    controller._jamulus_connected = True
-    controller.participants = {
-        0: ParticipantPresentation(0, "Jeff", "You", is_local=True)
-    }
+    # A reachable host may safely make an invite before this Mac's own
+    # Jamulus client has appeared in the local roster.  That is invite-ready,
+    # not a claim that a bandmate or live music path is connected.
+    assert controller.participants == {}
+    assert controller._jamulus_connected is False
     with patch.object(
         controller,
         "_current_invite_url",
         return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
-    assert controller.window.session_hud._status.text() == "Ready to share"
-    assert "Bandmate" not in controller.window.session_hud._status.text()
+    assert controller.window.session_hud._status.text() == "Invite ready"
+    assert controller.window.session_hud._action.text() == "Copy Invite"
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_strip._invite_button.isHidden()
+    assert "connected" not in controller.window.session_hud._status.text().lower()
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
@@ -630,12 +676,12 @@ def test_connection_timeout_replaces_spinner_with_one_retry(qapp, tmp_path):
         controller._on_connection_timeout()
     controller._update_session_hud()
     assert controller.audio.connection_timed_out is True
-    # Recovery has one primary action in the stage.  The HUD explains the
-    # problem but must not grow a second Retry button.
-    assert controller.window.participant_grid._empty_primary.text() == "Try Again"
-    assert controller.window.participant_grid._empty_primary.isEnabled()
-    assert controller.window.session_hud._action.isHidden()
-    assert "same Wi-Fi" in controller.window.session_hud._detail.text()
+    # Recovery has one clear next action in the HUD.  The passive stage must
+    # not grow a second retry button with a competing label.
+    assert controller.window.participant_grid._empty_primary.isHidden()
+    assert not controller.window.session_hud._action.isHidden()
+    assert controller.window.session_hud._action.text() == "Try Reconnect"
+    assert controller.window.session_hud._status.text() == "Session needs attention"
     controller.bridge.jamulus_launch_intended = False
     controller.shutdown()
 
@@ -705,8 +751,9 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
     assert controller._jamulus_connected is False
     assert 7 in controller.participants
     assert controller._connection_timer.isActive()
-    assert controller.window.session_hud._status.text() == "Connecting your audio…"
-    assert "Bandmate connected" not in controller.window.session_hud._status.text()
+    assert controller.window.session_hud._status.text() == "Joining the jam"
+    assert controller.window.session_hud._action.isHidden()
+    assert "Connected to the jam" not in controller.window.session_hud._status.text()
 
     with patch(
         "core.network_invite.local_band_address", return_value="192.168.1.42"

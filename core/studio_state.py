@@ -8,7 +8,7 @@ hidden ``.webjam-studio-state.json`` sidecar beside a take instead.
 The sidecar is bound to both the schema-v2 project's ``session_id`` and
 ``take_id``.  Individual settings are bound to durable ``track_id`` values,
 not list positions or display names.  Consequently a later manifest can add
-or reorder tracks without moving a musician's gain, pan, mute, solo, or Logic
+or reorder tracks without moving a musician's gain, pan, mute, solo, or track
 export selection: newly seen tracks receive defaults and stale track entries
 are ignored.  A malformed sidecar or a sidecar for a different take raises
 ``StudioStateError`` and is never applied.
@@ -100,7 +100,7 @@ class StudioTrackState:
     ``gain`` is a linear multiplier from 0 through :data:`MAX_GAIN`; ``pan``
     ranges from -1 (left) through 1 (right).  The booleans influence Studio
     playback/reference-mix behavior only.  ``export_included`` controls
-    whether the lane is included in the next Logic handoff, never the source
+    whether the lane is included in the next track export, never the source
     recording itself.
     """
 

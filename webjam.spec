@@ -196,10 +196,18 @@ a = Analysis(
         "core.take_player",
         "core.take_export",
         "core.studio_state",
+        # The conductor is imported at normal startup; the private Test Night
+        # ledger and dialog are intentionally imported only when an operator
+        # invokes that hidden workflow.  Keep all three explicit so a frozen
+        # candidate includes the complete v0.15 path even if module-graph
+        # analysis changes how it follows function-local imports.
+        "core.session_conductor",
+        "core.pilot_evidence",
         "core.jamulus_server_rpc",
         "webjam_qt.windows.take_deck",
         "webjam_qt.widgets.recording_studio",
         "webjam_qt.windows.recording_setup",
+        "webjam_qt.windows.test_night",
         "soundfile",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",

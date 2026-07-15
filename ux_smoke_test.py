@@ -44,7 +44,7 @@ def main() -> int:
     tokens_file = ROOT / "webjam_qt" / "theme" / "tokens.py"
     studio_file = ROOT / "webjam_qt" / "widgets" / "recording_studio.py"
     recording_setup_file = ROOT / "webjam_qt" / "windows" / "recording_setup.py"
-    recording_guide = ROOT / "RECORDING_AND_LOGIC.md"
+    recording_guide = ROOT / "RECORDING_AND_STUDIO.md"
 
     for required in (
         app_file,
@@ -82,9 +82,9 @@ def main() -> int:
     require_contains(launch_file, "Join a Jam", failures)
     require_contains(session_state_file, "PERMISSION_DENIED", failures)
     require_contains(tokens_file, '#BF5700', failures)
-    require_contains(studio_file, "Export for Logic", failures)
+    require_contains(studio_file, "Export Tracks", failures)
     require_contains(take_export_file, "all_stems_start_at_zero", failures)
-    require_contains(recording_guide, "never rewrite the original recorder WAVs", failures)
+    require_contains(recording_guide, "Export never rewrites the original take.", failures)
 
     for target in (
         app_file,

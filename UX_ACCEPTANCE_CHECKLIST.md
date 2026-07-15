@@ -1,22 +1,20 @@
 # WebJam UX acceptance checklist
 
-Use this checklist for the v0.14.0 Qt/package candidate. It includes the
+Use this checklist for the v0.15.0 Qt/package candidate. It includes the
 sound-confirmation screen, CoreAudio route preflight, recording-storage guard,
-durable local-capture checkpoints, recovery truth, and conservative Logic
-export checks. The exact hardware and musician outcomes remain **NOT RUN** in
-the test-night worksheet until people record them. Earlier packages are rollback
-history. Setup Wizard, Ready Check, raw endpoints, **Start Audio**, **Host &
-Start Audio**, and a visible Jamulus window are legacy paths, not current
-acceptance criteria.
+durable local-capture checkpoints, recovery truth, one-primary-action session
+conductor, operator-only Test Night, and conservative **Export Tracks** checks.
+The exact hardware and musician outcomes remain **NOT RUN** until people record
+them in the physical worksheet. Setup Wizard, Ready Check, raw endpoints,
+**Start Audio**, **Host & Start Audio**, and a visible Jamulus window are legacy
+paths, not current acceptance criteria.
 
-The exact package is `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`, built
-from `045c5acb01687a4088b0bd618dab4d0ab6200804`. Its source, transport,
-fresh-extraction, signature/nested-app/fabric-ID, and two isolated launch/TERM
-package checks passed. The Studio v0.14 rows below describe shipped UI behavior;
-neither those checks nor a rendered screenshot turns a physical musician,
-CoreAudio, recording/recovery, or Logic result into anything other than
-**NOT RUN**.
+Record the exact v0.15.0 package filename, SHA-256, source/build commit, and
+package-gate result in [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md)
+after packaging. The v0.14.0 artifact is rollback history only. Neither source
+or package checks nor a rendered screenshot turns a physical musician,
+CoreAudio, recording/recovery, or optional external-editor result into anything
+other than **NOT RUN**.
 
 ## Launch: understandable in five seconds
 
@@ -56,7 +54,7 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 ## Host and invitation
 
 - [ ] **Host a Jam** opens one concise name and band-sound confirmation in the
-      v0.14.0 macOS candidate. A new or changed setup then opens Band Check;
+      v0.15.0 macOS candidate. A new or changed setup then opens Band Check;
       **Start Session** starts the bundled server and client in the background.
 - [ ] **Starting your jam…** is real lifecycle state, not a fake delay.
 - [ ] Copy Invite stays unavailable until the hosted service is alive and a
@@ -84,7 +82,7 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 ## Join and connection truth
 
 - [ ] Cold-start link activation and paste-then-Join use the same strict
-      invitation parser, fill/accept the same connection, and—in the v0.14.0
+      invitation parser, fill/accept the same connection, and—in the v0.15.0
       candidate—show the same concise sound confirmation before Band
       Check and **Start Session**. An already-running deep link uses the same
       parser but honors the current-session/active-take guard before switching.
@@ -106,10 +104,15 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 
 - [ ] The live window has one restrained header, a dominant stage, one status
       surface, responsive participant tiles, and one bottom control bar.
-- [ ] The bottom bar keeps **Copy Invite**, **Record**, **More**, and the
-      role-aware **End Session** or **Leave Jam** visible.
-- [ ] At 760×600, all four bottom controls remain available and no horizontal
-      content is clipped.
+- [ ] The session conductor presents one focused, truthful next action:
+      prepare/start, **Copy Invite**, join/reconnect, Band Check,
+      record/stop, review, **Export Tracks**, or the role-aware **End Session**
+      / **Leave Jam**. It never presents a local process as a connected band.
+- [ ] The bottom bar keeps only non-duplicated session tools such as Record,
+      **More**, and role-aware end/leave actions. If the conductor owns **Copy
+      Invite**, a second visible invite button is suppressed.
+- [ ] At 760×600, core controls remain available and no horizontal content is
+      clipped.
 - [ ] One through six participants form a balanced layout based on the actual
       viewport; resizing does not leave a fixed six-column grid or clipped
       cards.
@@ -126,9 +129,24 @@ CoreAudio, recording/recovery, or Logic result into anything other than
       the pair is staged for the next Jamulus session, never that a musician
       has already heard it.
 
+## Operator-only Test Night
+
+- [ ] A normal musician does not see Test Night controls.
+- [ ] Launching WebJam with `--test-night` exposes **Test Night** under session
+      tools without adding a second recording workflow to the live stage.
+- [ ] The operator can start, pause, resume, abandon, and restart a pilot. An
+      unfinished run recovered after an app restart is visibly paused until the
+      operator resumes it; starting a new run never rewrites old evidence.
+- [ ] Automatic lifecycle/conductor/export outcomes are distinct from a human
+      observation. A person must explicitly enter physical audibility, route,
+      recording/recovery, and optional manual-import outcomes.
+- [ ] The local pilot ledger is bounded and redacted. Its report contains no
+      raw invite, credential, device identifier, local path, audio, or free-form
+      diagnostic payload.
+
 ## Permission and error states
 
-- [ ] In the v0.14.0 candidate, Host/Join on a new or changed setup
+- [ ] In the v0.15.0 candidate, Host/Join on a new or changed setup
       first shows the concise sound confirmation, then Band Check; F2, **More
       → Band Check**, and **Settings → Run Band Check** open the same guided
       readiness flow. During a live jam it observes the running session without
@@ -136,7 +154,7 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 - [ ] Band Check reports **Ready to Jam**, **Ready with a Warning**, or
       **Action Needed** in words and keeps technical detail collapsed by
       default.
-- [ ] In v0.14.0, an unusable folder or dangerously low free space reports one
+- [ ] In v0.15.0, an unusable folder or dangerously low free space reports one
       corrective action and starts neither local capture nor the server
       recorder. Low storage renders a warning; it is not a claim that a long
       rehearsal is safe.
@@ -146,7 +164,7 @@ CoreAudio, recording/recovery, or Logic result into anything other than
       off** with one **Open System Settings** action.
 - [ ] After opening settings, WebJam explains how to return and offers **Try
       Again**. The user is not sent to an unrelated preferences form.
-- [ ] In the v0.14.0 candidate, a missing, ambiguous, or non-48-kHz
+- [ ] In the v0.15.0 candidate, a missing, ambiguous, or non-48-kHz
       selected macOS band device blocks client/server launch before any external
       process starts, gives one safe correction path, and never exposes a raw
       path or CoreAudio error. An automatic reconnect never silently chooses a
@@ -190,9 +208,9 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 - [ ] A crash-recovered guest original remains local for manual review; recovery
       alone does not claim a successful shared-take attachment or upload.
 - [ ] A finished take exposes gain, pan, mute, solo, wired-output selection,
-      and **Export for Logic**. Export stays responsive, never rewrites source
+      and **Export Tracks**. Export stays responsive, never rewrites source
       audio, and reports either the ready folder or an actionable safe failure.
-- [ ] Logic export pauses if a selected performance track has an explicitly
+- [ ] Track Export pauses if a selected performance track has an explicitly
       silent segment, or if a selected local original lacks verified timeline
       alignment. Studio explains the safe next step: review and intentionally
       leave that track out of this export, or keep the Jamulus server track /
@@ -203,8 +221,11 @@ CoreAudio, recording/recovery, or Logic result into anything other than
       behavior. A second confirmation is not shown after the recording flow has
       already handled it.
 
-## Multitrack Studio v0.14 review workspace
+## Multitrack Studio v0.15 review workspace
 
+- [ ] Studio uses familiar multitrack-editor cues—transport, elapsed-seconds
+      ruler, track headers, inspector, mute, solo, gain, and pan—without
+      claiming DAW features or an integration with Logic Pro or another editor.
 - [ ] The Studio has one shared ruler expressed in elapsed seconds. Every
       displayed completed lane uses that same time extent; the UI does not draw
       fictitious bars, beats, tempo, automation, or a musical grid it cannot
@@ -228,13 +249,13 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 - [ ] Changing or restoring Studio state never changes `webjam-take.json` or a
       source WAV. The sidecar is the only persisted mix/export state and is
       atomic/private.
-- [ ] Schema-v2 Logic mix and export selection follow durable track IDs even if
+- [ ] Schema-v2 mix and Track Export selection follow durable track IDs even if
       the project adds or reorders lanes; they cannot silently move to an
       adjacent musician. Legacy take behavior remains explicit rather than
       pretending a positional setting is a durable identity.
 - [ ] These are shipped-candidate acceptance checks. Two-Mac Studio use,
-      physical CoreAudio/recording/recovery review, and actual Logic Pro import
-      remain **NOT RUN** until they are recorded in
+      physical CoreAudio/recording/recovery review, and optional manual import
+      into an external multitrack editor remain **NOT RUN** until recorded in
       `SUNDAY_TWO_MAC_PILOT.md` for the exact package.
 
 ## Keyboard and assistive technology
@@ -256,15 +277,17 @@ CoreAudio, recording/recovery, or Logic result into anything other than
 - [ ] `QT_QPA_PLATFORM=offscreen .venv/bin/python ux_smoke_test.py` passes.
 - [ ] `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q` passes.
 - [ ] The focused Studio review group—`test_recording_studio.py`,
-      `test_studio_state.py`, and `test_take_export.py`—passes, including
-      durable-ID selection, sidecar immutability, and compact-ruler coverage.
+      `test_studio_state.py`, `test_take_export.py`,
+      `test_session_conductor.py`, `test_test_night_controller.py`, and
+      `test_pilot_evidence.py`—passes, including durable-ID selection, sidecar
+      immutability, one-primary-action truth, and sanitized pilot evidence.
 - [ ] Launch, Join, invalid invite, permission denied, connecting, ready,
       interrupted, unavailable, ending/leaving, and fatal-error renders have
       been visually reviewed.
-- [x] The exact v0.14.0 app passed the package-only gates: **1,719 passed, 18
-      skipped, one known warning, and 6 subtests**; transport `go test ./...`
-      and `go vet ./...`; fresh-extraction strict/deep signature, nested-app,
-      and exact fabric-ID checks; and two isolated six-second offscreen
-      launch/TERM cycles. These are not physical audio or musician results.
+- [ ] The exact v0.15.0 app passes its package-only gates: source/transport
+      checks, fresh-extraction strict/deep signature, nested-app and native
+      fabric checks, and isolated offscreen launch/TERM cycles. Record exact
+      results in the release record. These are not physical audio or musician
+      results.
 - [ ] The exact ZIP and SHA-256 used tonight are recorded in
       [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).

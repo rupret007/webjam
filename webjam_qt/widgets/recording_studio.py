@@ -40,9 +40,9 @@ from PySide6.QtWidgets import (
 
 from core.audio_routing import list_output_devices
 from core.take_export import (
-    LogicExportResult,
+    TrackExportResult,
     TrackMixSettings,
-    export_logic_package,
+    export_track_package,
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
@@ -77,8 +77,8 @@ def _take_review_message(*, has_errors: bool, has_warnings: bool) -> str:
     return "Take verified and ready to mix or export."
 
 
-def _logic_export_failure_message(error: str) -> str:
-    """Return safe, musician-facing copy for a failed Logic export.
+def _track_export_failure_message(error: str) -> str:
+    """Return safe, musician-facing copy for a failed track export.
 
     Export workers can surface implementation exceptions containing local paths
     or other diagnostic details.  A small, fixed allowlist preserves the two
@@ -90,27 +90,27 @@ def _logic_export_failure_message(error: str) -> str:
         "WebJam found explicitly silent segments in selected performance tracks:"
     ):
         return (
-            "Logic export paused: a selected performance track has an explicitly "
+            "Track export paused: a selected performance track has an explicitly "
             "silent segment. Review the take, or intentionally deselect each "
             "affected track and export again. The original take is safe."
         )
     if message.startswith(
-        "WebJam cannot create a timing-ready Logic export because these "
+        "WebJam cannot create a timing-ready track export because these "
         "local originals have no verified timeline alignment:"
     ):
         return (
-            "Logic export paused: selected local originals have no verified "
+            "Track export paused: selected local originals have no verified "
             "timeline alignment. Keep the Jamulus server track for this take, "
             "or align and verify each local original before exporting. The "
             "original take is safe."
         )
     return (
-        "Logic export couldn't be completed. The original take is safe. "
+        "Track export couldn't be completed. The original take is safe. "
         "Check available disk space and folder access, then try again."
     )
 
 
-def _selectable_logic_track_ids(take: TakeInfo) -> tuple[str, ...]:
+def _selectable_track_export_track_ids(take: TakeInfo) -> tuple[str, ...]:
     """Return stable IDs only when Studio can safely narrow a project export.
 
     Schema-v1 takes have no durable per-track IDs, so their export remains the
@@ -963,25 +963,25 @@ class TrackLane(QFrame):
 
         # This is deliberately an ephemeral export choice. It changes neither
         # the recording nor its durable project manifest; it simply narrows the
-        # next Logic handoff to tracks the musician has reviewed and wants.
-        self._logic_export_include = QCheckBox("Logic")
-        self._logic_export_include.setObjectName("StudioLogicExportInclude")
-        self._logic_export_include.setChecked(True)
-        self._logic_export_include.setVisible(bool(self._export_track_id))
-        self._logic_export_include.setAccessibleName(
-            f"Include {name} in Logic export"
+        # next track export to tracks the musician has reviewed and wants.
+        self._track_export_include = QCheckBox("Export")
+        self._track_export_include.setObjectName("StudioTrackExportInclude")
+        self._track_export_include.setChecked(True)
+        self._track_export_include.setVisible(bool(self._export_track_id))
+        self._track_export_include.setAccessibleName(
+            f"Include {name} in track export"
         )
-        self._logic_export_include.setAccessibleDescription(
-            "Uncheck to leave this track out of the next Logic export. "
+        self._track_export_include.setAccessibleDescription(
+            "Uncheck to leave this track out of the next track export. "
             "This does not change the recorded take."
         )
-        self._logic_export_include.setToolTip(
-            "Uncheck to leave this track out of the next Logic export. "
+        self._track_export_include.setToolTip(
+            "Uncheck to leave this track out of the next track export. "
             "The recorded take is unchanged."
         )
         name_row.addWidget(self._track_number)
         name_row.addWidget(self._name, 1)
-        name_row.addWidget(self._logic_export_include)
+        name_row.addWidget(self._track_export_include)
         self._detail = QLabel(detail)
         self._detail.setObjectName("StudioTrackDetail")
         detail_row = QHBoxLayout()
@@ -1042,8 +1042,8 @@ class TrackLane(QFrame):
             lambda checked: self.solo_changed.emit(self.channel_id, checked)
         )
         self._pan.valueChanged.connect(self._on_pan_changed)
-        self._logic_export_include.toggled.connect(self._on_export_included_changed)
-        for control in (self._mute, self._solo, self._logic_export_include):
+        self._track_export_include.toggled.connect(self._on_export_included_changed)
+        for control in (self._mute, self._solo, self._track_export_include):
             control.clicked.connect(self._select)
         self._gain.sliderPressed.connect(self._select)
         self._pan.sliderPressed.connect(self._select)
@@ -1071,18 +1071,18 @@ class TrackLane(QFrame):
         self._pan.setVisible(not live)
         self._pan_value.setVisible(not live)
         self._gain_value.setVisible(not live)
-        self._logic_export_include.setVisible(
+        self._track_export_include.setVisible(
             not live and bool(self._export_track_id)
         )
 
-    def set_logic_export_included(self, included: bool) -> None:
+    def set_track_export_included(self, included: bool) -> None:
         """Reflect Studio's transient per-take export selection without a signal."""
-        self._logic_export_include.blockSignals(True)
-        self._logic_export_include.setChecked(bool(included))
-        self._logic_export_include.blockSignals(False)
+        self._track_export_include.blockSignals(True)
+        self._track_export_include.setChecked(bool(included))
+        self._track_export_include.blockSignals(False)
 
-    def set_logic_export_enabled(self, enabled: bool) -> None:
-        self._logic_export_include.setEnabled(bool(enabled))
+    def set_track_export_enabled(self, enabled: bool) -> None:
+        self._track_export_include.setEnabled(bool(enabled))
 
     def set_mix_state(
         self,
@@ -1135,6 +1135,11 @@ class RecordingStudio(QWidget):
     live_solo_toggled = Signal(int, bool)
     output_device_changed = Signal(str)
     recording_setup_requested = Signal()
+    # The controller owns the session conductor and pilot evidence.  Studio
+    # only reports its actual export worker boundary; it never declares a
+    # external-editor import, alignment, or musician review successful on its own.
+    export_started = Signal()
+    export_finished = Signal(bool)
 
     def __init__(
         self,
@@ -1153,7 +1158,7 @@ class RecordingStudio(QWidget):
         self._lanes: dict[int, TrackLane] = {}
         self._track_info_by_channel: dict[int, object] = {}
         self._selected_channel_id: int | None = None
-        self._excluded_logic_export_track_ids: dict[Path, set[str]] = {}
+        self._excluded_track_export_track_ids: dict[Path, set[str]] = {}
         # Schema-v2 mix choices live in a separate, durable sidecar.  They are
         # deliberately never written into recording evidence or source media.
         self._studio_state: StudioTakeState | None = None
@@ -1162,7 +1167,7 @@ class RecordingStudio(QWidget):
         self._studio_state_error = ""
         self._pending_levels: dict[int, float] = {}
         self._finished_flag = False
-        self._export_outcome: tuple[Optional[LogicExportResult], str] | None = None
+        self._export_outcome: tuple[Optional[TrackExportResult], str] | None = None
         self._exporting = False
         self._reveal_path: Optional[Path] = None
         self._local_originals_path: Optional[Path] = None
@@ -1314,11 +1319,11 @@ class RecordingStudio(QWidget):
         self._output_picker.currentIndexChanged.connect(self._on_output_changed)
         actions.addWidget(self._output_picker, 1)
         actions.addStretch(1)
-        self._export_btn = QPushButton("Export for Logic")
+        self._export_btn = QPushButton("Export Tracks")
         self._export_btn.setObjectName("PrimaryButton")
-        self._export_btn.setAccessibleName("Export aligned stems for Logic Pro")
+        self._export_btn.setAccessibleName("Export aligned tracks")
         self._export_btn.setEnabled(False)
-        self._export_btn.clicked.connect(self._export_for_logic)
+        self._export_btn.clicked.connect(self._export_tracks)
         actions.addWidget(self._export_btn)
         self._reveal_btn = QPushButton("Show Take")
         self._reveal_btn.setObjectName("GhostButton")
@@ -1397,7 +1402,7 @@ class RecordingStudio(QWidget):
             ("timeline", "TIMELINE"),
             ("alignment", "ALIGNMENT"),
             ("gaps", "GAPS"),
-            ("export", "LOGIC"),
+            ("export", "EXPORT"),
         ):
             field = QLabel(label)
             field.setObjectName("StudioInspectorField")
@@ -1526,11 +1531,11 @@ class RecordingStudio(QWidget):
             alignment = "Needs verified timeline alignment"
         gaps = _timeline_gaps_for_track(source_info, self._current)
         track_id = self._state_track_id(source_info)
-        selected = self._selected_logic_track_ids(self._current)
+        selected = self._selected_track_export_track_ids(self._current)
         export = (
-            "Included in next Logic export"
+            "Included in next track export"
             if selected is None or track_id in selected
-            else "Left out of next Logic export"
+            else "Left out of next track export"
         )
         self._set_inspector_values(
             status=status,
@@ -1555,7 +1560,7 @@ class RecordingStudio(QWidget):
         self._studio_state_take_path = None
         self._studio_state_dirty = False
         self._studio_state_error = ""
-        if not _selectable_logic_track_ids(take):
+        if not _selectable_track_export_track_ids(take):
             return
         try:
             state = load_studio_state(take.path)
@@ -2102,19 +2107,19 @@ class RecordingStudio(QWidget):
         self._populate_live_lanes()
 
     @staticmethod
-    def _logic_export_selection_key(take: TakeInfo) -> Path:
+    def _track_export_selection_key(take: TakeInfo) -> Path:
         """Return a stable in-memory key for a take's temporary export choices."""
         return take.path.expanduser().resolve()
 
-    def _selected_logic_track_ids(self, take: TakeInfo) -> set[str] | None:
+    def _selected_track_export_track_ids(self, take: TakeInfo) -> set[str] | None:
         """Return durable inclusion choices, or ``None`` for schema-v1 takes."""
-        available = set(_selectable_logic_track_ids(take))
+        available = set(_selectable_track_export_track_ids(take))
         if not available:
             return None
         if (
             self._studio_state is not None
             and self._studio_state_take_path
-            == self._logic_export_selection_key(take)
+            == self._track_export_selection_key(take)
         ):
             return {
                 track_id
@@ -2124,8 +2129,8 @@ class RecordingStudio(QWidget):
                     or saved.export_included
                 )
             }
-        excluded = self._excluded_logic_export_track_ids.setdefault(
-            self._logic_export_selection_key(take), set()
+        excluded = self._excluded_track_export_track_ids.setdefault(
+            self._track_export_selection_key(take), set()
         )
         excluded.intersection_update(available)
         return available - excluded
@@ -2140,42 +2145,42 @@ class RecordingStudio(QWidget):
             or not self._player.tracks
         ):
             return False
-        selected = self._selected_logic_track_ids(take)
+        selected = self._selected_track_export_track_ids(take)
         return selected is None or bool(selected)
 
     def _refresh_export_button(self) -> None:
         if not self._exporting:
             self._export_btn.setEnabled(self._can_export_current_take())
 
-    def _set_logic_export_included(
+    def _set_track_export_included(
         self,
         take_path: Path,
         track_id: str,
         included: bool,
     ) -> None:
-        """Store one non-destructive choice for the current take's Logic handoff."""
+        """Store one non-destructive choice for the current track export."""
         take = self._current
         if (
             take is None
-            or self._logic_export_selection_key(take)
+            or self._track_export_selection_key(take)
             != take_path.expanduser().resolve()
         ):
             return
-        available = set(_selectable_logic_track_ids(take))
+        available = set(_selectable_track_export_track_ids(take))
         if track_id not in available:
             return
-        excluded = self._excluded_logic_export_track_ids.setdefault(
-            self._logic_export_selection_key(take), set()
+        excluded = self._excluded_track_export_track_ids.setdefault(
+            self._track_export_selection_key(take), set()
         )
         if included:
             excluded.discard(track_id)
             self._hint.setText(
-                "Track included in future Logic exports. The recorded take is unchanged."
+                "Track included in future exports. The recorded take is unchanged."
             )
         else:
             excluded.add(track_id)
             self._hint.setText(
-                "Track left out of future Logic exports. The recorded take is unchanged."
+                "Track left out of future exports. The recorded take is unchanged."
             )
         for channel_id, track in self._track_info_by_channel.items():
             if self._state_track_id(track) == track_id:
@@ -2184,9 +2189,9 @@ class RecordingStudio(QWidget):
                     export_included=bool(included),
                 )
                 break
-        if not self._selected_logic_track_ids(take):
+        if not self._selected_track_export_track_ids(take):
             self._hint.setText(
-                "Choose at least one track for Logic export. The recorded take is unchanged."
+                "Choose at least one track to export. The recorded take is unchanged."
             )
         self._refresh_export_button()
 
@@ -2239,8 +2244,8 @@ class RecordingStudio(QWidget):
             index: track for index, track in enumerate(take.tracks)
         }
         self._track_info_by_channel = dict(info_by_channel)
-        selectable_track_ids = set(_selectable_logic_track_ids(take))
-        selected_track_ids = self._selected_logic_track_ids(take)
+        selectable_track_ids = set(_selectable_track_export_track_ids(take))
+        selected_track_ids = self._selected_track_export_track_ids(take)
         for track in self._player.tracks:
             source_info = info_by_channel.get(
                 track.channel_id,
@@ -2282,13 +2287,13 @@ class RecordingStudio(QWidget):
                 source=track.source,
             )
             if export_track_id in selectable_track_ids:
-                lane.set_logic_export_included(
+                lane.set_track_export_included(
                     selected_track_ids is not None
                     and export_track_id in selected_track_ids
                 )
                 lane.export_included_changed.connect(
                     lambda track_id, included, take_path=take.path: (
-                        self._set_logic_export_included(
+                        self._set_track_export_included(
                             take_path,
                             track_id,
                             included,
@@ -2363,13 +2368,14 @@ class RecordingStudio(QWidget):
             )
         elif not verified:
             self._hint.setText(
-                "Unverified take. Playback is available, but Logic export stays "
+                "Unverified take. Playback is available, but track export stays "
                 "locked until WebJam verifies the recording."
             )
         else:
             self._hint.setText("Take verified and ready to mix or export.")
 
-    def _export_for_logic(self) -> None:
+    def _export_tracks(self) -> None:
+        """Publish a portable track package without creating an editor project."""
         take = self._current
         if (
             take is None
@@ -2378,7 +2384,7 @@ class RecordingStudio(QWidget):
             return
         self._flush_studio_state()
         self._stop_playback()
-        selectable_track_ids = set(_selectable_logic_track_ids(take))
+        selectable_track_ids = set(_selectable_track_export_track_ids(take))
         states: dict[int | str, TrackMixSettings] = {}
         for track in self._player.tracks:
             source_info = self._track_info_for_channel(track.channel_id)
@@ -2392,14 +2398,15 @@ class RecordingStudio(QWidget):
                 muted=track.muted,
                 solo=track.solo,
             )
-        selected_track_ids = self._selected_logic_track_ids(take)
+        selected_track_ids = self._selected_track_export_track_ids(take)
         self._exporting = True
+        self.export_started.emit()
         self._export_outcome = None
         self._take_list.setEnabled(False)
         self._export_btn.setEnabled(False)
         self._export_btn.setText("Exporting…")
         for lane in self._lanes.values():
-            lane.set_logic_export_enabled(False)
+            lane.set_track_export_enabled(False)
         self._hint.setText(
             "Preparing aligned 24-bit stems and a stereo rough mix. "
             "The original take will not be changed."
@@ -2407,41 +2414,43 @@ class RecordingStudio(QWidget):
 
         def worker() -> None:
             try:
-                result = export_logic_package(
+                result = export_track_package(
                     take,
                     mix_settings=states,
                     selected_track_ids=selected_track_ids,
                 )
                 self._export_outcome = (result, "")
             except Exception as exc:  # noqa: BLE001
-                LOGGER.exception("Logic export failed for %s", take.path)
+                LOGGER.exception("Track export failed for %s", take.path)
                 self._export_outcome = (None, str(exc))
 
         threading.Thread(
             target=worker,
             daemon=True,
-            name="logic-export",
+            name="track-export",
         ).start()
 
-    def _finish_export(self, result: Optional[LogicExportResult], error: str) -> None:
+    def _finish_export(self, result: Optional[TrackExportResult], error: str) -> None:
         self._exporting = False
         self._take_list.setEnabled(True)
-        self._export_btn.setText("Export for Logic")
+        self._export_btn.setText("Export Tracks")
         for lane in self._lanes.values():
-            lane.set_logic_export_enabled(True)
+            lane.set_track_export_enabled(True)
         self._refresh_export_button()
         if result is None:
-            LOGGER.error("Logic export did not complete: %s", error or "unknown error")
-            self._hint.setText(_logic_export_failure_message(error))
+            LOGGER.error("Track export did not complete: %s", error or "unknown error")
+            self._hint.setText(_track_export_failure_message(error))
+            self.export_finished.emit(False)
             return
         self._reveal_path = result.folder
-        self._reveal_btn.setText("Show Logic Export")
+        self._reveal_btn.setText("Show Track Export")
         self._reveal_btn.setEnabled(True)
         self._hint.setText(
-            f"Logic export ready · {len(result.stems)} aligned 24-bit stems · "
-            f"{result.samplerate / 1000:g} kHz. Drag the numbered WAVs into "
-            "Logic together at 0:00."
+            f"Track export ready · {len(result.stems)} aligned 24-bit stems · "
+            f"{result.samplerate / 1000:g} kHz. Import the numbered WAVs "
+            "together at 0:00 in your editor."
         )
+        self.export_finished.emit(True)
 
     def _reveal_current(self) -> None:
         if self._reveal_path is not None:

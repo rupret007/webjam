@@ -35,7 +35,7 @@ from core.network_invite import create_invite_link  # noqa: E402
 from core.session_transfer import SessionCredentials  # noqa: E402
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
-from webjam_qt.session_state import SessionPhase  # noqa: E402
+from webjam_qt.session_state import SessionPhase, SessionUiState  # noqa: E402
 from webjam_qt.theme import load_stylesheet  # noqa: E402
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic  # noqa: E402
 from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
@@ -328,6 +328,39 @@ def test_participant_grid_wraps_without_horizontal_clipping(styled_qapp, width):
         _destroy(window)
 
 
+def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
+    window = _window()
+    window.resize(760, 600)
+    window.participant_grid.set_session_state(
+        SessionUiState(
+            SessionPhase.NOT_CONNECTED,
+            "Ready when you are",
+            "Start from the session bar when your band is ready.",
+            show_primary=False,
+            show_ready_check=False,
+            show_practice=False,
+        )
+    )
+    window.session_hud.set_state(
+        "Ready when you are",
+        "Start when your band is ready.",
+        action_text="Start Session",
+        action_kind="primary",
+    )
+    window.show()
+    styled_qapp.processEvents()
+    try:
+        grid = window.participant_grid
+        assert grid._empty_state.isVisibleTo(window)
+        assert not grid._empty_primary.isVisibleTo(window)
+        assert not grid._empty_ready.isVisibleTo(window)
+        assert not grid._empty_practice.isVisibleTo(window)
+        assert window.session_hud._action.isVisibleTo(window)
+        assert window.session_hud._action.accessibleName() == "Start Session"
+    finally:
+        _destroy(window)
+
+
 def test_focus_order_moves_from_participant_to_bottom_controls(styled_qapp):
     window = _window()
     window.resize(760, 600)
@@ -545,7 +578,7 @@ def test_recording_close_confirmation_is_not_duplicated():
     controller.recording.confirm_quit.assert_not_called()
 
 
-def test_logic_export_in_progress_blocks_close_without_stopping_the_jam():
+def test_track_export_in_progress_blocks_close_without_stopping_the_jam():
     controller = SimpleNamespace(
         recording=SimpleNamespace(
             is_recording_active=False,

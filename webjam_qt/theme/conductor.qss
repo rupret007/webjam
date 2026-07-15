@@ -1042,13 +1042,13 @@ QPushButton#StudioRecordButton:focus {
     font-size: ${FONT_SIZE_XS}px;
 }
 
-QCheckBox#StudioLogicExportInclude {
+QCheckBox#StudioTrackExportInclude {
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_XS}px;
     spacing: 3px;
 }
 
-QCheckBox#StudioLogicExportInclude::indicator {
+QCheckBox#StudioTrackExportInclude::indicator {
     width: 11px;
     height: 11px;
     border: 1px solid ${COLOR_BORDER_STRONG};
@@ -1056,7 +1056,7 @@ QCheckBox#StudioLogicExportInclude::indicator {
     background-color: ${COLOR_BG_INPUT};
 }
 
-QCheckBox#StudioLogicExportInclude::indicator:checked {
+QCheckBox#StudioTrackExportInclude::indicator:checked {
     background-color: ${COLOR_ACCENT_PRIMARY};
     border-color: ${COLOR_ACCENT_PRIMARY};
 }

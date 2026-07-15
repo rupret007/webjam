@@ -750,7 +750,7 @@ class HostIdentity:
         # Host identity is a musician-facing name, but it remains free text
         # supplied by a local setting. Apply the same invite/address/secret
         # boundary as every other session-evidence string before it reaches a
-        # journal, take manifest, or Logic export.
+        # journal, take manifest, or track export.
         name = _safe_session_text(self.display_name, 160)
         if "[redacted" in name or "$HOME" in name:
             # A partially redacted display name is not useful session

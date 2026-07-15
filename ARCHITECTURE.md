@@ -33,6 +33,8 @@ webjam_qt_main.py          ← entry point
                                 ├─ AudioCoordinator       (launch/practice/live truth)
                                 ├─ VideoCoordinator       (Webex lifecycle)
                                 ├─ RecordingCoordinator   (RPC/state/take verification)
+                                ├─ Session Conductor      (pure fact-derived next action)
+                                ├─ Pilot ledger           (operator-only local evidence)
                                 ├─ BridgeService          (process lifecycle/reconnect)
                                 ├─ JamulusController      (mixer state + RPC/UDP)
                                 ├─ WebexController         (meeting URL + browser)
@@ -57,12 +59,13 @@ webjam_qt_main.py          ← entry point
 
 | Module | Responsibility |
 |--------|----------------|
-| `app.py` | `QApplication` bootstrap, bundled font, stylesheet, Host/Join gate, and fatal-error boundary |
+| `app.py` | `QApplication` bootstrap, bundled font, stylesheet, Host/Join gate, bounded `--test-night` parsing, and fatal-error boundary |
 | `windows/launch_dialog.py` | Responsive two-choice launch plus one-field invitation validation |
 | `windows/conductor_window.py` | Main application window — header, `SessionHud`, `ParticipantGrid`, workspaces, and bottom controls |
 | `windows/simple_settings.py` | Progressive preferences for displayed name, Band input, Band output & review, and an optional conversation URL; macOS saves stable route IDs for the next Jamulus launch without claiming audibility. |
 | `windows/recording_setup.py` | Focused Studio playback-output/Takes-folder selection and explicit two-input local-original consent for the host or an active-v2 guest |
 | `windows/ready_check.py` | Permanent guided Band Check; pre-session actions and non-invasive live observation |
+| `windows/test_night.py` | Hidden operator-only Test Night dialog; emits intent and never owns pilot persistence |
 | `windows/support_bundle_preview.py` | Preview and save one immutable allowlisted, redacted support artifact |
 | `windows/setup_wizard.py` | Legacy detailed configuration surface; not part of the current musician path |
 | `widgets/participant_card.py` | Per-channel fader, monitor mute, solo, accessible state, and observed level meter |
@@ -70,9 +73,9 @@ webjam_qt_main.py          ← entry point
 | `widgets/level_meter.py` | Truthful observed level meter with coarse accessible signal descriptions |
 | `widgets/session_hud.py` | One authoritative readiness/invitation/recovery summary |
 | `widgets/session_strip.py` | Header metadata plus persistent Copy Invite / Record / More / End-or-Leave controls |
-| `widgets/recording_studio.py` | Live participant lanes and take library; shared elapsed-time-only waveform ruler/transport; selected-track source, alignment, gap, and export inspector; observed level meters; non-destructive gain/pan/mute/solo and durable per-track Logic selection; background Logic export |
+| `widgets/recording_studio.py` | Live participant lanes and take library; shared elapsed-time-only waveform ruler/transport; selected-track source, alignment, gap, and export inspector; observed level meters; non-destructive gain/pan/mute/solo and durable per-track Track Export selection; background portable track export |
 | `widgets/webex_embed.py` | Compact native-Webex launch/status card; legacy embed code is inactive |
-| `controllers/application_controller.py` | Wires `ConductorWindow` to services; delegates audio/video/recording to coordinators |
+| `controllers/application_controller.py` | Wires `ConductorWindow` to services; maps authoritative facts into the Session Conductor and operator-only pilot ledger; delegates audio/video/recording to coordinators |
 | `controllers/audio_coordinator.py` | Permission gate, launch/recovery/end-or-leave lifecycle, and participant-grid transitions |
 | `controllers/video_coordinator.py` | External Webex-launch compatibility wrapper; no meeting control |
 | `controllers/recording_coordinator.py` | Recorder state machine, RPC worker, take discovery/validation, durable recovery publication, and completion actions |
@@ -204,9 +207,9 @@ Record button → RecordingCoordinator (preflight + roster-aware storage reserve
     NEEDS_ATTENTION project; recovered guest media remains local for manual
     handling and is not automatically uploaded
 
-Studio Export for Logic
+Studio Track Export
   → load or atomically save schema-v2 Studio review state beside the take;
-    bind gain/pan/mute/solo and Logic inclusion to durable track IDs, never
+    bind gain/pan/mute/solo and Track Export inclusion to durable track IDs, never
     to a visible/export-row position or recording evidence
   → apply non-destructive per-track Studio export selection, hash-check sources,
     and reject selected explicit-silence or unaligned/unverified local originals
@@ -222,7 +225,7 @@ Local-original capture never participates in the live mix. If it fails,
 Jamulus audio and server-recorder shutdown remain authoritative; WebJam keeps
 the original/recovered/partial files visible and blocks false completion or
 export while required media needs attention. A recovery project is not a
-completed multitrack take or timing-ready Logic export.
+completed multitrack take or timing-ready track export.
 
 The recording-session evidence is separate from media metadata: it accepts no
 invitation, network address, credential, or raw device identifier. Its UTC
@@ -241,8 +244,10 @@ server-clock timestamps.
 | `take_project.py` / `take_library.py` | Schema-v2 identity, segments, media truth, discovery, validation, and optional bounded/redacted session evidence |
 | `recording_manifest_journal.py` | Private, crash-safe in-progress checkpoint below the selected Takes folder; stores typed session evidence only and fails closed to recovery-needed truth |
 | `take_alignment.py` | Non-destructive bounded offset/drift evidence and manual restoration |
-| `studio_state.py` | Atomic, schema-v2-only `.webjam-studio-state.json` sidecar for durable-ID review mix and Logic-inclusion choices; never changes source media or take evidence |
-| `take_export.py` | Atomic common-origin PCM24 Logic package with references, reports, analysis, checksums, and silent/unaligned-selected-track truth gates; schema-v2 rough-mix state resolves by durable track ID before legacy positional compatibility |
+| `studio_state.py` | Atomic, schema-v2-only `.webjam-studio-state.json` sidecar for durable-ID review mix and Track Export inclusion choices; never changes source media or take evidence |
+| `take_export.py` | Atomic common-origin PCM24 Track Export with references, reports, analysis, checksums, and silent/unaligned-selected-track truth gates; schema-v2 rough-mix state resolves by durable track ID before legacy positional compatibility |
+| `session_conductor.py` | Pure, immutable fact-to-presentation derivation with generation/revision guards for stale callbacks and restart-safe checkpoints |
+| `pilot_evidence.py` | Bounded local-only append-only Test Night ledger and sanitized report builder; automatic facts are separate from explicit human observations |
 | `take_player.py` | Non-destructive multi-segment/mixed-rate project-clock review with seek, gain, pan, mute, and solo |
 | `support_bundle.py` | Immutable allowlist artifact, recursive redaction, and private atomic ZIP publication |
 | `creative_modes.py` | `CreativeMode` registry (Music Jam, Visual Studio, Writer's Room, Design Critique, Storyboard/Film Room) |
@@ -349,7 +354,8 @@ JamulusController background thread
 |------|---------|
 | `~/.webjam_config.json` | Server/ports, Webex URL and role, independent local-capture settings, misc prefs |
 | `~/.webjam_mix.json` | Anonymous local default mix (fader/mute/solo state) |
-| `<take>/.webjam-studio-state.json` | Schema-v2-only Studio review choices—gain, pan, mute, solo, and Logic inclusion—bound to that take/session and durable track IDs; atomically written separately from source WAVs and `webjam-take.json` |
+| `<take>/.webjam-studio-state.json` | Schema-v2-only Studio review choices—gain, pan, mute, solo, and Track Export inclusion—bound to that take/session and durable track IDs; atomically written separately from source WAVs and `webjam-take.json` |
+| `<application support>/Pilot/.webjam-pilot-evidence/` | Private mode-0600 opaque Test Night ledgers; never included in ordinary support output |
 | SQLite DB (path in settings) | Users, mixes, room context, canvas, audit |
 
 ### Studio review-state boundary
@@ -359,7 +365,7 @@ lane shares one elapsed project-time ruler; it intentionally has no fabricated
 tempo, bars, beats, automation, or editing claim. The compact track header
 shows the performer/source, observed level, and review controls. Selecting a
 lane exposes its source, media condition, timeline placement, alignment
-evidence, disclosed gaps, and current Logic-inclusion status in the inspector.
+evidence, disclosed gaps, and current Track Export inclusion status in the inspector.
 
 For a schema-v2 take, those review controls persist only in the hidden
 `.webjam-studio-state.json` sidecar. The state is bound to the project's
@@ -367,7 +373,7 @@ opaque `session_id`, `take_id`, and each `track_id`; it is reconciled by ID when
 tracks are added or reordered, so it cannot shift a musician's mix setting by
 position. The sidecar is atomically written and never opens or alters
 `webjam-take.json` or recorded media. A malformed, symbolic-link, or
-wrong-take sidecar fails closed and Studio uses defaults. At Logic export, the
+wrong-take sidecar fails closed and Studio uses defaults. At Track Export, the
 schema-v2 selection and rough-mix values are resolved by the same durable IDs
 before the reference mix is rendered.
 
@@ -376,10 +382,10 @@ before the reference mix is rendered.
 ## Current Limitations
 
 - Closed-pilot source, not broad-release-ready. Storage, recording-provenance,
-  durable local-capture, recovery, and Logic-export hardening have automated
+  durable local-capture, recovery, and Track Export hardening have automated
   coverage, but no documentation claim substitutes for a recorded package gate.
   Exact-package live CoreAudio, two-Mac audio/reconnect/originals, human Studio
-  checks, interruption recovery, and Logic import remain physical evidence
+  checks, interruption recovery, and external-editor import remain physical evidence
   gates.
 - Downloadable builds bundle Jamulus (macOS: zero-install client/server apps;
   Windows CI artifacts supply the official client installer). The private

@@ -46,6 +46,7 @@ class SessionStrip(QFrame):
     ready_check_requested = Signal()    # run Band Check
     invite_requested = Signal()         # copy the host address for bandmates
     reset_invite_requested = Signal()   # revoke and replace a remote invite
+    test_night_requested = Signal()     # open the operator-only pilot surface
     tool_requested = Signal(str)        # progressive-disclosure destination
 
     STRIP_HEIGHT = 60
@@ -56,6 +57,7 @@ class SessionStrip(QFrame):
         mode_entries: list[tuple[str, str]],
         initial_mode_key: str = "",
         initial_title: str = "Untitled Session",
+        operator_mode: bool = False,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -64,6 +66,7 @@ class SessionStrip(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self._mode_entries = list(mode_entries)
+        self.operator_mode = bool(operator_mode)
         self._elapsed_seconds = 0
         # --- Widgets
         self._logo = BrandMark(28)
@@ -211,6 +214,15 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("diagnostics")
         )
         tools_menu.addAction(diagnostics_action)
+        self._test_night_action: QAction | None = None
+        if self.operator_mode:
+            tools_menu.addSeparator()
+            self._test_night_action = QAction("Test Night", tools_menu)
+            self._test_night_action.setToolTip(
+                "Open the operator-only closed-pilot checklist."
+            )
+            self._test_night_action.triggered.connect(self.test_night_requested.emit)
+            tools_menu.addAction(self._test_night_action)
         self._tools_button.setMenu(tools_menu)
 
         # --- Layout

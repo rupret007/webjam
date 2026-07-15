@@ -319,6 +319,9 @@ class AudioCoordinator:
         self._c.session_health.reset_live_truth()
         self._c.session_lifecycle.reset(reason="Ready for a new session")
         self._c._clear_lan_invite_address()
+        reset_conductor = getattr(self._c, "_reset_session_conductor_attempt", None)
+        if callable(reset_conductor):
+            reset_conductor()
         # The session is over, so any confirmed transmit-mute died with the
         # Jamulus client.  A relaunched client always starts unmuted; carrying
         # TALK/muted state forward would render a fail-open lie.

@@ -879,7 +879,7 @@ class RecordingCoordinator:
         recovery project binds it to the opaque take/session IDs checkpointed
         at Record time, carries any safe session evidence, and deliberately
         remains ``needs_attention``.  It is never presented as a completed
-        multitrack take or timing-ready Logic export.
+        multitrack take or timing-ready track export.
         """
         if not getattr(item, "files", ()):
             return
@@ -1207,6 +1207,9 @@ class RecordingCoordinator:
         self.phase = phase
         self._c.window.session_strip.set_recording_phase(phase.value)
         self._c.window.recording_studio.set_recording_phase(phase.value)
+        changed = getattr(self._c, "_on_recorder_phase_changed", None)
+        if callable(changed):
+            changed(phase)
 
     def _is_inside_takes_dir(self, folder: Path) -> bool:
         root = (self._c.settings.takes_directory or "").strip()

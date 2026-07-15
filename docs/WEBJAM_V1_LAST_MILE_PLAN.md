@@ -1,11 +1,18 @@
-# WebJam v1 last-mile readiness record
+# WebJam v1 last-mile readiness record — v0.14 historical baseline
 
-**Working branch:** `master`
-**Current package candidate:** `0.14.0` private Apple-Silicon test-night
+> **Superseded for active test nights.** This is the verified v0.14 package
+> record retained as rollback evidence. Use [README.md](../../README.md),
+> [CLOSED_PILOT_PLAYBOOK.md](../../CLOSED_PILOT_PLAYBOOK.md),
+> [SUNDAY_TWO_MAC_PILOT.md](../../SUNDAY_TWO_MAC_PILOT.md), and
+> [RECORDING_AND_STUDIO.md](../../RECORDING_AND_STUDIO.md) for the current
+> v0.15 conductor, Test Night, and standalone Track Export boundary.
+
+**Working branch at the time:** `master`
+**Historical package candidate:** `0.14.0` private Apple-Silicon test-night
 candidate, built from `045c5acb01687a4088b0bd618dab4d0ab6200804`; its package
-verification is complete and its physical musician certification remains
+verification was complete and its physical musician certification remained
 **NOT RUN**.
-**Exact current artifact:** `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
+**Exact historical artifact:** `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
 `cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`
 **Previous rollback candidate:** `WebJam-v0.13.0-TEST-NIGHT-macos-arm64.zip`,
 SHA-256 `6b32a1d85cb64eb0bc97fecb7dadcd527159420a675358176cd75745d6565b3b`,

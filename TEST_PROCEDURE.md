@@ -1,35 +1,32 @@
-# WebJam v0.14.0 test-night certification procedure
+# WebJam v0.15.0 test-night certification procedure
 
 **Last updated:** 2026-07-14
-**Current target:** private Apple Silicon v0.14.0 test-night candidate.
-**Source build:** `045c5acb01687a4088b0bd618dab4d0ab6200804`
-**Exact artifact:** `WebJam-v0.14.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`cbcbdc038ac3d663e15870990ae5fea2a09819cdd55adbaa7463a64405ef8321`.
+**Current target:** private Apple Silicon v0.15.0 candidate.
+**Exact package:** record the filename, SHA-256, source/build commit, and
+package-gate result in [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md)
+after the v0.15.0 bundle is built.
 
-The package-only gates passed: the source suite recorded **1,719 passed, 18
-skipped, one known warning, and 6 subtests**; transport `go test ./...` and
-`go vet ./...` passed; fresh extraction passed strict/deep signature,
-nested-app, and exact fabric-ID checks; and two isolated six-second offscreen
-launch/TERM cycles passed. Physical two-Mac audio, CoreAudio-route, recording
-and recovery, and Logic results are **NOT RUN** until they are recorded in the
-worksheet.
+The v0.14.0 package is rollback history only. Its source counts, hash, and
+package result are not evidence for v0.15.0. Physical two-Mac audio,
+CoreAudio-route, recording/recovery, and optional external-editor import are
+**NOT RUN** until musicians record actual observations in the worksheet.
 
 The current-source product path is:
 
-> Host choice → Confirm sound → Band Check → Invite → Join choice → Confirm sound → Band Check → Play → Record → Studio → Export → End
+> Host or Join → Confirm sound → Band Check → Play → Record → Review → Export Tracks → End
 
-The current candidate adds durable local-capture checkpoints, truthful recovery
-projects, and conservative Logic-export selection to the confirmation,
-CoreAudio-route, storage-preflight, and private-journal path. It also ships the
-Studio review workspace: one elapsed-seconds ruler, truthful track inspection,
-compact track controls, and per-take non-destructive mix choices. It deliberately
-has no invented bars, beats, tempo, or automation grid. The schema-v2 Studio
-sidecar preserves gain, pan, mute, solo, and export choices by durable track ID
-without rewriting the manifest or source audio.
+The candidate adds a single truthful session-conductor action, durable
+local-capture checkpoints, truthful recovery projects, and conservative Track
+Export selection to the confirmation, CoreAudio-route, storage-preflight, and
+private-journal path. Studio is a focused standalone review workspace: one
+elapsed-seconds ruler, familiar track headers and transport, compact controls,
+and per-take non-destructive mix choices. It deliberately has no invented
+bars, beats, tempo, automation grid, plugin host, or editor integration. The
+schema-v2 Studio sidecar preserves gain, pan, mute, solo, and export choices by
+durable track ID without rewriting the manifest or source audio.
 
-The older v0.13.0 ZIP remains rollback history only; never reuse its build ID,
-filename, or checksum for this candidate. Package checks do not turn any
-physical Studio, CoreAudio, recovery, or Logic observation into a pass.
+Package checks do not turn any physical Studio, CoreAudio, recovery, or manual
+external-editor observation into a pass.
 
 This procedure separates deterministic source evidence, real Jamulus/JACK
 evidence, packaged macOS evidence, and physical musician evidence. Passing one
@@ -41,7 +38,7 @@ Run Qt workflows serially; concurrent offscreen processes can share Qt state
 and create false failures.
 
 ```bash
-.venv/bin/python -m ruff check --no-cache \
+.venv/bin/ruff check --no-cache \
   webjam_qt/ core/ ui/ services/ api/ \
   jamulus_controller.py jamulus_state_manager.py
 .venv/bin/python -m compileall -q \
@@ -55,8 +52,8 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q
 
 Record exact counts and failures. An interim focused or full run before all
 concurrent edits landed is useful slice evidence, not the final source gate.
-The final v0.14.0 source gate recorded **1,719 passed, 18 skipped, one known
-warning, and 6 subtests**, with no failures or errors.
+Record the final v0.15.0 source-gate counts, skips, and known warnings here in
+the release record; do not carry forward v0.14.0 numbers.
 The final run must include:
 
 - strict v1/v2/v3 invitation parsing and credential redaction;
@@ -71,23 +68,26 @@ The final run must include:
   neither recorder;
 - resumable/idempotent size/SHA/PCM-verified guest transfer;
 - schema-v2 missing/partial/damaged/segment/rate/project truth;
-- Studio seek/waveform/mixer/output/reopen behavior, including the v0.14
+- Studio seek/waveform/mixer/output/reopen behavior, including the v0.15
   shared elapsed-seconds ruler, aligned playhead, selected-track source,
   alignment, and gap inspection, and the compact 760×600 layout;
-- schema-v2 Studio sidecar persistence: gain, pan, mute, solo, and Logic-export
+- schema-v2 Studio sidecar persistence: gain, pan, mute, solo, and Track Export
   inclusion survive reopen by durable `track_id`, while the manifest and WAV
   bytes remain unchanged;
 - offset/drift/rate/gap alignment and non-destructive manual restoration;
-- atomic Logic exports, independent analysis, source checks, checksums, and
+- atomic Track Exports, independent analysis, source checks, checksums, and
   blocks for selected explicitly silent or unaligned local-original tracks;
   schema-v2 mix/export choices resolve by durable track ID so reordering a take
   cannot move a musician's selection to a neighboring lane;
 - support preview/saved-ZIP parity, separate sanitized clipboard-summary
   coverage, and adversarial redaction;
 - owned-process/port cleanup and fresh-host restart;
-- the three-part black/white/burnt-orange brand assets.
+- the three-part black/white/burnt-orange brand assets; and
+- session-conductor and hidden Test Night coverage, including one primary action,
+  restart truth, bounded local evidence, human-only manual observations, and
+  sanitized pilot reports without raw invite, device, path, or audio data.
 
-### Recording durability coverage included in v0.14.0
+### Recording durability coverage included in v0.15.0
 
 Run the focused recording checks before packaging a future candidate:
 
@@ -108,20 +108,25 @@ This group covers the writable-folder/storage reserve, private 0600
 in-progress evidence journal, start/stop/lifecycle checkpoint integration,
 periodic writer flush/fsync evidence, private-name/invite/address/credential
 redaction, hidden-work-directory discovery exclusion, recovery-project
-reconciliation, final-manifest retirement, and Logic-export propagation.
+reconciliation, final-manifest retirement, and Track Export propagation.
 Source tests establish this behavior; the physical worksheet remains the only
-place to credit actual recording, crash recovery, audibility, and Logic import.
+place to credit actual recording, crash recovery, audibility, and any manual
+external-editor import.
 
-### Studio v0.14 review-workspace coverage
+### Studio v0.15 review-workspace coverage
 
-Run this focused group before packaging a future Studio change. It passed for
-the exact v0.14.0 candidate above:
+Run this focused group before packaging a Studio or conductor change:
 
 ```bash
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q \
   tests/test_recording_studio.py \
   tests/test_studio_state.py \
-  tests/test_take_export.py
+  tests/test_take_export.py \
+  tests/test_session_conductor.py \
+  tests/test_host_share_join_flow.py \
+  tests/test_test_night_controller.py \
+  tests/test_test_night_ui.py \
+  tests/test_pilot_evidence.py
 ```
 
 The tests must establish all of the following without relying on a musical-time
@@ -140,12 +145,13 @@ fiction:
   restores gain, pan, mute, solo, and export inclusion by durable `track_id`;
   malformed or mismatched state is rejected and neither `webjam-take.json` nor
   source WAV bytes are rewritten; and
-- schema-v2 Logic handoff uses those durable IDs for mix/export state, so an
+- schema-v2 Track Export uses those durable IDs for mix/export state, so an
   added or reordered lane cannot inherit another lane's choice.
 
-This is deterministic source evidence only. The package review named above
-passed, but musician review, physical interruption/recovery, and actual Logic
-Pro import are **NOT RUN** until they are entered in the physical worksheet.
+This is deterministic source evidence only. The v0.15.0 package review must be
+recorded separately, and musician review, physical interruption/recovery, and
+optional manual external-editor import are **NOT RUN** until entered in the
+physical worksheet.
 
 ## 2. Real Jamulus/JACK boundary gate
 
@@ -213,8 +219,8 @@ Do not overwrite an earlier rollback ZIP or copy its identity into a new test.
 After an archive is built, fresh-extract it and record its exact build commit,
 filename, SHA-256, architecture, install location, and package-gate result in
 the release record and [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md).
-For v0.14.0, those package checks passed for the exact artifact named above;
-the physical worksheet remains **NOT RUN**.
+Until those v0.15.0 facts are recorded, the package and physical worksheets
+remain **NOT RUN**.
 
 Verify the bundled official Jamulus 3.12.2 DMG checksum before staging the
 nested client and server apps. Only the exact fresh-extracted archive named in
@@ -222,7 +228,7 @@ that completed release record may receive package or musician credit.
 
 Inspect that exact fresh extraction:
 
-- `Info.plist` reports version `0.14.0` and registers the `webjam`
+- `Info.plist` reports version `0.15.0` and registers the `webjam`
   URL scheme.
 - The bundle contains Band Check, private session transfer, schema-v2 project,
   Studio, export, support preview, brand assets, licenses, Inter, the
@@ -245,11 +251,12 @@ missing/invalid sealed resource or “damaged app” result fails packaging.
 
 ## 4. Candidate-flow smoke
 
-Use an isolated preferences/home profile and the exact extracted v0.14.0 app.
+Use an isolated preferences/home profile and the exact extracted v0.15.0 app.
 
 An isolated launch/TERM smoke verifies startup and bounded cleanup only; it is
-not a live-audio, route, roster, recording, reconnect, crash-recovery, or Logic
-result. Attach the test interfaces before completing the musician steps below.
+not a live-audio, route, roster, recording, reconnect, crash-recovery, or
+external-editor result. Attach the test interfaces before completing the
+musician steps below.
 
 1. Launch shows the original three-part WebJam mark and the restrained black,
    white, neutral, and burnt-orange system. No purple or teal remains. After
@@ -284,19 +291,20 @@ result. Attach the test interfaces before completing the musician steps below.
    project for manual review; it is never silently marked complete or claimed
    transferred.
 7. Studio shows missing/partial/damaged/transferring truth, plays mixed-rate
-   multi-segment projects with gaps, and releases output on close. Its v0.14
+   multi-segment projects with gaps, and releases output on close. Its v0.15
    review workspace uses one elapsed-seconds ruler—not invented bars or
    tempo—keeps its transport/ruler/lane playheads aligned while seeking, and
    lets a selected lane expose source, alignment, and gap evidence. At compact
    size, contextual detail may collapse but essential track controls remain
    reachable.
-8. Logic export blocks uncertain required media, a selected explicitly silent
+8. **Export Tracks** blocks uncertain required media, a selected explicitly silent
    performance track, and a selected local original without verified timeline
    alignment. Studio may non-destructively leave a reviewed track out of the
    future exports until changed; its private sidecar restores those choices by
    durable track ID, not lane position, and it does not alter the take. Keep
    the Jamulus server track or align and verify a local original before treating
-   an export as timing-ready.
+   an export as timing-ready. The result is a generic portable Track Export;
+   WebJam does not launch or integrate with another editor.
 9. Support preview and saved archive match and exclude recordings, notes,
    transcripts, Webex content, invitations, secrets, meeting links, and home
    paths.
@@ -306,7 +314,10 @@ result. Attach the test interfaces before completing the musician steps below.
     attempts a final upload before disconnecting. The host waits for any guest
     originals to be verified/arrived before ending because End Session does not
     await peer transfer. Relaunch starts cleanly.
-11. The essential flow remains usable at 760×600 with sensible keyboard order,
+11. In operator-only `--test-night` mode, the Test Night action can start,
+    pause, resume, abandon, restart, record explicitly human observations, and
+    export a redacted report. It is not shown in normal musician mode.
+12. The essential flow remains usable at 760×600 with sensible keyboard order,
     visible focus, accessible names, and no color-only status.
 
 The peer recording plane is authenticated HTTP bound to a private RFC1918 IPv4
@@ -315,10 +326,10 @@ claim and no upload quota or rate limiting. Its invite is a reusable
 session-scoped bearer credential, not a one-use token. Use trusted bandmates on
 a trusted LAN; do not test it by exposing a router port.
 
-## 5. Physical two-Mac and Logic gate
+## 5. Physical two-Mac and optional external-editor gate
 
 Complete [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) with the exact
-recorded v0.14.0 archive and record:
+recorded v0.15.0 archive and record:
 
 - both Mac/interface/driver routes and 48-kHz configuration;
 - musician-confirmed two-way audibility, not just meters;
@@ -331,28 +342,30 @@ recorded v0.14.0 archive and record:
   source/alignment/gap inspection, and a usable compact layout;
 - a before/after check that the Studio sidecar restores the same durable-ID mix
   and export choices after reopen without changing `webjam-take.json` or any
-  source WAV; and
-- a Logic handoff in which an intentionally excluded source stays excluded by
+  source WAV;
+- a Track Export in which an intentionally excluded source stays excluded by
   its durable identity rather than following a display position;
-- exact exported inventory/checksums and actual Logic Pro import at `0:00`;
+- exact exported inventory/checksums and, only if performed, manual import into
+  an external multitrack editor at `0:00`;
 - private support bundle and zero-owned-process cleanup.
 
 At the time this procedure was updated, two-Mac audibility, physical CoreAudio
-route confirmation, recording and interruption recovery, Studio use, and Logic
-import are **NOT RUN**. Keep that state until the worksheet contains real
-observations.
+route confirmation, recording and interruption recovery, Studio use, and
+manual external-editor import are **NOT RUN**. Keep that state until the
+worksheet contains real observations.
 
 ## 6. Pass rule
 
 The private candidate may reach the default branch after its exact source,
 normal CI, exact-bundle, and installed cleanup gates pass; that integration is
 not a release, tag, or physical certification. It is ready to advance beyond
-the private test only after both musicians and Logic Pro pass the worksheet.
+the private test only after both musicians complete the worksheet. Manual
+external-editor import is optional and is never an integration requirement.
 Preserve failed takes, originals, exports, reports, and the support bundle
 before changing a device, network, or build. GitHub Actions run `29269188463`
 remains the 3,600-second Jamulus/JACK longevity evidence for the v1/v2 engine
 baseline; it does not certify the lab-only v3 profile, CoreAudio, two Macs, or
-Logic.
+manual external-editor import.
 
 The retired 2024 harness remains in
 [`legacy/TEST_PROCEDURE_2024.md`](legacy/TEST_PROCEDURE_2024.md) for history.
