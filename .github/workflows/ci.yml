@@ -767,10 +767,10 @@ jobs:
           PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
         run: |
           $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-fresh"
-          $home = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
-          Remove-Item -Recurse -Force $freshRoot,$home -ErrorAction SilentlyContinue
+          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
+          Remove-Item -Recurse -Force $freshRoot,$smokeHome -ErrorAction SilentlyContinue
           Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $freshRoot
-          New-Item -ItemType Directory -Force $home | Out-Null
+          New-Item -ItemType Directory -Force $smokeHome | Out-Null
           $appDir = Join-Path $freshRoot "WebJam"
           $app = Join-Path $appDir "WebJam.exe"
           $fabric = Join-Path $appDir "webjam-fabric.exe"
@@ -789,13 +789,13 @@ jobs:
               }
             }
           }
-          $env:HOME = $home
-          $env:USERPROFILE = $home
-          $env:WEBJAM_LOG_FILE = Join-Path $home "webjam.log"
+          $env:HOME = $smokeHome
+          $env:USERPROFILE = $smokeHome
+          $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
           $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
           $env:WEBJAM_SMOKE_EXIT_MS = "5000"
           [IO.File]::WriteAllText(
-            (Join-Path $home ".webjam_config.json"),
+            (Join-Path $smokeHome ".webjam_config.json"),
             '{"jamulus_candidates":[]}',
             [Text.Encoding]::UTF8
           )
