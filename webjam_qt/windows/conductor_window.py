@@ -113,7 +113,7 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._invite_button)
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
-        self.session_strip._tools_button.setText("More")
+        self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")
         controls_layout.addWidget(self.session_strip._tools_button)
         controls_layout.addSpacing(Space.MD)

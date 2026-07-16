@@ -782,7 +782,10 @@ class BandCheckSession:
             for item in required
         ):
             return BandCheckOutcome.ACTION_NEEDED
-        if any(item.status is BandCheckStatus.WARNING for item in self.steps):
+        # Optional companions are shown as useful context, never as a warning
+        # that holds up music readiness. Their configuration is deliberately
+        # outside the Jamulus signal path.
+        if any(item.status is BandCheckStatus.WARNING for item in required):
             return BandCheckOutcome.WARNING
         return BandCheckOutcome.READY
 
@@ -797,8 +800,17 @@ class BandCheckSession:
             for item in self.steps:
                 if item.required and item.status is wanted and item.next_action:
                     return item
+        # Optional companions can provide useful warnings, but they must not
+        # replace the one action needed to finish or start a music session.
+        # In particular, Webex is never the music path and sending its warning
+        # to the primary button used to strand an otherwise-ready Band Check in
+        # an unrelated settings route.
         for item in self.steps:
-            if item.status is BandCheckStatus.WARNING and item.next_action:
+            if (
+                item.required
+                and item.status is BandCheckStatus.WARNING
+                and item.next_action
+            ):
                 return item
         return None
 
@@ -1125,18 +1137,17 @@ def build_band_check_session(
         )
 
     if str(getattr(settings, "webex_url", "") or "").strip():
-        webex_ok = bool(webex and webex.ok)
         steps.append(
             BandCheckStep(
                 BandCheckStepKey.WEBEX,
                 "Webex companion",
-                BandCheckStatus.WARNING if webex_ok else BandCheckStatus.WARNING,
+                BandCheckStatus.WARNING,
                 (
                     "Optional: Webex is for video and conversation. Keep its music monitoring off while playing."
-                    if webex_ok
+                    if bool(webex and webex.ok)
                     else "The optional Webex link needs attention. Jamulus still carries the music."
                 ),
-                "Review Webex audio" if webex_ok else "Open Settings",
+                "",
                 (getattr(webex, "detail", ""),) if webex else (),
                 required=False,
             )

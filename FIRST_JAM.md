@@ -6,21 +6,22 @@
 2. WebJam starts the private JamulusServer and opens Jamulus.
 3. In Jamulus, set your interface, channels, headphones, and buffer. Use
    **Settings → Audio/Network Settings** if needed.
-4. In WebJam, choose **I Finished Sound Setup**. Play a note and wait for the
-   private connection to appear.
-5. Answer **Yes, It Sounds Right** only when you hear your returned instrument
-   cleanly.
-6. Choose **Not Now** or **Add Webex**. Webex is optional and music remains in
-   Jamulus.
-7. Choose **Copy Invite** and send the complete link to a bandmate.
-8. Choose **Enter Jam**.
+4. WebJam moves into the session automatically when it sees the authenticated
+   Jamulus connection. If Jamulus is behind another window, choose **Bring
+   Jamulus Forward**.
+5. When **Copy Invite** appears, send the complete link to a bandmate.
+6. Play a note and make sure you can hear each other. Use **More → Band Check
+   / Verify Sound** if you need help.
+7. Add Webex only if your band wants it: **More → Webex / Conversation**.
+   Jamulus remains the music path.
 
 ## Join
 
 1. Open the invite or choose **Join a Jam** and paste it once.
 2. Let WebJam open Jamulus and connect to the invited band.
 3. Set sound in Jamulus if this Mac needs it.
-4. Return to WebJam, confirm that you hear the band, and choose **Enter Jam**.
+4. WebJam moves into the band session automatically when the authenticated
+   connection is ready. Play a note and make sure you can hear each other.
 
 ## Important boundaries
 
@@ -29,7 +30,7 @@
 - Do not configure Local Originals before joining. The host’s first **Record**
   click is when that choice matters.
 - Do not use a moving meter as proof that the returned mix sounds right. The
-  musician’s confirmation is required.
+  musicians still need to listen and verify each other.
 
 If Jamulus needs another change, choose **Bring Jamulus Forward** in the setup
 surface or **More → Audio Settings in Jamulus** after entering the jam.

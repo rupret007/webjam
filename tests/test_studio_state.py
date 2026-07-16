@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import ANY, patch
 
@@ -174,6 +175,7 @@ def test_reconciles_added_and_reordered_tracks_by_id_without_positional_carryove
         take_id=project.take_id,
         track_ids=(added_id, second_id, first_id),
     )
+    revised = replace(revised, revision=project.revision + 1)
     write_take_project(take_dir, revised)
 
     loaded = load_studio_state(take_dir)

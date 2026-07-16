@@ -23,14 +23,19 @@
 - [ ] WebJam says that Jamulus owns interface, channels, headphones, and
       buffer.
 - [ ] WebJam waits for process/RPC/connection/local-identity proof.
-- [ ] WebJam asks a human whether returned music sounds right.
-- [ ] A meter or a running process alone never marks sound ready.
-- [ ] Returning exact-profile host/guest takes a fast path.
+- [ ] After that proof, WebJam moves into the ordinary session HUD without a
+      setup, sound-confirmation, or Enter Jam click.
+- [ ] A meter or a running process alone never claims that musicians can hear
+      each other.
+- [ ] Musicians verify audibility by playing a note; Band Check is optional
+      help, not a startup gate.
+- [ ] An unchanged recovered profile never bypasses fresh connection proof.
 - [ ] Changed/missing profile returns to native Jamulus setup safely.
 
 ## Optional features
 
-- [ ] Webex is offered only after music readiness.
+- [ ] Webex is available under **More** and never delays music readiness,
+      invitation sharing, or entry to the session.
 - [ ] Webex link is optional, external, and never auto-opened.
 - [ ] UI says Jamulus carries music and reminds musicians to mute Webex while
       playing.

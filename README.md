@@ -17,11 +17,12 @@ It is a conductor, not a replacement for the tools musicians already trust.
 2. WebJam starts the private session or consumes the invitation.
 3. Jamulus opens normally. Choose the interface, channels, headphones, and
    buffer in **Jamulus → Settings → Audio/Network Settings**.
-4. Return to WebJam and choose **I Finished Sound Setup**.
-5. When WebJam can prove the connection, answer the one human question: does
-   the returned instrument/band sound right?
-6. Optionally add a Webex link. Music remains in Jamulus.
-7. The host copies the invitation; everyone enters the jam.
+4. When WebJam sees the authenticated music connection, it opens the session
+   automatically; the host then copies the invitation.
+5. Play a note and make sure you can hear each other. Use **More → Band Check
+   / Verify Sound** if you need help.
+6. Add Webex only if your band wants it through **More → Webex /
+   Conversation**; music remains in Jamulus.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
@@ -37,7 +38,12 @@ changes Jamulus music settings.
 Studio is a Logic-like multitrack review workspace, not a Logic integration.
 It opens recorded takes, lets the musician choose a playback output when a
 take is reviewed, preserves non-destructive mix choices, and exports aligned
-stems plus a rough mix.
+stems plus a rough mix. A transferred guest Local Original is preserved first,
+then becomes eligible for an aligned export only when WebJam verifies it
+against that musician's intact Jamulus server reference; uncertain originals
+stay available for Studio review with waiting or unverified timing evidence.
+A selected aligned export waits until each original is verified or deliberately
+deselected rather than guessing where it belongs.
 
 ## Jamulus profile and privacy
 
@@ -54,6 +60,9 @@ allowlisted profile and phase hashes—never invitation URLs, Webex URLs,
 credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
+
+The package record below predates the active source work on this branch. It is
+rollback evidence, not evidence that an existing ZIP includes the new behavior.
 
 v0.16.1 is a private stabilization candidate for tonight's rehearsal. Its
 source gate reported **1,798 passed**, 19 environment-bound skips, and 6

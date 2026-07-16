@@ -176,7 +176,7 @@ class SessionStrip(QFrame):
         self._invite_button.setVisible(False)
 
         self._tools_button = QToolButton()
-        self._tools_button.setText("More")
+        self._tools_button.setText("More ▾")
         self._tools_button.setObjectName("GhostButton")
         self._tools_button.setAccessibleName("More session options")
         self._tools_button.setPopupMode(

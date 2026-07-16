@@ -453,6 +453,7 @@ def write_take_manifest(
         SourceType,
         TakeProject,
         new_project_id,
+        take_project_manifest_lock,
         write_take_project,
     )
 
@@ -513,7 +514,8 @@ def write_take_manifest(
         # provenance beside the source media. This is a receipt, not a claim
         # that the incomplete folder has become a verified project.
         preliminary["session"] = final_session_evidence.to_dict()
-    atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
+    with take_project_manifest_lock(path):
+        atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
     result = validate_take(
         path, expected_tracks=expected_tracks + required_local_stems,
         required_local_stems=required_local_stems,
@@ -529,7 +531,10 @@ def write_take_manifest(
             "warnings": list(result.warnings),
             "tracks": [],
         })
-        atomic_write_text(manifest_path, json.dumps(preliminary, indent=2), mode=0o600)
+        with take_project_manifest_lock(path):
+            atomic_write_text(
+                manifest_path, json.dumps(preliminary, indent=2), mode=0o600
+            )
         return TakeValidationResult(
             None, tuple(errors), result.warnings, manifest_path,
         )

@@ -1,5 +1,9 @@
 # WebJam v0.16 test procedure
 
+> Historical package record: the v0.16.0 evidence below applies only to that
+> archived package. It does not certify newer source work or replace a fresh
+> package gate. Do not replace an installed test app from source-only results.
+
 ## Scope
 
 This procedure distinguishes automated source/package evidence from physical
@@ -44,7 +48,8 @@ Review at minimum:
 5. Launch the fresh app and inspect Host, Join, optional Webex, Recording
    Setup, Studio, End/Leave, and an invalid/recovery state at 760×600,
    1024×768, and 1440×900.
-6. Preserve v0.15.0 as rollback before installing the verified v0.16.0 app.
+6. Preserve the current rollback package before installing any freshly verified
+   candidate app.
 
 ## v0.16 package evidence
 

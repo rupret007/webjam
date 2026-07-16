@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import threading
+import time
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -45,6 +46,7 @@ from core.take_project import (
     MediaSegment,
     MediaStatus,
     Participant,
+    ProjectMarker,
     ProjectStatus,
     ProjectTrack,
     RecoveryStatus,
@@ -61,6 +63,17 @@ def _id() -> str:
     return str(uuid.uuid4())
 
 
+def _wait_until(predicate, description: str, *, timeout_s: float = 5.0) -> None:
+    """Wait for the host's owned maintenance worker without polling sleeps."""
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    assert predicate(), f"Timed out waiting for {description}."
+
+
 def _wav(
     path: Path,
     *,
@@ -73,6 +86,79 @@ def _wav(
     mono = (0.2 * np.sin(2.0 * np.pi * frequency * timeline)).astype(np.float32)
     data = mono if channels == 1 else np.column_stack((mono, mono * 0.5))
     sf.write(path, data, rate, subtype="PCM_24")
+
+
+def _click_wav(
+    path: Path,
+    *,
+    times: tuple[float, ...],
+    duration_s: float,
+    rate: int = 48_000,
+) -> None:
+    """Write bounded shared-transient fixtures for peer timing tests."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    audio = np.zeros(int(round(duration_s * rate)), dtype=np.float32)
+    shape = np.asarray((0.88, 0.54, 0.24, 0.08), dtype=np.float32)
+    for time_s in times:
+        frame = int(round(time_s * rate))
+        if 0 <= frame <= len(audio) - len(shape):
+            audio[frame : frame + len(shape)] = shape
+    sf.write(path, audio, rate, subtype="PCM_24")
+
+
+def _append_server_reference(
+    take_dir: Path,
+    *,
+    participant_id: str,
+    display_name: str,
+    source: Path,
+) -> str:
+    """Add one checksum-backed server stem for a specific enrolled musician."""
+
+    project = load_take_project(take_dir)
+    info = sf.info(str(source))
+    segment = MediaSegment(
+        segment_id=new_project_id(),
+        path=source.relative_to(take_dir).as_posix(),
+        project_start_frame=0,
+        frame_count=info.frames,
+        sample_rate=info.samplerate,
+        channels=info.channels,
+        sample_format=info.subtype,
+        media_status=MediaStatus.AVAILABLE,
+        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        size_bytes=source.stat().st_size,
+    )
+    reference = ProjectTrack(
+        track_id=new_project_id(),
+        source_id=new_project_id(),
+        participant_id=participant_id,
+        name=f"{display_name} network reference",
+        instrument="",
+        source_type=SourceType.JAMULUS_SERVER,
+        quality=SourceQuality.NETWORK_TRACK,
+        media_status=MediaStatus.AVAILABLE,
+        order=max((track.order for track in project.tracks), default=-1) + 1,
+        segments=(segment,),
+        alignment=AlignmentState(
+            confidence=1.0,
+            method="recorder-origin",
+        ),
+    )
+    participants = project.participants
+    if participant_id not in {item.participant_id for item in participants}:
+        participants = (*participants, Participant(participant_id, display_name))
+    write_take_project(
+        take_dir,
+        replace(
+            project,
+            participants=participants,
+            tracks=(*project.tracks, reference),
+            revision=project.revision + 1,
+        ),
+    )
+    return reference.track_id
 
 
 def _descriptor(
@@ -436,6 +522,14 @@ def test_guest_capture_gaps_survive_queue_transfer_and_host_attachment(
         ]
 
         host.register_take(take_id, take_dir)
+        _wait_until(
+            lambda: sum(
+                track.source_type is SourceType.LOCAL_ISOLATED
+                for track in load_take_project(take_dir).tracks
+            )
+            == 2,
+            "both gapped peer tracks",
+        )
         project = load_take_project(take_dir)
         peer_tracks = {
             track.name: track
@@ -527,6 +621,14 @@ def test_host_keeps_legacy_gap_totals_without_inventing_gap_positions(
         assert descriptor.gaps == ()
         assert client.upload_file(alex, descriptor, original).complete
         host.register_take(take_id, take_dir)
+        _wait_until(
+            lambda: any(
+                track.participant_id == alex.participant_id
+                and track.source_type is SourceType.LOCAL_ISOLATED
+                for track in load_take_project(take_dir).tracks
+            ),
+            "legacy-gap peer track",
+        )
 
         project = load_take_project(take_dir)
         peer_track = next(
@@ -662,6 +764,7 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         )
         host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
         host.register_take(take_id, take_dir)
+        _wait_until(lambda: bool(updates), "initial missing peer inventory")
         missing = load_take_project(take_dir)
         assert missing.status is ProjectStatus.NEEDS_ATTENTION
         assert any("has not arrived" in error for error in missing.errors)
@@ -699,12 +802,478 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         attached_path = take_dir / attached.primary_segment.path
         assert attached_path.read_bytes() == before
         assert local_original.read_bytes() == before
+        # The only server stem belongs to the host, not Alex.  A matching
+        # checksum proves delivery, not a shared timeline, so WebJam must not
+        # use another participant's audio as an alignment reference.
+        assert attached.quality is SourceQuality.UNVERIFIED
+        assert attached.alignment.method.startswith(
+            "peer-local-original-awaiting-reference/"
+        )
         payload = json.loads((take_dir / "webjam-take.json").read_text())
         assert payload["peer_transfers"]["participants"][0]["status"] == "verified"
+        alignment = payload["peer_transfers"]["participants"][0]["segments"][0][
+            "alignment"
+        ]
+        assert alignment["status"] == "waiting_for_reference"
+        assert alignment["timing_ready"] is False
+        assert "same-participant" in alignment["reason"]
         assert updates == [(take_id, take_dir.resolve(), True)]
         assert host.reconcile_take(take_id, take_dir) is False
         assert updates == [(take_id, take_dir.resolve(), True)]
     finally:
+        host.stop()
+
+
+def test_host_registration_wakes_its_worker_without_blocking_the_caller(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Long peer reconciliation cannot run on the recording-completion thread."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    started = threading.Event()
+    release = threading.Event()
+    worker_threads: list[threading.Thread] = []
+
+    def slow_reconcile(*_args, **_kwargs) -> bool:
+        worker_threads.append(threading.current_thread())
+        started.set()
+        assert release.wait(5.0)
+        return False
+
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    monkeypatch.setattr(host, "reconcile_take", slow_reconcile)
+    try:
+        began = time.monotonic()
+        host.register_take(_id(), tmp_path / "long-take")
+        assert time.monotonic() - began < 0.25
+        assert started.wait(1.0)
+        assert worker_threads == [host._thread]
+    finally:
+        release.set()
+        host.stop()
+
+
+def test_host_promotes_verified_guest_original_only_with_strong_same_participant_reference(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A checksum-verified guest source gains a timeline only from its own stem."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient(
+            "127.0.0.1", host.peer_port, credentials=credentials
+        )
+        guest = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-13T12:00:00Z")
+        take_dir = tmp_path / "finished-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+
+        source_times = (0.55, 1.8, 3.7, 5.9, 8.4, 10.7)
+        offset_s = 0.17321
+        guest_original = take_dir / "alex-original.wav"
+        server_reference = take_dir / "alex-server-reference.wav"
+        _click_wav(guest_original, times=source_times, duration_s=12.0)
+        _click_wav(
+            server_reference,
+            times=tuple(time_s + offset_s for time_s in source_times),
+            duration_s=12.0,
+        )
+        reference_track_id = _append_server_reference(
+            take_dir,
+            participant_id=guest.participant_id,
+            display_name="Alex",
+            source=server_reference,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
+        descriptor = _descriptor(
+            guest_original, credentials, guest.participant_id, take_id
+        )
+        assert client.upload_file(guest, descriptor, guest_original).complete
+
+        host.register_take(take_id, take_dir)
+        _wait_until(
+            lambda: any(
+                track.participant_id == guest.participant_id
+                and track.source_type is SourceType.LOCAL_ISOLATED
+                for track in load_take_project(take_dir).tracks
+            ),
+            "verified peer alignment",
+        )
+
+        project = load_take_project(take_dir)
+        attached = next(
+            track
+            for track in project.tracks
+            if track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert attached.quality is SourceQuality.VERIFIED_ISOLATED
+        assert attached.alignment.method.startswith(
+            "peer-local-original-verified-alignment/"
+        )
+        assert attached.alignment.confidence >= 0.85
+        assert attached.alignment.residual_ms <= 2.0
+        assert attached.alignment.automatic_offset_s == pytest.approx(offset_s, abs=0.002)
+        assert len(attached.alignment.anchors) >= 3
+        assert attached.alignment.reference_track_id == reference_track_id
+        assert len(attached.alignment.reference_fingerprint_sha256) == 64
+
+        payload = json.loads((take_dir / "webjam-take.json").read_text())
+        alignment = payload["peer_transfers"]["participants"][0]["segments"][0][
+            "alignment"
+        ]
+        assert alignment["status"] == "aligned"
+        assert alignment["timing_ready"] is True
+        assert host.reconcile_take(take_id, take_dir) is False
+    finally:
+        host.stop()
+
+
+def test_host_retries_guest_alignment_when_its_server_reference_arrives_later(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A preserved original is not terminal merely because its stem is late."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient(
+            "127.0.0.1", host.peer_port, credentials=credentials
+        )
+        guest = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-15T12:00:00Z")
+        take_dir = tmp_path / "late-reference-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-15T12:01:00Z")
+        host.register_take(take_id, take_dir)
+
+        source_times = (0.5, 1.7, 3.4, 5.6, 8.2, 10.5)
+        offset_s = 0.12175
+        guest_original = take_dir / "alex-original.wav"
+        _click_wav(guest_original, times=source_times, duration_s=12.0)
+        descriptor = _descriptor(
+            guest_original, credentials, guest.participant_id, take_id
+        )
+        assert client.upload_file(guest, descriptor, guest_original).complete
+        assert host.reconcile_take(take_id, take_dir)
+
+        waiting = next(
+            track
+            for track in load_take_project(take_dir).tracks
+            if track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert waiting.quality is SourceQuality.UNVERIFIED
+        assert waiting.alignment.method.startswith(
+            "peer-local-original-awaiting-reference/"
+        )
+
+        server_reference = take_dir / "alex-server-reference.wav"
+        _click_wav(
+            server_reference,
+            times=tuple(time_s + offset_s for time_s in source_times),
+            duration_s=12.0,
+        )
+        _append_server_reference(
+            take_dir,
+            participant_id=guest.participant_id,
+            display_name="Alex",
+            source=server_reference,
+        )
+
+        assert host.reconcile_take(take_id, take_dir)
+        promoted = next(
+            track
+            for track in load_take_project(take_dir).tracks
+            if track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert promoted.quality is SourceQuality.VERIFIED_ISOLATED
+        assert promoted.alignment.method.startswith(
+            "peer-local-original-verified-alignment/"
+        )
+    finally:
+        host.stop()
+
+
+def test_host_retries_after_manifest_changes_during_peer_alignment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A recorder-side manifest update cannot be overwritten by slow alignment."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    from core import take_alignment
+
+    real_align = take_alignment.align_project_tracks
+    alignment_started = threading.Event()
+    release_alignment = threading.Event()
+
+    def delayed_align(*args, **kwargs):
+        alignment_started.set()
+        assert release_alignment.wait(10.0)
+        return real_align(*args, **kwargs)
+
+    monkeypatch.setattr(take_alignment, "align_project_tracks", delayed_align)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient(
+            "127.0.0.1", host.peer_port, credentials=credentials
+        )
+        guest = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-15T12:00:00Z")
+        take_dir = tmp_path / "concurrent-manifest-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        source_times = (0.5, 1.7, 3.4, 5.6, 8.2, 10.5)
+        offset_s = 0.12175
+        guest_original = take_dir / "alex-original.wav"
+        server_reference = take_dir / "alex-server-reference.wav"
+        _click_wav(guest_original, times=source_times, duration_s=12.0)
+        _click_wav(
+            server_reference,
+            times=tuple(time_s + offset_s for time_s in source_times),
+            duration_s=12.0,
+        )
+        _append_server_reference(
+            take_dir,
+            participant_id=guest.participant_id,
+            display_name="Alex",
+            source=server_reference,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-15T12:01:00Z")
+        host.register_take(take_id, take_dir)
+        descriptor = _descriptor(
+            guest_original, credentials, guest.participant_id, take_id
+        )
+        assert client.upload_file(guest, descriptor, guest_original).complete
+
+        result: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: result.append(host.reconcile_take(take_id, take_dir)),
+        )
+        worker.start()
+        assert alignment_started.wait(10.0)
+        before_external_write = load_take_project(take_dir)
+        marker = ProjectMarker(new_project_id(), 0.75, "Recorder note")
+        write_take_project(
+            take_dir,
+            replace(
+                before_external_write,
+                markers=(*before_external_write.markers, marker),
+                revision=before_external_write.revision + 1,
+            ),
+        )
+        release_alignment.set()
+        worker.join(timeout=15.0)
+        assert not worker.is_alive()
+        assert result == [True]
+
+        reconciled = load_take_project(take_dir)
+        assert marker in reconciled.markers
+        attached = next(
+            track
+            for track in reconciled.tracks
+            if track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert attached.quality is SourceQuality.VERIFIED_ISOLATED
+    finally:
+        release_alignment.set()
+        host.stop()
+
+
+def test_host_retries_when_manifest_changes_just_before_conditional_commit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The final compare-and-replace closes the post-analysis TOCTOU window."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    from core import take_project
+
+    real_commit = take_project.replace_take_project_manifest_if_unchanged
+    commit_entered = threading.Event()
+    release_commit = threading.Event()
+    commits = 0
+
+    def delayed_first_commit(*args, **kwargs):
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            commit_entered.set()
+            assert release_commit.wait(10.0)
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(
+        take_project,
+        "replace_take_project_manifest_if_unchanged",
+        delayed_first_commit,
+    )
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient(
+            "127.0.0.1", host.peer_port, credentials=credentials
+        )
+        guest = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-15T12:00:00Z")
+        take_dir = tmp_path / "commit-race-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-15T12:01:00Z")
+
+        original = tmp_path / "alex-original.wav"
+        _wav(original)
+        descriptor = _descriptor(
+            original, credentials, guest.participant_id, take_id
+        )
+        assert client.upload_file(guest, descriptor, original).complete
+
+        result: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: result.append(host.reconcile_take(take_id, take_dir)),
+        )
+        worker.start()
+        assert commit_entered.wait(10.0)
+        before_external_write = load_take_project(take_dir)
+        marker = ProjectMarker(new_project_id(), 0.75, "Recorder note")
+        write_take_project(
+            take_dir,
+            replace(
+                before_external_write,
+                markers=(*before_external_write.markers, marker),
+                revision=before_external_write.revision + 1,
+            ),
+        )
+        release_commit.set()
+        worker.join(timeout=15.0)
+        assert not worker.is_alive()
+        assert result == [True]
+
+        reconciled = load_take_project(take_dir)
+        assert marker in reconciled.markers
+        assert any(
+            track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+            for track in reconciled.tracks
+        )
+    finally:
+        release_commit.set()
         host.stop()
 
 
@@ -986,6 +1555,11 @@ def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
         )
         host.finish_take(second_take_id, stopped_utc="2026-07-15T00:03:00Z")
         host.register_take(second_take_id, second_take_dir)
+        _wait_until(
+            lambda: updates
+            == [(second_take_id, second_take_dir.resolve(), False)],
+            "current-session peer inventory after restart",
+        )
         assert updates == [(second_take_id, second_take_dir.resolve(), False)]
     finally:
         release_checksum.set()
@@ -1032,6 +1606,8 @@ def test_host_take_update_callback_can_stop_reentrantly(
         )
         host.finish_take(take_id, stopped_utc="2026-07-15T00:01:00Z")
         host.register_take(take_id, take_dir)
+        _wait_until(lambda: updates == [take_id], "reentrant take update")
+        _wait_until(lambda: not host.active, "reentrant host shutdown")
 
         assert updates == [take_id]
         assert not host.active

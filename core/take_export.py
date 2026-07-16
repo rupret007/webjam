@@ -65,6 +65,10 @@ LogicExportResult = TrackExportResult
 
 
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._() -]+")
+_PEER_VERIFIED_ALIGNMENT_PREFIX = "peer-local-original-verified-alignment/"
+_PEER_ALIGNMENT_MIN_CONFIDENCE = 0.85
+_PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
+_PEER_ALIGNMENT_MIN_ANCHORS = 3
 
 
 def _safe_name(value: str, fallback: str) -> str:
@@ -459,16 +463,87 @@ def _project_timeline_frames(project) -> int:
     return latest
 
 
-def _unaligned_local_original_names(tracks) -> list[str]:
+def _reference_fingerprint(track) -> str:
+    """Match the immutable peer-reference fingerprint recorded at alignment."""
+
+    digest = hashlib.sha256()
+    for segment in sorted(
+        tuple(track.segments), key=lambda item: item.segment_id
+    ):
+        digest.update(str(segment.segment_id).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(segment.sha256 or "").lower().encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(segment.frame_count).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(segment.sample_rate).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(segment.channels).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _peer_reference_is_still_verified(track, all_tracks, take_root: Path) -> bool:
+    """Require the exact source reference and its immutable bytes at export."""
+
+    from core.take_project import MediaStatus, SourceQuality, SourceType
+
+    alignment = track.alignment
+    reference_id = str(alignment.reference_track_id or "")
+    fingerprint = str(alignment.reference_fingerprint_sha256 or "").lower()
+    if not reference_id or not fingerprint:
+        return False
+    references = [
+        candidate
+        for candidate in all_tracks
+        if candidate.track_id == reference_id
+        and candidate.participant_id == track.participant_id
+        and candidate.source_type is SourceType.JAMULUS_SERVER
+        and candidate.quality is SourceQuality.NETWORK_TRACK
+    ]
+    if len(references) != 1:
+        return False
+    reference = references[0]
+    if _reference_fingerprint(reference) != fingerprint:
+        return False
+    if reference.media_status is not MediaStatus.AVAILABLE:
+        return False
+    for segment in reference.segments:
+        if segment.media_status is not MediaStatus.AVAILABLE or not segment.sha256:
+            return False
+        source = (take_root / segment.path).resolve()
+        try:
+            source.relative_to(take_root)
+        except ValueError:
+            return False
+        try:
+            if (
+                not source.is_file()
+                or (segment.size_bytes and source.stat().st_size != segment.size_bytes)
+                or _sha256(source) != segment.sha256
+            ):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _unaligned_local_original_names(
+    tracks,
+    *,
+    all_tracks=(),
+    take_root: Path | None = None,
+) -> list[str]:
     """Return local originals that cannot truthfully share the export timeline.
 
-    A transferred guest original is intentionally attached with an explicit
-    ``peer-local-original-unverified-alignment`` marker until WebJam has a
-    defensible project-time transform for it.  Rendering that media at zero
-    would make a convenient-looking but false track export.  The host's
-    existing local-capture path may remain ``UNVERIFIED`` while still carrying
-    a positive automatic alignment confidence, so quality alone is not enough
-    to reject it.
+    A transferred guest original is timing-ready only when the peer attachment
+    path records both the explicit verified-alignment provenance and
+    ``VERIFIED_ISOLATED`` quality.  An uncertain transient result may retain a
+    positive confidence and useful anchors for Studio review, but must not be
+    rendered as a trustworthy zero-origin performance stem.  The host's
+    existing local-capture path may remain ``UNVERIFIED`` while carrying a
+    positive automatic alignment confidence, so this stricter rule is scoped
+    to peer-origin provenance rather than quality alone.
     """
     from core.take_project import SourceQuality, SourceType
 
@@ -478,11 +553,22 @@ def _unaligned_local_original_names(tracks) -> list[str]:
             continue
         confidence = float(track.alignment.confidence)
         method = str(track.alignment.method or "").strip().lower()
-        peer_unverified = (
-            method.startswith("peer-local-original")
-            and track.quality is SourceQuality.UNVERIFIED
+        peer_timing_ready = (
+            method.startswith(_PEER_VERIFIED_ALIGNMENT_PREFIX)
+            and track.quality is SourceQuality.VERIFIED_ISOLATED
+            and confidence >= _PEER_ALIGNMENT_MIN_CONFIDENCE
+            and float(track.alignment.residual_ms)
+            <= _PEER_ALIGNMENT_MAX_RESIDUAL_MS
+            and len(track.alignment.anchors) >= _PEER_ALIGNMENT_MIN_ANCHORS
+            and take_root is not None
+            and _peer_reference_is_still_verified(
+                track,
+                all_tracks,
+                take_root,
+            )
         )
-        if confidence <= 0.0 or peer_unverified:
+        peer_original = method.startswith("peer-local-original")
+        if confidence <= 0.0 or (peer_original and not peer_timing_ready):
             blocked.append(track.name)
     return blocked
 
@@ -576,7 +662,11 @@ def _export_project_track_package(
             + ". Review the recording or intentionally deselect the affected track "
             "before export."
         )
-    unaligned_local_originals = _unaligned_local_original_names(selected)
+    unaligned_local_originals = _unaligned_local_original_names(
+        selected,
+        all_tracks=project.tracks,
+        take_root=take.path.resolve(),
+    )
     if unaligned_local_originals:
         raise TakeExportError(
             "WebJam cannot create a timing-ready track export because these "

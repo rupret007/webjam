@@ -1,7 +1,8 @@
 # WebJam v0.16 two-Mac pilot worksheet
 
-Fill this out against the final v0.16 package only. Do not copy a package SHA,
-source SHA, or test count from v0.15.0.
+> Historical v0.16.0 worksheet: use this record only for the archived package
+> identified below. Do not copy its package SHA, source SHA, or test count into
+> a newer candidate; a fresh package needs its own worksheet and physical run.
 
 ## Package identity
 

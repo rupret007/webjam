@@ -19,8 +19,8 @@ v0.16 establishes the boundary:
 - Simple Host/Join first screen.
 - Non-modal role-aware startup journey.
 - Visible Jamulus native setup with a dedicated, Jamulus-owned profile.
-- Human audibility confirmation and exact-profile returning fast path.
-- Optional Webex after music readiness.
+- Automatic session handoff after authenticated Jamulus connection proof.
+- Optional Webex under **More**, never in the music startup path.
 - First-Record Local Originals choice and Studio-only playback output.
 - Private, allowlisted restart recovery state.
 - Burnt-orange three-loop WebJam mark and black/white/orange UI.

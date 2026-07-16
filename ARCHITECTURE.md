@@ -35,15 +35,19 @@ RPC calls.
 `SessionHud`:
 
 1. host server start (host only);
-2. native Jamulus sound setup;
+2. visible native Jamulus launch and sound setup;
 3. process/RPC/connection/local-identity proof;
-4. explicit human audibility confirmation;
-5. optional Webex decision;
-6. invite ready or enter jam.
+4. automatic handoff to the ordinary Session HUD and safe invite readiness.
+
+Jamulus setup is not a WebJam approval gate: WebJam watches for fresh,
+authenticated connection proof and moves into the session automatically. It
+does not call that proof audibility; musicians play a note and verify each
+other, with Band Check available if help is needed. Webex is optional under
+**More** and never delays the session or invite.
 
 The persisted attempt record holds only a digest ID, generation, role, safe
-server/client phases, profile fingerprint, connection state, human-confirmed
-flag, Webex decision enum, and next-action enum. It stores no invite,
+server/client phases, profile fingerprint, connection state, compatibility
+confirmation/conversation state, and next-action enum. It stores no invite,
 credential, URL, device data, path, or notes. A restart resumes only after an
 exact profile match and new live proof.
 

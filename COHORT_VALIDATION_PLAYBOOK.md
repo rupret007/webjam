@@ -10,9 +10,10 @@ video. Recording and Studio are available when you need them, not before.”
 
 1. Verify the exact v0.16 package identity from the pilot worksheet.
 2. Host chooses **Host a Jam**; guest uses one invite.
-3. Each musician completes native Jamulus setup and explicitly confirms
-   audibility.
-4. Add/skip Webex only after music is ready.
+3. Each musician completes native Jamulus setup. WebJam moves into the session
+   automatically after authenticated connection proof; play a note and verify
+   audibility with each other.
+4. Use **More → Webex / Conversation** only if the band wants it.
 5. Record a short shared take; separately opt into Local Originals only if
    desired.
 6. Review/export in Studio and record the actual result.

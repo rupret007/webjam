@@ -23,6 +23,7 @@ from core.take_project import (
     SourceQuality,
     SourceType,
     TakeProject,
+    TakeProjectConflict,
     TakeProjectError,
     HostIdentity,
     load_take_project,
@@ -112,6 +113,33 @@ def test_schema_v2_round_trip_preserves_identity_segments_gaps_and_alignment(tmp
     assert data["tracks"][0]["filename"] == "media/guitar-01.wav"
     assert data["tracks"][0]["offset_s"] == pytest.approx(-0.123)
     assert "session" not in data
+
+
+@pytest.mark.parametrize("stale_revision_offset", (0, 3))
+def test_project_writer_rejects_a_stale_revision_update(
+    tmp_path,
+    stale_revision_offset,
+):
+    """A delayed writer cannot silently replace newer peer/project truth."""
+
+    original = _project()
+    write_take_project(tmp_path, original)
+    newer = replace(
+        original,
+        markers=(*original.markers, ProjectMarker(new_project_id(), 12.0, "Chorus")),
+        revision=original.revision + 1,
+    )
+    write_take_project(tmp_path, newer)
+    stale = replace(
+        original,
+        warnings=("stale writer",),
+        revision=original.revision + 1 + stale_revision_offset,
+    )
+
+    with pytest.raises(TakeProjectConflict, match="newer revision"):
+        write_take_project(tmp_path, stale)
+
+    assert load_take_project(tmp_path) == newer
 
 
 def test_session_evidence_round_trip_preserves_recording_provenance(tmp_path):

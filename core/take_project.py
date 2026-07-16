@@ -16,11 +16,13 @@ import hashlib
 import json
 import math
 import re
+import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterator, Iterable, Mapping
 
 from core.redaction import redact_text
 
@@ -28,10 +30,66 @@ from core.redaction import redact_text
 PROJECT_SCHEMA_VERSION = 2
 _MIGRATION_NAMESPACE = uuid.UUID("f1203a8a-b035-4fe0-8a48-1c5b23d78d33")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_MANIFEST_LOCKS_GUARD = threading.Lock()
+_MANIFEST_LOCKS: dict[Path, threading.RLock] = {}
 
 
 class TakeProjectError(ValueError):
     """Raised when a project manifest cannot be trusted or represented."""
+
+
+class TakeProjectConflict(TakeProjectError):
+    """Raised when a writer tries to replace a newer take-project revision."""
+
+
+def _take_project_manifest_path(take_dir: str | Path) -> Path:
+    """Return one stable, process-local lock identity for a project manifest."""
+
+    return Path(take_dir).expanduser().resolve() / "webjam-take.json"
+
+
+@contextmanager
+def take_project_manifest_lock(take_dir: str | Path) -> Iterator[Path]:
+    """Serialize short in-process project-manifest writes for one take.
+
+    This deliberately protects only metadata publication. Callers must perform
+    media hashing, copying, and timing analysis before acquiring the lock.
+    Atomic replacement still protects readers; the lock prevents two WebJam
+    writers from silently winning a read-modify-write race in this process.
+    """
+
+    manifest = _take_project_manifest_path(take_dir)
+    with _MANIFEST_LOCKS_GUARD:
+        lock = _MANIFEST_LOCKS.setdefault(manifest, threading.RLock())
+    with lock:
+        yield manifest
+
+
+def replace_take_project_manifest_if_unchanged(
+    take_dir: str | Path,
+    *,
+    expected_bytes: bytes,
+    payload: Mapping[str, Any],
+) -> bool:
+    """Atomically replace a manifest only when its exact snapshot still wins.
+
+    The caller supplies a payload derived from ``expected_bytes``. A false
+    result means another cooperative WebJam writer published newer project
+    truth, so the caller must reload and merge/retry rather than overwrite it.
+    """
+
+    from core.file_io import atomic_write_text
+
+    serialized = json.dumps(dict(payload), indent=2, sort_keys=False) + "\n"
+    with take_project_manifest_lock(take_dir) as manifest:
+        try:
+            current = manifest.read_bytes()
+        except OSError:
+            return False
+        if current != bytes(expected_bytes):
+            return False
+        atomic_write_text(manifest, serialized, mode=0o600)
+    return True
 
 
 class ProjectStatus(str, Enum):
@@ -308,6 +366,12 @@ class AlignmentState:
     method: str = "unverified"
     residual_ms: float = 0.0
     anchors: tuple[AlignmentAnchor, ...] = ()
+    # A peer original may rely on a different musician's immutable server
+    # capture only when this identifies the exact same-participant reference
+    # track and its declared segment fingerprint. Empty values retain legacy
+    # alignment compatibility; peer export uses them as a required gate.
+    reference_track_id: str = ""
+    reference_fingerprint_sha256: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -334,6 +398,24 @@ class AlignmentState:
             _finite_float(self.residual_ms, "alignment.residual_ms", minimum=0),
         )
         object.__setattr__(self, "anchors", tuple(self.anchors))
+        reference_track_id = str(self.reference_track_id or "").strip()
+        if reference_track_id:
+            reference_track_id = _canonical_uuid(
+                reference_track_id, "alignment.reference_track_id"
+            )
+        object.__setattr__(self, "reference_track_id", reference_track_id)
+        reference_fingerprint = str(
+            self.reference_fingerprint_sha256 or ""
+        ).strip().lower()
+        if reference_fingerprint and not _SHA256_RE.fullmatch(reference_fingerprint):
+            raise TakeProjectError(
+                "alignment.reference_fingerprint_sha256 must be a SHA-256 digest."
+            )
+        object.__setattr__(
+            self,
+            "reference_fingerprint_sha256",
+            reference_fingerprint,
+        )
 
     @property
     def effective_offset_s(self) -> float:
@@ -349,7 +431,7 @@ class AlignmentState:
         return replace(self, manual_nudge_s=0.0)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "automatic_offset_s": self.automatic_offset_s,
             "manual_nudge_s": self.manual_nudge_s,
             "effective_offset_s": self.effective_offset_s,
@@ -359,6 +441,13 @@ class AlignmentState:
             "residual_ms": self.residual_ms,
             "anchors": [item.to_dict() for item in self.anchors],
         }
+        if self.reference_track_id:
+            payload["reference_track_id"] = self.reference_track_id
+        if self.reference_fingerprint_sha256:
+            payload["reference_fingerprint_sha256"] = (
+                self.reference_fingerprint_sha256
+            )
+        return payload
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "AlignmentState":
@@ -376,6 +465,10 @@ class AlignmentState:
             method=value.get("method", "unverified"),
             residual_ms=value.get("residual_ms", 0.0),
             anchors=anchors,
+            reference_track_id=value.get("reference_track_id", ""),
+            reference_fingerprint_sha256=value.get(
+                "reference_fingerprint_sha256", ""
+            ),
         )
 
 
@@ -1331,13 +1424,53 @@ def load_take_project(take_dir: str | Path) -> TakeProject:
     raise TakeProjectError(f"Unsupported project schema: {schema!r}.")
 
 
-def write_take_project(take_dir: str | Path, project: TakeProject) -> Path:
-    """Atomically publish project metadata; never open or mutate source media."""
+def write_take_project(
+    take_dir: str | Path,
+    project: TakeProject,
+    *,
+    expected_revision: int | None = None,
+) -> Path:
+    """Atomically publish project metadata without replacing newer truth.
+
+    New projects and schema-v1 migration may write revision one. Once a
+    schema-v2 manifest exists, a changed payload must be exactly the next
+    revision from the version it read. This makes ordinary read-modify-write
+    callers fail closed instead of silently erasing a peer reconciliation that
+    finished just before their write.
+    """
+
     from core.file_io import atomic_write_text
 
     path = Path(take_dir)
     path.mkdir(parents=True, exist_ok=True)
-    manifest = path / "webjam-take.json"
     payload = json.dumps(project.to_dict(), indent=2, sort_keys=False) + "\n"
-    atomic_write_text(manifest, payload, mode=0o600)
+    with take_project_manifest_lock(path) as manifest:
+        try:
+            current_bytes = manifest.read_bytes()
+            current_payload = json.loads(current_bytes)
+        except (OSError, ValueError, TypeError):
+            current_payload = None
+            current_bytes = b""
+        if isinstance(current_payload, Mapping) and current_payload.get(
+            "schema_version"
+        ) == PROJECT_SCHEMA_VERSION:
+            try:
+                current_revision = int(current_payload.get("revision", 0) or 0)
+            except (TypeError, ValueError):
+                current_revision = 0
+            if expected_revision is not None and current_revision != int(
+                expected_revision
+            ):
+                raise TakeProjectConflict(
+                    "The take project changed before this update could be saved."
+                )
+            if current_bytes != payload and project.revision != current_revision + 1:
+                raise TakeProjectConflict(
+                    "The take project has a newer revision; reload it before saving."
+                )
+        elif expected_revision is not None:
+            raise TakeProjectConflict(
+                "The take project is not at the revision required for this update."
+            )
+        atomic_write_text(manifest, payload, mode=0o600)
     return manifest

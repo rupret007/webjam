@@ -109,6 +109,56 @@ def test_dialog_uses_band_check_name_exact_outcome_and_plain_next_action() -> No
         dialog.close()
 
 
+def test_footer_keeps_audio_settings_label_compact_and_explicit() -> None:
+    dialog = _dialog(_session())
+    try:
+        buttons = {button.text(): button for button in dialog.findChildren(QPushButton)}
+        audio = buttons["Audio Settings"]
+        assert audio.accessibleName() == "Jamulus audio settings"
+        assert "Jamulus" in audio.accessibleDescription()
+    finally:
+        dialog.close()
+
+
+def test_optional_webex_note_never_blocks_start_session() -> None:
+    session = BandCheckSession(
+        BandCheckMode.PRE_SESSION,
+        [
+            BandCheckStep(
+                BandCheckStepKey.MUSIC_ENGINE,
+                "Music engine",
+                BandCheckStatus.PASS,
+                "Available",
+            ),
+            BandCheckStep(
+                BandCheckStepKey.WEBEX,
+                "Webex companion",
+                BandCheckStatus.WARNING,
+                "Optional conversation note.",
+                required=False,
+            ),
+        ],
+    )
+    with mock.patch(
+        "webjam_qt.windows.ready_check.build_band_check_session",
+        return_value=session,
+    ):
+        dialog = BandCheckDialog(
+            lambda: _settings(),
+            start_session_when_ready=True,
+        )
+        dialog.show()
+        for _ in range(30):
+            APP.processEvents()
+            if dialog._session is not None:
+                break
+    try:
+        assert session.outcome is BandCheckOutcome.READY
+        assert dialog._primary.text() == "Start Session"
+    finally:
+        dialog.close()
+
+
 def test_constructing_dialog_never_plays_or_records() -> None:
     with mock.patch(
         "webjam_qt.windows.ready_check.build_band_check_session",

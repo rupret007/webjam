@@ -67,6 +67,19 @@ class RecorderSnapshot:
     recording: bool
 
 
+@dataclass(frozen=True)
+class _ToggleAttempt:
+    """One recorder RPC request bound to the take that requested it.
+
+    Jamulus recorder notifications and RPC replies arrive independently.  The
+    take ID is therefore carried back to the UI thread so a late worker reply
+    can never mutate a later take (or revive one that has entered validation).
+    """
+
+    take_id: str
+    target_armed: bool
+
+
 class RecordingCoordinator:
     """Own the same-Mac/remote recorder state machine and take verification."""
 
@@ -81,6 +94,15 @@ class RecordingCoordinator:
         self._session_title = ""
         self._session_id = new_project_id()
         self._take_id = ""
+        # ``_take_id`` is active ownership, not history.  Completed take
+        # metadata lives in ``last_completed_take``/``last_validation`` so an
+        # unrelated recorder notification can never reopen an old take.
+        self._validation_take_id = ""
+        # Workers are invoked through the controller's stable two-argument
+        # compatibility wrapper. The thread-local attempt carries the request
+        # identity through that wrapper without a mutable global slot that a
+        # later Stop could overwrite while a Start worker is still in flight.
+        self._toggle_worker_context = threading.local()
         self._local_participant_id = new_project_id()
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
@@ -120,6 +142,44 @@ class RecordingCoordinator:
             capture = self._local_capture
             self._local_capture = None
             return capture
+
+    def _start_take_validation_once(self) -> bool:
+        """Hand one active take to validation exactly once.
+
+        A ``recorderState(false)`` notification is authoritative evidence that
+        the server has stopped.  Its RPC worker may still report a timeout
+        afterwards, so this guard must be take-scoped rather than phase-only.
+        """
+
+        take_id = self._take_id
+        if not take_id or self._validation_take_id == take_id:
+            return False
+        self._validation_take_id = take_id
+        self._set_phase(RecorderPhase.VALIDATING)
+        self._begin_take_validation(take_id)
+        return True
+
+    def _retire_active_take(self, take_id: str) -> None:
+        """Forget active ownership after a terminal validation/recovery path."""
+
+        if take_id and self._take_id == take_id:
+            self._take_id = ""
+        if take_id and self._validation_take_id == take_id:
+            self._validation_take_id = ""
+
+    def _toggle_callback_is_current(self, take_id: str | None) -> bool:
+        """Reject a late RPC completion for a retired or validating take."""
+
+        if take_id is None:
+            # Direct controller/unit-test calls predate take-bound callbacks.
+            # They remain useful for isolated state tests; production worker
+            # callbacks always carry an explicit take ID.
+            return True
+        return bool(
+            take_id
+            and take_id == self._take_id
+            and take_id != self._validation_take_id
+        )
 
     @staticmethod
     def _utc_timestamp() -> str:
@@ -176,6 +236,10 @@ class RecordingCoordinator:
     def _reset_session_evidence(self) -> None:
         """Begin a new take-local evidence context before requesting record."""
         peer_control = "webjam-v2-private-peer" if self._c.host_peer.active else "none"
+        # A fresh UUID is assigned immediately before this method for normal
+        # recording starts.  Clear only the prior operation bookkeeping; the
+        # completed take itself remains available through ``last_validation``.
+        self._validation_take_id = ""
         with self._evidence_lock:
             self._recording_started_utc = ""
             self._recording_ended_utc = ""
@@ -622,6 +686,7 @@ class RecordingCoordinator:
         if self.phase is RecorderPhase.VALIDATING:
             # The validation worker owns the capture and will finish the take.
             return
+        active_take_id = self._take_id
         recovered, errors = self._salvage_capture()
         self._mark_recording_recovery(
             RecoveryStatus.NEEDS_ATTENTION,
@@ -634,6 +699,7 @@ class RecordingCoordinator:
         self._set_phase(RecorderPhase.IDLE)
         if recovered is not None:
             self._notify_recovered(recovered, errors)
+        self._retire_active_take(active_take_id)
 
     @property
     def snapshot(self) -> RecorderSnapshot:
@@ -777,9 +843,13 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.STARTING)
         else:
             self._set_phase(RecorderPhase.STOPPING)
+        attempt = _ToggleAttempt(
+            take_id=self._take_id,
+            target_armed=target_armed,
+        )
         threading.Thread(
-            target=self._c._record_toggle_worker,
-            args=(target_armed, secret_file),
+            target=self._run_toggle_attempt,
+            args=(attempt, secret_file),
             daemon=True,
             name="record-toggle",
         ).start()
@@ -1032,11 +1102,35 @@ class RecordingCoordinator:
         )
         return recovery_dir
 
+    def _run_toggle_attempt(self, attempt: _ToggleAttempt, secret_file: str) -> None:
+        """Carry one request's take identity through the legacy worker hook."""
+
+        self._toggle_worker_context.attempt = attempt
+        try:
+            self._c._record_toggle_worker(attempt.target_armed, secret_file)
+        finally:
+            try:
+                del self._toggle_worker_context.attempt
+            except AttributeError:
+                pass
+
     def toggle_worker(self, target_armed: bool, secret_file: str) -> None:
         from core.jamulus_server_rpc import (
             JamulusServerRpc,
             ServerRpcError,
             read_secret_file,
+        )
+
+        attempt = getattr(self._toggle_worker_context, "attempt", None)
+        # Retain the originating ID even when it was retired before this
+        # worker got CPU time. ``apply_*`` rejects that callback instead of
+        # falling back to the legacy unbound path and mutating a newer take.
+        callback_take_id = (
+            attempt.take_id
+            if isinstance(attempt, _ToggleAttempt)
+            and attempt.target_armed is target_armed
+            and attempt.take_id
+            else None
         )
 
         try:
@@ -1059,22 +1153,47 @@ class RecordingCoordinator:
                     time.sleep(0.25)
                 if armed != target_armed:
                     raise ServerRpcError("The recorder state did not change in time.")
-            self._c._ui_invoker.invoke(
-                lambda: self._c._apply_record_toggle_result(armed)
-            )
+            if callback_take_id is None:
+                self._c._ui_invoker.invoke(
+                    lambda: self._c._apply_record_toggle_result(armed)
+                )
+            else:
+                self._c._ui_invoker.invoke(
+                    lambda take_id=callback_take_id: self.apply_toggle_result(
+                        armed, take_id=take_id
+                    )
+                )
         except ServerRpcError as exc:
-            self._c._ui_invoker.invoke(
-                lambda message=str(exc): self._c._apply_record_toggle_failure(message)
-            )
+            if callback_take_id is None:
+                self._c._ui_invoker.invoke(
+                    lambda message=str(exc): self._c._apply_record_toggle_failure(message)
+                )
+            else:
+                self._c._ui_invoker.invoke(
+                    lambda message=str(exc), take_id=callback_take_id: self.apply_toggle_failure(
+                        message, take_id=take_id
+                    )
+                )
         except Exception:  # noqa: BLE001
             LOGGER.exception("Record toggle failed unexpectedly")
-            self._c._ui_invoker.invoke(
-                lambda: self._c._apply_record_toggle_failure(
-                    "WebJam couldn't confirm the band server's recording state."
+            if callback_take_id is None:
+                self._c._ui_invoker.invoke(
+                    lambda: self._c._apply_record_toggle_failure(
+                        "WebJam couldn't confirm the band server's recording state."
+                    )
                 )
-            )
+            else:
+                self._c._ui_invoker.invoke(
+                    lambda take_id=callback_take_id: self.apply_toggle_failure(
+                        "WebJam couldn't confirm the band server's recording state.",
+                        take_id=take_id,
+                    )
+                )
 
-    def apply_toggle_result(self, armed: bool) -> None:
+    def apply_toggle_result(self, armed: bool, *, take_id: str | None = None) -> None:
+        if not self._toggle_callback_is_current(take_id):
+            LOGGER.debug("Ignoring stale recorder RPC result for a retired take")
+            return
         self._c._recorder_armed = armed
         self._c.session_health.mark_recorder(
             armed=armed, recording=self._c._server_recording
@@ -1105,10 +1224,15 @@ class RecordingCoordinator:
                     self._c.signal_peer_recording_stopped(
                         self._take_id, stopped_utc=stopped_utc
                     )
-            self._set_phase(RecorderPhase.VALIDATING)
-            self._begin_take_validation()
+                self._start_take_validation_once()
+            else:
+                self._set_phase(RecorderPhase.IDLE)
+                self._c.window.flash_message("Recording stopped.", ms=3000)
 
-    def apply_toggle_failure(self, message: str) -> None:
+    def apply_toggle_failure(self, message: str, *, take_id: str | None = None) -> None:
+        if not self._toggle_callback_is_current(take_id):
+            LOGGER.debug("Ignoring stale recorder RPC failure for a retired take")
+            return
         ambiguous_start = (
             self.phase is RecorderPhase.STARTING
             and not self._c._recorder_armed
@@ -1195,11 +1319,27 @@ class RecordingCoordinator:
                             else ""
                         ),
                     )
-            if self.phase is not RecorderPhase.STOPPING:
-                self._c._recorder_armed = False
-                self._set_phase(RecorderPhase.VALIDATING)
-                if prior_phase is RecorderPhase.RECORDING:
-                    self._begin_take_validation()
+            # The state notification is authoritative even if the stop RPC
+            # subsequently times out.  Do not wait for that worker before
+            # finalizing a take: it can otherwise leave real local media in a
+            # STOP_FAILED/VALIDATING limbo indefinitely.
+            self._c._recorder_armed = False
+            self._c.session_health.mark_recorder(armed=False, recording=False)
+            if self._take_id:
+                if self._validation_take_id == self._take_id:
+                    self._set_phase(RecorderPhase.VALIDATING)
+                else:
+                    self._start_take_validation_once()
+            elif self.phase in {
+                RecorderPhase.STARTING,
+                RecorderPhase.RECORDING,
+                RecorderPhase.STOPPING,
+                RecorderPhase.STOP_FAILED,
+            }:
+                # WebJam can still display a recorder it did not start, but a
+                # manual/external stop must never manufacture a project from a
+                # previously completed take.
+                self._set_phase(RecorderPhase.IDLE)
         if not recording:
             self._c.window.flash_message("Server recording stopped.", ms=3000)
 
@@ -1266,7 +1406,10 @@ class RecordingCoordinator:
         self._recovery_box = box
         box.open()
 
-    def _begin_take_validation(self) -> None:
+    def _begin_take_validation(self, take_id: str | None = None) -> None:
+        """Start validation for one already-stopped, locally owned take."""
+
+        active_take_id = self._take_id if take_id is None else take_id
         root = self._c.settings.takes_directory
         if not root:
             self._mark_recording_recovery(
@@ -1281,9 +1424,11 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             if recovered is not None:
                 self._notify_recovered(recovered, errors)
+            self._retire_active_take(active_take_id)
             return
         threading.Thread(
             target=self._validate_take_worker,
+            args=(active_take_id,),
             daemon=True,
             name="take-validation",
         ).start()
@@ -1301,10 +1446,10 @@ class RecordingCoordinator:
             )
         )
 
-    def _validate_take_worker(self) -> None:
+    def _validate_take_worker(self, take_id: str | None = None) -> None:
         """Never leave the recorder UI stuck if validation itself fails."""
         try:
-            result = self._build_take_validation()
+            result = self._build_take_validation(take_id=take_id)
         except Exception:  # noqa: BLE001
             LOGGER.exception("Take validation failed unexpectedly")
             candidate = find_changed_take(
@@ -1323,10 +1468,13 @@ class RecordingCoordinator:
                 ),
             )
         self._c._ui_invoker.invoke(
-            lambda: self._show_validation_result(result)
+            lambda: self._show_validation_result(result, take_id=take_id)
         )
 
-    def _build_take_validation(self) -> TakeValidationResult:
+    def _build_take_validation(
+        self, *, take_id: str | None = None
+    ) -> TakeValidationResult:
+        active_take_id = self._take_id if take_id is None else take_id
         root = self._c.settings.takes_directory
         take_dir = None
         self._post_validation_stage("WAITING FOR SERVER FILES…")
@@ -1353,6 +1501,7 @@ class RecordingCoordinator:
             duration_s = 0.0
             capture_gaps: tuple[object, ...] = ()
             local_total_frames = 0
+            local_durable_frames: int | None = None
             capture_device = None
             capture = self._take_local_capture()
             if capture is not None:
@@ -1363,6 +1512,9 @@ class RecordingCoordinator:
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
                 local_total_frames = int(
                     getattr(local_result, "total_frames", 0) or 0
+                )
+                local_durable_frames = getattr(
+                    local_result, "durable_frames", None
                 )
                 capture_device = getattr(local_result, "capture_device", None)
                 actual_recovery_dir = getattr(local_result, "recovery_dir", None)
@@ -1394,13 +1546,14 @@ class RecordingCoordinator:
                     participant_names=self._track_names,
                     session_title=self._session_title,
                     session_id=self._session_id,
-                    take_id=self._take_id,
+                    take_id=active_take_id,
                     participant_ids=self._participant_ids,
                     local_participant_id=self._local_participant_id,
                     local_participant_name=self._c.settings.musician_name,
                     capture_device=capture_device,
                     capture_gaps=capture_gaps,
                     local_total_frames=local_total_frames,
+                    local_durable_frames=local_durable_frames,
                     session_evidence=self._current_session_evidence(),
                 )
                 if result.take is not None:
@@ -1416,6 +1569,7 @@ class RecordingCoordinator:
             duration_s = 0.0
             capture_gaps: tuple[object, ...] = ()
             local_total_frames = 0
+            local_durable_frames: int | None = None
             capture_device = None
             capture = self._take_local_capture()
             if capture is not None:
@@ -1426,6 +1580,9 @@ class RecordingCoordinator:
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
                 local_total_frames = int(
                     getattr(local_result, "total_frames", 0) or 0
+                )
+                local_durable_frames = getattr(
+                    local_result, "durable_frames", None
                 )
                 capture_device = getattr(local_result, "capture_device", None)
             self._post_validation_stage("CHECKING TRACKS…")
@@ -1451,20 +1608,27 @@ class RecordingCoordinator:
                 participant_names=self._track_names,
                 session_title=self._session_title,
                 session_id=self._session_id,
-                take_id=self._take_id,
+                take_id=active_take_id,
                 participant_ids=self._participant_ids,
                 local_participant_id=self._local_participant_id,
                 local_participant_name=self._c.settings.musician_name,
                 capture_device=capture_device,
                 capture_gaps=capture_gaps,
                 local_total_frames=local_total_frames,
+                local_durable_frames=local_durable_frames,
                 session_evidence=self._current_session_evidence(),
             )
             if result.take is not None:
                 self._remove_evidence_journal_after_manifest()
         return result
 
-    def _show_validation_result(self, result: TakeValidationResult) -> None:
+    def _show_validation_result(
+        self, result: TakeValidationResult, *, take_id: str | None = None
+    ) -> None:
+        if take_id and take_id != self._take_id:
+            LOGGER.debug("Ignoring validation result for a retired recording take")
+            return
+        completed_take_id = self._take_id if take_id is None else take_id
         self.last_validation = result
         self.last_completed_take = result.take.path if result.take else None
         for warning in result.warnings:
@@ -1494,11 +1658,12 @@ class RecordingCoordinator:
             result.take.path if result.take else None,
             result,
         )
-        if result.take is not None and self._take_id and self._c.host_peer.active:
+        if result.take is not None and completed_take_id and self._c.host_peer.active:
             try:
-                self._c.host_peer.register_take(self._take_id, result.take.path)
+                self._c.host_peer.register_take(completed_take_id, result.take.path)
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Could not attach peer transfer inventory to take")
+        self._retire_active_take(completed_take_id)
 
     @staticmethod
     def _completion_text(result: TakeValidationResult) -> tuple[str, str]:

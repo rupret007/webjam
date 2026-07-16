@@ -6,7 +6,7 @@
 | Join a rehearsal | Launch WebJam → **Join a Jam** → paste one invite |
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a bandmate | Host setup → **Copy Invite** |
-| Add talk/video | After music is ready, choose **Add Webex** or **More → Webex / Conversation** |
+| Add talk/video | Choose **More → Webex / Conversation** when your band wants it |
 | Record the band | Host → **Record** |
 | Keep local interface stems | First host Record → **Also Keep This Mac’s Inputs** |
 | Review a take | **More → Studio** |

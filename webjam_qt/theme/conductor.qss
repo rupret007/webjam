@@ -273,6 +273,13 @@ QPushButton#QuietButton:focus {
     padding: 0 18px;
 }
 
+/* The label supplies the one intentional More chevron. Suppress Qt's extra
+ * native menu glyph, which otherwise floats below/right of the button. */
+#SessionControlBar QToolButton#GhostButton::menu-indicator {
+    image: none;
+    width: 0px;
+}
+
 #SessionControlBar QPushButton#AudioButton[destructive="true"] {
     background-color: ${COLOR_BG_CARD};
     color: ${COLOR_TEXT_PRIMARY};

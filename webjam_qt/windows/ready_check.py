@@ -193,8 +193,12 @@ class BandCheckDialog(QDialog):
         root.addWidget(self._report, stretch=1)
 
         footer = QHBoxLayout()
-        settings = QPushButton("Jamulus Audio Settings")
+        settings = QPushButton("Audio Settings")
         settings.setObjectName("GhostButton")
+        settings.setAccessibleName("Jamulus audio settings")
+        settings.setAccessibleDescription(
+            "Bring Jamulus forward to change your interface, headphones, and buffer."
+        )
         settings.clicked.connect(self.settings_requested.emit)
         footer.addWidget(settings)
         practice = QPushButton("Practice Solo")

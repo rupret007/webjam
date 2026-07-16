@@ -631,8 +631,11 @@ def _presentation(
             phase,
             role,
             SessionPrimaryAction.RECORD if host else SessionPrimaryAction.NONE,
-            "You’re ready to play",
-            "Your band is connected. Play a note, then confirm you can hear each other.",
+            "Band connected",
+            (
+                "Your band is connected. Play a note, then make sure you can hear "
+                "each other before recording. Use Band Check (F2) if you need help."
+            ),
             "Only musicians can confirm two-way audibility; meters do not prove it.",
         )
     if phase is SessionConductorPhase.RECORDING_STARTING:
@@ -1140,6 +1143,28 @@ class SessionConductor:
         )
         self._revision = 0
         self._facts = SessionFacts(role=self._token.role, setup_requested=True)
+        self._needs_fresh_observation = False
+        return self._token
+
+    def reset_to_idle(
+        self,
+        role: SessionRole | str | None = None,
+    ) -> SessionConductorToken:
+        """Invalidate an ended/cancelled attempt after confirmed cleanup.
+
+        Controllers must call this only once their owned cleanup has reached a
+        known idle boundary.  It deliberately advances the token instead of
+        merely replacing facts, so an old worker cannot redraw a session after
+        the musician has safely left it.
+        """
+
+        reset_role = self._token.role if role is None else _coerce_role(role)
+        self._token = SessionConductorToken(
+            self._token.generation + 1,
+            reset_role,
+        )
+        self._revision = 0
+        self._facts = SessionFacts(role=reset_role)
         self._needs_fresh_observation = False
         return self._token
 

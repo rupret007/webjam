@@ -406,6 +406,9 @@ class AudioCoordinator:
         self._c.session_health.mark_participants(len(jamulus_participants))
 
         if not self.connected and local_session_proven:
+            recovered_from_interruption = bool(
+                self.recovering or self.connection_timed_out
+            )
             self.connected = True
             self.recovering = False
             self.connection_timed_out = False
@@ -417,6 +420,8 @@ class AudioCoordinator:
                 SessionLifecyclePhase.CONNECTED,
                 "This Mac is present in the live Jamulus roster",
             )
+            if recovered_from_interruption:
+                self._c._resume_session_conductor_after_authoritative_reconnect()
             self._c.jamulus.set_name(self._c.settings.musician_name)
             self._c.participants.clear()
             self._c._level_timer.start()

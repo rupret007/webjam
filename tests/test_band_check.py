@@ -95,8 +95,9 @@ def test_exact_outcomes_and_single_next_action() -> None:
             action="Review Webex audio",
         )
     )
-    assert session.outcome is BandCheckOutcome.WARNING
-    assert session.outcome.value == "Ready with a Warning"
+    assert session.outcome is BandCheckOutcome.READY
+    assert session.outcome.value == "Ready to Jam"
+    assert session.primary_action == "Close Band Check"
 
 
 def test_local_input_evidence_never_claims_jamulus_path() -> None:
@@ -380,6 +381,8 @@ def test_optional_configured_webex_can_only_warn() -> None:
     webex = session.step(BandCheckStepKey.WEBEX)
     assert webex.status is BandCheckStatus.WARNING
     assert not webex.required
+    assert webex.next_action == ""
+    assert session.primary_action != "Open Settings"
 
 
 def test_built_live_session_exposes_no_device_or_lifecycle_action() -> None:

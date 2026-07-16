@@ -533,6 +533,11 @@ class DualMusicianRehearsalLab:
         take_dir = self.artifact_root / "takes" / "gapped-take"
         self._write_base_project(take_dir, take_id)
         host.register_take(take_id, take_dir)
+        self._reconcile_until(
+            take_id,
+            take_dir,
+            lambda project: project.status is ProjectStatus.NEEDS_ATTENTION,
+        )
         initial = load_take_project(take_dir)
         if initial.status is not ProjectStatus.NEEDS_ATTENTION or not initial.errors:
             raise AssertionError("Missing guest media was not made visible before recovery.")
@@ -602,6 +607,11 @@ class DualMusicianRehearsalLab:
         take_dir = self.artifact_root / "takes" / "clean-take"
         self._write_base_project(take_dir, take_id)
         host.register_take(take_id, take_dir)
+        self._reconcile_until(
+            take_id,
+            take_dir,
+            lambda project: project.status is ProjectStatus.NEEDS_ATTENTION,
+        )
         missing = load_take_project(take_dir)
         if missing.status is not ProjectStatus.NEEDS_ATTENTION:
             raise AssertionError("The host did not disclose the pending clean transfer.")
@@ -772,7 +782,11 @@ class DualMusicianRehearsalLab:
             else track
             for track in project.tracks
         )
-        project = replace(project, tracks=aligned_tracks)
+        project = replace(
+            project,
+            tracks=aligned_tracks,
+            revision=project.revision + 1,
+        )
         write_take_project(take_dir, project)
         host = self._require_host()
         host.reconcile_take(project.take_id, take_dir)

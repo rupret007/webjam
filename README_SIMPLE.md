@@ -10,8 +10,10 @@ or video.
    Jam** if a bandmate sent a link.
 2. When Jamulus opens, choose your interface, input channels, headphones, and
    buffer there.
-3. Return to WebJam and say when the sound is right.
-4. The host copies the invite. Everyone enters the jam.
+3. WebJam moves into the session automatically when it sees the authenticated
+   Jamulus connection.
+4. The host copies the invite. Play a note and make sure bandmates hear each
+   other.
 
 That is the whole live-music path.
 

@@ -13,11 +13,13 @@ from core.take_export import (
     TakeExportError,
     TrackExportResult,
     TrackMixSettings,
+    _reference_fingerprint,
     export_logic_package,
     export_track_package,
 )
 from core.take_library import TakeInfo, TrackInfo
 from core.take_project import (
+    AlignmentAnchor,
     AlignmentState,
     GapInterval,
     HostIdentity,
@@ -694,10 +696,22 @@ def test_schema2_track_export_blocks_unaligned_transferred_guest_original(tmp_pa
                 [_project_segment(guest, take_dir)],
                 order=1,
                 source_type=SourceType.LOCAL_ISOLATED,
-                quality=SourceQuality.UNVERIFIED,
+                # A malformed or stale manifest must not bypass the peer
+                # timing gate merely by carrying the verified prefix,
+                # optimistic quality, and a non-zero confidence value.
+                quality=SourceQuality.VERIFIED_ISOLATED,
                 alignment=AlignmentState(
-                    confidence=0.0,
-                    method="peer-local-original-unverified-alignment",
+                    automatic_offset_s=0.031,
+                    confidence=0.93,
+                    method=(
+                        "peer-local-original-verified-alignment/"
+                        "gap-aware-transients-v1"
+                    ),
+                    residual_ms=0.4,
+                    anchors=(
+                        AlignmentAnchor(0.3, 0.331, 0.3),
+                        AlignmentAnchor(1.7, 1.731, 0.5),
+                    ),
                 ),
             ),
         ),
@@ -719,6 +733,74 @@ def test_schema2_track_export_blocks_unaligned_transferred_guest_original(tmp_pa
 
     assert "Keep the Jamulus server track" in str(exc.value)
     assert not root.exists()
+
+
+def test_schema2_track_export_allows_a_strong_peer_original_with_its_reference(
+    tmp_path,
+):
+    take_dir = tmp_path / "Take"
+    take_dir.mkdir()
+    server = take_dir / "riley-server.wav"
+    guest = take_dir / "riley-original.wav"
+    _write(server, np.ones(4096) * 0.1, rate=48_000)
+    _write(guest, np.ones(4096) * 0.2, rate=48_000)
+    guest_id = new_project_id()
+    reference = _project_track(
+        "Riley server track",
+        guest_id,
+        [_project_segment(server, take_dir)],
+        order=0,
+        source_type=SourceType.JAMULUS_SERVER,
+        quality=SourceQuality.NETWORK_TRACK,
+        alignment=AlignmentState(confidence=1.0, method="server-origin"),
+    )
+    peer_original = _project_track(
+        "Riley local original",
+        guest_id,
+        [_project_segment(guest, take_dir)],
+        order=1,
+        source_type=SourceType.LOCAL_ISOLATED,
+        quality=SourceQuality.VERIFIED_ISOLATED,
+        alignment=AlignmentState(
+            automatic_offset_s=0.031,
+            confidence=0.93,
+            method="peer-local-original-verified-alignment/gap-aware-transients-v1",
+            residual_ms=0.4,
+            anchors=(
+                AlignmentAnchor(0.3, 0.331, 0.3),
+                AlignmentAnchor(1.7, 1.731, 0.5),
+                AlignmentAnchor(3.5, 3.531, 0.2),
+            ),
+            reference_track_id=reference.track_id,
+            reference_fingerprint_sha256=_reference_fingerprint(reference),
+        ),
+    )
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="",
+        take_name="Take",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(Participant(guest_id, "Riley"),),
+        tracks=(reference, peer_original),
+    )
+    write_take_project(take_dir, project)
+
+    result = export_track_package(
+        TakeInfo(
+            take_dir,
+            "Take",
+            [
+                TrackInfo(server, "Riley server track", samplerate=48_000),
+                TrackInfo(guest, "Riley local original", samplerate=48_000),
+            ],
+            take_id=project.take_id,
+        ),
+        destination_root=tmp_path / "exports",
+    )
+
+    assert len(result.stems) == 2
 
 
 def test_schema2_track_export_allows_aligned_host_local_capture(tmp_path):

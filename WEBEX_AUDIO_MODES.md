@@ -2,10 +2,11 @@
 
 Webex is optional for talking or video. Jamulus carries the music.
 
-WebJam accepts a valid HTTPS Webex link only after music readiness, saves it
-only when the musician explicitly asks, and opens it externally only on a
-user action. It never claims to have joined, muted, selected a microphone, or
-verified the Webex participant list.
+Use **More → Webex / Conversation** only if the band wants it. WebJam accepts
+a valid HTTPS Webex link only when the musician explicitly asks, saves it only
+on that action, and opens it externally only on a user action. It never claims
+to have joined, muted, selected a microphone, or verified the Webex participant
+list.
 
 ## Safe rehearsal habit
 

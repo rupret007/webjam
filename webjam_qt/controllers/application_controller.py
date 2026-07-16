@@ -43,8 +43,9 @@ from core.session_conductor import (
     SessionConductorPhase,
     SessionPrimaryAction,
     SessionRole,
+    SessionConductor,
+    SessionConductorToken,
     TakeValidationState,
-    derive_session_conductor,
 )
 from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
 from core.session_intelligence import build_session_pulse
@@ -260,6 +261,27 @@ class ApplicationController(QObject):
         self._conductor_studio_reviewing = False
         self._conductor_export = ExportState.IDLE
         self._last_session_conductor = None
+        # The editable title must not steal the first keystroke from the
+        # musician-facing action. We move initial focus only once and only
+        # while the title still owns it; later intentional title edits stay
+        # untouched.
+        self._initial_hud_action_focused = False
+        self._initial_hud_action_focus_pending = False
+        # The pure conductor is now also a live attempt boundary.  The
+        # lifecycle journal remains the durable, redacted event log and the
+        # widgets remain renderers, but every ordinary controller projection
+        # is accepted through one generation guard first.  This is
+        # deliberately small: BridgeService, AudioCoordinator, and the native
+        # Jamulus journey retain ownership of their provider work.
+        initial_role = (
+            SessionRole.HOST
+            if bool(getattr(self.settings, "host_server_enabled", False))
+            else SessionRole.GUEST
+        )
+        self.session_conductor = SessionConductor(
+            SessionConductorFacts(role=initial_role)
+        )
+        self._session_conductor_token = self.session_conductor.token
         # One role-aware, generation-scoped startup journey replaces the old
         # modal device picker + pre-session Band Check chain. Its durable
         # confirmation record is deliberately profile-hash-only: no invite,
@@ -825,6 +847,113 @@ class ApplicationController(QObject):
     def _jamulus_connected(self, value: bool) -> None:
         self.audio.connected = value
 
+    def _live_session_conductor(
+        self,
+        facts: SessionConductorFacts | None = None,
+    ) -> SessionConductor:
+        """Return the controller's one live conductor, creating it safely.
+
+        Focused tests and extensions sometimes construct a controller shell
+        through ``__new__``.  Lazily creating the conductor here keeps those
+        paths under the same callback guard without making normal startup
+        depend on a test-only initialization detail.
+        """
+
+        conductor = getattr(self, "session_conductor", None)
+        if not isinstance(conductor, SessionConductor):
+            initial = facts or SessionConductorFacts()
+            conductor = SessionConductor(
+                SessionConductorFacts(role=initial.role)
+            )
+            self.session_conductor = conductor
+            self._session_conductor_token = conductor.token
+        return conductor
+
+    def _start_session_conductor_attempt(
+        self,
+        role: SessionRole | str,
+    ) -> SessionConductorToken:
+        """Open one guarded musician attempt for a real Host/Join intent.
+
+        This method is intentionally called only from an explicit start or
+        retry command.  Rendering facts must never silently create a new
+        generation after a failure, because a late worker could otherwise
+        appear to restart a session that the musician did not retry.
+        """
+
+        requested_role = (
+            role
+            if isinstance(role, SessionRole)
+            else (
+                SessionRole.GUEST
+                if str(role or "").strip().lower() == "join"
+                else SessionRole(str(role or "").strip().lower())
+            )
+        )
+        conductor = self._live_session_conductor()
+        snapshot = conductor.snapshot
+        if (
+            snapshot.presentation.phase is SessionConductorPhase.FAILED
+            and snapshot.presentation.retry_safe
+            and snapshot.token.role is requested_role
+        ):
+            token = conductor.retry()
+            if token is None:  # Defensive: the presentation just said retry-safe.
+                token = conductor.token
+        else:
+            # ``retry`` deliberately keeps its old role. A musician who
+            # switches from a failed Host attempt to Join (or vice versa)
+            # needs a new role-bound generation; otherwise every fact from
+            # the new attempt is correctly rejected as contradictory.
+            token = conductor.start(requested_role)
+        self._session_conductor_token = token
+        return token
+
+    def _observe_session_conductor_facts(
+        self,
+        facts: SessionConductorFacts,
+        *,
+        token: SessionConductorToken | None = None,
+    ):
+        """Accept only current controller facts and return the live snapshot.
+
+        The controller is still migrating away from legacy provider callbacks.
+        This adapter gives those callbacks the conductor's established stale
+        generation protection now, without pretending that a process or a
+        meter is a stronger fact than it really is. Provider callbacks do not
+        yet carry independent revisions, so each accepted UI-thread snapshot
+        is sequenced locally rather than presented as source-order proof.
+        """
+
+        conductor = self._live_session_conductor(facts)
+        snapshot = conductor.snapshot
+        expected = token or getattr(self, "_session_conductor_token", snapshot.token)
+        if expected != snapshot.token:
+            LOGGER.debug("Ignored stale controller conductor observation")
+            return snapshot
+
+        # A direct invitation can arrive before the first normal UI refresh.
+        # It is the sole render-time exception allowed to open generation one;
+        # later attempts must use the explicit command method above.
+        if (
+            facts.setup_requested
+            and snapshot.presentation.phase is SessionConductorPhase.IDLE
+            and not snapshot.facts.setup_requested
+            and snapshot.token.generation == 0
+        ):
+            expected = conductor.start(facts.role)
+            self._session_conductor_token = expected
+            snapshot = conductor.snapshot
+
+        if facts.role is not expected.role:
+            LOGGER.debug("Ignored role-mismatched controller conductor observation")
+            return snapshot
+        if facts == snapshot.facts:
+            return snapshot
+        if not conductor.observe(expected, snapshot.revision + 1, facts):
+            LOGGER.debug("Ignored stale or contradictory controller conductor facts")
+        return conductor.snapshot
+
     def _transition_lifecycle(
         self,
         phase: SessionLifecyclePhase,
@@ -1322,9 +1451,11 @@ class ApplicationController(QObject):
             int(stored_generation),
         )
         generation = self._startup_generation
+        conductor_token = self._start_session_conductor_attempt(role)
         self._startup_attempt = {
             "generation": generation,
             "role": role,
+            "conductor_token": conductor_token,
             "phase": "starting_server" if role == "host" else "launching_client",
             "cancel_event": threading.Event(),
             "started_at": time.monotonic(),
@@ -1368,6 +1499,12 @@ class ApplicationController(QObject):
             or getattr(self, "_shutdown", False)
         ):
             return None
+        token = attempt.get("conductor_token")
+        if isinstance(token, SessionConductorToken):
+            conductor = self._live_session_conductor()
+            if token != conductor.token:
+                LOGGER.debug("Ignored stale startup callback for a replaced attempt")
+                return None
         return attempt
 
     def _start_hosted_server_for_startup(self, generation: int) -> None:
@@ -1519,15 +1656,14 @@ class ApplicationController(QObject):
         ):
             return
 
-        if not bool(attempt.get("setup_finished", False)):
-            attempt["phase"] = "native_sound_setup"
-            self._render_startup_journey()
-            return
-        if bool(attempt.get("fast_path", False)):
-            self._continue_after_music_ready(generation)
-            return
-        attempt["phase"] = "confirm_sound"
-        self._render_startup_journey()
+        # Reaching the authenticated local roster is the real boundary for a
+        # normal Host/Join handoff. Jamulus already owns device setup, while
+        # hearing remains a musician judgment that stays available through
+        # Band Check instead of becoming two extra startup clicks. Webex is
+        # optional under More and never delays the music session or invite.
+        attempt["setup_finished"] = True
+        attempt["webex_decision"] = "skipped"
+        self._show_startup_invite_ready(generation)
 
     def _start_guest_peer_for_native_startup(
         self, attempt: dict[str, object]
@@ -1752,6 +1888,17 @@ class ApplicationController(QObject):
         self._show_startup_invite_ready(int(attempt["generation"]))
 
     def _show_startup_invite_ready(self, generation: int) -> None:
+        """Finish a proven startup without a redundant Enter Jam click.
+
+        The ordinary HUD already computes HostShareReadiness from the owned
+        server, bound UDP listener, and a private LAN address.  Keeping the
+        transient startup renderer alive here used to show Copy Invite before
+        those facts were checked, then show the same unusable button again
+        after a safe copy failure.  Hand control back to the normal conductor
+        immediately so it can either expose a real invite or one clear
+        reachability action.
+        """
+
         attempt = self._startup_attempt_for(generation)
         if attempt is None:
             return
@@ -1759,7 +1906,7 @@ class ApplicationController(QObject):
         self.window.session_strip.set_recording_available(
             bool(attempt["role"] == "host" and self._jamulus_connected)
         )
-        self._render_startup_journey()
+        self._enter_startup_jam()
 
     def _enter_startup_jam(self) -> None:
         attempt = getattr(self, "_startup_attempt", None)
@@ -1793,9 +1940,11 @@ class ApplicationController(QObject):
         if role == "host" and self.bridge.hosted_server_alive():
             self._startup_generation += 1
             generation = self._startup_generation
+            conductor_token = self._start_session_conductor_attempt("host")
             self._startup_attempt = {
                 "generation": generation,
                 "role": "host",
+                "conductor_token": conductor_token,
                 "phase": "launching_client",
                 "cancel_event": threading.Event(),
                 "started_at": time.monotonic(),
@@ -1822,16 +1971,25 @@ class ApplicationController(QObject):
         self._render_startup_journey()
 
         def worker() -> None:
+            cleanup_ok = True
             try:
-                self._stop_session_peer()
-                self.bridge.stop_jamulus()
+                cleanup_ok = bool(self._stop_session_peer())
+                cleanup_ok = bool(self.bridge.stop_jamulus()) and cleanup_ok
                 if role == "host":
-                    self.bridge.stop_hosted_server()
+                    cleanup_ok = bool(self.bridge.stop_hosted_server()) and cleanup_ok
             except Exception:  # noqa: BLE001 - cleanup state remains conservative
                 LOGGER.exception("Startup cancellation cleanup failed")
+                cleanup_ok = False
 
             def deliver() -> None:
                 if self._startup_attempt_for(generation) is None:
+                    return
+                if not cleanup_ok:
+                    self._fail_startup_journey(
+                        generation,
+                        "WebJam couldn't finish closing this startup attempt. "
+                        "Try again after the music connection has stopped.",
+                    )
                     return
                 self._clear_startup_recovery()
                 self.audio.ended_by_user = False
@@ -1960,6 +2118,18 @@ class ApplicationController(QObject):
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
             return
+        # The native journey still supplies specialized, action-oriented copy
+        # while the controller migration is in progress.  It nevertheless
+        # feeds the same live conductor as normal/recovery rendering so an old
+        # worker cannot later replace this attempt's facts.
+        self._observe_session_conductor_facts(
+            self._session_conductor_facts(),
+            token=(
+                attempt.get("conductor_token")
+                if isinstance(attempt.get("conductor_token"), SessionConductorToken)
+                else None
+            ),
+        )
         role = str(attempt.get("role", "guest"))
         phase = str(attempt.get("phase", ""))
         end_label = "End Session" if role == "host" else "Leave Jam"
@@ -1976,13 +2146,10 @@ class ApplicationController(QObject):
         elif phase in {"launching_client", "native_sound_setup"}:
             self.window.session_hud.set_state(
                 "Set up your sound in Jamulus",
-                "Choose your interface, input channels, headphones, and buffer in Jamulus. WebJam will watch the connection here.",
-                action_text="I Finished Sound Setup",
+                "Choose your interface, input channels, headphones, and buffer in Jamulus. WebJam will continue automatically when the music connection is ready.",
+                action_text="Bring Jamulus Forward",
                 action_visible=True,
-                action_kind="native_setup_finished",
-                secondary_action_text="Bring Jamulus Forward",
-                secondary_action_visible=True,
-                secondary_action_kind="bring_jamulus",
+                action_kind="bring_jamulus",
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
@@ -2080,6 +2247,7 @@ class ApplicationController(QObject):
                 secondary_action_visible=True,
                 secondary_action_kind="cancel_startup",
             )
+        self._focus_initial_hud_action()
         self._persist_startup_attempt(attempt)
 
     def start_session_or_band_check(self) -> None:
@@ -3003,6 +3171,15 @@ class ApplicationController(QObject):
         invitation = getattr(self, "_remote_invitation", None)
         if invitation is None or getattr(self, "_shutdown", False):
             return
+        # A remote invitation always represents a guest attempt, even when
+        # this app last used a host profile. There is no owned Jamulus work at
+        # this point; replacing an old idle/preflight token prevents the later
+        # authenticated guest facts from being rejected as host facts.
+        conductor = self._live_session_conductor()
+        if conductor.token.role is not SessionRole.GUEST:
+            self._session_conductor_token = conductor.reset_to_idle(
+                SessionRole.GUEST
+            )
         self._transition_lifecycle(
             SessionLifecyclePhase.PREPARING,
             "Preparing the private music path",
@@ -3021,10 +3198,20 @@ class ApplicationController(QObject):
             "Finding the fastest path",
             "WebJam is opening your private music connection.",
         )
+        callback_source: dict[str, object | None] = {"value": None}
+
+        def on_snapshot(snapshot) -> None:
+            source = callback_source["value"]
+            if source is None:
+                # A backend must not be allowed to render a session before it
+                # has been installed as this controller's active runtime.
+                return
+            self._on_remote_session_snapshot(snapshot, source=source)
+
         try:
             runtime = RemoteSessionRuntime(
                 NativeGuestTransportBackend(),
-                on_snapshot=self._on_remote_session_snapshot,
+                on_snapshot=on_snapshot,
                 schedule_callback=self._ui_invoker.invoke,
             )
         except Exception as exc:  # noqa: BLE001 - never expose private detail
@@ -3037,6 +3224,7 @@ class ApplicationController(QObject):
                 retry_safe=True,
             )
             return
+        callback_source["value"] = runtime
         self._remote_session = runtime
         runtime.start_guest(invitation)
 
@@ -3057,14 +3245,23 @@ class ApplicationController(QObject):
 
         def worker() -> None:
             owner = None
+            callback_source: dict[str, object | None] = {"value": None}
+
+            def on_snapshot(snapshot) -> None:
+                source = callback_source["value"]
+                if source is None:
+                    return
+                self._on_remote_session_snapshot(snapshot, source=source)
+
             try:
                 from services.native_remote_transport import NativeHostTransportOwner
 
                 owner = NativeHostTransportOwner(
                     target_port=int(self.settings.jamulus_port),
-                    on_snapshot=self._on_remote_session_snapshot,
+                    on_snapshot=on_snapshot,
                     schedule_callback=self._ui_invoker.invoke,
                 )
+                callback_source["value"] = owner
             except Exception as exc:  # noqa: BLE001 - fixed musician copy only
                 LOGGER.error(
                     "Remote host preparation failed; exception_type=%s",
@@ -3093,10 +3290,21 @@ class ApplicationController(QObject):
                 self._remote_session = owner
                 snapshot = getattr(owner, "snapshot", None)
                 if snapshot is not None:
-                    self._mark_remote_band_check_path(
-                        snapshot,
-                        connected=False,
-                    )
+                    # Constructor-time callbacks are intentionally ignored
+                    # until an owner is installed. Reconcile the owner-owned
+                    # snapshot now so an early failure cannot fall through to
+                    # a normal Host startup as though preparation succeeded.
+                    self._on_remote_session_snapshot(snapshot, source=owner)
+                    from services.remote_session_runtime import RemoteSessionPhase
+
+                    if snapshot.phase is RemoteSessionPhase.FAILED:
+                        self._clear_remote_invite_owner()
+                        return
+                    if snapshot.phase is not RemoteSessionPhase.CONNECTED:
+                        self._mark_remote_band_check_path(
+                            snapshot,
+                            connected=False,
+                        )
                 self._update_session_hud()
                 self.begin_startup_journey()
 
@@ -3112,12 +3320,15 @@ class ApplicationController(QObject):
             name="webjam-remote-host",
         ).start()
 
-    def _on_remote_session_snapshot(self, snapshot) -> None:
+    def _on_remote_session_snapshot(self, snapshot, *, source: object) -> None:
         """Apply one safe transport snapshot on Qt's owning thread."""
 
         from services.remote_session_runtime import RemoteSessionPhase
 
         if getattr(self, "_shutdown", False):
+            return
+        if source is not getattr(self, "_remote_session", None):
+            LOGGER.debug("Ignored snapshot from a replaced remote runtime")
             return
         if snapshot.phase is RemoteSessionPhase.PREPARING:
             self.window.session_hud.set_state(
@@ -3668,8 +3879,19 @@ class ApplicationController(QObject):
 
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
         practice = bool(getattr(getattr(self, "bridge", None), "practice_mode", False))
+        remote_session = getattr(self, "_remote_session", None)
+        remote_snapshot = getattr(remote_session, "snapshot", None)
+        remote_role = str(
+            getattr(getattr(remote_snapshot, "role", None), "value", "") or ""
+        ).strip().lower()
+        remote_guest_intent = bool(
+            getattr(self, "_remote_invitation", None) is not None
+            or remote_role == SessionRole.GUEST.value
+        )
         role = (
-            SessionRole.PRACTICE
+            SessionRole.GUEST
+            if remote_guest_intent
+            else SessionRole.PRACTICE
             if practice
             else SessionRole.HOST
             if hosting
@@ -3770,8 +3992,6 @@ class ApplicationController(QObject):
             else EvidenceState.NOT_STARTED
         )
 
-        remote_session = getattr(self, "_remote_session", None)
-        remote_snapshot = getattr(remote_session, "snapshot", None)
         remote_phase = str(getattr(getattr(remote_snapshot, "phase", None), "value", ""))
         if remote_phase in {"preparing", "connecting"}:
             guest_enrollment = EvidenceState.IN_PROGRESS
@@ -3901,6 +4121,24 @@ class ApplicationController(QObject):
             getattr(self, "_remote_invitation_requires_replacement", False)
         ):
             return True
+        # The generic conductor knows that the host listener is not ready but
+        # not why. Preserve the legacy's one actionable LAN recovery when the
+        # actual pre-share probe says Wi-Fi or port inspection needs a human
+        # response; only the passive "wait" state may be replaced by the
+        # neutral conductor wording.
+        if (
+            facts.role is SessionRole.HOST
+            and getattr(self, "_remote_invite_owner", None) is None
+        ):
+            try:
+                readiness = self._host_share_readiness()
+                if (
+                    not readiness.shareable
+                    and readiness.action != "Wait for WebJam"
+                ):
+                    return True
+            except Exception:  # noqa: BLE001 - preserve generic safe copy
+                pass
         if bool(getattr(self, "_host_peer_warning", "")):
             return True
         try:
@@ -3967,7 +4205,21 @@ class ApplicationController(QObject):
         """Render the canonical conductor without replacing real UI evidence."""
 
         facts = self._session_conductor_facts()
-        presentation = derive_session_conductor(facts)
+        attempt = getattr(self, "_startup_attempt", None)
+        attempt_token = (
+            attempt.get("conductor_token")
+            if isinstance(attempt, dict)
+            else None
+        )
+        snapshot = self._observe_session_conductor_facts(
+            facts,
+            token=(
+                attempt_token
+                if isinstance(attempt_token, SessionConductorToken)
+                else None
+            ),
+        )
+        presentation = snapshot.presentation
         self._last_session_conductor = presentation
         self._record_pilot_conductor_presentation(presentation)
         if self._conductor_requires_legacy_copy(facts):
@@ -4004,8 +4256,13 @@ class ApplicationController(QObject):
             action_visible=action_visible,
             action_kind=self._conductor_action_kind(action),
             ready=presentation.phase
-            in {SessionConductorPhase.LIVE, SessionConductorPhase.TAKE_READY},
+            is SessionConductorPhase.TAKE_READY
+            or (
+                presentation.phase is SessionConductorPhase.LIVE
+                and facts.human_two_way_audibility is EvidenceState.VERIFIED
+            ),
         )
+        self._focus_initial_hud_action()
         # The HUD owns the focused action.  The empty stage stays explanatory
         # so an initial 760x600 window never presents a Start/Check/Practice
         # pile alongside the same action in the HUD.
@@ -4027,6 +4284,42 @@ class ApplicationController(QObject):
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
+
+    def _focus_initial_hud_action(self) -> None:
+        """Give the first visible session action keyboard focus once."""
+
+        if (
+            getattr(self, "_initial_hud_action_focused", False)
+            or getattr(self, "_initial_hud_action_focus_pending", False)
+        ):
+            return
+        hud = getattr(getattr(self, "window", None), "session_hud", None)
+        strip = getattr(getattr(self, "window", None), "session_strip", None)
+        action = getattr(hud, "_action", None)
+        title = getattr(strip, "_title_input", None)
+        if (
+            action is None
+            or title is None
+            or action.isHidden()
+            or not action.isEnabled()
+        ):
+            return
+        self._initial_hud_action_focus_pending = True
+
+        def deliver() -> None:
+            self._initial_hud_action_focus_pending = False
+            if getattr(self, "_initial_hud_action_focused", False):
+                return
+            try:
+                current = self.window.focusWidget()
+                if action.isVisibleTo(self.window) and current in {None, title}:
+                    action.setFocus(Qt.FocusReason.OtherFocusReason)
+                    self._initial_hud_action_focused = True
+            except RuntimeError:
+                # The window can disappear while a queued focus handoff waits.
+                return
+
+        QTimer.singleShot(0, deliver)
 
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
@@ -4098,6 +4391,49 @@ class ApplicationController(QObject):
 
         self._update_session_hud()
 
+    def _resume_session_conductor_after_authoritative_reconnect(self) -> None:
+        """Open a fresh guarded generation after proven automatic recovery.
+
+        A retryable failure is terminal by design: ordinary observations may
+        not resurrect it. The roster callback is the explicit recovery
+        boundary because it has already re-established Jamulus authentication
+        and this Mac's local participant identity. A process restart or meter
+        alone never reaches this method.
+        """
+
+        facts = self._session_conductor_facts()
+        if not (
+            facts.setup_requested
+            and facts.music_path is MusicPathState.AUTHENTICATED
+            and facts.local_participant is EvidenceState.VERIFIED
+            and facts.failure is FailureDisposition.NONE
+        ):
+            return
+        conductor = self._live_session_conductor(facts)
+        snapshot = conductor.snapshot
+        if not (
+            snapshot.presentation.phase is SessionConductorPhase.FAILED
+            and snapshot.presentation.retry_safe
+            and snapshot.token.role is facts.role
+        ):
+            return
+        token = conductor.start(facts.role)
+        self._session_conductor_token = token
+        self._observe_session_conductor_facts(facts, token=token)
+        # The recovered roster has now opened a fresh, authoritative attempt.
+        # Retire only an old failed startup journey; otherwise the regular HUD
+        # renderer would keep preferring its stale Try Again screen over this
+        # connected session.  Setting its event first makes any queued worker
+        # notice cancellation even before `_startup_attempt_for` rejects the
+        # obsolete token after the recovery record is cleared.
+        attempt = getattr(self, "_startup_attempt", None)
+        if isinstance(attempt, dict) and str(attempt.get("phase", "")) == "failed":
+            cancel_event = attempt.get("cancel_event")
+            setter = getattr(cancel_event, "set", None)
+            if callable(setter):
+                setter()
+            self._clear_startup_recovery()
+
     def _on_studio_export_started(self) -> None:
         self._conductor_export = ExportState.EXPORTING
         self._update_session_hud()
@@ -4133,6 +4469,14 @@ class ApplicationController(QObject):
         still offer honest review after a session ends.
         """
 
+        # AudioCoordinator reaches this method only after its owned
+        # Jamulus/server cleanup has completed. Advance the conductor token at
+        # that safe boundary so a late callback from the old attempt cannot
+        # make the freshly idle lobby look failed, live, or reconnecting.
+        conductor = self._live_session_conductor()
+        self._session_conductor_token = conductor.reset_to_idle(
+            self._session_conductor_facts().role
+        )
         self._conductor_setup_requested = False
         self._conductor_band_check = EvidenceState.NOT_STARTED
         self._conductor_had_authenticated_connection = False
@@ -4767,6 +5111,17 @@ class ApplicationController(QObject):
         self.recording.apply_toggle_failure(message)
 
     def _on_practice_requested(self) -> None:
+        # Practice has its own private server/client lifecycle. When a stale
+        # Host/Join preflight exists but no Jamulus process owns work yet,
+        # give the explicit Practice choice its own role-bound attempt rather
+        # than letting those practice facts be rejected by the old token.
+        if not self._is_jamulus_running():
+            conductor = self._live_session_conductor()
+            if conductor.token.role is not SessionRole.PRACTICE:
+                self._session_conductor_token = conductor.reset_to_idle(
+                    SessionRole.PRACTICE
+                )
+            self._start_session_conductor_attempt(SessionRole.PRACTICE)
         self._conductor_setup_requested = True
         self.audio.on_practice_requested()
 

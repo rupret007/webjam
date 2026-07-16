@@ -8,6 +8,7 @@ and resumable delivery.  A peer outage never stops an active local capture.
 from __future__ import annotations
 
 import ipaddress
+import hashlib
 import json
 import logging
 import os
@@ -45,6 +46,21 @@ from core.session_transfer import (
 LOGGER = logging.getLogger("webjam.session_transfer")
 _POLL_SECONDS = 0.75
 _TRANSFER_ERROR_PREFIX = "Peer isolated recording: "
+
+# A generic transient match is useful evidence, but a remotely delivered local
+# original must clear a higher bar before Studio may treat it as a timing-ready
+# performance stem.  These are intentionally stricter than the aligner's
+# ordinary automatic-result floor: peer media was captured by another clock
+# and reaches the host after the take has ended.
+_PEER_ALIGNMENT_INITIAL_METHOD = "peer-local-original-unverified-alignment"
+_PEER_ALIGNMENT_WAITING_PREFIX = "peer-local-original-awaiting-reference/"
+_PEER_ALIGNMENT_UNCERTAIN_PREFIX = "peer-local-original-alignment-uncertain/"
+_PEER_ALIGNMENT_VERIFIED_PREFIX = "peer-local-original-verified-alignment/"
+_PEER_ALIGNMENT_MIN_CONFIDENCE = 0.85
+_PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
+_PEER_ALIGNMENT_MIN_ANCHORS = 3
+_MANIFEST_RECONCILE_MAX_ATTEMPTS = 3
+_RECONCILE_RETRY = object()
 
 
 def is_private_lan_host(value: str) -> bool:
@@ -126,6 +142,119 @@ def _is_legacy_peer_attachment(
     )
 
 
+def _enum_text(value: object) -> str:
+    """Return an enum-like value without importing project types at startup."""
+
+    return str(getattr(value, "value", value) or "").strip().lower()
+
+
+def _track_media_is_verified(track: object, take_root: Path) -> bool:
+    """Require file-backed checksum proof before timing a peer original.
+
+    ``TransferStore`` validates the uploaded blob and the attachment path is
+    hashed again before publication.  This second helper also verifies a
+    candidate Jamulus reference from the immutable project manifest so an
+    alignment result can never promote media that has changed on disk.
+    """
+
+    if _enum_text(getattr(track, "media_status", "")) != "available":
+        return False
+    segments = tuple(getattr(track, "segments", ()) or ())
+    if not segments:
+        return False
+    for segment in segments:
+        if _enum_text(getattr(segment, "media_status", "")) != "available":
+            return False
+        checksum = str(getattr(segment, "sha256", "") or "").strip().lower()
+        relative = str(getattr(segment, "path", "") or "").strip()
+        if not checksum or not relative:
+            return False
+        path = take_root / relative
+        try:
+            if not path.is_file() or _sha256_file(path) != checksum:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _same_participant_reference_track(
+    tracks: tuple[object, ...],
+    *,
+    participant_id: str,
+    take_root: Path,
+) -> object | None:
+    """Return exactly one strong Jamulus reference for a guest source.
+
+    A server stem from another musician is not a timing reference for a guest
+    original.  Likewise, two same-participant candidates are ambiguous: this
+    bounded first integration chooses neither rather than guessing a channel.
+    """
+
+    candidates = tuple(
+        track
+        for track in tracks
+        if getattr(track, "participant_id", "") == participant_id
+        and _enum_text(getattr(track, "source_type", "")) == "jamulus_server"
+    )
+    if len(candidates) != 1:
+        return None
+    candidate = candidates[0]
+    if _enum_text(getattr(candidate, "quality", "")) != "network_track":
+        return None
+    if not _track_media_is_verified(candidate, take_root):
+        return None
+    return candidate
+
+
+def _reference_fingerprint(track: object) -> str:
+    """Return a stable fingerprint for the exact server media used to align.
+
+    Each source segment's declared digest is already checked against disk
+    before this value is stored. Including its immutable segment ID and media
+    facts prevents a later same-track rewrite from silently inheriting the
+    timing transform for a different reference recording.
+    """
+
+    digest = hashlib.sha256()
+    for segment in sorted(
+        tuple(getattr(track, "segments", ()) or ()),
+        key=lambda item: str(getattr(item, "segment_id", "")),
+    ):
+        digest.update(str(getattr(segment, "segment_id", "")).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(getattr(segment, "sha256", "")).lower().encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(getattr(segment, "frame_count", 0)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(getattr(segment, "sample_rate", 0)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(getattr(segment, "channels", 0)).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _peer_alignment_summary(
+    track: object,
+    *,
+    status: str,
+    timing_ready: bool,
+    reason: str,
+) -> dict[str, object]:
+    """Keep transport success separate from timing-readiness evidence."""
+
+    alignment = getattr(track, "alignment", None)
+    payload: dict[str, object] = {
+        "status": status,
+        "timing_ready": timing_ready,
+        "confidence": round(float(getattr(alignment, "confidence", 0.0)), 6),
+        "residual_ms": round(float(getattr(alignment, "residual_ms", 0.0)), 6),
+        "method": str(getattr(alignment, "method", "") or ""),
+        "reason": reason,
+    }
+    return payload
+
+
 @dataclass(frozen=True)
 class PendingLocalSegment:
     descriptor: TransferDescriptor
@@ -155,7 +284,16 @@ class HostPeerSession:
         self._root: Path | None = None
         self._registered_takes: dict[str, Path] = {}
         self._expected_by_take: dict[str, tuple[str, ...]] = {}
+        # One take can be registered directly while the maintenance worker is
+        # also reconciling it.  Keep their slow checksum/copy/alignment work
+        # serial without holding the host lifecycle lock or blocking another
+        # take.  RLock preserves the documented reentrant update callback.
+        self._take_reconcile_locks: dict[str, threading.RLock] = {}
         self._stop_event = threading.Event()
+        # Registration happens on the recording completion path. Wake the
+        # owned maintenance worker immediately instead of running hashing,
+        # copying, or timing analysis on Qt's event loop.
+        self._maintenance_wake = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
         self._callback_condition = threading.Condition(self._lock)
@@ -224,7 +362,9 @@ class HostPeerSession:
             self._lifecycle_generation += 1
             generation = self._lifecycle_generation
             stop_event = threading.Event()
+            wake_event = threading.Event()
             self._stop_event = stop_event
+            self._maintenance_wake = wake_event
             self.credentials = credentials
             self.registry = registry
             self.control = control
@@ -234,9 +374,10 @@ class HostPeerSession:
             self._root = root
             self._registered_takes.clear()
             self._expected_by_take.clear()
+            self._take_reconcile_locks.clear()
             self._thread = threading.Thread(
                 target=self._maintenance_loop,
-                args=(generation, stop_event),
+                args=(generation, stop_event, wake_event),
                 name="webjam-host-transfer-maintenance",
                 daemon=True,
             )
@@ -251,9 +392,11 @@ class HostPeerSession:
             generation = self._lifecycle_generation
             self._lifecycle_generation += 1
             stop_event = self._stop_event
+            wake_event = self._maintenance_wake
             thread = self._thread
             server = self.server
             stop_event.set()
+            wake_event.set()
             self._wait_for_callback_leases_locked(generation)
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=3.0)
@@ -272,6 +415,7 @@ class HostPeerSession:
                 self._root = None
                 self._registered_takes.clear()
                 self._expected_by_take.clear()
+                self._take_reconcile_locks.clear()
 
     def invite_link(self, *, host: str, jamulus_port: int, session_name: str) -> str:
         if not self.active or self.credentials is None:
@@ -360,13 +504,22 @@ class HostPeerSession:
         )
 
     def register_take(self, take_id: str, take_dir: str | Path) -> None:
+        """Queue immediate inventory maintenance without blocking the caller.
+
+        A finished take can contain long Local Originals.  Their checksum,
+        copy, and timing analysis belong to the owned maintenance lifecycle,
+        not the recorder completion/UI path.  Callers that deliberately need
+        synchronous maintenance can still call :meth:`reconcile_take`.
+        """
+
         try:
             canonical_take = str(uuid.UUID(str(take_id)))
         except (ValueError, TypeError, AttributeError):
             return
         with self._lock:
             self._registered_takes[canonical_take] = Path(take_dir).resolve()
-        self.reconcile_take(canonical_take, take_dir)
+            wake_event = self._maintenance_wake
+        wake_event.set()
 
     def _lifecycle_is_current_locked(
         self,
@@ -432,9 +585,14 @@ class HostPeerSession:
         self,
         generation: int,
         stop_event: threading.Event,
+        wake_event: threading.Event,
     ) -> None:
-        while not stop_event.wait(_POLL_SECONDS):
+        while True:
+            wake_event.wait(_POLL_SECONDS)
             with self._lock:
+                # Clear while holding the same lock used by register_take so
+                # a registration racing this pass cannot lose its wake-up.
+                wake_event.clear()
                 if not self._lifecycle_is_current_locked(generation, stop_event):
                     return
                 registered = tuple(self._registered_takes.items())
@@ -459,7 +617,50 @@ class HostPeerSession:
         _generation: int | None = None,
         _stop_event: threading.Event | None = None,
     ) -> bool:
-        """Attach verified media and disclose every expected missing transfer."""
+        """Attach verified media without losing a competing take update.
+
+        Reconciliation is deliberately allowed to take time while it verifies
+        blobs and analyzes audio. A per-take lock serializes this peer service's
+        own passes; an optimistic manifest revision/byte check detects a
+        recorder or other writer that updated the project meanwhile and retries
+        from fresh immutable facts instead of publishing a stale replacement.
+        """
+
+        with self._lock:
+            take_lock = self._take_reconcile_locks.setdefault(
+                str(take_id), threading.RLock()
+            )
+        with take_lock:
+            for attempt in range(_MANIFEST_RECONCILE_MAX_ATTEMPTS):
+                result = self._reconcile_take_once(
+                    take_id,
+                    take_dir,
+                    _generation=_generation,
+                    _stop_event=_stop_event,
+                )
+                if result is not _RECONCILE_RETRY:
+                    return bool(result)
+                LOGGER.info(
+                    "Take manifest changed during peer reconciliation; retrying "
+                    "attempt %s/%s",
+                    attempt + 1,
+                    _MANIFEST_RECONCILE_MAX_ATTEMPTS,
+                )
+        LOGGER.warning(
+            "Take manifest kept changing during peer reconciliation; leaving "
+            "the next maintenance pass to retry safely"
+        )
+        return False
+
+    def _reconcile_take_once(
+        self,
+        take_id: str,
+        take_dir: str | Path,
+        *,
+        _generation: int | None = None,
+        _stop_event: threading.Event | None = None,
+    ) -> bool | object:
+        """Run one optimistic reconciliation pass; return retry sentinel on drift."""
 
         with self._lock:
             generation = (
@@ -475,7 +676,6 @@ class HostPeerSession:
             transfers = self.transfers
             registry = self.registry
             expected_ids = self._expected_by_take.get(take_id, ())
-        from core.file_io import atomic_write_text
         from core.take_project import (
             AlignmentState,
             MediaSegment,
@@ -489,12 +689,21 @@ class HostPeerSession:
             SourceQuality,
             SourceType,
             load_take_project,
+            replace_take_project_manifest_if_unchanged,
         )
 
         folder = Path(take_dir).resolve()
         manifest = folder / "webjam-take.json"
         if not manifest.is_file():
             return False
+        try:
+            manifest_before = manifest.read_bytes()
+            manifest_before_payload = json.loads(manifest_before)
+        except (OSError, ValueError, TypeError):
+            return False
+        if not isinstance(manifest_before_payload, dict):
+            return False
+        base_manifest_revision = int(manifest_before_payload.get("revision", 0) or 0)
         project = load_take_project(folder)
         if project.take_id != take_id:
             return False
@@ -559,6 +768,10 @@ class HostPeerSession:
                         "gap_frames": descriptor.gap_frames,
                         "gaps": [gap.to_mapping() for gap in descriptor.gaps],
                         "errors": list(descriptor.capture_errors),
+                        "alignment": {
+                            "status": "waiting_for_verified_attachment",
+                            "timing_ready": False,
+                        },
                     }
                 )
                 if not item.complete or item.path is None:
@@ -602,16 +815,22 @@ class HostPeerSession:
                     participant_id,
                     descriptor.segment_id,
                 )
-                legacy_attached = any(
-                    _is_legacy_peer_attachment(
-                        track,
-                        take_id=take_id,
-                        participant_id=participant_id,
-                        transfer_segment_id=descriptor.segment_id,
-                        source_type=SourceType.LOCAL_ISOLATED,
-                    )
-                    for track in tracks_by_id.values()
+                legacy_track = next(
+                    (
+                        track
+                        for track in tracks_by_id.values()
+                        if _is_legacy_peer_attachment(
+                            track,
+                            take_id=take_id,
+                            participant_id=participant_id,
+                            transfer_segment_id=descriptor.segment_id,
+                            source_type=SourceType.LOCAL_ISOLATED,
+                        )
+                    ),
+                    None,
                 )
+                legacy_attached = legacy_track is not None
+                attached_track = tracks_by_id.get(track_id) or legacy_track
                 if project_segment_id not in segment_ids and not legacy_attached:
                     attached_new_media = True
                     media_status = (
@@ -660,12 +879,247 @@ class HostPeerSession:
                             ),
                         ),
                         alignment=AlignmentState(
-                            method="peer-local-original-unverified-alignment"
+                            method=_PEER_ALIGNMENT_INITIAL_METHOD
                         ),
                     )
                     tracks_by_id[track.track_id] = track
                     segment_ids.add(project_segment_id)
                     next_order += 1
+                    attached_track = track
+
+                # Transport verification does not prove that a guest's clock
+                # shares the server take timeline.  Only attempt automatic
+                # timing after the immutable attachment exists and its hash has
+                # been checked above.  The reference must be the one verified
+                # Jamulus server track assigned to this same enrolled musician;
+                # never borrow another participant's audio or choose among
+                # ambiguous candidates.
+                if attached_track is None:
+                    segment_summaries[-1]["alignment"] = {
+                        "status": "uncertain",
+                        "timing_ready": False,
+                        "reason": "The attached local original could not be identified in the take project.",
+                    }
+                else:
+                    alignment_method = str(
+                        attached_track.alignment.method or ""
+                    ).strip().lower()
+                    manual_nudge = float(attached_track.alignment.manual_nudge_s)
+                    retrying_reference = alignment_method.startswith(
+                        _PEER_ALIGNMENT_WAITING_PREFIX
+                    )
+                    if (
+                        (
+                            alignment_method == _PEER_ALIGNMENT_INITIAL_METHOD
+                            or retrying_reference
+                        )
+                        and not manual_nudge
+                    ):
+                        alignment_reason = ""
+                        uncertainty_code = ""
+                        reference_track = None
+                        if descriptor.capture_errors or descriptor.gap_frames:
+                            alignment_reason = (
+                                "The local original has declared capture gaps or errors."
+                            )
+                            uncertainty_code = "incomplete-source"
+                        elif not _track_media_is_verified(attached_track, folder):
+                            alignment_reason = (
+                                "The attached local original no longer matches its recorded checksum."
+                            )
+                            uncertainty_code = "attachment-checksum-mismatch"
+                        else:
+                            reference_track = _same_participant_reference_track(
+                                tuple(tracks_by_id.values()),
+                                participant_id=participant_id,
+                                take_root=folder,
+                            )
+                            if reference_track is None:
+                                alignment_reason = (
+                                    "No verified same-participant Jamulus server reference is available."
+                                )
+                                uncertainty_code = (
+                                    "no-verified-same-participant-reference"
+                                )
+
+                        if reference_track is None:
+                            waiting_for_reference = (
+                                uncertainty_code
+                                == "no-verified-same-participant-reference"
+                            )
+                            alignment = AlignmentState(
+                                method=(
+                                    (
+                                        _PEER_ALIGNMENT_WAITING_PREFIX
+                                        if waiting_for_reference
+                                        else _PEER_ALIGNMENT_UNCERTAIN_PREFIX
+                                    )
+                                    + uncertainty_code
+                                )
+                            )
+                            attached_track = replace(
+                                attached_track,
+                                quality=SourceQuality.UNVERIFIED,
+                                alignment=alignment,
+                            )
+                            tracks_by_id[attached_track.track_id] = attached_track
+                            segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                                attached_track,
+                                status=(
+                                    "waiting_for_reference"
+                                    if waiting_for_reference
+                                    else "uncertain"
+                                ),
+                                timing_ready=False,
+                                reason=alignment_reason,
+                            )
+                        else:
+                            try:
+                                # Importing the analysis path here is
+                                # intentional: no decode/scan work occurs for
+                                # incomplete or unverified transfer media.
+                                from core.take_alignment import (
+                                    AlignmentOutcome,
+                                    align_project_tracks,
+                                )
+
+                                result = align_project_tracks(
+                                    folder,
+                                    reference_track,
+                                    attached_track,
+                                    project_sample_rate=project.project_sample_rate,
+                                )
+                            except Exception:  # noqa: BLE001
+                                LOGGER.exception(
+                                    "Could not analyze verified guest original alignment"
+                                )
+                                result = None
+
+                            if result is not None and (
+                                result.outcome is AlignmentOutcome.ALIGNED
+                                and result.state.confidence
+                                >= _PEER_ALIGNMENT_MIN_CONFIDENCE
+                                and result.state.residual_ms
+                                <= _PEER_ALIGNMENT_MAX_RESIDUAL_MS
+                                and len(result.state.anchors)
+                                >= _PEER_ALIGNMENT_MIN_ANCHORS
+                                and not result.issues
+                            ):
+                                alignment = replace(
+                                    result.state,
+                                    method=(
+                                        _PEER_ALIGNMENT_VERIFIED_PREFIX
+                                        + result.state.method
+                                    ),
+                                    reference_track_id=reference_track.track_id,
+                                    reference_fingerprint_sha256=_reference_fingerprint(
+                                        reference_track
+                                    ),
+                                )
+                                attached_track = replace(
+                                    attached_track,
+                                    quality=SourceQuality.VERIFIED_ISOLATED,
+                                    alignment=alignment,
+                                )
+                                tracks_by_id[attached_track.track_id] = attached_track
+                                segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                                    attached_track,
+                                    status="aligned",
+                                    timing_ready=True,
+                                    reason="Strong shared transient evidence verified this local original against its server track.",
+                                )
+                            else:
+                                if result is None:
+                                    alignment = AlignmentState(
+                                        method=(
+                                            _PEER_ALIGNMENT_UNCERTAIN_PREFIX
+                                            + "analysis-unavailable"
+                                        )
+                                    )
+                                    alignment_reason = (
+                                        "WebJam could not read enough timing evidence to verify this local original."
+                                    )
+                                else:
+                                    alignment = replace(
+                                        result.state,
+                                        method=(
+                                            _PEER_ALIGNMENT_UNCERTAIN_PREFIX
+                                            + result.state.method
+                                        ),
+                                    )
+                                    alignment_reason = (
+                                        "The shared timing evidence did not pass "
+                                        "WebJam's strong verification gate."
+                                    )
+                                attached_track = replace(
+                                    attached_track,
+                                    quality=SourceQuality.UNVERIFIED,
+                                    alignment=alignment,
+                                )
+                                tracks_by_id[attached_track.track_id] = attached_track
+                                segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                                    attached_track,
+                                    status="uncertain",
+                                    timing_ready=False,
+                                    reason=alignment_reason,
+                                )
+                    elif alignment_method.startswith(_PEER_ALIGNMENT_VERIFIED_PREFIX):
+                        segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                            attached_track,
+                            status="aligned",
+                            timing_ready=(
+                                attached_track.quality
+                                is SourceQuality.VERIFIED_ISOLATED
+                            ),
+                            reason="Strong shared transient evidence verified this local original against its server track.",
+                        )
+                    elif manual_nudge:
+                        segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                            attached_track,
+                            status="manual_review",
+                            timing_ready=False,
+                            reason="A manual timing adjustment is preserved for Studio review.",
+                        )
+                    else:
+                        if alignment_method.startswith(_PEER_ALIGNMENT_WAITING_PREFIX):
+                            alignment_reason = (
+                                "No verified same-participant Jamulus server reference is available."
+                            )
+                            alignment_status = "waiting_for_reference"
+                        elif alignment_method.endswith("incomplete-source"):
+                            alignment_reason = (
+                                "The local original has declared capture gaps or errors."
+                            )
+                            alignment_status = "uncertain"
+                        elif alignment_method.endswith("attachment-checksum-mismatch"):
+                            alignment_reason = (
+                                "The attached local original no longer matches its recorded checksum."
+                            )
+                            alignment_status = "uncertain"
+                        elif alignment_method.endswith(
+                            "no-verified-same-participant-reference"
+                        ):
+                            alignment_reason = (
+                                "No verified same-participant Jamulus server reference is available."
+                            )
+                            alignment_status = "waiting_for_reference"
+                        elif alignment_method.endswith("analysis-unavailable"):
+                            alignment_reason = (
+                                "WebJam could not read enough timing evidence to verify this local original."
+                            )
+                            alignment_status = "uncertain"
+                        else:
+                            alignment_reason = (
+                                "The shared timing evidence did not pass WebJam's "
+                                "strong verification gate."
+                            )
+                            alignment_status = "uncertain"
+                        segment_summaries[-1]["alignment"] = _peer_alignment_summary(
+                            attached_track,
+                            status=alignment_status,
+                            timing_ready=False,
+                            reason=alignment_reason,
+                        )
                 if descriptor.capture_errors or descriptor.gap_frames:
                     transfer_errors.append(
                         f"{_TRANSFER_ERROR_PREFIX}{name}'s local original needs attention."
@@ -744,7 +1198,18 @@ class HostPeerSession:
         if not self._lifecycle_is_current(generation, stop_event):
             return False
         # Avoid rewriting the manifest every maintenance tick if truth did not change.
-        prior_payload = json.loads(manifest.read_text(encoding="utf-8"))
+        try:
+            prior_bytes = manifest.read_bytes()
+            prior_payload = json.loads(prior_bytes)
+        except (OSError, ValueError, TypeError):
+            return _RECONCILE_RETRY
+        if (
+            prior_bytes != manifest_before
+            or not isinstance(prior_payload, dict)
+            or int(prior_payload.get("revision", 0) or 0)
+            != base_manifest_revision
+        ):
+            return _RECONCILE_RETRY
         payload = updated.to_dict()
         payload["peer_transfers"] = {
             "status": "needs_attention" if transfer_errors else "complete",
@@ -760,11 +1225,12 @@ class HostPeerSession:
         with self._callback_condition:
             if not self._lifecycle_is_current_locked(generation, stop_event):
                 return False
-            atomic_write_text(
-                manifest,
-                json.dumps(payload, indent=2, sort_keys=False) + "\n",
-                mode=0o600,
-            )
+            if not replace_take_project_manifest_if_unchanged(
+                folder,
+                expected_bytes=prior_bytes,
+                payload=payload,
+            ):
+                return _RECONCILE_RETRY
             callback = self._begin_callback_lease_locked(generation, stop_event)
         if callback is not None:
             try:

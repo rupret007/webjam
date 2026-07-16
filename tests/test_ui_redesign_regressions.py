@@ -359,6 +359,22 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
         _destroy(window)
 
 
+def test_initial_focus_moves_from_title_to_visible_hud_action(qapp, tmp_path):
+    window = _window()
+    controller = ApplicationController(window, settings=_settings(tmp_path))
+    window.show()
+    for _ in range(30):
+        qapp.processEvents()
+        if window.focusWidget() is window.session_hud._action:
+            break
+    try:
+        assert window.session_hud._action.isVisibleTo(window)
+        assert window.focusWidget() is window.session_hud._action
+    finally:
+        controller.shutdown()
+        _destroy(window)
+
+
 def test_focus_order_moves_from_participant_to_bottom_controls(styled_qapp):
     window = _window()
     window.resize(760, 600)

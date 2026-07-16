@@ -454,6 +454,114 @@ class TestRecordButtonWiring(unittest.TestCase):
             segment["gaps"],
         )
 
+    def test_live_take_validation_marks_non_durable_local_media_partial(self):
+        """The live finalizer must retain the capture durability boundary."""
+        import struct
+        import wave
+
+        from core.take_project import new_project_id
+
+        def write_wav(path: Path) -> None:
+            with wave.open(str(path), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(48_000)
+                output.writeframes(struct.pack("<480h", *([800] * 480)))
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            take_dir = root / "Jamulus Take"
+            take_dir.mkdir()
+            write_wav(take_dir / "Band-0-1.wav")
+            write_wav(take_dir / "host-guitar.wav")
+            write_wav(take_dir / "host-vocal.wav")
+            take_id = new_project_id()
+            c.settings.takes_directory = directory
+            c.recording._take_id = take_id
+            c.recording._expected_tracks = 1
+            c.recording._reset_session_evidence()
+            capture = MagicMock()
+            capture.stop_into.return_value = SimpleNamespace(
+                errors=("Local capture durability checkpoint failed.",),
+                started_utc="2026-07-16T00:00:00Z",
+                duration_s=0.01,
+                gaps=(),
+                total_frames=480,
+                durable_frames=240,
+                capture_device=None,
+            )
+            c.recording._local_capture = capture
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.find_changed_take",
+                return_value=take_dir,
+            ), patch(
+                "webjam_qt.controllers.recording_coordinator.wait_for_take_files_stable",
+                return_value=True,
+            ):
+                c.recording._build_take_validation(take_id=take_id)
+            payload = json.loads((take_dir / "webjam-take.json").read_text())
+        c.recording._expected_tracks = 0
+
+        local_segments = [
+            track["segments"][0]
+            for track in payload["tracks"]
+            if track["source"] == "local_isolated"
+        ]
+        self.assertEqual(len(local_segments), 2)
+        for segment in local_segments:
+            self.assertEqual(segment["media_status"], "partial")
+            self.assertIn(
+                {
+                    "start_frame": 240,
+                    "frame_count": 240,
+                    "reason": "unverified_after_crash_checkpoint",
+                    "channels": [0],
+                },
+                segment["gaps"],
+            )
+
+    def test_missing_server_take_forwards_durable_boundary_to_recovery_manifest(self):
+        """The no-server recovery path keeps the same export-blocking boundary."""
+        from core.take_project import new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            c.settings.takes_directory = directory
+            take_id = new_project_id()
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            capture = MagicMock()
+
+            def stop_into(destination):
+                Path(destination).mkdir(parents=True, exist_ok=True)
+                return SimpleNamespace(
+                    errors=("Local capture durability checkpoint failed.",),
+                    started_utc="2026-07-16T00:00:00Z",
+                    duration_s=0.01,
+                    gaps=(),
+                    total_frames=480,
+                    durable_frames=240,
+                    capture_device=None,
+                    recovery_dir=None,
+                )
+
+            capture.stop_into.side_effect = stop_into
+            c.recording._local_capture = capture
+            fake_result = SimpleNamespace(take=None, errors=(), warnings=())
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.find_changed_take",
+                return_value=None,
+            ), patch(
+                "webjam_qt.controllers.recording_coordinator.time.sleep"
+            ), patch(
+                "webjam_qt.controllers.recording_coordinator.write_take_manifest",
+                return_value=fake_result,
+            ) as write_manifest:
+                c.recording._build_take_validation(take_id=take_id)
+
+        self.assertEqual(write_manifest.call_args.kwargs["local_durable_frames"], 240)
+
     def test_salvage_reports_the_capture_recovery_folder_not_a_guess(self):
         c = self.controller
         with TemporaryDirectory() as directory:
@@ -763,6 +871,106 @@ class TestRecordButtonWiring(unittest.TestCase):
         c._server_recording = False
         c.recording.phase = RecorderPhase.IDLE
         self.window.session_strip.set_recording_phase("idle")
+
+    def test_authoritative_stop_during_stopping_validates_once_despite_late_rpc_failure(self):
+        """A real server stop wins over a later lost stop-RPC reply."""
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording.phase = RecorderPhase.STOPPING
+        with patch.object(c.recording, "_begin_take_validation") as begin:
+            c.recording.on_server_state(False)
+            c.recording.apply_toggle_failure(
+                "late stop timeout", take_id=take_id
+            )
+            c.recording.apply_toggle_result(False, take_id=take_id)
+
+        begin.assert_called_once_with(take_id)
+        self.assertFalse(c._recorder_armed)
+        self.assertFalse(c._server_recording)
+        self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
+        c._show_actionable_error.assert_not_called()
+
+    def test_authoritative_stop_after_stop_failure_starts_validation_once(self):
+        """A delayed false notification must not leave STOP_FAILED stuck."""
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording.phase = RecorderPhase.STOP_FAILED
+        with patch.object(c.recording, "_begin_take_validation") as begin:
+            c.recording.on_server_state(False)
+            c.recording.apply_toggle_result(False, take_id=take_id)
+
+        begin.assert_called_once_with(take_id)
+        self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
+
+    def test_late_worker_callback_stays_bound_to_its_originating_take(self):
+        """A retired worker must not fall back to mutating the next take."""
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import (
+            RecorderPhase,
+            _ToggleAttempt,
+        )
+
+        c = self.controller
+        retired_take_id = new_project_id()
+        current_take_id = new_project_id()
+        c.recording._take_id = current_take_id
+        c.recording.phase = RecorderPhase.RECORDING
+        c._recorder_armed = True
+        c._server_recording = True
+        attempt = _ToggleAttempt(retired_take_id, target_armed=False)
+        with patch(
+            "core.jamulus_server_rpc.read_secret_file",
+            side_effect=ServerRpcError("late stop timeout"),
+        ), patch.object(
+            c._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        ):
+            c.recording._run_toggle_attempt(attempt, "/tmp/secret")
+
+        self.assertEqual(c.recording.phase, RecorderPhase.RECORDING)
+        self.assertTrue(c._recorder_armed)
+        c._show_actionable_error.assert_not_called()
+
+    def test_validation_retires_take_before_unrelated_recorder_notifications(self):
+        """A later manual recorder cycle cannot reuse completed-take ownership."""
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._validation_take_id = take_id
+        result = SimpleNamespace(
+            ok=True,
+            take=SimpleNamespace(path=Path("/tmp/webjam-completed-take")),
+            errors=(),
+            warnings=(),
+            summary="1 track · 0:01 · 48 kHz",
+        )
+        with patch.object(c.window.recording_studio, "on_take_completed"), \
+             patch.object(c.recording, "_begin_take_validation") as begin:
+            c.recording._show_validation_result(result, take_id=take_id)
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(c.recording._validation_take_id, "")
+            c.recording.on_server_state(True)
+            c.recording.on_server_state(False)
+            c.recording.apply_toggle_result(True, take_id=take_id)
+
+        begin.assert_not_called()
+        self.assertEqual(c.recording.phase.value, "idle")
+        self.assertFalse(c._recorder_armed)
 
     def test_ambiguous_start_failure_preserves_capture_and_retries_stop(self):
         """A lost start reply must not delete audio or send another start."""

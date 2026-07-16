@@ -16,9 +16,11 @@ does not claim that Webex joined, muted, selected devices, or sees anyone.
 
 Choosing **Host a Jam** is authorization to start the private session—there is
 no extra Start Session click. WebJam starts the server first, then opens a
-visible Jamulus client against it. Finish sound setup in Jamulus, return to
-WebJam, and confirm audibility. A returning musician with an unchanged,
-Jamulus-owned profile can take the fast path to the invite.
+visible Jamulus client against it. Set up sound in Jamulus; once WebJam sees
+the authenticated connection, it moves straight into the session without an
+extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
+you can hear each other—WebJam never treats a meter or connection as proof of
+that. **More → Band Check / Verify Sound** is there if you need help.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint

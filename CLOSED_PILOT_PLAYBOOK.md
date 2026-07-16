@@ -3,9 +3,10 @@
 The pilot validates a simple rehearsal experience:
 
 1. Host or Join.
-2. Native Jamulus sound setup.
-3. Human sound confirmation.
-4. Optional Webex.
+2. Native Jamulus sound setup; WebJam moves into the session automatically
+   after fresh authenticated connection proof.
+3. Play a note and have musicians verify that they hear each other.
+4. Optional Webex through **More → Webex / Conversation**.
 5. Invite/play/record/review.
 
 Keep the scope honest. Automated checks validate source and package behavior.

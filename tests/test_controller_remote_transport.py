@@ -227,6 +227,81 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
     controller.shutdown()
 
 
+def test_replaced_remote_runtime_cannot_render_a_late_failure(qapp, tmp_path) -> None:
+    """Runtime-local generations are not enough after a controller replacement."""
+
+    controller = _controller(tmp_path)
+    old_runtime = object()
+    controller._remote_session = object()
+    controller._show_remote_session_failure = mock.MagicMock()
+    failed = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.FAILED,
+        role=SessionRole.GUEST,
+        generation=1,
+        error_code=RemoteSessionErrorCode.UNAVAILABLE,
+    )
+
+    controller._on_remote_session_snapshot(failed, source=old_runtime)
+
+    controller._show_remote_session_failure.assert_not_called()
+    controller.shutdown()
+
+
+def test_replaced_remote_runtime_cannot_activate_a_late_guest_route(
+    qapp, tmp_path
+) -> None:
+    controller = _controller(tmp_path)
+    old_runtime = object()
+    controller._remote_session = object()
+    controller._activate_remote_guest_route = mock.MagicMock()
+    connected = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.CONNECTED,
+        role=SessionRole.GUEST,
+        generation=1,
+        loopback_port=43123,
+        path=TransportPath.SECURE_RELAY,
+    )
+
+    controller._on_remote_session_snapshot(connected, source=old_runtime)
+
+    controller._activate_remote_guest_route.assert_not_called()
+    controller.shutdown()
+
+
+def test_active_remote_runtime_still_accepts_its_own_failure(qapp, tmp_path) -> None:
+    controller = _controller(tmp_path)
+    runtime = object()
+    controller._remote_session = runtime
+    controller._show_remote_session_failure = mock.MagicMock()
+    failed = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.FAILED,
+        role=SessionRole.GUEST,
+        generation=1,
+        error_code=RemoteSessionErrorCode.UNAVAILABLE,
+    )
+
+    controller._on_remote_session_snapshot(failed, source=runtime)
+
+    controller._show_remote_session_failure.assert_called_once_with(
+        guest_enrollment=True,
+        retry_safe=True,
+    )
+    controller.shutdown()
+
+
+def test_remote_guest_intent_replaces_a_host_profile_conductor_token(qapp, tmp_path) -> None:
+    """A pasted guest invite wins over a stale local Host profile immediately."""
+
+    controller = _controller(tmp_path, hosting=True)
+    controller._remote_invitation = _invitation()
+
+    assert controller._session_conductor_facts().role.value == "guest"
+    controller._update_session_hud()
+
+    assert controller.session_conductor.token.role.value == "guest"
+    controller.shutdown()
+
+
 def test_v3_guest_replaces_idle_v2_peer_before_enrollment(
     qapp, tmp_path, monkeypatch
 ) -> None:
@@ -451,6 +526,46 @@ def test_lab_host_owner_is_installed_before_any_audio_launch(
     assert controller.bridge.jamulus_process is None
     assert controller._remote_band_check_required()
     controller.begin_startup_journey.assert_called_once_with()
+    controller.shutdown()
+
+
+def test_lab_host_reconciles_an_early_owner_failure_before_startup(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    """A constructor-time owner failure cannot fall through to normal Host."""
+
+    class Owner:
+        invitation_available = False
+        snapshot = RemoteSessionSnapshot(
+            phase=RemoteSessionPhase.FAILED,
+            role=SessionRole.HOST,
+            generation=1,
+            error_code=RemoteSessionErrorCode.UNAVAILABLE,
+        )
+
+        def __init__(self, *, on_snapshot, **_kwargs):
+            # This callback fires before the controller can install us. The
+            # delivered snapshot must still be reconciled afterward.
+            on_snapshot(self.snapshot)
+
+        def stop(self):
+            return None
+
+    controller = _controller(tmp_path, hosting=True)
+    controller.begin_startup_journey = mock.MagicMock()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeHostTransportOwner",
+        Owner,
+    )
+
+    controller._begin_remote_host()
+    _drain_until(
+        qapp,
+        lambda: "could not open" in controller.window.session_hud._status.text().lower(),
+    )
+
+    controller.begin_startup_journey.assert_not_called()
+    assert controller._remote_invite_owner is None
     controller.shutdown()
 
 

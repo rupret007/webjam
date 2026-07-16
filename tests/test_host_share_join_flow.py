@@ -420,6 +420,121 @@ def test_host_never_serializes_lan_invite_until_expected_udp_port_is_bound(
     controller.shutdown()
 
 
+def test_host_handoff_keeps_the_connect_to_wifi_recovery_action(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Network Recovery",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller.bridge._port_free = MagicMock(return_value=False)
+
+    with patch("core.network_invite.local_band_address", return_value=""):
+        controller._update_session_hud()
+
+    assert controller.window.session_hud._status.text() == "Connect to Wi-Fi"
+    assert controller.window.session_hud._action.text() == "Connect to Wi-Fi"
+    assert not controller.window.session_hud._action.isHidden()
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_host_handoff_keeps_the_port_inspection_retry_action(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Port Recovery",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller.bridge._port_free = MagicMock(side_effect=OSError("probe unavailable"))
+
+    with patch("core.network_invite.local_band_address", return_value="192.168.1.42"):
+        controller._update_session_hud()
+
+    assert controller.window.session_hud._status.text() == "Getting your jam ready"
+    assert controller.window.session_hud._action.text() == "Try Again"
+    assert not controller.window.session_hud._action.isHidden()
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_native_startup_handoff_uses_host_share_gate_before_showing_copy_invite(
+    qapp, tmp_path
+):
+    """A proven local client is not enough to make a LAN invite shareable."""
+
+    from core.session_conductor import SessionRole
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.widgets.participant_card import ParticipantPresentation
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Startup Handoff",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    # `_port_free=True` is the observable proof that nobody owns the expected
+    # Jamulus UDP listener yet.  The host must not receive a Copy Invite UI.
+    controller.bridge._port_free = MagicMock(return_value=True)
+    controller._jamulus_connected = True
+    controller.participants = {
+        1: ParticipantPresentation(
+            channel_id=1,
+            name="You",
+            role="Musician",
+            is_local=True,
+        )
+    }
+    token = controller._start_session_conductor_attempt(SessionRole.HOST)
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "host",
+        "conductor_token": token,
+        "phase": "confirm_sound",
+    }
+
+    with patch("core.network_invite.local_band_address", return_value="192.168.1.42"):
+        controller._show_startup_invite_ready(1)
+
+    assert controller._startup_attempt is None
+    assert controller.window.session_hud._status.text() == "Preparing the invite"
+    assert controller.window.session_hud._action.isHidden()
+    assert controller.window.session_strip._invite_button.isHidden()
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
 def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(
     qapp, tmp_path
 ):

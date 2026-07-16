@@ -614,7 +614,7 @@ class TestConductorWindow(unittest.TestCase):
             self.assertEqual(
                 w.session_strip._audio_button.property("destructive"), "true"
             )
-            self.assertEqual(w.session_strip._tools_button.text(), "More")
+            self.assertEqual(w.session_strip._tools_button.text(), "More ▾")
         finally:
             w.close()
 

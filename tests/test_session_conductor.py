@@ -99,6 +99,35 @@ def test_setup_progress_is_derived_from_identity_sound_and_band_check_facts():
         is SessionConductorPhase.CONFIRMING_IDENTITY_AND_SOUND
     )
 
+
+def test_confirmed_cleanup_resets_to_idle_and_quarantines_old_callbacks():
+    conductor = SessionConductor()
+    first = conductor.start(SessionRole.HOST)
+    assert conductor.observe(
+        first,
+        1,
+        SessionConductorFacts(
+            role=SessionRole.HOST,
+            setup_requested=True,
+            failure=FailureDisposition.RETRYABLE,
+        ),
+    )
+    assert conductor.snapshot.presentation.phase is SessionConductorPhase.FAILED
+
+    reset = conductor.reset_to_idle(SessionRole.GUEST)
+
+    assert reset != first
+    assert reset.role is SessionRole.GUEST
+    assert conductor.snapshot.presentation.phase is SessionConductorPhase.IDLE
+    assert not conductor.observe(
+        first,
+        2,
+        SessionConductorFacts(
+            role=SessionRole.HOST,
+            setup_requested=True,
+        ),
+    )
+
     needs_check = replace(
         _ready_facts(),
         band_check=EvidenceState.NOT_STARTED,
@@ -189,6 +218,9 @@ def test_guest_join_and_live_require_authenticated_path_and_unique_roster_truth(
     )
     assert live.phase is SessionConductorPhase.LIVE
     assert live.primary_action is SessionPrimaryAction.NONE
+    assert live.title == "Band connected"
+    assert "ready to play" not in live.title.lower()
+    assert "Band Check (F2)" in live.message
     assert "only musicians" in live.limitation.lower()
 
     duplicate_identity = derive_session_conductor(
