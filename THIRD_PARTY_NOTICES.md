@@ -60,7 +60,8 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     publisher warning remains a separate release-certification disclosure.
   - **Linux:** the Ubuntu x86-64 build carries the official unmodified `.deb`
     as a distribution dependency plus a visible install helper. It is a
-    join-only build for Ubuntu 22.04 or newer; the helper installs Jamulus as
+    join-only build certified only for Ubuntu 22.04 x64; other Ubuntu versions
+    and Linux distributions are not certified. The helper installs Jamulus as
     `/usr/bin/jamulus`, which WebJam discovers without a custom path.
 - **Why this doesn't require relicensing WebJam:** Redistributing a
   third-party binary that is invoked as a separate process

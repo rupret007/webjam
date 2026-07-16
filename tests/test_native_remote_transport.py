@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import time
 from unittest import mock
 
 import pytest
@@ -31,9 +33,19 @@ def _invitation():
 class FakeProcess:
     instances = []
 
-    def __init__(self, binary, *, expected_build, command_timeout=5, on_event=None, **_kw):
+    def __init__(
+        self,
+        binary,
+        *,
+        expected_build,
+        start_timeout=5,
+        command_timeout=5,
+        on_event=None,
+        **_kw,
+    ):
         self.binary = Path(binary)
         self.expected_build = expected_build
+        self.start_timeout = start_timeout
         self.command_timeout = command_timeout
         self.on_event = on_event
         self.running = False
@@ -121,9 +133,11 @@ def test_guest_backend_returns_only_authenticated_loopback_facts(monkeypatch) ->
     assert connected.loopback_port == 43123
     assert connected.path is TransportPath.SECURE_RELAY
     assert connected.generation == 7
+    assert native.DEFAULT_REMOTE_START_TIMEOUT_SECONDS == 30.0
+    assert FakeProcess.instances[-1].start_timeout == 30.0
     assert FakeProcess.instances[-1].guest_generations == [7]
     backend.stop()
-    assert FakeProcess.instances[-1].closed == 1
+    assert FakeProcess.instances[-1].closed == 0
     assert FakeProcess.instances[-1].stopped == 1
 
 
@@ -171,6 +185,67 @@ def test_guest_backend_allows_same_invitation_retry_only_before_open_guest(
     assert open_process.stopped == 1
 
 
+def test_guest_stop_cancels_pre_ready_start_without_enrollment(
+    monkeypatch,
+) -> None:
+    process_created = threading.Event()
+    created_processes = []
+
+    class BlockingStartProcess(FakeProcess):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.start_entered = threading.Event()
+            self.stop_released = threading.Event()
+            self.reaped = False
+            created_processes.append(self)
+            process_created.set()
+
+        def start(self):
+            self.running = True
+            self.start_entered.set()
+            if not self.stop_released.wait(2):
+                raise RuntimeError("test cancellation did not arrive")
+            raise RuntimeError("sidecar start was cancelled")
+
+        def stop(self):
+            super().stop()
+            self.reaped = True
+            self.stop_released.set()
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", BlockingStartProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+    )
+    failures = []
+
+    def start_guest() -> None:
+        try:
+            backend.start_guest(_invitation(), generation=1)
+        except Exception as exc:  # noqa: BLE001 - assertion captures type below
+            failures.append(exc)
+
+    worker = threading.Thread(target=start_guest)
+    worker.start()
+    assert process_created.wait(1)
+    process = created_processes[0]
+    assert isinstance(process, BlockingStartProcess)
+    assert process.start_entered.wait(1)
+
+    started = time.monotonic()
+    backend.stop()
+    worker.join(1)
+
+    assert time.monotonic() - started < 1
+    assert not worker.is_alive()
+    assert failures and isinstance(failures[0], RemoteBackendError)
+    assert failures[0].code is RemoteSessionErrorCode.UNAVAILABLE
+    assert process.guest_generations == []
+    assert process.closed == 0
+    assert process.reaped
+
+
 def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
     monkeypatch,
 ) -> None:
@@ -184,6 +259,7 @@ def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
         on_snapshot=snapshots.append,
     )
     process = FakeProcess.instances[-1]
+    assert process.start_timeout == 5
 
     first = owner.copy_for_clipboard()
     assert first.startswith("webjam://join?v=3")
@@ -216,6 +292,7 @@ def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
     assert process.host_generations == [1, 2, 3]
     assert process.closed == 2
     owner.stop()
+    assert process.closed == 2
     assert process.stopped == 1
     assert owner.snapshot.phase is RemoteSessionPhase.STOPPED
 

@@ -1,7 +1,8 @@
 WEBJAM FOR LINUX x64
 ====================
 
-This test build supports 64-bit Ubuntu 22.04 or newer. Keep the entire WebJam
+This test build is certified only for 64-bit Ubuntu 22.04. Other Ubuntu
+versions and Linux distributions are not certified. Keep the entire WebJam
 folder together; the files under _internal are required at runtime.
 
 Linux and Windows builds currently join a jam hosted from the macOS build.

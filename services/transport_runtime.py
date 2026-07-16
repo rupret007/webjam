@@ -564,7 +564,10 @@ class TransportProcess:
         self._process: subprocess.Popen[bytes] | None = None
         self._reader: threading.Thread | None = None
         self._condition = threading.Condition(threading.RLock())
+        self._lifecycle_lock = threading.Lock()
         self._write_lock = threading.Lock()
+        self._start_in_progress = False
+        self._stop_requested = False
         self._next_id = 1
         self._pending: dict[int, TransportEvent] = {}
         self._waiting: set[int] = set()
@@ -589,58 +592,87 @@ class TransportProcess:
             return tuple(self._timeline)
 
     def start(self) -> TransportEvent:
-        if self._process is not None:
-            raise TransportLaunchError("The transport process is already started.")
-        binary = _validated_binary(
-            self._binary_input,
-            expected_sha256=self._expected_sha256,
-            expected_machine=self._expected_machine,
-            require_platform_signature=self._require_platform_signature,
-        )
-        popen_options: dict[str, Any] = {
-            "stdin": subprocess.PIPE,
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.DEVNULL,
-            "cwd": str(binary.parent),
-            "env": {},
-            "shell": False,
-            "close_fds": True,
-            "bufsize": 0,
-        }
-        if os.name == "nt":
-            popen_options["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-            )
-        else:
-            popen_options["start_new_session"] = True
+        with self._condition:
+            if self._process is not None or self._start_in_progress:
+                raise TransportLaunchError(
+                    "The transport process is already started."
+                )
+            if self._stop_requested:
+                raise TransportLaunchError("The transport process was stopped.")
+            self._start_in_progress = True
         try:
-            process = subprocess.Popen([str(binary)], **popen_options)
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            raise TransportLaunchError(
-                "WebJam could not start its secure transport process."
-            ) from exc
-        if process.stdin is None or process.stdout is None:
-            self._terminate_process(process)
-            raise TransportLaunchError(
-                "WebJam could not start its secure transport process."
+            binary = _validated_binary(
+                self._binary_input,
+                expected_sha256=self._expected_sha256,
+                expected_machine=self._expected_machine,
+                require_platform_signature=self._require_platform_signature,
             )
-        self._process = process
-        self._reader = threading.Thread(
-            target=self._read_events,
-            args=(process, process.stdout),
-            name="webjam-transport-events",
-            daemon=True,
-        )
-        self._reader.start()
-        try:
+            with self._condition:
+                if self._stop_requested:
+                    raise self._stopped_error_locked()
+            popen_options: dict[str, Any] = {
+                "stdin": subprocess.PIPE,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.DEVNULL,
+                "cwd": str(binary.parent),
+                "env": {},
+                "shell": False,
+                "close_fds": True,
+                "bufsize": 0,
+            }
+            if os.name == "nt":
+                popen_options["creationflags"] = (
+                    subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                )
+            else:
+                popen_options["start_new_session"] = True
+            try:
+                process = subprocess.Popen([str(binary)], **popen_options)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                raise TransportLaunchError(
+                    "WebJam could not start its secure transport process."
+                ) from exc
+            if process.stdin is None or process.stdout is None:
+                self._terminate_process(process)
+                raise TransportLaunchError(
+                    "WebJam could not start its secure transport process."
+                )
+            with self._lifecycle_lock:
+                with self._condition:
+                    if self._stop_requested:
+                        cancelled = self._stopped_error_locked()
+                    else:
+                        cancelled = None
+                        self._process = process
+                        self._reader = threading.Thread(
+                            target=self._read_events,
+                            args=(process, process.stdout),
+                            name="webjam-transport-events",
+                            daemon=True,
+                        )
+                        reader = self._reader
+                if cancelled is not None:
+                    self._terminate_process(process)
+                    self._close_process_streams(process)
+                    raise cancelled
+                assert reader is not None
+                reader.start()
             ready = self._wait_ready(self._start_timeout)
             if ready.build != self._expected_build:
                 raise TransportLaunchError(
                     "The transport process does not match this WebJam build."
                 )
+            with self._condition:
+                if self._stop_requested:
+                    raise self._stopped_error_locked()
+                self._start_in_progress = False
+                self._condition.notify_all()
             return ready
         except BaseException:
             self._force_stop()
+            with self._condition:
+                self._start_in_progress = False
+                self._condition.notify_all()
             raise
 
     def hello(self) -> TransportEvent:
@@ -722,11 +754,24 @@ class TransportProcess:
         return self._request("close_peer")
 
     def stop(self) -> None:
-        process = self._process
+        with self._condition:
+            self._stop_requested = True
+            starting = self._start_in_progress
+            process = self._process
+            if starting:
+                self._record_failure_locked(self._stopped_error_locked())
         if process is None:
+            if starting:
+                deadline = time.monotonic() + self._stop_timeout
+                with self._condition:
+                    while self._start_in_progress:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        self._condition.wait(remaining)
             self._prepared_host_pin = None
             return
-        if process.poll() is None and self._failure is None:
+        if not starting and process.poll() is None and self._failure is None:
             try:
                 self._request("shutdown", timeout=self._stop_timeout)
             except TransportProcessError:
@@ -803,6 +848,8 @@ class TransportProcess:
         if process is None or process.poll() is not None:
             raise TransportProcessError("The transport process is not running.")
         with self._condition:
+            if self._stop_requested and command_type != "shutdown":
+                raise self._stopped_error_locked()
             if self._failure is not None:
                 raise self._failure
             command_id = self._next_id
@@ -946,35 +993,46 @@ class TransportProcess:
             self._failure = failure
         self._condition.notify_all()
 
+    def _stopped_error_locked(self) -> TransportProcessError:
+        return self._failure or TransportProcessError(
+            "The transport process was stopped."
+        )
+
     def _force_stop(self) -> None:
-        process = self._process
-        if process is None:
-            self._prepared_host_pin = None
-            return
-        with self._condition:
-            if self._waiting:
-                self._record_failure_locked(
-                    TransportProcessError(
-                        "The transport process stopped before the operation completed."
+        with self._lifecycle_lock:
+            process = self._process
+            if process is None:
+                self._prepared_host_pin = None
+                return
+            reader = self._reader
+            self._process = None
+            self._reader = None
+            with self._condition:
+                if self._waiting:
+                    self._record_failure_locked(
+                        TransportProcessError(
+                            "The transport process stopped before the operation "
+                            "completed."
+                        )
                     )
-                )
-        self._terminate_process(process)
-        reader = self._reader
-        if reader is not None and reader is not threading.current_thread():
-            reader.join(timeout=self._stop_timeout)
+            self._terminate_process(process)
+            if reader is not None and reader is not threading.current_thread():
+                reader.join(timeout=self._stop_timeout)
+            self._close_process_streams(process)
+            self._prepared_host_pin = None
+            with self._condition:
+                self._waiting.clear()
+                self._pending.clear()
+                self._condition.notify_all()
+
+    @staticmethod
+    def _close_process_streams(process: subprocess.Popen[bytes]) -> None:
         for stream in (process.stdin, process.stdout):
             if stream is not None:
                 try:
                     stream.close()
                 except OSError:
                     pass
-        self._reader = None
-        self._process = None
-        self._prepared_host_pin = None
-        with self._condition:
-            self._waiting.clear()
-            self._pending.clear()
-            self._condition.notify_all()
 
     def _terminate_process(self, process: subprocess.Popen[bytes]) -> None:
         if process.poll() is not None:

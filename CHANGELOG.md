@@ -33,11 +33,22 @@ All notable improvements and features for the WebJam music collaboration platfor
   Jamulus installer has its own unsigned-publisher UAC limitation.
 - Test Night evidence now records the actual desktop target, including Intel
   macOS, Windows x64, and Linux x64. Release automation refuses to mutate a
-  previously published tag and creates new tag releases as drafts for exact
-  hardware certification.
+  previously published tag, creates new tag releases as drafts for exact
+  hardware certification, and attaches a verified SHA-256 manifest covering
+  the seven direct and portable release assets.
+- Tagged Mac builds now fail before packaging until the full Developer ID and
+  Apple notarization path is implemented and proven with release credentials.
+  Branch artifacts remain explicitly ad-hoc test packages, and the prepared
+  outer-app entitlement boundary includes hardened-runtime camera and direct
+  audio-input access plus Qt WebEngine's separate microphone entitlement.
 
 ### Reliability
 
+- Increased the packaged guest transport's cold-start allowance to 30 seconds
+  before invitation enrollment. Slow first launch on Mac remains bounded and
+  retry-safe because the startup timeout still occurs before the one-use
+  capability is sent. Canceling during that wait is prompt, reaps the child,
+  and sends no protocol command.
 - Replaced an immediate JACK graph assertion with a bounded convergence check
   that retains process-health checks and reports every missing route on timeout.
   This removes an observed CI race without retrying or weakening the real
@@ -52,7 +63,7 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Source verification
 
-- The clean source gate reports **1,866 passed**, 19 environment-bound skips,
+- The clean source gate reports **1,879 passed**, 19 environment-bound skips,
   and one dependency deprecation warning. Ruff, Go tests/vet, workflow YAML,
   and Actionlint pass; native archive evidence is recorded only after the
   matrix builds finish from the committed candidate.

@@ -8,14 +8,18 @@
 # Build a one-file executable (slower startup):
 #   pyinstaller webjam.spec --onefile
 #
-# macOS — after signing every nested component bottom-up, shallow-sign the
-# outer bundle so child signatures are not mutated after their manifests:
-#   codesign --force --verify --verbose \
-#     --sign "Developer ID Application: Your Name (TEAMID)" \
-#     dist/WebJam.app
-#   xcrun altool --notarize-app --primary-bundle-id "com.webjam.app" \
-#     --username your@apple.id --password @keychain:AC_PASSWORD \
-#     --file dist/WebJam.app
+# macOS production release (not yet implemented in CI): provide a Developer ID
+# Application identity to PyInstaller so every collected Mach-O receives a
+# hardened-runtime, timestamped signature. After staging Jamulus and the
+# transport, re-sign nested code bottom-up with component-specific
+# entitlements, shallow-sign WebJam.app last, package it with ditto or in the
+# final DMG, then use modern notarytool and staple the accepted ticket:
+#   xcrun notarytool submit WebJam-macos-x64.zip \
+#     --key AuthKey_ID.p8 --key-id KEY_ID --issuer ISSUER_ID --wait
+#   xcrun stapler staple dist/WebJam.app
+#   xcrun stapler validate dist/WebJam.app
+# Tagged CI currently fails closed before packaging; ordinary branch builds
+# remain ad-hoc signed test artifacts.
 #
 #   CAVEAT: CI stages the official Jamulus client/server apps under Resources,
 #   then deep ad-hoc signs each nested app without the upstream App Sandbox
@@ -281,6 +285,9 @@ if sys.platform == "darwin":
         icon=str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.icns"),
         bundle_identifier="com.webjam.app",
         info_plist={
+            "NSCameraUsageDescription":
+                "WebJam uses your camera only when you choose the optional "
+                "embedded Webex video companion.",
             "NSMicrophoneUsageDescription":
                 "WebJam uses your microphone or audio interface so your "
                 "bandmates can hear you, and to show your input level or "

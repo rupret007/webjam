@@ -333,6 +333,44 @@ jobs:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
 
+      # A Developer ID certificate alone is not a release path: every tagged
+      # Mac asset also needs Apple notary credentials and implemented
+      # signing/notarization gates. Keep branch artifacts ad-hoc for testing,
+      # but fail tags before any package can be uploaded as a release asset.
+      - name: Refuse untrusted tagged macOS release
+        if: startsWith(matrix.target, 'macos-') && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          required=(
+            MACOS_DEVELOPER_ID_P12
+            MACOS_DEVELOPER_ID_P12_PASSWORD
+            APPLE_NOTARY_KEY_P8
+            APPLE_NOTARY_KEY_ID
+            APPLE_NOTARY_ISSUER_ID
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            printf 'Tagged macOS releases require all trust credentials; missing: %s\n' \
+              "${missing[*]}" >&2
+            exit 1
+          fi
+          printf '%s\n' \
+            'All macOS trust credentials are present, but Developer ID signing and notarization are not implemented yet.' \
+            'Refusing to produce an ad-hoc tagged macOS release.' >&2
+          exit 1
+
       - name: Install Linux desktop system libraries
         if: matrix.target == 'linux-x64'
         run: |
@@ -1288,11 +1326,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          existing="$(gh api \
+          set -euo pipefail
+          set +e
+          response="$(gh api --include \
             "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            2>/dev/null || true)"
-          if [[ -n "$existing" && "$(jq -r '.draft' <<<"$existing")" != "true" ]]; then
-            echo "Release $GITHUB_REF_NAME is already published; refusing to attach unreviewed assets." >&2
+            --jq '.draft' 2>&1)"
+          probe_exit=$?
+          set -e
+          http_status="$(sed -n \
+            's/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' \
+            <<<"$response" | tail -1)"
+          if [[ "$probe_exit" -eq 0 ]]; then
+            draft="$(grep -E '^(true|false)\r?$' <<<"$response" \
+              | tail -1 | tr -d '\r')"
+            if [[ "$draft" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; refusing to attach unreviewed assets." >&2
+              exit 1
+            fi
+          elif [[ "$http_status" != "404" ]]; then
+            echo "Could not prove whether release $GITHUB_REF_NAME already exists; refusing mutation." >&2
             exit 1
           fi
 
@@ -1320,11 +1372,47 @@ jobs:
           name: webjam-linux-x64
           path: release-assets/
 
+      - name: Generate and verify release checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          version="${GITHUB_REF_NAME#v}"
+          assets=(
+            "WebJam-linux-x64.zip"
+            "WebJam-macos-arm64.zip"
+            "WebJam-macos-x64.zip"
+            "WebJam-v${version}-macos-arm64.dmg"
+            "WebJam-v${version}-macos-x64.dmg"
+            "WebJam-v${version}-windows-x64-setup.exe"
+            "WebJam-windows-x64.zip"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          shopt -s nullglob dotglob
+          downloaded=(*)
+          test "${#downloaded[@]}" -eq "${#assets[@]}"
+          checksum_file="WebJam-${GITHUB_REF_NAME}-SHA256SUMS.txt"
+          sha256sum -- "${assets[@]}" > "$checksum_file"
+          test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"
+          sha256sum --check --strict "$checksum_file"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           # Hardware validation is a release gate. Tags create a reviewable
           # draft; a maintainer publishes only after exact artifacts pass.
+          # Upload only the verified inventory and its checksum manifest.
           draft: true
           generate_release_notes: true
-          files: release-assets/*
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/WebJam-linux-x64.zip
+            release-assets/WebJam-macos-arm64.zip
+            release-assets/WebJam-macos-x64.zip
+            release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg
+            release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg
+            release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe
+            release-assets/WebJam-windows-x64.zip
+            release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt

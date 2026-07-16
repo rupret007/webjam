@@ -51,9 +51,43 @@ Each macOS job also creates and verifies a read-only drag-to-Applications disk
 image. CI mounts it without browsing, checks its Applications link, copies the
 app to a fresh directory, ejects the image, then repeats strict/deep signature,
 architecture, version, build-ID, transport, bundled-Jamulus, and launch checks
-against that copy. The apps are currently ad-hoc signed, not Developer ID
-signed or notarized. They are private test packages until a notarized
-distribution path and credentials are added.
+against that copy. Ordinary branch apps are currently ad-hoc signed, not
+Developer ID signed or notarized, and remain private test packages.
+
+Tagged macOS jobs fail before packaging. They first require all five GitHub
+Actions secrets below and then deliberately stop because the credentialed
+signing/notarization implementation has not yet been validated. This prevents
+merely adding credentials from accidentally publishing an ad-hoc Mac asset.
+
+- `MACOS_DEVELOPER_ID_P12`: base64 PKCS#12 containing the Developer ID
+  Application certificate and private key;
+- `MACOS_DEVELOPER_ID_P12_PASSWORD`;
+- `APPLE_NOTARY_KEY_P8`: base64 App Store Connect API private key;
+- `APPLE_NOTARY_KEY_ID`;
+- `APPLE_NOTARY_ISSUER_ID`.
+
+The remaining implementation must import the PKCS#12 into an ephemeral
+keychain, give PyInstaller the Developer ID Application identity so all of its
+collected Mach-O files receive hardened-runtime and secure-timestamp
+signatures, and re-sign staged code from the inside out. In particular, the Qt
+WebEngine helper must be explicitly re-signed and verified with at least the
+entitlement plist shipped inside that helper, including its JIT/runtime keys.
+WebJam's outer signature must use `packaging/macos/WebJam.entitlements`.
+Bundled Jamulus must retain its audio-input entitlement on each executable but
+remain free of its incompatible upstream App Sandbox and sandbox-only
+file/network entitlements. The outer app must be signed last without a final
+`--deep` mutation.
+
+Each distributed outer container then needs its own accepted `xcrun notarytool
+submit ... --wait` result; CI must inspect the notary log as well as the final
+accepted status. For the portable ZIP, staple and validate
+`WebJam.app`, then recreate and freshly extract the ZIP because a ZIP cannot
+itself be stapled. Sign the DMG with Developer ID Application, submit it,
+staple and validate it, then require `spctl` acceptance for both a fresh app
+copy and the DMG. Credential files and the temporary keychain must be removed
+in an unconditional cleanup step. Only after this exact path passes on both
+Intel and Apple Silicon, and GitHub immutable releases are enabled for this
+repository, may the deliberate tag stop be removed.
 
 ## Manual release gates
 
@@ -82,6 +116,9 @@ JACK graph, or connected roster is not evidence that a person heard audio.
 The public `v0.16.2` tag and its attached assets are immutable historical
 evidence. Post-tag packaging fixes require a new version and tag (normally
 `v0.16.3`); never move `v0.16.2` or silently replace its published archives.
-Tag CI attaches the direct Setup executable, both DMGs, Linux ZIP, and portable
-ZIP fallbacks to a draft GitHub release. A maintainer publishes it only after
-the manual gates above refer to the exact downloaded draft assets and hashes.
+Once the macOS trust path above is implemented and validated, tag CI is
+designed to attach the direct Setup executable, both DMGs, Linux ZIP, and
+portable ZIP fallbacks to a draft GitHub release. It also generates, verifies,
+and attaches `WebJam-v<VERSION>-SHA256SUMS.txt` for that exact seven-file asset
+set. A maintainer publishes the draft only after the manual gates above refer
+to the exact downloaded assets and manifest hashes.

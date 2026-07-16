@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -11,6 +12,13 @@ WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
 )
 DMG_SCRIPT_PATH = ROOT / "packaging" / "macos" / "create-dmg.sh"
 DMG_SCRIPT = DMG_SCRIPT_PATH.read_text(encoding="utf-8")
+LINUX_README = (ROOT / "packaging" / "linux" / "README-LINUX.txt").read_text(
+    encoding="utf-8"
+)
+PROJECT_README = (ROOT / "README.md").read_text(encoding="utf-8")
+THIRD_PARTY_NOTICES = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(
+    encoding="utf-8"
+)
 
 
 def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
@@ -80,4 +88,66 @@ def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> No
     assert 'test -s "out/WebJam-v${version}-${target}-setup.exe"' in WORKFLOW
     assert 'test -s "out/WebJam-v${version}-${target}.dmg"' in WORKFLOW
     assert "path: out/WebJam*${{ matrix.target }}*" in WORKFLOW
-    assert "files: release-assets/*" in WORKFLOW
+
+
+def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> None:
+    release_job = WORKFLOW.split("  release:\n", 1)[1]
+    assert "Generate and verify release checksum manifest" in release_job
+    expected_assets = {
+        "WebJam-linux-x64.zip",
+        "WebJam-macos-arm64.zip",
+        "WebJam-macos-x64.zip",
+        "WebJam-v${version}-macos-arm64.dmg",
+        "WebJam-v${version}-macos-x64.dmg",
+        "WebJam-v${version}-windows-x64-setup.exe",
+        "WebJam-windows-x64.zip",
+    }
+    asset_block = release_job.split("          assets=(\n", 1)[1].split(
+        "          )\n", 1
+    )[0]
+    assert set(re.findall(r'^\s+"(WebJam-[^"]+)"$', asset_block, re.MULTILINE)) == (
+        expected_assets
+    )
+    assert 'checksum_file="WebJam-${GITHUB_REF_NAME}-SHA256SUMS.txt"' in release_job
+    assert 'sha256sum -- "${assets[@]}" > "$checksum_file"' in release_job
+    assert 'test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"' in release_job
+    assert 'sha256sum --check --strict "$checksum_file"' in release_job
+    assert "shopt -s nullglob dotglob" in release_job
+    assert "downloaded=(*)" in release_job
+    assert 'test "${#downloaded[@]}" -eq "${#assets[@]}"' in release_job
+    expected_uploads = {
+        "release-assets/WebJam-linux-x64.zip",
+        "release-assets/WebJam-macos-arm64.zip",
+        "release-assets/WebJam-macos-x64.zip",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe",
+        "release-assets/WebJam-windows-x64.zip",
+        "release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt",
+    }
+    upload_block = release_job.split("          files: |\n", 1)[1]
+    assert "          fail_on_unmatched_files: true\n" in release_job
+    assert set(
+        re.findall(r"^\s+(release-assets/WebJam-[^\n]+)$", upload_block, re.MULTILINE)
+    ) == expected_uploads
+
+
+def test_release_existence_probe_fails_closed_except_for_an_actual_404() -> None:
+    release_job = WORKFLOW.split("  release:\n", 1)[1]
+    probe = release_job.split(
+        "      - name: Refuse mutation of an already-published release\n", 1
+    )[1].split("\n      - name:", 1)[0]
+    assert "gh api --include" in probe
+    assert "probe_exit=$?" in probe
+    assert 'http_status="$(sed -n' in probe
+    assert 'elif [[ "$http_status" != "404" ]]' in probe
+    assert "Could not prove whether release" in probe
+    assert "2>/dev/null || true" not in probe
+
+
+def test_linux_release_claims_only_the_certified_ubuntu_target() -> None:
+    claims = "\n".join((LINUX_README, PROJECT_README, THIRD_PARTY_NOTICES))
+    assert "certified only for 64-bit Ubuntu 22.04" in LINUX_README
+    assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
+    assert "certified only for Ubuntu 22.04 x64" in THIRD_PARTY_NOTICES
+    assert "22.04 or newer" not in claims

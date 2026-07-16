@@ -63,10 +63,11 @@ credentials, device identifiers, raw paths, or notes.
 
 The source tree is preparing v0.16.3 cross-platform test packages. Its GitHub
 release is designed to offer a direct Windows Setup executable and macOS disk
-images, with portable ZIPs retained as fallbacks and a Linux x64 ZIP. The
-release page still has one immutable current release: v0.16.2. It includes the
-simplified automatic Host/Join handoff and the zero-friction
-recording/recovery hardening described in the changelog.
+images, with portable ZIPs retained as fallbacks and an Ubuntu 22.04 x64 ZIP.
+Other Ubuntu versions and Linux distributions are not certified. The release
+page still has one immutable current release: v0.16.2. It includes the
+simplified automatic Host/Join handoff and the zero-friction recording/recovery
+hardening described in the changelog.
 
 The v0.16.2 archive is a **test build** for macOS on Apple Silicon (M-series
 Macs), built from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:

@@ -39,6 +39,7 @@ from services.transport_runtime import (
 
 REFERENCE_LOCAL_OPT_IN = "WEBJAM_ENABLE_REFERENCE_LOCAL"
 TRANSPORT_BINARY_OVERRIDE = "WEBJAM_TRANSPORT_BINARY"
+DEFAULT_REMOTE_START_TIMEOUT_SECONDS = 30.0
 DEFAULT_REMOTE_CONNECT_TIMEOUT_SECONDS = 30.0
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 LOGGER = logging.getLogger("webjam.services.native_remote_transport")
@@ -160,6 +161,7 @@ class NativeGuestTransportBackend:
         self._connect_timeout = float(connect_timeout)
         self._lock = threading.RLock()
         self._process: TransportProcess | None = None
+        self._phase = "idle"
 
     def start_guest(
         self,
@@ -176,10 +178,16 @@ class NativeGuestTransportBackend:
                 process = TransportProcess(
                     self._binary,
                     expected_build=self._expected_build,
+                    # A packaged sidecar can spend several seconds in the OS
+                    # cold-launch path before it emits its first IPC event.
+                    # This budget expires before open_guest sends the one-use
+                    # enrollment capability, so a timeout remains retry-safe.
+                    start_timeout=DEFAULT_REMOTE_START_TIMEOUT_SECONDS,
                     command_timeout=self._connect_timeout,
                     **_integrity_options(self._binary),
                 )
                 self._process = process
+                self._phase = "starting"
         except RemoteBackendError:
             raise
         except Exception:  # noqa: BLE001 - fixed safe failure boundary
@@ -191,11 +199,32 @@ class NativeGuestTransportBackend:
             self._discard_failed_process(process)
             raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE) from None
 
+        with self._lock:
+            if self._process is process and self._phase == "starting":
+                self._phase = "enrolling"
+                cancelled = False
+            else:
+                cancelled = True
+        if cancelled:
+            self._discard_failed_process(process)
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE) from None
+
         try:
             # From this call onward the service may have atomically consumed
             # the enrollment value. Never retry the invitation on uncertainty.
             connected = process.open_guest(invitation, generation=generation)
         except Exception:  # noqa: BLE001 - preserve no sidecar detail
+            self._discard_failed_process(process)
+            raise RemoteBackendError(
+                RemoteSessionErrorCode.INVITATION_UNUSABLE
+            ) from None
+        with self._lock:
+            if self._process is process and self._phase == "enrolling":
+                self._phase = "connected"
+                cancelled = False
+            else:
+                cancelled = True
+        if cancelled:
             self._discard_failed_process(process)
             raise RemoteBackendError(
                 RemoteSessionErrorCode.INVITATION_UNUSABLE
@@ -221,18 +250,18 @@ class NativeGuestTransportBackend:
             with self._lock:
                 if self._process is process:
                     self._process = None
+                    self._phase = "idle"
 
     def stop(self) -> None:
         with self._lock:
             process = self._process
             self._process = None
+            self._phase = "idle"
         if process is None:
             return
-        if process.running:
-            try:
-                process.close_peer()
-            except TransportProcessError:
-                pass
+        # Whole-process shutdown destroys the active peer in the sidecar. It
+        # is bounded by TransportProcess.stop_timeout, unlike a separate
+        # close_peer request using the longer enrollment command budget.
         process.stop()
 
 
@@ -361,9 +390,12 @@ class NativeHostTransportOwner:
             self._stopped = True
             owner = self._owner
             self._owner = None
+        # Shutdown destroys any active host peer. Clear the local invitation
+        # owner afterward so its registrar callback observes a stopped process
+        # and does not issue a redundant long-timeout close_peer request.
+        self._process.stop()
         if owner is not None:
             owner.stop()
-        self._process.stop()
         with self._lock:
             self._active_invitation = None
             self._snapshot = RemoteSessionSnapshot(
