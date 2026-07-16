@@ -576,12 +576,7 @@ jobs:
             done
             test "$jamulus_stopped" = 1
             test "$(stat -c '%a' "$smoke_home/.webjam_jsonrpc_secret")" = 600
-            python - <<'PY'
-            import socket
-
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.bind(("127.0.0.1", 22998))
-            PY
+            python -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 22998)); sock.close()'
             ! jack_lsp 2>/dev/null | grep -q '^Jamulus'
           else
             cp transport/build/package/webjam-fabric \
