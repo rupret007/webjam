@@ -61,15 +61,18 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page preserves the older v0.8.0 stable build and its five immediate
-predecessors. The current build line is v0.16.2. It includes the simplified
+The release page has one current release: v0.16.2. It includes the simplified
 automatic Host/Join handoff and the zero-friction recording/recovery hardening
 described in the changelog.
 
-The v0.16.2 archive is a **pre-release test build** for macOS on Apple Silicon
-(M-series Macs). Its exact source commit, SHA-256, and package-verification
-record are published with the release asset. It is ad-hoc signed, not
-notarized, and must not be presented as a general-production macOS installer.
+The v0.16.2 archive is a **test build** for macOS on Apple Silicon (M-series
+Macs), built from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
+`WebJam-v0.16.2-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`5855af408c5182408d091c9029bdfa61d8f9abf96801822df319d55f649e688d`.
+A fresh extraction passed deep signature verification, bundled Jamulus client
+and server executable checks, and arm64 transport build-ID/checksum
+verification. It is ad-hoc signed, not notarized, and must not be presented as
+a general-production macOS installer.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

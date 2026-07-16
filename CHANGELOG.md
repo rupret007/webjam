@@ -26,9 +26,12 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Release boundary
 
-- This entry describes the current source candidate. The GitHub pre-release
-  asset records the exact source commit, SHA-256, and package verification
-  result for the uploaded macOS Apple-Silicon ZIP.
+- The GitHub Latest release contains the macOS Apple-Silicon test build from
+  `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
+  `WebJam-v0.16.2-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `5855af408c5182408d091c9029bdfa61d8f9abf96801822df319d55f649e688d`.
+  A fresh extraction passed deep signature, bundled-engine executable, and
+  arm64 transport build-ID/checksum verification.
 - The build is ad-hoc signed and not notarized. Physical two-Mac audio,
   hardware change/recovery, long-recording recovery, and external-editor
   import remain **NOT RUN** until musicians perform and record those checks.
