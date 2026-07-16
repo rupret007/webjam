@@ -61,10 +61,12 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The source tree is preparing v0.16.3 cross-platform test packages. The release
-page still has one immutable current release: v0.16.2. It includes the simplified
-automatic Host/Join handoff and the zero-friction recording/recovery hardening
-described in the changelog.
+The source tree is preparing v0.16.3 cross-platform test packages. Its GitHub
+release is designed to offer a direct Windows Setup executable and macOS disk
+images, with portable ZIPs retained as fallbacks and a Linux x64 ZIP. The
+release page still has one immutable current release: v0.16.2. It includes the
+simplified automatic Host/Join handoff and the zero-friction
+recording/recovery hardening described in the changelog.
 
 The v0.16.2 archive is a **test build** for macOS on Apple Silicon (M-series
 Macs), built from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
@@ -81,6 +83,13 @@ the v0.16.2 Windows archive is unsigned and its clean-install Jamulus action
 looked in the wrong packaged-data location. Those assets stay immutable as
 build evidence; the fixes are versioned in the v0.16.3 candidate instead of
 silently replacing files on the old tag.
+
+The v0.16.3 installer formats improve download and installation, but they do
+not substitute for platform trust. A public Windows Setup must be signed with a
+trusted Authenticode publisher certificate (and a managed PC may still require
+IT approval). The current macOS candidates are ad-hoc signed and non-notarized,
+so their DMGs remain private test artifacts until Developer ID signing and
+notarization are available.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

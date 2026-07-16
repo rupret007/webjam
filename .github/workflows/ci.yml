@@ -291,7 +291,7 @@ jobs:
   # ------------------------------------------------------------------
   # Build desktop artifacts
   # Four targets built from webjam.spec (single source of truth):
-  #   windows-x64  → windows-latest (x86-64)
+  #   windows-x64  → windows-2025   (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
   #   linux-x64    → ubuntu-22.04   (x86-64, join-only desktop)
@@ -309,7 +309,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             target: windows-x64
           - os: macos-14
             target: macos-arm64
@@ -701,6 +701,74 @@ jobs:
               "$fresh_home/webjam.log"
           fi
 
+      - name: Build and verify macOS disk image
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          build_id="$(git rev-parse HEAD)"
+          expected_machine="arm64"
+          if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
+            expected_machine="x86_64"
+          fi
+          dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
+          packaging/macos/create-dmg.sh \
+            dist/WebJam.app "$dmg" "WebJam $version"
+          hdiutil verify "$dmg"
+
+          mount_dir="$RUNNER_TEMP/webjam-dmg-mount-${{ matrix.target }}"
+          copy_dir="$RUNNER_TEMP/webjam-dmg-copy-${{ matrix.target }}"
+          smoke_home="$RUNNER_TEMP/webjam-dmg-home-${{ matrix.target }}"
+          mkdir -p "$mount_dir" "$copy_dir" "$smoke_home"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_dir"
+          cleanup_dmg() {
+            hdiutil detach "$mount_dir" -force >/dev/null 2>&1 || true
+          }
+          trap cleanup_dmg EXIT
+          test -d "$mount_dir/WebJam.app"
+          test -L "$mount_dir/Applications"
+          test "$(readlink "$mount_dir/Applications")" = /Applications
+          test "$(stat -f '%Lp' "$mount_dir")" = 755
+          ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
+          hdiutil detach "$mount_dir"
+          trap - EXIT
+
+          copied_app="$copy_dir/WebJam.app"
+          codesign --verify --deep --strict "$copied_app"
+          file "$copied_app/Contents/MacOS/WebJam" \
+            | grep -q "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy \
+            -c 'Print :CFBundleShortVersionString' \
+            "$copied_app/Contents/Info.plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$copied_app/Contents/Info.plist")" = "$version"
+          test "$(tr -d '\r\n' \
+            < "$copied_app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
+          jamulus_client="$copied_app/Contents/Resources/Jamulus.app"
+          jamulus_server="$copied_app/Contents/Resources/JamulusServer.app"
+          test -x "$jamulus_client/Contents/MacOS/Jamulus"
+          test -x "$jamulus_server/Contents/MacOS/JamulusServer"
+          lipo "$jamulus_client/Contents/MacOS/Jamulus" \
+            -verify_arch "$expected_machine"
+          lipo "$jamulus_server/Contents/MacOS/JamulusServer" \
+            -verify_arch "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$jamulus_client/Contents/Info.plist")" = 3.12.2
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$jamulus_server/Contents/Info.plist")" = 3.12.2
+          python -m tests.support.verify_packaged_transport \
+            --binary "$copied_app/Contents/MacOS/webjam-fabric" \
+            --manifest "$copied_app/Contents/Resources/webjam-fabric.sha256" \
+            --build-id "$build_id" \
+            --machine "$expected_machine"
+          HOME="$smoke_home" \
+            WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
+            WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+            "$copied_app/Contents/MacOS/WebJam"
+          grep -Fq 'Starting Conductor UI' "$smoke_home/webjam.log"
+          ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+            "$smoke_home/webjam.log"
+
       - name: Verify Windows version metadata
         if: matrix.target == 'windows-x64'
         shell: pwsh
@@ -833,11 +901,343 @@ jobs:
             throw "Frozen package left owned processes running after launch smoke"
           }
 
+      - name: Build, install, launch, and uninstall Windows setup
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: |
+          $version = (python -c "from webjam_qt import __version__; print(__version__)").Trim()
+          $buildId = (git rev-parse HEAD).Trim()
+          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-setup-source"
+          $installDir = Join-Path $env:RUNNER_TEMP "webjam-installed"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-setup-home"
+          Remove-Item -Recurse -Force $workRoot,$installDir,$smokeHome `
+            -ErrorAction SilentlyContinue
+          Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $workRoot
+          New-Item -ItemType Directory -Force $smokeHome | Out-Null
+          $sourceDir = (Resolve-Path (Join-Path $workRoot "WebJam")).Path
+          $outputDir = (Resolve-Path "out").Path
+          $outputBase = "WebJam-v$version-windows-x64-setup"
+
+          $isccCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } `
+            | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup ISCC.exe was not found" }
+          $isccVersion = (Get-Item $iscc).VersionInfo.ProductVersion
+          if ($isccVersion -notlike "6.7.1*") {
+            throw "Expected Inno Setup 6.7.1 on windows-2025, found '$isccVersion'"
+          }
+
+          $isccArgs = @(
+            "/DWebJamAppName=WebJam",
+            "/DWebJamAppVersion=$version",
+            "/DWebJamVersionInfoVersion=$version",
+            "/DWebJamSourceDir=$sourceDir",
+            "/DWebJamOutputDir=$outputDir",
+            "/DWebJamOutputBaseFilename=$outputBase"
+          )
+          $pfxPath = $null
+          $importedThumbprint = $null
+          $removeImportedCertificate = $false
+          $signtool = $null
+          try {
+            if (-not [string]::IsNullOrEmpty($env:PFX_B64)) {
+              $pfxPath = Join-Path $env:RUNNER_TEMP "setup-codesign.pfx"
+              [IO.File]::WriteAllBytes(
+                $pfxPath,
+                [Convert]::FromBase64String($env:PFX_B64)
+              )
+              $signtool = (Get-ChildItem `
+                -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
+                -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue `
+                | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } `
+                | Sort-Object FullName `
+                | Select-Object -Last 1).FullName
+              if (-not $signtool) { throw "signtool.exe not found" }
+              $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                $pfxPath,
+                $env:PFX_PASSWORD
+              )
+              $importedThumbprint = $certificate.Thumbprint
+              $certStorePath = "Cert:\CurrentUser\My\$importedThumbprint"
+              $removeImportedCertificate = -not (Test-Path $certStorePath)
+              $securePassword = ConvertTo-SecureString `
+                -String $env:PFX_PASSWORD -AsPlainText -Force
+              Import-PfxCertificate -FilePath $pfxPath `
+                -CertStoreLocation "Cert:\CurrentUser\My" `
+                -Password $securePassword | Out-Null
+              $signCommand = '$q' + $signtool +
+                '$q sign /sha1 ' + $importedThumbprint +
+                ' /tr https://timestamp.digicert.com /td sha256 /fd sha256 $f'
+              $isccArgs += "/Swebjamsign=$signCommand"
+              $isccArgs += "/DWebJamSignTool=webjamsign"
+            }
+
+            & $iscc @isccArgs "packaging\windows\WebJam.iss"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+            }
+
+            $setup = (Resolve-Path (Join-Path $outputDir "$outputBase.exe")).Path
+            if ((Get-Item $setup).VersionInfo.ProductVersion -ne $version) {
+              throw "Setup ProductVersion does not match $version"
+            }
+            if (-not [string]::IsNullOrEmpty($env:PFX_B64)) {
+              & $signtool verify /pa /all /v $setup
+              if ($LASTEXITCODE -ne 0) {
+                throw "Setup Authenticode verification failed"
+              }
+              if ((Get-AuthenticodeSignature -LiteralPath $setup).Status -ne "Valid") {
+                throw "Setup does not have a valid Authenticode signature"
+              }
+            } elseif ((Get-AuthenticodeSignature -LiteralPath $setup).Status -ne "NotSigned") {
+              throw "Unsigned branch setup has an unexpected signature state"
+            }
+          } finally {
+            if ($removeImportedCertificate -and $importedThumbprint) {
+              Remove-Item "Cert:\CurrentUser\My\$importedThumbprint" `
+                -Force -ErrorAction SilentlyContinue
+            }
+            if ($pfxPath) {
+              Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          $installLog = Join-Path $env:RUNNER_TEMP "webjam-install.log"
+          $installArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/TASKS=desktopicon",
+            "/DIR=`"$installDir`""
+          )
+          $installProcess = Start-Process -FilePath $setup `
+            -ArgumentList ($installArguments + "/LOG=`"$installLog`"") `
+            -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "WebJam setup exited $($installProcess.ExitCode)"
+          }
+
+          $app = Join-Path $installDir "WebJam.exe"
+          $fabric = Join-Path $installDir "webjam-fabric.exe"
+          $manifestPath = Join-Path $installDir "webjam-fabric.sha256"
+          $readmePath = Join-Path $installDir "README-WINDOWS.txt"
+          $licensePath = Join-Path $installDir "LICENSE.txt"
+          $noticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
+          $jamulusInstaller = Join-Path $installDir `
+            "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          $requiredFiles = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $jamulusInstaller,
+            $readmePath,
+            $licensePath,
+            $noticesPath
+          )
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path $required)) { throw "Installed file is missing: $required" }
+          }
+
+          # Prove an in-place update replaces the complete owned PyInstaller
+          # tree instead of retaining modules removed by a newer build.
+          $obsoleteCanary = Join-Path $installDir "_internal\obsolete-owned-canary.dll"
+          [IO.File]::WriteAllText($obsoleteCanary, "obsolete", [Text.Encoding]::ASCII)
+          $upgradeLog = Join-Path $env:RUNNER_TEMP "webjam-upgrade.log"
+          $upgradeProcess = Start-Process -FilePath $setup `
+            -ArgumentList ($installArguments + "/LOG=`"$upgradeLog`"") `
+            -Wait -PassThru
+          if ($upgradeProcess.ExitCode -ne 0) {
+            throw "WebJam in-place upgrade exited $($upgradeProcess.ExitCode)"
+          }
+          if (Test-Path $obsoleteCanary) {
+            throw "In-place upgrade retained an obsolete owned PyInstaller file"
+          }
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path $required)) {
+              throw "Upgraded installation lost a required file: $required"
+            }
+          }
+
+          $uninstallRegistry = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{39B63AB8-F1B2-4E8E-9E70-35F517800BA5}_is1"
+          if (-not (Test-Path $uninstallRegistry)) {
+            throw "Installed-app registry entry is missing"
+          }
+          if ((Get-Item $app).VersionInfo.ProductVersion -ne $version) {
+            throw "Installed WebJam version does not match $version"
+          }
+          function Get-PeMachine([string] $Path) {
+            $stream = [IO.File]::OpenRead($Path)
+            $reader = [IO.BinaryReader]::new($stream)
+            try {
+              if ($reader.ReadUInt16() -ne 0x5A4D) {
+                throw "Installed file is not a PE executable: $Path"
+              }
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadInt32()
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "Installed file has no PE signature: $Path"
+              }
+              return $reader.ReadUInt16()
+            } finally {
+              $reader.Dispose()
+            }
+          }
+          foreach ($binary in @($app, $fabric)) {
+            if ((Get-PeMachine $binary) -ne 0x8664) {
+              throw "Installed payload is not x86-64: $binary"
+            }
+          }
+          $installedBuildId = (Get-Content `
+            (Join-Path $installDir "_internal\webjam-build-id.txt") -Raw).Trim()
+          if ($installedBuildId -ne $buildId) {
+            throw "Installed build ID '$installedBuildId' does not match '$buildId'"
+          }
+          $manifest = (Get-Content $manifestPath -Raw).Trim()
+          $fabricHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest -ne $fabricHash) {
+            throw "Installed transport manifest mismatch"
+          }
+          $installerHash = (Get-FileHash $jamulusInstaller `
+            -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installerHash -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Installed Jamulus installer checksum mismatch"
+          }
+          if (-not [string]::IsNullOrEmpty($env:PFX_B64)) {
+            foreach ($binary in @($app, $fabric)) {
+              if ((Get-AuthenticodeSignature -LiteralPath $binary).Status -ne "Valid") {
+                throw "Installed payload lost its Authenticode signature: $binary"
+              }
+            }
+          }
+
+          $startShortcut = Join-Path $env:APPDATA `
+            "Microsoft\Windows\Start Menu\Programs\WebJam.lnk"
+          $desktopShortcut = Join-Path `
+            ([Environment]::GetFolderPath("Desktop")) "WebJam.lnk"
+          if (-not (Test-Path $startShortcut)) { throw "Start-menu shortcut is missing" }
+          if (-not (Test-Path $desktopShortcut)) { throw "Desktop shortcut is missing" }
+
+          $env:HOME = $smokeHome
+          $env:USERPROFILE = $smokeHome
+          $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
+          $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
+          $env:WEBJAM_SMOKE_EXIT_MS = "5000"
+          [IO.File]::WriteAllText(
+            (Join-Path $smokeHome ".webjam_config.json"),
+            '{"jamulus_candidates":[]}',
+            [Text.Encoding]::UTF8
+          )
+          $appProcess = Start-Process -FilePath $app `
+            -WorkingDirectory $installDir -PassThru
+          try {
+            Wait-Process -Id $appProcess.Id -Timeout 30 -ErrorAction Stop
+          } catch {
+            taskkill /PID $appProcess.Id /T /F 2>$null | Out-Null
+            throw "Installed WebJam did not finish its bounded launch smoke"
+          }
+          $appProcess.Refresh()
+          if ($appProcess.ExitCode -ne 0) {
+            throw "Installed WebJam launch exited $($appProcess.ExitCode)"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Starting Conductor UI" -Quiet)) {
+            throw "Installed WebJam did not reach the Conductor UI"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Verified bundled Jamulus installer is available" -Quiet)) {
+            throw "Installed WebJam did not discover bundled Jamulus"
+          }
+          if (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -Pattern "WebJam failed during startup|Unhandled WebJam UI error" -Quiet) {
+            throw "Installed WebJam logged a startup failure"
+          }
+
+          $sentinel = Join-Path $installDir "user-sentinel.txt"
+          [IO.File]::WriteAllText($sentinel, "preserve me", [Text.Encoding]::UTF8)
+          $uninstaller = Get-ChildItem $installDir -Filter "unins*.exe" `
+            | Select-Object -First 1
+          if (-not $uninstaller) { throw "WebJam uninstaller is missing" }
+          if (-not [string]::IsNullOrEmpty($env:PFX_B64) -and
+              (Get-AuthenticodeSignature -LiteralPath $uninstaller.FullName).Status -ne "Valid") {
+            throw "Embedded WebJam uninstaller is not signed"
+          }
+          $uninstallLog = Join-Path $env:RUNNER_TEMP "webjam-uninstall.log"
+          $uninstallProcess = Start-Process -FilePath $uninstaller.FullName `
+            -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART",
+              "/LOG=`"$uninstallLog`""
+            ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "WebJam uninstall exited $($uninstallProcess.ExitCode)"
+          }
+          $ownedAfterUninstall = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $readmePath,
+            $licensePath,
+            $noticesPath,
+            (Join-Path $installDir "_internal")
+          )
+          for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            $ownedRemaining = @($ownedAfterUninstall | Where-Object { Test-Path $_ })
+            $uninstallerRemaining = @(Get-ChildItem $installDir -Filter "unins*" `
+              -ErrorAction SilentlyContinue)
+            if (-not $ownedRemaining -and -not $uninstallerRemaining -and
+                -not (Test-Path $uninstallRegistry)) {
+              break
+            }
+            Start-Sleep -Milliseconds 200
+          }
+          $ownedRemaining = @($ownedAfterUninstall | Where-Object { Test-Path $_ })
+          if ($ownedRemaining) {
+            throw "Uninstall left owned payload paths: $($ownedRemaining -join ', ')"
+          }
+          if (Get-ChildItem $installDir -Filter "unins*" `
+              -ErrorAction SilentlyContinue) {
+            throw "Uninstall left owned uninstaller files"
+          }
+          if (Test-Path $uninstallRegistry) {
+            throw "Uninstall left the installed-app registry entry"
+          }
+          if (-not (Test-Path $sentinel)) { throw "Uninstall removed an unowned file" }
+          if ((Test-Path $startShortcut) -or (Test-Path $desktopShortcut)) {
+            throw "Uninstall left a WebJam shortcut"
+          }
+          $residue = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installDir)
+          }
+          if ($residue) {
+            throw "Installed package left an owned process after uninstall"
+          }
+          Remove-Item -Recurse -Force $installDir
+
+      - name: Verify expected release deliverables
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          target="${{ matrix.target }}"
+          test -s "out/WebJam-${target}.zip"
+          if [[ "$target" == "windows-x64" ]]; then
+            test -s "out/WebJam-v${version}-${target}-setup.exe"
+          elif [[ "$target" == macos-* ]]; then
+            test -s "out/WebJam-v${version}-${target}.dmg"
+          fi
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: webjam-${{ matrix.target }}
-          path: out/WebJam-${{ matrix.target }}.zip
+          path: out/WebJam*${{ matrix.target }}*
           if-no-files-found: error
           retention-days: 14
 

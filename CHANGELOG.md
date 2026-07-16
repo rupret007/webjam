@@ -9,9 +9,14 @@ All notable improvements and features for the WebJam music collaboration platfor
 ### Native desktop packages
 
 - Added native Windows x64, Intel macOS x64, and Ubuntu 22.04 x64 build gates
-  from one source commit. Every archive is freshly extracted and checked for
-  application/transport architecture, exact build provenance, transport hash
-  and protocol lifecycle, required data, and a clean frozen UI launch.
+  from one source commit. Every deliverable is freshly installed, mounted, or
+  extracted and checked for application/transport architecture, exact build
+  provenance, transport hash and protocol lifecycle, required data, and a clean
+  frozen UI launch.
+- Added direct GitHub-ready desktop installers: a per-user Windows Setup `.exe`
+  with Start-menu and optional desktop shortcuts plus clean uninstall, and
+  drag-to-Applications `.dmg` files for Intel and Apple Silicon Macs. The
+  portable ZIPs remain available as fallbacks.
 - Added the first Linux client package. It carries the checksum-pinned official
   Jamulus 3.12.2 Ubuntu `.deb`, visible install instructions, lowercase binary
   discovery, x86-64 ELF validation, and a packaged-app smoke against a private
@@ -22,10 +27,10 @@ All notable improvements and features for the WebJam music collaboration platfor
   requires the exact 3.12.2 filename and pinned SHA-256 both at discovery and
   immediately before launch.
 - Tagged Windows builds now require valid Authenticode credentials and verify
-  both executables after final archive extraction. Branch builds remain usable
-  for legacy v1/v2 testing but state that secure packaged v3 fails closed when
-  unsigned. The upstream Jamulus installer has its own unsigned-publisher UAC
-  limitation.
+  both payload executables, Setup, and the embedded uninstaller after a real
+  fresh-install cycle. Branch builds remain usable for legacy v1/v2 testing but
+  state that secure packaged v3 fails closed when unsigned. The upstream
+  Jamulus installer has its own unsigned-publisher UAC limitation.
 - Test Night evidence now records the actual desktop target, including Intel
   macOS, Windows x64, and Linux x64. Release automation refuses to mutate a
   previously published tag and creates new tag releases as drafts for exact
@@ -40,14 +45,14 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Distribution boundary
 
-- Intel/Apple Silicon macOS packages remain ad-hoc signed and non-notarized
+- Intel/Apple Silicon macOS apps and DMGs remain ad-hoc signed and non-notarized
   private test builds. Windows publisher signing, physical interface audio,
   audible two-musician proof, and Ubuntu hardware audio remain release gates;
   automation does not claim human audibility.
 
 ### Source verification
 
-- The clean source gate reports **1,852 passed**, 19 environment-bound skips,
+- The clean source gate reports **1,866 passed**, 19 environment-bound skips,
   and one dependency deprecation warning. Ruff, Go tests/vet, workflow YAML,
   and Actionlint pass; native archive evidence is recorded only after the
   matrix builds finish from the committed candidate.
