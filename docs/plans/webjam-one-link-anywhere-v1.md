@@ -3,8 +3,9 @@
 > **Historical record:** This preserves the 2026-07-13 recovery chronology for
 > the v0.11.0 remote-session vertical slice. It is not the current branch or
 > release-status record. Use
-> [`../../SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) for the active
-> v0.16.0 source/package/physical proof boundary.
+> [`../../README.md`](../../README.md) and
+> [`../../SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) for the
+> current v0.16.2 source/package/physical proof boundary.
 
 ## Product promise
 

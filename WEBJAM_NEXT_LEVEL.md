@@ -89,9 +89,10 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 
 ## Recommended next step
 
-Current recommendation: treat the v0.13.0 and v0.12.0 candidates as preserved
-historical package evidence and use the separately packaged v0.14.0 candidate
-for the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`. Do not publish
-until that exact artifact passes physical audio, recording/recovery, reconnect,
-role-aware cleanup, and Logic import gates. The v1/v2 engine baseline has native
-one-hour longevity evidence; it does not certify a package or remote v3.
+Current recommendation: treat the v0.14.0, v0.13.0, and v0.12.0 candidates as
+preserved historical package evidence. The v0.16.2 GitHub test build is the
+current artifact for the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`. It is
+ad-hoc signed and not notarized; physical audio, recording/recovery, reconnect,
+role-aware cleanup, and external-editor import gates remain **NOT RUN**. The
+v1/v2 engine baseline has native one-hour longevity evidence; it does not
+certify a package or remote v3.
