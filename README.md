@@ -88,9 +88,11 @@ silently replacing files on the old tag.
 The v0.16.3 installer formats improve download and installation, but they do
 not substitute for platform trust. A public Windows Setup must be signed with a
 trusted Authenticode publisher certificate (and a managed PC may still require
-IT approval). The current macOS candidates are ad-hoc signed and non-notarized,
-so their DMGs remain private test artifacts until Developer ID signing and
-notarization are available.
+IT approval). The source now contains a credential-gated Developer ID signing,
+notarization, stapling, and Gatekeeper-verification path for both Mac
+architectures. It has not yet completed a credentialed rehearsal, so the
+current macOS candidates remain ad-hoc signed private test artifacts and must
+not be promoted as public installers.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

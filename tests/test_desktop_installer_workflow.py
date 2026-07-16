@@ -40,7 +40,8 @@ def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
 
 
 def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None:
-    assert "Build and verify macOS disk image" in WORKFLOW
+    assert "Build, sign, and notarize macOS disk image" in WORKFLOW
+    assert "Verify mounted macOS disk image" in WORKFLOW
     assert 'dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"' in WORKFLOW
     assert 'hdiutil attach "$dmg" -readonly -nobrowse' in WORKFLOW
     assert 'test -L "$mount_dir/Applications"' in WORKFLOW

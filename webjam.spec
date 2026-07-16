@@ -277,8 +277,10 @@ if sys.platform == "darwin":
     # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
     # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
     # must be staged with `ditto` after this call produces dist/WebJam.app.
-    # CI then prepares each nested signature as documented above and finally
-    # shallow-signs WebJam.app so the added resources enter its outer seal.
+    # CI then prepares each nested signature as documented above. Ordinary
+    # branch builds refresh the ad-hoc outer seal; the protected release path
+    # re-signs every final code object inside-out with Developer ID and seals
+    # WebJam.app last.
     app = BUNDLE(
         coll,
         name="WebJam.app",

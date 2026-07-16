@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      macos_signing_rehearsal:
+        description: Sign and notarize macOS artifacts without publishing a release
+        required: false
+        type: boolean
+        default: false
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -304,7 +310,10 @@ jobs:
     name: Build Desktop (${{ matrix.target }})
     needs: [test, integration-jamulus, transport, reference-service]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # Developer ID signing includes two independent Apple notarization
+    # submissions (the app archive and DMG), so release-trust runs need more
+    # room than ordinary branch builds.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -333,12 +342,15 @@ jobs:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
 
-      # A Developer ID certificate alone is not a release path: every tagged
-      # Mac asset also needs Apple notary credentials and implemented
-      # signing/notarization gates. Keep branch artifacts ad-hoc for testing,
-      # but fail tags before any package can be uploaded as a release asset.
-      - name: Refuse untrusted tagged macOS release
-        if: startsWith(matrix.target, 'macos-') && startsWith(github.ref, 'refs/tags/v')
+      # Trust credentials are injected only for a v* tag or an explicitly
+      # requested manual rehearsal. Ordinary branch/PR builds remain
+      # secret-free, ad-hoc-signed test artifacts.
+      - name: Validate macOS release trust credentials
+        if: >-
+          startsWith(matrix.target, 'macos-') &&
+          (startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' &&
+          inputs.macos_signing_rehearsal))
         shell: bash
         env:
           MACOS_DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
@@ -346,30 +358,11 @@ jobs:
           APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}
         run: |
           set -euo pipefail
-          required=(
-            MACOS_DEVELOPER_ID_P12
-            MACOS_DEVELOPER_ID_P12_PASSWORD
-            APPLE_NOTARY_KEY_P8
-            APPLE_NOTARY_KEY_ID
-            APPLE_NOTARY_ISSUER_ID
-          )
-          missing=()
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              missing+=("$name")
-            fi
-          done
-          if [[ "${#missing[@]}" -gt 0 ]]; then
-            printf 'Tagged macOS releases require all trust credentials; missing: %s\n' \
-              "${missing[*]}" >&2
-            exit 1
-          fi
-          printf '%s\n' \
-            'All macOS trust credentials are present, but Developer ID signing and notarization are not implemented yet.' \
-            'Refusing to produce an ad-hoc tagged macOS release.' >&2
-          exit 1
+          packaging/macos/release-keychain.sh validate
+          echo "WEBJAM_MACOS_RELEASE_TRUST=1" >> "$GITHUB_ENV"
 
       - name: Install Linux desktop system libraries
         if: matrix.target == 'linux-x64'
@@ -621,22 +614,25 @@ jobs:
               dist/WebJam.app/Contents/MacOS/webjam-fabric
             chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
             # Nest the pinned upstream Jamulus client/server and license.
-            # Upstream enables App Sandbox, which prevents WebJam from safely
-            # provisioning command-line RPC secrets/recordings for these
-            # child processes. Re-sign the nested apps ad hoc without that
-            # entitlement; executable/framework contents remain upstream.
+            # Branch artifacts replace the upstream signatures ad hoc so App
+            # Sandbox does not prevent WebJam from provisioning command-line
+            # RPC secrets/recordings. Release-trust runs leave the staged tree
+            # untouched here; release-trust.sh signs every nested component
+            # with the explicit Developer ID entitlement policy below.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             ditto "$RUNNER_TEMP/JamulusServer.app" \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
             cp licenses/JAMULUS_COPYING.txt \
               dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
-            codesign --force --deep --sign - \
-              dist/WebJam.app/Contents/Resources/Jamulus.app
-            codesign --force --deep --sign - \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app
-            codesign --force --sign - \
-              dist/WebJam.app/Contents/MacOS/webjam-fabric
+            if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" != "1" ]]; then
+              codesign --force --deep --sign - \
+                dist/WebJam.app/Contents/Resources/Jamulus.app
+              codesign --force --deep --sign - \
+                dist/WebJam.app/Contents/Resources/JamulusServer.app
+              codesign --force --sign - \
+                dist/WebJam.app/Contents/MacOS/webjam-fabric
+            fi
             shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}' \
               > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
@@ -649,12 +645,16 @@ jobs:
               --manifest dist/WebJam.app/Contents/Resources/webjam-fabric.sha256 \
               --build-id "$build_id" \
               --machine "$expected_machine"
-            ! codesign -d --entitlements :- \
-              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
-              | grep -q 'com.apple.security.app-sandbox'
-            ! codesign -d --entitlements :- \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
-              | grep -q 'com.apple.security.app-sandbox'
+            if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" != "1" ]]; then
+              jamulus_entitlements="$(codesign -d --xml --entitlements - \
+                dist/WebJam.app/Contents/Resources/Jamulus.app)"
+              server_entitlements="$(codesign -d --xml --entitlements - \
+                dist/WebJam.app/Contents/Resources/JamulusServer.app)"
+              ! grep -q 'com.apple.security.app-sandbox' \
+                <<< "$jamulus_entitlements"
+              ! grep -q 'com.apple.security.app-sandbox' \
+                <<< "$server_entitlements"
+            fi
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
             file dist/WebJam.app/Contents/MacOS/WebJam \
@@ -673,73 +673,119 @@ jobs:
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
-            # PyInstaller signs the outer bundle before the CI-only Jamulus
-            # copy above. Refresh the shallow outer seal so Gatekeeper does
-            # not report the added resources as a damaged application.
-            jamulus_cdhash_before="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            server_cdhash_before="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            fabric_cdhash_before="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            codesign --force --sign - dist/WebJam.app
-            codesign --verify --strict dist/WebJam.app
-            codesign --verify --deep --strict dist/WebJam.app
+            if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" != "1" ]]; then
+              # PyInstaller signs the outer bundle before the CI-only Jamulus
+              # copy above. Refresh the shallow outer seal so Gatekeeper does
+              # not report the added resources as a damaged application.
+              jamulus_cdhash_before="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              server_cdhash_before="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              fabric_cdhash_before="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              codesign --force --sign - dist/WebJam.app
+              codesign --verify --strict dist/WebJam.app
+              codesign --verify --deep --strict dist/WebJam.app
 
-            # Prove outer signing preserved the prepared nested signatures.
-            codesign --verify --strict \
-              dist/WebJam.app/Contents/Resources/Jamulus.app
-            codesign --verify --strict \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app
-            codesign --verify --strict \
-              dist/WebJam.app/Contents/MacOS/webjam-fabric
-            jamulus_cdhash_after="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            server_cdhash_after="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            fabric_cdhash_after="$(codesign -dv --verbose=4 \
-              dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
-              | awk -F= '/^CDHash=/{print $2}')"
-            test -n "$jamulus_cdhash_before"
-            test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
-            test -n "$server_cdhash_before"
-            test "$server_cdhash_before" = "$server_cdhash_after"
-            test -n "$fabric_cdhash_before"
-            test "$fabric_cdhash_before" = "$fabric_cdhash_after"
-            test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
-              | awk '{print $1}')" = \
-              "$(tr -d '\n' < dist/WebJam.app/Contents/Resources/webjam-fabric.sha256)"
-            # macOS: ditto preserves resource forks and extended attributes
-            ditto -c -k --sequesterRsrc --keepParent \
-              dist/WebJam.app \
-              "out/WebJam-${{ matrix.target }}.zip"
-            fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
-            mkdir -p "$fresh_dir"
-            ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
-            codesign --verify --deep --strict "$fresh_dir/WebJam.app"
-            python -m tests.support.verify_packaged_transport \
-              --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
-              --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
-              --build-id "$build_id" \
-              --machine "$expected_machine"
-            fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
-            mkdir -p "$fresh_home"
-            HOME="$fresh_home" \
-              WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
-              WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
-              "$fresh_dir/WebJam.app/Contents/MacOS/WebJam"
-            test -f "$fresh_home/webjam.log"
-            grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
-            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
-              "$fresh_home/webjam.log"
+              # Prove outer signing preserved the prepared nested signatures.
+              codesign --verify --strict \
+                dist/WebJam.app/Contents/Resources/Jamulus.app
+              codesign --verify --strict \
+                dist/WebJam.app/Contents/Resources/JamulusServer.app
+              codesign --verify --strict \
+                dist/WebJam.app/Contents/MacOS/webjam-fabric
+              jamulus_cdhash_after="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              server_cdhash_after="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              fabric_cdhash_after="$(codesign -dv --verbose=4 \
+                dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
+                | awk -F= '/^CDHash=/{print $2}')"
+              test -n "$jamulus_cdhash_before"
+              test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
+              test -n "$server_cdhash_before"
+              test "$server_cdhash_before" = "$server_cdhash_after"
+              test -n "$fabric_cdhash_before"
+              test "$fabric_cdhash_before" = "$fabric_cdhash_after"
+              test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
+                | awk '{print $1}')" = \
+                "$(tr -d '\n' < dist/WebJam.app/Contents/Resources/webjam-fabric.sha256)"
+              # macOS: ditto preserves resource forks and extended attributes.
+              ditto -c -k --sequesterRsrc --keepParent \
+                dist/WebJam.app \
+                "out/WebJam-${{ matrix.target }}.zip"
+              fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
+              mkdir -p "$fresh_dir"
+              ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
+              codesign --verify --deep --strict "$fresh_dir/WebJam.app"
+              python -m tests.support.verify_packaged_transport \
+                --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
+                --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
+                --build-id "$build_id" \
+                --machine "$expected_machine"
+              fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
+              mkdir -p "$fresh_home"
+              HOME="$fresh_home" \
+                WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
+                WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+                "$fresh_dir/WebJam.app/Contents/MacOS/WebJam"
+              test -f "$fresh_home/webjam.log"
+              grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
+              ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+                "$fresh_home/webjam.log"
+            fi
           fi
 
-      - name: Build and verify macOS disk image
+      # Materialize the private key only after all third-party dependencies,
+      # build commands, and unsigned app smoke checks have completed.
+      - name: Prepare ephemeral macOS release keychain
+        if: env.WEBJAM_MACOS_RELEASE_TRUST == '1'
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}
+        run: packaging/macos/release-keychain.sh prepare
+
+      - name: Sign, notarize, and staple macOS app
+        if: env.WEBJAM_MACOS_RELEASE_TRUST == '1'
+        shell: bash
+        run: |
+          packaging/macos/release-trust.sh app \
+            dist/WebJam.app \
+            "out/WebJam-${{ matrix.target }}.zip" \
+            "out/notarization/${{ matrix.target }}"
+
+      - name: Build, sign, and notarize macOS disk image
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
+          packaging/macos/create-dmg.sh \
+            dist/WebJam.app "$dmg" "WebJam $version"
+          if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" == "1" ]]; then
+            packaging/macos/release-trust.sh dmg \
+              "$dmg" "out/notarization/${{ matrix.target }}"
+          fi
+          hdiutil verify "$dmg"
+
+      # This always-step is deliberately before application execution and all
+      # upload actions. It is also the failure fallback for either notary step.
+      - name: Remove macOS release credentials and keychain
+        if: always() && env.WEBJAM_MACOS_RELEASE_TRUST == '1'
+        shell: bash
+        run: packaging/macos/release-keychain.sh cleanup
+
+      - name: Verify mounted macOS disk image
         if: startsWith(matrix.target, 'macos-')
         shell: bash
         run: |
@@ -750,10 +796,6 @@ jobs:
             expected_machine="x86_64"
           fi
           dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
-          packaging/macos/create-dmg.sh \
-            dist/WebJam.app "$dmg" "WebJam $version"
-          hdiutil verify "$dmg"
-
           mount_dir="$RUNNER_TEMP/webjam-dmg-mount-${{ matrix.target }}"
           copy_dir="$RUNNER_TEMP/webjam-dmg-copy-${{ matrix.target }}"
           smoke_home="$RUNNER_TEMP/webjam-dmg-home-${{ matrix.target }}"
@@ -767,12 +809,20 @@ jobs:
           test -L "$mount_dir/Applications"
           test "$(readlink "$mount_dir/Applications")" = /Applications
           test "$(stat -f '%Lp' "$mount_dir")" = 755
+          if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" == "1" ]]; then
+            packaging/macos/release-trust.sh verify-app \
+              "$mount_dir/WebJam.app"
+          fi
           ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
           hdiutil detach "$mount_dir"
           trap - EXIT
 
           copied_app="$copy_dir/WebJam.app"
-          codesign --verify --deep --strict "$copied_app"
+          if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" == "1" ]]; then
+            packaging/macos/release-trust.sh verify-app "$copied_app"
+          else
+            codesign --verify --deep --strict "$copied_app"
+          fi
           file "$copied_app/Contents/MacOS/WebJam" \
             | grep -q "$expected_machine"
           test "$(/usr/libexec/PlistBuddy \
@@ -1294,6 +1344,15 @@ jobs:
           path: out/WebJam*${{ matrix.target }}*
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload macOS notarization evidence
+        if: always() && env.WEBJAM_MACOS_RELEASE_TRUST == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: webjam-notarization-${{ matrix.target }}
+          path: out/notarization/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 90
 
   # ------------------------------------------------------------------
   # GitHub Release

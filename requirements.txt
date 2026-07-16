@@ -1,14 +1,17 @@
 # WebJam - Music Collaboration Platform
 # Python dependencies
 
-# Primary UI framework (Qt) — new Conductor UI
-PySide6>=6.6.0
+# Primary UI framework (Qt) — new Conductor UI. Release packaging inventories
+# Qt's nested helper/framework layout and exact helper entitlements, so keep the
+# audited release dependency stable until that policy is deliberately updated.
+PySide6==6.11.1
 
 # Legacy UI (retained until Qt port reaches parity)
 customtkinter>=5.2.0
 
-# For building executables
-pyinstaller>=5.13.0
+# For building executables. This is the version used by the audited v0.16.3
+# candidate bundle layout on every native builder.
+pyinstaller==6.21.0
 
 # Core modernization dependencies
 numpy>=1.26.0
@@ -18,4 +21,3 @@ fastapi>=0.111.0
 uvicorn>=0.30.0
 httpx>=0.27.0
 sentry-sdk>=2.0.0
-
