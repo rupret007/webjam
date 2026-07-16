@@ -62,10 +62,15 @@ fixes private-invite command-line retention, peer-media ID collisions, exact
 capture-gap preservation, immutable transfer metadata, stale maintenance
 publication, and incomplete-peer shutdown.
 
-The Apple-Silicon ZIP is built and verified only from the clean v0.16.1 source
-commit; its build ID and SHA-256 are recorded with the package evidence after a
-fresh extraction passes strict/deep signature and transport checks. v0.16.0 is
-preserved as the verified rollback package:
+The private Apple-Silicon ZIP was built from the clean v0.16.1 source commit
+`7c6e7e2533facdb6162d180d57256a5a101faad8`:
+`WebJam-v0.16.1-TEST-NIGHT-macos-arm64.zip`, SHA-256
+`a983b06781a6af9a9fb3ddff7a2f3852192fa044fdb116a7a73357c4f3546fdd`.
+The fresh extracted archive passed strict/deep outer and nested-app signature
+checks, arm64 native-transport build-ID/checksum verification, and a bounded
+frozen Host lifecycle smoke with no WebJam/Jamulus process left behind. It is
+ad-hoc signed for private testing, not notarized. v0.16.0 is preserved as the
+verified rollback package:
 `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
 `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
 

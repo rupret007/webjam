@@ -33,9 +33,15 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 - Source gate: **1,798 passed**, 19 environment-bound skips, 1 known
   dependency warning, and 6 subtests with zero failures/errors.
-- The private Apple-Silicon archive is built only from this clean candidate
-  commit; fresh-extraction signature, bundled-Jamulus, and native-transport
-  evidence is recorded after packaging. Physical rehearsal evidence remains
+- Built the private Apple-Silicon archive from
+  `7c6e7e2533facdb6162d180d57256a5a101faad8`:
+  `WebJam-v0.16.1-TEST-NIGHT-macos-arm64.zip`, SHA-256
+  `a983b06781a6af9a9fb3ddff7a2f3852192fa044fdb116a7a73357c4f3546fdd`.
+  The checksummed official Jamulus 3.12.2 DMG was freshly staged; a fresh
+  extraction passed strict/deep outer and nested signature checks, arm64
+  fabric build-ID/checksum verification, and a bounded frozen Host lifecycle
+  smoke with no leftover owned process. The archive is ad-hoc signed for
+  private testing, not notarized. Physical rehearsal evidence remains
   **NOT RUN**.
 
 ---
