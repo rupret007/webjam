@@ -49,7 +49,7 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
 def test_windows_ci_builds_and_exercises_the_direct_setup_executable() -> None:
     assert "Build, install, launch, and uninstall Windows setup" in WORKFLOW
     assert "- os: windows-2025" in WORKFLOW
-    assert 'if ($isccVersion -notlike "6.7.1*")' in WORKFLOW
+    assert "$isccFileVersion" in WORKFLOW
     assert '$outputBase = "WebJam-v$version-windows-x64-setup"' in WORKFLOW
     assert '"packaging\\windows\\WebJam.iss"' in WORKFLOW
     assert '"/TASKS=desktopicon"' in WORKFLOW

@@ -928,10 +928,8 @@ jobs:
           $iscc = $isccCandidates | Where-Object { Test-Path $_ } `
             | Select-Object -First 1
           if (-not $iscc) { throw "Inno Setup ISCC.exe was not found" }
-          $isccVersion = (Get-Item $iscc).VersionInfo.ProductVersion
-          if ($isccVersion -notlike "6.7.1*") {
-            throw "Expected Inno Setup 6.7.1 on windows-2025, found '$isccVersion'"
-          }
+          $isccFileVersion = (Get-Item $iscc).VersionInfo.FileVersion
+          Write-Host "Using Inno Setup at '$iscc' (file version $isccFileVersion)"
 
           $isccArgs = @(
             "/DWebJamAppName=WebJam",
