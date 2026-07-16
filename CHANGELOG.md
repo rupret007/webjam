@@ -4,6 +4,37 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.16.2] — 2026-07-16 test-build release candidate
+
+### Simple session flow and take safety
+
+- Normal Host and Join now move to the session automatically after fresh,
+  authenticated Jamulus connection and local-identity evidence. Musicians no
+  longer have to finish a WebJam sound wizard, confirm a startup Webex choice,
+  or press an extra Enter Jam action. Jamulus remains visible for its own audio
+  setup, and WebJam never treats connection evidence as proof of audibility.
+- Startup, retry, reconnect, invite, recording, and shutdown events now use a
+  generation-guarded session snapshot. A late callback from a replaced or
+  failed attempt cannot redraw or cancel the current session.
+- Incoming Local Originals remain preserved first. Timing alignment is allowed
+  only against the matching verified server reference with sufficient anchors,
+  confidence, and residual evidence; otherwise Studio keeps the media visible
+  but blocks it from a misleading aligned export.
+- Recording maintenance now runs outside the Qt completion path and project
+  manifests use a short per-take lock plus exact-revision replacement. Late or
+  competing work retries safely rather than overwriting newer take truth.
+
+### Release boundary
+
+- This entry describes the current source candidate. The GitHub pre-release
+  asset records the exact source commit, SHA-256, and package verification
+  result for the uploaded macOS Apple-Silicon ZIP.
+- The build is ad-hoc signed and not notarized. Physical two-Mac audio,
+  hardware change/recovery, long-recording recovery, and external-editor
+  import remain **NOT RUN** until musicians perform and record those checks.
+
+---
+
 ## [0.16.1] — 2026-07-15 private stabilization candidate
 
 ### Stability and truthful recovery

@@ -1,4 +1,4 @@
-# WebJam v0.16.1
+# WebJam v0.16.2
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -61,32 +61,21 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The package record below predates the active source work on this branch. It is
-rollback evidence, not evidence that an existing ZIP includes the new behavior.
+The release page preserves the older v0.8.0 stable build and its five immediate
+predecessors. The current build line is v0.16.2. It includes the simplified
+automatic Host/Join handoff and the zero-friction recording/recovery hardening
+described in the changelog.
 
-v0.16.1 is a private stabilization candidate for tonight's rehearsal. Its
-source gate reported **1,798 passed**, 19 environment-bound skips, and 6
-subtests with zero failures/errors. It adds an isolated dual-musician lab and
-fixes private-invite command-line retention, peer-media ID collisions, exact
-capture-gap preservation, immutable transfer metadata, stale maintenance
-publication, and incomplete-peer shutdown.
+The v0.16.2 archive is a **pre-release test build** for macOS on Apple Silicon
+(M-series Macs). Its exact source commit, SHA-256, and package-verification
+record are published with the release asset. It is ad-hoc signed, not
+notarized, and must not be presented as a general-production macOS installer.
 
-The private Apple-Silicon ZIP was built from the clean v0.16.1 source commit
-`7c6e7e2533facdb6162d180d57256a5a101faad8`:
-`WebJam-v0.16.1-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`a983b06781a6af9a9fb3ddff7a2f3852192fa044fdb116a7a73357c4f3546fdd`.
-The fresh extracted archive passed strict/deep outer and nested-app signature
-checks, arm64 native-transport build-ID/checksum verification, and a bounded
-frozen Host lifecycle smoke with no WebJam/Jamulus process left behind. It is
-ad-hoc signed for private testing, not notarized. v0.16.0 is preserved as the
-verified rollback package:
-`WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
-
-Automated source checks are evidence for code behavior. Real two-Mac audio,
-interface changes, sleep/wake, interruption/recovery, and external-editor
-import remain physical-pilot evidence and are recorded as **NOT RUN** until
-people perform them.
+Automated source and package checks are evidence for code and archive
+integrity—not a substitute for musicians hearing one another. Real two-Mac
+audio, interface changes, sleep/wake, interruption/recovery, and
+external-editor import remain physical-pilot evidence and are recorded as
+**NOT RUN** until people perform them.
 
 ## Guides
 

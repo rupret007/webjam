@@ -1,4 +1,4 @@
-# Developing WebJam v0.16.1
+# Developing WebJam v0.16.2
 
 ## Local setup
 
