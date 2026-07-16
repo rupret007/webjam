@@ -982,8 +982,26 @@ jobs:
             }
 
             $setup = (Resolve-Path (Join-Path $outputDir "$outputBase.exe")).Path
-            if ((Get-Item $setup).VersionInfo.ProductVersion -ne $version) {
-              throw "Setup ProductVersion does not match $version"
+            $setupVersionInfo = (Get-Item $setup).VersionInfo
+            $actualVersionParts = @(
+              $setupVersionInfo.ProductMajorPart,
+              $setupVersionInfo.ProductMinorPart,
+              $setupVersionInfo.ProductBuildPart,
+              $setupVersionInfo.ProductPrivatePart
+            )
+            $expectedVersionParts = @(
+              $version.Split('.') | ForEach-Object { [int] $_ }
+            )
+            if ($expectedVersionParts.Count -gt 4) {
+              throw "Setup version has more than four numeric components: $version"
+            }
+            while ($expectedVersionParts.Count -lt 4) {
+              $expectedVersionParts += 0
+            }
+            $actualNumericVersion = $actualVersionParts -join '.'
+            $expectedNumericVersion = $expectedVersionParts -join '.'
+            if ($actualNumericVersion -ne $expectedNumericVersion) {
+              throw "Setup ProductVersion '$($setupVersionInfo.ProductVersion)' does not match '$version'"
             }
             if (-not [string]::IsNullOrEmpty($env:PFX_B64)) {
               & $signtool verify /pa /all /v $setup

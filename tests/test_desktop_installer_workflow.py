@@ -52,6 +52,8 @@ def test_windows_ci_builds_and_exercises_the_direct_setup_executable() -> None:
     assert "$isccFileVersion" in WORKFLOW
     assert '$outputBase = "WebJam-v$version-windows-x64-setup"' in WORKFLOW
     assert '"packaging\\windows\\WebJam.iss"' in WORKFLOW
+    assert "$setupVersionInfo.ProductMajorPart" in WORKFLOW
+    assert "$setupVersionInfo.ProductPrivatePart" in WORKFLOW
     assert '"/TASKS=desktopicon"' in WORKFLOW
     assert '"/DIR=`"$installDir`""' in WORKFLOW
     assert "obsolete-owned-canary.dll" in WORKFLOW
