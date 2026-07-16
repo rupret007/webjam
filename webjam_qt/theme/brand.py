@@ -13,14 +13,15 @@ placeholder.
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Final, Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QIcon,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -43,44 +44,60 @@ BRAND_MARK_PATH: Final = Path(__file__).resolve().parent / "assets" / "webjam-ma
 _INK: Final = QColor("#0A0A0A")
 _BURNT_ORANGE: Final = QColor(Color.ACCENT_PRIMARY)
 _ORANGE: Final = QColor("#F06A00")
+_HIGHLIGHT_ORANGE: Final = QColor("#F28A00")
 
 
-def _trinity_path() -> QPainterPath:
-    """Return one continuous three-loop knot in a 0..1 coordinate space.
+def _trinity_paths() -> tuple[QPainterPath, QPainterPath, QPainterPath]:
+    """Return the supplied trinity reference as three linked ribbon loops.
 
-    This is a compact 2D trefoil projection.  Unlike three overlapping leaf
-    outlines, its single unbroken ribbon reads clearly as a trinity knot at
-    icon sizes and stays calm enough for the header.
+    The earlier mathematical trefoil was technically a three-loop knot but
+    looked busy at header size.  These three rounded loops follow the supplied
+    trinity reference literally: one loop for each musician, with the rings
+    joining them at the outer points.  The geometry stays calm at 16 px.
     """
-    samples = 240
-    raw_points: list[tuple[float, float]] = []
-    for index in range(samples + 1):
-        angle = (2.0 * math.pi * index) / samples
-        raw_points.append(
-            (
-                math.sin(angle) + (2.0 * math.sin(2.0 * angle)),
-                math.cos(angle) - (2.0 * math.cos(2.0 * angle)),
-            )
-        )
-    max_x = max(abs(x) for x, _ in raw_points)
-    max_y = max(abs(y) for _, y in raw_points)
-    extent = 0.355
-    path = QPainterPath()
-    for index, (x, y) in enumerate(raw_points):
-        point = QPointF(0.5 + ((x / max_x) * extent), 0.5 + ((y / max_y) * extent))
-        if index == 0:
-            path.moveTo(point)
-        else:
-            path.lineTo(point)
-    path.closeSubpath()
-    return path
+    top = QPainterPath(QPointF(0.50, 0.15))
+    top.cubicTo(
+        QPointF(0.31, 0.36),
+        QPointF(0.31, 0.64),
+        QPointF(0.50, 0.85),
+    )
+    top.cubicTo(
+        QPointF(0.69, 0.64),
+        QPointF(0.69, 0.36),
+        QPointF(0.50, 0.15),
+    )
+
+    left = QPainterPath(QPointF(0.154, 0.75))
+    left.cubicTo(
+        QPointF(0.443, 0.803),
+        QPointF(0.661, 0.677),
+        QPointF(0.760, 0.400),
+    )
+    left.cubicTo(
+        QPointF(0.471, 0.347),
+        QPointF(0.253, 0.473),
+        QPointF(0.154, 0.750),
+    )
+
+    right = QPainterPath(QPointF(0.846, 0.75))
+    right.cubicTo(
+        QPointF(0.747, 0.473),
+        QPointF(0.529, 0.347),
+        QPointF(0.240, 0.400),
+    )
+    right.cubicTo(
+        QPointF(0.339, 0.677),
+        QPointF(0.557, 0.803),
+        QPointF(0.846, 0.750),
+    )
+    return top, left, right
 
 
-_TRINITY_PATH: Final = _trinity_path()
+_TOP_LOOP_PATH, _LEFT_LOOP_PATH, _RIGHT_LOOP_PATH = _trinity_paths()
 _NODES: Final = (
-    QPointF(0.5, 0.145),
-    QPointF(0.826, 0.693),
-    QPointF(0.174, 0.693),
+    QPointF(0.50, 0.15),
+    QPointF(0.846, 0.75),
+    QPointF(0.154, 0.75),
 )
 
 
@@ -96,6 +113,20 @@ def _mark_color(color_name: str) -> QColor:
     # Default app surfaces use the bright orange mark shown at launch while
     # explicit monochrome callers retain the requested color.
     return QColor(_ORANGE if base.name().upper() == _BURNT_ORANGE.name().upper() else base)
+
+
+def _mark_brush(color_name: str) -> QBrush:
+    """Use the warm reference ribbon without losing monochrome callers."""
+
+    base = _resolved_color(color_name)
+    if base.name().upper() != _BURNT_ORANGE.name().upper():
+        return QBrush(_mark_color(color_name))
+    gradient = QLinearGradient(QPointF(0.15, 0.12), QPointF(0.86, 0.88))
+    gradient.setColorAt(0.0, _HIGHLIGHT_ORANGE)
+    gradient.setColorAt(0.34, _ORANGE)
+    gradient.setColorAt(0.72, QColor(Color.ACCENT_PRIMARY))
+    gradient.setColorAt(1.0, _ORANGE)
+    return QBrush(gradient)
 
 
 def draw_brand_mark(
@@ -127,18 +158,20 @@ def draw_brand_mark(
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
     # One simple ribbon weight keeps the mark readable at both 16 px and
-    # launch scale. The loops naturally layer at their crossings without a
-    # dark outline or a decorative glow.
+    # launch scale. The three deliberate loops mirror the supplied mark
+    # without shadows, animation, or a fragile bitmap crop.
     stroke = max(0.076, 1.62 / side)
 
-    mark_color = _mark_color(color)
-    ribbon = QPen(mark_color)
+    mark_brush = _mark_brush(color)
+    ribbon = QPen(mark_brush, stroke)
     ribbon.setWidthF(stroke)
     ribbon.setCapStyle(Qt.PenCapStyle.RoundCap)
     ribbon.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.setPen(ribbon)
-    painter.drawPath(_TRINITY_PATH)
+    painter.drawPath(_TOP_LOOP_PATH)
+    painter.drawPath(_LEFT_LOOP_PATH)
+    painter.drawPath(_RIGHT_LOOP_PATH)
 
     # Three circular nodes remain visible even at 16 px.  The dark center
     # keeps them legible on both the app's black tile and a light OS surface.
@@ -146,7 +179,7 @@ def draw_brand_mark(
     inner_radius = node_radius * 0.53
     for node in _NODES:
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(mark_color)
+        painter.setBrush(mark_brush)
         painter.drawEllipse(node, node_radius, node_radius)
         painter.setBrush(_INK)
         painter.drawEllipse(node, inner_radius, inner_radius)

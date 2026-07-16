@@ -255,7 +255,11 @@ class AudioCoordinator:
             )
             self._c.window.flash_message(error, ms=8000)
             return
-        self._c._stop_session_peer()
+        # A successful Leave/End is terminal for the private peer plane.
+        # Discard the typed v2 invitation as well as the listener/client so a
+        # bearer cannot survive in controller memory and quietly reopen on a
+        # later Start. The musician can paste a fresh invite for a new jam.
+        self._c._stop_session_peer(clear_invite=True)
         # The hosted server has been confirmed stopped before this success
         # callback. Revoke the v3 owner and clear its in-memory loopback mode
         # now so a later legacy LAN-host session keeps its original binding.

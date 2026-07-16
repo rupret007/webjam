@@ -31,6 +31,7 @@ import math
 import os
 import re
 import secrets
+import socket
 import tempfile
 import threading
 import uuid
@@ -52,6 +53,9 @@ MAX_SEGMENT_BYTES = 32 * 1024 * 1024 * 1024
 DEFAULT_CHUNK_BYTES = 1024 * 1024
 _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_MAX_DESCRIPTOR_GAPS = 128
+_MAX_DESCRIPTOR_GAP_REASON = 120
+_PEER_REQUEST_READ_TIMEOUT_S = 30.0
 
 
 class SessionTransferError(RuntimeError):
@@ -94,8 +98,9 @@ def _token_text(value: str, label: str) -> str:
 
 def _clean_name(value: str) -> str:
     clean = " ".join(
-        "".join(character if character.isprintable() else " " for character in str(value))
-        .split()
+        "".join(
+            character if character.isprintable() else " " for character in str(value)
+        ).split()
     )
     return clean[:80] or "Musician"
 
@@ -155,9 +160,7 @@ def load_or_create_installation_id(path: str | Path) -> str:
             payload = json.loads(identity_path.read_text(encoding="utf-8"))
             if payload.get("schema") != 1:
                 raise ValueError("schema")
-            installation_id = _uuid_text(
-                payload["installation_id"], "installation_id"
-            )
+            installation_id = _uuid_text(payload["installation_id"], "installation_id")
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise SessionTransferError(
                 "The WebJam installation identity is unreadable."
@@ -194,7 +197,9 @@ class SessionCredentials:
     invite_token: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "session_id", _uuid_text(self.session_id, "session_id"))
+        object.__setattr__(
+            self, "session_id", _uuid_text(self.session_id, "session_id")
+        )
         object.__setattr__(
             self, "invite_token", _token_text(self.invite_token, "invite_token")
         )
@@ -292,9 +297,16 @@ class EnrollmentRegistry:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise SessionTransferError("The participant registry is unreadable.") from exc
-        if payload.get("schema") != 1 or payload.get("session_id") != self.credentials.session_id:
-            raise SessionTransferError("The participant registry belongs to another session.")
+            raise SessionTransferError(
+                "The participant registry is unreadable."
+            ) from exc
+        if (
+            payload.get("schema") != 1
+            or payload.get("session_id") != self.credentials.session_id
+        ):
+            raise SessionTransferError(
+                "The participant registry belongs to another session."
+            )
         records = payload.get("participants", [])
         if not isinstance(records, list):
             raise SessionTransferError("The participant registry is malformed.")
@@ -302,7 +314,9 @@ class EnrollmentRegistry:
         participant_ids: set[str] = set()
         try:
             for record in records:
-                installation_id = _uuid_text(record["installation_id"], "installation_id")
+                installation_id = _uuid_text(
+                    record["installation_id"], "installation_id"
+                )
                 participant_id = _uuid_text(record["participant_id"], "participant_id")
                 if installation_id in loaded or participant_id in participant_ids:
                     raise ValueError("duplicate participant identity")
@@ -322,7 +336,9 @@ class EnrollmentRegistry:
                 }
                 participant_ids.add(participant_id)
         except (KeyError, TypeError, ValueError) as exc:
-            raise SessionTransferError("The participant registry is malformed.") from exc
+            raise SessionTransferError(
+                "The participant registry is malformed."
+            ) from exc
         self._participants = loaded
 
     def _save(self) -> None:
@@ -437,7 +453,9 @@ class EnrollmentRegistry:
                 None,
             )
             if record is None:
-                raise TransferAuthenticationError("Participant enrollment was not found.")
+                raise TransferAuthenticationError(
+                    "Participant enrollment was not found."
+                )
             prior_generation = int(record.get("presence_generation", 0))
             prior_channel = record.get("channel_id")
             prior_name = record["display_name"]
@@ -541,7 +559,9 @@ class SessionStateSnapshot:
     message: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "session_id", _uuid_text(self.session_id, "session_id"))
+        object.__setattr__(
+            self, "session_id", _uuid_text(self.session_id, "session_id")
+        )
         if self.take_id is not None:
             object.__setattr__(self, "take_id", _uuid_text(self.take_id, "take_id"))
         if self.generation < 0:
@@ -582,9 +602,13 @@ class SessionControlState:
                 message=str(payload.get("message", ""))[:240],
             )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            raise SessionTransferError("The session recording state is unreadable.") from exc
+            raise SessionTransferError(
+                "The session recording state is unreadable."
+            ) from exc
         if snapshot.session_id != self.session_id:
-            raise SessionTransferError("The recording state belongs to another session.")
+            raise SessionTransferError(
+                "The recording state belongs to another session."
+            )
         self._snapshot = snapshot
 
     def _publish(self, **changes: Any) -> SessionStateSnapshot:
@@ -662,6 +686,116 @@ class SessionControlState:
             )
 
 
+def _gap_integer(value: object, field_name: str, *, positive: bool = False) -> int:
+    if isinstance(value, bool):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{field_name} must be a {qualifier} integer.")
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer.") from exc
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"{field_name} must be an integer.")
+    invalid = result <= 0 if positive else result < 0
+    if invalid:
+        qualifier = "greater than zero" if positive else "non-negative"
+        raise ValueError(f"{field_name} must be {qualifier}.")
+    return result
+
+
+def _gap_timeline_frames(gaps: tuple["TransferGap", ...]) -> int:
+    """Return the union of declared source-frame intervals.
+
+    A multi-channel descriptor can report the same missing time range for
+    several channels.  ``gap_frames`` is a legacy timeline total, not a count
+    of missing samples across every channel, so overlapping per-channel facts
+    must not inflate it.
+    """
+
+    intervals = sorted((gap.start_frame, gap.end_frame) for gap in gaps)
+    total = 0
+    start = end = -1
+    for next_start, next_end in intervals:
+        if start < 0:
+            start, end = next_start, next_end
+            continue
+        if next_start > end:
+            total += end - start
+            start, end = next_start, next_end
+            continue
+        end = max(end, next_end)
+    return total + (end - start if start >= 0 else 0)
+
+
+@dataclass(frozen=True)
+class TransferGap:
+    """A validated, per-channel missing interval in an uploaded segment.
+
+    Transfer descriptors cross a private network boundary and are later
+    retained with the take.  Keep the information limited to source-frame
+    facts, a bounded safe reason, and the affected media channels; never pass
+    a capture implementation's arbitrary diagnostics through unchanged.
+    """
+
+    start_frame: int
+    frame_count: int
+    channels: tuple[int, ...]
+    reason: str
+
+    def __post_init__(self) -> None:
+        start_frame = _gap_integer(self.start_frame, "gap.start_frame")
+        frame_count = _gap_integer(self.frame_count, "gap.frame_count", positive=True)
+        if not isinstance(self.channels, (list, tuple)):
+            raise ValueError("gap.channels must be a sequence of channel indices.")
+        clean_channels: list[int] = []
+        for value in self.channels:
+            channel = _gap_integer(value, "gap.channels")
+            clean_channels.append(channel)
+        if not clean_channels:
+            raise ValueError("gap.channels must identify at least one channel.")
+        if len(set(clean_channels)) != len(clean_channels):
+            raise ValueError("gap.channels cannot contain duplicate indices.")
+        reason = redact_text(" ".join(str(self.reason or "").split()))
+        # ``redact_text`` deliberately treats assignment-like text as
+        # sensitive.  A descriptor reloaded from its own redacted JSON may
+        # therefore present ``token=[redacted]`` to it again; collapse the
+        # harmless extra closing bracket so this durable wire record is
+        # canonical and replay/idempotency comparisons remain stable.
+        reason = re.sub(r"(?i)\[redacted\]\]+", "[redacted]", reason)
+        if not reason:
+            raise ValueError("gap.reason is required.")
+        object.__setattr__(self, "start_frame", start_frame)
+        object.__setattr__(self, "frame_count", frame_count)
+        object.__setattr__(self, "channels", tuple(clean_channels))
+        object.__setattr__(self, "reason", reason[:_MAX_DESCRIPTOR_GAP_REASON])
+
+    @property
+    def end_frame(self) -> int:
+        return self.start_frame + self.frame_count
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "start_frame": self.start_frame,
+            "frame_count": self.frame_count,
+            "channels": list(self.channels),
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "TransferGap":
+        if not isinstance(value, Mapping):
+            raise ValueError("gap must be an object.")
+        raw_channels = value.get("channels", ())
+        if not isinstance(raw_channels, (list, tuple)):
+            raise ValueError("gap.channels must be a sequence of channel indices.")
+        return cls(
+            start_frame=value.get("start_frame", -1),
+            frame_count=value.get("frame_count", 0),
+            channels=tuple(raw_channels),
+            reason=value.get("reason", ""),
+        )
+
+
 @dataclass(frozen=True)
 class TransferDescriptor:
     session_id: str
@@ -679,6 +813,7 @@ class TransferDescriptor:
     source_channel: int = 0
     gap_frames: int = 0
     capture_errors: tuple[str, ...] = ()
+    gaps: tuple[TransferGap, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name in ("session_id", "take_id", "participant_id", "segment_id"):
@@ -708,8 +843,36 @@ class TransferDescriptor:
             raise ValueError("source_channel cannot be negative.")
         if gap_frames < 0 or gap_frames > int(self.frame_count):
             raise ValueError("gap_frames is outside the segment timeline.")
+        if not isinstance(self.gaps, (list, tuple)):
+            raise ValueError("gaps must be a sequence of structured gap records.")
+        if len(self.gaps) > _MAX_DESCRIPTOR_GAPS:
+            raise ValueError("Too many gap records were supplied for one segment.")
+        structured_gaps: list[TransferGap] = []
+        for value in self.gaps:
+            gap = (
+                value
+                if isinstance(value, TransferGap)
+                else TransferGap.from_mapping(value)
+            )
+            if gap.end_frame > int(self.frame_count):
+                raise ValueError(
+                    "A structured gap extends beyond the segment timeline."
+                )
+            if any(channel >= int(self.channels) for channel in gap.channels):
+                raise ValueError("A structured gap references an unavailable channel.")
+            structured_gaps.append(gap)
+        structured_gap_frames = _gap_timeline_frames(tuple(structured_gaps))
+        if structured_gaps:
+            if gap_frames not in {0, structured_gap_frames}:
+                raise ValueError(
+                    "gap_frames must match the total of structured gap records."
+                )
+            # ``gap_frames`` remains in the wire shape for older peers, but is
+            # now derived from exact intervals whenever they are available.
+            gap_frames = structured_gap_frames
         object.__setattr__(self, "source_channel", source_channel)
         object.__setattr__(self, "gap_frames", gap_frames)
+        object.__setattr__(self, "gaps", tuple(structured_gaps))
         object.__setattr__(
             self,
             "capture_errors",
@@ -721,6 +884,9 @@ class TransferDescriptor:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "TransferDescriptor":
+        raw_gaps = value.get("gaps", ())
+        if not isinstance(raw_gaps, (list, tuple)):
+            raise ValueError("gaps must be a sequence of structured gap records.")
         return cls(
             session_id=str(value["session_id"]),
             take_id=str(value["take_id"]),
@@ -739,6 +905,7 @@ class TransferDescriptor:
             capture_errors=tuple(value.get("capture_errors", ()))
             if isinstance(value.get("capture_errors", ()), (list, tuple))
             else (),
+            gaps=tuple(TransferGap.from_mapping(item) for item in raw_gaps),
         )
 
 
@@ -786,31 +953,62 @@ class TransferStore:
     def status(self, descriptor: TransferDescriptor) -> TransferReceipt:
         part, final, sidecar = self._paths(descriptor)
         with self._lock:
+            final_size = final.stat().st_size if final.is_file() else 0
+            received = final_size if final.is_file() else (
+                part.stat().st_size if part.is_file() else 0
+            )
+            error = ""
+            # The descriptor is immutable for the whole transfer lifetime,
+            # including after the verified WAV has been published. Otherwise
+            # a caller could receive a false complete receipt while presenting
+            # altered capture-gap or media metadata under the same identity.
+            if sidecar.is_file():
+                try:
+                    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+                    stored_descriptor = TransferDescriptor.from_mapping(payload)
+                except (
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    raise SessionTransferError(
+                        "The transfer checkpoint is unreadable."
+                    ) from exc
+                if stored_descriptor != descriptor:
+                    raise TransferConflictError(
+                        "The segment metadata changed after upload began.",
+                        expected_offset=received,
+                    )
+                error = str(payload.get("error", ""))[:240]
+            elif final.is_file():
+                # A crash between publishing the WAV and writing its sidecar
+                # leaves bytes but no durable descriptor to authenticate them.
+                # Do not let an arbitrary retry descriptor claim that orphan
+                # as complete; report zero progress so a normal retry safely
+                # revalidates and republishes the source from the beginning.
+                return TransferReceipt(
+                    descriptor,
+                    0,
+                    False,
+                    None,
+                    "Published segment checkpoint is missing; retrying safely.",
+                )
             if final.is_file():
                 complete = (
-                    final.stat().st_size == descriptor.size_bytes
+                    final_size == descriptor.size_bytes
                     and _sha256_file(final) == descriptor.sha256
                 )
                 return TransferReceipt(
                     descriptor,
-                    final.stat().st_size,
+                    final_size,
                     complete,
                     final if complete else None,
-                    "" if complete else "Published segment no longer matches its checksum.",
+                    ""
+                    if complete
+                    else "Published segment no longer matches its checksum.",
                 )
-            received = part.stat().st_size if part.is_file() else 0
-            error = ""
-            if sidecar.is_file():
-                try:
-                    payload = json.loads(sidecar.read_text(encoding="utf-8"))
-                    if payload.get("sha256") != descriptor.sha256:
-                        raise TransferConflictError(
-                            "A different segment already uses this transfer identity.",
-                            expected_offset=received,
-                        )
-                    error = str(payload.get("error", ""))[:240]
-                except json.JSONDecodeError as exc:
-                    raise SessionTransferError("The transfer checkpoint is unreadable.") from exc
             return TransferReceipt(descriptor, received, False, None, error)
 
     def append(
@@ -1004,8 +1202,87 @@ class TransferStore:
 
 
 class _ReusableThreadingHTTPServer(ThreadingHTTPServer):
-    daemon_threads = True
+    """Threaded HTTP server whose in-flight handlers can be stopped safely."""
+
+    # Keep request workers joinable. ``stop()`` closes their sockets before
+    # ``server_close()`` joins them, so an incomplete peer upload cannot leave
+    # a daemon worker blocked forever in ``rfile.read()``.
+    daemon_threads = False
     allow_reuse_address = True
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._active_request_lock = threading.Lock()
+        self._active_requests: set[socket.socket] = set()
+        self._stopping = False
+        super().__init__(*args, **kwargs)
+
+    @property
+    def stopping(self) -> bool:
+        with self._active_request_lock:
+            return self._stopping
+
+    @property
+    def active_handler_count(self) -> int:
+        """Return the number of handlers that have not completed yet."""
+
+        with self._active_request_lock:
+            return len(self._active_requests)
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        # A normal SessionPeerClient has a shorter five-second request timeout.
+        # This longer server-side guard only releases abandoned/raw connections;
+        # it resets whenever a resumable upload continues receiving bytes.
+        request.settimeout(_PEER_REQUEST_READ_TIMEOUT_S)
+        return request, client_address
+
+    def begin_shutdown(self) -> None:
+        """Refuse new handlers and unblock every in-flight socket."""
+
+        with self._active_request_lock:
+            self._stopping = True
+            requests = tuple(self._active_requests)
+        for request in requests:
+            try:
+                request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                request.close()
+            except OSError:
+                pass
+
+    def process_request(self, request, client_address) -> None:
+        with self._active_request_lock:
+            stopping = self._stopping
+            if not stopping:
+                self._active_requests.add(request)
+        if stopping:
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address) -> None:
+        """Suppress expected socket errors from a server-initiated close."""
+
+        try:
+            self.finish_request(request, client_address)
+        except OSError:
+            # A client can also disappear mid-response. That is not a service
+            # failure and must not leave a noisy handler traceback behind.
+            pass
+        except Exception:
+            if not self.stopping:
+                self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+
+    def shutdown_request(self, request) -> None:
+        try:
+            super().shutdown_request(request)
+        finally:
+            with self._active_request_lock:
+                self._active_requests.discard(request)
 
     def server_bind(self) -> None:
         """Bind without HTTPServer's blocking reverse-DNS lookup."""
@@ -1049,14 +1326,20 @@ class SessionPeerServer:
                 return
 
             def _json(self, status: int, payload: Mapping[str, Any]) -> None:
+                if owner._httpd.stopping:
+                    self.close_connection = True
+                    return
                 encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(encoded)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(encoded)
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                except OSError:
+                    self.close_connection = True
 
             def _error(
                 self,
@@ -1078,7 +1361,10 @@ class SessionPeerServer:
                 length = int(raw_length)
                 if not 0 <= length <= maximum:
                     raise ValueError("The request body is too large.")
-                body = self.rfile.read(length)
+                try:
+                    body = self.rfile.read(length)
+                except OSError as exc:
+                    raise ValueError("The request body ended early.") from exc
                 if len(body) != length:
                     raise ValueError("The request body ended early.")
                 return body
@@ -1092,13 +1378,17 @@ class SessionPeerServer:
             def _participant(self) -> str:
                 participant_id = self.headers.get("X-WebJam-Participant", "")
                 if not owner.registry.authenticate(participant_id, self._bearer()):
-                    raise TransferAuthenticationError("Participant authentication failed.")
+                    raise TransferAuthenticationError(
+                        "Participant authentication failed."
+                    )
                 return participant_id
 
             def do_POST(self) -> None:  # noqa: N802
                 route = urlsplit(self.path).path
                 if route not in {"/v1/enroll", "/v1/presence"}:
-                    self._error(HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route.")
+                    self._error(
+                        HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
+                    )
                     return
                 if route == "/v1/presence":
                     try:
@@ -1119,7 +1409,12 @@ class SessionPeerServer:
                     except TransferConflictError as exc:
                         self._error(HTTPStatus.CONFLICT, "presence_conflict", str(exc))
                         return
-                    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    except (
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
                         self._error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
                         return
                     self._json(HTTPStatus.OK, asdict(binding))
@@ -1170,7 +1465,20 @@ class SessionPeerServer:
                     except TransferAuthenticationError as exc:
                         self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
                         return
-                    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                    except TransferConflictError as exc:
+                        self._error(
+                            HTTPStatus.CONFLICT,
+                            "transfer_conflict",
+                            str(exc),
+                            expected_offset=exc.expected_offset,
+                        )
+                        return
+                    except (
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        json.JSONDecodeError,
+                    ) as exc:
                         self._error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
                         return
                     self._json(
@@ -1186,14 +1494,18 @@ class SessionPeerServer:
 
             def do_PUT(self) -> None:  # noqa: N802
                 if urlsplit(self.path).path != "/v1/segment":
-                    self._error(HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route.")
+                    self._error(
+                        HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
+                    )
                     return
                 try:
                     participant_id = self._participant()
                     descriptor_raw = self.headers.get("X-WebJam-Descriptor", "")
                     if len(descriptor_raw.encode("utf-8")) > MAX_JSON_BYTES:
                         raise ValueError("The transfer descriptor is too large.")
-                    descriptor = TransferDescriptor.from_mapping(json.loads(descriptor_raw))
+                    descriptor = TransferDescriptor.from_mapping(
+                        json.loads(descriptor_raw)
+                    )
                     if descriptor.participant_id != participant_id:
                         raise TransferAuthenticationError(
                             "The segment identity does not match this participant."
@@ -1244,13 +1556,20 @@ class SessionPeerServer:
         self._thread.start()
 
     def stop(self) -> None:
+        self._httpd.begin_shutdown()
         if self._thread is None:
             self._httpd.server_close()
             return
         self._httpd.shutdown()
         self._httpd.server_close()
-        self._thread.join(timeout=5.0)
+        self._thread.join()
         self._thread = None
+
+    @property
+    def active_handler_count(self) -> int:
+        """Return the number of outstanding peer HTTP handler workers."""
+
+        return self._httpd.active_handler_count
 
 
 class SessionPeerClient:
@@ -1299,7 +1618,9 @@ class SessionPeerClient:
             response = connection.getresponse()
             raw = response.read(MAX_JSON_BYTES + 1)
         except OSError as exc:
-            raise SessionTransferError("The host's recording service is unavailable.") from exc
+            raise SessionTransferError(
+                "The host's recording service is unavailable."
+            ) from exc
         finally:
             connection.close()
         if len(raw) > MAX_JSON_BYTES:
@@ -1307,12 +1628,16 @@ class SessionPeerClient:
         try:
             payload = json.loads(raw or b"{}")
         except json.JSONDecodeError as exc:
-            raise SessionTransferError("The host returned an unreadable response.") from exc
+            raise SessionTransferError(
+                "The host returned an unreadable response."
+            ) from exc
         if not isinstance(payload, dict):
             raise SessionTransferError("The host returned an invalid response.")
         if response.status >= 400:
             if response.status == HTTPStatus.UNAUTHORIZED:
-                raise TransferAuthenticationError(str(payload.get("message", "Unauthorized.")))
+                raise TransferAuthenticationError(
+                    str(payload.get("message", "Unauthorized."))
+                )
             if response.status == HTTPStatus.CONFLICT:
                 raise TransferConflictError(
                     str(payload.get("message", "Transfer conflict.")),
@@ -1323,8 +1648,12 @@ class SessionPeerClient:
                     ),
                 )
             if response.status == HTTPStatus.UNPROCESSABLE_ENTITY:
-                raise TransferIntegrityError(str(payload.get("message", "Integrity failure.")))
-            raise SessionTransferError(str(payload.get("message", "The request failed.")))
+                raise TransferIntegrityError(
+                    str(payload.get("message", "Integrity failure."))
+                )
+            raise SessionTransferError(
+                str(payload.get("message", "The request failed."))
+            )
         return payload
 
     def enroll(self, installation_id: str, display_name: str) -> ParticipantEnrollment:
@@ -1421,10 +1750,17 @@ class SessionPeerClient:
             )
         if not 1 <= int(chunk_bytes) <= MAX_CHUNK_BYTES:
             raise ValueError("chunk_bytes must be between 1 byte and 4 MiB.")
-        if not source_path.is_file() or source_path.stat().st_size != descriptor.size_bytes:
-            raise TransferIntegrityError("The local segment size changed before transfer.")
+        if (
+            not source_path.is_file()
+            or source_path.stat().st_size != descriptor.size_bytes
+        ):
+            raise TransferIntegrityError(
+                "The local segment size changed before transfer."
+            )
         if _sha256_file(source_path) != descriptor.sha256:
-            raise TransferIntegrityError("The local segment checksum changed before transfer.")
+            raise TransferIntegrityError(
+                "The local segment checksum changed before transfer."
+            )
         receipt = self.transfer_status(enrollment, descriptor)
         if receipt.complete:
             return receipt
@@ -1432,9 +1768,13 @@ class SessionPeerClient:
         with source_path.open("rb") as handle:
             handle.seek(offset)
             while offset < descriptor.size_bytes:
-                data = handle.read(min(int(chunk_bytes), descriptor.size_bytes - offset))
+                data = handle.read(
+                    min(int(chunk_bytes), descriptor.size_bytes - offset)
+                )
                 if not data:
-                    raise TransferIntegrityError("The local segment ended during transfer.")
+                    raise TransferIntegrityError(
+                        "The local segment ended during transfer."
+                    )
                 payload = self._request(
                     "PUT",
                     "/v1/segment",

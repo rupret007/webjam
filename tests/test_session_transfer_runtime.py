@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import socket
+import threading
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +20,7 @@ from core.network_invite import (
     create_invite_link,
     parse_invite_link,
 )
+from core.local_capture import LocalCaptureGap
 from core.session_transfer import (
     EnrollmentRegistry,
     RecordingSignal,
@@ -27,6 +30,7 @@ from core.session_transfer import (
     SessionPeerServer,
     SessionTransferError,
     TransferDescriptor,
+    TransferGap,
     TransferStore,
     load_or_create_installation_id,
 )
@@ -37,6 +41,7 @@ from core.session_transfer_runtime import (
 )
 from core.take_project import (
     AlignmentState,
+    GapInterval,
     MediaSegment,
     MediaStatus,
     Participant,
@@ -56,10 +61,16 @@ def _id() -> str:
     return str(uuid.uuid4())
 
 
-def _wav(path: Path, *, rate: int = 48_000, channels: int = 1) -> None:
+def _wav(
+    path: Path,
+    *,
+    rate: int = 48_000,
+    channels: int = 1,
+    frequency: float = 440.0,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     timeline = np.arange(2_503, dtype=np.float64) / rate
-    mono = (0.2 * np.sin(2.0 * np.pi * 440.0 * timeline)).astype(np.float32)
+    mono = (0.2 * np.sin(2.0 * np.pi * frequency * timeline)).astype(np.float32)
     data = mono if channels == 1 else np.column_stack((mono, mono * 0.5))
     sf.write(path, data, rate, subtype="PCM_24")
 
@@ -69,13 +80,15 @@ def _descriptor(
     credentials: SessionCredentials,
     participant_id: str,
     take_id: str,
+    *,
+    segment_id: str | None = None,
 ) -> TransferDescriptor:
     info = sf.info(str(path))
     return TransferDescriptor(
         session_id=credentials.session_id,
         take_id=take_id,
         participant_id=participant_id,
-        segment_id=_id(),
+        segment_id=segment_id or _id(),
         sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         size_bytes=path.stat().st_size,
         sample_rate=info.samplerate,
@@ -124,6 +137,25 @@ class _FakeCapture:
             errors=(),
             gaps=(),
             capture_device=SimpleNamespace(device_id="portaudio:test:7"),
+        )
+
+
+class _GappedFakeCapture(_FakeCapture):
+    """A deterministic local-capture result with one gap per source stem."""
+
+    instances: list["_GappedFakeCapture"] = []
+
+    def stop_into(self, destination: Path):
+        result = super().stop_into(destination)
+        return SimpleNamespace(
+            files=result.files,
+            started_utc=result.started_utc,
+            errors=result.errors,
+            gaps=(
+                LocalCaptureGap(240, 48, (0,), "queue_overflow"),
+                LocalCaptureGap(720, 64, (1,), "write_failure"),
+            ),
+            capture_device=result.capture_device,
         )
 
 
@@ -192,7 +224,9 @@ def test_private_invite_v2_never_exposes_control_or_media_plane_publicly(
         parse_invite_link(forged)
 
 
-def test_installation_identity_is_private_stable_and_fails_closed(tmp_path: Path) -> None:
+def test_installation_identity_is_private_stable_and_fails_closed(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "identity.json"
     first = load_or_create_installation_id(path)
     assert load_or_create_installation_id(path) == first
@@ -206,9 +240,7 @@ def test_authenticated_presence_keeps_duplicate_names_distinct_through_rename_an
     peer,
 ) -> None:
     credentials, registry, _control, _transfers, server = peer
-    client = SessionPeerClient(
-        "127.0.0.1", server.address[1], credentials=credentials
-    )
+    client = SessionPeerClient("127.0.0.1", server.address[1], credentials=credentials)
     first = client.enroll(_id(), "Alex")
     second = client.enroll(_id(), "Alex")
     client.bind_presence(
@@ -238,7 +270,10 @@ def test_authenticated_presence_keeps_duplicate_names_distinct_through_rename_an
     assert changed.participant_id == first.participant_id
     assert registry.participant_id_for_channel(4) is None
     assert registry.participant_id_for_channel(11) == first.participant_id
-    assert registry.presence_for_participant(first.participant_id).display_name == "Alex Guitar"
+    assert (
+        registry.presence_for_participant(first.participant_id).display_name
+        == "Alex Guitar"
+    )
 
 
 def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_and_uploads(
@@ -302,11 +337,212 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     assert all(item.status == "verified" for item in guest.pending_segments)
     assert all(item.source.is_file() for item in guest.pending_segments)
     assert all(
-        transfers.status(item.descriptor).complete
-        for item in guest.pending_segments
+        transfers.status(item.descriptor).complete for item in guest.pending_segments
     )
     assert originals_updates == [guest.originals_root]
     guest.stop()
+
+
+def test_guest_capture_gaps_survive_queue_transfer_and_host_attachment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Precise local-capture loss must reach Studio's immutable source view."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    _GappedFakeCapture.instances.clear()
+    host = HostPeerSession()
+    guest: GuestPeerSession | None = None
+    try:
+        host.start(
+            "127.0.0.1",
+            takes_root=tmp_path / "host-takes",
+            installation_path=tmp_path / "host-installation.json",
+            display_name="Host",
+        )
+        credentials = host.credentials
+        assert credentials is not None
+        invite = BandInvite(
+            "127.0.0.1",
+            22124,
+            "Test",
+            credentials.session_id,
+            host.peer_port,
+            credentials.invite_token,
+        )
+        guest = GuestPeerSession(
+            invite,
+            display_name="Alex",
+            takes_root=tmp_path / "guest-takes",
+            installation_path=tmp_path / "guest-installation.json",
+            capture_enabled=lambda: True,
+            capture_config=lambda: (7, 48_000, 128),
+            capture_factory=_GappedFakeCapture,
+        )
+        guest.observe_presence(8, "Alex")
+        assert guest.poll_once().signal is RecordingSignal.IDLE
+
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-13T12:00:00Z")
+        guest.poll_once()
+        assert len(_GappedFakeCapture.instances) == 1
+
+        take_dir = tmp_path / "finished-take"
+        take_dir.mkdir()
+        assert host.host_enrollment is not None
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
+        guest.poll_once()
+
+        pending = sorted(
+            guest.pending_segments, key=lambda item: item.descriptor.source_channel
+        )
+        assert [
+            (item.descriptor.source_channel, item.descriptor.gaps) for item in pending
+        ] == [
+            (0, (TransferGap(240, 48, (0,), "queue_overflow"),)),
+            (1, (TransferGap(720, 64, (0,), "write_failure"),)),
+        ]
+        assert all(item.status == "verified" for item in pending)
+
+        # The durable queue is the guest's recovery boundary. Reopening it
+        # must retain exact intervals, not only the legacy aggregate count.
+        reopened = GuestPeerSession(
+            invite,
+            display_name="Alex",
+            takes_root=tmp_path / "guest-takes",
+            installation_path=tmp_path / "guest-installation.json",
+            capture_enabled=lambda: True,
+            capture_config=lambda: (7, 48_000, 128),
+            capture_factory=_GappedFakeCapture,
+        )
+        assert [
+            item.descriptor.gaps
+            for item in sorted(
+                reopened.pending_segments,
+                key=lambda item: item.descriptor.source_channel,
+            )
+        ] == [
+            (TransferGap(240, 48, (0,), "queue_overflow"),),
+            (TransferGap(720, 64, (0,), "write_failure"),),
+        ]
+
+        host.register_take(take_id, take_dir)
+        project = load_take_project(take_dir)
+        peer_tracks = {
+            track.name: track
+            for track in project.tracks
+            if track.source_type is SourceType.LOCAL_ISOLATED
+        }
+        assert peer_tracks["Alex Input 1"].primary_segment.gaps == (
+            GapInterval(240, 48, "queue_overflow", (0,)),
+        )
+        assert peer_tracks["Alex Input 2"].primary_segment.gaps == (
+            GapInterval(720, 64, "write_failure", (0,)),
+        )
+        assert all(
+            track.media_status is MediaStatus.PARTIAL for track in peer_tracks.values()
+        )
+        manifest = json.loads((take_dir / "webjam-take.json").read_text())
+        summaries = {
+            item["source_channel"]: item
+            for item in manifest["peer_transfers"]["participants"][0]["segments"]
+        }
+        assert summaries[0]["gaps"] == [
+            {
+                "start_frame": 240,
+                "frame_count": 48,
+                "channels": [0],
+                "reason": "queue_overflow",
+            }
+        ]
+        assert summaries[1]["gaps"] == [
+            {
+                "start_frame": 720,
+                "frame_count": 64,
+                "channels": [0],
+                "reason": "write_failure",
+            }
+        ]
+    finally:
+        if guest is not None:
+            guest.stop()
+        host.stop()
+
+
+def test_host_keeps_legacy_gap_totals_without_inventing_gap_positions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
+        alex = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            alex,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        assert host.begin_take(take_id, started_utc="2026-07-13T12:00:00Z")
+        take_dir = tmp_path / "finished-take"
+        take_dir.mkdir()
+        assert host.host_enrollment is not None
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        assert host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
+
+        original = tmp_path / "alex-original.wav"
+        _wav(original)
+        descriptor = replace(
+            _descriptor(original, credentials, alex.participant_id, take_id),
+            gap_frames=60,
+        )
+        assert descriptor.gaps == ()
+        assert client.upload_file(alex, descriptor, original).complete
+        host.register_take(take_id, take_dir)
+
+        project = load_take_project(take_dir)
+        peer_track = next(
+            track
+            for track in project.tracks
+            if track.participant_id == alex.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert peer_track.media_status is MediaStatus.PARTIAL
+        assert peer_track.primary_segment.gaps == ()
+        manifest = json.loads((take_dir / "webjam-take.json").read_text())
+        summary = manifest["peer_transfers"]["participants"][0]["segments"][0]
+        assert summary["gap_frames"] == 60
+        assert summary["gaps"] == []
+    finally:
+        host.stop()
 
 
 def test_guest_opt_out_never_opens_capture(tmp_path: Path, peer) -> None:
@@ -337,7 +573,9 @@ def test_guest_opt_out_never_opens_capture(tmp_path: Path, peer) -> None:
     guest.stop()
 
 
-def _base_project(take_dir: Path, take_id: str, session_id: str, participant_id: str) -> None:
+def _base_project(
+    take_dir: Path, take_id: str, session_id: str, participant_id: str
+) -> None:
     source = take_dir / "server.wav"
     _wav(source)
     info = sf.info(str(source))
@@ -403,9 +641,7 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
     try:
         credentials = host.credentials
         assert credentials is not None
-        client = SessionPeerClient(
-            "127.0.0.1", host.peer_port, credentials=credentials
-        )
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
         guest = client.enroll(_id(), "Alex")
         client.bind_presence(
             guest,
@@ -430,7 +666,9 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         assert missing.status is ProjectStatus.NEEDS_ATTENTION
         assert any("has not arrived" in error for error in missing.errors)
         missing_payload = json.loads((take_dir / "webjam-take.json").read_text())
-        assert missing_payload["peer_transfers"]["participants"][0]["status"] == "missing"
+        assert (
+            missing_payload["peer_transfers"]["participants"][0]["status"] == "missing"
+        )
         assert updates == [(take_id, take_dir.resolve(), False)]
         updates.clear()
 
@@ -452,9 +690,12 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
             for event in complete.session_evidence.timeline
         )
         attached = next(
-            track for track in complete.tracks
-            if track.primary_segment.segment_id == descriptor.segment_id
+            track
+            for track in complete.tracks
+            if track.participant_id == guest.participant_id
+            and track.source_type is SourceType.LOCAL_ISOLATED
         )
+        assert attached.primary_segment.segment_id != descriptor.segment_id
         attached_path = take_dir / attached.primary_segment.path
         assert attached_path.read_bytes() == before
         assert local_original.read_bytes() == before
@@ -463,6 +704,132 @@ def test_host_inventory_discloses_missing_then_attaches_only_verified_media(
         assert updates == [(take_id, take_dir.resolve(), True)]
         assert host.reconcile_take(take_id, take_dir) is False
         assert updates == [(take_id, take_dir.resolve(), True)]
+    finally:
+        host.stop()
+
+
+def test_host_inventory_keeps_same_peer_segment_id_for_two_participants_distinct(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    host = HostPeerSession()
+    host.start(
+        "127.0.0.1",
+        takes_root=tmp_path / "host-takes",
+        installation_path=tmp_path / "host-installation.json",
+        display_name="Host",
+    )
+    try:
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        client = SessionPeerClient("127.0.0.1", host.peer_port, credentials=credentials)
+        alex = client.enroll(_id(), "Alex")
+        blair = client.enroll(_id(), "Blair")
+        client.bind_presence(
+            alex,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        client.bind_presence(
+            blair,
+            channel_id=8,
+            display_name="Blair",
+            generation=1,
+            capture_enabled=True,
+        )
+        take_id = _id()
+        host.begin_take(take_id, started_utc="2026-07-13T12:00:00Z")
+        take_dir = tmp_path / "finished-take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        host.finish_take(take_id, stopped_utc="2026-07-13T12:01:00Z")
+        host.register_take(take_id, take_dir)
+
+        shared_segment_id = _id()
+        alex_original = tmp_path / "alex-original.wav"
+        blair_original = tmp_path / "blair-original.wav"
+        _wav(alex_original)
+        _wav(blair_original, frequency=554.37)
+        alex_descriptor = _descriptor(
+            alex_original,
+            credentials,
+            alex.participant_id,
+            take_id,
+            segment_id=shared_segment_id,
+        )
+        blair_descriptor = _descriptor(
+            blair_original,
+            credentials,
+            blair.participant_id,
+            take_id,
+            segment_id=shared_segment_id,
+        )
+        assert client.upload_file(alex, alex_descriptor, alex_original).complete
+        assert client.upload_file(blair, blair_descriptor, blair_original).complete
+
+        assert host.reconcile_take(take_id, take_dir) is True
+        project = load_take_project(take_dir)
+        peer_tracks = tuple(
+            track
+            for track in project.tracks
+            if track.source_type is SourceType.LOCAL_ISOLATED
+        )
+        assert project.status is ProjectStatus.COMPLETE
+        assert not project.errors
+        assert {track.participant_id for track in peer_tracks} == {
+            alex.participant_id,
+            blair.participant_id,
+        }
+        assert len(peer_tracks) == 2
+        assert len({track.track_id for track in peer_tracks}) == 2
+        assert len({track.source_id for track in peer_tracks}) == 2
+        project_segment_ids = {
+            track.primary_segment.segment_id for track in peer_tracks
+        }
+        assert len(project_segment_ids) == 2
+        assert shared_segment_id not in project_segment_ids
+        attached_paths = {track.primary_segment.path for track in peer_tracks}
+        assert len(attached_paths) == 2
+        assert {
+            (take_dir / track.primary_segment.path).read_bytes()
+            for track in peer_tracks
+        } == {alex_original.read_bytes(), blair_original.read_bytes()}
+        payload = json.loads((take_dir / "webjam-take.json").read_text())
+        participants = payload["peer_transfers"]["participants"]
+        assert {item["participant_id"] for item in participants} == {
+            alex.participant_id,
+            blair.participant_id,
+        }
+        assert all(item["status"] == "verified" for item in participants)
+        assert all(
+            item["segments"][0]["segment_id"] == shared_segment_id
+            for item in participants
+        )
+
+        revision = project.revision
+        assert host.reconcile_take(take_id, take_dir) is False
+        unchanged = load_take_project(take_dir)
+        assert unchanged.revision == revision
+        assert {
+            (track.track_id, track.source_id, track.primary_segment.segment_id)
+            for track in unchanged.tracks
+            if track.source_type is SourceType.LOCAL_ISOLATED
+        } == {
+            (track.track_id, track.source_id, track.primary_segment.segment_id)
+            for track in peer_tracks
+        }
     finally:
         host.stop()
 
@@ -499,6 +866,179 @@ def test_host_service_rotates_credentials_and_releases_port(
         host.stop()
 
 
+def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A checksum already in flight must not publish after Leave/End.
+
+    The maintenance worker is allowed a bounded join during shutdown so the
+    application stays responsive for a very large attachment.  Once that
+    bound expires, a later worker completion must remain quarantined from the
+    stopped session and from an immediately restarted host service.
+    """
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 0.01)
+    from core import session_transfer_runtime
+
+    real_hash = session_transfer_runtime._sha256_file
+    checksum_entered = threading.Event()
+    release_checksum = threading.Event()
+
+    def delayed_hash(path: str | Path) -> str:
+        if (
+            Path(path).name.endswith(".wav.copying")
+            and not checksum_entered.is_set()
+        ):
+            checksum_entered.set()
+            assert release_checksum.wait(10.0)
+        return real_hash(path)
+
+    monkeypatch.setattr(session_transfer_runtime, "_sha256_file", delayed_hash)
+    updates: list[tuple[str, Path, bool]] = []
+    host = HostPeerSession(
+        on_take_updated=lambda take_id, path, attached: updates.append(
+            (take_id, path, attached)
+        )
+    )
+    args = {
+        "takes_root": tmp_path / "host-takes",
+        "installation_path": tmp_path / "installation.json",
+        "display_name": "Host",
+    }
+    try:
+        host.start("127.0.0.1", **args)
+        first_credentials = host.credentials
+        assert first_credentials is not None
+        client = SessionPeerClient(
+            "127.0.0.1",
+            host.peer_port,
+            credentials=first_credentials,
+        )
+        guest = client.enroll(_id(), "Alex")
+        client.bind_presence(
+            guest,
+            channel_id=7,
+            display_name="Alex",
+            generation=1,
+            capture_enabled=True,
+        )
+        first_take_id = _id()
+        host.begin_take(first_take_id, started_utc="2026-07-15T00:00:00Z")
+        first_take_dir = tmp_path / "first-take"
+        first_take_dir.mkdir()
+        _base_project(
+            first_take_dir,
+            first_take_id,
+            first_credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        host.finish_take(first_take_id, stopped_utc="2026-07-15T00:01:00Z")
+        host.register_take(first_take_id, first_take_dir)
+
+        original = tmp_path / "alex-original.wav"
+        _wav(original)
+        descriptor = _descriptor(
+            original,
+            first_credentials,
+            guest.participant_id,
+            first_take_id,
+        )
+        assert client.upload_file(guest, descriptor, original, chunk_bytes=257).complete
+        assert checksum_entered.wait(5.0)
+        old_thread = host._thread
+        assert old_thread is not None
+        # A partial-upload maintenance pass may have emitted ordinary updates
+        # before the verified attachment was deliberately held.  Only events
+        # after this point are stale.
+        updates.clear()
+
+        host.stop()
+        stopped_manifest = (first_take_dir / "webjam-take.json").read_bytes()
+
+        # Start again before allowing the old checksum to finish.  This is the
+        # critical rapid Leave/Start sequence from the desktop application.
+        host.start("127.0.0.1", **args)
+        second_credentials = host.credentials
+        assert second_credentials is not None
+        assert second_credentials.session_id != first_credentials.session_id
+
+        release_checksum.set()
+        old_thread.join(timeout=2.0)
+        assert not old_thread.is_alive()
+        assert (first_take_dir / "webjam-take.json").read_bytes() == stopped_manifest
+        assert updates == []
+        assert not list((first_take_dir / "transferred-isolated").glob("*.copying"))
+
+        # The new lifecycle still publishes its own current-session state.
+        second_take_id = _id()
+        host.begin_take(second_take_id, started_utc="2026-07-15T00:02:00Z")
+        second_take_dir = tmp_path / "second-take"
+        second_take_dir.mkdir()
+        _base_project(
+            second_take_dir,
+            second_take_id,
+            second_credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        host.finish_take(second_take_id, stopped_utc="2026-07-15T00:03:00Z")
+        host.register_take(second_take_id, second_take_dir)
+        assert updates == [(second_take_id, second_take_dir.resolve(), False)]
+    finally:
+        release_checksum.set()
+        host.stop()
+
+
+def test_host_take_update_callback_can_stop_reentrantly(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A non-blocking notification may synchronously stop its host safely."""
+
+    monkeypatch.setattr(
+        "core.session_transfer_runtime.is_private_lan_host", lambda _host: True
+    )
+    monkeypatch.setattr("core.session_transfer_runtime._POLL_SECONDS", 3600.0)
+    updates: list[str] = []
+    host: HostPeerSession
+
+    def stop_from_callback(take_id: str, _path: Path, _attached: bool) -> None:
+        updates.append(take_id)
+        host.stop()
+
+    host = HostPeerSession(on_take_updated=stop_from_callback)
+    try:
+        host.start(
+            "127.0.0.1",
+            takes_root=tmp_path / "host-takes",
+            installation_path=tmp_path / "installation.json",
+            display_name="Host",
+        )
+        credentials = host.credentials
+        assert credentials is not None
+        assert host.host_enrollment is not None
+        take_id = _id()
+        host.begin_take(take_id, started_utc="2026-07-15T00:00:00Z")
+        take_dir = tmp_path / "take"
+        take_dir.mkdir()
+        _base_project(
+            take_dir,
+            take_id,
+            credentials.session_id,
+            host.host_enrollment.participant_id,
+        )
+        host.finish_take(take_id, stopped_utc="2026-07-15T00:01:00Z")
+        host.register_take(take_id, take_dir)
+
+        assert updates == [take_id]
+        assert not host.active
+    finally:
+        host.stop()
+
+
 @pytest.mark.parametrize(
     ("host", "expected"),
     [
@@ -510,5 +1050,7 @@ def test_host_service_rotates_credentials_and_releases_port(
         ("8.8.8.8", False),
     ],
 )
-def test_host_peer_binding_accepts_only_private_lan_ipv4(host: str, expected: bool) -> None:
+def test_host_peer_binding_accepts_only_private_lan_ipv4(
+    host: str, expected: bool
+) -> None:
     assert is_private_lan_host(host) is expected

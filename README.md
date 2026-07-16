@@ -1,4 +1,4 @@
-# WebJam v0.16.0
+# WebJam v0.16.1
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -55,15 +55,19 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-v0.16.0 is the final private test-night package, built from
-`a36789978efbaac5e85fbc5c6ef55abae4ed42e3`:
+v0.16.1 is a private stabilization candidate for tonight's rehearsal. Its
+source gate reported **1,798 passed**, 19 environment-bound skips, and 6
+subtests with zero failures/errors. It adds an isolated dual-musician lab and
+fixes private-invite command-line retention, peer-media ID collisions, exact
+capture-gap preservation, immutable transfer metadata, stale maintenance
+publication, and incomplete-peer shutdown.
+
+The Apple-Silicon ZIP is built and verified only from the clean v0.16.1 source
+commit; its build ID and SHA-256 are recorded with the package evidence after a
+fresh extraction passes strict/deep signature and transport checks. v0.16.0 is
+preserved as the verified rollback package:
 `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`, SHA-256
 `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
-The final source gate reported **1,783 passed**, 18 environment-bound skips,
-and 6 subtests with zero failures/errors. A fresh extracted package passed
-strict/deep outer and nested-app signature checks, transport verification, and
-a frozen Host smoke. The v0.15.0 ZIP and prior installed app are preserved as
-rollback.
 
 Automated source checks are evidence for code behavior. Real two-Mac audio,
 interface changes, sleep/wake, interruption/recovery, and external-editor
@@ -76,6 +80,7 @@ people perform them.
 - [Musician guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
+- [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md)
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Test procedure](TEST_PROCEDURE.md)
 - [Architecture](ARCHITECTURE.md)

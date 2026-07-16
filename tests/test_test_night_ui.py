@@ -30,12 +30,17 @@ def test_operator_argument_is_read_without_mutating_user_arguments() -> None:
         test_night_mode_from_arguments,
     )
 
-    user_arguments = ("WebJam", TEST_NIGHT_ARGUMENT, "webjam://join?host=127.0.0.1")
+    user_arguments = (
+        "WebJam",
+        TEST_NIGHT_ARGUMENT,
+        "webjam://join?host=127.0.0.1",
+        "--style=Fusion",
+    )
 
     assert test_night_mode_from_arguments(user_arguments) is True
     assert qt_arguments_without_test_night(user_arguments) == [
         "WebJam",
-        "webjam://join?host=127.0.0.1",
+        "--style=Fusion",
     ]
     assert user_arguments[1] == TEST_NIGHT_ARGUMENT
     assert test_night_mode_from_arguments(("WebJam",)) is False

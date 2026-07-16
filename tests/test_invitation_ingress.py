@@ -69,7 +69,6 @@ def test_v3_file_open_is_macos_only_and_argv_is_always_rejected() -> None:
         assert raw not in str(caught.value)
 
 
-@pytest.mark.parametrize("version", [1, 2])
 @pytest.mark.parametrize(
     ("source", "platform"),
     [
@@ -80,24 +79,65 @@ def test_v3_file_open_is_macos_only_and_argv_is_always_rejected() -> None:
         (InvitationSource.ARGV, "win32"),
     ],
 )
-def test_legacy_links_keep_existing_ingress_paths(
-    version: int, source: InvitationSource, platform: str
+def test_v1_links_keep_existing_ingress_paths(
+    source: InvitationSource, platform: str
 ) -> None:
-    kwargs = {}
-    if version == 2:
-        kwargs = {
-            "session_id": "11111111-1111-4111-8111-111111111111",
-            "peer_port": 43121,
-            "invite_token": "t" * 43,
-        }
-    raw = create_invite_link("192.168.1.42", **kwargs)
+    raw = create_invite_link("192.168.1.42")
     parsed = parse_invitation_at_ingress(
         raw,
         source=source,
         platform=platform,
     )
     assert isinstance(parsed, BandInvite)
-    assert parsed.version == version
+    assert parsed.version == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "platform"),
+    [
+        (InvitationSource.PASTE, "darwin"),
+        (InvitationSource.PASTE, "win32"),
+        (InvitationSource.MAC_FILE_OPEN, "darwin"),
+    ],
+)
+def test_v2_private_links_remain_available_from_approved_ingress(
+    source: InvitationSource, platform: str
+) -> None:
+    raw = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+
+    parsed = parse_invitation_at_ingress(raw, source=source, platform=platform)
+
+    assert isinstance(parsed, BandInvite)
+    assert parsed.version == 2
+    assert parsed.peer_enabled is True
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux"])
+def test_v2_private_links_are_rejected_from_argv_without_echoing_bearer(
+    platform: str,
+) -> None:
+    token = "t" * 43
+    raw = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token=token,
+    )
+
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            raw,
+            source=InvitationSource.ARGV,
+            platform=platform,
+        )
+
+    assert caught.value.code is InvitationIngressErrorCode.SOURCE_NOT_ALLOWED
+    assert token not in str(caught.value)
 
 
 def test_bare_legacy_address_is_paste_only() -> None:
@@ -115,21 +155,22 @@ def test_bare_legacy_address_is_paste_only() -> None:
             )
 
 
-def test_argv_helper_ignores_v3_and_finds_a_later_v2_link() -> None:
+def test_argv_helper_ignores_bearer_links_and_finds_a_later_v1_link() -> None:
     remote = _remote_link()
-    legacy = create_invite_link(
+    private = create_invite_link(
         "192.168.1.42",
         session_id="11111111-1111-4111-8111-111111111111",
         peer_port=43121,
         invite_token="t" * 43,
     )
+    legacy = create_invite_link("192.168.1.43")
 
-    parsed = invitation_from_arguments(["WebJam", remote, legacy])
+    parsed = invitation_from_arguments(["WebJam", remote, private, legacy])
 
     assert isinstance(parsed, BandInvite)
-    assert parsed.version == 2
+    assert parsed.version == 1
     assert remote not in repr(parsed)
-    assert invitation_from_arguments(["WebJam", remote]) is None
+    assert invitation_from_arguments(["WebJam", remote, private]) is None
 
 
 def test_ingress_errors_have_only_fixed_copy_and_no_exception_chain() -> None:

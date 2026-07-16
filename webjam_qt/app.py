@@ -43,12 +43,23 @@ def test_night_mode_from_arguments(arguments: Sequence[object]) -> bool:
 
 
 def qt_arguments_without_test_night(arguments: Sequence[object]) -> list[str]:
-    """Make a Qt-only argument list without mutating ``sys.argv``."""
+    """Make a Qt-only argument list without mutating ``sys.argv``.
+
+    Qt retains its construction arguments for process lifetime and platform
+    tooling may expose them. WebJam URLs can carry invitation credentials, so
+    remove every such URL before QApplication is constructed. The bootstrap
+    still inspects the original list through the strict ingress policy, where
+    only endpoint-only v1 links may be accepted from argv.
+    """
 
     return [
         str(argument)
         for index, argument in enumerate(arguments)
-        if index == 0 or str(argument) != TEST_NIGHT_ARGUMENT
+        if index == 0
+        or (
+            str(argument) != TEST_NIGHT_ARGUMENT
+            and "webjam://" not in str(argument).lower()
+        )
     ]
 
 
@@ -109,7 +120,7 @@ class WebJamApplication(QApplication):
 
 
 def _invite_from_arguments(arguments: list[str]) -> BandInvite | None:
-    """Preserve legacy deep links while refusing v3 process arguments."""
+    """Preserve endpoint-only v1 links while refusing argv bearers."""
 
     return invitation_from_arguments(arguments)
 

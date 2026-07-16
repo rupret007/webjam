@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
+import time
 import uuid
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +24,7 @@ from core.session_transfer import (
     TransferAuthenticationError,
     TransferConflictError,
     TransferDescriptor,
+    TransferGap,
     TransferIntegrityError,
     TransferStore,
 )
@@ -69,10 +72,12 @@ def test_credentials_derive_stable_scoped_participant_tokens() -> None:
     assert credentials.participant_token(participant) == credentials.participant_token(
         participant
     )
-    assert credentials.participant_token(participant) != credentials.participant_token(_id())
-    assert credentials.participant_token(participant) != SessionCredentials.create().participant_token(
-        participant
+    assert credentials.participant_token(participant) != credentials.participant_token(
+        _id()
     )
+    assert credentials.participant_token(
+        participant
+    ) != SessionCredentials.create().participant_token(participant)
 
 
 def test_registry_keeps_identity_through_rename_reload_and_duplicate_names(
@@ -95,7 +100,10 @@ def test_registry_keeps_identity_through_rename_reload_and_duplicate_names(
     assert other.participant_id != first.participant_id
 
     reopened = EnrollmentRegistry(tmp_path, credentials)
-    assert reopened.participant_id_for_installation(first_installation) == first.participant_id
+    assert (
+        reopened.participant_id_for_installation(first_installation)
+        == first.participant_id
+    )
     assert reopened.authenticate(first.participant_id, first.participant_token)
     assert not reopened.authenticate(first.participant_id, other.participant_token)
     assert not reopened.authenticate(_id(), first.participant_token)
@@ -178,15 +186,92 @@ def test_transfer_store_resumes_replays_chunks_and_publishes_exact_pcm(
     assert duplicate.path == receipt.path
 
 
+def test_transfer_store_rejects_gap_metadata_changes_after_partial_upload(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, _id())
+    altered = replace(
+        descriptor,
+        gaps=(TransferGap(120, 48, (0,), "queue overflow"),),
+    )
+    store = TransferStore(tmp_path / "host", credentials.session_id)
+    data = source.read_bytes()
+    first = data[:257]
+    store.append(descriptor, offset=0, data=first)
+
+    with pytest.raises(TransferConflictError) as changed:
+        store.append(altered, offset=len(first), data=data[len(first) :])
+
+    assert changed.value.expected_offset == len(first)
+    inventory = store.inventory(descriptor.take_id)
+    assert len(inventory) == 1
+    assert inventory[0].descriptor == descriptor
+    assert inventory[0].received_bytes == len(first)
+
+
+def test_transfer_store_rejects_gap_metadata_changes_after_completion(
+    tmp_path: Path,
+) -> None:
+    """A completed immutable segment cannot be re-described on status retry."""
+
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, _id())
+    altered = replace(
+        descriptor,
+        gaps=(TransferGap(120, 48, (0,), "queue overflow"),),
+    )
+    store = TransferStore(tmp_path / "host", credentials.session_id)
+    data = source.read_bytes()
+    assert store.append(descriptor, offset=0, data=data).complete
+
+    with pytest.raises(TransferConflictError) as changed:
+        store.status(altered)
+
+    assert changed.value.expected_offset == len(data)
+    assert store.status(descriptor).complete
+
+
+def test_transfer_store_retries_a_sidecarless_published_file_from_zero(
+    tmp_path: Path,
+) -> None:
+    """A crash orphan never becomes a completed receipt for new metadata."""
+
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, _id())
+    altered = replace(
+        descriptor,
+        gaps=(TransferGap(120, 48, (0,), "queue overflow"),),
+    )
+    store = TransferStore(tmp_path / "host", credentials.session_id)
+    data = source.read_bytes()
+    assert store.append(descriptor, offset=0, data=data).complete
+    _part, _final, sidecar = store._paths(descriptor)
+    sidecar.unlink()
+
+    orphan = store.status(altered)
+    assert not orphan.complete
+    assert orphan.received_bytes == 0
+    assert "checkpoint is missing" in orphan.error
+
+    recovered = store.append(descriptor, offset=0, data=data)
+    assert recovered.complete
+    assert store.status(descriptor).complete
+
+
 def test_transfer_store_preserves_bad_checksum_partial_for_recovery(
     tmp_path: Path,
 ) -> None:
     credentials = SessionCredentials.create()
     source = tmp_path / "local.wav"
     _wav(source)
-    descriptor = replace(
-        _descriptor(source, credentials, _id()), sha256="0" * 64
-    )
+    descriptor = replace(_descriptor(source, credentials, _id()), sha256="0" * 64)
     store = TransferStore(tmp_path / "host", credentials.session_id)
     with pytest.raises(TransferIntegrityError, match="SHA-256"):
         store.append(descriptor, offset=0, data=source.read_bytes())
@@ -205,9 +290,7 @@ def test_transfer_store_rejects_pcm_metadata_mismatch_without_publication(
     credentials = SessionCredentials.create()
     source = tmp_path / "local.wav"
     _wav(source)
-    descriptor = replace(
-        _descriptor(source, credentials, _id()), sample_rate=44_100
-    )
+    descriptor = replace(_descriptor(source, credentials, _id()), sample_rate=44_100)
     store = TransferStore(tmp_path / "host", credentials.session_id)
     with pytest.raises(TransferIntegrityError, match="WAV facts"):
         store.append(descriptor, offset=0, data=source.read_bytes())
@@ -248,6 +331,46 @@ def test_transfer_descriptor_never_sends_private_capture_error_content(
     assert "[redacted]" in encoded
 
 
+def test_transfer_descriptor_round_trips_precise_gaps_and_keeps_legacy_totals_unpositioned(
+    tmp_path: Path,
+) -> None:
+    credentials = SessionCredentials.create()
+    source = tmp_path / "local.wav"
+    _wav(source)
+    precise = replace(
+        _descriptor(source, credentials, _id()),
+        gaps=(
+            TransferGap(
+                120,
+                48,
+                (0,),
+                "queue overflow near /Users/alice/Music token=invite-private",
+            ),
+        ),
+    )
+    assert precise.gap_frames == 48
+    assert precise.gaps[0].start_frame == 120
+    assert precise.gaps[0].channels == (0,)
+    assert "/Users/alice" not in precise.gaps[0].reason
+    assert "invite-private" not in precise.gaps[0].reason
+    assert "$HOME/Music" in precise.gaps[0].reason
+
+    restored = TransferDescriptor.from_mapping(asdict(precise))
+    assert restored == precise
+
+    legacy = replace(_descriptor(source, credentials, _id()), gap_frames=48)
+    reloaded_legacy = TransferDescriptor.from_mapping(asdict(legacy))
+    assert reloaded_legacy.gap_frames == 48
+    assert reloaded_legacy.gaps == ()
+
+    with pytest.raises(ValueError, match="match the total"):
+        replace(precise, gap_frames=47)
+    with pytest.raises(ValueError, match="unavailable channel"):
+        replace(precise, gaps=(TransferGap(120, 48, (1,), "queue overflow"),))
+    with pytest.raises(ValueError, match="structured gap records"):
+        TransferDescriptor.from_mapping({**asdict(precise), "gaps": "invalid"})
+
+
 @pytest.fixture
 def peer(tmp_path: Path):
     credentials = SessionCredentials.create()
@@ -263,9 +386,7 @@ def peer(tmp_path: Path):
         transfers=transfers,
     )
     server.start()
-    client = SessionPeerClient(
-        "127.0.0.1", server.address[1], credentials=credentials
-    )
+    client = SessionPeerClient("127.0.0.1", server.address[1], credentials=credentials)
     try:
         yield credentials, registry, control, transfers, server, client
     finally:
@@ -316,9 +437,7 @@ def test_peer_protocol_enrolls_observes_and_transfers_without_changing_original(
     source = tmp_path / "guest-original.wav"
     _wav(source, channels=2)
     before = source.read_bytes()
-    descriptor = _descriptor(
-        source, credentials, again.participant_id, take_id=take_id
-    )
+    descriptor = _descriptor(source, credentials, again.participant_id, take_id=take_id)
     receipt = client.upload_file(again, descriptor, source, chunk_bytes=311)
     assert receipt.complete
     published = transfers.status(descriptor)
@@ -326,6 +445,28 @@ def test_peer_protocol_enrolls_observes_and_transfers_without_changing_original(
     assert published.path is not None
     assert published.path.read_bytes() == before
     assert source.read_bytes() == before
+
+
+def test_peer_status_reports_a_conflict_for_changed_partial_metadata(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, _registry, _control, transfers, _server, client = peer
+    enrollment = client.enroll(_id(), "Sam")
+    source = tmp_path / "guest-original.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, enrollment.participant_id)
+    altered = replace(
+        descriptor,
+        gaps=(TransferGap(120, 48, (0,), "queue overflow"),),
+    )
+    first = source.read_bytes()[:311]
+    transfers.append(descriptor, offset=0, data=first)
+
+    with pytest.raises(TransferConflictError) as changed:
+        client.transfer_status(enrollment, altered)
+
+    assert changed.value.expected_offset == len(first)
 
 
 def test_peer_protocol_resumes_after_server_restart(tmp_path: Path) -> None:
@@ -373,6 +514,43 @@ def test_peer_protocol_resumes_after_server_restart(tmp_path: Path) -> None:
         assert reopened_transfers.status(descriptor).received_bytes == len(raw)
     finally:
         second_server.stop()
+
+
+def test_peer_server_stop_releases_a_partial_upload_handler(
+    peer, tmp_path: Path
+) -> None:
+    credentials, _registry, _control, _transfers, server, client = peer
+    enrollment = client.enroll(_id(), "Guest")
+    source = tmp_path / "guest.wav"
+    _wav(source)
+    descriptor = _descriptor(source, credentials, enrollment.participant_id)
+    descriptor_header = json.dumps(asdict(descriptor), separators=(",", ":"))
+    request = (
+        "PUT /v1/segment HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        f"Authorization: Bearer {enrollment.participant_token}\r\n"
+        f"X-WebJam-Participant: {enrollment.participant_id}\r\n"
+        f"X-WebJam-Descriptor: {descriptor_header}\r\n"
+        "X-WebJam-Offset: 0\r\n"
+        "Content-Length: 1024\r\n"
+        "Connection: keep-alive\r\n"
+        "\r\n"
+    ).encode("ascii")
+    connection = socket.create_connection(server.address, timeout=1.0)
+    try:
+        connection.sendall(request + b"x")
+        deadline = time.monotonic() + 1.0
+        while server.active_handler_count == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert server.active_handler_count == 1
+
+        started = time.monotonic()
+        server.stop()
+
+        assert time.monotonic() - started < 2.0
+        assert server.active_handler_count == 0
+    finally:
+        connection.close()
 
 
 def test_peer_protocol_rejects_wrong_invite_participant_and_descriptor(

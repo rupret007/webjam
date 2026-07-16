@@ -1,4 +1,4 @@
-# Developing WebJam v0.16
+# Developing WebJam v0.16.1
 
 ## Local setup
 
@@ -13,6 +13,19 @@ Use the repository virtual environment:
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
 jitter settings.
+
+## Dual-musician rehearsal lab
+
+Run the hardware-free source gate when changing host/guest recording,
+transfer, Studio, export, or cleanup behavior:
+
+```bash
+.venv/bin/python -m pytest -q tests/test_dual_musician_rehearsal_lab.py
+```
+
+It uses isolated pytest artifacts and synthetic capture only; the separate
+Linux/JACK real-Jamulus companion and its evidence boundary are documented in
+[Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md).
 
 ## Integration rules
 

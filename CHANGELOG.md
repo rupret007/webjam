@@ -4,6 +4,42 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.16.1] — 2026-07-15 private stabilization candidate
+
+### Stability and truthful recovery
+
+- Added the isolated Dual-Musician Rehearsal Lab. It exercises real WebJam
+  host/guest peer sessions, loopback HTTP transfer, durable identities,
+  deterministic capture fixtures, Studio state, Track Export, stale-invite
+  rejection, and cleanup. Its optional Linux/JACK companion exercises real
+  JamulusServer and two Jamulus clients without claiming human audibility or
+  physical hardware proof.
+- Private v2/v3 bearer invitations are no longer accepted from process
+  arguments, and WebJam URLs are removed before Qt retains argv. Pasted and
+  FileOpen invitations retain their typed ingress path.
+- Fixed a peer-media collision where two musicians could reuse a local segment
+  UUID and one verified original would be omitted from the host project.
+- Transfer descriptors now preserve exact structured capture gaps, reject
+  metadata changes after both partial and completed upload, and fail closed if
+  a crash-orphaned published WAV has no authoritative descriptor sidecar.
+- Host shutdown now cancels stale maintenance lifecycle work: an old worker
+  cannot write a manifest or notify the UI after Leave/End or rapid restart.
+  Incomplete peer HTTP uploads are also released during shutdown.
+- Replaced the previous trinity glyph with the supplied three-loop, three-ring
+  WebJam mark. It remains a simple native vector/icon in black, white, and
+  burnt orange only.
+
+### Verification
+
+- Source gate: **1,798 passed**, 19 environment-bound skips, 1 known
+  dependency warning, and 6 subtests with zero failures/errors.
+- The private Apple-Silicon archive is built only from this clean candidate
+  commit; fresh-extraction signature, bundled-Jamulus, and native-transport
+  evidence is recorded after packaging. Physical rehearsal evidence remains
+  **NOT RUN**.
+
+---
+
 ## [0.16.0] — 2026-07-15 test-night package
 
 ### Jamulus-first startup

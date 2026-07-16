@@ -32,6 +32,7 @@ from core.session_transfer import (
     SessionStateSnapshot,
     SessionTransferError,
     TransferDescriptor,
+    TransferGap,
     TransferIntegrityError,
     TransferStore,
     _sha256_file,
@@ -72,6 +73,59 @@ def default_installation_identity_path(settings_file: str | Path) -> Path:
     return Path.home() / ".webjam-installation.json"
 
 
+def _peer_project_media_ids(
+    take_id: str,
+    participant_id: str,
+    transfer_segment_id: str,
+) -> tuple[str, str, str]:
+    """Return durable project IDs for one transferred peer segment.
+
+    ``TransferDescriptor.segment_id`` belongs to a guest's local capture.  It
+    is not a project-wide identity: two independently installed clients can
+    legitimately produce the same UUID.  Project entities must instead be
+    scoped by both the enrolled participant and that local capture ID.
+    """
+
+    namespace = uuid.UUID(take_id)
+    identity = f"{participant_id}:{transfer_segment_id}"
+    return (
+        str(uuid.uuid5(namespace, f"peer-track:{identity}")),
+        str(uuid.uuid5(namespace, f"peer-source:{identity}")),
+        str(uuid.uuid5(namespace, f"peer-segment:{identity}")),
+    )
+
+
+def _is_legacy_peer_attachment(
+    track: object,
+    *,
+    take_id: str,
+    participant_id: str,
+    transfer_segment_id: str,
+    source_type: object,
+) -> bool:
+    """Recognize the pre-scoped attachment shape without trusting lookalikes.
+
+    Older manifests used the transfer segment UUID directly as the project
+    segment ID.  Keep an existing attachment for the same enrolled participant
+    idempotent during upgrade, while allowing a second participant with that
+    UUID to be attached with the new scoped project IDs.
+    """
+
+    namespace = uuid.UUID(take_id)
+    legacy_track_id = str(uuid.uuid5(namespace, f"peer-track:{transfer_segment_id}"))
+    legacy_source_id = str(uuid.uuid5(namespace, f"peer-source:{transfer_segment_id}"))
+    return bool(
+        getattr(track, "participant_id", None) == participant_id
+        and getattr(track, "source_type", None) == source_type
+        and getattr(track, "track_id", None) == legacy_track_id
+        and getattr(track, "source_id", None) == legacy_source_id
+        and any(
+            getattr(segment, "segment_id", None) == transfer_segment_id
+            for segment in getattr(track, "segments", ())
+        )
+    )
+
+
 @dataclass(frozen=True)
 class PendingLocalSegment:
     descriptor: TransferDescriptor
@@ -88,6 +142,9 @@ class HostPeerSession:
         *,
         on_take_updated: Callable[[str, Path, bool], None] | None = None,
     ) -> None:
+        # This is an advisory, non-blocking notification hook. It may call
+        # ``stop`` reentrantly, but must not wait for UI work that in turn
+        # waits for this maintenance worker.
         self._on_take_updated = on_take_updated
         self.credentials: SessionCredentials | None = None
         self.registry: EnrollmentRegistry | None = None
@@ -101,6 +158,12 @@ class HostPeerSession:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
+        self._callback_condition = threading.Condition(self._lock)
+        self._callback_leases: dict[tuple[int, int], int] = {}
+        # A maintenance pass may be in a long checksum/copy when the user
+        # leaves.  Give each start its own identity so that old work cannot
+        # publish a manifest or UI update after a stop (or a rapid restart).
+        self._lifecycle_generation = 0
 
     @property
     def active(self) -> bool:
@@ -158,6 +221,10 @@ class HostPeerSession:
             server.stop()
             raise
         with self._lock:
+            self._lifecycle_generation += 1
+            generation = self._lifecycle_generation
+            stop_event = threading.Event()
+            self._stop_event = stop_event
             self.credentials = credentials
             self.registry = registry
             self.control = control
@@ -167,33 +234,44 @@ class HostPeerSession:
             self._root = root
             self._registered_takes.clear()
             self._expected_by_take.clear()
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._maintenance_loop,
-            name="webjam-host-transfer-maintenance",
-            daemon=True,
-        )
-        self._thread.start()
+            self._thread = threading.Thread(
+                target=self._maintenance_loop,
+                args=(generation, stop_event),
+                name="webjam-host-transfer-maintenance",
+                daemon=True,
+            )
+            thread = self._thread
+        thread.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        thread = self._thread
+        with self._callback_condition:
+            # Invalidate first.  A maintenance pass holds the same lock while
+            # it publishes a manifest. A callback lease lets the callback run
+            # outside that lock without allowing it to begin after stop.
+            generation = self._lifecycle_generation
+            self._lifecycle_generation += 1
+            stop_event = self._stop_event
+            thread = self._thread
+            server = self.server
+            stop_event.set()
+            self._wait_for_callback_leases_locked(generation)
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=3.0)
-        self._thread = None
-        server = self.server
         if server is not None:
             server.stop()
         with self._lock:
-            self.server = None
-            self.registry = None
-            self.control = None
-            self.transfers = None
-            self.credentials = None
-            self.host_enrollment = None
-            self._root = None
-            self._registered_takes.clear()
-            self._expected_by_take.clear()
+            # Do not let a late stop of an old lifecycle erase a new one.
+            if self.server is server:
+                self._thread = None
+                self.server = None
+                self.registry = None
+                self.control = None
+                self.transfers = None
+                self.credentials = None
+                self.host_enrollment = None
+                self._root = None
+                self._registered_takes.clear()
+                self._expected_by_take.clear()
 
     def invite_link(self, *, host: str, jamulus_port: int, session_name: str) -> str:
         if not self.active or self.credentials is None:
@@ -240,7 +318,9 @@ class HostPeerSession:
             return None
         return self.registry.participant_id_for_channel(channel_id)
 
-    def begin_take(self, take_id: str, *, started_utc: str) -> SessionStateSnapshot | None:
+    def begin_take(
+        self, take_id: str, *, started_utc: str
+    ) -> SessionStateSnapshot | None:
         if self.control is None:
             return None
         snapshot = self.control.begin(take_id, started_utc=started_utc)
@@ -248,7 +328,9 @@ class HostPeerSession:
             return snapshot
         expected: list[str] = []
         if self.registry is not None:
-            host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
+            host_id = (
+                self.host_enrollment.participant_id if self.host_enrollment else ""
+            )
             for enrollment in self.registry.participants():
                 if enrollment.participant_id == host_id:
                     continue
@@ -286,27 +368,120 @@ class HostPeerSession:
             self._registered_takes[canonical_take] = Path(take_dir).resolve()
         self.reconcile_take(canonical_take, take_dir)
 
-    def _maintenance_loop(self) -> None:
-        while not self._stop_event.wait(_POLL_SECONDS):
+    def _lifecycle_is_current_locked(
+        self,
+        generation: int,
+        stop_event: threading.Event,
+    ) -> bool:
+        return bool(
+            self._lifecycle_generation == generation
+            and self._stop_event is stop_event
+            and not stop_event.is_set()
+        )
+
+    def _lifecycle_is_current(
+        self,
+        generation: int,
+        stop_event: threading.Event,
+    ) -> bool:
+        with self._lock:
+            return self._lifecycle_is_current_locked(generation, stop_event)
+
+    def _begin_callback_lease_locked(
+        self,
+        generation: int,
+        stop_event: threading.Event,
+    ) -> Callable[[str, Path, bool], None] | None:
+        """Claim a current-lifecycle callback before releasing ``_lock``."""
+
+        if not self._lifecycle_is_current_locked(generation, stop_event):
+            return None
+        callback = self._on_take_updated
+        if callback is None:
+            return None
+        key = (generation, threading.get_ident())
+        self._callback_leases[key] = self._callback_leases.get(key, 0) + 1
+        return callback
+
+    def _end_callback_lease(self, generation: int) -> None:
+        with self._callback_condition:
+            key = (generation, threading.get_ident())
+            count = self._callback_leases.get(key, 0)
+            if count <= 1:
+                self._callback_leases.pop(key, None)
+            else:
+                self._callback_leases[key] = count - 1
+            self._callback_condition.notify_all()
+
+    def _wait_for_callback_leases_locked(self, generation: int) -> None:
+        """Wait for other in-flight current callbacks without self-deadlock."""
+
+        own_key = (generation, threading.get_ident())
+        own_leases = self._callback_leases.get(own_key, 0)
+        while (
+            sum(
+                count
+                for (lease_generation, _thread_id), count in self._callback_leases.items()
+                if lease_generation == generation
+            )
+            > own_leases
+        ):
+            self._callback_condition.wait()
+
+    def _maintenance_loop(
+        self,
+        generation: int,
+        stop_event: threading.Event,
+    ) -> None:
+        while not stop_event.wait(_POLL_SECONDS):
             with self._lock:
+                if not self._lifecycle_is_current_locked(generation, stop_event):
+                    return
                 registered = tuple(self._registered_takes.items())
             for take_id, take_dir in registered:
+                if not self._lifecycle_is_current(generation, stop_event):
+                    return
                 try:
-                    self.reconcile_take(take_id, take_dir)
+                    self.reconcile_take(
+                        take_id,
+                        take_dir,
+                        _generation=generation,
+                        _stop_event=stop_event,
+                    )
                 except Exception:  # noqa: BLE001
                     LOGGER.exception("Could not refresh peer transfer inventory")
 
-    def reconcile_take(self, take_id: str, take_dir: str | Path) -> bool:
+    def reconcile_take(
+        self,
+        take_id: str,
+        take_dir: str | Path,
+        *,
+        _generation: int | None = None,
+        _stop_event: threading.Event | None = None,
+    ) -> bool:
         """Attach verified media and disclose every expected missing transfer."""
 
-        if self.transfers is None or self.registry is None:
-            return False
+        with self._lock:
+            generation = (
+                self._lifecycle_generation if _generation is None else _generation
+            )
+            stop_event = self._stop_event if _stop_event is None else _stop_event
+            if (
+                not self._lifecycle_is_current_locked(generation, stop_event)
+                or self.transfers is None
+                or self.registry is None
+            ):
+                return False
+            transfers = self.transfers
+            registry = self.registry
+            expected_ids = self._expected_by_take.get(take_id, ())
         from core.file_io import atomic_write_text
         from core.take_project import (
             AlignmentState,
             MediaSegment,
             MediaStatus,
             Participant,
+            GapInterval,
             ProjectStatus,
             ProjectTrack,
             RecoveryStatus,
@@ -323,12 +498,12 @@ class HostPeerSession:
         project = load_take_project(folder)
         if project.take_id != take_id:
             return False
-        inventory = self.transfers.inventory(take_id)
+        inventory = transfers.inventory(take_id)
         display_by_id = {
             item.participant_id: item.display_name
-            for item in self.registry.participants()
+            for item in registry.participants()
         }
-        expected = set(self._expected_by_take.get(take_id, ()))
+        expected = set(expected_ids)
         expected.update(item.descriptor.participant_id for item in inventory)
         received_by_participant: dict[str, list] = {}
         for item in inventory:
@@ -339,10 +514,10 @@ class HostPeerSession:
         participants = {item.participant_id: item for item in project.participants}
         tracks_by_id = {track.track_id: track for track in project.tracks}
         segment_ids = {
-            segment.segment_id
-            for track in project.tracks
-            for segment in track.segments
+            segment.segment_id for track in project.tracks for segment in track.segments
         }
+        if not self._lifecycle_is_current(generation, stop_event):
+            return False
         attached_dir = folder / "transferred-isolated"
         attached_dir.mkdir(exist_ok=True)
         transfer_errors: list[str] = []
@@ -351,6 +526,8 @@ class HostPeerSession:
         attached_new_media = False
 
         for participant_id in sorted(expected):
+            if not self._lifecycle_is_current(generation, stop_event):
+                return False
             name = display_by_id.get(participant_id, "Musician")
             participant_items = received_by_participant.get(participant_id, [])
             participant_status = "missing"
@@ -362,6 +539,8 @@ class HostPeerSession:
                     f"{_TRANSFER_ERROR_PREFIX}{name}'s local original has not arrived."
                 )
             for item in participant_items:
+                if not self._lifecycle_is_current(generation, stop_event):
+                    return False
                 descriptor = item.descriptor
                 status = "verified" if item.complete else "receiving"
                 if item.error:
@@ -378,6 +557,7 @@ class HostPeerSession:
                         "device_id": descriptor.device_id,
                         "source_channel": descriptor.source_channel,
                         "gap_frames": descriptor.gap_frames,
+                        "gaps": [gap.to_mapping() for gap in descriptor.gaps],
                         "errors": list(descriptor.capture_errors),
                     }
                 )
@@ -389,7 +569,12 @@ class HostPeerSession:
                 destination = attached_dir / (
                     f"{participant_id}-{descriptor.segment_id}.wav"
                 )
-                if not destination.is_file() or _sha256_file(destination) != descriptor.sha256:
+                if (
+                    not destination.is_file()
+                    or _sha256_file(destination) != descriptor.sha256
+                ):
+                    if not self._lifecycle_is_current(generation, stop_event):
+                        return False
                     temporary = destination.with_suffix(".wav.copying")
                     temporary.unlink(missing_ok=True)
                     try:
@@ -405,8 +590,29 @@ class HostPeerSession:
                         raise TransferIntegrityError(
                             "Attached peer media did not match its checksum."
                         )
-                    os.replace(temporary, destination)
-                if descriptor.segment_id not in segment_ids:
+                    with self._lock:
+                        if not self._lifecycle_is_current_locked(
+                            generation, stop_event
+                        ):
+                            temporary.unlink(missing_ok=True)
+                            return False
+                        os.replace(temporary, destination)
+                track_id, source_id, project_segment_id = _peer_project_media_ids(
+                    take_id,
+                    participant_id,
+                    descriptor.segment_id,
+                )
+                legacy_attached = any(
+                    _is_legacy_peer_attachment(
+                        track,
+                        take_id=take_id,
+                        participant_id=participant_id,
+                        transfer_segment_id=descriptor.segment_id,
+                        source_type=SourceType.LOCAL_ISOLATED,
+                    )
+                    for track in tracks_by_id.values()
+                )
+                if project_segment_id not in segment_ids and not legacy_attached:
                     attached_new_media = True
                     media_status = (
                         MediaStatus.PARTIAL
@@ -415,18 +621,8 @@ class HostPeerSession:
                     )
                     relative = destination.relative_to(folder).as_posix()
                     track = ProjectTrack(
-                        track_id=str(
-                            uuid.uuid5(
-                                uuid.UUID(take_id),
-                                f"peer-track:{descriptor.segment_id}",
-                            )
-                        ),
-                        source_id=str(
-                            uuid.uuid5(
-                                uuid.UUID(take_id),
-                                f"peer-source:{descriptor.segment_id}",
-                            )
-                        ),
+                        track_id=track_id,
+                        source_id=source_id,
                         participant_id=participant_id,
                         name=f"{name} Input {descriptor.source_channel + 1}",
                         instrument="",
@@ -436,7 +632,7 @@ class HostPeerSession:
                         order=next_order,
                         segments=(
                             MediaSegment(
-                                segment_id=descriptor.segment_id,
+                                segment_id=project_segment_id,
                                 path=relative,
                                 project_start_frame=0,
                                 frame_count=descriptor.frame_count,
@@ -446,7 +642,19 @@ class HostPeerSession:
                                 media_status=media_status,
                                 sha256=descriptor.sha256,
                                 device_id="",
-                                gaps=(),
+                                # Only structured records carry a position.
+                                # Older descriptors may disclose aggregate
+                                # ``gap_frames``; retain their partial status
+                                # without guessing where audio was absent.
+                                gaps=tuple(
+                                    GapInterval(
+                                        gap.start_frame,
+                                        gap.frame_count,
+                                        gap.reason,
+                                        gap.channels,
+                                    )
+                                    for gap in descriptor.gaps
+                                ),
                                 size_bytes=descriptor.size_bytes,
                                 has_signal=None,
                             ),
@@ -456,7 +664,7 @@ class HostPeerSession:
                         ),
                     )
                     tracks_by_id[track.track_id] = track
-                    segment_ids.add(descriptor.segment_id)
+                    segment_ids.add(project_segment_id)
                     next_order += 1
                 if descriptor.capture_errors or descriptor.gap_frames:
                     transfer_errors.append(
@@ -467,8 +675,7 @@ class HostPeerSession:
                     participant_status = (
                         "needs_attention"
                         if any(
-                            item.descriptor.capture_errors
-                            or item.descriptor.gap_frames
+                            item.descriptor.capture_errors or item.descriptor.gap_frames
                             for item in participant_items
                         )
                         else "verified"
@@ -485,7 +692,9 @@ class HostPeerSession:
             )
 
         base_errors = tuple(
-            item for item in project.errors if not item.startswith(_TRANSFER_ERROR_PREFIX)
+            item
+            for item in project.errors
+            if not item.startswith(_TRANSFER_ERROR_PREFIX)
         )
         had_transfer_attention = any(
             item.startswith(_TRANSFER_ERROR_PREFIX) for item in project.errors
@@ -532,6 +741,8 @@ class HostPeerSession:
             session_evidence=evidence,
             revision=project.revision + 1,
         )
+        if not self._lifecycle_is_current(generation, stop_event):
+            return False
         # Avoid rewriting the manifest every maintenance tick if truth did not change.
         prior_payload = json.loads(manifest.read_text(encoding="utf-8"))
         payload = updated.to_dict()
@@ -546,12 +757,15 @@ class HostPeerSession:
         if prior_comparable == next_comparable:
             return False
         payload["revision"] = max(int(prior_revision or 0) + 1, updated.revision)
-        atomic_write_text(
-            manifest,
-            json.dumps(payload, indent=2, sort_keys=False) + "\n",
-            mode=0o600,
-        )
-        callback = self._on_take_updated
+        with self._callback_condition:
+            if not self._lifecycle_is_current_locked(generation, stop_event):
+                return False
+            atomic_write_text(
+                manifest,
+                json.dumps(payload, indent=2, sort_keys=False) + "\n",
+                mode=0o600,
+            )
+            callback = self._begin_callback_lease_locked(generation, stop_event)
         if callback is not None:
             try:
                 callback(take_id, folder, attached_new_media)
@@ -559,6 +773,8 @@ class HostPeerSession:
                 # UI notification is advisory. Never turn a successfully
                 # verified/attached original back into a transfer failure.
                 LOGGER.exception("Could not publish peer take update")
+            finally:
+                self._end_callback_lease(generation)
         return True
 
 
@@ -620,9 +836,7 @@ class GuestPeerSession:
         os.chmod(self.queue_path.parent, 0o700)
         from core.local_capture import recover_stale_local_captures
 
-        self.recovered_captures = recover_stale_local_captures(
-            self.queue_path.parent
-        )
+        self.recovered_captures = recover_stale_local_captures(self.queue_path.parent)
         for recovered in self.recovered_captures:
             LOGGER.warning(
                 "Recovered abandoned guest local capture in %s",
@@ -671,7 +885,9 @@ class GuestPeerSession:
             thread.join(timeout=5.0)
         self._thread = None
         # A quit/network leave never deletes or aborts an active original.
-        self._finalize_capture(needs_attention="Session ended before host stop was observed.")
+        self._finalize_capture(
+            needs_attention="Session ended before host stop was observed."
+        )
         try:
             self._upload_pending()
         except SessionTransferError:
@@ -734,9 +950,7 @@ class GuestPeerSession:
             bound = self._bound_presence
         if desired is None or desired == bound:
             return
-        self._presence_generation = max(
-            time.time_ns(), self._presence_generation + 1
-        )
+        self._presence_generation = max(time.time_ns(), self._presence_generation + 1)
         self.client.bind_presence(
             self.enrollment,
             channel_id=desired[0],
@@ -781,7 +995,9 @@ class GuestPeerSession:
             if self._active_take_id == take_id:
                 return
             # A different take cannot overwrite an unfinalized local original.
-            self._finalize_capture(needs_attention="A new take started before the prior stop.")
+            self._finalize_capture(
+                needs_attention="A new take started before the prior stop."
+            )
         device, rate, blocksize = self.capture_config()
         originals = self.queue_path.parent
         originals.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -815,7 +1031,10 @@ class GuestPeerSession:
         if needs_attention:
             errors.append(needs_attention)
         current_config = tuple(int(item) for item in self.capture_config())
-        if self._capture_started_config and current_config[:2] != self._capture_started_config[:2]:
+        if (
+            self._capture_started_config
+            and current_config[:2] != self._capture_started_config[:2]
+        ):
             errors.append(
                 "The selected input device or sample rate changed during this take; "
                 "the preserved segment uses the configuration captured at its start."
@@ -832,12 +1051,36 @@ class GuestPeerSession:
             except (OSError, RuntimeError) as exc:
                 errors.append(f"The preserved local WAV is unreadable: {exc}")
                 continue
-            channel_gap_frames = sum(
-                int(getattr(gap, "frame_count", 0) or 0)
-                for gap in gaps
-                if not getattr(gap, "channels", ())
-                or channel in tuple(getattr(gap, "channels", ()))
-            )
+            channel_gaps: list[TransferGap] = []
+            for gap in gaps:
+                raw_channels = getattr(gap, "channels", ())
+                try:
+                    source_channels = tuple(int(item) for item in raw_channels)
+                except (TypeError, ValueError):
+                    errors.append(
+                        "A local capture gap had an invalid channel map and "
+                        "could not be represented safely."
+                    )
+                    continue
+                if source_channels and channel not in source_channels:
+                    continue
+                try:
+                    # Each local-original file is a self-contained source
+                    # segment. Preserve the exact source-frame interval, but
+                    # map it to that file's media channels (normally mono),
+                    # rather than leaking the capture device's channel index.
+                    channel_gaps.append(
+                        TransferGap(
+                            start_frame=getattr(gap, "start_frame", -1),
+                            frame_count=getattr(gap, "frame_count", 0),
+                            channels=tuple(range(int(info.channels))),
+                            reason=str(getattr(gap, "reason", "")),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    errors.append(
+                        "A local capture gap could not be represented safely."
+                    )
             descriptor = TransferDescriptor(
                 session_id=self.invite.session_id,
                 take_id=take_id,
@@ -856,8 +1099,8 @@ class GuestPeerSession:
                 started_utc=str(getattr(result, "started_utc", "") or ""),
                 device_id=device_id,
                 source_channel=channel,
-                gap_frames=channel_gap_frames,
                 capture_errors=tuple(dict.fromkeys(errors)),
+                gaps=tuple(channel_gaps),
             )
             with self._lock:
                 self._pending.append(PendingLocalSegment(descriptor, source_path))
@@ -944,7 +1187,10 @@ class GuestPeerSession:
             return
         try:
             payload = json.loads(self.queue_path.read_text(encoding="utf-8"))
-            if payload.get("schema") != 1 or payload.get("session_id") != self.invite.session_id:
+            if (
+                payload.get("schema") != 1
+                or payload.get("session_id") != self.invite.session_id
+            ):
                 raise ValueError("session")
             records = payload.get("segments", ())
             if not isinstance(records, list):
@@ -966,7 +1212,9 @@ class GuestPeerSession:
                     )
                 )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            raise SessionTransferError("The local transfer queue is unreadable.") from exc
+            raise SessionTransferError(
+                "The local transfer queue is unreadable."
+            ) from exc
         with self._lock:
             self._pending = loaded
         try:

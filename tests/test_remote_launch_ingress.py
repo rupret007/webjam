@@ -15,9 +15,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
+from core.network_invite import create_invite_link
 from core.remote_invitation import RemoteInvitation, issue_remote_invitation
 from core.settings import AppSettings
-from webjam_qt.app import WebJamApplication, _invite_from_arguments
+from webjam_qt.app import (
+    WebJamApplication,
+    _invite_from_arguments,
+    qt_arguments_without_test_night,
+)
 from webjam_qt.windows.launch_dialog import LaunchDialog
 
 
@@ -108,9 +113,52 @@ def test_malformed_v3_is_never_restored_to_the_join_field(qapp, tmp_path: Path) 
     qapp.processEvents()
 
 
-def test_v3_process_argument_is_ignored_before_launch_dialog() -> None:
-    raw = _issued().private_link.reveal_for_clipboard()
-    assert _invite_from_arguments(["WebJam", raw]) is None
+def test_bearer_process_arguments_are_ignored_before_launch_dialog() -> None:
+    remote = _issued().private_link.reveal_for_clipboard()
+    private = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+    legacy = create_invite_link("192.168.1.43")
+
+    assert _invite_from_arguments(["WebJam", remote]) is None
+    assert _invite_from_arguments(["WebJam", private]) is None
+    parsed = _invite_from_arguments(["WebJam", private, legacy])
+    assert parsed is not None and parsed.version == 1
+
+
+def test_qt_arguments_drop_all_webjam_urls_without_mutating_source() -> None:
+    remote = _issued().private_link.reveal_for_clipboard()
+    private = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+    legacy = create_invite_link("192.168.1.43")
+    raw = (
+        "WebJam",
+        "--style=Fusion",
+        legacy,
+        private,
+        remote,
+        f"--handoff={private}",
+    )
+
+    qt_arguments = qt_arguments_without_test_night(raw)
+
+    assert qt_arguments == ["WebJam", "--style=Fusion"]
+    assert raw == (
+        "WebJam",
+        "--style=Fusion",
+        legacy,
+        private,
+        remote,
+        f"--handoff={private}",
+    )
+    assert all("webjam://" not in argument.lower() for argument in qt_arguments)
 
 
 def test_macos_file_open_is_parsed_immediately_and_only_typed_state_remains() -> None:

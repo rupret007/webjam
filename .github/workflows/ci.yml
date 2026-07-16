@@ -121,7 +121,8 @@ jobs:
       - name: Run two-client JACK production-boundary harness
         run: >-
           pytest tests/test_real_jamulus_audio.py
-          tests/test_real_jamulus_recording_pipeline.py -v -s
+          tests/test_real_jamulus_recording_pipeline.py
+          tests/test_dual_musician_rehearsal_lab_real_jamulus.py -v -s
 
   # ------------------------------------------------------------------
   # Native v3 transport: strict protocol, race detector, module integrity,

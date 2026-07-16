@@ -202,9 +202,9 @@ class ApplicationController(QObject):
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
-        # A v2 invite credential is intentionally memory-only. Retaining the
-        # parsed object lets Leave → Start rebuild the private recording peer
-        # without asking the musician to paste the same invite again.
+        # A v2 invite credential is intentionally memory-only for the active
+        # join. A successful Leave/End clears it with the peer runtime, so a
+        # stale bearer cannot silently reopen on a later Start.
         self._guest_invite = None
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None

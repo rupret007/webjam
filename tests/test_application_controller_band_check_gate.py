@@ -343,8 +343,9 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
 
         assert events == ["audio", "peer"]
 
-        # Leave tears down live peer resources but keeps the parsed v2 invite
-        # only in memory, so another explicit Start can restore transfers.
+        # The low-level cleanup helper may retain an active invite while a
+        # settings repair rebuilds the peer. The successful Leave path uses
+        # clear_invite=True and is covered separately below.
         controller._stop_session_peer()
         assert controller.guest_peer is None
         assert controller._guest_invite is invite
@@ -358,6 +359,29 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
         assert controller.guest_peer is restarted_guest
     finally:
         controller.shutdown()
+
+
+def test_successful_leave_forgets_the_private_guest_invite() -> None:
+    controller = _bare_controller()
+    controller.window = SimpleNamespace(
+        session_strip=SimpleNamespace(
+            reset_session_clock=mock.Mock(),
+            set_tools_enabled=mock.Mock(),
+        ),
+        session_hud=SimpleNamespace(set_state=mock.Mock()),
+    )
+    controller.recording = SimpleNamespace(on_audio_session_stopped=mock.Mock())
+    controller._stop_session_peer = mock.Mock(return_value=True)
+    controller._clear_remote_invite_owner = mock.Mock(return_value=True)
+    controller._stop_remote_transport = mock.Mock(return_value=True)
+    controller._transition_lifecycle = mock.Mock()
+    controller.audio = AudioCoordinator(controller)
+    controller.audio.reset_to_idle = mock.Mock()
+
+    controller.audio._finish_session_stop_ui()
+
+    controller._stop_session_peer.assert_called_once_with(clear_invite=True)
+    controller.audio.reset_to_idle.assert_called_once_with()
 
 
 def test_permission_blocked_launch_does_not_start_guest_peer() -> None:

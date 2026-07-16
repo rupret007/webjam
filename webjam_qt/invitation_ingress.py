@@ -42,9 +42,9 @@ class InvitationIngressError(ValueError):
 Invitation = BandInvite | RemoteInvitation
 
 
-def _has_literal_v3_marker(value: str) -> bool:
+def _has_literal_version_marker(value: str, version: str) -> bool:
     query = value.partition("?")[2]
-    return any(part == "v=3" for part in query.split("&"))
+    return any(part == f"v={version}" for part in query.split("&"))
 
 
 def parse_invitation_at_ingress(
@@ -56,9 +56,11 @@ def parse_invitation_at_ingress(
 ) -> Invitation:
     """Return a typed invitation and immediately discard the serialized input.
 
-    Version-3 capabilities are accepted only from an explicit paste or a
-    macOS QFileOpen event. They are never parsed from process arguments.
-    Version-1/2 links retain their existing paste, deep-link, and argv support.
+    Bearer-carrying invitations (v2 private-LAN and v3 remote) are accepted
+    only from an explicit paste or a macOS QFileOpen event. They are never
+    parsed from process arguments, which Qt and crash reporters may retain.
+    Version-1 endpoint-only links retain their existing paste, deep-link, and
+    argv support.
     """
 
     try:
@@ -76,7 +78,10 @@ def parse_invitation_at_ingress(
             InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,
             "Paste the invitation into WebJam to join.",
         )
-    if ingress_source is InvitationSource.ARGV and _has_literal_v3_marker(value):
+    if ingress_source is InvitationSource.ARGV and (
+        _has_literal_version_marker(value, "2")
+        or _has_literal_version_marker(value, "3")
+    ):
         raise InvitationIngressError(
             InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,
             "Paste the invitation into WebJam to join.",
@@ -110,7 +115,12 @@ def parse_invitation_at_ingress(
             InvitationIngressErrorCode.INVALID,
             "That invite link doesn’t look right. Copy it again from your host.",
         ) from None
-    if isinstance(invitation, RemoteInvitation):
+    if isinstance(invitation, RemoteInvitation) or (
+        isinstance(invitation, BandInvite) and invitation.peer_enabled
+    ):
+        # The literal version guard above avoids parsing the normal form in
+        # the first place. Keep this typed guard for percent-encoded or future
+        # equivalent forms so a bearer can never become an argv invitation.
         if ingress_source is InvitationSource.ARGV:
             raise InvitationIngressError(
                 InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,
@@ -132,7 +142,12 @@ def invitation_from_arguments(
     *,
     allowed_remote_profiles: frozenset[str] | None = None,
 ) -> BandInvite | None:
-    """Return the first valid legacy argv invitation; silently ignore v3."""
+    """Return the first endpoint-only v1 argv invitation.
+
+    Bearer-carrying v2/v3 links are intentionally ignored so neither the
+    bootstrap nor Qt can retain a credential supplied on a process command
+    line.
+    """
 
     for item in arguments[1:]:
         raw = str(item or "")

@@ -41,7 +41,7 @@ def _qapp() -> QApplication:
 
 def test_svg_is_a_portable_warm_trinity_companion():
     source = BRAND_MARK_PATH.read_text(encoding="utf-8")
-    assert len(re.findall(r"<path\b", source)) == 1
+    assert len(re.findall(r"<path\b", source)) == 3
     assert "linearGradient" in source
     assert "radialGradient" in source
     assert len(re.findall(r"<circle\b", source)) == 6
@@ -92,7 +92,7 @@ def test_mark_has_three_circular_dark_centered_nodes():
     _qapp()
     size = 96
     image = render_brand_pixmap(size).toImage()
-    for x_ratio, y_ratio in ((0.5, 0.145), (0.826, 0.693), (0.174, 0.693)):
+    for x_ratio, y_ratio in ((0.50, 0.15), (0.846, 0.75), (0.154, 0.75)):
         pixel = image.pixelColor(round(size * x_ratio), round(size * y_ratio))
         assert pixel.alpha() == 255
         assert max(pixel.red(), pixel.green(), pixel.blue()) <= 16
