@@ -1,4 +1,4 @@
-# Developing WebJam v0.16.2
+# Developing WebJam v0.16.3
 
 ## Local setup
 
@@ -64,4 +64,6 @@ The authoritative build is:
 
 Use the macOS staging/signing/transport verification in `.github/workflows/ci.yml`.
 Do not use the retired `build_webjam.py` release path. Package and visual
-verification are required before replacing the installed test-night app.
+verification are required before replacing the installed test-night app. The
+cross-platform support boundary, automated gates, and physical-hardware release
+checklist are in [Desktop release runbook](docs/DESKTOP_RELEASE_RUNBOOK.md).

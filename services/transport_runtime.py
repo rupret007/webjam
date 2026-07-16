@@ -393,6 +393,21 @@ def _validate_binary_architecture(path: Path, expected_machine: str) -> None:
         wanted = 0xAA64 if expected == "arm64" else 0x8664
         if machine != wanted:
             raise TransportLaunchError("The transport process is not installed safely.")
+    elif sys.platform.startswith("linux"):
+        # ELF64 e_machine is a stable native target assertion. Linux has no
+        # universal executable equivalent, so accepting a different machine
+        # here would defer a packaging error until process launch.
+        if (
+            len(header) < 20
+            or header[:4] != b"\x7fELF"
+            or header[4] != 2  # ELFCLASS64
+            or header[5] != 1  # ELFDATA2LSB
+        ):
+            raise TransportLaunchError("The transport process is not installed safely.")
+        machine = int.from_bytes(header[18:20], "little")
+        wanted = 0xB7 if expected == "arm64" else 0x3E
+        if machine != wanted:
+            raise TransportLaunchError("The transport process is not installed safely.")
 
 
 def _verify_platform_signature(path: Path) -> None:

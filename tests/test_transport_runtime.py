@@ -18,6 +18,7 @@ from services.transport_runtime import (
     TransportProcessError,
     TransportProtocolError,
     TransportTimeoutError,
+    _validate_binary_architecture,
     _validated_binary,
     parse_transport_event,
 )
@@ -251,6 +252,28 @@ def test_binary_manifest_hash_is_verified_before_process_launch(tmp_path: Path) 
     assert _validated_binary(target, expected_sha256=digest) == target.resolve()
     with pytest.raises(TransportLaunchError, match="not installed safely"):
         _validated_binary(target, expected_sha256="0" * 64)
+
+
+def test_linux_elf_machine_is_verified_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary = tmp_path / "webjam-fabric"
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    header[4] = 2
+    header[5] = 1
+    header[18:20] = (0x3E).to_bytes(2, "little")
+    binary.write_bytes(header)
+    monkeypatch.setattr("services.transport_runtime.sys.platform", "linux")
+
+    _validate_binary_architecture(binary, "x86_64")
+    with pytest.raises(TransportLaunchError, match="not installed safely"):
+        _validate_binary_architecture(binary, "arm64")
+
+    header[18:20] = (0xB7).to_bytes(2, "little")
+    binary.write_bytes(header)
+    _validate_binary_architecture(binary, "arm64")
 
 
 def test_event_parser_rejects_unknown_duplicate_noncanonical_and_bad_versions() -> None:

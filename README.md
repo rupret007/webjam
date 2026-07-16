@@ -1,4 +1,4 @@
-# WebJam v0.16.2
+# WebJam v0.16.3 release candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -61,7 +61,8 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page has one current release: v0.16.2. It includes the simplified
+The source tree is preparing v0.16.3 cross-platform test packages. The release
+page still has one immutable current release: v0.16.2. It includes the simplified
 automatic Host/Join handoff and the zero-friction recording/recovery hardening
 described in the changelog.
 
@@ -73,6 +74,13 @@ A fresh extraction passed deep signature verification, bundled Jamulus client
 and server executable checks, and arm64 transport build-ID/checksum
 verification. It is ad-hoc signed, not notarized, and must not be presented as
 a general-production macOS installer.
+
+The generic Windows x64 and Intel macOS archives attached to that published
+tag are historical CI outputs, not promoted release packages. In particular,
+the v0.16.2 Windows archive is unsigned and its clean-install Jamulus action
+looked in the wrong packaged-data location. Those assets stay immutable as
+build evidence; the fixes are versioned in the v0.16.3 candidate instead of
+silently replacing files on the old tag.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

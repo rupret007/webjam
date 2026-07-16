@@ -116,7 +116,10 @@ if sys.platform == "win32":
 
 # On Windows, bundle the VB-CABLE installers so the app folder really does
 # contain the virtual-audio-cable setup the band guide points users to.
-# (Useless on macOS — that uses BlackHole — so only include it on Windows.)
+# The Windows Jamulus installer is PyInstaller data because the Launch dialog
+# resolves it through ``sys._MEIPASS``. Linux gets a visible archive-root
+# ``Jamulus/`` distribution dependency after PyInstaller finishes; macOS gets
+# runnable nested app bundles after PyInstaller finishes.
 _extra_datas = []
 if sys.platform == "win32":
     _vb_dir = ROOT / "VB"
@@ -125,13 +128,9 @@ if sys.platform == "win32":
             if _p.is_file():
                 _extra_datas.append((str(_p), "VB"))
 
-    # Bundle the official Jamulus Windows installer (staged by CI at build
-    # time into a repo-root Jamulus/ dir — see .github/workflows/ci.yml —
-    # absent in plain dev checkouts, matching the VB/ pattern above) so the
-    # Setup Wizard can offer an "Install Jamulus now" button instead of
-    # sending users to jamulus.io. Jamulus has no portable Windows binary
-    # to bundle directly (unlike macOS's Jamulus.app — see BUNDLE below),
-    # so this ships the unmodified upstream installer, not a runnable copy.
+if sys.platform == "win32":
+    # Bundle the checksum-pinned official installer staged by CI. PyInstaller
+    # places it below ``_internal/Jamulus`` in the onedir build.
     _jamulus_dir = ROOT / "Jamulus"
     if _jamulus_dir.is_dir():
         for _p in _jamulus_dir.iterdir():

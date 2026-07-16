@@ -4706,7 +4706,7 @@ class ApplicationController(QObject):
     def _start_test_night(self) -> None:
         """Create a new local-only ledger and record package availability."""
 
-        from core.build_info import build_id
+        from core.build_info import build_id, desktop_target
         from core.pilot_evidence import (
             EvidenceLimitation,
             EvidenceOutcome,
@@ -4723,8 +4723,10 @@ class ApplicationController(QObject):
                 self._resume_test_night()
             return
         artifact_identity = "not_available"
-        if getattr(sys, "frozen", False) and sys.platform == "darwin":
-            artifact_identity = f"webjam-v{__version__}-test-night-macos-arm64"
+        if getattr(sys, "frozen", False):
+            target = desktop_target()
+            if target:
+                artifact_identity = f"webjam-v{__version__}-test-night-{target}"
         try:
             ledger = create_pilot_ledger(
                 app_version=__version__,

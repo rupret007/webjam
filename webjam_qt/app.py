@@ -173,16 +173,26 @@ def _report_unhandled_exception(exception_type, exception, traceback) -> None:
 
 
 def _request_smoke_quit(window: ConductorWindow) -> None:
-    """Quit a frozen Host smoke after representing an affirmative close choice."""
+    """Quit a frozen lifecycle smoke after representing an affirmative close."""
     logging.getLogger("webjam.qt").info(
-        "Frozen Host smoke timer confirming close and requesting Qt quit"
+        "Frozen desktop smoke timer confirming close and requesting Qt quit"
     )
-    # A live Host normally asks before ending the jam.  The headless smoke has
+    # A live session normally asks before ending the jam. The headless smoke has
     # no operator to click Yes, so bypass only that already-tested prompt.  Qt
     # still closes the real window, emits close_requested, and runs the same
     # controller shutdown used after an affirmative musician choice.
     window.confirm_close = lambda: True
     window.close()
+
+
+def _bounded_smoke_exit_ms(default: int = 0) -> int:
+    """Return a test-only bounded exit delay without affecting normal users."""
+
+    try:
+        value = int(os.environ.get("WEBJAM_SMOKE_EXIT_MS", "0"))
+    except ValueError:
+        return default
+    return value if 1_000 <= value <= 60_000 else default
 
 
 def _run_app() -> int:
@@ -208,6 +218,11 @@ def _run_app() -> int:
     # Every ordinary launch begins with the same two choices. Existing config
     # supplies invisible defaults; it never skips the Host/Join decision.
     smoke_autostart = os.environ.get("WEBJAM_SMOKE_AUTOSTART_AUDIO") == "1"
+    smoke_launch_only = (
+        getattr(sys, "frozen", False)
+        and not smoke_autostart
+        and os.environ.get("WEBJAM_SMOKE_LAUNCH_ONLY") == "1"
+    )
     launch = None
     if not smoke_autostart:
         argument_invitation = _invite_from_arguments(arguments)
@@ -250,6 +265,14 @@ def _run_app() -> int:
                 QTimer.singleShot(
                     0, lambda message=late_error: launch.show_ingress_error(message)
                 )
+        if smoke_launch_only:
+            # Native release runners need a clean, bounded way to prove the
+            # frozen GUI reaches its real Host/Join surface. Rejecting the
+            # modal launch dialog follows the ordinary no-session exit path
+            # and never starts Jamulus or mutates saved settings.
+            QTimer.singleShot(
+                _bounded_smoke_exit_ms(default=5_000), launch.reject
+            )
         result = launch.exec()
         if isinstance(app, WebJamApplication) and launch_invite_handler is not None:
             try:
@@ -334,15 +357,12 @@ def _run_app() -> int:
         else controller.begin_startup_journey,
     )
     if smoke_autostart:
-        # Frozen-build validation needs to exercise the real Host lifecycle
-        # and then leave through Qt's ordinary quit path.  A process signal
+        # Frozen-build validation needs to exercise the real desktop lifecycle
+        # and then leave through Qt's ordinary quit path. A process signal
         # only tests the bootloader and can bypass ``aboutToQuit`` entirely.
         # Keep this hook unavailable to normal launches and bounded so a bad
         # environment value can never close an interactive session.
-        try:
-            smoke_exit_ms = int(os.environ.get("WEBJAM_SMOKE_EXIT_MS", "0"))
-        except ValueError:
-            smoke_exit_ms = 0
+        smoke_exit_ms = _bounded_smoke_exit_ms()
         if 1_000 <= smoke_exit_ms <= 60_000:
             QTimer.singleShot(
                 smoke_exit_ms, lambda: _request_smoke_quit(window)

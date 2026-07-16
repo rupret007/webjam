@@ -65,6 +65,8 @@ class TestPackagedDataFiles(unittest.TestCase):
             "QUIC-GO-MIT.txt",
         ):
             self.assertTrue((ROOT / "transport" / "licenses" / name).is_file())
+        self.assertNotIn('sys.platform.startswith("linux")', SPEC)
+        self.assertIn('"Jamulus"', SPEC)
 
     def test_ci_builds_stages_and_smokes_the_native_transport(self):
         self.assertIn("go test -race -count=1 ./...", CI)
@@ -77,6 +79,25 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn('"type":"shutdown"', CI)
         self.assertIn("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION=1", CI)
         self.assertIn("tests/test_native_sidecar_integration.py", CI)
+        self.assertIn("target: linux-x64", CI)
+        self.assertIn("jamulus_3.12.2_ubuntu_amd64.deb", CI)
+        self.assertIn("dist/WebJam/Jamulus/JAMULUS_COPYING.txt", CI)
+        self.assertIn("--machine x86_64", CI)
+        self.assertIn("WEBJAM_SMOKE_LAUNCH_ONLY=1", CI)
+        self.assertIn("WEBJAM_SMOKE_AUTOSTART_AUDIO=1", CI)
+        self.assertIn("accepted valid authentication secret", CI)
+        self.assertIn("webjam-linux-x64", CI)
+        self.assertIn("Verify tag matches packaged version", CI)
+
+    def test_linux_release_instructions_and_installer_helper_are_packaged(self):
+        linux = ROOT / "packaging" / "linux"
+        readme = linux / "README-LINUX.txt"
+        installer = linux / "install-jamulus.sh"
+        self.assertTrue(readme.is_file())
+        self.assertTrue(installer.is_file())
+        self.assertTrue(installer.stat().st_mode & 0o111)
+        self.assertIn("join a jam hosted from the macOS build", readme.read_text())
+        self.assertIn("jamulus_3.12.2_ubuntu_amd64.deb", installer.read_text())
 
     def test_spec_version_tracks_package_version(self):
         # The macOS bundle version must not be hardcoded/stale.

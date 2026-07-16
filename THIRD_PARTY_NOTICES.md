@@ -33,7 +33,8 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
   [`licenses/JAMULUS_COPYING.txt`](licenses/JAMULUS_COPYING.txt) and is
   also placed alongside the bundled copy in every WebJam build (macOS:
   `WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/`; Windows:
-  `Jamulus/` next to the bundled installer).
+  `_internal/Jamulus/` next to the bundled installer; Linux: the visible
+  archive-root `Jamulus/` directory next to the bundled `.deb`).
 - **How it's bundled, per platform:**
   - **macOS:** `Jamulus.app` from Jamulus's official release `.dmg` is
     nested inside `WebJam.app/Contents/Resources/Jamulus.app`. WebJam's build
@@ -52,9 +53,15 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     prepared copies as upstream-notarized nested apps.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so Windows packaging carries the unmodified installer
-    as a distribution dependency. The current private Host/Join flow does not
-    invoke the former Setup Wizard installer button; Windows packaging and
-    install behavior remain a separate release-certification gate.
+    as a distribution dependency. On a clean Windows system, the Host/Join
+    dialog offers an Install Jamulus action only after WebJam verifies the
+    exact pinned filename and SHA-256; it verifies the file again immediately
+    before launch. The upstream installer itself is unsigned, so its UAC
+    publisher warning remains a separate release-certification disclosure.
+  - **Linux:** the Ubuntu x86-64 build carries the official unmodified `.deb`
+    as a distribution dependency plus a visible install helper. It is a
+    join-only build for Ubuntu 22.04 or newer; the helper installs Jamulus as
+    `/usr/bin/jamulus`, which WebJam discovers without a custom path.
 - **Why this doesn't require relicensing WebJam:** Redistributing a
   third-party binary that is invoked as a separate process
   (never statically or dynamically linked into WebJam's own executable)

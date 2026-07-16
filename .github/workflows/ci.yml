@@ -41,7 +41,7 @@ jobs:
       - name: Install Qt + audio system libraries (Linux)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
             python3-tk
 
@@ -290,13 +290,15 @@ jobs:
 
   # ------------------------------------------------------------------
   # Build desktop artifacts
-  # Three targets built from webjam.spec (single source of truth):
+  # Four targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-latest (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
+  #   linux-x64    → ubuntu-22.04   (x86-64, join-only desktop)
   #
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
+  # Linux:   dist/WebJam/ directory → zipped with zip
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
@@ -313,6 +315,8 @@ jobs:
             target: macos-arm64
           - os: macos-15-intel
             target: macos-x64
+          - os: ubuntu-22.04
+            target: linux-x64
 
     steps:
       - name: Checkout
@@ -328,6 +332,20 @@ jobs:
         with:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
+
+      - name: Install Linux desktop system libraries
+        if: matrix.target == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            binutils libegl1 libgl1 libglib2.0-0 libxkbcommon0 \
+            libxkbcommon-x11-0 libdbus-1-3 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libfontconfig1 libfreetype6 \
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
+            libxtst6 libxkbfile1 libnss3 libnspr4 libbrotli1 libasound2 \
+            libgbm1 libportaudio2 libgtk-3-0 libtiff5 libcups2 libpulse0 \
+            jackd2 jack-tools xvfb xauth zip unzip
 
       - name: Install dependencies
         run: |
@@ -347,8 +365,12 @@ jobs:
             (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
               go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
               -o build/package/webjam-fabric ./cmd/webjam-fabric)
-          else
+          elif [[ "${{ matrix.target }}" == "macos-x64" ]]; then
             (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+              -o build/package/webjam-fabric ./cmd/webjam-fabric)
+          else
+            (cd transport && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
               go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
               -o build/package/webjam-fabric ./cmd/webjam-fabric)
           fi
@@ -369,8 +391,26 @@ jobs:
           mv jamulus_installer.exe Jamulus/jamulus_3.12.2_win.exe
           # webjam.spec's Jamulus/ datas block (mirrors VB/) picks this up.
 
+      - name: Stage bundled Jamulus package (Linux)
+        if: matrix.target == 'linux-x64'
+        run: |
+          curl -fsSL -o jamulus_client.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
+          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus_client.deb" | sha256sum -c -
+          mkdir -p Jamulus
+          mv jamulus_client.deb Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+          # Prove the packaged dependency installs the exact lowercase path
+          # WebJam discovers on a clean Ubuntu machine.
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            ./Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+          test "$(command -v jamulus)" = "/usr/bin/jamulus"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Package)" = "jamulus"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Version)" = "3.12.2"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Architecture)" = "amd64"
+          python -c 'from core.settings import AppSettings; assert "/usr/bin/jamulus" in AppSettings().jamulus_candidates'
+
       - name: Stage bundled Jamulus.app (macOS)
-        if: matrix.target != 'windows-x64'
+        if: startsWith(matrix.target, 'macos-')
         run: |
           curl -fsSL -o jamulus.dmg \
             https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_mac.dmg
@@ -388,6 +428,7 @@ jobs:
         run: |
           mkdir -p out
           python -m PyInstaller --clean --noconfirm webjam.spec
+          build_id="$(git rev-parse HEAD)"
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
             cp transport/build/package/webjam-fabric.exe \
@@ -404,9 +445,144 @@ jobs:
               | grep -q '"type":"stopped"'
             test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
             test -n "$(find dist/WebJam -path '*/webjam_qt/webex_widget.html' -print -quit)"
-            test -n "$(find dist/WebJam -path '*/Jamulus/jamulus_3.12.2_win.exe' -print -quit)"
+            test -f dist/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe
+            test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
+          elif [[ "${{ matrix.target }}" == "linux-x64" ]]; then
+            cp transport/build/package/webjam-fabric \
+              dist/WebJam/webjam-fabric
+            chmod 755 dist/WebJam/webjam-fabric
+            mkdir -p dist/WebJam/Jamulus
+            cp Jamulus/jamulus_3.12.2_ubuntu_amd64.deb \
+              dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+            cp licenses/JAMULUS_COPYING.txt \
+              dist/WebJam/Jamulus/JAMULUS_COPYING.txt
+            sha256sum dist/WebJam/webjam-fabric \
+              | awk '{print $1}' > dist/WebJam/webjam-fabric.sha256
+            python -m tests.support.verify_packaged_transport \
+              --binary dist/WebJam/webjam-fabric \
+              --manifest dist/WebJam/webjam-fabric.sha256 \
+              --build-id "$build_id" \
+              --machine x86_64
+            file dist/WebJam/WebJam | grep -Eq 'ELF 64-bit.*x86-64'
+            file dist/WebJam/webjam-fabric | grep -Eq 'ELF 64-bit.*x86-64'
+            test -x dist/WebJam/WebJam
+            test -x dist/WebJam/webjam-fabric
+            test -f dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+            test -f dist/WebJam/Jamulus/JAMULUS_COPYING.txt
+            echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
+            test -f dist/WebJam/_internal/webjam_qt/theme/conductor.qss
+            test -f dist/WebJam/_internal/webjam_qt/webex_widget.html
+            test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
+            cp packaging/linux/README-LINUX.txt dist/WebJam/README-LINUX.txt
+            cp packaging/linux/install-jamulus.sh dist/WebJam/install-jamulus.sh
+            chmod 755 dist/WebJam/install-jamulus.sh
+            (cd dist && zip -qr "../out/WebJam-${{ matrix.target }}.zip" WebJam/)
+            fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
+            mkdir -p "$fresh_dir"
+            unzip -q "out/WebJam-${{ matrix.target }}.zip" -d "$fresh_dir"
+            python -m tests.support.verify_packaged_transport \
+              --binary "$fresh_dir/WebJam/webjam-fabric" \
+              --manifest "$fresh_dir/WebJam/webjam-fabric.sha256" \
+              --build-id "$build_id" \
+              --machine x86_64
+            test -f "$fresh_dir/WebJam/README-LINUX.txt"
+            test -x "$fresh_dir/WebJam/install-jamulus.sh"
+            test -f "$fresh_dir/WebJam/Jamulus/JAMULUS_COPYING.txt"
+            echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  $fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
+            fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
+            mkdir -p "$fresh_home"
+            HOME="$fresh_home" \
+              WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
+              WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+              QT_QPA_PLATFORM=offscreen \
+              "$fresh_dir/WebJam/WebJam"
+            test -f "$fresh_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$fresh_home/webjam.log"
+
+            # Exercise the extracted app against the exact packaged Jamulus
+            # client and a private dummy JACK graph. A pre-existing client
+            # config is intentional: Linux is join-only, so this must never
+            # fall through to the macOS-only Host smoke defaults.
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+              --no-install-recommends \
+              "$fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb"
+            /usr/bin/jamulus --version 2>&1 | grep -Fq 'Version 3.12.2'
+            smoke_home="$RUNNER_TEMP/webjam-linux-audio-smoke-home"
+            mkdir -p "$smoke_home"
+            chmod 700 "$smoke_home"
+            printf '%s\n' \
+              '{' \
+              '  "jamulus_server": "127.0.0.1",' \
+              '  "jamulus_port": 22999,' \
+              '  "jamulus_rpc_port": 22998,' \
+              '  "jamulus_candidates": ["/usr/bin/jamulus"],' \
+              '  "host_server_enabled": false,' \
+              '  "musician_name": "Package Smoke"' \
+              '}' > "$smoke_home/.webjam_config.json"
+            chmod 600 "$smoke_home/.webjam_config.json"
+
+            export JACK_DEFAULT_SERVER="webjam-package-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            export JACK_NO_START_SERVER=1
+            export JACK_NO_AUDIO_RESERVATION=1
+            jackd --no-realtime --name "$JACK_DEFAULT_SERVER" \
+              -d dummy -r 48000 -p 128 -C 2 -P 2 \
+              > "$RUNNER_TEMP/webjam-jack-smoke.log" 2>&1 &
+            jack_pid=$!
+            cleanup_jack() {
+              kill "$jack_pid" 2>/dev/null || true
+              wait "$jack_pid" 2>/dev/null || true
+            }
+            trap cleanup_jack EXIT
+            jack_ready=0
+            for _ in $(seq 1 30); do
+              if jack_lsp >/dev/null 2>&1; then
+                jack_ready=1
+                break
+              fi
+              sleep 0.2
+            done
+            test "$jack_ready" = 1
+
+            set +e
+            HOME="$smoke_home" \
+              WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
+              WEBJAM_SMOKE_AUTOSTART_AUDIO=1 WEBJAM_SMOKE_EXIT_MS=8000 \
+              timeout 20s xvfb-run -a "$fresh_dir/WebJam/WebJam" \
+              > "$RUNNER_TEMP/webjam-linux-smoke.log" 2>&1
+            smoke_rc=$?
+            set -e
+            test "$smoke_rc" = 0
+            test -f "$smoke_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$smoke_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$smoke_home/webjam.log"
+            grep -Fq 'JSON-RPC: Server started on 127.0.0.1:22998' \
+              "$smoke_home/.webjam_jamulus.log"
+            grep -Fq 'accepted valid authentication secret' \
+              "$smoke_home/.webjam_jamulus.log"
+            grep -Fq "Connecting to JACK \"$JACK_DEFAULT_SERVER\" instance" \
+              "$smoke_home/.webjam_jamulus.log"
+            jamulus_stopped=0
+            for _ in $(seq 1 25); do
+              if ! pgrep -x jamulus >/dev/null; then
+                jamulus_stopped=1
+                break
+              fi
+              sleep 0.2
+            done
+            test "$jamulus_stopped" = 1
+            test "$(stat -c '%a' "$smoke_home/.webjam_jsonrpc_secret")" = 600
+            python - <<'PY'
+            import socket
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind(("127.0.0.1", 22998))
+            PY
+            ! jack_lsp 2>/dev/null | grep -q '^Jamulus'
           else
             cp transport/build/package/webjam-fabric \
               dist/WebJam.app/Contents/MacOS/webjam-fabric
@@ -431,7 +607,6 @@ jobs:
             shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}' \
               > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
-            build_id="$(git rev-parse HEAD)"
             expected_machine="arm64"
             if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
               expected_machine="x86_64"
@@ -449,6 +624,8 @@ jobs:
               | grep -q 'com.apple.security.app-sandbox'
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
+            file dist/WebJam.app/Contents/MacOS/WebJam \
+              | grep -q "$expected_machine"
             test -s dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
             printf '%s\n' \
               '{"version":1,"id":1,"type":"hello"}' \
@@ -517,6 +694,16 @@ jobs:
               --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
               --machine "$expected_machine"
+            fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
+            mkdir -p "$fresh_home"
+            HOME="$fresh_home" \
+              WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
+              WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+              "$fresh_dir/WebJam.app/Contents/MacOS/WebJam"
+            test -f "$fresh_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$fresh_home/webjam.log"
           fi
 
       - name: Verify Windows version metadata
@@ -537,14 +724,19 @@ jobs:
           PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: |
           if ([string]::IsNullOrEmpty($env:PFX_B64)) {
-            Write-Host "No code-signing cert configured; v1/v2 remains usable but packaged v3 will fail closed."
+            if ($env:GITHUB_REF -like "refs/tags/v*") {
+              throw "A tagged Windows release requires WINDOWS_CODESIGN_PFX; packaged v3 must not be published unsigned."
+            }
+            Write-Warning "Unsigned branch/test build: v1/v2 remains usable but packaged v3 will fail closed."
             exit 0
           }
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
           $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
             -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue `
-            | Select-Object -First 1).FullName
+            | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } `
+            | Sort-Object FullName `
+            | Select-Object -Last 1).FullName
           if (-not $signtool) { throw "signtool.exe not found" }
           # Extract zip, sign the exe, re-zip
           Expand-Archive "out\WebJam-windows-x64.zip" `
@@ -555,6 +747,11 @@ jobs:
           & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD `
             /tr https://timestamp.digicert.com /td sha256 /fd sha256 `
             "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe"
+          foreach ($binary in @("WebJam.exe", "webjam-fabric.exe")) {
+            & $signtool verify /pa /all /v `
+              "$env:RUNNER_TEMP\sign_work\WebJam\$binary"
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $binary" }
+          }
           $fabricHash = (Get-FileHash `
             "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe" `
             -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -564,8 +761,82 @@ jobs:
             [Text.Encoding]::ASCII
           )
           cd "$env:RUNNER_TEMP\sign_work"
+          Remove-Item -Force "$env:GITHUB_WORKSPACE\out\WebJam-windows-x64.zip"
           7z a "$env:GITHUB_WORKSPACE\out\WebJam-windows-x64.zip" WebJam\
           Remove-Item -Force $pfxPath -ErrorAction SilentlyContinue
+
+      - name: Verify frozen Windows package
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+        run: |
+          $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-fresh"
+          $home = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
+          Remove-Item -Recurse -Force $freshRoot,$home -ErrorAction SilentlyContinue
+          Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $freshRoot
+          New-Item -ItemType Directory -Force $home | Out-Null
+          $appDir = Join-Path $freshRoot "WebJam"
+          $app = Join-Path $appDir "WebJam.exe"
+          $fabric = Join-Path $appDir "webjam-fabric.exe"
+          $manifest = (Get-Content (Join-Path $appDir "webjam-fabric.sha256") -Raw).Trim()
+          $actualHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest -ne $actualHash) { throw "Packaged transport checksum mismatch" }
+          $installer = Join-Path $appDir "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installerHash -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Bundled Jamulus installer checksum mismatch"
+          }
+          if (-not [string]::IsNullOrEmpty($env:PFX_B64)) {
+            foreach ($binary in @($app, $fabric)) {
+              if ((Get-AuthenticodeSignature -LiteralPath $binary).Status -ne "Valid") {
+                throw "Fresh package lost a required Authenticode signature: $binary"
+              }
+            }
+          }
+          $env:HOME = $home
+          $env:USERPROFILE = $home
+          $env:WEBJAM_LOG_FILE = Join-Path $home "webjam.log"
+          $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
+          $env:WEBJAM_SMOKE_EXIT_MS = "5000"
+          [IO.File]::WriteAllText(
+            (Join-Path $home ".webjam_config.json"),
+            '{"jamulus_candidates":[]}',
+            [Text.Encoding]::UTF8
+          )
+          $process = Start-Process -FilePath $app -WorkingDirectory $appDir -PassThru
+          try {
+            Wait-Process -Id $process.Id -Timeout 30 -ErrorAction Stop
+          } catch {
+            taskkill /PID $process.Id /T /F 2>$null | Out-Null
+            throw "Frozen WebJam did not finish its bounded launch smoke"
+          }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) {
+            throw "Frozen WebJam launch smoke exited $($process.ExitCode)"
+          }
+          if (-not (Test-Path $env:WEBJAM_LOG_FILE)) {
+            throw "Frozen WebJam did not create its startup log"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Starting Conductor UI" -Quiet)) {
+            throw "Frozen WebJam did not reach the Conductor UI bootstrap"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Verified bundled Jamulus installer is available" -Quiet)) {
+            throw "Frozen WebJam did not discover its verified Jamulus installer"
+          }
+          if (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -Pattern "WebJam failed during startup|Unhandled WebJam UI error" -Quiet) {
+            throw "Frozen WebJam logged a startup failure"
+          }
+          $residue = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($freshRoot)
+          }
+          if ($residue) {
+            $residue | ForEach-Object { taskkill /PID $_.ProcessId /T /F 2>$null | Out-Null }
+            throw "Frozen package left owned processes running after launch smoke"
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -591,6 +862,29 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches packaged version
+        run: |
+          expected="v$(python3 -c 'from webjam_qt import __version__; print(__version__)')"
+          if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $expected." >&2
+            exit 1
+          fi
+
+      - name: Refuse mutation of an already-published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh api \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            2>/dev/null || true)"
+          if [[ -n "$existing" && "$(jq -r '.draft' <<<"$existing")" != "true" ]]; then
+            echo "Release $GITHUB_REF_NAME is already published; refusing to attach unreviewed assets." >&2
+            exit 1
+          fi
+
       - name: Download windows-x64 artifact
         uses: actions/download-artifact@v4
         with:
@@ -607,6 +901,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webjam-macos-x64
+          path: release-assets/
+
+      - name: Download linux-x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webjam-linux-x64
           path: release-assets/
 
       - name: Create GitHub Release

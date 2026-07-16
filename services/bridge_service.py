@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import os
 import subprocess
@@ -17,6 +19,12 @@ from core.jamulus_profile import (
 from core.settings import AppSettings
 
 LOGGER = logging.getLogger("webjam.services.bridge")
+
+_PINNED_WINDOWS_JAMULUS_INSTALLER = "jamulus_3.12.2_win.exe"
+_PINNED_WINDOWS_JAMULUS_SHA256 = (
+    "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9"
+)
+_HASH_CHUNK_BYTES = 1024 * 1024
 
 
 def _bundled_jamulus_candidate() -> Optional[str]:
@@ -76,10 +84,9 @@ def _bundled_jamulus_installer() -> Optional[str]:
     """Path to the bundled Jamulus Windows installer, if present.
 
     Jamulus only publishes an NSIS installer on Windows (no portable
-    binary), so "bundling" there means shipping that unmodified installer
-    inside WebJam's own install directory at ``Jamulus/jamulus_*_win.exe``
-    (see the ``Jamulus/`` datas block in ``webjam.spec``) and letting the
-    Setup Wizard offer to run it on demand.
+    binary), so "bundling" there means shipping that unmodified installer in
+    PyInstaller's frozen data root at ``Jamulus/jamulus_3.12.2_win.exe`` (normally
+    ``WebJam/_internal/Jamulus``) and letting Setup offer to run it on demand.
 
     Returns ``None`` when not running from a frozen (PyInstaller) build,
     on any platform other than Windows, or when the bundled installer
@@ -91,13 +98,51 @@ def _bundled_jamulus_installer() -> Optional[str]:
         return None
     try:
         app_dir = Path(sys.executable).resolve().parent
-        jamulus_dir = app_dir / "Jamulus"
-        if not jamulus_dir.is_dir():
-            return None
-        candidates = sorted(jamulus_dir.glob("jamulus_*_win.exe"))
+        # PyInstaller 6 one-directory builds place collected data below
+        # ``_internal`` and expose that directory as ``sys._MEIPASS``. Keep
+        # the executable directory fallback for older/alternate layouts.
+        roots = []
+        frozen_data = str(getattr(sys, "_MEIPASS", "") or "").strip()
+        if frozen_data:
+            roots.append(Path(frozen_data).resolve())
+        roots.append(app_dir)
+        checked: set[Path] = set()
+        for root in roots:
+            if root in checked:
+                continue
+            checked.add(root)
+            jamulus_dir = root / "Jamulus"
+            if not jamulus_dir.is_dir():
+                continue
+            installer = jamulus_dir / _PINNED_WINDOWS_JAMULUS_INSTALLER
+            if _is_pinned_jamulus_installer(installer):
+                return str(installer)
     except OSError:
         return None
-    return str(candidates[0]) if candidates else None
+    return None
+
+
+def _is_pinned_jamulus_installer(path: str | Path) -> bool:
+    """Verify the exact upstream Windows installer before it is exposed.
+
+    The WebJam executable signature does not seal adjacent PyInstaller data.
+    Re-hashing here, and again immediately before launch, prevents a renamed
+    or replaced unsigned installer from inheriting WebJam's install affordance.
+    """
+
+    candidate = Path(path)
+    if candidate.name != _PINNED_WINDOWS_JAMULUS_INSTALLER:
+        return False
+    try:
+        if not candidate.is_file():
+            return False
+        digest = hashlib.sha256()
+        with candidate.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(_HASH_CHUNK_BYTES), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return hmac.compare_digest(digest.hexdigest(), _PINNED_WINDOWS_JAMULUS_SHA256)
 
 
 class JamulusState(str, Enum):

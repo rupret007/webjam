@@ -858,23 +858,49 @@ class JackBoundary:
         self,
         client_index: int,
         jamulus_ports: dict[str, Any],
+        *,
+        process: ManagedProcess,
+        timeout_s: float = 2.0,
+        poll_interval_s: float = 0.05,
     ) -> None:
         sources = self._source_a if client_index == 0 else self._source_b
         sinks = self._sink_a if client_index == 0 else self._sink_b
-        self.client.connect(sources[0], jamulus_ports["input left"])
-        self.client.connect(sources[1], jamulus_ports["input right"])
-        self.client.connect(jamulus_ports["output left"], sinks[0])
-        self.client.connect(jamulus_ports["output right"], sinks[1])
-
-        for source, target in (
+        routes = (
             (sources[0], jamulus_ports["input left"]),
             (sources[1], jamulus_ports["input right"]),
             (jamulus_ports["output left"], sinks[0]),
             (jamulus_ports["output right"], sinks[1]),
-        ):
-            connections = {port.name for port in self.client.get_all_connections(source)}
-            if target.name not in connections:
-                raise HarnessFailure(f"JACK route missing: {source.name} -> {target.name}")
+        )
+        for source, target in routes:
+            self.client.connect(source, target)
+
+        # JACK applies graph mutations asynchronously. A successful connect()
+        # can precede the graph snapshot that exposes the new route, so poll a
+        # short bounded convergence window while still failing real defects.
+        deadline = time.monotonic() + timeout_s
+        missing = routes
+        while True:
+            process.ensure_running()
+            missing = tuple(
+                (source, target)
+                for source, target in routes
+                if target.name
+                not in {
+                    port.name
+                    for port in self.client.get_all_connections(source)
+                }
+            )
+            if not missing:
+                return
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(poll_interval_s)
+        missing_text = ", ".join(
+            f"{source.name} -> {target.name}" for source, target in missing
+        )
+        raise HarnessFailure(
+            f"JACK routes did not converge; missing={missing_text}\n{process.tail()}"
+        )
 
     def run(
         self,
@@ -1257,8 +1283,8 @@ class JamulusJackHarness:
             timeout_s=12.0,
             process=client_processes[1],
         )
-        self.boundary.route_client(0, ports_a)
-        self.boundary.route_client(1, ports_b)
+        self.boundary.route_client(0, ports_a, process=client_processes[0])
+        self.boundary.route_client(1, ports_b, process=client_processes[1])
 
         expected_names = {self.CLIENT_A_NAME, self.CLIENT_B_NAME}
 

@@ -313,6 +313,9 @@ class TestJamulusPageBundling(unittest.TestCase):
             page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
 
         with patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=True,
+        ), patch(
             "webjam_qt.windows.setup_wizard.subprocess.Popen"
         ) as mock_popen:
             page._install_bundled_jamulus()
@@ -332,6 +335,9 @@ class TestJamulusPageBundling(unittest.TestCase):
             page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
 
         with patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=True,
+        ), patch(
             "webjam_qt.windows.setup_wizard.subprocess.Popen",
             side_effect=OSError("no such file"),
         ):
@@ -339,6 +345,27 @@ class TestJamulusPageBundling(unittest.TestCase):
 
         self.assertFalse(page._install_poll_timer.isActive())
         self.assertTrue(page._install_jamulus_btn.isEnabled())
+
+    def test_install_bundled_jamulus_rejects_replaced_installer(self):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+        with patch(
+            "services.bridge_service._bundled_jamulus_installer",
+            return_value="/app/Jamulus/jamulus_3.12.2_win.exe",
+        ):
+            page = _JamulusPage(AppSettings(jamulus_server="x", jamulus_candidates=[]))
+
+        with patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=False,
+        ), patch(
+            "webjam_qt.windows.setup_wizard.subprocess.Popen"
+        ) as mock_popen:
+            page._install_bundled_jamulus()
+
+        mock_popen.assert_not_called()
+        self.assertIsNone(page._bundled_installer_path)
+        self.assertFalse(page._install_jamulus_btn.isEnabled())
+        self.assertIn("failed its integrity check", page._install_status.text())
 
     def test_poll_fills_path_and_hides_button_once_installed(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage

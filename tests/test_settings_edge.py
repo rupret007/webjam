@@ -257,6 +257,9 @@ class TestSettingsBoundaryPorts(unittest.TestCase):
 
 
 class TestSettingsEnvOverrides(unittest.TestCase):
+    def test_default_candidates_include_official_lowercase_linux_binary(self):
+        self.assertIn("/usr/bin/jamulus", AppSettings().jamulus_candidates)
+
     @patch.dict(os.environ, {"WEBJAM_JAMULUS_PORT": "5555"})
     def test_env_port_override(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
