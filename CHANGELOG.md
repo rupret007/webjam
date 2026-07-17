@@ -21,7 +21,7 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Release boundary
 
-- The GitHub Latest release now points to `v0.16.3`, based on build ID
+- The primary GitHub release now points to `v0.16.3`, based on build ID
   `4d8c04684ee29ab2ea36ae38dc3be8ac6d612c7a`.
   Release assets have been intentionally cleaned to a single public artifact:
   `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.

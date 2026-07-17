@@ -365,6 +365,14 @@ class RecordingCoordinator:
         except (OSError, RecordingManifestJournalError, ValueError):
             LOGGER.warning("Could not scan private recording recovery evidence.")
             return
+        for item in scan.journals:
+            self._publish_recovered_evidence_journal(item, root)
+        for issue in scan.untrusted_entries:
+            # Untrusted directory entries are valid recovery cues, not recoverable
+            # payload, so we keep the signal and continue. A dedicated project
+            # is published from trusted or fallback evidence paths when available.
+            LOGGER.warning("Ignoring untrusted recording-evidence entry: %s", issue.error)
+
         pending = len(scan.journals) + len(scan.untrusted_entries)
         if not pending:
             return
@@ -379,6 +387,100 @@ class RecordingCoordinator:
             self._c.window.recording_studio.reload()
         except Exception:  # noqa: BLE001
             LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
+
+    def _publish_recovered_evidence_journal(self, item, root: str) -> None:
+        """Publish interrupt-only evidence as a review-only recovery project."""
+        take_id = str(getattr(item, "take_id", "") or "").strip()
+        if not take_id or not root:
+            return
+
+        recovery_dir = (
+            Path(root).expanduser() / f"Recovered-{take_id}"
+        )
+        manifest_path = recovery_dir / "webjam-take.json"
+
+        if manifest_path.is_file() and not manifest_path.is_symlink():
+            try:
+                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if (
+                    isinstance(existing_manifest, dict)
+                    and existing_manifest.get("schema_version") == 2
+                ):
+                    return
+            except (OSError, ValueError):
+                pass
+
+        evidence = getattr(item, "evidence", None)
+        if not isinstance(evidence, SessionEvidence):
+            evidence = SessionEvidence()
+
+        evidence_note = (
+            "Recording evidence was recovered from an interrupted session; "
+            "media was not preserved."
+        )
+        if not bool(getattr(item, "trusted", True)):
+            evidence_note = (
+                "Recording evidence could not be safely read; review this "
+                "recovery project before export."
+            )
+
+        merged_notes = tuple(dict.fromkeys((*evidence.recovery_notes, evidence_note)))
+        merged_timeline = tuple(
+            dict.fromkeys(
+                (*evidence.timeline, SessionTimelineEvent("recording_evidence_recovered", detail=evidence_note))
+            ).keys()
+        )
+        evidence = replace(
+            evidence,
+            recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+            recovery_notes=tuple(merged_notes),
+            timeline=merged_timeline,
+        )
+
+        try:
+            from webjam_qt import __version__
+            placeholder = recovery_dir / "recovery-evidence.wav"
+            if not placeholder.exists():
+                import wave
+
+                recovery_dir.mkdir(parents=True, exist_ok=True)
+                with wave.open(str(placeholder), "wb") as output:
+                    output.setnchannels(1)
+                    output.setsampwidth(2)
+                    output.setframerate(48000)
+                    output.writeframes(b"")
+
+            result = write_take_manifest(
+                recovery_dir,
+                expected_tracks=0,
+                required_local_stems=0,
+                local_started_utc=evidence.started_utc,
+                local_duration_s=0.0,
+                capture_errors=(evidence_note,),
+                app_version=__version__,
+                participant_names={},
+                session_title="Recovered recording evidence",
+                session_id=take_id,
+                take_id=take_id,
+                local_participant_id=evidence.host.participant_id,
+                local_participant_name=evidence.host.display_name or "Recovered host",
+                capture_device=None,
+                capture_gaps=(),
+                local_total_frames=0,
+                local_durable_frames=0,
+                session_evidence=evidence,
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Could not publish evidence-only recovery project.")
+            return
+
+        if result.manifest_path:
+            try:
+                RecordingManifestJournal(root).remove(take_id)
+            except (OSError, RecordingManifestJournalError, ValueError):
+                LOGGER.warning(
+                    "Could not retire recovered evidence checkpoint after manifest publish."
+                )
 
     def recover_interrupted_recordings(self) -> None:
         """Run the bounded local-audio and evidence recovery discovery once."""

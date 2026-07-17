@@ -352,6 +352,33 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertIn("Open Studio", message)
         self.assertNotIn(take_id, message)
 
+    def test_recovered_evidence_journal_is_published_as_review_project(self):
+        from core.recording_manifest_journal import RecordingManifestJournal
+        from core.take_project import RecoveryStatus, SessionEvidence, new_project_id
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            c.settings.takes_directory = directory
+            take_id = new_project_id()
+            journal = RecordingManifestJournal(directory)
+            journal.create(
+                take_id,
+                SessionEvidence(
+                    protocol_version="jamulus-3.12.2",
+                    recovery_notes=("Interrupted server recording checkpoint",),
+                ),
+            )
+            c.recording._stale_journal_scan_done = False
+            c.recording._recover_stale_evidence_journals_once()
+            recovery_dir = Path(directory) / f"Recovered-{take_id}"
+            manifest = json.loads((recovery_dir / "webjam-take.json").read_text())
+            recovered_journal = RecordingManifestJournal(directory)
+
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(manifest["session"]["recovery_status"], RecoveryStatus.NEEDS_ATTENTION.value)
+        self.assertTrue(any(t["source"] for t in manifest["tracks"]))
+        self.assertIsNone(recovered_journal.load(take_id))
+
     def test_recovered_local_capture_publishes_recovery_manifest_and_retires_trusted_journal(self):
         """Recovered PCM is bound to its original opaque take, not left orphaned."""
         from core.recording_manifest_journal import RecordingManifestJournal
