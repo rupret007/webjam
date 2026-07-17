@@ -61,19 +61,10 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page now points to `v0.16.3` as the current release.
-Primary installer for this test build is
-`WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
-
-This build includes a full cross-platform package set:
+The release page now points to `v0.16.3` as the current release and has been
+cleaned to one public file:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
-- `WebJam-v0.16.3-RC-4d8c046-windows-x64.zip`
-- `WebJam-v0.16.3-RC-4d8c046-macos-arm64.dmg`
-- `WebJam-v0.16.3-RC-4d8c046-macos-arm64.zip`
-- `WebJam-v0.16.3-RC-4d8c046-macos-x64.dmg`
-- `WebJam-v0.16.3-RC-4d8c046-macos-x64.zip`
-- `WebJam-v0.16.3-RC-4d8c046-linux-x64.zip`
 
 It is still a private test candidate. Windows signing, macOS notarization, and
 other production gates remain pending, so use this build as a reviewed test
