@@ -86,13 +86,23 @@ build evidence; the fixes are versioned in the v0.16.3 candidate instead of
 silently replacing files on the old tag.
 
 The v0.16.3 installer formats improve download and installation, but they do
-not substitute for platform trust. A public Windows Setup must be signed with a
-trusted Authenticode publisher certificate (and a managed PC may still require
-IT approval). The source now contains a credential-gated Developer ID signing,
-notarization, stapling, and Gatekeeper-verification path for both Mac
-architectures. It has not yet completed a credentialed rehearsal, so the
-current macOS candidates remain ad-hoc signed private test artifacts and must
-not be promoted as public installers.
+not substitute for platform trust. Ordinary Actions downloads are visibly
+named `UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. The source
+now isolates Authenticode and Developer ID credentials in separate protected
+`windows-release` and `macos-release` environment jobs. Those jobs pin the
+expected publisher/Team identity, sign and verify the direct Setup/DMG assets,
+remove private keys before launch, and retain trust evidence. Native packaging
+also installs the reviewed Python graph from target-specific, hash-locked wheel
+files rather than resolving new dependencies during a release build.
+
+The implemented Windows PFX path is suitable only when the project already has
+an eligible exportable legacy or internal-enterprise code-signing key. Newly
+issued public code-signing keys are normally hardware- or service-backed, so a
+public release still needs an explicit signing-provider choice and integration.
+The repository does not yet have the protected GitHub Environments or
+credentials configured, and no credentialed rehearsal has completed. A managed
+Windows PC may still require IT approval even after valid publisher signing;
+current test artifacts must not be promoted as public installers.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

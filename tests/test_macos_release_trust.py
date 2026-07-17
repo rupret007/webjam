@@ -1,4 +1,5 @@
 """Fail-closed contracts for the macOS Developer ID release path."""
+
 from __future__ import annotations
 
 import ast
@@ -14,18 +15,12 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-    encoding="utf-8"
-)
+WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
 KEYCHAIN_PATH = ROOT / "packaging" / "macos" / "release-keychain.sh"
 TRUST_PATH = ROOT / "packaging" / "macos" / "release-trust.sh"
-WEBJAM_ENTITLEMENTS_PATH = (
-    ROOT / "packaging" / "macos" / "WebJam.entitlements"
-)
-JAMULUS_ENTITLEMENTS_PATH = (
-    ROOT / "packaging" / "macos" / "Jamulus.entitlements"
-)
+WEBJAM_ENTITLEMENTS_PATH = ROOT / "packaging" / "macos" / "WebJam.entitlements"
+JAMULUS_ENTITLEMENTS_PATH = ROOT / "packaging" / "macos" / "Jamulus.entitlements"
 KEYCHAIN = KEYCHAIN_PATH.read_text(encoding="utf-8")
 TRUST = TRUST_PATH.read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
@@ -46,6 +41,15 @@ def _workflow_step(name: str) -> str:
     return WORKFLOW[start : end if end >= 0 else len(WORKFLOW)]
 
 
+def _workflow_job(name: str) -> str:
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n.*?(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        WORKFLOW,
+    )
+    assert match is not None
+    return match.group(0)
+
+
 def _bash_function(source: str, name: str) -> str:
     marker = f"{name}() {{\n"
     start = source.index(marker)
@@ -60,9 +64,7 @@ def _bash_array(source: str, name: str) -> tuple[str, ...]:
         re.DOTALL,
     )
     assert match is not None
-    return tuple(
-        re.findall(r"(?m)^\s{2}([A-Z][A-Z0-9_]+)\s*$", match["body"])
-    )
+    return tuple(re.findall(r"(?m)^\s{2}([A-Z][A-Z0-9_]+)\s*$", match["body"]))
 
 
 def _mapped_secrets(step: str) -> tuple[tuple[str, str], ...]:
@@ -82,9 +84,7 @@ def _python_heredoc_after(source: str, marker: str) -> str:
 
 
 def _release_entitlement_policy() -> tuple[dict[str, bool], ...]:
-    tree = ast.parse(
-        _python_heredoc_after(TRUST, "validate_source_entitlements()")
-    )
+    tree = ast.parse(_python_heredoc_after(TRUST, "validate_source_entitlements()"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "expected"
@@ -100,11 +100,7 @@ def _valid_credentials() -> dict[str, str]:
     # validate intentionally performs only cheap structural checks. These are
     # inert test bytes; prepare is responsible for importing a real PKCS#12.
     dummy_der = b"\x30\x03\x02\x01\x00"
-    dummy_pem = (
-        b"-----BEGIN PRIVATE KEY-----\n"
-        b"AA==\n"
-        b"-----END PRIVATE KEY-----\n"
-    )
+    dummy_pem = b"-----BEGIN PRIVATE KEY-----\nAA==\n-----END PRIVATE KEY-----\n"
     return {
         "MACOS_DEVELOPER_ID_P12": base64.b64encode(dummy_der).decode("ascii"),
         "MACOS_DEVELOPER_ID_P12_PASSWORD": "not-a-real-p12-password",
@@ -133,7 +129,9 @@ def _run_keychain_validate(credentials: dict[str, str]) -> subprocess.CompletedP
 
 
 def test_workflow_gates_exactly_five_macos_secrets_to_tags_or_rehearsals() -> None:
-    validate = _workflow_step("Validate macOS release trust credentials")
+    trust_job = _workflow_job("macos-release-trust")
+    build_job = _workflow_job("build-desktop")
+    validate = _workflow_step("Validate protected macOS release credentials")
     prepare = _workflow_step("Prepare ephemeral macOS release keychain")
     expected_mapping = tuple((name, name) for name in MACOS_SECRETS)
 
@@ -143,20 +141,18 @@ def test_workflow_gates_exactly_five_macos_secrets_to_tags_or_rehearsals() -> No
     for name in MACOS_SECRETS:
         reference = rf"\$\{{\{{ secrets\.{re.escape(name)} \}}\}}"
         assert len(re.findall(reference, WORKFLOW)) == 2
-    assert WORKFLOW.count(
-        "APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}"
-    ) == 2
+    assert (
+        WORKFLOW.count("APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}")
+        == 2
+    )
 
     condition = " ".join(
-        validate.split("        if: >-\n", 1)[1]
-        .split("        shell:", 1)[0]
-        .split()
+        trust_job.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
     )
     assert condition == (
-        "startsWith(matrix.target, 'macos-') && "
-        "(startsWith(github.ref, 'refs/tags/v') || "
+        "startsWith(github.ref, 'refs/tags/v') || "
         "(github.event_name == 'workflow_dispatch' && "
-        "inputs.macos_signing_rehearsal))"
+        "inputs.macos_signing_rehearsal)"
     )
     dispatch = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split(
         "\n\n# Default:", 1
@@ -164,45 +160,62 @@ def test_workflow_gates_exactly_five_macos_secrets_to_tags_or_rehearsals() -> No
     assert "macos_signing_rehearsal:" in dispatch
     assert "type: boolean" in dispatch
     assert "default: false" in dispatch
-    assert 'echo "WEBJAM_MACOS_RELEASE_TRUST=1" >> "$GITHUB_ENV"' in validate
-    assert "if: env.WEBJAM_MACOS_RELEASE_TRUST == '1'" in prepare
+    assert "environment:\n      name: macos-release" in trust_job
+    assert "deployment: false" in trust_job
+    assert "needs: build-desktop" in trust_job
+    assert not any(f"secrets.{name}" in build_job for name in MACOS_SECRETS)
+    assert not any(f"vars.{name}" in build_job for name in MACOS_SECRETS)
 
 
 def test_ordinary_macos_builds_are_secret_free_ad_hoc_artifacts() -> None:
+    build_job = _workflow_job("build-desktop")
     build = _workflow_step("Build desktop artifact")
     assert "codesign_identity=None" in SPEC
     assert "entitlements_file=None" in SPEC
-    assert build.count(
-        'if [[ "${WEBJAM_MACOS_RELEASE_TRUST:-0}" != "1" ]]; then'
-    ) >= 3
     assert "codesign --force --deep --sign -" in build
     assert "codesign --force --sign - dist/WebJam.app" in build
     assert not any(f"secrets.{name}" in build for name in MACOS_SECRETS)
-    assert WORKFLOW.count("WEBJAM_MACOS_RELEASE_TRUST=1") == 1
+    assert "release-keychain.sh" not in build_job
+    assert "release-trust.sh" not in build_job
+    assert "WEBJAM_MACOS_RELEASE_TRUST" not in build_job
+    assert "\n    environment:" not in build_job
 
 
 def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     step_names = (
-        "Validate macOS release trust credentials",
-        "Build desktop artifact",
+        "Download tested ad-hoc macOS source artifact",
+        "Verify downloaded macOS source before credential access",
+        "Validate protected macOS release credentials",
         "Prepare ephemeral macOS release keychain",
-        "Sign, notarize, and staple macOS app",
-        "Build, sign, and notarize macOS disk image",
-        "Remove macOS release credentials and keychain",
-        "Verify mounted macOS disk image",
-        "Verify expected release deliverables",
-        "Upload build artifact",
-        "Upload macOS notarization evidence",
+        "Sign, notarize, and staple protected macOS app",
+        "Build, sign, notarize, and staple protected macOS disk image",
+        "Remove protected macOS credentials and keychain",
+        "Verify and launch protected macOS release containers",
+        "Upload protected macOS release artifact",
+        "Upload protected macOS notarization evidence",
     )
     positions = [WORKFLOW.index(f"      - name: {name}\n") for name in step_names]
     assert positions == sorted(positions)
 
+    source = _workflow_step("Verify downloaded macOS source before credential access")
     prepare = _workflow_step("Prepare ephemeral macOS release keychain")
-    app = _workflow_step("Sign, notarize, and staple macOS app")
-    dmg = _workflow_step("Build, sign, and notarize macOS disk image")
-    mounted = _workflow_step("Verify mounted macOS disk image")
-    evidence = _workflow_step("Upload macOS notarization evidence")
-    cleanup = _workflow_step("Remove macOS release credentials and keychain")
+    app = _workflow_step("Sign, notarize, and staple protected macOS app")
+    dmg = _workflow_step("Build, sign, notarize, and staple protected macOS disk image")
+    mounted = _workflow_step("Verify and launch protected macOS release containers")
+    artifact = _workflow_step("Upload protected macOS release artifact")
+    evidence = _workflow_step("Upload protected macOS notarization evidence")
+    cleanup = _workflow_step("Remove protected macOS credentials and keychain")
+    assert not any(f"secrets.{name}" in source for name in MACOS_SECRETS)
+    assert "WebJam-${target}-ADHOC-TEST-ONLY.zip" in source
+    assert "ADHOC-TEST-ONLY.dmg" in source
+    assert "codesign --verify --deep --strict" in source
+    assert "verify_packaged_transport" not in source
+    assert "/usr/bin/shasum -a 256" in source
+    assert "/usr/bin/file" in source
+    assert "python -m" not in source
+    assert "python -c" not in source
+    assert '"$GITHUB_REF_NAME" != "v${version}"' in source
+    assert "WEBJAM_SMOKE_LAUNCH_ONLY" not in source
     assert "packaging/macos/release-keychain.sh prepare" in prepare
     assert "packaging/macos/release-trust.sh app" in app
     assert dmg.index("packaging/macos/create-dmg.sh") < dmg.index(
@@ -210,27 +223,40 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     )
     assert dmg.count("packaging/macos/release-trust.sh dmg") == 1
     assert mounted.count("packaging/macos/release-trust.sh verify-app") == 2
-    assert "if: always() && env.WEBJAM_MACOS_RELEASE_TRUST == '1'" in evidence
+    assert "xcrun stapler validate" in mounted
+    assert "spctl --assess --type open" in mounted
+    assert "WEBJAM_SMOKE_LAUNCH_ONLY=1" in mounted
+    assert "name: webjam-release-${{ matrix.target }}" in artifact
+    assert "out/WebJam-${{ matrix.target }}.zip" in artifact
+    assert "out/WebJam-v*-${{ matrix.target }}.dmg" in artifact
+    assert "if: always()" in evidence
     assert "name: webjam-notarization-${{ matrix.target }}" in evidence
     assert "path: out/notarization/${{ matrix.target }}/" in evidence
     assert "if-no-files-found: error" in evidence
     assert "retention-days: 90" in evidence
-    assert "if: always() && env.WEBJAM_MACOS_RELEASE_TRUST == '1'" in cleanup
+    assert "if: always()" in cleanup
     assert "packaging/macos/release-keychain.sh cleanup" in cleanup
-    assert WORKFLOW.index("Remove macOS release credentials and keychain") < (
-        WORKFLOW.index("Verify mounted macOS disk image")
+    assert WORKFLOW.index("Remove protected macOS credentials and keychain") < (
+        WORKFLOW.index("Verify and launch protected macOS release containers")
     )
-    assert WORKFLOW.index("Remove macOS release credentials and keychain") < (
-        WORKFLOW.index("Upload build artifact")
+    assert WORKFLOW.index("Remove protected macOS credentials and keychain") < (
+        WORKFLOW.index("Upload protected macOS release artifact")
     )
 
 
 def test_release_remains_a_tag_only_draft_with_direct_installers() -> None:
-    release = WORKFLOW.split("  release:\n", 1)[1]
-    assert "needs: build-desktop" in release
+    release = _workflow_job("release")
+    assert (
+        "needs: [build-desktop, windows-release-trust, macos-release-trust]" in release
+    )
     assert "if: startsWith(github.ref, 'refs/tags/v')" in release
+    assert "name: webjam-release-macos-arm64" in release
+    assert "name: webjam-release-macos-x64" in release
     create = _workflow_step("Create GitHub Release")
-    assert "uses: softprops/action-gh-release@v2" in create
+    assert (
+        "uses: softprops/action-gh-release@"
+        "3bb12739c298aeb8a4eeaf626c5b8d85266b0e65" in create
+    )
     assert "draft: true" in create
     assert "fail_on_unmatched_files: true" in create
     uploads = set(
@@ -276,8 +302,7 @@ def test_release_entitlements_are_exact_and_component_specific() -> None:
     assert 'sign_target "$target" "$JAMULUS_ENTITLEMENTS"' in TRUST
     assert 'sign_target "$target" "$qt_entitlements"' in TRUST
     assert (
-        '"$QT_HELPER_APP/Contents/Resources/'
-        'QtWebEngineProcess.entitlements"' in TRUST
+        '"$QT_HELPER_APP/Contents/Resources/QtWebEngineProcess.entitlements"' in TRUST
     )
 
 
@@ -355,8 +380,8 @@ def test_release_verifies_identity_runtime_timestamp_and_entitlements() -> None:
 
 def test_notary_results_and_logs_must_be_cleanly_accepted() -> None:
     submit = _bash_function(TRUST, "notary_submit")
-    assert '${label}-notary-submit.json' in submit
-    assert '${label}-notary-log.json' in submit
+    assert "${label}-notary-submit.json" in submit
+    assert "${label}-notary-log.json" in submit
     assert "notarytool submit" in submit
     assert "--wait --timeout 45m --output-format json" in submit
     assert submit.index("notarytool submit") < submit.index("notarytool log")
@@ -386,12 +411,8 @@ def test_app_and_dmg_are_independently_notarized_stapled_and_assessed() -> None:
     assert '"$SPCTL_BIN" --assess --type exec --verbose=4 "$app"' in verify_stapled
     assert '"$SYSPOLICY_CHECK_BIN" notary-submission "$app"' in app
 
-    assert dmg.index('notary_submit "$dmg" dmg') < dmg.index(
-        'stapler staple "$dmg"'
-    )
-    assert dmg.index('stapler staple "$dmg"') < dmg.index(
-        'stapler validate "$dmg"'
-    )
+    assert dmg.index('notary_submit "$dmg" dmg') < dmg.index('stapler staple "$dmg"')
+    assert dmg.index('stapler staple "$dmg"') < dmg.index('stapler validate "$dmg"')
     assert '"$HDIUTIL_BIN" verify "$dmg"' in dmg
     assert "--force --all-architectures --timestamp" in dmg
     assert "--assess --type open" in dmg

@@ -1,5 +1,7 @@
 # WebJam - Music Collaboration Platform
 # Python dependencies
+# Development and test jobs resolve these declarations normally. Native release
+# packaging must use the target-specific hashed files under requirements-lock/.
 
 # Primary UI framework (Qt) — new Conductor UI. Release packaging inventories
 # Qt's nested helper/framework layout and exact helper entitlements, so keep the
