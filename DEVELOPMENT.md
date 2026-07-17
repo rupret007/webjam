@@ -60,8 +60,8 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 The current release candidate uses:
 
-- Primary published artifact:
-  `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe` in GitHub Releases.
+- Primary published artifact in GitHub Releases:
+  `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
 
 The authoritative local build command remains:
 

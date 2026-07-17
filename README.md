@@ -61,8 +61,8 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page now points to `v0.16.3` as the current release and has been
-cleaned to one public file:
+The release page now points to `v0.16.3` as the current release and is kept
+clean with a single primary public file:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
 

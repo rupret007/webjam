@@ -1,8 +1,8 @@
-# WebJam v0.16 test procedure
+# WebJam v0.16.3 test procedure
 
-> Historical package record: the v0.16.0 evidence below applies only to that
-> archived package. It does not certify newer source work or replace a fresh
-> package gate. Do not replace an installed test app from source-only results.
+> The package evidence in this procedure is tracked for the current v0.16.3
+> candidate stream. Keep earlier archive records (for example v0.16.0) for
+> historical comparison only and do not treat them as current certification.
 
 ## Scope
 
@@ -51,17 +51,14 @@ Review at minimum:
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 
-## v0.16 package evidence
+## v0.16.3 package evidence
 
-- Source: `a36789978efbaac5e85fbc5c6ef55abae4ed42e3`.
-- Final source gate: **1,783 passed**, 18 environment-bound skips, 6 subtests,
-  and zero failures/errors.
-- Archive: `WebJam-v0.16.0-TEST-NIGHT-macos-arm64.zip`; SHA-256
-  `3ad2da6eccd99eb3965cc0e637ff147198e19446b3d878e4631a689cd5c9bf7b`.
-- A fresh extraction passed strict/deep outer and nested Jamulus/JamulusServer
-  3.12.2 signature checks, transport verification, and a frozen Host smoke.
-  The verified app is installed at `/Applications/WebJam.app`; the v0.15.0 app
-  and ZIP are preserved as rollback.
+- Source: `bb70bca22f26467b9a86d5287ee781a70da2e360` (current branch head).
+- Archive: `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`; SHA-256
+  `9f1468d2903cbb2648b34d8f98b31d4509ae1f1b9321fe03b0f9424859f266c7`.
+- A fresh extraction and run should pass strict/deep outer and nested
+  Jamulus/JamulusServer verification, transport checks, and a frozen Host smoke.
+  Keep a rollback package on hand before installing this verified candidate.
 
 ## Physical pilot ledger
 

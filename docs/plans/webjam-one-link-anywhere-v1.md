@@ -5,7 +5,7 @@
 > release-status record. Use
 > [`../../README.md`](../../README.md) and
 > [`../../SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) for the
-> current v0.16.2 source/package/physical proof boundary.
+> current v0.16.3 source/package/physical proof boundary.
 
 ## Product promise
 
