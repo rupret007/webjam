@@ -5,7 +5,7 @@ recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
 Current build: **v0.16.3 RC 4d8c046** (private test stream). The clean GitHub
-release is `v0.16.3` with primary artifact:
+release is [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3) with primary artifact:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
 

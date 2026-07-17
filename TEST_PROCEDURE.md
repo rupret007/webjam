@@ -56,6 +56,7 @@ Review at minimum:
 ## v0.16.3 package evidence
 
 - Source: `bb70bca22f26467b9a86d5287ee781a70da2e360` (current branch head).
+- Release page: https://github.com/rupret007/webjam/releases/tag/v0.16.3
 - Archive: `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`; SHA-256
   `9f1468d2903cbb2648b34d8f98b31d4509ae1f1b9321fe03b0f9424859f266c7`.
 - A fresh extraction and run should pass strict/deep outer and nested

@@ -61,8 +61,7 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page now points to `v0.16.3` as the current release and is kept
-clean with a single primary public file:
+The current release stream is [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3), and the release page is kept to a single primary artifact:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
 
