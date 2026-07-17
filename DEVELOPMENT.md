@@ -1,4 +1,4 @@
-# Developing WebJam v0.16.2
+# Developing WebJam v0.16.3 RC 4d8c046
 
 ## Local setup
 
@@ -56,7 +56,13 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Packaging
 
-The authoritative build is:
+# Build and release hygiene
+
+The current release candidate uses:
+
+- `WebJam-v0.16.3-RC-4d8c046` artifacts published in GitHub Releases.
+
+The authoritative local build command remains:
 
 ```bash
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec

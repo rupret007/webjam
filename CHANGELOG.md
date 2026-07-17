@@ -4,6 +4,32 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.16.3] — 2026-07-17 private cross-platform test build
+
+### Session stability and studio behavior
+
+- Kept the simple Host/Join-first flow from `v0.16.2` and carried forward the
+  recording/Studio behavior hardening from the current `codex/webjam-zero-friction-recording-ultimate`
+  branch. Late callbacks remain guarded by generation checks, and Studio exports
+  continue to distinguish verified aligned alignment from unverified playback-only
+  originals.
+- Improved installer packaging coverage and build artifact reproducibility for
+  Windows x64, macOS (Intel and Apple Silicon), and Ubuntu x64, including both
+  installer/portable and portable ZIP forms.
+
+### Release boundary
+
+- The GitHub Latest release now points to `v0.16.3`, based on build ID
+  `4d8c04684ee29ab2ea36ae38dc3be8ac6d612c7a`.
+  Primary file: `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
+- SHA-256 for the current release candidate archive set is tracked in
+  `WebJam-v0.16.3-RC-4d8c046-SHA256SUMS.txt`.
+- This is still a private test candidate: Windows is unsigned, both macOS
+  builds are ad-hoc signed and not notarized, and physical two-machine,
+  browser-quarantine, and managed-device gates remain outstanding.
+
+---
+
 ## [0.16.2] — 2026-07-16 test-build release candidate
 
 ### Simple session flow and take safety

@@ -1,4 +1,4 @@
-# WebJam v0.16.2
+# WebJam v0.16.3 RC 4d8c046
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -61,19 +61,23 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page has one current release: v0.16.2. The published artifact is a
-single primary file for this test build (plus historical references below), and
-it includes the simplified automatic Host/Join handoff and the
-zero-friction recording/recovery hardening described in the changelog.
+The release page now points to `v0.16.3` as the current release.
+Primary installer for this test build is
+`WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
 
-The v0.16.2 archive is a **test build** for macOS on Apple Silicon (M-series
-Macs), built from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
-`WebJam-v0.16.2-TEST-NIGHT-macos-arm64.zip`, SHA-256
-`5855af408c5182408d091c9029bdfa61d8f9abf96801822df319d55f649e688d`.
-A fresh extraction passed deep signature verification, bundled Jamulus client
-and server executable checks, and arm64 transport build-ID/checksum
-verification. It is ad-hoc signed, not notarized, and must not be presented as
-a general-production macOS installer.
+This build includes a full cross-platform package set:
+
+- `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
+- `WebJam-v0.16.3-RC-4d8c046-windows-x64.zip`
+- `WebJam-v0.16.3-RC-4d8c046-macos-arm64.dmg`
+- `WebJam-v0.16.3-RC-4d8c046-macos-arm64.zip`
+- `WebJam-v0.16.3-RC-4d8c046-macos-x64.dmg`
+- `WebJam-v0.16.3-RC-4d8c046-macos-x64.zip`
+- `WebJam-v0.16.3-RC-4d8c046-linux-x64.zip`
+
+It is still a private test candidate. Windows signing, macOS notarization, and
+other production gates remain pending, so use this build as a reviewed test
+release only.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac
