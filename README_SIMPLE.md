@@ -4,6 +4,11 @@ WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
+Current build: **v0.16.3 RC 4d8c046** (private test stream). The clean GitHub
+release is `v0.16.3` with primary artifact:
+
+- `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
+
 ## Start playing
 
 1. Choose **Host a Jam** if this Mac is starting the rehearsal, or **Join a
