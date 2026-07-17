@@ -578,8 +578,8 @@ jobs:
   # ------------------------------------------------------------------
   # GitHub Release
   # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
-  # Downloads all desktop artifacts and attaches them to a GitHub Release.
-  # Auto-generates release notes from commits since previous tag.
+  # Publishes only the primary artifact for cleaner release pages and keeps a
+  # short release history (current + 5 previous), removing older releases.
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release
@@ -597,18 +597,6 @@ jobs:
           name: webjam-windows-x64
           path: release-assets/
 
-      - name: Download macos-arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: webjam-macos-arm64
-          path: release-assets/
-
-      - name: Download macos-x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: webjam-macos-x64
-          path: release-assets/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -617,3 +605,24 @@ jobs:
           draft: true
           generate_release_notes: true
           files: release-assets/*
+
+      - name: Prune old releases (keep current + 5 previous)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          keep_releases=6
+          gh release list --json tagName,createdAt,isDraft,isPrerelease --limit 100 \
+            | jq -r --argjson keep "$keep_releases" '
+                map(select((.isDraft | not) and (.isPrerelease | not)))
+                | sort_by(.createdAt)
+                | reverse
+                | .[$keep:]
+                | .[].tagName
+              ' |
+            while IFS= read -r tag_name; do
+              [ -n "$tag_name" ] || continue
+              echo "Removing old release: $tag_name"
+              gh release delete "$tag_name" --yes
+            done
