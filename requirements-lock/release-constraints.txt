@@ -26,7 +26,11 @@ pydantic-core==2.46.4
 pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
 sentry-sdk==2.66.0
-setuptools==83.0.0
+# PyInstaller 6.21's macOS pkg_resources runtime hook still requires
+# pkg_resources.NullProvider. Setuptools 82+ removes pkg_resources entirely,
+# which lets the bundle build but makes the frozen app fail on first launch.
+setuptools==81.0.0; sys_platform == "darwin"
+setuptools==83.0.0; sys_platform != "darwin"
 sounddevice==0.5.5
 soundfile==0.14.0
 starlette==1.3.1

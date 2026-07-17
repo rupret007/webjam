@@ -8,18 +8,17 @@
 # Build a one-file executable (slower startup):
 #   pyinstaller webjam.spec --onefile
 #
-# macOS production release (not yet implemented in CI): provide a Developer ID
-# Application identity to PyInstaller so every collected Mach-O receives a
-# hardened-runtime, timestamped signature. After staging Jamulus and the
-# transport, re-sign nested code bottom-up with component-specific
-# entitlements, shallow-sign WebJam.app last, package it with ditto or in the
-# final DMG, then use modern notarytool and staple the accepted ticket:
+# macOS production release: the protected CI job takes the tested ad-hoc source
+# bundle, re-signs every collected Mach-O plus the staged Jamulus and transport
+# code bottom-up with Developer ID and component-specific entitlements, then
+# shallow-signs WebJam.app last. It packages with ditto and a final DMG, uses
+# modern notarytool, and staples the accepted tickets:
 #   xcrun notarytool submit WebJam-macos-x64.zip \
 #     --key AuthKey_ID.p8 --key-id KEY_ID --issuer ISSUER_ID --wait
 #   xcrun stapler staple dist/WebJam.app
 #   xcrun stapler validate dist/WebJam.app
-# Tagged CI currently fails closed before packaging; ordinary branch builds
-# remain ad-hoc signed test artifacts.
+# Tagged CI fails closed unless the protected signing environment is complete;
+# ordinary branch builds remain explicitly named ad-hoc test artifacts.
 #
 #   CAVEAT: CI stages the official Jamulus client/server apps under Resources,
 #   then deep ad-hoc signs each nested app without the upstream App Sandbox

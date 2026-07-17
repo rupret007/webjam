@@ -175,6 +175,12 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
         "macos-arm64": "3.11.9",
         "linux-x64": "3.11.15",
     }
+    expected_setuptools = {
+        "windows-x64": "83.0.0",
+        "macos-x64": "81.0.0",
+        "macos-arm64": "81.0.0",
+        "linux-x64": "83.0.0",
+    }
     assert 'python-version: "${{ matrix.python }}"' in build
     assert "--require-hashes --only-binary=:all:" in build
     assert "--force-reinstall --require-hashes" in build
@@ -182,6 +188,9 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
     assert "python -m pip check" in build
     assert "python -VV" in build
     assert "python -m pip freeze --all" in build
+    assert "Verify macOS PyInstaller pkg_resources compatibility" in build
+    assert 'version("setuptools") == "81.0.0"' in build
+    assert 'hasattr(pkg_resources, "NullProvider")' in build
     assert "pip install --upgrade pip" not in build
     assert "pip install -r requirements.txt" not in build
     for target, python_version in expected_python.items():
@@ -191,11 +200,21 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
         assert lock.is_file()
         assert "--hash=sha256:" in contents
         assert "pyinstaller-hooks-contrib==2026.6" in contents
-        assert "setuptools==83.0.0" in contents
+        assert f"setuptools=={expected_setuptools[target]}" in contents
         assert not re.search(r"(?m)^[A-Za-z0-9_.-]+\s*[~<>!]", contents)
     bootstrap = (RELEASE_LOCK_ROOT / "bootstrap.txt").read_text(encoding="utf-8")
     assert "pip==26.1.2" in bootstrap
     assert "--hash=sha256:" in bootstrap
+
+
+def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> None:
+    test_job = _workflow_job("test")
+    assert "Audit native release dependency locks" in test_job
+    assert "for target in windows-x64 linux-x64" in test_job
+    assert "for target in macos-x64 macos-arm64" in test_job
+    assert "--disable-pip --no-deps" in test_job
+    assert "--ignore-vuln PYSEC-2026-3447" in test_job
+    assert "GHSA-h35f-9h28-mq5c affects sdist creation" in test_job
 
 
 def test_protected_windows_release_is_verified_after_key_cleanup() -> None:
@@ -268,6 +287,14 @@ def test_every_external_action_is_pinned_to_an_immutable_commit() -> None:
     assert external_uses
     for reference in external_uses:
         assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", reference), reference
+    assert set(external_uses) == {
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+        "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228",
+    }
 
 
 def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> None:

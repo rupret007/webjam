@@ -255,7 +255,7 @@ def test_release_remains_a_tag_only_draft_with_direct_installers() -> None:
     create = _workflow_step("Create GitHub Release")
     assert (
         "uses: softprops/action-gh-release@"
-        "3bb12739c298aeb8a4eeaf626c5b8d85266b0e65" in create
+        "3d0d9888cb7fd7b750713d6e236d1fcb99157228" in create
     )
     assert "draft: true" in create
     assert "fail_on_unmatched_files: true" in create
