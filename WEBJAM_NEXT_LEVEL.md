@@ -90,9 +90,10 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 ## Recommended next step
 
 Current recommendation: treat the v0.14.0, v0.13.0, and v0.12.0 candidates as
-preserved historical package evidence. The v0.16.2 GitHub test build is the
-current artifact for the two-Mac workflow in `SUNDAY_TWO_MAC_PILOT.md`. It is
-ad-hoc signed and not notarized; physical audio, recording/recovery, reconnect,
-role-aware cleanup, and external-editor import gates remain **NOT RUN**. The
-v1/v2 engine baseline has native one-hour longevity evidence; it does not
+preserved historical package evidence. The current public GitHub build in the
+`WebJam v0.16.3 RC 4d8c046` release stream is the active two-Mac reference and
+is ad-hoc signed, not notarized. `SUNDAY_TWO_MAC_PILOT.md` remains historical
+for v0.16.0 and is not current guidance. Physical audio, recording/recovery,
+reconnect, role-aware cleanup, and external-editor import gates remain **NOT RUN**.
+The v1/v2 engine baseline has native one-hour longevity evidence; it does not
 certify a package or remote v3.
