@@ -32,6 +32,8 @@ Review at minimum:
 - Connection proof requires owned process, authenticated RPC, intended path,
   and exactly one local participant; human audibility remains explicit.
 - Restart recovery fails closed when profile truth changes.
+- Restart recovery handles stalled but alive Jamulus processes by force-restarting
+  the process after repeated heartbeat timeout, then continuing regular auto-reconnect.
 - Webex is optional and a failure does not stop music.
 - First Record offers shared-only versus Local Originals.
 - Studio output appears only in Studio review.

@@ -118,6 +118,8 @@ class JamulusState(str, Enum):
 
 
 PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
+RECONNECT_MAX_ATTEMPTS = 5
+RECONNECT_HANG_THRESHOLD_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -463,7 +465,10 @@ class BridgeService:
         return True
 
     def launch_jamulus(
-        self, manual: bool = True, reconnect: bool = False
+        self,
+        manual: bool = True,
+        reconnect: bool = False,
+        force_restart: bool = False,
     ) -> bool:
         """Accept a Jamulus launch and connect to the band's server.
 
@@ -479,6 +484,9 @@ class BridgeService:
             reconnect: True when this is an auto-reconnect attempt.  Skips
                 the actionable-error dialog on failure (would be too noisy)
                 and emits reconnect-specific metrics.
+            force_restart: True when an alive process should be replaced, used
+                for hung-process recovery where restart requires a restart of a
+                live-but-unresponsive Jamulus process.
 
         Side effects:
             - Resolves the Jamulus binary via `find_jamulus()` and shows
@@ -568,18 +576,45 @@ class BridgeService:
             )
             return False
 
-        if self.jamulus_process and self.jamulus_process.poll() is None:
-            self._set_jamulus_state(JamulusState.ALREADY)
-            self.jamulus_reconnect_attempts = 0
-            self.jamulus_next_reconnect_at = 0.0
-            self.jamulus_reconnect_inflight = False
-            self.schedule_ui_callback(self.refresh_readiness)
-            if manual:
-                # Non-blocking flash instead of a modal dialog
-                self.schedule_ui_callback(
-                    lambda: self.set_status_banner("Jamulus is already running.")
-                )
-            return True
+        if (
+            self.jamulus_process is not None
+            and self.jamulus_process.poll() is None
+        ):
+            if force_restart:
+                # Recovery path only: keep intent and lifecycle state but replace
+                # the existing Jamulus process so UI can recover from a
+                # "still alive but not answering" condition.
+                old_proc = self.jamulus_process
+                try:
+                    self.jamulus_controller.stop()
+                except Exception as exc:  # noqa: BLE001 - defensive recovery
+                    LOGGER.debug("Could not stop old Jamulus controller: %s", exc)
+                if old_proc is not None:
+                    try:
+                        old_proc.terminate()
+                        try:
+                            old_proc.wait(timeout=2.0)
+                        except subprocess.TimeoutExpired:
+                            old_proc.kill()
+                            old_proc.wait(timeout=2.0)
+                    except Exception as exc:  # noqa: BLE001
+                        raise RuntimeError(
+                            "Could not replace a hung Jamulus process."
+                        ) from exc
+                with self._reconnect_lock:
+                    self.jamulus_process = None
+            else:
+                self._set_jamulus_state(JamulusState.ALREADY)
+                self.jamulus_reconnect_attempts = 0
+                self.jamulus_next_reconnect_at = 0.0
+                self.jamulus_reconnect_inflight = False
+                self.schedule_ui_callback(self.refresh_readiness)
+                if manual:
+                    # Non-blocking flash instead of a modal dialog
+                    self.schedule_ui_callback(
+                        lambda: self.set_status_banner("Jamulus is already running.")
+                    )
+                return True
 
         # Detect port conflict before launching Jamulus.  If the JSON-RPC port
         # is already in use (typically: another WebJam instance, or a previous
@@ -652,11 +687,30 @@ class BridgeService:
                         self.jamulus_process is not None
                         and self.jamulus_process.poll() is None
                     ):
-                        self._set_jamulus_state(JamulusState.ALREADY)
-                        with self._reconnect_lock:
-                            self.jamulus_reconnect_inflight = False
-                        self.schedule_ui_callback(self.refresh_readiness)
-                        return
+                        if force_restart:
+                            try:
+                                self.jamulus_controller.stop()
+                            except Exception as exc:  # noqa: BLE001 - defensive recovery
+                                LOGGER.debug("Could not stop old Jamulus controller: %s", exc)
+                            try:
+                                self.jamulus_process.terminate()
+                                try:
+                                    self.jamulus_process.wait(timeout=2.0)
+                                except subprocess.TimeoutExpired:
+                                    self.jamulus_process.kill()
+                                    self.jamulus_process.wait(timeout=2.0)
+                            except Exception as exc:  # noqa: BLE001
+                                raise RuntimeError(
+                                    "Could not replace a hung Jamulus process."
+                                ) from exc
+                            with self._reconnect_lock:
+                                self.jamulus_process = None
+                        else:
+                            self._set_jamulus_state(JamulusState.ALREADY)
+                            with self._reconnect_lock:
+                                self.jamulus_reconnect_inflight = False
+                            self.schedule_ui_callback(self.refresh_readiness)
+                            return
                     if cancelled():
                         return
 
@@ -1834,15 +1888,41 @@ class BridgeService:
         delay = RECONNECT_BASE_DELAY_SECONDS * (2 ** (attempts - 1))
         return min(delay, RECONNECT_MAX_DELAY_SECONDS)
 
+    def _jamulus_rpc_activity_age(self) -> float | None:
+        """Return finite positive RPC age in seconds, or None when unusable."""
+        rpc_client = getattr(self.jamulus_controller, "rpc_client", None)
+        if rpc_client is None:
+            return None
+        try:
+            age = rpc_client.last_activity_age()
+        except Exception:  # noqa: BLE001
+            return None
+        if not isinstance(age, (int, float)) or age < 0.0:
+            return None
+        if age == float("inf"):
+            return None
+        return float(age)
+
+    def _jamulus_process_is_stalled(self) -> bool:
+        """Return True when Jamulus is alive but RPC heartbeat appears stuck."""
+        proc = self.jamulus_process
+        if proc is None or proc.poll() is not None:
+            return False
+        age = self._jamulus_rpc_activity_age()
+        if age is None:
+            return False
+        return age >= RECONNECT_HANG_THRESHOLD_SECONDS
+
     def attempt_auto_reconnects(self):
-        """Auto-reconnect tick — retries only a dropped Jamulus process.
+        """Auto-reconnect tick — retries dropped or stalled Jamulus processes.
 
         Called every ~3 seconds from `ApplicationController._on_reconnect_tick`.
         Per service:
 
         - **Jamulus**: if `jamulus_launch_intended=True` (user clicked Launch
           Audio at some point and didn't click Stop), and the subprocess has
-          died (`poll() is not None`), schedules a relaunch with exponential
+          died (`poll() is not None`) or is unresponsive for too long, it
+          schedules a relaunch with exponential
           backoff (cap 5 attempts, 45s max delay).
         Reads the `auto_reconnect_enabled` repository setting; returns
         immediately if disabled.  Both retries set `*_inflight=True` to
@@ -1873,9 +1953,13 @@ class BridgeService:
         with self._reconnect_lock:
             if not self.jamulus_launch_intended:
                 return
+            is_running = (
+                self.jamulus_process is not None
+                and self.jamulus_process.poll() is None
+            )
+            is_stalled = self._jamulus_process_is_stalled()
 
-            is_running = self.jamulus_process is not None and self.jamulus_process.poll() is None
-            if is_running:
+            if is_running and not is_stalled:
                 self.jamulus_reconnect_attempts = 0
                 self.jamulus_next_reconnect_at = 0.0
                 self.jamulus_reconnect_inflight = False
@@ -1883,9 +1967,6 @@ class BridgeService:
 
             if self.jamulus_reconnect_inflight:
                 return
-
-            # Max attempts constant from main app
-            RECONNECT_MAX_ATTEMPTS = 5
 
             if self.jamulus_reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
                 return
@@ -1897,4 +1978,8 @@ class BridgeService:
             self.jamulus_next_reconnect_at = now + self._reconnect_delay_seconds(self.jamulus_reconnect_attempts)
             self.jamulus_reconnect_inflight = True
         self.metrics_service.increment("metric_jamulus_reconnect_attempt")
-        self.launch_jamulus(manual=False, reconnect=True)
+        self.launch_jamulus(
+            manual=False,
+            reconnect=True,
+            force_restart=is_stalled,
+        )

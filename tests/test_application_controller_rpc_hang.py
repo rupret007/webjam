@@ -90,6 +90,58 @@ class TestRpcHangBanner(unittest.TestCase):
             f"expected 'responding again' flash, got {msgs!r}",
         )
 
+    def test_reconnect_exhaustion_with_hung_process_shows_failed_state(self):
+        self.controller.bridge.jamulus_reconnect_attempts = 5
+        self.controller._rpc_hang_banner_shown = True
+        self.controller._reconnect_gave_up = False
+        self.controller._connection_timer = MagicMock()
+        self.controller.window.session_strip.set_audio_state = MagicMock()
+        self.controller.window.participant_grid.set_session_state = MagicMock()
+
+        fake_proc = self.controller.bridge.jamulus_process
+        fake_proc.poll.return_value = None
+        self.controller.jamulus.rpc_client = MagicMock()
+        self.controller.jamulus.rpc_client.last_activity_age.return_value = 30.0
+        self.controller.bridge.attempt_auto_reconnects = MagicMock()
+
+        self.controller._on_reconnect_tick()
+
+        self.assertTrue(self.controller._reconnect_gave_up)
+        self.assertFalse(self.controller._rpc_hang_banner_shown)
+        self.controller.window.session_strip.set_audio_state.assert_called_with(
+            "Start Session", enabled=True
+        )
+        self.assertEqual(self.controller.audio.connected, False)
+        msgs = [
+            call.args[0] for call in self.controller.window.flash_message.call_args_list
+        ]
+        self.assertTrue(
+            any(
+                "couldn't recover after 5 tries" in m for m in msgs
+            ),
+            f"expected exhaustion flash, got {msgs!r}",
+        )
+
+    def test_failed_hang_state_clears_upon_response_and_reopens_connection_state(self):
+        self.controller._rpc_hang_banner_shown = True
+        self.controller._reconnect_gave_up = True
+        self.controller.bridge.attempt_auto_reconnects = MagicMock()
+        self.controller.jamulus.rpc_client = MagicMock()
+        self.controller.jamulus.rpc_client.last_activity_age.return_value = 2.0
+        fake_proc = self.controller.bridge.jamulus_process
+        fake_proc.poll.return_value = None
+
+        self.controller._on_reconnect_tick()
+
+        self.assertFalse(self.controller._reconnect_gave_up)
+        self.assertFalse(self.controller._rpc_hang_banner_shown)
+        self.assertTrue(
+            any("responding again" in m for m in [
+                call.args[0] for call in self.controller.window.flash_message.call_args_list
+            ]),
+            f"expected 'responding again' flash, got {[call.args[0] for call in self.controller.window.flash_message.call_args_list]!r}",
+        )
+
     def test_no_banner_when_age_below_threshold_and_not_already_shown(self):
         self.controller.jamulus.rpc_client = MagicMock()
         self.controller.jamulus.rpc_client.last_activity_age.return_value = 1.0

@@ -131,10 +131,51 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge._attempt_auto_reconnect_jamulus(now=100.0)
 
         bridge.metrics_service.increment.assert_any_call("metric_jamulus_reconnect_attempt")
-        launch_j.assert_called_once_with(manual=False, reconnect=True)
+        launch_j.assert_called_once_with(manual=False, reconnect=True, force_restart=False)
         self.assertEqual(bridge.jamulus_reconnect_attempts, 1)
         self.assertGreater(bridge.jamulus_next_reconnect_at, 100.0)
         self.assertTrue(bridge.jamulus_reconnect_inflight)
+
+    def test_auto_reconnect_jamulus_forces_restart_when_process_stalls(self):
+        bridge = _make_bridge()
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process.poll.return_value = None
+        bridge.jamulus_controller.rpc_client = MagicMock()
+        bridge.jamulus_controller.rpc_client.last_activity_age.return_value = 30.0
+        bridge.jamulus_reconnect_attempts = 2
+        bridge.jamulus_next_reconnect_at = 0.0
+        bridge.jamulus_reconnect_inflight = False
+        bridge.jamulus_launch_intended = True
+        launch_j = MagicMock()
+        bridge.launch_jamulus = launch_j
+
+        bridge._attempt_auto_reconnect_jamulus(now=100.0)
+
+        bridge.metrics_service.increment.assert_any_call("metric_jamulus_reconnect_attempt")
+        launch_j.assert_called_once_with(
+            manual=False, reconnect=True, force_restart=True
+        )
+
+    def test_auto_reconnect_not_required_for_healthy_live_process(self):
+        bridge = _make_bridge()
+        bridge.jamulus_launch_intended = True
+        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process.poll.return_value = None
+        bridge.jamulus_controller.rpc_client = MagicMock()
+        bridge.jamulus_controller.rpc_client.last_activity_age.return_value = 1.0
+        bridge.jamulus_reconnect_attempts = 2
+        bridge.jamulus_next_reconnect_at = 0.0
+        bridge.jamulus_reconnect_inflight = False
+        launch_j = MagicMock()
+        bridge.launch_jamulus = launch_j
+
+        bridge._attempt_auto_reconnect_jamulus(now=100.0)
+
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+        self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
+        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        launch_j.assert_not_called()
 
     def test_auto_reconnect_jamulus_resets_when_process_running(self):
         bridge = _make_bridge()

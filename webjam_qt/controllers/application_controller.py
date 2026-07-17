@@ -5533,6 +5533,35 @@ class ApplicationController(QObject):
                 "Couldn't reconnect after 5 tries — press Start Session to try again.",
                 ms=8000,
             )
+        elif (
+            self.bridge.jamulus_launch_intended
+            and proc is not None
+            and proc.poll() is None
+            and self._rpc_hang_banner_shown
+            and self.bridge.jamulus_reconnect_attempts >= 5
+            and not getattr(self, "_reconnect_gave_up", False)
+        ):
+            # Auto-reconnect has retried a hung live process 5 times and still
+            # fails to produce timely RPC heartbeats.
+            self._reconnect_gave_up = True
+            self._rpc_hang_banner_shown = False
+            self.window.set_status_audio("Not responding")
+            self.window.session_strip.set_audio_state("Start Session", enabled=True)
+            self.audio.connected = False
+            self.audio.recovering = False
+            self.window.participant_grid.set_session_state(
+                SessionUiState.reconnect_failed()
+            )
+            self._transition_lifecycle(
+                SessionLifecyclePhase.FAILED_RECOVERABLE,
+                "Automatic reconnect attempts were exhausted for an unresponsive process",
+                recovery_attempt=self.bridge.jamulus_reconnect_attempts,
+            )
+            self.window.flash_message(
+                "Music engine is not responding — couldn't recover after 5 tries. "
+                "Press Start Session to relaunch.",
+                ms=8000,
+            )
 
         # Detect RPC hang: process is alive AND was previously responsive
         # (we got past _jamulus_connected=True) AND the RPC heartbeat hasn't
@@ -5575,6 +5604,8 @@ class ApplicationController(QObject):
                     LOGGER.debug("hang metric failed", exc_info=True)
             elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
                 self._rpc_hang_banner_shown = False
+                self._reconnect_gave_up = False
+                self.audio.recovering = False
                 self.window.flash_message(
                     "The music engine is responding again.", ms=3000
                 )

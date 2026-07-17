@@ -15,6 +15,9 @@ All notable improvements and features for the WebJam music collaboration platfor
   originals.
 - Improved installer packaging reproducibility for Windows x64 and retained
   artifact identity controls for cross-platform packaging output.
+- Added a force-restart recovery path when the Jamulus process stays alive but
+  stops answering JSON-RPC heartbeats, so auto-reconnect now recovers stalls
+  as well as hard process exits.
 
 ### Release boundary
 

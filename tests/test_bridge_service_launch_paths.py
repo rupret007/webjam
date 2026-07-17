@@ -164,6 +164,28 @@ class TestLaunchJamulusAlreadyRunning(unittest.TestCase):
         ]
         self.assertTrue(any("already running" in b for b in banners), banners)
 
+    @patch("services.bridge_service.subprocess.Popen")
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_force_restart_replaces_hung_alive_process(self, _thread, popen):
+        old_proc = MagicMock()
+        old_proc.poll.return_value = None
+        new_proc = MagicMock()
+        new_proc.poll.return_value = None
+        popen.return_value = new_proc
+        bridge = _make_bridge()
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge.jamulus_process = old_proc
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            bridge.launch_jamulus(manual=False, reconnect=True, force_restart=True)
+
+        old_proc.terminate.assert_called_once()
+        bridge.jamulus_controller.stop.assert_called_once()
+        self.assertEqual(bridge.jamulus_state, "Running")
+        self.assertIs(bridge.jamulus_process, new_proc)
+
 
 @patch("services.bridge_service.time.sleep")
 @patch("services.bridge_service.threading.Thread",
