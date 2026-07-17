@@ -55,7 +55,8 @@ Review at minimum:
 
 ## v0.16.3 package evidence
 
-- Source: `c48132cab01b0e20ade2be42252c5f6f4c28aab3` (current branch head).
+- Source: `40e7aaa2bac95659839e5abf1d87b56ae4626709` (current branch head for this
+  procedure revision).
 - Release page: https://github.com/rupret007/webjam/releases/tag/v0.16.3
 - Archive: `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`; SHA-256
   `9f1468d2903cbb2648b34d8f98b31d4509ae1f1b9321fe03b0f9424859f266c7`.
