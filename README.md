@@ -61,9 +61,10 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The release page has one current release: v0.16.2. It includes the simplified
-automatic Host/Join handoff and the zero-friction recording/recovery hardening
-described in the changelog.
+The release page has one current release: v0.16.2. The published artifact is a
+single primary file for this test build (plus historical references below), and
+it includes the simplified automatic Host/Join handoff and the
+zero-friction recording/recovery hardening described in the changelog.
 
 The v0.16.2 archive is a **test build** for macOS on Apple Silicon (M-series
 Macs), built from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:

@@ -26,8 +26,8 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Release boundary
 
-- The GitHub Latest release contains the macOS Apple-Silicon test build from
-  `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
+- The GitHub Latest release publishes the primary macOS Apple-Silicon test build
+  from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
   `WebJam-v0.16.2-TEST-NIGHT-macos-arm64.zip`, SHA-256
   `5855af408c5182408d091c9029bdfa61d8f9abf96801822df319d55f649e688d`.
   A fresh extraction passed deep signature, bundled-engine executable, and
