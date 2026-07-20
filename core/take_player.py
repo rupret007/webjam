@@ -52,16 +52,19 @@ class TrackSegmentState:
 @dataclass
 class TrackState:
     """Per-track mixer state (mutated live from the UI)."""
+
     channel_id: int
     name: str
     path: Path
+    track_id: str = ""
     offset_s: float = 0.0
     source: str = "jamulus_server"
-    gain: float = 1.0        # 0..~1.27 (fader/100)
-    pan: float = 0.0         # -1.0 left .. 0 centre .. +1.0 right
+    gain: float = 1.0  # 0..~1.27 (fader/100)
+    trim_gain: float = 1.0
+    pan: float = 0.0  # -1.0 left .. 0 centre .. +1.0 right
     muted: bool = False
     solo: bool = False
-    level: float = 0.0       # last block RMS, 0..1 (for meters)
+    level: float = 0.0  # last block RMS, 0..1 (for meters)
     _reader: object = field(default=None, repr=False)
     _eof: bool = False
     segments: tuple[TrackSegmentState, ...] = field(default_factory=tuple, repr=False)
@@ -71,13 +74,13 @@ class TrackState:
 class OutputSink(Protocol):
     """Something that consumes mixed audio blocks."""
 
-    def start(self, samplerate: int, blocksize: int,
-              pull: Callable[[int], np.ndarray]) -> None:
+    def start(
+        self, samplerate: int, blocksize: int, pull: Callable[[int], np.ndarray]
+    ) -> None:
         """Begin playback. ``pull(n)`` returns the next ``n`` stereo frames."""
         ...
 
-    def stop(self) -> None:
-        ...
+    def stop(self) -> None: ...
 
 
 class SoundDeviceSink:
@@ -108,8 +111,11 @@ class SoundDeviceSink:
                     outdata[:count, :2] = block[:count, :2]
 
         self._stream = sd.OutputStream(
-            samplerate=samplerate, blocksize=blocksize,
-            channels=2, dtype="float32", callback=_callback,
+            samplerate=samplerate,
+            blocksize=blocksize,
+            channels=2,
+            dtype="float32",
+            callback=_callback,
             device=self.device_name or None,
         )
         self._stream.start()
@@ -153,6 +159,10 @@ class TakePlayer:
         self._playing = False
         self._pos_frames = 0
         self._total_frames = 0
+        self._studio_renderer = None
+        self._studio_stream = None
+        self._studio_track_channels: dict[str, int] = {}
+        self._studio_master = None
 
     # -- loading ----------------------------------------------------------
     def load(self, take) -> None:
@@ -166,26 +176,34 @@ class TakePlayer:
         """
         self.stop()
         with self._lock:
+            self._studio_renderer = None
+            self._studio_stream = None
+            self._studio_track_channels = {}
+            self._studio_master = None
             self._tracks = []
             # Schema-v2 owns an explicit project rate. Legacy takes adopt the
             # most common non-zero source rate. Individual files are converted
             # to this timeline while streaming, so mixed supported rates never
             # play at the wrong pitch or duration.
-            _rates = [int(getattr(t, "samplerate", 0) or 0)
-                      for t in getattr(take, "tracks", [])]
+            _rates = [
+                int(getattr(t, "samplerate", 0) or 0)
+                for t in getattr(take, "tracks", [])
+            ]
             _rates = [r for r in _rates if r > 0]
             project_rate = int(getattr(take, "project_samplerate", 0) or 0)
             if project_rate > 0:
                 self.samplerate = project_rate
             elif _rates:
                 from collections import Counter
+
                 self.samplerate = Counter(_rates).most_common(1)[0][0]
             _distinct = set(_rates)
             if len(_distinct) > 1:
                 _logger.info(
                     "take has mixed track samplerates %s; converting to %d Hz "
                     "on the non-destructive playback timeline",
-                    sorted(_distinct), self.samplerate,
+                    sorted(_distinct),
+                    self.samplerate,
                 )
             longest = 0
             for i, t in enumerate(getattr(take, "tracks", [])):
@@ -218,10 +236,7 @@ class TakePlayer:
                     segment_states.append(state)
                     rendered = int(
                         round(
-                            source_frames
-                            / source_rate
-                            * drift_scale
-                            * self.samplerate
+                            source_frames / source_rate * drift_scale * self.samplerate
                         )
                     )
                     longest = max(
@@ -242,18 +257,84 @@ class TakePlayer:
                     )
                     longest = max(
                         longest,
-                        offset_frames + int(round(duration * drift_scale * self.samplerate)),
+                        offset_frames
+                        + int(round(duration * drift_scale * self.samplerate)),
                     )
-                self._tracks.append(TrackState(
-                    channel_id=i,
-                    name=getattr(t, "name", f"Track {i}"),
-                    path=Path(getattr(t, "path")),
-                    offset_s=offset_s,
-                    source=str(getattr(t, "source", "jamulus_server")),
-                    segments=tuple(segment_states),
-                    drift_ppm=drift_ppm,
-                ))
+                self._tracks.append(
+                    TrackState(
+                        channel_id=i,
+                        name=getattr(t, "name", f"Track {i}"),
+                        path=Path(getattr(t, "path")),
+                        track_id=str(getattr(t, "track_id", "") or ""),
+                        offset_s=offset_s,
+                        source=str(getattr(t, "source", "jamulus_server")),
+                        segments=tuple(segment_states),
+                        drift_ppm=drift_ppm,
+                    )
+                )
             self._total_frames = longest
+            self._pos_frames = 0
+
+    def load_studio(self, project, document, take_root: str | Path) -> None:
+        """Load an edited Studio document through the shared render engine.
+
+        Source/arrangement DSP is delegated to ``StudioRenderer``.  The
+        existing transport and sink remain in place so output-device behavior
+        and UI callbacks do not fork into a second playback implementation.
+        """
+
+        from core.studio_renderer import StudioRenderError, StudioRenderer
+
+        self.stop()
+        with self._lock:
+            self._studio_renderer = None
+            self._studio_stream = None
+            self._studio_track_channels = {}
+            self._studio_master = None
+            self._tracks = []
+            self._total_frames = 0
+            self._pos_frames = 0
+        try:
+            renderer = StudioRenderer(project, document, take_root)
+        except StudioRenderError as exc:
+            raise PlaybackError(
+                f"Studio arrangement could not be loaded: {exc}"
+            ) from exc
+        project_tracks = {track.track_id: track for track in project.tracks}
+        root = Path(take_root).expanduser().resolve()
+        with self._lock:
+            self._studio_renderer = renderer
+            self._studio_stream = None
+            self._studio_track_channels = {}
+            self._studio_master = document.master
+            self.samplerate = renderer.sample_rate
+            self._tracks = []
+            for channel_id, state in enumerate(
+                sorted(document.tracks, key=lambda item: (item.order, item.track_id))
+            ):
+                source = project_tracks.get(state.track_id)
+                first_segment = (
+                    source.segments[0] if source and source.segments else None
+                )
+                path = root / first_segment.path if first_segment is not None else root
+                source_type = getattr(source, "source_type", "jamulus_server")
+                source_label = str(getattr(source_type, "value", source_type))
+                self._tracks.append(
+                    TrackState(
+                        channel_id=channel_id,
+                        track_id=state.track_id,
+                        name=getattr(source, "name", f"Track {channel_id + 1}"),
+                        path=path,
+                        source=source_label,
+                        gain=state.fader_gain,
+                        trim_gain=state.trim_gain,
+                        pan=state.pan,
+                        muted=state.muted,
+                        solo=state.solo,
+                    )
+                )
+                self._studio_track_channels[state.track_id] = channel_id
+            self._total_frames = renderer.total_frames
             self._pos_frames = 0
 
     @property
@@ -293,25 +374,65 @@ class TakePlayer:
         with self._lock:
             for t in self._tracks:
                 if t.channel_id == channel_id:
-                    t.gain = max(0.0, float(gain))
+                    t.gain = max(0.0, min(4.0, float(gain)))
+                    self._update_studio_stream_mix(t, fader_gain=t.gain)
+
+    def set_trim_gain(self, channel_id: int, gain: float) -> None:
+        with self._lock:
+            for t in self._tracks:
+                if t.channel_id == channel_id:
+                    t.trim_gain = max(0.0, min(4.0, float(gain)))
+                    self._update_studio_stream_mix(t, trim_gain=t.trim_gain)
 
     def set_muted(self, channel_id: int, muted: bool) -> None:
         with self._lock:
             for t in self._tracks:
                 if t.channel_id == channel_id:
                     t.muted = bool(muted)
+                    self._update_studio_stream_mix(t, muted=t.muted)
 
     def set_pan(self, channel_id: int, pan: float) -> None:
         with self._lock:
             for t in self._tracks:
                 if t.channel_id == channel_id:
                     t.pan = max(-1.0, min(1.0, float(pan)))
+                    self._update_studio_stream_mix(t, pan=t.pan)
 
     def set_solo(self, channel_id: int, solo: bool) -> None:
         with self._lock:
             for t in self._tracks:
                 if t.channel_id == channel_id:
                     t.solo = bool(solo)
+                    self._update_studio_stream_mix(t, solo=t.solo)
+
+    def _update_studio_stream_mix(self, track: TrackState, **changes: object) -> None:
+        stream = self._studio_stream
+        if stream is not None and track.track_id:
+            stream.set_track_mix(track.track_id, **changes)
+
+    def set_master_gain(self, gain: float) -> None:
+        from core.studio_project import StudioMaster
+
+        with self._lock:
+            current = self._studio_master or StudioMaster()
+            self._studio_master = StudioMaster(
+                gain=max(0.0, min(4.0, float(gain))),
+                limiter_enabled=current.limiter_enabled,
+            )
+            if self._studio_stream is not None:
+                self._studio_stream.set_master(self._studio_master)
+
+    def set_limiter_enabled(self, enabled: bool) -> None:
+        from core.studio_project import StudioMaster
+
+        with self._lock:
+            current = self._studio_master or StudioMaster()
+            self._studio_master = StudioMaster(
+                gain=current.gain,
+                limiter_enabled=bool(enabled),
+            )
+            if self._studio_stream is not None:
+                self._studio_stream.set_master(self._studio_master)
 
     # -- transport --------------------------------------------------------
     def play(self) -> None:
@@ -324,8 +445,8 @@ class TakePlayer:
                 self._pos_frames = 0
                 self._close_readers()
             self._playing = True
-        self._open_readers()
         try:
+            self._open_readers()
             self._sink.start(self.samplerate, self.blocksize, self._pull)
         except Exception as exc:  # noqa: BLE001
             try:
@@ -365,7 +486,32 @@ class TakePlayer:
 
     # -- readers ----------------------------------------------------------
     def _open_readers(self) -> None:
+        if self._studio_renderer is not None:
+            with self._lock:
+                if self._studio_stream is not None:
+                    return
+                stream = self._studio_renderer.open(
+                    start_frame=0,
+                    end_frame=self._total_frames,
+                )
+                stream.seek(self._pos_frames)
+                for track in self._tracks:
+                    if not track.track_id:
+                        continue
+                    stream.set_track_mix(
+                        track.track_id,
+                        trim_gain=track.trim_gain,
+                        fader_gain=track.gain,
+                        pan=track.pan,
+                        muted=track.muted,
+                        solo=track.solo,
+                    )
+                if self._studio_master is not None:
+                    stream.set_master(self._studio_master)
+                self._studio_stream = stream
+            return
         import soundfile as sf  # type: ignore
+
         with self._lock:
             for t in self._tracks:
                 for segment in t.segments:
@@ -380,6 +526,11 @@ class TakePlayer:
                 t._eof = False
 
     def _close_readers(self) -> None:
+        if self._studio_stream is not None:
+            try:
+                self._studio_stream.close()
+            finally:
+                self._studio_stream = None
         for t in self._tracks:
             for segment in t.segments:
                 if segment._reader is None:
@@ -407,10 +558,7 @@ class TakePlayer:
             segment_start = segment.project_start_frame + offset_frames
             rendered_frames = int(
                 round(
-                    segment.frame_count
-                    / segment.samplerate
-                    * scale
-                    * self.samplerate
+                    segment.frame_count / segment.samplerate * scale * self.samplerate
                 )
             )
             segment_end = segment_start + max(0, rendered_frames)
@@ -418,9 +566,7 @@ class TakePlayer:
             overlap_end = min(start + n, segment_end)
             if overlap_end <= overlap_start:
                 continue
-            output_positions = np.arange(
-                overlap_start, overlap_end, dtype=np.float64
-            )
+            output_positions = np.arange(overlap_start, overlap_end, dtype=np.float64)
             source_positions = (
                 (output_positions - segment_start)
                 / self.samplerate
@@ -438,9 +584,7 @@ class TakePlayer:
             try:
                 if reader.tell() != first:
                     reader.seek(first)
-                source = reader.read(
-                    last - first, dtype="float32", always_2d=True
-                )
+                source = reader.read(last - first, dtype="float32", always_2d=True)
             except Exception:  # noqa: BLE001
                 continue
             if not len(source):
@@ -489,6 +633,8 @@ class TakePlayer:
 
     def _pull(self, frames: int) -> np.ndarray:
         """Mix the next ``frames`` frames. Called from the audio thread."""
+        if self._studio_renderer is not None:
+            return self._pull_studio(frames)
         with self._lock:
             if not self._tracks or self._pos_frames >= self._total_frames:
                 self._finish_if_needed()
@@ -504,8 +650,11 @@ class TakePlayer:
                 if audible and t.gain > 0.0:
                     contribution = self._pan_block(block, t.pan) * t.gain
                     mix += contribution
-                    rms = float(np.sqrt(np.mean(np.square(contribution)))) \
-                        if frames else 0.0
+                    rms = (
+                        float(np.sqrt(np.mean(np.square(contribution))))
+                        if frames
+                        else 0.0
+                    )
                     t.level = min(1.0, rms * 3.0)  # visual scaling
                 else:
                     t.level = 0.0
@@ -524,6 +673,42 @@ class TakePlayer:
         if finished:
             self._finish_if_needed()
         return mix
+
+    def _pull_studio(self, frames: int) -> np.ndarray:
+        """Pull edited audio and meters from the authoritative Studio stream."""
+
+        with self._lock:
+            stream = self._studio_stream
+            if stream is None or self._pos_frames >= self._total_frames:
+                self._finish_if_needed()
+                return np.zeros((frames, 2), dtype=np.float32)
+            block, track_blocks = stream.read_with_tracks(frames)
+            rendered_count = len(block)
+            if rendered_count < frames:
+                block = np.pad(block, ((0, frames - rendered_count), (0, 0)))
+            levels: Dict[int, float] = {}
+            for track in self._tracks:
+                contribution = track_blocks.get(track.track_id)
+                if contribution is None or not contribution.size:
+                    level = 0.0
+                else:
+                    level = min(
+                        1.0,
+                        float(np.sqrt(np.mean(np.square(contribution)))) * 3.0,
+                    )
+                track.level = level
+                levels[track.channel_id] = level
+            self._pos_frames = stream.position_frame
+            pos_s = self.position_s
+            finished = self._pos_frames >= self._total_frames
+
+        if self._on_levels:
+            self._on_levels(levels)
+        if self._on_position:
+            self._on_position(pos_s)
+        if finished:
+            self._finish_if_needed()
+        return block
 
     def _finish_if_needed(self) -> None:
         if self._playing:

@@ -22,6 +22,7 @@ from core.studio_renderer import (
     StudioRenderError,
     StudioRenderer,
 )
+from core.take_player import TakePlayer
 from core.take_project import (
     AlignmentState,
     GapInterval,
@@ -415,3 +416,80 @@ def test_stream_is_bounded_seekable_and_does_not_mutate_sources(
     with pytest.raises(StudioRenderError, match="between"):
         renderer.render_block(0, 0)
     assert source.read_bytes() == before
+
+
+def test_stream_runtime_mix_reports_track_contributions_without_reopening_sources(
+    tmp_path: Path,
+) -> None:
+    first_segment, _first = _segment(
+        tmp_path, 20, np.full(4, 0.2, dtype=np.float32), rate=8_000
+    )
+    second_segment, _second = _segment(
+        tmp_path, 21, np.full(4, 0.3, dtype=np.float32), rate=8_000
+    )
+    project = _project(
+        (
+            _track(10, (first_segment,), order=0),
+            _track(11, (second_segment,), order=1),
+        ),
+        rate=8_000,
+    )
+    document = default_studio_document(project)
+    renderer = StudioRenderer(project, document, tmp_path)
+
+    with renderer.open(end_frame=4) as stream:
+        stream.set_track_mix(_id(10), gain=0.5, pan=-1.0)
+        stream.set_track_mix(_id(11), muted=True)
+        mix, tracks = stream.read_with_tracks(4)
+
+    assert set(tracks) == {_id(10), _id(11)}
+    np.testing.assert_allclose(tracks[_id(10)][:, 0], 0.1, atol=1e-6)
+    np.testing.assert_allclose(tracks[_id(10)][:, 1], 0.0, atol=1e-6)
+    np.testing.assert_array_equal(tracks[_id(11)], np.zeros((4, 2), np.float32))
+    np.testing.assert_array_equal(mix, tracks[_id(10)])
+
+
+def test_take_player_uses_the_shared_studio_stream_for_transport_and_live_mix(
+    tmp_path: Path,
+) -> None:
+    class PullSink:
+        pull = None
+
+        def start(self, _rate, _blocksize, pull) -> None:
+            self.pull = pull
+
+        def stop(self) -> None:
+            pass
+
+    segment, _source = _segment(
+        tmp_path, 20, np.full(8, 0.4, dtype=np.float32), rate=8_000
+    )
+    project = _project((_track(10, (segment,)),), rate=8_000)
+    document = default_studio_document(project).set_region_fades(
+        default_studio_document(project).regions[0].region_id,
+        fade_in_frames=3,
+        fade_out_frames=2,
+    )
+    expected_renderer = StudioRenderer(project, document, tmp_path)
+    with expected_renderer.open(end_frame=8) as stream:
+        stream.set_track_mix(_id(10), gain=0.5, pan=1.0)
+        expected = stream.read(8)
+
+    sink = PullSink()
+    levels: dict[int, float] = {}
+    player = TakePlayer(
+        samplerate=8_000,
+        blocksize=8,
+        sink=sink,
+        on_levels=levels.update,
+    )
+    player.load_studio(project, document, tmp_path)
+    player.set_gain(0, 0.5)
+    player.set_pan(0, 1.0)
+    player.play()
+    actual = sink.pull(8)
+    player.stop()
+
+    np.testing.assert_allclose(actual, expected, atol=1e-7)
+    assert levels[0] > 0.0
+    assert player.duration_s == pytest.approx(8 / 8_000)

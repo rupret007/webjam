@@ -46,6 +46,7 @@ from core.take_export import (
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
+from core.take_project import TakeProjectError, load_take_project
 from core.studio_project import (
     StudioDocument,
     StudioProjectError,
@@ -2238,7 +2239,21 @@ class RecordingStudio(QWidget):
         take = self._takes[row]
         self._current = take
         self._load_studio_state(take)
-        self._player.load(take)
+        if self._studio_state is not None:
+            try:
+                self._player.load_studio(
+                    load_take_project(take.path),
+                    self._studio_state,
+                    take.path,
+                )
+            except (PlaybackError, TakeProjectError) as exc:
+                LOGGER.warning("Could not load Studio arrangement: %s", exc)
+                self._studio_state_error = (
+                    "Studio couldn't open this arrangement safely. The recorded "
+                    "take is unchanged; review its media before playback."
+                )
+        else:
+            self._player.load(take)
         self._clear_lanes()
         waveform_generation, waveform_cancel = self._begin_waveform_batch()
         self._set_playback_controls_visible(True)

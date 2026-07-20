@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterator, Sequence
 
@@ -29,6 +29,7 @@ from core.studio_project import (
     StudioCompRange,
     StudioCrossfade,
     StudioDocument,
+    StudioMaster,
     StudioRegion,
     StudioTakeLane,
     StudioTrack,
@@ -212,6 +213,7 @@ class StudioRenderer:
         self.block_frames = _block_count(block_frames, "block_frames")
         self.apply_master = apply_master
         self.verify_checksums = verify_checksums
+        self._validated_source_fingerprints: dict[str, tuple[int, ...]] = {}
 
         requested: frozenset[str] | None = None
         if track_ids is not None:
@@ -482,6 +484,7 @@ class StudioRenderer:
         except ImportError as exc:  # pragma: no cover - packaged dependency
             raise StudioRenderError("Studio audio support is unavailable.") from exc
 
+        fingerprints: dict[str, tuple[int, ...]] = {}
         for source in sorted(
             self._sources.values(), key=lambda item: item.segment.segment_id
         ):
@@ -527,6 +530,34 @@ class StudioRenderer:
                 raise StudioRenderError(
                     "Studio cannot safely infer a stereo layout for this source."
                 )
+            fingerprints[segment.segment_id] = (
+                int(getattr(stat, "st_dev", 0)),
+                int(getattr(stat, "st_ino", 0)),
+                int(stat.st_size),
+                int(stat.st_mtime_ns),
+            )
+        self._validated_source_fingerprints = fingerprints
+
+    def _media_validation_is_current(self) -> bool:
+        if len(self._validated_source_fingerprints) != len(self._sources):
+            return False
+        for source in self._sources.values():
+            try:
+                info = source.path.stat()
+            except OSError:
+                return False
+            observed = (
+                int(getattr(info, "st_dev", 0)),
+                int(getattr(info, "st_ino", 0)),
+                int(info.st_size),
+                int(info.st_mtime_ns),
+            )
+            if (
+                self._validated_source_fingerprints.get(source.segment.segment_id)
+                != observed
+            ):
+                return False
+        return True
 
     def open(
         self,
@@ -543,7 +574,8 @@ class StudioRenderer:
             end = _integer_frame(end_frame, "end_frame")
             if end < start:
                 raise StudioRenderError("end_frame must not precede start_frame.")
-        self.validate_media()
+        if not self._media_validation_is_current():
+            self.validate_media()
         return StudioRenderStream(self, start_frame=start, end_frame=end)
 
     def iter_blocks(
@@ -694,6 +726,10 @@ class StudioRenderStream:
         self.end_frame = end_frame
         self.position_frame = start_frame
         self._readers: OrderedDict[str, object] = OrderedDict()
+        self._track_states = {
+            item.track.track_id: item.track for item in renderer._track_plans
+        }
+        self._master = renderer.document.master
         self._closed = False
 
     @property
@@ -767,18 +803,70 @@ class StudioRenderStream:
         self.position_frame = target
         return target
 
+    def set_track_mix(self, track_id: str, **changes: object) -> StudioTrack:
+        """Update one stream-local mix state without rebuilding arrangement I/O."""
+
+        if self._closed:
+            raise StudioRenderError("Studio render stream is closed.")
+        state = self._track_states.get(str(track_id))
+        if state is None:
+            raise StudioRenderError("Render stream does not contain that track.")
+        allowed = {
+            "trim_gain",
+            "fader_gain",
+            "gain",
+            "pan",
+            "muted",
+            "solo",
+        }
+        unknown = set(changes).difference(allowed)
+        if unknown:
+            raise StudioRenderError("Unsupported stream-local track mix setting.")
+        values = dict(changes)
+        if "gain" in values:
+            if "fader_gain" in values:
+                raise StudioRenderError("Specify gain or fader_gain, not both.")
+            values["fader_gain"] = values.pop("gain")
+        try:
+            updated = replace(state, **values)
+        except (TypeError, ValueError) as exc:
+            raise StudioRenderError("Stream-local track mix is invalid.") from exc
+        self._track_states[state.track_id] = updated
+        return updated
+
+    def set_master(self, master: StudioMaster) -> None:
+        """Apply one validated stream-local master state."""
+
+        if self._closed:
+            raise StudioRenderError("Studio render stream is closed.")
+        if not isinstance(master, StudioMaster):
+            raise StudioRenderError("master must be a StudioMaster.")
+        self._master = master
+
     def read(self, frame_count: int) -> np.ndarray:
         """Return up to ``frame_count`` stereo frames and advance transport."""
+
+        mix, _tracks = self.read_with_tracks(frame_count)
+        return mix
+
+    def read_with_tracks(
+        self, frame_count: int
+    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        """Return the mixed bus and its processed per-track contributions."""
 
         if self._closed:
             raise StudioRenderError("Studio render stream is closed.")
         requested = _block_count(frame_count, "frame_count")
         count = min(requested, self.remaining_frames)
         if count <= 0:
-            return np.zeros((0, 2), dtype=np.float32)
+            return np.zeros((0, 2), dtype=np.float32), {
+                track_id: np.zeros((0, 2), dtype=np.float32)
+                for track_id in self._track_states
+            }
         start = self.position_frame
         try:
-            block = self._render(start, count)
+            tracks = self._render_tracks(start, count)
+            block = self._mix_tracks(tracks, count)
         except Exception as exc:
             if isinstance(exc, StudioRenderError):
                 raise
@@ -786,17 +874,18 @@ class StudioRenderStream:
                 "Studio source media failed while rendering."
             ) from exc
         self.position_frame += count
-        return block
+        return block, tracks
 
-    def _render(self, start: int, count: int) -> np.ndarray:
-        mix = np.zeros((count, 2), dtype=np.float32)
-        any_solo = any(item.track.solo for item in self.renderer._track_plans)
+    def _render_tracks(self, start: int, count: int) -> dict[str, np.ndarray]:
+        rendered_tracks: dict[str, np.ndarray] = {}
+        any_solo = any(state.solo for state in self._track_states.values())
         for track_plan in self.renderer._track_plans:
-            state = track_plan.track
+            state = self._track_states[track_plan.track.track_id]
             audible = not state.muted and (state.solo or not any_solo)
-            if not audible or state.trim_gain <= 0.0 or state.fader_gain <= 0.0:
-                continue
             track_mix = np.zeros((count, 2), dtype=np.float32)
+            if not audible or state.trim_gain <= 0.0 or state.fader_gain <= 0.0:
+                rendered_tracks[state.track_id] = track_mix
+                continue
             for region_plan in track_plan.regions:
                 rendered = self._read_region(region_plan, start, count)
                 if rendered is None:
@@ -819,11 +908,16 @@ class StudioRenderStream:
             elif pan > 0.0:
                 track_mix[:, 0] *= np.float32(1.0) - pan
             track_mix *= np.float32(state.trim_gain * state.fader_gain)
-            mix += track_mix
+            rendered_tracks[state.track_id] = track_mix
+        return rendered_tracks
 
+    def _mix_tracks(self, tracks: dict[str, np.ndarray], count: int) -> np.ndarray:
+        mix = np.zeros((count, 2), dtype=np.float32)
+        for track in tracks.values():
+            mix += track
         if self.renderer.apply_master:
-            mix *= np.float32(self.renderer.document.master.gain)
-            if self.renderer.document.master.limiter_enabled:
+            mix *= np.float32(self._master.gain)
+            if self._master.limiter_enabled:
                 np.clip(mix, -1.0, 1.0, out=mix)
         if not np.all(np.isfinite(mix)):
             raise StudioRenderError("Studio render produced non-finite audio.")
