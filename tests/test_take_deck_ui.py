@@ -21,7 +21,13 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
+from core.take_library import write_take_manifest  # noqa: E402
 from core.take_player import TakePlayer  # noqa: E402
+from core.take_project import (  # noqa: E402
+    RecoveryStatus,
+    SessionEvidence,
+    new_project_id,
+)
 from webjam_qt.windows.take_deck import TakeDeck, _fmt_time  # noqa: E402
 
 
@@ -94,6 +100,35 @@ class TestTakeDeckEmpty(unittest.TestCase):
             try:
                 self.assertIn("No takes found", deck._hint.text())
                 self.assertIn("WebJam Recovered Takes", deck._hint.text())
+            finally:
+                deck.close()
+
+    def test_evidence_only_recovery_is_visible_but_transport_is_disabled(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            write_take_manifest(
+                root / "Recovered evidence",
+                expected_tracks=0,
+                required_local_stems=0,
+                capture_errors=("Interrupted recording evidence recovered.",),
+                session_id=new_project_id(),
+                take_id=new_project_id(),
+                session_evidence=SessionEvidence(
+                    recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+                    recovery_notes=("No audio survived.",),
+                ),
+            )
+            player = TakePlayer(samplerate=RATE, sink=_SilentSink())
+            deck = TakeDeck(d, player=player)
+            try:
+                self.assertEqual(deck._take_list.count(), 1)
+                self.assertIn("Review Only", deck._take_list.item(0).text())
+                self.assertFalse(deck._play_btn.isEnabled())
+                self.assertFalse(deck._stop_btn.isEnabled())
+                self.assertFalse(deck._scrub.isEnabled())
+                self.assertEqual(player.tracks, [])
+                self.assertIn("Review only", deck._title.text())
+                self.assertIn("cannot be exported", deck._hint.text())
             finally:
                 deck.close()
 

@@ -17,6 +17,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMessageBox
 
 from core.take_library import (
+    EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
     TakeValidationResult,
     find_changed_take,
     load_take,
@@ -379,7 +380,7 @@ class RecordingCoordinator:
         noun = "recording" if pending == 1 else "recordings"
         self._c.window.flash_message(
             "WebJam found interrupted "
-            f"{noun}. Open Studio and review the saved tracks before export.",
+            f"{noun}. Open Studio and review the saved recovery evidence.",
             ms=10000,
         )
         try:
@@ -416,12 +417,12 @@ class RecordingCoordinator:
 
         evidence_note = (
             "Recording evidence was recovered from an interrupted session; "
-            "media was not preserved."
+            f"media was not preserved. {EVIDENCE_ONLY_EXPORT_BLOCK_REASON}"
         )
         if not bool(getattr(item, "trusted", True)):
             evidence_note = (
-                "Recording evidence could not be safely read; review this "
-                "recovery project before export."
+                "Recording evidence could not be safely read. "
+                f"{EVIDENCE_ONLY_EXPORT_BLOCK_REASON}"
             )
 
         merged_notes = tuple(dict.fromkeys((*evidence.recovery_notes, evidence_note)))
@@ -439,17 +440,6 @@ class RecordingCoordinator:
 
         try:
             from webjam_qt import __version__
-            placeholder = recovery_dir / "recovery-evidence.wav"
-            if not placeholder.exists():
-                import wave
-
-                recovery_dir.mkdir(parents=True, exist_ok=True)
-                with wave.open(str(placeholder), "wb") as output:
-                    output.setnchannels(1)
-                    output.setsampwidth(2)
-                    output.setframerate(48000)
-                    output.writeframes(b"")
-
             result = write_take_manifest(
                 recovery_dir,
                 expected_tracks=0,

@@ -17,7 +17,7 @@ from core.take_export import (
     export_logic_package,
     export_track_package,
 )
-from core.take_library import TakeInfo, TrackInfo
+from core.take_library import TakeInfo, TrackInfo, load_take
 from core.take_project import (
     AlignmentAnchor,
     AlignmentState,
@@ -29,6 +29,7 @@ from core.take_project import (
     ProjectMarker,
     ProjectStatus,
     ProjectTrack,
+    RecoveryStatus,
     SourceQuality,
     SourceType,
     SessionEvidence,
@@ -48,6 +49,39 @@ def _write(path: Path, data, *, rate: int = RATE) -> None:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_evidence_only_recovery_blocks_export_without_writing_output(tmp_path):
+    take_dir = tmp_path / "Recovered evidence"
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Recovered recording evidence",
+        take_name=take_dir.name,
+        status=ProjectStatus.NEEDS_ATTENTION,
+        project_sample_rate=48_000,
+        participants=(),
+        tracks=(),
+        errors=("No audio media was preserved.",),
+        session_evidence=SessionEvidence(
+            recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+            recovery_notes=("Interrupted recording evidence recovered.",),
+        ),
+    )
+    manifest = write_take_project(take_dir, project)
+    before = manifest.read_bytes()
+    take = load_take(take_dir)
+    destination = tmp_path / "exports"
+
+    assert take is not None
+    assert take.review_only is True
+    assert take.is_exportable is False
+    with pytest.raises(TakeExportError, match="no audio tracks to export"):
+        export_track_package(take, destination_root=destination)
+
+    assert not destination.exists()
+    assert manifest.read_bytes() == before
+    assert not tuple(take_dir.glob("*.wav"))
 
 
 def test_track_export_aligns_signed_offsets_and_preserves_originals(tmp_path):

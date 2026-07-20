@@ -372,11 +372,22 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording._recover_stale_evidence_journals_once()
             recovery_dir = Path(directory) / f"Recovered-{take_id}"
             manifest = json.loads((recovery_dir / "webjam-take.json").read_text())
+            recovery_files = {
+                path.relative_to(recovery_dir).as_posix()
+                for path in recovery_dir.rglob("*")
+                if path.is_file()
+            }
             recovered_journal = RecordingManifestJournal(directory)
 
         self.assertEqual(manifest["schema_version"], 2)
-        self.assertEqual(manifest["session"]["recovery_status"], RecoveryStatus.NEEDS_ATTENTION.value)
-        self.assertTrue(any(t["source"] for t in manifest["tracks"]))
+        self.assertEqual(
+            manifest["session"]["recovery_status"],
+            RecoveryStatus.NEEDS_ATTENTION.value,
+        )
+        self.assertEqual(manifest["status"], "needs_attention")
+        self.assertEqual(manifest["tracks"], [])
+        self.assertEqual(recovery_files, {"webjam-take.json"})
+        self.assertIn("review-only", " ".join(manifest["errors"]))
         self.assertIsNone(recovered_journal.load(take_id))
 
     def test_recovered_local_capture_publishes_recovery_manifest_and_retires_trusted_journal(self):
@@ -445,6 +456,7 @@ class TestRecordButtonWiring(unittest.TestCase):
                 output.setsampwidth(2)
                 output.setframerate(48_000)
                 output.writeframes(struct.pack("<480h", *([800] * 480)))
+            original_audio = recovered_audio.read_bytes()
             take_id = new_project_id()
             session_id = new_project_id()
             journal = RecordingManifestJournal(directory)
@@ -463,6 +475,7 @@ class TestRecordButtonWiring(unittest.TestCase):
 
             c.recording._publish_recovered_local_capture(item, directory)
             payload = json.loads((recovery_dir / "webjam-take.json").read_text())
+            self.assertEqual(recovered_audio.read_bytes(), original_audio)
             self.assertIsNone(journal.load(take_id))
 
         self.assertEqual(payload["schema_version"], 2)
