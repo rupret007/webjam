@@ -70,12 +70,15 @@ Current IPC version: `1`. Current secure session wire version: `3`.
 In a frozen desktop build, the owner ignores environment path/build-ID
 overrides and requires the packaged executable plus its canonical
 `webjam-fabric.sha256` manifest. macOS seals the manifest as bundle data under
-`Contents/Resources`; Windows keeps it beside the executable in the flat
-PyInstaller directory. WebJam verifies SHA-256, thin architecture, safe
-owner/mode, native platform signature, and the sidecar's embedded build ID
-before accepting the process. The ad-hoc macOS test signature detects damaged
-or incompletely staged bundles; it is not a trusted publisher identity and
-does not replace Developer ID signing/notarization.
+`Contents/Resources`; Windows and Linux keep it beside the executable in the
+flat PyInstaller directory. WebJam verifies SHA-256, the native Mach-O, PE, or
+ELF architecture, safe owner/mode where the platform exposes it, and the
+sidecar's embedded build ID before accepting the process. macOS and Windows
+also require their native platform signature. The ad-hoc macOS test signature
+detects damaged or incompletely staged bundles; it is not a trusted publisher
+identity and does not replace Developer ID signing/notarization. Linux has no
+equivalent publisher-signature gate in this ZIP format; archive checksums and
+the packaged manifest provide its integrity boundary.
 An unsigned Windows artifact likewise fails the v3 native-signature gate by
 design; legacy v1/v2 behavior remains available.
 

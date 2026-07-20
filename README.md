@@ -1,4 +1,4 @@
-# WebJam v0.16.3 RC 4d8c046
+# WebJam v0.16.3 release candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -61,13 +61,44 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Current release state
 
-The current release stream is [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3), and the release page is kept to a single primary artifact:
+The current release stream is [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3).
+The source tree also contains the reviewed cross-platform packaging path for a
+direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
+portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and
+Linux distributions are not certified. The published release remains a private
+test candidate with one promoted primary artifact:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
 
 It is still a private test candidate. Windows signing, macOS notarization, and
 other production gates remain pending, so use this build as a reviewed test
 release only.
+
+The generic Windows x64 and Intel macOS archives attached to that published
+tag are historical CI outputs, not promoted release packages. In particular,
+the v0.16.2 Windows archive is unsigned and its clean-install Jamulus action
+looked in the wrong packaged-data location. Those assets stay immutable as
+build evidence; the fixes are versioned in the v0.16.3 candidate instead of
+silently replacing files on the old tag.
+
+The v0.16.3 installer formats improve download and installation, but they do
+not substitute for platform trust. Ordinary Actions downloads are visibly
+named `UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. The source
+now isolates Authenticode and Developer ID credentials in separate protected
+`windows-release` and `macos-release` environment jobs. Those jobs pin the
+expected publisher/Team identity, sign and verify the direct Setup/DMG assets,
+remove private keys before launch, and retain trust evidence. Native packaging
+also installs the reviewed Python graph from target-specific, hash-locked wheel
+files rather than resolving new dependencies during a release build.
+
+The implemented Windows PFX path is suitable only when the project already has
+an eligible exportable legacy or internal-enterprise code-signing key. Newly
+issued public code-signing keys are normally hardware- or service-backed, so a
+public release still needs an explicit signing-provider choice and integration.
+The repository does not yet have the protected GitHub Environments or
+credentials configured, and no credentialed rehearsal has completed. A managed
+Windows PC may still require IT approval even after valid publisher signing;
+current test artifacts must not be promoted as public installers.
 
 Automated source and package checks are evidence for code and archive
 integrity—not a substitute for musicians hearing one another. Real two-Mac

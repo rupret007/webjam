@@ -29,6 +29,68 @@ All notable improvements and features for the WebJam music collaboration platfor
   builds are ad-hoc signed and not notarized, and physical two-machine,
   browser-quarantine, and managed-device gates remain outstanding.
 
+### Native desktop packages
+
+- Added native Windows x64, Intel macOS x64, and Ubuntu 22.04 x64 build gates
+  from one source commit. Every deliverable is freshly installed, mounted, or
+  extracted and checked for application/transport architecture, exact build
+  provenance, transport hash and protocol lifecycle, required data, and a clean
+  frozen UI launch.
+- Added direct GitHub-ready desktop installers: a per-user Windows Setup `.exe`
+  with Start-menu and optional desktop shortcuts plus clean uninstall, and
+  drag-to-Applications `.dmg` files for Intel and Apple Silicon Macs. The
+  portable ZIPs remain available as fallbacks.
+- Added the first Linux client package. It carries the checksum-pinned official
+  Jamulus 3.12.2 Ubuntu `.deb`, visible install instructions, lowercase binary
+  discovery, x86-64 ELF validation, and a packaged-app smoke against a private
+  JACK graph with authenticated Jamulus RPC and clean process shutdown. Linux
+  and Windows remain truthfully Join-only; managed hosting remains macOS-only.
+- Fixed fresh Windows installs: the Host/Join dialog now exposes the packaged
+  Jamulus installer from PyInstaller's real `_internal` data root. WebJam
+  requires the exact 3.12.2 filename and pinned SHA-256 both at discovery and
+  immediately before launch.
+- Tagged Windows builds now require valid Authenticode credentials and verify
+  both payload executables, Setup, and the embedded uninstaller after a real
+  fresh-install cycle. Branch builds remain usable for legacy v1/v2 testing but
+  state that secure packaged v3 fails closed when unsigned. The upstream
+  Jamulus installer has its own unsigned-publisher UAC limitation.
+- Test Night evidence now records the actual desktop target, including Intel
+  macOS, Windows x64, and Linux x64. Release automation refuses to mutate a
+  previously published tag, creates new tag releases as drafts for exact
+  hardware certification, and attaches a verified SHA-256 manifest covering
+  the seven direct and portable release assets.
+- Tagged Mac builds now fail before packaging until the full Developer ID and
+  Apple notarization path is implemented and proven with release credentials.
+  Branch artifacts remain explicitly ad-hoc test packages, and the prepared
+  outer-app entitlement boundary includes hardened-runtime camera and direct
+  audio-input access plus Qt WebEngine's separate microphone entitlement.
+
+### Reliability
+
+- Increased the packaged guest transport's cold-start allowance to 30 seconds
+  before invitation enrollment. Slow first launch on Mac remains bounded and
+  retry-safe because the startup timeout still occurs before the one-use
+  capability is sent. Canceling during that wait is prompt, reaps the child,
+  and sends no protocol command.
+- Replaced an immediate JACK graph assertion with a bounded convergence check
+  that retains process-health checks and reports every missing route on timeout.
+  This removes an observed CI race without retrying or weakening the real
+  Jamulus integration gate.
+
+### Distribution boundary
+
+- Intel/Apple Silicon macOS apps and DMGs remain ad-hoc signed and non-notarized
+  private test builds. Windows publisher signing, physical interface audio,
+  audible two-musician proof, and Ubuntu hardware audio remain release gates;
+  automation does not claim human audibility.
+
+### Source verification
+
+- The final clean source gate on PR #2 reported **1,908 passed**, 19
+  environment-bound skips, and 6 subtests passed. Ruff, Go tests/vet, workflow
+  YAML, and Actionlint passed; native archive evidence is recorded only after
+  the matrix builds finish from the committed candidate.
+
 ---
 
 ## [0.16.2] — 2026-07-16 test-build release candidate

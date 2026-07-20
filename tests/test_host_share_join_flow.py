@@ -83,6 +83,89 @@ def test_launch_initially_shows_only_host_and_join_actions(qapp, tmp_path):
     dialog.close()
 
 
+def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
+    qapp,
+    tmp_path,
+):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_candidates=[],
+    )
+    with patch.object(sys, "platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+    ), patch(
+        "services.bridge_service._is_pinned_jamulus_installer",
+        return_value=True,
+    ), patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen:
+        dialog = LaunchDialog(settings)
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._install_jamulus_button.isVisibleTo(dialog)
+        dialog._install_jamulus_button.click()
+
+    popen.assert_called_once_with(
+        ["C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe"],
+        shell=False,
+    )
+    assert not dialog._install_jamulus_button.isEnabled()
+    assert "Finish the Jamulus installer" in dialog._choice_helper.text()
+    dialog.close()
+
+
+def test_windows_installer_button_stays_hidden_when_jamulus_is_installed(
+    qapp,
+    tmp_path,
+):
+    installed = tmp_path / "Jamulus.exe"
+    installed.write_bytes(b"stub")
+    settings = AppSettings(jamulus_candidates=[str(installed)])
+    with patch.object(sys, "platform", "win32"), patch(
+        "services.bridge_service._bundled_jamulus_installer",
+        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+    ):
+        dialog = LaunchDialog(settings)
+        dialog.show()
+        qapp.processEvents()
+    assert not dialog._install_jamulus_button.isVisibleTo(dialog)
+    dialog.close()
+
+
+def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
+    settings = AppSettings(jamulus_candidates=[])
+    with patch.object(sys, "platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+    ), patch(
+        "services.bridge_service._is_pinned_jamulus_installer",
+        return_value=True,
+    ), patch(
+        "webjam_qt.windows.launch_dialog.subprocess.Popen",
+        side_effect=OSError("blocked"),
+    ):
+        dialog = LaunchDialog(settings)
+        dialog._install_jamulus_button.click()
+    assert "couldn’t open" in dialog._choice_error.text()
+    assert dialog._install_jamulus_button.isEnabled()
+
+
+def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path):
+    settings = AppSettings(jamulus_candidates=[])
+    with patch.object(sys, "platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+    ), patch(
+        "services.bridge_service._is_pinned_jamulus_installer",
+        return_value=False,
+    ), patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen:
+        dialog = LaunchDialog(settings)
+        dialog._install_jamulus_button.click()
+
+    popen.assert_not_called()
+    assert "failed its integrity check" in dialog._choice_error.text()
+    assert not dialog._install_jamulus_button.isEnabled()
+
+
 def test_host_choice_persists_role_without_a_webjam_audio_form(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     with patch.object(sys, "platform", "darwin"):

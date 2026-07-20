@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.pilot_evidence import (  # noqa: E402
@@ -71,6 +73,32 @@ def test_normal_controller_cannot_open_hidden_test_night(tmp_path: Path) -> None
     dialog_type.assert_not_called()
     assert controller._test_night_dialog is None
     assert controller._pilot_ledger is None
+
+
+@pytest.mark.parametrize(
+    "target",
+    ("macos-arm64", "macos-x64", "windows-x64", "linux-x64"),
+)
+def test_frozen_pilot_identity_uses_the_actual_desktop_target(
+    tmp_path: Path,
+    target: str,
+) -> None:
+    controller = _controller(tmp_path)
+    with patch(
+        "webjam_qt.controllers.application_controller.sys.frozen",
+        True,
+        create=True,
+    ), patch("core.build_info.desktop_target", return_value=target), patch(
+        "core.build_info.build_id", return_value="a" * 40
+    ):
+        controller._start_test_night()
+
+    from webjam_qt import __version__
+
+    assert controller._pilot_ledger is not None
+    assert controller._pilot_ledger.artifact_identity == (
+        f"webjam-v{__version__}-test-night-{target}"
+    )
 
 
 def test_pilot_run_persists_automatic_and_explicit_human_evidence(

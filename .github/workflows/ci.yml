@@ -4,6 +4,22 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      macos_signing_rehearsal:
+        description: Sign and notarize macOS artifacts without publishing a release
+        required: false
+        type: boolean
+        default: false
+      windows_signing_rehearsal:
+        description: Authenticode-sign Windows artifacts without publishing a release
+        required: false
+        type: boolean
+        default: false
+      run_one_hour_certification:
+        description: Run the one-hour real Jamulus/JACK soak certification
+        required: false
+        type: boolean
+        default: false
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -31,17 +47,17 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
 
       - name: Install Qt + audio system libraries (Linux)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
             python3-tk
 
@@ -59,6 +75,21 @@ jobs:
 
       - name: Audit Python dependencies
         run: pip-audit --progress-spinner off
+
+      - name: Audit native release dependency locks
+        run: |
+          for target in windows-x64 linux-x64; do
+            pip-audit --progress-spinner off --disable-pip --no-deps \
+              -r "requirements-lock/${target}.txt"
+          done
+          # GHSA-h35f-9h28-mq5c affects sdist creation. The macOS release
+          # installs only hashed wheels and needs the final pkg_resources
+          # release until PyInstaller supports setuptools 82+.
+          for target in macos-x64 macos-arm64; do
+            pip-audit --progress-spinner off --disable-pip --no-deps \
+              --ignore-vuln PYSEC-2026-3447 \
+              -r "requirements-lock/${target}.txt"
+          done
 
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
@@ -83,10 +114,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
 
@@ -134,16 +165,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
 
       - name: Set up Python for the real sidecar boundary
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
 
@@ -184,10 +215,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
 
@@ -221,11 +252,14 @@ jobs:
   # GitHub-hosted Ubuntu/amd64 VM. It never runs for pushes or PRs. The
   # workflow already exists on the default branch, so maintainers can run
   # the job against a pushed candidate with:
-  #   gh workflow run ci.yml --ref <candidate-branch>
+  #   gh workflow run ci.yml --ref <candidate-branch> \
+  #     -f run_one_hour_certification=true
   # ------------------------------------------------------------------
   certify-jamulus-one-hour:
     name: Certify Jamulus/JACK (one hour, manual)
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_one_hour_certification
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -235,7 +269,7 @@ jobs:
       WEBJAM_JACK_AUDIO_SOAK_REPORT: artifacts/jamulus-jack-soak.json
     steps:
       - name: Checkout selected candidate ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Initialize failure-safe evidence
         run: |
@@ -245,7 +279,7 @@ jobs:
             > artifacts/jamulus-jack-soak.json
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
 
@@ -279,7 +313,7 @@ jobs:
 
       - name: Upload certification evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jamulus-jack-soak-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -290,13 +324,15 @@ jobs:
 
   # ------------------------------------------------------------------
   # Build desktop artifacts
-  # Three targets built from webjam.spec (single source of truth):
-  #   windows-x64  → windows-latest (x86-64)
+  # Four targets built from webjam.spec (single source of truth):
+  #   windows-x64  → windows-2025   (x86-64)
   #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
+  #   linux-x64    → ubuntu-22.04   (x86-64, join-only desktop)
   #
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
+  # Linux:   dist/WebJam/ directory → zipped with zip
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
@@ -307,32 +343,282 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             target: windows-x64
+            python: "3.11.9"
           - os: macos-14
             target: macos-arm64
+            python: "3.11.9"
           - os: macos-15-intel
             target: macos-x64
+            python: "3.11.9"
+          - os: ubuntu-22.04
+            target: linux-x64
+            python: "3.11.15"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.11"
+          python-version: "${{ matrix.python }}"
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
 
+      - name: Verify Windows release helper fails closed without credentials
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "packaging\windows\release-certificate.ps1"),
+            [ref] $tokens,
+            [ref] $parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            throw "Windows release helper has PowerShell parse errors: $parseErrors"
+          }
+          foreach ($name in @(
+              "WINDOWS_CODESIGN_PFX",
+              "WINDOWS_CODESIGN_PASSWORD",
+              "WINDOWS_CODESIGN_SUBJECT"
+          )) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+          }
+          try {
+            & packaging\windows\release-certificate.ps1 Validate
+            throw "Windows release helper accepted missing credentials"
+          } catch {
+            if ($_.Exception.Message -notmatch `
+                "Windows release signing requires WINDOWS_CODESIGN_PFX") {
+              throw
+            }
+          }
+
+      - name: Exercise disposable Windows certificate lifecycle
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        run: |
+          $helper = (Resolve-Path `
+            "packaging\windows\release-certificate.ps1").Path
+          $pfxPath = Join-Path $env:RUNNER_TEMP "webjam-release-codesign.pfx"
+          $statePath = Join-Path $env:RUNNER_TEMP `
+            "webjam-release-certificate-thumbprints.txt"
+          $scratchGitHubEnv = Join-Path $env:RUNNER_TEMP `
+            "webjam-certificate-lifecycle.env"
+          $originalGitHubEnv = $env:GITHUB_ENV
+          $credentialNames = @(
+            "WINDOWS_CODESIGN_PFX",
+            "WINDOWS_CODESIGN_PASSWORD",
+            "WINDOWS_CODESIGN_SUBJECT"
+          )
+          $originalCredentials = @{}
+          foreach ($name in $credentialNames) {
+            $originalCredentials[$name] = `
+              [Environment]::GetEnvironmentVariable($name, "Process")
+          }
+          function Invoke-CertificateHelper([string] $Mode) {
+            & pwsh -NoLogo -NoProfile -NonInteractive -File $helper $Mode
+            if ($LASTEXITCODE -ne 0) {
+              throw "Windows release certificate helper $Mode failed with exit code $LASTEXITCODE"
+            }
+          }
+
+          $cleanupCompleted = $false
+          try {
+            Remove-Item -LiteralPath $scratchGitHubEnv `
+              -Force -ErrorAction SilentlyContinue
+            $env:GITHUB_ENV = $scratchGitHubEnv
+            Invoke-CertificateHelper "Cleanup"
+
+            $rsa = [Security.Cryptography.RSA]::Create(2048)
+            try {
+              $request = `
+                [Security.Cryptography.X509Certificates.CertificateRequest]::new(
+                  [Security.Cryptography.X509Certificates.X500DistinguishedName]::new(
+                    "CN=WebJam Disposable CI $([Guid]::NewGuid().ToString('N'))"
+                  ),
+                  $rsa,
+                  [Security.Cryptography.HashAlgorithmName]::SHA256,
+                  [Security.Cryptography.RSASignaturePadding]::Pkcs1
+                )
+              $ekuOids = [Security.Cryptography.OidCollection]::new()
+              $null = $ekuOids.Add(
+                [Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.3")
+              )
+              $null = $request.CertificateExtensions.Add(
+                [Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
+                  $ekuOids,
+                  $false
+                )
+              )
+              $null = $request.CertificateExtensions.Add(
+                [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
+                  [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature,
+                  $true
+                )
+              )
+              $fixture = $request.CreateSelfSigned(
+                [DateTimeOffset]::UtcNow.AddMinutes(-5),
+                [DateTimeOffset]::UtcNow.AddHours(1)
+              )
+              try {
+                $thumbprint = $fixture.Thumbprint.ToUpperInvariant()
+                $env:WINDOWS_CODESIGN_SUBJECT = $fixture.Subject
+                $env:WINDOWS_CODESIGN_PASSWORD = `
+                  [Guid]::NewGuid().ToString("N")
+                $pfxBytes = $fixture.Export(
+                  [Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12,
+                  $env:WINDOWS_CODESIGN_PASSWORD
+                )
+                $env:WINDOWS_CODESIGN_PFX = `
+                  [Convert]::ToBase64String($pfxBytes)
+              } finally {
+                $fixture.Dispose()
+              }
+            } finally {
+              $rsa.Dispose()
+            }
+
+            Invoke-CertificateHelper "Validate"
+            Invoke-CertificateHelper "Prepare"
+            if (Test-Path -LiteralPath $pfxPath) {
+              throw "Prepare left its temporary PFX on disk"
+            }
+            if (-not (Test-Path -LiteralPath $statePath)) {
+              throw "Prepare did not create cleanup state"
+            }
+            $recorded = @(
+              Get-Content -LiteralPath $statePath | ForEach-Object { $_.Trim() }
+            )
+            if ($recorded.Count -ne 1 -or $recorded[0] -cne $thumbprint) {
+              throw "Cleanup state does not contain the fixture thumbprint exactly once"
+            }
+
+            $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
+            $imported = Get-Item -LiteralPath $certificatePath -ErrorAction Stop
+            $privateKey = `
+              [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(
+                $imported
+              )
+            if ($null -eq $privateKey) {
+              throw "Imported fixture certificate has no accessible RSA private key"
+            }
+            try {
+              if ($privateKey -is [Security.Cryptography.RSACng]) {
+                $uniqueName = $privateKey.Key.UniqueName
+                if ($privateKey.Key.Provider.Provider -cne `
+                    "Microsoft Software Key Storage Provider") {
+                  throw "Unexpected fixture CNG provider: $($privateKey.Key.Provider.Provider)"
+                }
+                $keyDirectory = Join-Path $env:APPDATA "Microsoft\Crypto\Keys"
+              } elseif ($privateKey -is `
+                  [Security.Cryptography.RSACryptoServiceProvider]) {
+                $uniqueName = `
+                  $privateKey.CspKeyContainerInfo.UniqueKeyContainerName
+                if ($privateKey.CspKeyContainerInfo.MachineKeyStore) {
+                  throw "Fixture unexpectedly used the machine key store"
+                }
+                $sid = `
+                  [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+                $keyDirectory = Join-Path $env:APPDATA `
+                  "Microsoft\Crypto\RSA\$sid"
+              } else {
+                throw "Unsupported imported RSA implementation: $($privateKey.GetType().FullName)"
+              }
+              if ([string]::IsNullOrWhiteSpace($uniqueName)) {
+                throw "Imported fixture private key is unexpectedly ephemeral"
+              }
+              $keyFilePath = Join-Path $keyDirectory $uniqueName
+              if (-not (Test-Path -LiteralPath $keyFilePath -PathType Leaf)) {
+                throw "Imported private-key file was not found: $keyFilePath"
+              }
+            } finally {
+              $privateKey.Dispose()
+              $imported.Dispose()
+            }
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+
+            foreach ($name in $credentialNames) {
+              Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            Invoke-CertificateHelper "Cleanup"
+            $cleanupCompleted = $true
+            if (Test-Path -LiteralPath $certificatePath) {
+              throw "Cleanup left the fixture certificate in CurrentUser\My"
+            }
+            if ((Test-Path -LiteralPath $pfxPath) -or
+                (Test-Path -LiteralPath $statePath)) {
+              throw "Cleanup left temporary signing files"
+            }
+            for ($attempt = 0; $attempt -lt 20 -and
+                (Test-Path -LiteralPath $keyFilePath); $attempt++) {
+              Start-Sleep -Milliseconds 100
+            }
+            if (Test-Path -LiteralPath $keyFilePath) {
+              throw "Cleanup left the imported private-key file: $keyFilePath"
+            }
+          } finally {
+            foreach ($name in $credentialNames) {
+              [Environment]::SetEnvironmentVariable(
+                $name,
+                $originalCredentials[$name],
+                "Process"
+              )
+            }
+            if (-not $cleanupCompleted) {
+              & pwsh -NoLogo -NoProfile -NonInteractive `
+                -File $helper Cleanup
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Emergency disposable-certificate cleanup failed"
+              }
+            }
+            $env:GITHUB_ENV = $originalGitHubEnv
+            Remove-Item -LiteralPath $scratchGitHubEnv `
+              -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Install Linux desktop system libraries
+        if: matrix.target == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            binutils libegl1 libgl1 libglib2.0-0 libxkbcommon0 \
+            libxkbcommon-x11-0 libdbus-1-3 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libfontconfig1 libfreetype6 \
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
+            libxtst6 libxkbfile1 libnss3 libnspr4 libbrotli1 libasound2 \
+            libgbm1 libportaudio2 libgtk-3-0 libtiff5 libcups2 libpulse0 \
+            jackd2 jack-tools xvfb xauth zip unzip
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-lock/bootstrap.txt
+          python -m pip install --force-reinstall --require-hashes --only-binary=:all: -r requirements-lock/${{ matrix.target }}.txt
+          python -m pip check
+          python -VV
+          python -m pip freeze --all
+
+      - name: Verify macOS PyInstaller pkg_resources compatibility
+        if: startsWith(matrix.target, 'macos-')
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          import pkg_resources
+
+          assert version("setuptools") == "81.0.0"
+          assert getattr(pkg_resources, "__file__", None)
+          assert hasattr(pkg_resources, "NullProvider")
+          PY
 
       - name: Build bundled secure transport
         shell: bash
@@ -347,8 +633,12 @@ jobs:
             (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
               go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
               -o build/package/webjam-fabric ./cmd/webjam-fabric)
-          else
+          elif [[ "${{ matrix.target }}" == "macos-x64" ]]; then
             (cd transport && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
+              -o build/package/webjam-fabric ./cmd/webjam-fabric)
+          else
+            (cd transport && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
               go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
               -o build/package/webjam-fabric ./cmd/webjam-fabric)
           fi
@@ -369,8 +659,26 @@ jobs:
           mv jamulus_installer.exe Jamulus/jamulus_3.12.2_win.exe
           # webjam.spec's Jamulus/ datas block (mirrors VB/) picks this up.
 
+      - name: Stage bundled Jamulus package (Linux)
+        if: matrix.target == 'linux-x64'
+        run: |
+          curl -fsSL -o jamulus_client.deb \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
+          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus_client.deb" | sha256sum -c -
+          mkdir -p Jamulus
+          mv jamulus_client.deb Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+          # Prove the packaged dependency installs the exact lowercase path
+          # WebJam discovers on a clean Ubuntu machine.
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            ./Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+          test "$(command -v jamulus)" = "/usr/bin/jamulus"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Package)" = "jamulus"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Version)" = "3.12.2"
+          test "$(dpkg-deb -f Jamulus/jamulus_3.12.2_ubuntu_amd64.deb Architecture)" = "amd64"
+          python -c 'from core.settings import AppSettings; assert "/usr/bin/jamulus" in AppSettings().jamulus_candidates'
+
       - name: Stage bundled Jamulus.app (macOS)
-        if: matrix.target != 'windows-x64'
+        if: startsWith(matrix.target, 'macos-')
         run: |
           curl -fsSL -o jamulus.dmg \
             https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_mac.dmg
@@ -388,6 +696,7 @@ jobs:
         run: |
           mkdir -p out
           python -m PyInstaller --clean --noconfirm webjam.spec
+          build_id="$(git rev-parse HEAD)"
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
             cp transport/build/package/webjam-fabric.exe \
@@ -404,18 +713,149 @@ jobs:
               | grep -q '"type":"stopped"'
             test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
             test -n "$(find dist/WebJam -path '*/webjam_qt/webex_widget.html' -print -quit)"
-            test -n "$(find dist/WebJam -path '*/Jamulus/jamulus_3.12.2_win.exe' -print -quit)"
+            test -f dist/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe
+            test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
             cd dist && 7z a "../out/WebJam-${{ matrix.target }}.zip" WebJam/ && cd ..
+          elif [[ "${{ matrix.target }}" == "linux-x64" ]]; then
+            cp transport/build/package/webjam-fabric \
+              dist/WebJam/webjam-fabric
+            chmod 755 dist/WebJam/webjam-fabric
+            mkdir -p dist/WebJam/Jamulus
+            cp Jamulus/jamulus_3.12.2_ubuntu_amd64.deb \
+              dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+            cp licenses/JAMULUS_COPYING.txt \
+              dist/WebJam/Jamulus/JAMULUS_COPYING.txt
+            sha256sum dist/WebJam/webjam-fabric \
+              | awk '{print $1}' > dist/WebJam/webjam-fabric.sha256
+            python -m tests.support.verify_packaged_transport \
+              --binary dist/WebJam/webjam-fabric \
+              --manifest dist/WebJam/webjam-fabric.sha256 \
+              --build-id "$build_id" \
+              --machine x86_64
+            file dist/WebJam/WebJam | grep -Eq 'ELF 64-bit.*x86-64'
+            file dist/WebJam/webjam-fabric | grep -Eq 'ELF 64-bit.*x86-64'
+            test -x dist/WebJam/WebJam
+            test -x dist/WebJam/webjam-fabric
+            test -f dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb
+            test -f dist/WebJam/Jamulus/JAMULUS_COPYING.txt
+            echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
+            test -f dist/WebJam/_internal/webjam_qt/theme/conductor.qss
+            test -f dist/WebJam/_internal/webjam_qt/webex_widget.html
+            test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
+            cp packaging/linux/README-LINUX.txt dist/WebJam/README-LINUX.txt
+            cp packaging/linux/install-jamulus.sh dist/WebJam/install-jamulus.sh
+            chmod 755 dist/WebJam/install-jamulus.sh
+            (cd dist && zip -qr "../out/WebJam-${{ matrix.target }}.zip" WebJam/)
+            fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
+            mkdir -p "$fresh_dir"
+            unzip -q "out/WebJam-${{ matrix.target }}.zip" -d "$fresh_dir"
+            python -m tests.support.verify_packaged_transport \
+              --binary "$fresh_dir/WebJam/webjam-fabric" \
+              --manifest "$fresh_dir/WebJam/webjam-fabric.sha256" \
+              --build-id "$build_id" \
+              --machine x86_64
+            test -f "$fresh_dir/WebJam/README-LINUX.txt"
+            test -x "$fresh_dir/WebJam/install-jamulus.sh"
+            test -f "$fresh_dir/WebJam/Jamulus/JAMULUS_COPYING.txt"
+            echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  $fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
+            fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
+            mkdir -p "$fresh_home"
+            HOME="$fresh_home" \
+              WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
+              WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+              QT_QPA_PLATFORM=offscreen \
+              "$fresh_dir/WebJam/WebJam"
+            test -f "$fresh_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$fresh_home/webjam.log"
+
+            # Exercise the extracted app against the exact packaged Jamulus
+            # client and a private dummy JACK graph. A pre-existing client
+            # config is intentional: Linux is join-only, so this must never
+            # fall through to the macOS-only Host smoke defaults.
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+              --no-install-recommends \
+              "$fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb"
+            /usr/bin/jamulus --version 2>&1 | grep -Fq 'Version 3.12.2'
+            smoke_home="$RUNNER_TEMP/webjam-linux-audio-smoke-home"
+            mkdir -p "$smoke_home"
+            chmod 700 "$smoke_home"
+            printf '%s\n' \
+              '{' \
+              '  "jamulus_server": "127.0.0.1",' \
+              '  "jamulus_port": 22999,' \
+              '  "jamulus_rpc_port": 22998,' \
+              '  "jamulus_candidates": ["/usr/bin/jamulus"],' \
+              '  "host_server_enabled": false,' \
+              '  "musician_name": "Package Smoke"' \
+              '}' > "$smoke_home/.webjam_config.json"
+            chmod 600 "$smoke_home/.webjam_config.json"
+
+            export JACK_DEFAULT_SERVER="webjam-package-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            export JACK_NO_START_SERVER=1
+            export JACK_NO_AUDIO_RESERVATION=1
+            jackd --no-realtime --name "$JACK_DEFAULT_SERVER" \
+              -d dummy -r 48000 -p 128 -C 2 -P 2 \
+              > "$RUNNER_TEMP/webjam-jack-smoke.log" 2>&1 &
+            jack_pid=$!
+            cleanup_jack() {
+              kill "$jack_pid" 2>/dev/null || true
+              wait "$jack_pid" 2>/dev/null || true
+            }
+            trap cleanup_jack EXIT
+            jack_ready=0
+            for _ in $(seq 1 30); do
+              if jack_lsp >/dev/null 2>&1; then
+                jack_ready=1
+                break
+              fi
+              sleep 0.2
+            done
+            test "$jack_ready" = 1
+
+            set +e
+            HOME="$smoke_home" \
+              WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
+              WEBJAM_SMOKE_AUTOSTART_AUDIO=1 WEBJAM_SMOKE_EXIT_MS=8000 \
+              timeout 20s xvfb-run -a "$fresh_dir/WebJam/WebJam" \
+              > "$RUNNER_TEMP/webjam-linux-smoke.log" 2>&1
+            smoke_rc=$?
+            set -e
+            test "$smoke_rc" = 0
+            test -f "$smoke_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$smoke_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$smoke_home/webjam.log"
+            grep -Fq 'JSON-RPC: Server started on 127.0.0.1:22998' \
+              "$smoke_home/.webjam_jamulus.log"
+            grep -Fq 'accepted valid authentication secret' \
+              "$smoke_home/.webjam_jamulus.log"
+            grep -Fq "Connecting to JACK \"$JACK_DEFAULT_SERVER\" instance" \
+              "$smoke_home/.webjam_jamulus.log"
+            jamulus_stopped=0
+            for _ in $(seq 1 25); do
+              if ! pgrep -x jamulus >/dev/null; then
+                jamulus_stopped=1
+                break
+              fi
+              sleep 0.2
+            done
+            test "$jamulus_stopped" = 1
+            test "$(stat -c '%a' "$smoke_home/.webjam_jsonrpc_secret")" = 600
+            python -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 22998)); sock.close()'
+            ! jack_lsp 2>/dev/null | grep -q '^Jamulus'
           else
             cp transport/build/package/webjam-fabric \
               dist/WebJam.app/Contents/MacOS/webjam-fabric
             chmod 755 dist/WebJam.app/Contents/MacOS/webjam-fabric
             # Nest the pinned upstream Jamulus client/server and license.
-            # Upstream enables App Sandbox, which prevents WebJam from safely
-            # provisioning command-line RPC secrets/recordings for these
-            # child processes. Re-sign the nested apps ad hoc without that
-            # entitlement; executable/framework contents remain upstream.
+            # Build artifacts replace the upstream signatures ad hoc so App
+            # Sandbox does not prevent WebJam from provisioning command-line
+            # RPC secrets/recordings. The isolated protected release job later
+            # replaces every nested signature with its explicit Developer ID
+            # entitlement policy.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             ditto "$RUNNER_TEMP/JamulusServer.app" \
@@ -431,7 +871,6 @@ jobs:
             shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}' \
               > dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
-            build_id="$(git rev-parse HEAD)"
             expected_machine="arm64"
             if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
               expected_machine="x86_64"
@@ -441,14 +880,18 @@ jobs:
               --manifest dist/WebJam.app/Contents/Resources/webjam-fabric.sha256 \
               --build-id "$build_id" \
               --machine "$expected_machine"
-            ! codesign -d --entitlements :- \
-              dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
-              | grep -q 'com.apple.security.app-sandbox'
-            ! codesign -d --entitlements :- \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
-              | grep -q 'com.apple.security.app-sandbox'
+            jamulus_entitlements="$(codesign -d --xml --entitlements - \
+              dist/WebJam.app/Contents/Resources/Jamulus.app)"
+            server_entitlements="$(codesign -d --xml --entitlements - \
+              dist/WebJam.app/Contents/Resources/JamulusServer.app)"
+            ! grep -q 'com.apple.security.app-sandbox' \
+              <<< "$jamulus_entitlements"
+            ! grep -q 'com.apple.security.app-sandbox' \
+              <<< "$server_entitlements"
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
+            file dist/WebJam.app/Contents/MacOS/WebJam \
+              | grep -q "$expected_machine"
             test -s dist/WebJam.app/Contents/Resources/webjam-fabric.sha256
             printf '%s\n' \
               '{"version":1,"id":1,"type":"hello"}' \
@@ -464,8 +907,8 @@ jobs:
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
             # PyInstaller signs the outer bundle before the CI-only Jamulus
-            # copy above. Refresh the shallow outer seal so Gatekeeper does
-            # not report the added resources as a damaged application.
+            # copy above. Refresh the shallow outer seal so the unsigned source
+            # artifact is internally consistent before protected signing.
             jamulus_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
@@ -504,7 +947,7 @@ jobs:
             test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}')" = \
               "$(tr -d '\n' < dist/WebJam.app/Contents/Resources/webjam-fabric.sha256)"
-            # macOS: ditto preserves resource forks and extended attributes
+            # macOS: ditto preserves resource forks and extended attributes.
             ditto -c -k --sequesterRsrc --keepParent \
               dist/WebJam.app \
               "out/WebJam-${{ matrix.target }}.zip"
@@ -517,7 +960,94 @@ jobs:
               --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
               --machine "$expected_machine"
+            fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
+            mkdir -p "$fresh_home"
+            HOME="$fresh_home" \
+              WEBJAM_LOG_FILE="$fresh_home/webjam.log" \
+              WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+              "$fresh_dir/WebJam.app/Contents/MacOS/WebJam"
+            test -f "$fresh_home/webjam.log"
+            grep -Fq 'Starting Conductor UI' "$fresh_home/webjam.log"
+            ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+              "$fresh_home/webjam.log"
           fi
+
+      - name: Build macOS disk image
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          version="$(/usr/bin/sed -nE \
+            's/^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' \
+            webjam_qt/__init__.py)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
+          packaging/macos/create-dmg.sh \
+            dist/WebJam.app "$dmg" "WebJam $version"
+          hdiutil verify "$dmg"
+
+      - name: Verify mounted macOS disk image
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          build_id="$(git rev-parse HEAD)"
+          expected_machine="arm64"
+          if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
+            expected_machine="x86_64"
+          fi
+          dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
+          mount_dir="$RUNNER_TEMP/webjam-dmg-mount-${{ matrix.target }}"
+          copy_dir="$RUNNER_TEMP/webjam-dmg-copy-${{ matrix.target }}"
+          smoke_home="$RUNNER_TEMP/webjam-dmg-home-${{ matrix.target }}"
+          mkdir -p "$mount_dir" "$copy_dir" "$smoke_home"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_dir"
+          cleanup_dmg() {
+            hdiutil detach "$mount_dir" -force >/dev/null 2>&1 || true
+          }
+          trap cleanup_dmg EXIT
+          test -d "$mount_dir/WebJam.app"
+          test -L "$mount_dir/Applications"
+          test "$(readlink "$mount_dir/Applications")" = /Applications
+          test "$(stat -f '%Lp' "$mount_dir")" = 755
+          ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
+          hdiutil detach "$mount_dir"
+          trap - EXIT
+
+          copied_app="$copy_dir/WebJam.app"
+          codesign --verify --deep --strict "$copied_app"
+          file "$copied_app/Contents/MacOS/WebJam" \
+            | grep -q "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy \
+            -c 'Print :CFBundleShortVersionString' \
+            "$copied_app/Contents/Info.plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$copied_app/Contents/Info.plist")" = "$version"
+          test "$(tr -d '\r\n' \
+            < "$copied_app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
+          jamulus_client="$copied_app/Contents/Resources/Jamulus.app"
+          jamulus_server="$copied_app/Contents/Resources/JamulusServer.app"
+          test -x "$jamulus_client/Contents/MacOS/Jamulus"
+          test -x "$jamulus_server/Contents/MacOS/JamulusServer"
+          lipo "$jamulus_client/Contents/MacOS/Jamulus" \
+            -verify_arch "$expected_machine"
+          lipo "$jamulus_server/Contents/MacOS/JamulusServer" \
+            -verify_arch "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$jamulus_client/Contents/Info.plist")" = 3.12.2
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$jamulus_server/Contents/Info.plist")" = 3.12.2
+          python -m tests.support.verify_packaged_transport \
+            --binary "$copied_app/Contents/MacOS/webjam-fabric" \
+            --manifest "$copied_app/Contents/Resources/webjam-fabric.sha256" \
+            --build-id "$build_id" \
+            --machine "$expected_machine"
+          HOME="$smoke_home" \
+            WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
+            WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+            "$copied_app/Contents/MacOS/WebJam"
+          grep -Fq 'Starting Conductor UI' "$smoke_home/webjam.log"
+          ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+            "$smoke_home/webjam.log"
 
       - name: Verify Windows version metadata
         if: matrix.target == 'windows-x64'
@@ -529,51 +1059,1224 @@ jobs:
             throw "WebJam.exe ProductVersion '$actual' does not match '$expected'"
           }
 
-      - name: Sign Windows executables (optional; required for v3)
+      - name: Verify frozen Windows package
         if: matrix.target == 'windows-x64'
         shell: pwsh
-        env:
-          PFX_B64: ${{ secrets.WINDOWS_CODESIGN_PFX }}
-          PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: |
-          if ([string]::IsNullOrEmpty($env:PFX_B64)) {
-            Write-Host "No code-signing cert configured; v1/v2 remains usable but packaged v3 will fail closed."
-            exit 0
+          $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-fresh"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
+          Remove-Item -Recurse -Force $freshRoot,$smokeHome -ErrorAction SilentlyContinue
+          Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $freshRoot
+          New-Item -ItemType Directory -Force $smokeHome | Out-Null
+          $appDir = Join-Path $freshRoot "WebJam"
+          $app = Join-Path $appDir "WebJam.exe"
+          $fabric = Join-Path $appDir "webjam-fabric.exe"
+          $manifest = (Get-Content (Join-Path $appDir "webjam-fabric.sha256") -Raw).Trim()
+          $actualHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest -ne $actualHash) { throw "Packaged transport checksum mismatch" }
+          $installer = Join-Path $appDir "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installerHash -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Bundled Jamulus installer checksum mismatch"
           }
-          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
-          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
-            -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue `
-            | Select-Object -First 1).FullName
-          if (-not $signtool) { throw "signtool.exe not found" }
-          # Extract zip, sign the exe, re-zip
-          Expand-Archive "out\WebJam-windows-x64.zip" `
-            -DestinationPath "$env:RUNNER_TEMP\sign_work" -Force
-          & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD `
-            /tr https://timestamp.digicert.com /td sha256 /fd sha256 `
-            "$env:RUNNER_TEMP\sign_work\WebJam\WebJam.exe"
-          & $signtool sign /f $pfxPath /p $env:PFX_PASSWORD `
-            /tr https://timestamp.digicert.com /td sha256 /fd sha256 `
-            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe"
-          $fabricHash = (Get-FileHash `
-            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.exe" `
-            -Algorithm SHA256).Hash.ToLowerInvariant()
+          foreach ($binary in @($app, $fabric)) {
+            if ((Get-AuthenticodeSignature -LiteralPath $binary).Status -ne "NotSigned") {
+              throw "Ad-hoc Windows source artifact has an unexpected signature: $binary"
+            }
+          }
+          $env:HOME = $smokeHome
+          $env:USERPROFILE = $smokeHome
+          $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
+          $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
+          $env:WEBJAM_SMOKE_EXIT_MS = "5000"
           [IO.File]::WriteAllText(
-            "$env:RUNNER_TEMP\sign_work\WebJam\webjam-fabric.sha256",
+            (Join-Path $smokeHome ".webjam_config.json"),
+            '{"jamulus_candidates":[]}',
+            [Text.Encoding]::UTF8
+          )
+          $process = Start-Process -FilePath $app -WorkingDirectory $appDir -PassThru
+          try {
+            Wait-Process -Id $process.Id -Timeout 30 -ErrorAction Stop
+          } catch {
+            taskkill /PID $process.Id /T /F 2>$null | Out-Null
+            throw "Frozen WebJam did not finish its bounded launch smoke"
+          }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) {
+            throw "Frozen WebJam launch smoke exited $($process.ExitCode)"
+          }
+          if (-not (Test-Path $env:WEBJAM_LOG_FILE)) {
+            throw "Frozen WebJam did not create its startup log"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Starting Conductor UI" -Quiet)) {
+            throw "Frozen WebJam did not reach the Conductor UI bootstrap"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Verified bundled Jamulus installer is available" -Quiet)) {
+            throw "Frozen WebJam did not discover its verified Jamulus installer"
+          }
+          if (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -Pattern "WebJam failed during startup|Unhandled WebJam UI error" -Quiet) {
+            throw "Frozen WebJam logged a startup failure"
+          }
+          $residue = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($freshRoot)
+          }
+          if ($residue) {
+            $residue | ForEach-Object { taskkill /PID $_.ProcessId /T /F 2>$null | Out-Null }
+            throw "Frozen package left owned processes running after launch smoke"
+          }
+
+      - name: Build, install, launch, and uninstall Windows setup
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        run: |
+          $version = (python -c "from webjam_qt import __version__; print(__version__)").Trim()
+          $buildId = (git rev-parse HEAD).Trim()
+          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-setup-source"
+          $installDir = Join-Path $env:RUNNER_TEMP "webjam-installed"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-setup-home"
+          Remove-Item -Recurse -Force $workRoot,$installDir,$smokeHome `
+            -ErrorAction SilentlyContinue
+          Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $workRoot
+          New-Item -ItemType Directory -Force $smokeHome | Out-Null
+          $sourceDir = (Resolve-Path (Join-Path $workRoot "WebJam")).Path
+          $outputDir = (Resolve-Path "out").Path
+          $outputBase = "WebJam-v$version-windows-x64-setup"
+
+          $isccCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } `
+            | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup ISCC.exe was not found" }
+          $isccFileVersion = (Get-Item $iscc).VersionInfo.FileVersion
+          Write-Host "Using Inno Setup at '$iscc' (file version $isccFileVersion)"
+
+          $isccArgs = @(
+            "/DWebJamAppName=WebJam",
+            "/DWebJamAppVersion=$version",
+            "/DWebJamVersionInfoVersion=$version",
+            "/DWebJamSourceDir=$sourceDir",
+            "/DWebJamOutputDir=$outputDir",
+            "/DWebJamOutputBaseFilename=$outputBase"
+          )
+          $isccOutput = @(
+            & $iscc @isccArgs "packaging\windows\WebJam.iss" 2>&1
+          )
+          $isccExitCode = $LASTEXITCODE
+          $isccOutput | ForEach-Object { Write-Host $_ }
+          if ($isccExitCode -ne 0) {
+            throw "Inno Setup compilation failed with exit code $isccExitCode"
+          }
+          if (-not @($isccOutput | Where-Object {
+              [string] $_ -match '^Compiler engine version: Inno Setup 6\.7\.1$'
+          })) {
+            throw "Inno Setup compiler is not the reviewed version 6.7.1"
+          }
+
+          $setup = (Resolve-Path (Join-Path $outputDir "$outputBase.exe")).Path
+          $setupVersionInfo = (Get-Item $setup).VersionInfo
+          $actualVersionParts = @(
+            $setupVersionInfo.ProductMajorPart,
+            $setupVersionInfo.ProductMinorPart,
+            $setupVersionInfo.ProductBuildPart,
+            $setupVersionInfo.ProductPrivatePart
+          )
+          $expectedVersionParts = @(
+            $version.Split('.') | ForEach-Object { [int] $_ }
+          )
+          if ($expectedVersionParts.Count -gt 4) {
+            throw "Setup version has more than four numeric components: $version"
+          }
+          while ($expectedVersionParts.Count -lt 4) {
+            $expectedVersionParts += 0
+          }
+          $actualNumericVersion = $actualVersionParts -join '.'
+          $expectedNumericVersion = $expectedVersionParts -join '.'
+          if ($actualNumericVersion -ne $expectedNumericVersion) {
+            throw "Setup ProductVersion '$($setupVersionInfo.ProductVersion)' does not match '$version'"
+          }
+          if ((Get-AuthenticodeSignature -LiteralPath $setup).Status -ne "NotSigned") {
+            throw "Unsigned branch setup has an unexpected signature state"
+          }
+
+          $installLog = Join-Path $env:RUNNER_TEMP "webjam-install.log"
+          $installArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/TASKS=desktopicon",
+            "/DIR=`"$installDir`""
+          )
+          $installProcess = Start-Process -FilePath $setup `
+            -ArgumentList ($installArguments + "/LOG=`"$installLog`"") `
+            -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "WebJam setup exited $($installProcess.ExitCode)"
+          }
+
+          $app = Join-Path $installDir "WebJam.exe"
+          $fabric = Join-Path $installDir "webjam-fabric.exe"
+          $manifestPath = Join-Path $installDir "webjam-fabric.sha256"
+          $readmePath = Join-Path $installDir "README-WINDOWS.txt"
+          $licensePath = Join-Path $installDir "LICENSE.txt"
+          $noticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
+          $jamulusInstaller = Join-Path $installDir `
+            "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          $requiredFiles = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $jamulusInstaller,
+            $readmePath,
+            $licensePath,
+            $noticesPath
+          )
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path $required)) { throw "Installed file is missing: $required" }
+          }
+
+          # Prove an in-place update replaces the complete owned PyInstaller
+          # tree instead of retaining modules removed by a newer build.
+          $obsoleteCanary = Join-Path $installDir "_internal\obsolete-owned-canary.dll"
+          [IO.File]::WriteAllText($obsoleteCanary, "obsolete", [Text.Encoding]::ASCII)
+          $upgradeLog = Join-Path $env:RUNNER_TEMP "webjam-upgrade.log"
+          $upgradeProcess = Start-Process -FilePath $setup `
+            -ArgumentList ($installArguments + "/LOG=`"$upgradeLog`"") `
+            -Wait -PassThru
+          if ($upgradeProcess.ExitCode -ne 0) {
+            throw "WebJam in-place upgrade exited $($upgradeProcess.ExitCode)"
+          }
+          if (Test-Path $obsoleteCanary) {
+            throw "In-place upgrade retained an obsolete owned PyInstaller file"
+          }
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path $required)) {
+              throw "Upgraded installation lost a required file: $required"
+            }
+          }
+
+          $uninstallRegistry = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{39B63AB8-F1B2-4E8E-9E70-35F517800BA5}_is1"
+          if (-not (Test-Path $uninstallRegistry)) {
+            throw "Installed-app registry entry is missing"
+          }
+          if ((Get-Item $app).VersionInfo.ProductVersion -ne $version) {
+            throw "Installed WebJam version does not match $version"
+          }
+          function Get-PeMachine([string] $Path) {
+            $stream = [IO.File]::OpenRead($Path)
+            $reader = [IO.BinaryReader]::new($stream)
+            try {
+              if ($reader.ReadUInt16() -ne 0x5A4D) {
+                throw "Installed file is not a PE executable: $Path"
+              }
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadInt32()
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "Installed file has no PE signature: $Path"
+              }
+              return $reader.ReadUInt16()
+            } finally {
+              $reader.Dispose()
+            }
+          }
+          foreach ($binary in @($app, $fabric)) {
+            if ((Get-PeMachine $binary) -ne 0x8664) {
+              throw "Installed payload is not x86-64: $binary"
+            }
+          }
+          $installedBuildId = (Get-Content `
+            (Join-Path $installDir "_internal\webjam-build-id.txt") -Raw).Trim()
+          if ($installedBuildId -ne $buildId) {
+            throw "Installed build ID '$installedBuildId' does not match '$buildId'"
+          }
+          $manifest = (Get-Content $manifestPath -Raw).Trim()
+          $fabricHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest -ne $fabricHash) {
+            throw "Installed transport manifest mismatch"
+          }
+          $installerHash = (Get-FileHash $jamulusInstaller `
+            -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installerHash -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Installed Jamulus installer checksum mismatch"
+          }
+          foreach ($binary in @($app, $fabric)) {
+            if ((Get-AuthenticodeSignature -LiteralPath $binary).Status -ne "NotSigned") {
+              throw "Unsigned source install has an unexpected signature: $binary"
+            }
+          }
+
+          $startShortcut = Join-Path $env:APPDATA `
+            "Microsoft\Windows\Start Menu\Programs\WebJam.lnk"
+          $desktopShortcut = Join-Path `
+            ([Environment]::GetFolderPath("Desktop")) "WebJam.lnk"
+          if (-not (Test-Path $startShortcut)) { throw "Start-menu shortcut is missing" }
+          if (-not (Test-Path $desktopShortcut)) { throw "Desktop shortcut is missing" }
+
+          $env:HOME = $smokeHome
+          $env:USERPROFILE = $smokeHome
+          $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
+          $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
+          $env:WEBJAM_SMOKE_EXIT_MS = "5000"
+          [IO.File]::WriteAllText(
+            (Join-Path $smokeHome ".webjam_config.json"),
+            '{"jamulus_candidates":[]}',
+            [Text.Encoding]::UTF8
+          )
+          $appProcess = Start-Process -FilePath $app `
+            -WorkingDirectory $installDir -PassThru
+          try {
+            Wait-Process -Id $appProcess.Id -Timeout 30 -ErrorAction Stop
+          } catch {
+            taskkill /PID $appProcess.Id /T /F 2>$null | Out-Null
+            throw "Installed WebJam did not finish its bounded launch smoke"
+          }
+          $appProcess.Refresh()
+          if ($appProcess.ExitCode -ne 0) {
+            throw "Installed WebJam launch exited $($appProcess.ExitCode)"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Starting Conductor UI" -Quiet)) {
+            throw "Installed WebJam did not reach the Conductor UI"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Verified bundled Jamulus installer is available" -Quiet)) {
+            throw "Installed WebJam did not discover bundled Jamulus"
+          }
+          if (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -Pattern "WebJam failed during startup|Unhandled WebJam UI error" -Quiet) {
+            throw "Installed WebJam logged a startup failure"
+          }
+
+          $sentinel = Join-Path $installDir "user-sentinel.txt"
+          [IO.File]::WriteAllText($sentinel, "preserve me", [Text.Encoding]::UTF8)
+          $uninstaller = Get-ChildItem $installDir -Filter "unins*.exe" `
+            | Select-Object -First 1
+          if (-not $uninstaller) { throw "WebJam uninstaller is missing" }
+          if ((Get-AuthenticodeSignature -LiteralPath $uninstaller.FullName).Status -ne "NotSigned") {
+            throw "Unsigned source uninstaller has an unexpected signature"
+          }
+          $uninstallLog = Join-Path $env:RUNNER_TEMP "webjam-uninstall.log"
+          $uninstallProcess = Start-Process -FilePath $uninstaller.FullName `
+            -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART",
+              "/LOG=`"$uninstallLog`""
+            ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "WebJam uninstall exited $($uninstallProcess.ExitCode)"
+          }
+          $ownedAfterUninstall = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $readmePath,
+            $licensePath,
+            $noticesPath,
+            (Join-Path $installDir "_internal")
+          )
+          for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            $ownedRemaining = @($ownedAfterUninstall | Where-Object { Test-Path $_ })
+            $uninstallerRemaining = @(Get-ChildItem $installDir -Filter "unins*" `
+              -ErrorAction SilentlyContinue)
+            if (-not $ownedRemaining -and -not $uninstallerRemaining -and
+                -not (Test-Path $uninstallRegistry)) {
+              break
+            }
+            Start-Sleep -Milliseconds 200
+          }
+          $ownedRemaining = @($ownedAfterUninstall | Where-Object { Test-Path $_ })
+          if ($ownedRemaining) {
+            throw "Uninstall left owned payload paths: $($ownedRemaining -join ', ')"
+          }
+          if (Get-ChildItem $installDir -Filter "unins*" `
+              -ErrorAction SilentlyContinue) {
+            throw "Uninstall left owned uninstaller files"
+          }
+          if (Test-Path $uninstallRegistry) {
+            throw "Uninstall left the installed-app registry entry"
+          }
+          if (-not (Test-Path $sentinel)) { throw "Uninstall removed an unowned file" }
+          if ((Test-Path $startShortcut) -or (Test-Path $desktopShortcut)) {
+            throw "Uninstall left a WebJam shortcut"
+          }
+          $residue = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installDir)
+          }
+          if ($residue) {
+            throw "Installed package left an owned process after uninstall"
+          }
+          Remove-Item -Recurse -Force $installDir
+
+      - name: Verify expected release deliverables
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          target="${{ matrix.target }}"
+          test -s "out/WebJam-${target}.zip"
+          if [[ "$target" == "windows-x64" ]]; then
+            test -s "out/WebJam-v${version}-${target}-setup.exe"
+          elif [[ "$target" == macos-* ]]; then
+            test -s "out/WebJam-v${version}-${target}.dmg"
+          fi
+
+      # Actions artifacts are useful for engineering checks but are not the
+      # permanent signed GitHub Release. Make that trust distinction visible
+      # in every unsigned/ad-hoc filename before it can be downloaded by hand.
+      - name: Mark unsigned platform source artifacts as test-only
+        if: >-
+          matrix.target == 'windows-x64' ||
+          startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          target="${{ matrix.target }}"
+          if [[ "$target" == "windows-x64" ]]; then
+            mv "out/WebJam-${target}.zip" \
+              "out/WebJam-${target}-UNSIGNED-TEST-ONLY.zip"
+            mv "out/WebJam-v${version}-${target}-setup.exe" \
+              "out/WebJam-v${version}-${target}-UNSIGNED-TEST-ONLY-setup.exe"
+          else
+            mv "out/WebJam-${target}.zip" \
+              "out/WebJam-${target}-ADHOC-TEST-ONLY.zip"
+            mv "out/WebJam-v${version}-${target}.dmg" \
+              "out/WebJam-v${version}-${target}-ADHOC-TEST-ONLY.dmg"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-${{ matrix.target }}
+          path: out/WebJam*${{ matrix.target }}*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ------------------------------------------------------------------
+  # Protected Windows release trust
+  #
+  # The ordinary matrix creates and fully exercises an unsigned source Setup.
+  # Only a tag or explicit rehearsal can enter this environment-gated job,
+  # which validates the pinned publisher certificate, signs owned executables,
+  # rebuilds/signs Setup and its uninstaller, removes the private key, and then
+  # repeats installation and launch checks on the final signed container.
+  # ------------------------------------------------------------------
+  windows-release-trust:
+    name: Windows Release Trust (windows-x64)
+    needs: build-desktop
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.windows_signing_rehearsal)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    environment:
+      name: windows-release
+      deployment: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Download tested unsigned Windows source artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-windows-x64
+          path: release-source/
+
+      - name: Verify downloaded Windows source before credential access
+        shell: pwsh
+        run: |
+          $versionMatches = [regex]::Matches(
+            [IO.File]::ReadAllText("webjam_qt\__init__.py"),
+            '(?m)^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$'
+          )
+          if ($versionMatches.Count -ne 1) {
+            throw "Could not statically resolve one WebJam release version"
+          }
+          $version = $versionMatches[0].Groups[1].Value
+          if ($env:GITHUB_REF.StartsWith("refs/tags/") -and
+              $env:GITHUB_REF_NAME -cne "v$version") {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match package version v$version"
+          }
+          $buildId = (git rev-parse HEAD).Trim()
+          $sourceZip = (Resolve-Path `
+            "release-source\WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip").Path
+          $sourceSetup = (Resolve-Path `
+            "release-source\WebJam-v$version-windows-x64-UNSIGNED-TEST-ONLY-setup.exe").Path
+          $sourceFiles = @(Get-ChildItem "release-source" -File)
+          if ($sourceFiles.Count -ne 2) {
+            throw "Windows source artifact must contain exactly ZIP and Setup files"
+          }
+          foreach ($file in @($sourceZip, $sourceSetup)) {
+            if ((Get-Item $file).Length -le 0) { throw "Empty source artifact: $file" }
+          }
+          if ((Get-AuthenticodeSignature $sourceSetup).Status -ne "NotSigned") {
+            throw "Windows source Setup must remain unsigned before protected signing"
+          }
+
+          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-release-source"
+          $evidenceDir = Join-Path $env:GITHUB_WORKSPACE `
+            "out\windows-signing-evidence"
+          Remove-Item -Recurse -Force $workRoot,"out" `
+            -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $workRoot,$evidenceDir | Out-Null
+          [IO.File]::WriteAllText(
+            (Join-Path $evidenceDir "signing-status.json"),
+            '{"version":1,"success":false,"stage":"protected-job-started"}',
+            [Text.Encoding]::UTF8
+          )
+          Expand-Archive $sourceZip -DestinationPath $workRoot
+          $appDir = Join-Path $workRoot "WebJam"
+          $app = Join-Path $appDir "WebJam.exe"
+          $fabric = Join-Path $appDir "webjam-fabric.exe"
+          foreach ($binary in @($app, $fabric)) {
+            if ((Get-AuthenticodeSignature $binary).Status -ne "NotSigned") {
+              throw "Windows source executable must be unsigned: $binary"
+            }
+          }
+          if ((Get-Item $app).VersionInfo.ProductVersion -ne $version) {
+            throw "Windows source version does not match $version"
+          }
+          $packagedBuildId = (Get-Content `
+            (Join-Path $appDir "_internal\webjam-build-id.txt") -Raw).Trim()
+          if ($packagedBuildId -ne $buildId) {
+            throw "Windows source build ID '$packagedBuildId' does not match '$buildId'"
+          }
+          $manifest = (Get-Content `
+            (Join-Path $appDir "webjam-fabric.sha256") -Raw).Trim()
+          $fabricHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest -ne $fabricHash) {
+            throw "Windows source transport manifest mismatch"
+          }
+          $jamulusInstaller = Join-Path $appDir `
+            "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          if ((Get-FileHash $jamulusInstaller -Algorithm SHA256).Hash.ToLowerInvariant() `
+              -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Windows source Jamulus installer checksum mismatch"
+          }
+
+      - name: Verify protected Windows packaging tools before credential access
+        shell: pwsh
+        run: |
+          $sevenZipOutput = @(& 7z i 2>&1)
+          $sevenZipExitCode = $LASTEXITCODE
+          if ($sevenZipExitCode -ne 0 -or -not @($sevenZipOutput | Where-Object {
+              [string] $_ -match '^7-Zip 26\.02 '
+          })) {
+            throw "7-Zip is not the reviewed version 26.02"
+          }
+
+          $isccCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup ISCC.exe was not found" }
+          $probeRoot = Join-Path $env:RUNNER_TEMP "webjam-inno-version-probe"
+          Remove-Item -Recurse -Force $probeRoot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $probeRoot | Out-Null
+          $probeScript = Join-Path $probeRoot "probe.iss"
+          $probeOutput = Join-Path $probeRoot "output"
+          $probeSource = @"
+          [Setup]
+          AppId=WebJamCompilerVersionProbe
+          AppName=WebJam Compiler Version Probe
+          AppVersion=0.0.0
+          DefaultDirName={tmp}\WebJamCompilerVersionProbe
+          OutputDir=$probeOutput
+          OutputBaseFilename=webjam-compiler-version-probe
+          PrivilegesRequired=lowest
+          Uninstallable=no
+          "@
+          [IO.File]::WriteAllText(
+            $probeScript,
+            $probeSource,
+            [Text.UTF8Encoding]::new($false)
+          )
+          try {
+            $isccOutput = @(& $iscc $probeScript 2>&1)
+            $isccExitCode = $LASTEXITCODE
+            $isccOutput | ForEach-Object { Write-Host $_ }
+            if ($isccExitCode -ne 0) {
+              throw "Inno Setup probe failed with exit code $isccExitCode"
+            }
+            if (-not @($isccOutput | Where-Object {
+                [string] $_ -match '^Compiler engine version: Inno Setup 6\.7\.1$'
+            })) {
+              throw "Inno Setup compiler is not the reviewed version 6.7.1"
+            }
+          } finally {
+            Remove-Item -Recurse -Force $probeRoot -ErrorAction SilentlyContinue
+          }
+
+      - name: Validate protected Windows release certificate
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+          WINDOWS_CODESIGN_SUBJECT: ${{ vars.WINDOWS_CODESIGN_SUBJECT }}
+        run: packaging\windows\release-certificate.ps1 Validate
+
+      - name: Prepare protected Windows release certificate
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+          WINDOWS_CODESIGN_SUBJECT: ${{ vars.WINDOWS_CODESIGN_SUBJECT }}
+        run: packaging\windows\release-certificate.ps1 Prepare
+
+      - name: Sign Windows payload and build signed Setup
+        shell: pwsh
+        run: |
+          function Assert-WebJamSignature([string] $Path) {
+            & $env:WEBJAM_WINDOWS_SIGNTOOL verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed: $Path"
+            }
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if ($signature.Status -ne "Valid") {
+              throw "Authenticode status is not valid: $Path"
+            }
+            if ($signature.SignerCertificate.Subject -cne `
+                $env:WEBJAM_WINDOWS_CODESIGN_SUBJECT) {
+              throw "Authenticode publisher subject mismatch: $Path"
+            }
+            if ($signature.SignerCertificate.Thumbprint.ToUpperInvariant() -cne `
+                $env:WEBJAM_WINDOWS_CODESIGN_THUMBPRINT) {
+              throw "Authenticode certificate thumbprint mismatch: $Path"
+            }
+            if ($null -eq $signature.TimeStamperCertificate) {
+              throw "Authenticode timestamp is missing: $Path"
+            }
+          }
+
+          $versionMatches = [regex]::Matches(
+            [IO.File]::ReadAllText("webjam_qt\__init__.py"),
+            '(?m)^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$'
+          )
+          if ($versionMatches.Count -ne 1) {
+            throw "Could not statically resolve one WebJam release version"
+          }
+          $version = $versionMatches[0].Groups[1].Value
+          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-release-source"
+          $appDir = Join-Path $workRoot "WebJam"
+          $app = Join-Path $appDir "WebJam.exe"
+          $fabric = Join-Path $appDir "webjam-fabric.exe"
+          foreach ($binary in @($app, $fabric)) {
+            & $env:WEBJAM_WINDOWS_SIGNTOOL sign `
+              /sha1 $env:WEBJAM_WINDOWS_CODESIGN_THUMBPRINT `
+              /tr https://timestamp.digicert.com /td sha256 /fd sha256 $binary
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed: $binary" }
+            Assert-WebJamSignature $binary
+          }
+          $fabricHash = (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            (Join-Path $appDir "webjam-fabric.sha256"),
             $fabricHash,
             [Text.Encoding]::ASCII
           )
-          cd "$env:RUNNER_TEMP\sign_work"
-          7z a "$env:GITHUB_WORKSPACE\out\WebJam-windows-x64.zip" WebJam\
-          Remove-Item -Force $pfxPath -ErrorAction SilentlyContinue
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+          $outputDir = (Resolve-Path "out").Path
+          $portableZip = Join-Path $outputDir "WebJam-windows-x64.zip"
+          Remove-Item -Force $portableZip -ErrorAction SilentlyContinue
+          Push-Location $workRoot
+          try {
+            7z a $portableZip WebJam\
+            if ($LASTEXITCODE -ne 0) { throw "Signed portable ZIP creation failed" }
+          } finally {
+            Pop-Location
+          }
+
+          $isccCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } `
+            | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup ISCC.exe was not found" }
+          $outputBase = "WebJam-v$version-windows-x64-setup"
+          $signCommand = '$q' + $env:WEBJAM_WINDOWS_SIGNTOOL +
+            '$q sign /sha1 ' + $env:WEBJAM_WINDOWS_CODESIGN_THUMBPRINT +
+            ' /tr https://timestamp.digicert.com /td sha256 /fd sha256 $f'
+          $isccArgs = @(
+            "/DWebJamAppName=WebJam",
+            "/DWebJamAppVersion=$version",
+            "/DWebJamVersionInfoVersion=$version",
+            "/DWebJamSourceDir=$appDir",
+            "/DWebJamOutputDir=$outputDir",
+            "/DWebJamOutputBaseFilename=$outputBase",
+            "/Swebjamsign=$signCommand",
+            "/DWebJamSignTool=webjamsign"
+          )
+          $isccOutput = @(
+            & $iscc @isccArgs "packaging\windows\WebJam.iss" 2>&1
+          )
+          $isccExitCode = $LASTEXITCODE
+          $isccOutput | ForEach-Object { Write-Host $_ }
+          if ($isccExitCode -ne 0) {
+            throw "Signed Inno Setup compilation failed with exit code $isccExitCode"
+          }
+          if (-not @($isccOutput | Where-Object {
+              [string] $_ -match '^Compiler engine version: Inno Setup 6\.7\.1$'
+          })) {
+            throw "Inno Setup compiler is not the reviewed version 6.7.1"
+          }
+          $setup = (Resolve-Path (Join-Path $outputDir "$outputBase.exe")).Path
+          Assert-WebJamSignature $setup
+          if ((Get-Item $setup).VersionInfo.ProductVersion -ne $version) {
+            throw "Signed Setup ProductVersion does not match $version"
+          }
+
+          $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-release-signed"
+          Remove-Item -Recurse -Force $freshRoot -ErrorAction SilentlyContinue
+          Expand-Archive $portableZip -DestinationPath $freshRoot
+          foreach ($binary in @(
+              (Join-Path $freshRoot "WebJam\WebJam.exe"),
+              (Join-Path $freshRoot "WebJam\webjam-fabric.exe")
+          )) {
+            Assert-WebJamSignature $binary
+          }
+          $freshFabric = Join-Path $freshRoot "WebJam\webjam-fabric.exe"
+          $freshManifest = (Get-Content `
+            (Join-Path $freshRoot "WebJam\webjam-fabric.sha256") -Raw).Trim()
+          if ($freshManifest -ne `
+              (Get-FileHash $freshFabric -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Signed portable ZIP transport manifest mismatch"
+          }
+
+          $certificate = Get-Item `
+            "Cert:\CurrentUser\My\$env:WEBJAM_WINDOWS_CODESIGN_THUMBPRINT"
+          [PSCustomObject]@{
+            subject = $certificate.Subject
+            issuer = $certificate.Issuer
+            thumbprint = $certificate.Thumbprint
+            not_before = $certificate.NotBefore.ToUniversalTime().ToString("o")
+            not_after = $certificate.NotAfter.ToUniversalTime().ToString("o")
+            signature_algorithm = $certificate.SignatureAlgorithm.Value
+            public_key_algorithm = $certificate.PublicKey.Oid.Value
+          } | ConvertTo-Json | Set-Content -Encoding utf8 `
+            "out\windows-signing-evidence\publisher-certificate.json"
+          Get-FileHash $portableZip,$setup -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path | Split-Path -Leaf)" } |
+            Set-Content -Encoding ascii `
+              "out\windows-signing-evidence\signed-container-sha256.txt"
+
+      - name: Remove protected Windows release certificate
+        if: always()
+        shell: pwsh
+        run: packaging\windows\release-certificate.ps1 Cleanup
+
+      - name: Install, launch, inventory, and uninstall signed Windows Setup
+        shell: pwsh
+        run: |
+          function Assert-WebJamSignature([string] $Path) {
+            & $env:WEBJAM_WINDOWS_SIGNTOOL verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed after cleanup: $Path"
+            }
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if ($signature.Status -ne "Valid" -or
+                $signature.SignerCertificate.Subject -cne `
+                  $env:WEBJAM_WINDOWS_CODESIGN_SUBJECT -or
+                $signature.SignerCertificate.Thumbprint.ToUpperInvariant() -cne `
+                  $env:WEBJAM_WINDOWS_CODESIGN_THUMBPRINT -or
+                $null -eq $signature.TimeStamperCertificate) {
+              throw "Final Authenticode identity/timestamp check failed: $Path"
+            }
+          }
+          function Test-PortableExecutable([string] $Path) {
+            $stream = [IO.File]::OpenRead($Path)
+            try {
+              if ($stream.Length -lt 2) { return $false }
+              return ($stream.ReadByte() -eq 0x4D -and $stream.ReadByte() -eq 0x5A)
+            } finally {
+              $stream.Dispose()
+            }
+          }
+
+          $versionMatches = [regex]::Matches(
+            [IO.File]::ReadAllText("webjam_qt\__init__.py"),
+            '(?m)^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$'
+          )
+          if ($versionMatches.Count -ne 1) {
+            throw "Could not statically resolve one WebJam release version"
+          }
+          $version = $versionMatches[0].Groups[1].Value
+          $buildId = (git rev-parse HEAD).Trim()
+          $setup = (Resolve-Path "out\WebJam-v$version-windows-x64-setup.exe").Path
+          $installDir = Join-Path $env:RUNNER_TEMP "webjam-release-installed"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-release-installed-home"
+          $evidenceDir = Join-Path $env:GITHUB_WORKSPACE `
+            "out\windows-signing-evidence"
+          Remove-Item -Recurse -Force $installDir,$smokeHome `
+            -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $installDir,$smokeHome | Out-Null
+          Assert-WebJamSignature $setup
+          $installArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/TASKS=desktopicon",
+            "/DIR=`"$installDir`"",
+            "/LOG=`"$(Join-Path $env:RUNNER_TEMP 'webjam-release-install.log')`""
+          )
+          $installProcess = Start-Process $setup -ArgumentList $installArguments `
+            -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "Signed WebJam Setup exited $($installProcess.ExitCode)"
+          }
+
+          $app = Join-Path $installDir "WebJam.exe"
+          $fabric = Join-Path $installDir "webjam-fabric.exe"
+          $manifestPath = Join-Path $installDir "webjam-fabric.sha256"
+          $readmePath = Join-Path $installDir "README-WINDOWS.txt"
+          $licensePath = Join-Path $installDir "LICENSE.txt"
+          $noticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
+          $jamulusInstaller = Join-Path $installDir `
+            "_internal\Jamulus\jamulus_3.12.2_win.exe"
+          $requiredFiles = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $jamulusInstaller,
+            $readmePath,
+            $licensePath,
+            $noticesPath
+          )
+          foreach ($required in $requiredFiles) {
+            if (-not (Test-Path $required)) { throw "Signed install is missing $required" }
+          }
+          foreach ($binary in @($app, $fabric)) { Assert-WebJamSignature $binary }
+          if ((Get-Item $app).VersionInfo.ProductVersion -ne $version) {
+            throw "Signed installed WebJam version does not match $version"
+          }
+          $installedBuildId = (Get-Content `
+            (Join-Path $installDir "_internal\webjam-build-id.txt") -Raw).Trim()
+          if ($installedBuildId -ne $buildId) {
+            throw "Signed installed build ID '$installedBuildId' does not match '$buildId'"
+          }
+          $manifest = (Get-Content $manifestPath -Raw).Trim()
+          if ($manifest -ne `
+              (Get-FileHash $fabric -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Signed installed transport manifest mismatch"
+          }
+          if ((Get-FileHash $jamulusInstaller -Algorithm SHA256).Hash.ToLowerInvariant() `
+              -ne "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9") {
+            throw "Signed install Jamulus installer checksum mismatch"
+          }
+
+          $uninstallRegistry = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{39B63AB8-F1B2-4E8E-9E70-35F517800BA5}_is1"
+          if (-not (Test-Path $uninstallRegistry)) {
+            throw "Signed installed-app registry entry is missing"
+          }
+          $startShortcut = Join-Path $env:APPDATA `
+            "Microsoft\Windows\Start Menu\Programs\WebJam.lnk"
+          $desktopShortcut = Join-Path `
+            ([Environment]::GetFolderPath("Desktop")) "WebJam.lnk"
+          if (-not (Test-Path $startShortcut) -or -not (Test-Path $desktopShortcut)) {
+            throw "Signed Setup did not create its requested shortcuts"
+          }
+
+          $uninstaller = Get-ChildItem $installDir -Filter "unins*.exe" |
+            Select-Object -First 1
+          if (-not $uninstaller) { throw "Signed WebJam uninstaller is missing" }
+          Assert-WebJamSignature $uninstaller.FullName
+
+          $inventory = @(
+            Get-ChildItem $installDir -Recurse -File | ForEach-Object {
+              if (-not (Test-PortableExecutable $_.FullName)) { return }
+              $signature = Get-AuthenticodeSignature -LiteralPath $_.FullName
+              [PSCustomObject]@{
+                path = $_.FullName.Substring($installDir.Length + 1)
+                sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                status = [string] $signature.Status
+                subject = if ($signature.SignerCertificate) {
+                  $signature.SignerCertificate.Subject
+                } else { "" }
+              }
+            }
+          )
+          if ($inventory.Count -lt 300) {
+            throw "PE signature inventory is unexpectedly incomplete"
+          }
+          $inventory | Sort-Object path | Export-Csv -NoTypeInformation `
+            (Join-Path $evidenceDir "pe-signature-inventory.csv")
+          $otherSignatureStates = @($inventory | Where-Object {
+            $_.status -notin @("Valid", "NotSigned")
+          }).Count
+          [PSCustomObject]@{
+            total = $inventory.Count
+            valid = @($inventory | Where-Object status -eq "Valid").Count
+            unsigned = @($inventory | Where-Object status -eq "NotSigned").Count
+            other = $otherSignatureStates
+          } | ConvertTo-Json | Set-Content -Encoding utf8 `
+            (Join-Path $evidenceDir "pe-signature-summary.json")
+          if ($otherSignatureStates -ne 0) {
+            throw "Installed PE inventory contains invalid or indeterminate signature states"
+          }
+
+          $env:HOME = $smokeHome
+          $env:USERPROFILE = $smokeHome
+          $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
+          $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
+          $env:WEBJAM_SMOKE_EXIT_MS = "5000"
+          [IO.File]::WriteAllText(
+            (Join-Path $smokeHome ".webjam_config.json"),
+            '{"jamulus_candidates":[]}',
+            [Text.Encoding]::UTF8
+          )
+          $appProcess = Start-Process $app -WorkingDirectory $installDir -PassThru
+          try {
+            Wait-Process -Id $appProcess.Id -Timeout 30 -ErrorAction Stop
+          } catch {
+            taskkill /PID $appProcess.Id /T /F 2>$null | Out-Null
+            throw "Signed installed WebJam did not finish its launch smoke"
+          }
+          $appProcess.Refresh()
+          if ($appProcess.ExitCode -ne 0) {
+            throw "Signed installed WebJam exited $($appProcess.ExitCode)"
+          }
+          if (-not (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -SimpleMatch "Starting Conductor UI" -Quiet)) {
+            throw "Signed installed WebJam did not reach the Conductor UI"
+          }
+          if (Select-String -Path $env:WEBJAM_LOG_FILE `
+              -Pattern "WebJam failed during startup|Unhandled WebJam UI error" -Quiet) {
+            throw "Signed installed WebJam logged a startup failure"
+          }
+
+          $sentinel = Join-Path $installDir "user-sentinel.txt"
+          [IO.File]::WriteAllText($sentinel, "preserve me", [Text.Encoding]::UTF8)
+          $uninstallProcess = Start-Process $uninstaller.FullName -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/LOG=`"$(Join-Path $env:RUNNER_TEMP 'webjam-release-uninstall.log')`""
+          ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "Signed WebJam uninstall exited $($uninstallProcess.ExitCode)"
+          }
+          $ownedAfterUninstall = @(
+            $app,
+            $fabric,
+            $manifestPath,
+            $readmePath,
+            $licensePath,
+            $noticesPath,
+            (Join-Path $installDir "_internal")
+          )
+          for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            $ownedRemaining = @(
+              $ownedAfterUninstall | Where-Object { Test-Path $_ }
+            )
+            $uninstallerRemaining = @(
+              Get-ChildItem $installDir -Filter "unins*" `
+                -ErrorAction SilentlyContinue
+            )
+            if (-not $ownedRemaining -and -not $uninstallerRemaining -and
+                -not (Test-Path $uninstallRegistry)) {
+              break
+            }
+            Start-Sleep -Milliseconds 200
+          }
+          $ownedRemaining = @(
+            $ownedAfterUninstall | Where-Object { Test-Path $_ }
+          )
+          if ($ownedRemaining) {
+            throw "Signed uninstall left owned payload paths: $($ownedRemaining -join ', ')"
+          }
+          if (Get-ChildItem $installDir -Filter "unins*" `
+              -ErrorAction SilentlyContinue) {
+            throw "Signed uninstall left owned uninstaller files"
+          }
+          if (Test-Path $uninstallRegistry) {
+            throw "Signed uninstall left the installed-app registry entry"
+          }
+          if (-not (Test-Path $sentinel)) {
+            throw "Signed uninstall removed an unowned file"
+          }
+          if ((Test-Path $startShortcut) -or (Test-Path $desktopShortcut)) {
+            throw "Signed uninstall left a shortcut"
+          }
+          $residue = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installDir)
+          }
+          if ($residue) { throw "Signed uninstall left an owned process" }
+          Remove-Item -Recurse -Force $installDir
+          [IO.File]::WriteAllText(
+            (Join-Path $evidenceDir "signing-status.json"),
+            '{"version":1,"success":true,"stage":"post-cleanup-release-verification"}',
+            [Text.Encoding]::UTF8
+          )
+
+      - name: Upload protected Windows release artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: webjam-${{ matrix.target }}
-          path: out/WebJam-${{ matrix.target }}.zip
+          name: webjam-release-windows-x64
+          path: |
+            out/WebJam-windows-x64.zip
+            out/WebJam-v*-windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload protected Windows signing evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-windows-signing-evidence
+          path: out/windows-signing-evidence/
+          if-no-files-found: error
+          retention-days: 90
+
+  # ------------------------------------------------------------------
+  # Protected macOS release trust
+  #
+  # The ordinary matrix above never receives Apple credentials. A tag or an
+  # explicit rehearsal first builds and exercises an ad-hoc source artifact,
+  # then this separate job requests approval for the protected macos-release
+  # environment before any environment secret becomes available. Only this
+  # job's Developer ID/notarized outputs can flow into a GitHub Release.
+  # ------------------------------------------------------------------
+  macos-release-trust:
+    name: macOS Release Trust (${{ matrix.target }})
+    needs: build-desktop
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.macos_signing_rehearsal)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    environment:
+      name: macos-release
+      deployment: false
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x64
+
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Download tested ad-hoc macOS source artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-${{ matrix.target }}
+          path: release-source/
+
+      # Prove the downloaded source is the exact architecture, version, and
+      # commit that this protected job is about before mapping any secret into
+      # a process environment or materializing a private key.
+      - name: Verify downloaded macOS source before credential access
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(/usr/bin/sed -nE \
+            's/^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' \
+            webjam_qt/__init__.py)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/* && \
+                "$GITHUB_REF_NAME" != "v${version}" ]]; then
+            echo "Release tag '$GITHUB_REF_NAME' does not match package version v${version}" >&2
+            exit 1
+          fi
+          build_id="$(git rev-parse HEAD)"
+          target="${{ matrix.target }}"
+          source_zip="release-source/WebJam-${target}-ADHOC-TEST-ONLY.zip"
+          source_dmg="release-source/WebJam-v${version}-${target}-ADHOC-TEST-ONLY.dmg"
+          work_dir="$RUNNER_TEMP/webjam-release-source-${target}"
+          evidence_dir="out/notarization/${target}"
+          rm -rf -- "$work_dir" out
+          mkdir -p "$work_dir" "$evidence_dir"
+          printf '%s\n' \
+            '{"version":1,"success":false,"stage":"protected-job-started"}' \
+            > "$evidence_dir/signing-status.json"
+          test -s "$source_zip"
+          test -s "$source_dmg"
+          source_files=(release-source/*)
+          test "${#source_files[@]}" -eq 2
+          ditto -x -k "$source_zip" "$work_dir"
+          app="$work_dir/WebJam.app"
+          test -d "$app"
+          codesign --verify --deep --strict "$app"
+          expected_machine="arm64"
+          if [[ "$target" == "macos-x64" ]]; then
+            expected_machine="x86_64"
+          fi
+          file "$app/Contents/MacOS/WebJam" | grep -q "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$app/Contents/Info.plist")" = "$version"
+          test "$(tr -d '\r\n' \
+            < "$app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
+          fabric="$app/Contents/MacOS/webjam-fabric"
+          manifest="$app/Contents/Resources/webjam-fabric.sha256"
+          test -x "$fabric"
+          test -s "$manifest"
+          /usr/bin/file "$fabric" | /usr/bin/grep -q "$expected_machine"
+          manifest_bytes="$(/usr/bin/wc -c < "$manifest" | /usr/bin/tr -d ' ')"
+          test "$manifest_bytes" -eq 65
+          manifest_digest="$(/usr/bin/tr -d '\n' < "$manifest")"
+          [[ "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]
+          actual_digest="$(/usr/bin/shasum -a 256 "$fabric" | /usr/bin/awk '{print $1}')"
+          test "$actual_digest" = "$manifest_digest"
+      - name: Validate protected macOS release credentials
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}
+        run: packaging/macos/release-keychain.sh validate
+
+      - name: Prepare ephemeral macOS release keychain
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ vars.APPLE_DEVELOPER_TEAM_ID }}
+        run: packaging/macos/release-keychain.sh prepare
+
+      - name: Sign, notarize, and staple protected macOS app
+        shell: bash
+        run: |
+          target="${{ matrix.target }}"
+          packaging/macos/release-trust.sh app \
+            "$RUNNER_TEMP/webjam-release-source-${target}/WebJam.app" \
+            "out/WebJam-${target}.zip" \
+            "out/notarization/${target}"
+
+      - name: Build, sign, notarize, and staple protected macOS disk image
+        shell: bash
+        run: |
+          version="$(/usr/bin/sed -nE \
+            's/^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' \
+            webjam_qt/__init__.py)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          target="${{ matrix.target }}"
+          app="$RUNNER_TEMP/webjam-release-source-${target}/WebJam.app"
+          dmg="out/WebJam-v${version}-${target}.dmg"
+          packaging/macos/create-dmg.sh "$app" "$dmg" "WebJam $version"
+          packaging/macos/release-trust.sh dmg \
+            "$dmg" "out/notarization/${target}"
+
+      # The fixed RUNNER_TEMP paths make this safe even if validation or
+      # keychain preparation failed before exporting environment variables.
+      # Cleanup runs before any signed application execution or upload action.
+      - name: Remove protected macOS credentials and keychain
+        if: always()
+        shell: bash
+        run: packaging/macos/release-keychain.sh cleanup
+
+      - name: Verify and launch protected macOS release containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(/usr/bin/sed -nE \
+            's/^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' \
+            webjam_qt/__init__.py)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          build_id="$(git rev-parse HEAD)"
+          target="${{ matrix.target }}"
+          dmg="out/WebJam-v${version}-${target}.dmg"
+          zip="out/WebJam-${target}.zip"
+          evidence_dir="out/notarization/${target}"
+          mount_dir="$RUNNER_TEMP/webjam-release-dmg-mount-${target}"
+          copy_dir="$RUNNER_TEMP/webjam-release-dmg-copy-${target}"
+          smoke_home="$RUNNER_TEMP/webjam-release-dmg-home-${target}"
+          expected_machine="arm64"
+          if [[ "$target" == "macos-x64" ]]; then
+            expected_machine="x86_64"
+          fi
+          test -s "$zip"
+          test -s "$dmg"
+          hdiutil verify "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open \
+            --context context:primary-signature --verbose=4 "$dmg"
+          rm -rf -- "$mount_dir" "$copy_dir" "$smoke_home"
+          mkdir -p "$mount_dir" "$copy_dir" "$smoke_home"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_dir"
+          cleanup_dmg() {
+            hdiutil detach "$mount_dir" -force >/dev/null 2>&1 || true
+          }
+          trap cleanup_dmg EXIT
+          test -d "$mount_dir/WebJam.app"
+          test -L "$mount_dir/Applications"
+          test "$(readlink "$mount_dir/Applications")" = /Applications
+          packaging/macos/release-trust.sh verify-app "$mount_dir/WebJam.app"
+          ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
+          hdiutil detach "$mount_dir"
+          trap - EXIT
+          app="$copy_dir/WebJam.app"
+          packaging/macos/release-trust.sh verify-app "$app"
+          file "$app/Contents/MacOS/WebJam" | grep -q "$expected_machine"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$app/Contents/Info.plist")" = "$version"
+          test "$(tr -d '\r\n' \
+            < "$app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
+          python -m tests.support.verify_packaged_transport \
+            --binary "$app/Contents/MacOS/webjam-fabric" \
+            --manifest "$app/Contents/Resources/webjam-fabric.sha256" \
+            --build-id "$build_id" \
+            --machine "$expected_machine"
+          HOME="$smoke_home" \
+            WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
+            WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
+            "$app/Contents/MacOS/WebJam"
+          grep -Fq 'Starting Conductor UI' "$smoke_home/webjam.log"
+          ! grep -Eq 'WebJam failed during startup|Unhandled WebJam UI error' \
+            "$smoke_home/webjam.log"
+          printf '%s\n' \
+            '{"version":1,"success":true,"stage":"post-cleanup-release-verification"}' \
+            > "$evidence_dir/signing-status.json"
+
+      - name: Upload protected macOS release artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-release-${{ matrix.target }}
+          path: |
+            out/WebJam-${{ matrix.target }}.zip
+            out/WebJam-v*-${{ matrix.target }}.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload protected macOS notarization evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-notarization-${{ matrix.target }}
+          path: out/notarization/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 90
 
   # ------------------------------------------------------------------
   # GitHub Release
@@ -583,7 +2286,7 @@ jobs:
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release
-    needs: build-desktop
+    needs: [build-desktop, windows-release-trust, macos-release-trust]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -591,38 +2294,108 @@ jobs:
       contents: write
 
     steps:
-      - name: Download windows-x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: webjam-windows-x64
-          path: release-assets/
+      - name: Checkout release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          # Hardware validation is a release gate. Tags create a reviewable
-          # draft; a maintainer publishes only after exact artifacts pass.
-          draft: true
-          generate_release_notes: true
-          files: release-assets/*
+      - name: Verify tag matches packaged version
+        run: |
+          expected="v$(python3 -c 'from webjam_qt import __version__; print(__version__)')"
+          if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $expected." >&2
+            exit 1
+          fi
 
-      - name: Prune old releases (keep current + 5 previous)
-        if: github.event_name != 'pull_request'
+      - name: Refuse mutation of an already-published release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          keep_releases=6
-          gh release list --json tagName,createdAt,isDraft,isPrerelease --limit 100 \
-            | jq -r --argjson keep "$keep_releases" '
-                map(select((.isDraft | not) and (.isPrerelease | not)))
-                | sort_by(.createdAt)
-                | reverse
-                | .[$keep:]
-                | .[].tagName
-              ' |
-            while IFS= read -r tag_name; do
-              [ -n "$tag_name" ] || continue
-              echo "Removing old release: $tag_name"
-              gh release delete "$tag_name" --yes
-            done
+          set +e
+          response="$(gh api --include \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq '.draft' 2>&1)"
+          probe_exit=$?
+          set -e
+          http_status="$(sed -n \
+            's/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' \
+            <<<"$response" | tail -1)"
+          if [[ "$probe_exit" -eq 0 ]]; then
+            draft="$(grep -E '^(true|false)\r?$' <<<"$response" \
+              | tail -1 | tr -d '\r')"
+            if [[ "$draft" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; refusing to attach unreviewed assets." >&2
+              exit 1
+            fi
+          elif [[ "$http_status" != "404" ]]; then
+            echo "Could not prove whether release $GITHUB_REF_NAME already exists; refusing mutation." >&2
+            exit 1
+          fi
+
+      - name: Download windows-x64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-release-windows-x64
+          path: release-assets/
+
+      - name: Download macos-arm64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-release-macos-arm64
+          path: release-assets/
+
+      - name: Download macos-x64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-release-macos-x64
+          path: release-assets/
+
+      - name: Download linux-x64 artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-linux-x64
+          path: release-assets/
+
+      - name: Generate and verify release checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          version="${GITHUB_REF_NAME#v}"
+          assets=(
+            "WebJam-linux-x64.zip"
+            "WebJam-macos-arm64.zip"
+            "WebJam-macos-x64.zip"
+            "WebJam-v${version}-macos-arm64.dmg"
+            "WebJam-v${version}-macos-x64.dmg"
+            "WebJam-v${version}-windows-x64-setup.exe"
+            "WebJam-windows-x64.zip"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          shopt -s nullglob dotglob
+          downloaded=(*)
+          test "${#downloaded[@]}" -eq "${#assets[@]}"
+          checksum_file="WebJam-${GITHUB_REF_NAME}-SHA256SUMS.txt"
+          sha256sum -- "${assets[@]}" > "$checksum_file"
+          test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"
+          sha256sum --check --strict "$checksum_file"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          # Hardware validation is a release gate. Tags create a reviewable
+          # draft; a maintainer publishes only after exact artifacts pass.
+          # Upload only the verified inventory and its checksum manifest.
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/WebJam-linux-x64.zip
+            release-assets/WebJam-macos-arm64.zip
+            release-assets/WebJam-macos-x64.zip
+            release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg
+            release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg
+            release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe
+            release-assets/WebJam-windows-x64.zip
+            release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt

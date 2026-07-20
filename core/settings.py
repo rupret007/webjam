@@ -82,6 +82,8 @@ class AppSettings:
         r"C:\Program Files\Jamulus\Jamulus.exe",
         r"C:\Program Files (x86)\Jamulus\Jamulus.exe",
         # Linux / Homebrew / manual install
+        "/usr/bin/jamulus",
+        "/usr/local/bin/jamulus",
         "/usr/bin/Jamulus",
         "/usr/local/bin/Jamulus",
         "/opt/homebrew/bin/Jamulus",

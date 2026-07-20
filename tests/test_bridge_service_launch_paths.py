@@ -9,6 +9,7 @@ reconnect-gating branches.  No real processes are spawned.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import unittest
@@ -539,7 +540,7 @@ class TestBundledJamulusServerCandidate(unittest.TestCase):
             self.assertIsNone(_bundled_jamulus_server_candidate())
 
 class TestBundledJamulusInstaller(unittest.TestCase):
-    """Windows bundling: a Jamulus/ dir shipped next to WebJam.exe."""
+    """Windows bundling: a Jamulus/ dir in PyInstaller's frozen data root."""
 
     def test_returns_none_when_not_frozen(self):
         from services.bridge_service import _bundled_jamulus_installer
@@ -571,7 +572,37 @@ class TestBundledJamulusInstaller(unittest.TestCase):
 
             with patch.object(sys, "frozen", True, create=True), \
                  patch.object(sys, "platform", "win32"), \
-                 patch.object(sys, "executable", exe_path):
+                 patch.object(sys, "executable", exe_path), \
+                 patch(
+                     "services.bridge_service._PINNED_WINDOWS_JAMULUS_SHA256",
+                     hashlib.sha256(b"stub").hexdigest(),
+                 ):
+                result = _bundled_jamulus_installer()
+
+        self.assertEqual(result, str(installer))
+
+    def test_returns_installer_from_pyinstaller_internal_data_root(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp).resolve()
+            internal = app_dir / "_internal"
+            jamulus_dir = internal / "Jamulus"
+            jamulus_dir.mkdir(parents=True)
+            installer = jamulus_dir / "jamulus_3.12.2_win.exe"
+            installer.write_bytes(b"stub")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path), \
+                 patch.object(sys, "_MEIPASS", str(internal), create=True), \
+                 patch(
+                     "services.bridge_service._PINNED_WINDOWS_JAMULUS_SHA256",
+                     hashlib.sha256(b"stub").hexdigest(),
+                 ):
                 result = _bundled_jamulus_installer()
 
         self.assertEqual(result, str(installer))
@@ -588,7 +619,7 @@ class TestBundledJamulusInstaller(unittest.TestCase):
                  patch.object(sys, "executable", exe_path):
                 self.assertIsNone(_bundled_jamulus_installer())
 
-    def test_returns_none_when_no_exe_matches_pattern(self):
+    def test_returns_none_when_exact_installer_is_missing(self):
         import tempfile
         from pathlib import Path
         from services.bridge_service import _bundled_jamulus_installer
@@ -598,6 +629,25 @@ class TestBundledJamulusInstaller(unittest.TestCase):
             jamulus_dir = app_dir / "Jamulus"
             jamulus_dir.mkdir()
             (jamulus_dir / "JAMULUS_COPYING.txt").write_text("license")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path):
+                self.assertIsNone(_bundled_jamulus_installer())
+
+    def test_rejects_wrong_hash_and_never_selects_an_injected_wildcard(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp).resolve()
+            jamulus_dir = app_dir / "Jamulus"
+            jamulus_dir.mkdir()
+            (jamulus_dir / "jamulus_0_win.exe").write_bytes(b"injected")
+            installer = jamulus_dir / "jamulus_3.12.2_win.exe"
+            installer.write_bytes(b"replaced")
             exe_path = str(app_dir / "WebJam.exe")
 
             with patch.object(sys, "frozen", True, create=True), \

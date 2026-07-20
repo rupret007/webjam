@@ -9,7 +9,9 @@ dialog closes.
 from __future__ import annotations
 
 import getpass
+import logging
 import os
+import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -49,6 +51,9 @@ from webjam_qt.invitation_ingress import (
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
 
 
+LOGGER = logging.getLogger("webjam.qt.launch_dialog")
+
+
 def default_musician_name(settings: AppSettings) -> str:
     """Return a useful identity without turning launch into a form."""
     configured = str(settings.musician_name or "").strip()
@@ -65,6 +70,24 @@ def default_musician_name(settings: AppSettings) -> str:
             pass
     account = getpass.getuser().replace("_", " ").replace(".", " ").strip()
     return account.title()[:60] if account else "Musician"
+
+
+def _installed_jamulus(settings: AppSettings) -> bool:
+    for candidate in settings.jamulus_candidates:
+        try:
+            if Path(candidate).expanduser().is_file():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _windows_jamulus_installer(settings: AppSettings) -> str:
+    if sys.platform != "win32" or _installed_jamulus(settings):
+        return ""
+    from services.bridge_service import _bundled_jamulus_installer
+
+    return str(_bundled_jamulus_installer() or "")
 
 
 def apply_host_defaults(settings: AppSettings) -> None:
@@ -133,6 +156,9 @@ class LaunchDialog(QDialog):
         self._settings = settings
         self._submitting = False
         self._host_available = sys.platform == "darwin"
+        self._jamulus_installer = _windows_jamulus_installer(settings)
+        if self._jamulus_installer:
+            LOGGER.info("Verified bundled Jamulus installer is available")
         self.selected_role = ""
         self.session_name = "Band Rehearsal"
         self.band_invite: BandInvite | None = None
@@ -234,6 +260,16 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._host_button)
         layout.addWidget(self._join_button)
 
+        self._install_jamulus_button = QPushButton("Install Jamulus")
+        self._install_jamulus_button.setObjectName("GhostButton")
+        self._install_jamulus_button.setAccessibleName("Install Jamulus")
+        self._install_jamulus_button.setAccessibleDescription(
+            "Open the Jamulus installer included with this Windows build."
+        )
+        self._install_jamulus_button.clicked.connect(self._install_jamulus)
+        self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
+        layout.addWidget(self._install_jamulus_button)
+
         helper_text = (
             "One link. No setup."
             if self._host_available
@@ -252,6 +288,35 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._choice_error)
         layout.addStretch(1)
         return page
+
+    def _install_jamulus(self) -> None:
+        """Open only the checksum-pinned installer shipped in this package."""
+
+        if not self._jamulus_installer:
+            return
+        from services.bridge_service import _is_pinned_jamulus_installer
+
+        if not _is_pinned_jamulus_installer(self._jamulus_installer):
+            self._jamulus_installer = ""
+            self._install_jamulus_button.setEnabled(False)
+            self._choice_error.setText(
+                "The included Jamulus installer failed its integrity check. "
+                "Re-extract an official WebJam download and try again."
+            )
+            self._announce_error(self._choice_error)
+            return
+        try:
+            subprocess.Popen([self._jamulus_installer], shell=False)
+        except OSError:
+            self._choice_error.setText(
+                "Jamulus couldn’t open. Re-extract WebJam and try Install Jamulus again."
+            )
+            self._announce_error(self._choice_error)
+            return
+        self._install_jamulus_button.setEnabled(False)
+        self._choice_helper.setText(
+            "Finish the Jamulus installer, then return here and choose Join a Jam."
+        )
 
     def _build_join_page(self) -> QWidget:
         page = QWidget()
