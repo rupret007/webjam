@@ -97,7 +97,7 @@ def _make_fake_tools(root: Path) -> dict[str, Path]:
     tools.mkdir()
     implementation = tools / "fake-apple-tool"
     implementation.write_text(
-        f"""#!{sys.executable}
+        f"""#!/usr/bin/env python3
 import hashlib
 import json
 import os

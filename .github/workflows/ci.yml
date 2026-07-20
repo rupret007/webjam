@@ -2281,8 +2281,9 @@ jobs:
   # ------------------------------------------------------------------
   # GitHub Release
   # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
-  # Publishes only the primary artifact for cleaner release pages and keeps a
-  # short release history (current + 5 previous), removing older releases.
+  # Publishes the exact verified cross-platform inventory plus its checksum
+  # manifest as a draft. Existing published tags are immutable, and no release
+  # or asset is pruned or silently replaced by this job.
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release

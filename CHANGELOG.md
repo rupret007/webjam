@@ -86,10 +86,11 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Source verification
 
-- The final clean source gate on PR #2 reported **1,908 passed**, 19
-  environment-bound skips, and 6 subtests passed. Ruff, Go tests/vet, workflow
-  YAML, and Actionlint passed; native archive evidence is recorded only after
-  the matrix builds finish from the committed candidate.
+- PR #2's description recorded **1,908 passed**; its later authoritative
+  GitHub run `29546741915` recorded **1,909 passed**, 19 environment-bound
+  skips, one dependency warning, and 6 subtests passed. Ruff, Go tests/vet,
+  workflow YAML, and Actionlint passed; native archive evidence is recorded
+  only after the matrix builds finish from the committed candidate.
 
 ---
 

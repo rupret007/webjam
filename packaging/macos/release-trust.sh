@@ -139,7 +139,7 @@ validate_component_policy() {
   [[ -d "$JAMULUS_APP" ]] || die "bundled Jamulus.app is missing"
   [[ -d "$JAMULUS_SERVER_APP" ]] || die "bundled JamulusServer.app is missing"
 
-  QT_HELPER_APP="$($PYTHON_BIN - "$app" <<'PY'
+  QT_HELPER_APP="$("$PYTHON_BIN" - "$app" <<'PY'
 import os
 import pathlib
 import sys
@@ -483,7 +483,7 @@ notary_submit() {
   submit_rc=$?
   set -e
 
-  submission_id="$($PYTHON_BIN - "$result" <<'PY'
+  submission_id="$("$PYTHON_BIN" - "$result" <<'PY'
 import json
 import sys
 
