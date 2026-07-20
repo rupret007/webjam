@@ -366,9 +366,39 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
-    def shutdown(self) -> None:
+    def _prepare_studio_close(self) -> bool:
+        """Synchronously preserve dirty Studio edits before any teardown."""
+
+        studio = getattr(getattr(self, "window", None), "recording_studio", None)
+        prepare_close = getattr(studio, "prepare_close", None)
+        if not callable(prepare_close):
+            return True
+        try:
+            prepared = bool(prepare_close())
+        except Exception:  # noqa: BLE001 - closing must fail safe on save errors
+            LOGGER.exception("Studio close preparation failed")
+            prepared = False
+        if prepared:
+            return True
+        QMessageBox.information(
+            self.window,
+            "Studio edits not saved",
+            "Your recorded take is safe, but your Arrange and mix edits are not "
+            "saved. Check that your Takes folder has free space and can be written "
+            "to, then try quitting again.",
+        )
+        return False
+
+    def shutdown(self) -> bool:
         if self._shutdown:
-            return  # closeEvent + app.py both call this; run teardown once
+            return True  # closeEvent + app.py both call this; run teardown once
+        if not ApplicationController._prepare_studio_close(self):
+            return False
+        # Studio shutdown repeats the flush defensively for direct widget
+        # callers.  Run it before mutating any controller lifecycle so even an
+        # unexpected second failure leaves the whole document usable.
+        if self.window.recording_studio.shutdown() is False:
+            return False
         # An unfinished Test Night record is durable.  Mark it paused before
         # the normal teardown begins so a restart never makes a physical
         # pilot look complete or silently discards its earlier evidence.
@@ -380,7 +410,6 @@ class ApplicationController(QObject):
         self._token_refresh_timer.stop()
         self._pulse_refresh_timer.stop()
         self._connection_timer.stop()
-        self.window.recording_studio.shutdown()
         # Quitting mid-recording must keep the audio, not discard it.
         self.recording.salvage_on_shutdown()
         self._save_notes()
@@ -446,6 +475,7 @@ class ApplicationController(QObject):
             self.api_bridge.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Companion API stop failed")
+        return True
 
     def _configure_guest_peer(self, invite) -> None:
         self._stop_session_peer(clear_invite=True)
@@ -727,8 +757,7 @@ class ApplicationController(QObject):
             self.host_peer.begin_take(
                 take_id,
                 started_utc=(
-                    started_utc
-                    or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    started_utc or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 ),
             )
         except Exception:  # noqa: BLE001
@@ -748,8 +777,7 @@ class ApplicationController(QObject):
             self.host_peer.finish_take(
                 take_id,
                 stopped_utc=(
-                    stopped_utc
-                    or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    stopped_utc or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 ),
                 needs_attention=needs_attention,
                 message=message,
@@ -792,10 +820,10 @@ class ApplicationController(QObject):
             return False
         if recording_was_active:
             # The recording dialog already explained the full shutdown impact.
-            return True
+            return ApplicationController._prepare_studio_close(self)
         active = self._is_jamulus_running() or self.bridge.hosted_server_alive()
         if not active:
-            return True
+            return ApplicationController._prepare_studio_close(self)
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
         title = "End jam and quit?" if hosting else "Leave jam and quit?"
         body = (
@@ -810,7 +838,9 @@ class ApplicationController(QObject):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
-        return reply == QMessageBox.StandardButton.Yes
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+        return ApplicationController._prepare_studio_close(self)
 
     # ------------------------------------------------------------------
     # Companion API (optional localhost bridge for DAWs/editors/scripts)
@@ -862,9 +892,7 @@ class ApplicationController(QObject):
         conductor = getattr(self, "session_conductor", None)
         if not isinstance(conductor, SessionConductor):
             initial = facts or SessionConductorFacts()
-            conductor = SessionConductor(
-                SessionConductorFacts(role=initial.role)
-            )
+            conductor = SessionConductor(SessionConductorFacts(role=initial.role))
             self.session_conductor = conductor
             self._session_conductor_token = conductor.token
         return conductor
@@ -990,7 +1018,9 @@ class ApplicationController(QObject):
             else (
                 "host"
                 if bool(
-                    getattr(getattr(self, "settings", None), "host_server_enabled", False)
+                    getattr(
+                        getattr(self, "settings", None), "host_server_enabled", False
+                    )
                 )
                 else "join"
             )
@@ -1464,7 +1494,10 @@ class ApplicationController(QObject):
             "fast_path": False,
             "webex_decision": None,
         }
-        if recovery is not None and str(getattr(recovery.role, "value", recovery.role)) == role:
+        if (
+            recovery is not None
+            and str(getattr(recovery.role, "value", recovery.role)) == role
+        ):
             # The record is not trusted yet—only copied into this transient
             # attempt so the profile comparison below can decide whether it is
             # safe to resume.  It is deliberately never shown to the user.
@@ -1629,9 +1662,7 @@ class ApplicationController(QObject):
                 )
             except Exception:  # noqa: BLE001 - safe fallback is native setup
                 fast_path = False
-            attempt["fast_path"] = bool(
-                attempt.get("fast_path", False) or fast_path
-            )
+            attempt["fast_path"] = bool(attempt.get("fast_path", False) or fast_path)
             if fast_path:
                 attempt["setup_finished"] = True
                 attempt["human_confirmed"] = True
@@ -1650,9 +1681,8 @@ class ApplicationController(QObject):
         # this exact native Jamulus connection is proven—never at app boot or
         # before a cancelled launch has a chance to clean up.
         self._start_guest_peer_for_native_startup(attempt)
-        if (
-            str(attempt.get("phase", "")) == "cancelling"
-            or bool(getattr(attempt.get("cancel_event"), "is_set", lambda: False)())
+        if str(attempt.get("phase", "")) == "cancelling" or bool(
+            getattr(attempt.get("cancel_event"), "is_set", lambda: False)()
         ):
             return
 
@@ -1665,9 +1695,7 @@ class ApplicationController(QObject):
         attempt["webex_decision"] = "skipped"
         self._show_startup_invite_ready(generation)
 
-    def _start_guest_peer_for_native_startup(
-        self, attempt: dict[str, object]
-    ) -> None:
+    def _start_guest_peer_for_native_startup(self, attempt: dict[str, object]) -> None:
         """Start a v2 recording peer after Jamulus identity is proven.
 
         This stays out of v3, Host, and disconnected paths.  The peer has no
@@ -1701,7 +1729,9 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001 - peer transfer cannot block music
             LOGGER.exception("Could not start guest recording transfer")
 
-    def _apply_matching_startup_recovery(self, attempt: dict[str, object], plan) -> None:
+    def _apply_matching_startup_recovery(
+        self, attempt: dict[str, object], plan
+    ) -> None:
         """Resume only a strictly matching, path-free prior journey record.
 
         A process can survive a desktop restart, but an old profile cannot
@@ -1747,7 +1777,9 @@ class ApplicationController(QObject):
                 attempt["webex_decision"] = decision
             attempt["resumed"] = True
         except Exception:  # noqa: BLE001 - recovery must fail closed
-            LOGGER.info("Startup recovery did not match the active profile", exc_info=True)
+            LOGGER.info(
+                "Startup recovery did not match the active profile", exc_info=True
+            )
 
     def _clear_startup_recovery(self) -> None:
         """Forget only completed/cancelled operational recovery state."""
@@ -1856,7 +1888,11 @@ class ApplicationController(QObject):
 
         raw = self.window.session_hud.input_text()
         value = normalize_webex_url(raw)
-        error = webex_url_error(value) if value else "Paste a valid Webex link, or choose Not now."
+        error = (
+            webex_url_error(value)
+            if value
+            else "Paste a valid Webex link, or choose Not now."
+        )
         if error:
             attempt["input_error"] = error
             self._render_startup_journey()
@@ -1870,7 +1906,9 @@ class ApplicationController(QObject):
         except OSError:
             self.settings.webex_url = previous_url
             self.settings.webex_audio_mode = previous_mode
-            attempt["input_error"] = "WebJam couldn't save that link. Try again or choose Not now."
+            attempt["input_error"] = (
+                "WebJam couldn't save that link. Try again or choose Not now."
+            )
             self._render_startup_journey()
             return
         self.webex.meeting_url = value
@@ -2789,7 +2827,11 @@ class ApplicationController(QObject):
         self._remote_route_generation = 0
         self._remote_band_check_token = None
         self._remote_band_check_completed_token = None
-        if restore_route and base_settings is not None and base_settings is not self.settings:
+        if (
+            restore_route
+            and base_settings is not None
+            and base_settings is not self.settings
+        ):
             old_settings = self.settings
             self._replace_settings_object(base_settings)
             self._reconfigure_services_after_settings(old_settings)
@@ -2813,6 +2855,15 @@ class ApplicationController(QObject):
         separate interface stems here, at the moment recording matters,
         without turning Host/Join or Jamulus setup into a recording wizard.
         """
+
+        studio = getattr(getattr(self, "window", None), "recording_studio", None)
+        if bool(getattr(studio, "export_in_progress", False)):
+            self.window.flash_message(
+                "Wait for the Studio export to finish before starting a new take. "
+                "The current recordings are safe.",
+                ms=6000,
+            )
+            return
 
         settings = getattr(self, "settings", None)
         needs_choice = bool(
@@ -3177,9 +3228,7 @@ class ApplicationController(QObject):
         # authenticated guest facts from being rejected as host facts.
         conductor = self._live_session_conductor()
         if conductor.token.role is not SessionRole.GUEST:
-            self._session_conductor_token = conductor.reset_to_idle(
-                SessionRole.GUEST
-            )
+            self._session_conductor_token = conductor.reset_to_idle(SessionRole.GUEST)
         self._transition_lifecycle(
             SessionLifecyclePhase.PREPARING,
             "Preparing the private music path",
@@ -3354,9 +3403,7 @@ class ApplicationController(QObject):
         if snapshot.phase is RemoteSessionPhase.FAILED:
             self._show_remote_session_failure(
                 guest_enrollment=(snapshot.role.value == "guest"),
-                retry_safe=bool(
-                    getattr(snapshot, "invitation_retry_safe", False)
-                ),
+                retry_safe=bool(getattr(snapshot, "invitation_retry_safe", False)),
             )
 
     def _activate_remote_guest_route(self, snapshot) -> None:
@@ -3624,9 +3671,7 @@ class ApplicationController(QObject):
             hosting and remote_owner is not None and remote_owner.invitation_available
         )
         share_readiness = (
-            self._host_share_readiness()
-            if hosting and remote_owner is None
-            else None
+            self._host_share_readiness() if hosting and remote_owner is None else None
         )
         invite_url = (
             self._current_invite_url(readiness=share_readiness)
@@ -3734,10 +3779,7 @@ class ApplicationController(QObject):
                         "WebJam is getting the band audio ready.",
                     )
                 return
-            if (
-                remote_owner is None
-                and self._lan_invite_needs_refresh(share_readiness)
-            ):
+            if remote_owner is None and self._lan_invite_needs_refresh(share_readiness):
                 self._transition_lifecycle(
                     SessionLifecyclePhase.DEGRADED,
                     "The private Wi-Fi address changed; a new invite is required",
@@ -3881,9 +3923,11 @@ class ApplicationController(QObject):
         practice = bool(getattr(getattr(self, "bridge", None), "practice_mode", False))
         remote_session = getattr(self, "_remote_session", None)
         remote_snapshot = getattr(remote_session, "snapshot", None)
-        remote_role = str(
-            getattr(getattr(remote_snapshot, "role", None), "value", "") or ""
-        ).strip().lower()
+        remote_role = (
+            str(getattr(getattr(remote_snapshot, "role", None), "value", "") or "")
+            .strip()
+            .lower()
+        )
         remote_guest_intent = bool(
             getattr(self, "_remote_invitation", None) is not None
             or remote_role == SessionRole.GUEST.value
@@ -3972,9 +4016,7 @@ class ApplicationController(QObject):
             else EvidenceState.NOT_STARTED
         )
         invite = (
-            EvidenceState.VERIFIED
-            if observed_invite
-            else EvidenceState.NOT_STARTED
+            EvidenceState.VERIFIED if observed_invite else EvidenceState.NOT_STARTED
         )
 
         participants = list(getattr(self, "participants", {}).values())
@@ -3992,7 +4034,9 @@ class ApplicationController(QObject):
             else EvidenceState.NOT_STARTED
         )
 
-        remote_phase = str(getattr(getattr(remote_snapshot, "phase", None), "value", ""))
+        remote_phase = str(
+            getattr(getattr(remote_snapshot, "phase", None), "value", "")
+        )
         if remote_phase in {"preparing", "connecting"}:
             guest_enrollment = EvidenceState.IN_PROGRESS
         elif connected and not hosting:
@@ -4042,18 +4086,15 @@ class ApplicationController(QObject):
             else EvidenceState.NOT_REQUIRED
         )
 
-        band_check = getattr(
-            self, "_conductor_band_check", EvidenceState.NOT_STARTED
-        )
+        band_check = getattr(self, "_conductor_band_check", EvidenceState.NOT_STARTED)
         ready_dialog = getattr(self, "_ready_check_dialog", None)
-        if ready_dialog is not None and bool(getattr(ready_dialog, "isVisible", lambda: False)()):
+        if ready_dialog is not None and bool(
+            getattr(ready_dialog, "isVisible", lambda: False)()
+        ):
             band_check = EvidenceState.IN_PROGRESS
         elif bool(getattr(self, "_band_check_start_pending", False)):
             band_check = EvidenceState.IN_PROGRESS
-        elif (
-            band_check is EvidenceState.NOT_STARTED
-            and (launch_intended or connected)
-        ):
+        elif band_check is EvidenceState.NOT_STARTED and (launch_intended or connected):
             # A live/launching attempt cannot be sent backwards into an
             # imaginary pre-session gate.  This means only that the old gate
             # is no longer the current action; it does not claim a saved
@@ -4061,7 +4102,10 @@ class ApplicationController(QObject):
             band_check = EvidenceState.NOT_REQUIRED
 
         failure = FailureDisposition.NONE
-        if bool(getattr(audio, "connection_timed_out", False)) or self._remote_join_retry_pending():
+        if (
+            bool(getattr(audio, "connection_timed_out", False))
+            or self._remote_join_retry_pending()
+        ):
             failure = FailureDisposition.RETRYABLE
         elif bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             failure = FailureDisposition.BLOCKED
@@ -4074,7 +4118,10 @@ class ApplicationController(QObject):
             CleanupState.ENDING
             if bool(getattr(audio, "stopping", False))
             or lifecycle_phase
-            in {SessionLifecyclePhase.ENDING, SessionLifecyclePhase.FINALIZING_RECORDINGS}
+            in {
+                SessionLifecyclePhase.ENDING,
+                SessionLifecyclePhase.FINALIZING_RECORDINGS,
+            }
             else CleanupState.COMPLETE
             if lifecycle_phase is SessionLifecyclePhase.COMPLETED
             else CleanupState.NOT_REQUESTED
@@ -4132,10 +4179,7 @@ class ApplicationController(QObject):
         ):
             try:
                 readiness = self._host_share_readiness()
-                if (
-                    not readiness.shareable
-                    and readiness.action != "Wait for WebJam"
-                ):
+                if not readiness.shareable and readiness.action != "Wait for WebJam":
                     return True
             except Exception:  # noqa: BLE001 - preserve generic safe copy
                 pass
@@ -4151,7 +4195,9 @@ class ApplicationController(QObject):
                 return True
         except Exception:  # noqa: BLE001 - no permission observation is not a block
             pass
-        status_widget = getattr(getattr(self.window, "session_hud", None), "_status", None)
+        status_widget = getattr(
+            getattr(self.window, "session_hud", None), "_status", None
+        )
         status_text = str(getattr(status_widget, "text", lambda: "")())
         return status_text in {
             "Your Wi-Fi changed",
@@ -4207,9 +4253,7 @@ class ApplicationController(QObject):
         facts = self._session_conductor_facts()
         attempt = getattr(self, "_startup_attempt", None)
         attempt_token = (
-            attempt.get("conductor_token")
-            if isinstance(attempt, dict)
-            else None
+            attempt.get("conductor_token") if isinstance(attempt, dict) else None
         )
         snapshot = self._observe_session_conductor_facts(
             facts,
@@ -4231,10 +4275,14 @@ class ApplicationController(QObject):
             SessionPrimaryAction.STOP_RECORDING,
             SessionPrimaryAction.END_SESSION,
         }
-        action_visible = action not in {
-            SessionPrimaryAction.NONE,
-            SessionPrimaryAction.WAIT,
-        } and not header_owned
+        action_visible = (
+            action
+            not in {
+                SessionPrimaryAction.NONE,
+                SessionPrimaryAction.WAIT,
+            }
+            and not header_owned
+        )
         detail = presentation.message
         if presentation.preservation:
             detail = f"{detail} {presentation.preservation}"
@@ -4255,8 +4303,7 @@ class ApplicationController(QObject):
             action_text=action.label,
             action_visible=action_visible,
             action_kind=self._conductor_action_kind(action),
-            ready=presentation.phase
-            is SessionConductorPhase.TAKE_READY
+            ready=presentation.phase is SessionConductorPhase.TAKE_READY
             or (
                 presentation.phase is SessionConductorPhase.LIVE
                 and facts.human_two_way_audibility is EvidenceState.VERIFIED
@@ -4288,9 +4335,8 @@ class ApplicationController(QObject):
     def _focus_initial_hud_action(self) -> None:
         """Give the first visible session action keyboard focus once."""
 
-        if (
-            getattr(self, "_initial_hud_action_focused", False)
-            or getattr(self, "_initial_hud_action_focus_pending", False)
+        if getattr(self, "_initial_hud_action_focused", False) or getattr(
+            self, "_initial_hud_action_focus_pending", False
         ):
             return
         hud = getattr(getattr(self, "window", None), "session_hud", None)
@@ -4503,8 +4549,8 @@ class ApplicationController(QObject):
     def _pilot_outcome_key(value) -> str:
         """Turn a bounded ledger result into a dialog status key."""
 
-        return str(getattr(value, "value", value) or "waiting").lower().replace(
-            " ", "_"
+        return (
+            str(getattr(value, "value", value) or "waiting").lower().replace(" ", "_")
         )
 
     def _pilot_state_from_presentation(self, presentation=None):
@@ -4662,7 +4708,10 @@ class ApplicationController(QObject):
         ledger = ledgers[0]
         self._pilot_ledger = ledger
         last = ledger.events[-1] if ledger.events else None
-        if last is not None and last.observation_class is PilotObservationClass.PILOT_ABANDONED:
+        if (
+            last is not None
+            and last.observation_class is PilotObservationClass.PILOT_ABANDONED
+        ):
             self._pilot_run_state = "abandoned"
         elif (
             last is not None
@@ -4698,7 +4747,9 @@ class ApplicationController(QObject):
         dialog.restart_requested.connect(self._restart_test_night)
         dialog.manual_outcome_requested.connect(self._record_test_night_manual_outcome)
         dialog.export_report_requested.connect(self._export_test_night_report)
-        dialog.finished.connect(lambda _result: setattr(self, "_test_night_dialog", None))
+        dialog.finished.connect(
+            lambda _result: setattr(self, "_test_night_dialog", None)
+        )
         self._test_night_dialog = dialog
         self._pilot_refresh_dialog()
         dialog.show()
@@ -4822,7 +4873,10 @@ class ApplicationController(QObject):
             PilotSessionState,
         )
 
-        if self._pilot_run_state not in {"running", "paused"} or self._pilot_ledger is None:
+        if (
+            self._pilot_run_state not in {"running", "paused"}
+            or self._pilot_ledger is None
+        ):
             return
         if self._pilot_append_automatic(
             PilotObservationClass.PILOT_ABANDONED,
@@ -4876,9 +4930,7 @@ class ApplicationController(QObject):
             "session_playable": (PilotObservationClass.HUMAN_SESSION_PLAYABLE,),
             "studio_playback": (PilotObservationClass.HUMAN_STUDIO_PLAYBACK,),
             "studio_alignment": (PilotObservationClass.HUMAN_STUDIO_ALIGNMENT,),
-            "rehearsal_moment_useful": (
-                PilotObservationClass.HUMAN_REHEARSAL_USEFUL,
-            ),
+            "rehearsal_moment_useful": (PilotObservationClass.HUMAN_REHEARSAL_USEFUL,),
         }.get(str(key).strip(), ())
         if not observations:
             return
@@ -5099,7 +5151,9 @@ class ApplicationController(QObject):
             )
         except (OSError, ValueError):
             LOGGER.warning("Could not export local pilot report", exc_info=True)
-            self.window.flash_message("WebJam couldn't export the pilot report.", ms=7000)
+            self.window.flash_message(
+                "WebJam couldn't export the pilot report.", ms=7000
+            )
             return
         self.window.flash_message("Private pilot report exported.", ms=5000)
 

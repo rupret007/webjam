@@ -23,6 +23,9 @@ from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
 from webjam_qt.controllers.audio_coordinator import AudioCoordinator  # noqa: E402
+from webjam_qt.controllers.recording_coordinator import (  # noqa: E402
+    RecordingCoordinator,
+)
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
@@ -97,9 +100,7 @@ def test_stale_band_check_signal_cannot_start_replacement_settings() -> None:
     controller._start_after_band_check(1)
 
     controller._on_launch_audio.assert_not_called()
-    controller._open_band_check.assert_called_once_with(
-        start_session_when_ready=True
-    )
+    controller._open_band_check.assert_called_once_with(start_session_when_ready=True)
 
 
 def test_in_place_setup_change_invalidates_visible_band_check() -> None:
@@ -148,9 +149,7 @@ def test_host_server_alone_does_not_turn_retry_gate_into_live_observe() -> None:
         def show(self) -> None:
             pass
 
-    with mock.patch(
-        "webjam_qt.windows.ready_check.BandCheckDialog", _Dialog
-    ):
+    with mock.patch("webjam_qt.windows.ready_check.BandCheckDialog", _Dialog):
         controller._open_band_check(start_session_when_ready=True)
 
     assert captured["mode"] is BandCheckMode.PRE_SESSION
@@ -179,15 +178,16 @@ def test_stale_inflight_verification_never_launches_new_settings() -> None:
 
     saved = mock.Mock()
     saved.matches.return_value = True
-    with mock.patch(
-        "webjam_qt.controllers.application_controller.threading.Thread",
-        _DeferredThread,
-    ), mock.patch(
-        "core.band_check.build_verification_signature"
-    ), mock.patch(
-        "core.band_check.load_verification", return_value=saved
-    ), mock.patch(
-        "core.band_check.verification_path", return_value="/verification.json"
+    with (
+        mock.patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            _DeferredThread,
+        ),
+        mock.patch("core.band_check.build_verification_signature"),
+        mock.patch("core.band_check.load_verification", return_value=saved),
+        mock.patch(
+            "core.band_check.verification_path", return_value="/verification.json"
+        ),
     ):
         controller.start_session_or_band_check()
         controller.start_session_or_band_check()
@@ -223,15 +223,16 @@ def test_inflight_verification_restarts_after_same_object_setup_change() -> None
 
     saved = mock.Mock()
     saved.matches.return_value = True
-    with mock.patch(
-        "webjam_qt.controllers.application_controller.threading.Thread",
-        _DeferredThread,
-    ), mock.patch(
-        "core.band_check.build_verification_signature"
-    ), mock.patch(
-        "core.band_check.load_verification", return_value=saved
-    ), mock.patch(
-        "core.band_check.verification_path", return_value="/verification.json"
+    with (
+        mock.patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            _DeferredThread,
+        ),
+        mock.patch("core.band_check.build_verification_signature"),
+        mock.patch("core.band_check.load_verification", return_value=saved),
+        mock.patch(
+            "core.band_check.verification_path", return_value="/verification.json"
+        ),
     ):
         controller.start_session_or_band_check()
         controller._settings_generation += 1
@@ -278,18 +279,23 @@ def test_matching_saved_verification_never_bypasses_v3_host_or_guest_path() -> N
         saved = mock.Mock()
         saved.matches.return_value = True
 
-        with mock.patch(
-            "webjam_qt.controllers.application_controller.threading.Thread",
-            _ImmediateThread,
-        ), mock.patch(
-            "core.band_check.build_verification_signature",
-            return_value=mock.sentinel.signature,
-        ), mock.patch(
-            "core.band_check.load_verification",
-            return_value=saved,
-        ), mock.patch(
-            "core.band_check.verification_path",
-            return_value="/verification.json",
+        with (
+            mock.patch(
+                "webjam_qt.controllers.application_controller.threading.Thread",
+                _ImmediateThread,
+            ),
+            mock.patch(
+                "core.band_check.build_verification_signature",
+                return_value=mock.sentinel.signature,
+            ),
+            mock.patch(
+                "core.band_check.load_verification",
+                return_value=saved,
+            ),
+            mock.patch(
+                "core.band_check.verification_path",
+                return_value="/verification.json",
+            ),
         ):
             controller.start_session_or_band_check()
 
@@ -333,6 +339,7 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
         guest.start.assert_not_called()
         events: list[str] = []
         guest.start.side_effect = lambda: events.append("peer")
+
         def _launch_audio() -> bool:
             events.append("audio")
             return True
@@ -471,9 +478,7 @@ def test_v1_recording_setup_never_claims_local_originals() -> None:
         flash_message=mock.Mock(),
     )
     controller._sync_local_originals_action = mock.Mock()
-    controller._invalidate_band_check_evidence = mock.Mock(
-        return_value=(False, False)
-    )
+    controller._invalidate_band_check_evidence = mock.Mock(return_value=(False, False))
     controller._reopen_invalidated_band_check = mock.Mock()
     controller._reconfigure_services_after_settings = mock.Mock()
     committed = AppSettings(
@@ -483,14 +488,13 @@ def test_v1_recording_setup_never_claims_local_originals() -> None:
         takes_directory="/committed/takes",
     )
 
-    with mock.patch(
-        "webjam_qt.windows.recording_setup.RecordingSetupDialog"
-    ) as dialog_type, mock.patch(
-        "core.settings.load_settings", return_value=committed
+    with (
+        mock.patch(
+            "webjam_qt.windows.recording_setup.RecordingSetupDialog"
+        ) as dialog_type,
+        mock.patch("core.settings.load_settings", return_value=committed),
     ):
-        dialog_type.return_value.exec.return_value = (
-            dialog_type.DialogCode.Accepted
-        )
+        dialog_type.return_value.exec.return_value = dialog_type.DialogCode.Accepted
         controller._open_recording_setup()
 
     assert dialog_type.call_args.kwargs["local_originals_available"] is False
@@ -509,7 +513,9 @@ def test_v1_recording_setup_never_claims_local_originals() -> None:
     assert "local originals are unavailable" in message
 
 
-def test_first_host_record_can_start_shared_take_without_local_originals(tmp_path) -> None:
+def test_first_host_record_can_start_shared_take_without_local_originals(
+    tmp_path,
+) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
@@ -537,7 +543,9 @@ def test_first_host_record_can_start_shared_take_without_local_originals(tmp_pat
     assert saved.local_capture_enabled is False
 
 
-def test_first_host_record_opens_local_original_setup_only_when_requested(tmp_path) -> None:
+def test_first_host_record_opens_local_original_setup_only_when_requested(
+    tmp_path,
+) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
@@ -561,7 +569,9 @@ def test_first_host_record_opens_local_original_setup_only_when_requested(tmp_pa
     controller.recording.on_record_requested.assert_not_called()
 
 
-def test_saved_local_original_preference_never_interrupts_later_host_take(tmp_path) -> None:
+def test_saved_local_original_preference_never_interrupts_later_host_take(
+    tmp_path,
+) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
@@ -578,6 +588,43 @@ def test_saved_local_original_preference_never_interrupts_later_host_take(tmp_pa
 
     choice_type.assert_not_called()
     controller.recording.on_record_requested.assert_called_once_with()
+
+
+def test_record_request_is_blocked_while_studio_export_is_running(tmp_path) -> None:
+    controller = _bare_controller()
+    controller.settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+    )
+    controller.window = SimpleNamespace(
+        recording_studio=SimpleNamespace(export_in_progress=True),
+        flash_message=mock.Mock(),
+    )
+    controller.recording = SimpleNamespace(on_record_requested=mock.Mock())
+
+    with mock.patch(
+        "webjam_qt.windows.recording_setup.LocalOriginalsChoiceDialog"
+    ) as choice_type:
+        controller._on_record_requested()
+
+    choice_type.assert_not_called()
+    controller.recording.on_record_requested.assert_not_called()
+    assert "export" in controller.window.flash_message.call_args.args[0].lower()
+
+
+def test_recording_retry_is_blocked_if_export_started_after_prompt() -> None:
+    flash_message = mock.Mock()
+    coordinator = RecordingCoordinator.__new__(RecordingCoordinator)
+    coordinator._c = SimpleNamespace(
+        window=SimpleNamespace(
+            recording_studio=SimpleNamespace(export_in_progress=True),
+            flash_message=flash_message,
+        )
+    )
+
+    coordinator.on_record_requested()
+
+    assert "export" in flash_message.call_args.args[0].lower()
 
 
 def test_matching_recovery_only_restores_the_next_safe_native_prompt() -> None:
@@ -670,9 +717,7 @@ def test_pre_session_takes_change_rebuilds_v2_guest_peer(tmp_path) -> None:
         flash_message=mock.Mock(),
     )
     controller._sync_local_originals_action = mock.Mock()
-    controller._invalidate_band_check_evidence = mock.Mock(
-        return_value=(False, False)
-    )
+    controller._invalidate_band_check_evidence = mock.Mock(return_value=(False, False))
     controller._reopen_invalidated_band_check = mock.Mock()
     controller._reconfigure_services_after_settings = mock.Mock()
     controller._configure_guest_peer = mock.Mock()
@@ -681,14 +726,13 @@ def test_pre_session_takes_change_rebuilds_v2_guest_peer(tmp_path) -> None:
         takes_directory=str(tmp_path / "new-takes"),
     )
 
-    with mock.patch(
-        "webjam_qt.windows.recording_setup.RecordingSetupDialog"
-    ) as dialog_type, mock.patch(
-        "core.settings.load_settings", return_value=committed
+    with (
+        mock.patch(
+            "webjam_qt.windows.recording_setup.RecordingSetupDialog"
+        ) as dialog_type,
+        mock.patch("core.settings.load_settings", return_value=committed),
     ):
-        dialog_type.return_value.exec.return_value = (
-            dialog_type.DialogCode.Accepted
-        )
+        dialog_type.return_value.exec.return_value = dialog_type.DialogCode.Accepted
         controller._open_recording_setup()
 
     assert dialog_type.call_args.kwargs["takes_folder_editable"] is True
@@ -728,9 +772,7 @@ def test_failed_v2_peer_configuration_retains_invite_for_folder_repair(
 
 def test_failed_inline_output_save_restores_live_setting() -> None:
     controller = _bare_controller()
-    controller.settings = AppSettings(
-        take_playback_output_device="Old Output"
-    )
+    controller.settings = AppSettings(take_playback_output_device="Old Output")
     controller.window = SimpleNamespace(
         recording_studio=SimpleNamespace(set_output_device=mock.Mock()),
         flash_message=mock.Mock(),
@@ -751,7 +793,9 @@ def test_failed_inline_output_save_restores_live_setting() -> None:
     assert "do-not-show" not in controller.window.flash_message.call_args.args[0]
 
 
-def test_legacy_system_input_action_foregrounds_jamulus_without_mutation(tmp_path) -> None:
+def test_legacy_system_input_action_foregrounds_jamulus_without_mutation(
+    tmp_path,
+) -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),

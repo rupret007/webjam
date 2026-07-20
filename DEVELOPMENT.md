@@ -1,4 +1,4 @@
-# Developing WebJam v0.16.3
+# Developing WebJam v0.17.0
 
 ## Local setup
 
@@ -9,6 +9,11 @@ Use the repository virtual environment:
 .venv/bin/python -m py_compile webjam_qt/controllers/application_controller.py
 .venv/bin/pytest -q
 ```
+
+For Studio arrangement changes, run the focused model, persistence, history,
+controller, renderer, comping, waveform, export, and Qt integration modules in
+addition to the full suite. The physical-output and external-editor gates in
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.17.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -54,11 +59,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m webjam_qt.theme.generate_brand_ico
 The normal session surface has one dominant next action. Avoid adding device
 forms, server fields, or technical diagnostics to Host/Join.
 
-## Packaging
+## Build and release hygiene
 
-# Build and release hygiene
-
-The current release candidate uses:
+The source tree reports `0.17.0`; no package with that version is promoted.
+The current published rollback/reference package remains:
 
 - Primary published artifact in GitHub Releases:
   [`v0.16.3`](https://github.com/rupret007/webjam/releases/tag/v0.16.3) /

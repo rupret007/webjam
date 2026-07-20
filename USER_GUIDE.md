@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.16
+# WebJam musician guide — v0.17.0
 
 ## What each app does
 
@@ -41,7 +41,7 @@ invitation succeeded.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Studio | Reviews takes and exposes playback output only for review |
+| Studio | Reviews and arranges takes; playback output appears only for review |
 | Notes | Opens session notes |
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
@@ -56,10 +56,39 @@ never blocked from joining because Local Originals are not configured.
 
 ## Studio and Track Export
 
-Studio is designed for familiar multitrack review: track lanes, simple level,
-pan, mute, solo, waveform, and aligned export. It deliberately is not a DAW
-and does not integrate with or control Logic. It produces portable recordings
-that can be imported into an editor at the start of the timeline.
+Studio is designed for familiar multitrack review and arrangement. It
+deliberately does not integrate with or control Logic or another editor.
+
+- Drag a region to move it or drag an edge to trim it. The selected region can
+  also be split, duplicated, disabled, or deleted without changing its WAV.
+- Use the timeline ruler, zoom, scroll, snap choices, markers/sections, fades,
+  crossfades, and cycle/loop range to review the arrangement. Track trim/fader,
+  pan, mute, solo, export inclusion, and master choices are non-destructive.
+- Choose **＋ Section** to name a Verse or Chorus, then drag its section bar in
+  the ruler to move that whole block across every track as one Undo step.
+- Use Arrow keys to select Arrange rows and regions, Alt+Left/Right to nudge,
+  and Ctrl+Left/Right Bracket to trim an edge to the playhead. Ctrl+Alt+A
+  auditions a selected take lane, Ctrl+Alt+C comps its selected region, and
+  Ctrl+Alt+Left/Right reorders the named section at the playhead.
+- Use normal Undo/Redo shortcuts to restore exact Studio snapshots. Edits
+  autosave to a separate sidecar; if saving fails, the edit stays pending and
+  Studio tells you that the recorded take is safe. WebJam also refuses to quit
+  while that final save retry is still failing.
+- Select a track and choose **＋ Add Take** to use a safely matching repeated
+  take from the same session. Double-click the lane name to audition it without
+  changing the saved comp. Option/Alt-drag a lane to choose a comp range.
+- Waveforms arrive progressively for the visible timeline. Recorded gaps remain
+  silence, and changing takes cancels stale waveform work.
+
+Track Export produces equal-length 24-bit edited stems, aligned unity originals,
+and a rough mix, plus markers, import instructions, the exact Studio document,
+source manifests, provenance, and checksums. It fails closed if a source or
+manifest changed instead of guessing. Importing that package in an external
+editor is still a separate physical workflow gate; it is **NOT RUN** for the
+v0.17.0 source candidate.
+
+Studio never rewrites the take manifest or source recordings. Removing a region,
+take lane, or comp range changes only Studio's arrangement sidecar.
 
 ## Recovery
 

@@ -1282,6 +1282,16 @@ class StudioDocument:
                         raise StudioProjectError(
                             "A region cannot belong to more than one active take lane."
                         )
+        for region in regions:
+            if (
+                not region.deleted
+                and region.enabled
+                and region.source_take_id != self.take_id
+                and region.region_id not in owned_lane_regions
+            ):
+                raise StudioProjectError(
+                    "An active cross-take region must belong to an active take lane."
+                )
         active_comp_ranges: dict[str, list[StudioCompRange]] = {}
         for comp_range in comps:
             lane = lane_map.get(comp_range.lane_id)
@@ -1871,6 +1881,75 @@ class StudioDocument:
             return self
         return self._bumped(take_lanes=tuple(values))
 
+    def upsert_take_lane_with_regions(
+        self,
+        lane: StudioTakeLane,
+        regions: Iterable[StudioRegion],
+    ) -> "StudioDocument":
+        """Atomically add or restore one take lane and all regions it owns.
+
+        A lane cannot be published before its referenced regions exist because
+        every :class:`StudioDocument` snapshot validates as a whole.  Keeping
+        this operation on the immutable model prevents UI code from creating
+        a transient half-lane or bypassing durable-ID/source ownership checks.
+        """
+
+        if not isinstance(lane, StudioTakeLane):
+            raise StudioProjectError("lane must be a StudioTakeLane.")
+        incoming = tuple(regions)
+        if any(not isinstance(item, StudioRegion) for item in incoming):
+            raise StudioProjectError("Take-lane regions must be StudioRegion values.")
+        incoming_by_id = {item.region_id: item for item in incoming}
+        if len(incoming_by_id) != len(incoming):
+            raise StudioProjectError("Take-lane regions contain duplicate IDs.")
+        if set(lane.region_ids) != set(incoming_by_id):
+            raise StudioProjectError(
+                "Take-lane region IDs must exactly match the supplied regions."
+            )
+        if any(
+            item.track_id != lane.track_id
+            or item.source_take_id != lane.source_take_id
+            or item.source_track_id != lane.source_track_id
+            for item in incoming
+        ):
+            raise StudioProjectError(
+                "Take-lane regions do not match the lane's destination/source IDs."
+            )
+
+        region_values: list[StudioRegion] = []
+        found_region_ids: set[str] = set()
+        for item in self.regions:
+            replacement = incoming_by_id.get(item.region_id)
+            if replacement is None:
+                region_values.append(item)
+            else:
+                region_values.append(replacement)
+                found_region_ids.add(item.region_id)
+        region_values.extend(
+            item for item in incoming if item.region_id not in found_region_ids
+        )
+
+        lane_values: list[StudioTakeLane] = []
+        found_lane = False
+        for item in self.take_lanes:
+            if item.lane_id == lane.lane_id:
+                lane_values.append(lane)
+                found_lane = True
+            else:
+                lane_values.append(item)
+        if not found_lane:
+            lane_values.append(lane)
+
+        if (
+            tuple(region_values) == self.regions
+            and tuple(lane_values) == self.take_lanes
+        ):
+            return self
+        return self._bumped(
+            regions=tuple(region_values),
+            take_lanes=tuple(lane_values),
+        )
+
     def remove_take_lane(self, lane_id: str) -> "StudioDocument":
         lane = self.lane_for(lane_id)
         if lane.deleted:
@@ -1887,7 +1966,18 @@ class StudioDocument:
             else item
             for item in self.comp_ranges
         )
-        return self._bumped(take_lanes=lanes, comp_ranges=comps)
+        owned_region_ids = set(lane.region_ids)
+        regions = tuple(
+            replace(item, enabled=False, deleted=True)
+            if item.region_id in owned_region_ids and not item.deleted
+            else item
+            for item in self.regions
+        )
+        return self._bumped(
+            regions=regions,
+            take_lanes=lanes,
+            comp_ranges=comps,
+        )
 
     def select_comp_range(self, comp_range: StudioCompRange) -> "StudioDocument":
         if not isinstance(comp_range, StudioCompRange):
@@ -2041,7 +2131,11 @@ def default_studio_document(project: TakeProject) -> StudioDocument:
         project.tracks, key=lambda item: (item.order, item.track_id)
     )
     tracks = tuple(
-        StudioTrack(track_id=track.track_id, order=index)
+        StudioTrack(
+            track_id=track.track_id,
+            order=index,
+            export_included=track.selected_for_export,
+        )
         for index, track in enumerate(ordered_tracks)
     )
     regions = tuple(
@@ -2096,10 +2190,16 @@ def reconcile_studio_document(
     # Recording truth owns track inventory/order; mix choices follow durable
     # IDs.  Normalizing the saved order also drops stale lanes without ever
     # carrying a fader position to a different musician by list position.
-    tracks = [
-        replace(saved_tracks.get(track.track_id, track), order=track.order)
-        for track in baseline.tracks
-    ]
+    project_tracks = {item.track_id: item for item in project.tracks}
+    tracks = []
+    for track in baseline.tracks:
+        reconciled = replace(
+            saved_tracks.get(track.track_id, track),
+            order=track.order,
+        )
+        if not project_tracks[track.track_id].selected_for_export:
+            reconciled = replace(reconciled, export_included=False)
+        tracks.append(reconciled)
     project_track_ids = {item.track_id for item in baseline.tracks}
     project_sources = {
         (project.take_id, track.track_id, segment.segment_id): segment

@@ -228,6 +228,81 @@ def test_dirty_switch_and_reload_require_explicit_discard(tmp_path: Path) -> Non
     assert controller.accepts_async_result(original_token) is False
 
 
+def test_unload_clears_loaded_state_and_rejects_document_operations(
+    tmp_path: Path,
+) -> None:
+    folder, _project = _make_take(tmp_path, "take-a")
+    controller = StudioProjectController()
+    document = controller.load(folder)
+    controller.select_region(document.regions[0].region_id)
+    token = controller.task_token
+    generation = controller.generation
+
+    controller.unload()
+
+    assert token.cancelled is True
+    assert controller.accepts_async_result(token) is False
+    assert controller.generation == generation + 1
+    assert controller.take_path is None
+    assert controller.store_token is None
+    assert controller.dirty is False
+    assert controller.autosave_pending is False
+    assert controller.selected_track_id is None
+    assert controller.selected_region_id is None
+    assert controller.last_error == ""
+    assert controller.conflicted is False
+    assert controller.recovery_notice == ""
+    assert controller.can_undo is False
+    assert controller.can_redo is False
+    with pytest.raises(StudioControllerError, match="No Studio take is loaded"):
+        _ = controller.document
+    with pytest.raises(StudioControllerError, match="No Studio take is loaded"):
+        _ = controller.task_token
+    with pytest.raises(StudioControllerError, match="No Studio take is loaded"):
+        controller.reload()
+    with pytest.raises(StudioControllerError, match="No Studio take is loaded"):
+        controller.save()
+
+
+def test_unload_protects_dirty_state_until_discard_then_allows_new_load(
+    tmp_path: Path,
+) -> None:
+    first_folder, first_project = _make_take(tmp_path, "take-a")
+    second_folder, second_project = _make_take(tmp_path, "take-b")
+    controller = StudioProjectController()
+    retained = controller.load(first_folder)
+    token = controller.task_token
+    generation = controller.generation
+    controller.perform(
+        "Unsaved edit",
+        lambda document: document.update_track(
+            first_project.tracks[0].track_id,
+            muted=True,
+        ),
+    )
+
+    with pytest.raises(StudioControllerError, match="unsaved edits"):
+        controller.unload()
+
+    assert controller.document.take_id == retained.take_id
+    assert controller.dirty is True
+    assert controller.generation == generation
+    assert token.cancelled is False
+    assert controller.accepts_async_result(token) is True
+
+    controller.unload(discard_dirty=True)
+
+    assert token.cancelled is True
+    assert controller.take_path is None
+    assert controller.dirty is False
+    assert controller.generation == generation + 1
+    loaded = controller.load(second_folder)
+    assert loaded.take_id == second_project.take_id
+    assert controller.take_path == second_folder.resolve()
+    assert controller.dirty is False
+    assert controller.task_token.cancelled is False
+
+
 def test_reload_rejects_changed_take_identity_without_replacing_state(
     tmp_path: Path,
 ) -> None:

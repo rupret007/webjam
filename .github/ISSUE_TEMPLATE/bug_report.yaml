@@ -46,8 +46,8 @@ body:
     id: webjam_version
     attributes:
       label: WebJam version
-      description: Title bar shows the version, e.g. "WebJam v0.16.3".
-      placeholder: "v0.16.3"
+      description: Title bar shows the version, e.g. "WebJam v0.17.0".
+      placeholder: "v0.17.0"
     validations:
       required: true
 

@@ -1,4 +1,5 @@
 """Band-server recording lifecycle, validation, and completion feedback."""
+
 from __future__ import annotations
 
 import json
@@ -177,15 +178,15 @@ class RecordingCoordinator:
             # callbacks always carry an explicit take ID.
             return True
         return bool(
-            take_id
-            and take_id == self._take_id
-            and take_id != self._validation_take_id
+            take_id and take_id == self._take_id and take_id != self._validation_take_id
         )
 
     @staticmethod
     def _utc_timestamp() -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
-            "+00:00", "Z"
+        return (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z")
         )
 
     @staticmethod
@@ -221,9 +222,7 @@ class RecordingCoordinator:
         self._recording_events.append(item)
         del self._recording_events[:-100]
 
-    def _set_recovery_locked(
-        self, status: RecoveryStatus, note: str = ""
-    ) -> None:
+    def _set_recovery_locked(self, status: RecoveryStatus, note: str = "") -> None:
         if (
             status is RecoveryStatus.NEEDS_ATTENTION
             or self._recording_recovery_status is not RecoveryStatus.NEEDS_ATTENTION
@@ -289,9 +288,7 @@ class RecordingCoordinator:
         except (FileExistsError, OSError, RecordingManifestJournalError, ValueError):
             # UUID take IDs make an existing entry unexpected.  Do not replace
             # it: it may be recovery evidence from a previous interrupted take.
-            LOGGER.warning(
-                "Could not create a private recording-evidence checkpoint."
-            )
+            LOGGER.warning("Could not create a private recording-evidence checkpoint.")
             return False
         with self._evidence_lock:
             if self._take_id != take_id:
@@ -320,7 +317,9 @@ class RecordingCoordinator:
         try:
             journal.update(take_id, self._current_session_evidence())
         except (OSError, RecordingManifestJournalError, ValueError):
-            LOGGER.warning("Could not update the private recording-evidence checkpoint.")
+            LOGGER.warning(
+                "Could not update the private recording-evidence checkpoint."
+            )
             with self._evidence_lock:
                 if self._evidence_journal is journal and self._take_id == take_id:
                     self._evidence_journal_failed = True
@@ -346,7 +345,9 @@ class RecordingCoordinator:
             # The final manifest is already durable.  Retaining the journal is
             # safer than deleting unknown recovery evidence; the next launch
             # will surface it for review without exposing private paths.
-            LOGGER.warning("Could not remove the completed recording-evidence checkpoint.")
+            LOGGER.warning(
+                "Could not remove the completed recording-evidence checkpoint."
+            )
         finally:
             with self._evidence_lock:
                 if self._evidence_journal is journal:
@@ -372,7 +373,9 @@ class RecordingCoordinator:
             # Untrusted directory entries are valid recovery cues, not recoverable
             # payload, so we keep the signal and continue. A dedicated project
             # is published from trusted or fallback evidence paths when available.
-            LOGGER.warning("Ignoring untrusted recording-evidence entry: %s", issue.error)
+            LOGGER.warning(
+                "Ignoring untrusted recording-evidence entry: %s", issue.error
+            )
 
         pending = len(scan.journals) + len(scan.untrusted_entries)
         if not pending:
@@ -395,14 +398,14 @@ class RecordingCoordinator:
         if not take_id or not root:
             return
 
-        recovery_dir = (
-            Path(root).expanduser() / f"Recovered-{take_id}"
-        )
+        recovery_dir = Path(root).expanduser() / f"Recovered-{take_id}"
         manifest_path = recovery_dir / "webjam-take.json"
 
         if manifest_path.is_file() and not manifest_path.is_symlink():
             try:
-                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                existing_manifest = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                )
                 if (
                     isinstance(existing_manifest, dict)
                     and existing_manifest.get("schema_version") == 2
@@ -428,7 +431,12 @@ class RecordingCoordinator:
         merged_notes = tuple(dict.fromkeys((*evidence.recovery_notes, evidence_note)))
         merged_timeline = tuple(
             dict.fromkeys(
-                (*evidence.timeline, SessionTimelineEvent("recording_evidence_recovered", detail=evidence_note))
+                (
+                    *evidence.timeline,
+                    SessionTimelineEvent(
+                        "recording_evidence_recovered", detail=evidence_note
+                    ),
+                )
             ).keys()
         )
         evidence = replace(
@@ -440,6 +448,7 @@ class RecordingCoordinator:
 
         try:
             from webjam_qt import __version__
+
             result = write_take_manifest(
                 recovery_dir,
                 expected_tracks=0,
@@ -606,7 +615,8 @@ class RecordingCoordinator:
             return None, ()
         root = (self._c.settings.takes_directory or "").strip()
         base = (
-            Path(root).expanduser() if root
+            Path(root).expanduser()
+            if root
             else Path.home() / "Music" / "WebJam Recovered Takes"
         )
         recovered = base / f"Recovered-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -652,10 +662,15 @@ class RecordingCoordinator:
     def is_recording_active(self) -> bool:
         """True while a recording is armed, rolling, or being armed."""
         snap = self.snapshot
-        return snap.recording or snap.armed or self.phase in (
-            RecorderPhase.STARTING,
-            RecorderPhase.RECORDING,
-            RecorderPhase.STOP_FAILED,
+        return (
+            snap.recording
+            or snap.armed
+            or self.phase
+            in (
+                RecorderPhase.STARTING,
+                RecorderPhase.RECORDING,
+                RecorderPhase.STOP_FAILED,
+            )
         )
 
     @property
@@ -716,14 +731,15 @@ class RecordingCoordinator:
             return True
         secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
         if not secret_file:
-            LOGGER.error("Hosted recording is active but no recorder secret is configured")
+            LOGGER.error(
+                "Hosted recording is active but no recorder secret is configured"
+            )
             return False
         try:
             from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+
             secret = read_secret_file(secret_file)
-            rpc = JamulusServerRpc(
-                port=self._c.settings.server_rpc_port, secret=secret
-            )
+            rpc = JamulusServerRpc(port=self._c.settings.server_rpc_port, secret=secret)
             rpc.CONNECT_TIMEOUT_S = 0.75
             rpc.CALL_TIMEOUT_S = 1.5
             with rpc:
@@ -756,9 +772,7 @@ class RecordingCoordinator:
                                         "validation."
                                     ),
                                 )
-                        LOGGER.info(
-                            "Hosted-server recording stopped and confirmed"
-                        )
+                        LOGGER.info("Hosted-server recording stopped and confirmed")
                         return True
                     time.sleep(0.1)
             LOGGER.error("Hosted recorder stayed enabled after stop request")
@@ -802,6 +816,14 @@ class RecordingCoordinator:
         )
 
     def on_record_requested(self) -> None:
+        studio = getattr(getattr(self._c, "window", None), "recording_studio", None)
+        if bool(getattr(studio, "export_in_progress", False)):
+            self._c.window.flash_message(
+                "Wait for the Studio export to finish before starting a new take. "
+                "The current recordings are safe.",
+                ms=6000,
+            )
+            return
         secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
         if not secret_file:
             self._c._show_actionable_error(
@@ -818,8 +840,10 @@ class RecordingCoordinator:
             )
             return
         if self.phase in (
-            RecorderPhase.PREFLIGHT, RecorderPhase.STARTING,
-            RecorderPhase.STOPPING, RecorderPhase.VALIDATING,
+            RecorderPhase.PREFLIGHT,
+            RecorderPhase.STARTING,
+            RecorderPhase.STOPPING,
+            RecorderPhase.VALIDATING,
         ):
             return
 
@@ -827,7 +851,8 @@ class RecordingCoordinator:
         if target_armed:
             self._set_phase(RecorderPhase.PREFLIGHT)
             real_participants = [
-                participant for participant in self._c.participants.values()
+                participant
+                for participant in self._c.participants.values()
                 if not participant.role.startswith("Preview")
             ]
             if not self._c._jamulus_connected or not real_participants:
@@ -849,9 +874,7 @@ class RecordingCoordinator:
             storage = check_recording_storage(
                 self._c.settings.takes_directory,
                 expected_server_tracks=len(real_participants),
-                local_originals_enabled=bool(
-                    self._c.settings.local_capture_enabled
-                ),
+                local_originals_enabled=bool(self._c.settings.local_capture_enabled),
             )
             if not storage.can_start:
                 self._set_phase(RecorderPhase.ERROR)
@@ -1018,9 +1041,7 @@ class RecordingCoordinator:
         if not recovered:
             return
         for item in recovered:
-            LOGGER.warning(
-                "Recovered abandoned local capture in %s", item.recovery_dir
-            )
+            LOGGER.warning("Recovered abandoned local capture in %s", item.recovery_dir)
             self._publish_recovered_local_capture(item, root)
         self._c.window.flash_message(
             "WebJam recovered unfinished local audio from an earlier session. "
@@ -1049,10 +1070,15 @@ class RecordingCoordinator:
         manifest_path = recovery_dir / "webjam-take.json"
         if manifest_path.is_file() and not manifest_path.is_symlink():
             try:
-                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                existing_manifest = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                )
             except (OSError, json.JSONDecodeError):
                 existing_manifest = None
-            if isinstance(existing_manifest, dict) and existing_manifest.get("schema_version") == 2:
+            if (
+                isinstance(existing_manifest, dict)
+                and existing_manifest.get("schema_version") == 2
+            ):
                 return
 
         take_id = str(getattr(item, "take_id", "") or "")
@@ -1082,10 +1108,13 @@ class RecordingCoordinator:
         notes = tuple(dict.fromkeys((*evidence.recovery_notes, recovery_note)))
         timeline = tuple(
             dict.fromkeys(
-                (*evidence.timeline, SessionTimelineEvent(
-                    "local_capture_recovered",
-                    detail=recovery_note,
-                ))
+                (
+                    *evidence.timeline,
+                    SessionTimelineEvent(
+                        "local_capture_recovered",
+                        detail=recovery_note,
+                    ),
+                )
             )
         )
         evidence = replace(
@@ -1136,13 +1165,21 @@ class RecordingCoordinator:
             LOGGER.exception("Could not publish recovered local capture manifest")
             return
 
-        if result.take is not None and journal_result is not None and journal_result.trusted:
+        if (
+            result.take is not None
+            and journal_result is not None
+            and journal_result.trusted
+        ):
             try:
                 journal.remove(take_id)
             except (OSError, RecordingManifestJournalError, ValueError):
-                LOGGER.warning("Could not retire recovery evidence after manifest publish.")
+                LOGGER.warning(
+                    "Could not retire recovery evidence after manifest publish."
+                )
 
-    def _publish_local_result_recovery(self, result, root: str, fallback_dir: Path) -> Path | None:
+    def _publish_local_result_recovery(
+        self, result, root: str, fallback_dir: Path
+    ) -> Path | None:
         """Publish a visible local-result recovery without inventing media.
 
         ``LocalInputCapture`` may already have promoted a partial capture to a
@@ -1152,7 +1189,10 @@ class RecordingCoordinator:
         deferred promotion completes.
         """
         recovery_dir = Path(getattr(result, "recovery_dir", None) or fallback_dir)
-        if recovery_dir.name.startswith(".webjam-capture-") or not recovery_dir.is_dir():
+        if (
+            recovery_dir.name.startswith(".webjam-capture-")
+            or not recovery_dir.is_dir()
+        ):
             return None
         files = tuple(
             path
@@ -1183,9 +1223,7 @@ class RecordingCoordinator:
                 session_id=self._session_id,
                 started_utc=str(getattr(result, "started_utc", "") or ""),
                 total_frames=max(0, int(getattr(result, "total_frames", 0) or 0)),
-                durable_frames=max(
-                    0, int(getattr(result, "durable_frames", 0) or 0)
-                ),
+                durable_frames=max(0, int(getattr(result, "durable_frames", 0) or 0)),
                 sample_rate=max(0, int(getattr(capture_device, "sample_rate", 0) or 0)),
                 gaps=tuple(getattr(result, "gaps", ()) or ()),
                 capture_device=capture_device,
@@ -1234,7 +1272,9 @@ class RecordingCoordinator:
                     rpc.start_recording() if target_armed else rpc.stop_recording()
                 )
                 if not acknowledged:
-                    raise ServerRpcError("The recorder did not acknowledge the request.")
+                    raise ServerRpcError(
+                        "The recorder did not acknowledge the request."
+                    )
                 armed = target_armed
                 deadline = time.monotonic() + 4.0
                 while time.monotonic() < deadline:
@@ -1258,12 +1298,14 @@ class RecordingCoordinator:
         except ServerRpcError as exc:
             if callback_take_id is None:
                 self._c._ui_invoker.invoke(
-                    lambda message=str(exc): self._c._apply_record_toggle_failure(message)
+                    lambda message=str(exc): self._c._apply_record_toggle_failure(
+                        message
+                    )
                 )
             else:
                 self._c._ui_invoker.invoke(
-                    lambda message=str(exc), take_id=callback_take_id: self.apply_toggle_failure(
-                        message, take_id=take_id
+                    lambda message=str(exc), take_id=callback_take_id: (
+                        self.apply_toggle_failure(message, take_id=take_id)
                     )
                 )
         except Exception:  # noqa: BLE001
@@ -1326,8 +1368,7 @@ class RecordingCoordinator:
             LOGGER.debug("Ignoring stale recorder RPC failure for a retired take")
             return
         ambiguous_start = (
-            self.phase is RecorderPhase.STARTING
-            and not self._c._recorder_armed
+            self.phase is RecorderPhase.STARTING and not self._c._recorder_armed
         )
         if ambiguous_start:
             # A timeout can arrive after JamulusServer accepted startRecording
@@ -1348,7 +1389,8 @@ class RecordingCoordinator:
             RecorderPhase.STOP_FAILED if still_armed else RecorderPhase.ERROR
         )
         self._c._show_actionable_error(
-            "Recording Could Not Start" if not self._c._recorder_armed
+            "Recording Could Not Start"
+            if not self._c._recorder_armed
             else "Recording Could Not Stop",
             what_failed=(
                 "WebJam couldn't confirm that recording started."
@@ -1361,8 +1403,8 @@ class RecordingCoordinator:
             ),
             next_action=(
                 "The server may still be recording. Try Stop Again now."
-                if still_armed else
-                "End the session, start it again, and retry. WebJam will rebuild the "
+                if still_armed
+                else "End the session, start it again, and retry. WebJam will rebuild the "
                 "recording connection automatically."
             ),
             retry_callback=self.on_record_requested,
@@ -1602,12 +1644,8 @@ class RecordingCoordinator:
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
-                local_total_frames = int(
-                    getattr(local_result, "total_frames", 0) or 0
-                )
-                local_durable_frames = getattr(
-                    local_result, "durable_frames", None
-                )
+                local_total_frames = int(getattr(local_result, "total_frames", 0) or 0)
+                local_durable_frames = getattr(local_result, "durable_frames", None)
                 capture_device = getattr(local_result, "capture_device", None)
                 actual_recovery_dir = getattr(local_result, "recovery_dir", None)
                 if actual_recovery_dir is not None:
@@ -1622,6 +1660,7 @@ class RecordingCoordinator:
                     )
             if recovered is not None and recovered.is_dir():
                 from webjam_qt import __version__
+
                 self._post_validation_stage("ALIGNING HOST TRACKS…")
                 self._checkpoint_evidence_journal()
                 result = write_take_manifest(
@@ -1670,23 +1709,23 @@ class RecordingCoordinator:
                 started_utc = local_result.started_utc
                 duration_s = local_result.duration_s
                 capture_gaps = tuple(getattr(local_result, "gaps", ()) or ())
-                local_total_frames = int(
-                    getattr(local_result, "total_frames", 0) or 0
-                )
-                local_durable_frames = getattr(
-                    local_result, "durable_frames", None
-                )
+                local_total_frames = int(getattr(local_result, "total_frames", 0) or 0)
+                local_durable_frames = getattr(local_result, "durable_frames", None)
                 capture_device = getattr(local_result, "capture_device", None)
             self._post_validation_stage("CHECKING TRACKS…")
             stable = wait_for_take_files_stable(take_dir, polls=20, interval_s=0.25)
             if not stable:
-                capture_errors = (*capture_errors, "Take files did not become stable in time.")
+                capture_errors = (
+                    *capture_errors,
+                    "Take files did not become stable in time.",
+                )
                 self._mark_recording_recovery(
                     RecoveryStatus.NEEDS_ATTENTION,
                     "Take files did not become stable in time.",
                     event="take_files_unstable",
                 )
             from webjam_qt import __version__
+
             self._post_validation_stage("ALIGNING HOST TRACKS…")
             self._checkpoint_evidence_journal()
             result = write_take_manifest(
@@ -1802,7 +1841,9 @@ class RecordingCoordinator:
         open_button = box.addButton("Open Studio", QMessageBox.ButtonRole.ActionRole)
         reveal_button = None
         if result.take is not None:
-            reveal_button = box.addButton("Reveal in Finder", QMessageBox.ButtonRole.ActionRole)
+            reveal_button = box.addButton(
+                "Reveal in Finder", QMessageBox.ButtonRole.ActionRole
+            )
         box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
 
         def _clicked(button) -> None:

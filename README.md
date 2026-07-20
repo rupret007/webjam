@@ -1,4 +1,4 @@
-# WebJam v0.16.3 release candidate
+# WebJam v0.17.0 Studio source candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -36,14 +36,36 @@ The latter choice opens the clearly labeled Recording Setup panel; it never
 changes Jamulus music settings.
 
 Studio is a Logic-like multitrack review workspace, not a Logic integration.
-It opens recorded takes, lets the musician choose a playback output when a
-take is reviewed, preserves non-destructive mix choices, and exports aligned
-stems plus a rough mix. A transferred guest Local Original is preserved first,
-then becomes eligible for an aligned export only when WebJam verifies it
-against that musician's intact Jamulus server reference; uncertain originals
-stay available for Studio review with waiting or unverified timing evidence.
-A selected aligned export waits until each original is verified or deliberately
-deselected rather than guessing where it belongs.
+It opens recorded takes, lets the musician choose a playback output only while
+reviewing, and provides a frame-accurate Arrange timeline. Regions can be moved,
+trimmed, split, duplicated, faded, disabled, or removed; markers, sections,
+cycle/loop playback, snap state, track mix controls, and master delivery choices
+remain non-destructive. Name Verse/Chorus sections and drag a section bar to
+reorder that whole song block across every track as one undoable ripple edit.
+Complete or explicitly recovered recordings from the same session can be added
+as take lanes, auditioned without changing the saved comp, and selected with
+Option/Alt-drag quick-swipe ranges.
+
+Arrange also has a mouse-free path: Arrow keys select rows and regions,
+Alt+Left/Right nudges, bracket shortcuts trim to the playhead, and keyboard
+commands audition/comp take lanes or move the named section at the playhead.
+
+Waveforms load progressively for the visible timeline, preserve recorded gaps
+as silence, and cancel stale work when the take or source changes. Undo/redo is
+bounded and restores exact immutable arrangement snapshots. Edits autosave to
+a separate Studio sidecar with conflict detection and last-known-good recovery;
+a failed save stays dirty and retryable. The take manifest and source WAVs are
+never rewritten by Studio. A final save failure blocks application close rather
+than making the unsaved arrangement inaccessible.
+
+Export creates equal-length 24-bit edited stems, aligned unity originals, and a
+rough mix, together with markers, import instructions, the exact arrangement,
+source manifests, provenance, and SHA-256 checksums. Cross-take comp sources are
+bound by full take/track/segment identity and export fails closed if source,
+manifest, or saved-state truth changes. A transferred guest Local Original is
+preserved first, then becomes eligible for aligned export only when WebJam
+verifies it against that musician's intact Jamulus server reference; uncertain
+originals remain reviewable but cannot be represented as verified alignment.
 
 ## Jamulus profile and privacy
 
@@ -59,27 +81,29 @@ musician's normal `Jamulus.ini`. WebJam’s private restart records contain only
 allowlisted profile and phase hashes—never invitation URLs, Webex URLs,
 credentials, device identifiers, raw paths, or notes.
 
-## Current release state
+## Source and published release state
 
-The current release stream is [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3).
-The source tree also contains the reviewed cross-platform packaging path for a
-direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
-portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and
-Linux distributions are not certified. The published release remains a private
-test candidate with one promoted primary artifact:
+The source tree reports **v0.17.0** and contains the Studio arrangement work
+described above. No v0.17.0 desktop package has been promoted. The current
+published rollback/reference release remains
+[**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3), a
+private test candidate with one promoted primary artifact:
 
 - `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
 
-It is still a private test candidate. Windows signing, macOS notarization, and
-other production gates remain pending, so use this build as a reviewed test
-release only.
+The source tree also contains the reviewed cross-platform packaging path for a
+direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
+portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and
+Linux distributions are not certified. The published v0.16.3 build is still a
+private test candidate. Windows signing, macOS notarization, and other
+production gates remain pending, so use it only as a reviewed test release.
 
-The generic Windows x64 and Intel macOS archives attached to that published
-tag are historical CI outputs, not promoted release packages. In particular,
-the v0.16.2 Windows archive is unsigned and its clean-install Jamulus action
-looked in the wrong packaged-data location. Those assets stay immutable as
-build evidence; the fixes are versioned in the v0.16.3 candidate instead of
-silently replacing files on the old tag.
+Generic Windows x64 and Intel macOS archives from earlier CI/tag runs are
+historical outputs, not promoted release packages. In particular, the v0.16.2
+Windows archive is unsigned and its clean-install Jamulus action looked in the
+wrong packaged-data location. Those v0.16.2 assets stay immutable as build
+evidence; the fixes were versioned in v0.16.3 instead of silently replacing
+files on the old tag.
 
 The v0.16.3 installer formats improve download and installation, but they do
 not substitute for platform trust. Ordinary Actions downloads are visibly
@@ -101,13 +125,17 @@ Windows PC may still require IT approval even after valid publisher signing;
 current test artifacts must not be promoted as public installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. Real two-Mac
-audio, interface changes, sleep/wake, interruption/recovery, and
-external-editor import remain physical-pilot evidence and are recorded as
-**NOT RUN** until people perform them.
+integrity—not a substitute for musicians hearing one another. For v0.17.0,
+real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
+interruption and recording recovery, long-session operation, external-editor
+import of the new evidence-rich export, signed clean installation, and platform
+trust/notarization remain physical or credentialed evidence. They are recorded
+as **NOT RUN** until people perform them; the source suite does not promote a
+package or claim audibility.
 
 ## Guides
 
+- [v0.17.0 release notes and changelog](CHANGELOG.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)

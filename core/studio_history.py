@@ -33,6 +33,7 @@ class _HistoryEntry:
     before: StudioDocument
     after: StudioDocument
     serialized_bytes: int
+    merge_key: str | None = None
 
 
 def _positive_int(value: object, field_name: str) -> int:
@@ -59,28 +60,30 @@ def _document_size(document: StudioDocument) -> int:
     return len(payload)
 
 
-def _validated_label(label: object) -> tuple[str, int]:
-    """Return one bounded command label and its exact UTF-8 byte size."""
+def _validated_text(value: object, field_name: str) -> tuple[str, int]:
+    """Return one bounded history string and its exact UTF-8 byte size."""
 
-    if not isinstance(label, str):
-        raise StudioProjectError("Studio history label must be text.")
+    if not isinstance(value, str):
+        raise StudioProjectError(f"Studio history {field_name} must be text.")
     # Every Unicode code point needs at least one UTF-8 byte. Reject obviously
     # oversized input before allocating a second, encoded copy of it.
-    if len(label) > MAX_HISTORY_LABEL_BYTES:
+    if len(value) > MAX_HISTORY_LABEL_BYTES:
         raise StudioProjectError(
-            f"Studio history label cannot exceed {MAX_HISTORY_LABEL_BYTES} UTF-8 bytes."
+            f"Studio history {field_name} cannot exceed "
+            f"{MAX_HISTORY_LABEL_BYTES} UTF-8 bytes."
         )
     try:
-        label_bytes = len(label.encode("utf-8"))
+        value_bytes = len(value.encode("utf-8"))
     except UnicodeEncodeError as exc:
         raise StudioProjectError(
-            "Studio history label must be valid Unicode text."
+            f"Studio history {field_name} must be valid Unicode text."
         ) from exc
-    if label_bytes > MAX_HISTORY_LABEL_BYTES:
+    if value_bytes > MAX_HISTORY_LABEL_BYTES:
         raise StudioProjectError(
-            f"Studio history label cannot exceed {MAX_HISTORY_LABEL_BYTES} UTF-8 bytes."
+            f"Studio history {field_name} cannot exceed "
+            f"{MAX_HISTORY_LABEL_BYTES} UTF-8 bytes."
         )
-    return label, label_bytes
+    return value, value_bytes
 
 
 def _validate_transition(before: StudioDocument, after: StudioDocument) -> None:
@@ -160,6 +163,8 @@ class StudioHistory:
         self,
         label: str,
         edit_callable: Callable[[StudioDocument], StudioDocument],
+        *,
+        merge_key: str | None = None,
     ) -> StudioDocument:
         """Apply one immutable edit and retain it when history limits permit.
 
@@ -172,7 +177,14 @@ class StudioHistory:
 
         if not callable(edit_callable):
             raise StudioProjectError("Studio history edit must be callable.")
-        command_label, label_bytes = _validated_label(label)
+        command_label, label_bytes = _validated_text(label, "label")
+        command_merge_key: str | None = None
+        merge_key_bytes = 0
+        if merge_key is not None:
+            command_merge_key, merge_key_bytes = _validated_text(
+                merge_key,
+                "merge key",
+            )
 
         with self._lock:
             before = self._document
@@ -187,19 +199,45 @@ class StudioHistory:
             _validate_transition(before, after)
 
             serialized_bytes = (
-                _document_size(before) + _document_size(after) + label_bytes
+                _document_size(before)
+                + _document_size(after)
+                + label_bytes
+                + merge_key_bytes
             )
             entry = _HistoryEntry(
                 label=command_label,
                 before=before,
                 after=after,
                 serialized_bytes=serialized_bytes,
+                merge_key=command_merge_key,
             )
 
             self._drop_redo_locked()
             self._document = after
-            self._undo.append(entry)
-            self._history_bytes += entry.serialized_bytes
+            previous = self._undo[-1] if self._undo else None
+            if (
+                command_merge_key is not None
+                and previous is not None
+                and previous.merge_key == command_merge_key
+                and previous.after == before
+            ):
+                merged_size = (
+                    _document_size(previous.before)
+                    + _document_size(after)
+                    + label_bytes
+                    + merge_key_bytes
+                )
+                self._undo[-1] = _HistoryEntry(
+                    label=command_label,
+                    before=previous.before,
+                    after=after,
+                    serialized_bytes=merged_size,
+                    merge_key=command_merge_key,
+                )
+                self._history_bytes += merged_size - previous.serialized_bytes
+            else:
+                self._undo.append(entry)
+                self._history_bytes += entry.serialized_bytes
             self._enforce_limits_locked()
             return self._document
 

@@ -1,4 +1,4 @@
-# Webex companion guidance — v0.16
+# Webex companion guidance — v0.17.0
 
 Webex is optional for talking or video. Jamulus carries the music.
 
@@ -17,7 +17,7 @@ list.
    prerequisite.
 
 Legacy audience-bridge preferences remain loadable for compatibility, but the
-v0.16 musician flow does not route system audio automatically or configure
+v0.17 musician flow does not route system audio automatically or configure
 Webex devices. WebJam Settings stores only an optional conversation link and
 the chosen conversation behavior; live device choices stay with their native
 apps.

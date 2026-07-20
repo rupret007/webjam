@@ -1,11 +1,12 @@
 # WebJam v1 last-mile readiness record — v0.14 historical baseline
 
 > **Superseded for active test nights.** This is the verified v0.14 package
-> record retained as rollback evidence. Use [README.md](../../README.md),
-> [CLOSED_PILOT_PLAYBOOK.md](../../CLOSED_PILOT_PLAYBOOK.md),
-> [SUNDAY_TWO_MAC_PILOT.md](../../SUNDAY_TWO_MAC_PILOT.md), and
-> [RECORDING_AND_STUDIO.md](../../RECORDING_AND_STUDIO.md) for the current
-> v0.16 Jamulus-first test-night flow and Logic-like Studio boundary.
+> record retained as rollback evidence. Use [README.md](../README.md),
+> [CLOSED_PILOT_PLAYBOOK.md](../CLOSED_PILOT_PLAYBOOK.md),
+> [SUNDAY_TWO_MAC_PILOT.md](../SUNDAY_TWO_MAC_PILOT.md), and
+> [RECORDING_AND_STUDIO.md](../RECORDING_AND_STUDIO.md) for the current
+> v0.17 source flow and non-destructive Studio boundary. The v0.16.3 artifact
+> remains the published rollback/reference package.
 
 **Working branch at the time:** `master`
 **Historical package candidate:** `0.14.0` private Apple-Silicon test-night
@@ -198,8 +199,9 @@ from the physical musician certification still required.
 - Packaged VoiceOver/NVDA review
 - Developer ID signing and notarization before broad distribution
 
-Use [SUNDAY_TWO_MAC_PILOT.md](../SUNDAY_TWO_MAC_PILOT.md) for the operator
-worksheet. Mark every unobserved physical result **NOT RUN**.
+Use [V017_TWO_MAC_PILOT.md](../V017_TWO_MAC_PILOT.md) for the current operator
+worksheet. The v0.16 worksheet remains archived history. Mark every unobserved
+physical result **NOT RUN**.
 
 ## Rollback
 

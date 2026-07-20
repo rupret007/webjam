@@ -612,3 +612,67 @@ def test_track_export_in_progress_blocks_close_without_stopping_the_jam():
     information.assert_called_once()
     question.assert_not_called()
     controller.recording.confirm_quit.assert_not_called()
+
+
+def test_unsaved_studio_edits_veto_window_close_until_save_retry(qapp):
+    window = _window()
+    studio = window.recording_studio
+    controller = SimpleNamespace(
+        recording=SimpleNamespace(
+            is_recording_active=False,
+            take_in_progress=False,
+            confirm_quit=MagicMock(return_value=True),
+        ),
+        bridge=SimpleNamespace(
+            hosted_server_alive=MagicMock(return_value=False),
+            hosted_server_owned=MagicMock(return_value=False),
+        ),
+        settings=SimpleNamespace(host_server_enabled=False),
+        window=window,
+        _is_jamulus_running=MagicMock(return_value=False),
+    )
+    shutdown_requested = MagicMock()
+    window.confirm_close = lambda: ApplicationController._confirm_close(controller)
+    window.close_requested.connect(shutdown_requested)
+    window.show()
+    qapp.processEvents()
+    try:
+        with patch.object(
+            studio,
+            "prepare_close",
+            side_effect=(False, True),
+        ) as prepare_close, patch.object(
+            QMessageBox,
+            "information",
+        ) as information:
+            assert window.close() is False
+            assert window.isVisible()
+            shutdown_requested.assert_not_called()
+            information.assert_called_once()
+            assert "recorded take is safe" in information.call_args.args[2].lower()
+            assert "arrange and mix edits are not saved" in information.call_args.args[
+                2
+            ].lower()
+
+            assert window.close() is True
+            shutdown_requested.assert_called_once_with()
+            assert prepare_close.call_count == 2
+    finally:
+        window.confirm_close = None
+        studio.shutdown()
+        _destroy(window)
+
+
+def test_direct_shutdown_does_not_teardown_after_studio_save_failure():
+    studio = SimpleNamespace(
+        prepare_close=MagicMock(return_value=False),
+        shutdown=MagicMock(),
+    )
+    controller = SimpleNamespace(
+        _shutdown=False,
+        window=SimpleNamespace(recording_studio=studio),
+    )
+    with patch.object(QMessageBox, "information"):
+        assert ApplicationController.shutdown(controller) is False
+    assert controller._shutdown is False
+    studio.shutdown.assert_not_called()

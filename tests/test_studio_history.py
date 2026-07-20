@@ -328,6 +328,102 @@ def test_history_labels_are_utf8_bounded_and_count_toward_byte_limit() -> None:
     assert untouched.undo_depth == 0
 
 
+def test_consecutive_matching_merge_keys_form_one_exact_undo_step() -> None:
+    initial, track_id = _document()
+    history = StudioHistory(initial)
+
+    first = history.perform(
+        "Move fader",
+        lambda document: document.update_track(track_id, fader_gain=1.1),
+        merge_key=f"track:{track_id}:gain",
+    )
+    second = history.perform(
+        "Move fader",
+        lambda document: document.update_track(track_id, fader_gain=1.2),
+        merge_key=f"track:{track_id}:gain",
+    )
+    final = history.perform(
+        "Move fader",
+        lambda document: document.update_track(track_id, fader_gain=1.3),
+        merge_key=f"track:{track_id}:gain",
+    )
+
+    assert first is not second
+    assert second is not final
+    assert history.undo_depth == 1
+    assert history.undo() is initial
+    assert history.redo_depth == 1
+    assert history.redo() is final
+    assert history.document.state_for(track_id).fader_gain == pytest.approx(1.3)
+
+
+def test_merge_key_only_coalesces_immediately_adjacent_matching_edits() -> None:
+    initial, track_id = _document()
+    history = StudioHistory(initial)
+
+    history.perform(
+        "Move fader",
+        lambda document: document.update_track(track_id, fader_gain=1.1),
+        merge_key="track:gain",
+    )
+    panned = history.perform(
+        "Move pan",
+        lambda document: document.update_track(track_id, pan=0.25),
+        merge_key="track:pan",
+    )
+    final = history.perform(
+        "Move fader again",
+        lambda document: document.update_track(track_id, fader_gain=1.2),
+        merge_key="track:gain",
+    )
+
+    assert history.undo_depth == 3
+    assert history.undo() is panned
+    assert history.undo().state_for(track_id).fader_gain == pytest.approx(1.1)
+    assert history.undo() is initial
+    assert history.redo() is not initial
+    assert history.redo() is panned
+    assert history.redo() is final
+
+
+def test_merge_key_validation_is_atomic_and_counted_in_history_budget() -> None:
+    initial, track_id = _document()
+    changed = initial.update_track(track_id, muted=True)
+    label = "Mute"
+    merge_key = "track:mute"
+    entry_bytes = (
+        _compact_size(initial)
+        + _compact_size(changed)
+        + len(label.encode("utf-8"))
+        + len(merge_key.encode("utf-8"))
+    )
+
+    retained = StudioHistory(initial, max_bytes=entry_bytes)
+    retained.perform(label, lambda _document: changed, merge_key=merge_key)
+    assert retained.undo_depth == 1
+
+    evicted = StudioHistory(initial, max_bytes=entry_bytes - 1)
+    evicted.perform(label, lambda _document: changed, merge_key=merge_key)
+    assert evicted.document is changed
+    assert evicted.undo_depth == 0
+
+    untouched = StudioHistory(initial)
+    with pytest.raises(StudioProjectError, match="merge key must be text"):
+        untouched.perform(
+            label,
+            lambda _document: changed,
+            merge_key=123,  # type: ignore[arg-type]
+        )
+    with pytest.raises(StudioProjectError, match="merge key cannot exceed"):
+        untouched.perform(
+            label,
+            lambda _document: changed,
+            merge_key="é" * (MAX_HISTORY_LABEL_BYTES // 2) + "x",
+        )
+    assert untouched.document is initial
+    assert untouched.undo_depth == 0
+
+
 def test_concurrent_perform_serializes_edits_without_lost_updates() -> None:
     initial, track_id = _document()
     history = StudioHistory(initial, max_entries=128)

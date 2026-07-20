@@ -4,12 +4,108 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.17.0] — 2026-07-19 Studio arrangement source candidate
+
+### Arrange editing and take-lane comping
+
+- Replaced the mix-only Studio sidecar with an immutable, frame-domain
+  arrangement document. Studio now supports moving, trimming, splitting,
+  duplicating, disabling, and deleting regions; per-region fades and validated
+  crossfades; markers and sections; cycle/loop playback and snap state; track
+  trim/fader/pan, mute, solo, and export inclusion; and master gain/limiter
+  choices.
+- Added a responsive Arrange timeline with fixed track headers, zoom and
+  horizontal/vertical navigation, ruler/playhead, visible-region waveform
+  tiles, fades, crossfades, markers, cycle ranges, and keyboard undo/redo and
+  region actions. Arrow-key row/region selection, keyboard nudge/trim,
+  take-lane audition/comp, and named-section movement provide a mouse-free
+  editing path. Rendering work is culled to the visible viewport.
+- Named section bars can now be dragged to reorder Verse/Chorus song blocks as
+  one undoable ripple edit across every track. Regions split at permutation
+  seams with their exact affine source mapping, contained arrangement metadata
+  follows the block, and unsafe seam-crossing intervals fail atomically. The
+  player reloads the result while source media and tombstones remain unchanged.
+- Enabled cycle ranges now loop playback on exact project frames even when a
+  boundary falls inside an output-device block. A deterministic short seam
+  fade covers short and multi-wrap device blocks without changing transport
+  frame counts. Source tests prove the discontinuity is removed; physical
+  click-free playback remains **NOT RUN**.
+- Added repeated-take lanes for complete or explicitly recovered takes from the
+  same session, sample rate, and unambiguous musician. Musicians can audition a
+  lane without changing the saved comp and Option/Alt-drag ranges into a comp;
+  new selections split prior overlaps and use short equal-power boundaries.
+  Removing a lane tombstones only Studio choices—the repeated recording stays
+  in Takes.
+
+### Recording truth, persistence, and history
+
+- Arrangement state contains durable take/track/segment IDs and integer frames,
+  never source paths. The take manifest and every source WAV remain read-only
+  during load, edit, comp, undo/redo, autosave, playback, and export.
+- Added bounded immutable undo/redo history with exact snapshot restoration,
+  stable IDs, coalescing for adjacent continuous-control gestures, divergent
+  redo invalidation, and both entry-count and serialized-byte limits. An edit
+  remains current even when it is too large to retain as an undo step.
+- Added coalesced autosave of the schema-v2 Studio sidecar with exact-byte
+  compare-and-swap tokens, process and cross-process locking, atomic replace,
+  last-known-good backup recovery, and fail-closed conflict handling. A failed
+  save keeps the edit dirty and retryable; switching takes never silently
+  discards unsaved work, and application close is refused if the final save
+  retry still fails. Schema-v1 mix choices migrate in memory and their original
+  bytes are preserved on the first explicit schema-v2 save.
+
+### Waveforms, playback, and export provenance
+
+- Added cancellable, viewport-scoped waveform tiles with bounded LRU entry and
+  byte budgets. Declared recording gaps render as silence, stale generations
+  cannot publish into a newly selected take, mix-only changes reuse valid
+  tiles, and source-identity changes invalidate them. Trusted media is opened
+  without following symbolic links and is rechecked against its durable
+  identity and checksum.
+- Added a deterministic sparse 12-track, 60-minute workspace stress gate. It
+  passes load/edit/save/reopen, compact Arrange zoom/viewport, bounded waveform
+  scheduling, bounded-block export cancellation/cleanup, and unchanged source
+  hashes without allocating or playing a full session. Physical long-session
+  operation remains **NOT RUN**.
+- Playback and export now share the arrangement renderer for frame/rate
+  conversion, regions, fades, crossfades, comps, gaps, track state, and master
+  delivery behavior. Cross-take sources require a trusted full
+  take/track/segment catalog and fail closed if source or manifest truth changes.
+- Playback checksum validation and source-reader preparation now run on a
+  cancellable generation-tagged worker. Audio callbacks use preopened
+  descriptor-bound readers without open/stat/fstat work; stale take/edit
+  preparations cannot start output, and terminal source failures are drained on
+  the UI thread.
+- Studio export transactionally publishes equal-length 24-bit edited stems,
+  aligned unity originals, a rough mix, markers/sections CSV, import
+  instructions, the exact Studio document, source take manifests, provenance,
+  and SHA-256 checksums. Provenance records selected tracks and source keys,
+  input/output hashes, timeline identity, clipping counts, and an explicit
+  external-editor validation status of `NOT RUN`. Cancellation and
+  pre-publication failures remove the unpublished package without changing
+  source evidence.
+
+### Evidence boundary
+
+- Automated model, persistence, history, controller, renderer, comping,
+  waveform, export, and headless Qt interaction tests cover the source
+  implementation. They do not prove physical audibility or hardware behavior.
+- No `v0.17.0` package has been promoted. Real two-Mac listening, physical
+  interface disconnect/reconnect, sleep/wake, interruption and recording
+  recovery, long-session operation, external-editor import, signed clean
+  installation, and platform trust/notarization gates remain **NOT RUN** for
+  this source candidate. The published `v0.16.3` private test artifact remains
+  the current rollback/reference package until those gates are performed.
+
+---
+
 ## [0.16.3] — 2026-07-17 private cross-platform test build
 
 ### Session stability and studio behavior
 
 - Kept the simple Host/Join-first flow from `v0.16.2` and carried forward the
-  recording/Studio behavior hardening from the current `codex/webjam-zero-friction-recording-ultimate`
+  recording/Studio behavior hardening from the then-active
+  `codex/webjam-zero-friction-recording-ultimate`
   branch. Late callbacks remain guarded by generation checks, and Studio exports
   continue to distinguish verified aligned alignment from unverified playback-only
   originals.

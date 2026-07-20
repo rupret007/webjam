@@ -1,4 +1,4 @@
-# WebJam v0.16 UX acceptance checklist
+# WebJam v0.17.0 UX acceptance checklist
 
 ## Launch: understandable in five seconds
 
@@ -45,6 +45,23 @@
 - [ ] Studio playback output is shown only in Studio review.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
       Logic integration.
+- [ ] Arrange exposes visible timeline/ruler, fixed track headers, zoom/scroll,
+      accessible selection, and semantic region actions without clipping at the
+      supported compact size.
+- [ ] Move/trim gestures, Split, Duplicate, Disable/Delete, snap, and Undo/Redo
+      update playback while leaving the take manifest and WAVs unchanged.
+- [ ] A named Verse/Chorus section bar can be dragged earlier or later as one
+      ripple edit across every track; Undo restores it, and an unsafe
+      seam-crossing interval refuses the whole move without partial state.
+- [ ] A safely matched same-session repeated take can be added as a lane,
+      auditioned without changing the saved comp, and Option/Alt-dragged into a
+      non-overlapping comp range.
+- [ ] Waveforms arrive progressively, show declared gaps as silence, and never
+      show stale results after switching takes.
+- [ ] Autosave failure keeps the edit visibly dirty/retryable and describes the
+      recorded take as safe; a conflict never silently overwrites another edit.
+- [ ] Export reports one complete evidence-rich package or a safe failure—never
+      a partial folder presented as success.
 
 ## Permission and error states
 
@@ -82,3 +99,6 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
+- [ ] v0.17.0 remains a source candidate until real-output Arrange/comp playback,
+      external-editor import, signed clean installation, and platform trust
+      gates have evidence; all currently remain **NOT RUN**.

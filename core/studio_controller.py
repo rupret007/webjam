@@ -209,6 +209,35 @@ class StudioProjectController:
             )
             return self._document_locked()
 
+    def unload(self, *, discard_dirty: bool = False) -> None:
+        """Release the active take without silently discarding unsaved edits."""
+
+        self._require_bool(discard_dirty, "discard_dirty")
+        with self._lock:
+            self._ensure_running_locked()
+            if self._dirty and not discard_dirty:
+                self._raise_retained_locked(
+                    "Studio has unsaved edits; save or explicitly discard them before "
+                    "unloading."
+                )
+
+            self._task_token._cancel()
+            self._generation += 1
+            self._task_token = StudioCancellationToken(self._generation)
+            self._task_token._cancel()
+            self._history = None
+            self._saved_document = None
+            self._take_path = None
+            self._store_token = None
+            self._requires_save = False
+            self._dirty = False
+            self._autosave_pending = False
+            self._selected_track_id = None
+            self._selected_region_id = None
+            self._last_error = ""
+            self._conflicted = False
+            self._recovery_notice = ""
+
     def reload(self, *, discard_dirty: bool = False) -> StudioDocument:
         """Reload the current path only when it still identifies the same take."""
 
@@ -236,7 +265,13 @@ class StudioProjectController:
             )
             return self._document_locked()
 
-    def perform(self, label: str, edit: StudioEdit) -> StudioDocument:
+    def perform(
+        self,
+        label: str,
+        edit: StudioEdit,
+        *,
+        merge_key: str | None = None,
+    ) -> StudioDocument:
         """Apply one validated history edit and coalesce an autosave request."""
 
         request: tuple[AutosaveRequest, int] | None
@@ -244,7 +279,7 @@ class StudioProjectController:
             self._ensure_editable_locked()
             assert self._history is not None
             before = self._history.document
-            after = self._history.perform(label, edit)
+            after = self._history.perform(label, edit, merge_key=merge_key)
             if after == before:
                 return after
             request = self._document_changed_locked()

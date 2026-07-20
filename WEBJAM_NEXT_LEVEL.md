@@ -2,8 +2,9 @@
 
 **Date:** 2026-06-29
 **Status:** Historical memo. Its market comparison and protocol history remain
-useful, but current v0.16 status lives in `README.md`,
-`CLOSED_PILOT_PLAYBOOK.md`, and `SUNDAY_TWO_MAC_PILOT.md`.
+useful, but current v0.17 source status lives in `README.md`, `CHANGELOG.md`,
+and `RECORDING_AND_STUDIO.md`. The v0.16 pilot documents remain the published
+rollback/package record.
 The memo predates the v0.16.0 test-night candidate and the v0.15.0/v0.14.0/v0.13.0/v0.12.0
 historical Band Check/Host/Join baselines,
 automatic same-Mac hosting, responsive black/white/burnt-orange interface,
@@ -90,10 +91,11 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 ## Recommended next step
 
 Current recommendation: treat the v0.14.0, v0.13.0, and v0.12.0 candidates as
-preserved historical package evidence. The current public GitHub build in the
-`WebJam v0.16.3 RC 4d8c046` release stream is the active two-Mac reference and
-is ad-hoc signed, not notarized. `SUNDAY_TWO_MAC_PILOT.md` remains historical
-for v0.16.0 and is not current guidance. Physical audio, recording/recovery,
-reconnect, role-aware cleanup, and external-editor import gates remain **NOT RUN**.
+preserved historical package evidence. Source reports v0.17.0, but no v0.17.0
+package is promoted. The public `WebJam v0.16.3 RC 4d8c046` build remains the
+rollback/reference artifact and is unsigned on Windows and ad-hoc signed, not
+notarized, on macOS. `SUNDAY_TWO_MAC_PILOT.md` remains historical for v0.16.0.
+Physical audio, Arrange/comp playback, recording/recovery, reconnect,
+role-aware cleanup, and external-editor import gates remain **NOT RUN**.
 The v1/v2 engine baseline has native one-hour longevity evidence; it does not
 certify a package or remote v3.
