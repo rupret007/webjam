@@ -217,6 +217,15 @@ def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> Non
     assert "GHSA-h35f-9h28-mq5c affects sdist creation" in test_job
 
 
+def test_source_job_is_bounded_and_runs_required_environment_gates() -> None:
+    test_job = _workflow_job("test")
+
+    assert "timeout-minutes: 30" in test_job
+    assert "python -m pip check" in test_job
+    assert "python -m compileall -q core webjam_qt ui services api tests" in test_job
+    assert "git diff --check HEAD" in test_job
+
+
 def test_protected_windows_release_is_verified_after_key_cleanup() -> None:
     trust = _workflow_job("windows-release-trust")
     source = trust.index(

@@ -43,6 +43,7 @@ jobs:
   # ------------------------------------------------------------------
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -69,6 +70,12 @@ jobs:
           python -m pip install --upgrade pip "setuptools>=83.0.0"
           pip install -r requirements.txt
           pip install pytest ruff "pip-audit==2.10.1"
+
+      - name: Verify source environment and syntax
+        run: |
+          python -m pip check
+          python -m compileall -q core webjam_qt ui services api tests
+          git diff --check HEAD
 
       - name: Lint (ruff)
         run: ruff check webjam_qt/ core/ ui/ services/ api/
