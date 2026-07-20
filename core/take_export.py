@@ -297,6 +297,7 @@ def _render_segment_block(
     source_rate: int,
     project_rate: int,
     drift_scale: float,
+    gaps=(),
 ):
     """Render one overlap using deterministic linear time conversion.
 
@@ -331,6 +332,23 @@ def _render_segment_block(
         rendered[:, channel] = np.interp(
             local_positions, grid, source[:, channel]
         ).astype(np.float32)
+    # Capture gaps describe source frames that were durably unavailable.  They
+    # must remain silence after rate/drift conversion exactly as they do in
+    # Studio playback; exporting interpolated neighboring samples here would
+    # falsely manufacture audio inside a disclosed dropout.
+    for gap in gaps:
+        gap_start = int(getattr(gap, "start_frame", 0))
+        gap_count = int(getattr(gap, "frame_count", 0))
+        gap_channels = tuple(getattr(gap, "channels", ()) or ())
+        inside = (source_positions >= gap_start) & (
+            source_positions < gap_start + gap_count
+        )
+        if not np.any(inside):
+            continue
+        targets = gap_channels or tuple(range(rendered.shape[1]))
+        for channel in targets:
+            if 0 <= channel < rendered.shape[1]:
+                rendered[inside, channel] = 0.0
     destination_start = overlap_start - output_start
     return destination_start, rendered
 
@@ -432,6 +450,7 @@ def _write_project_track(
                         source_rate=int(segment.sample_rate),
                         project_rate=project_rate,
                         drift_scale=drift_scale,
+                        gaps=segment.gaps,
                     )
                     if rendered is not None:
                         destination_start, audio = rendered
