@@ -37,6 +37,7 @@ from core.take_project import (
     write_take_project,
 )
 from core.studio_state import load_studio_state
+from core.studio_store import StudioStoreError
 from webjam_qt.widgets.recording_studio import (
     _CompositeWaveformSpec,
     _WaveformSegmentSpec,
@@ -359,6 +360,35 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
             assert settings[local_id].solo is True
         finally:
             reopened.shutdown()
+
+
+def test_studio_autosave_failure_stays_dirty_and_retries_without_losing_edit(
+    tmp_path,
+):
+    take_dir, (_server_id, local_id) = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._lanes[1]._pan.setValue(35)
+        assert studio._studio_state_dirty is True
+
+        with patch(
+            "webjam_qt.widgets.recording_studio.save_studio_document",
+            side_effect=StudioStoreError("disk full"),
+        ):
+            assert studio._flush_studio_state() is False
+
+        assert studio._studio_state_dirty is True
+        assert "recorded take is safe" in studio._hint.text().lower()
+        assert studio._flush_studio_state() is True
+        assert studio._studio_state_dirty is False
+    finally:
+        studio.shutdown()
+
+    assert load_studio_state(take_dir).state_for(local_id).pan == pytest.approx(0.35)
 
 
 def test_late_attached_track_refreshes_selected_take_without_reopening(tmp_path):

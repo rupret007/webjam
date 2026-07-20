@@ -11,7 +11,7 @@ from unittest.mock import ANY, patch
 
 import pytest
 
-from core.file_io import atomic_write_text
+from core.file_io import atomic_write_bytes
 from core.studio_state import (
     STUDIO_STATE_FILENAME,
     StudioStateError,
@@ -94,7 +94,9 @@ def _make_take(tmp_path: Path, track_ids: tuple[str, ...]) -> tuple[Path, TakePr
     return take_dir, project
 
 
-def test_load_defaults_are_keyed_by_durable_track_id_and_never_write_take(tmp_path: Path):
+def test_load_defaults_are_keyed_by_durable_track_id_and_never_write_take(
+    tmp_path: Path,
+):
     track_ids = (new_project_id(), new_project_id())
     take_dir, project = _make_take(tmp_path, track_ids)
     manifest = take_dir / "webjam-take.json"
@@ -132,8 +134,8 @@ def test_save_load_round_trip_is_private_atomic_sidecar_and_leaves_take_untouche
     )
 
     with patch(
-        "core.studio_state.atomic_write_text",
-        wraps=atomic_write_text,
+        "core.studio_store.atomic_write_bytes",
+        wraps=atomic_write_bytes,
     ) as atomic_write:
         sidecar = save_studio_state(take_dir, changed)
 
@@ -143,9 +145,12 @@ def test_save_load_round_trip_is_private_atomic_sidecar_and_leaves_take_untouche
     payload = json.loads(sidecar.read_text(encoding="utf-8"))
     assert payload["take_id"] == changed.take_id
     assert payload["session_id"] == changed.session_id
+    assert payload["schema_version"] == 2
     assert payload["tracks"][1] == {
         "track_id": track_ids[1],
-        "gain": 1.27,
+        "order": 1,
+        "trim_gain": 1.0,
+        "fader_gain": 1.27,
         "pan": -0.4,
         "muted": True,
         "solo": True,
@@ -159,7 +164,11 @@ def test_save_load_round_trip_is_private_atomic_sidecar_and_leaves_take_untouche
 def test_reconciles_added_and_reordered_tracks_by_id_without_positional_carryover(
     tmp_path: Path,
 ):
-    first_id, second_id, added_id = (new_project_id(), new_project_id(), new_project_id())
+    first_id, second_id, added_id = (
+        new_project_id(),
+        new_project_id(),
+        new_project_id(),
+    )
     take_dir, project = _make_take(tmp_path, (first_id, second_id))
     saved = load_studio_state(take_dir)
     saved = saved.update_track(first_id, gain=0.55, pan=-0.5, export_included=False)
@@ -287,3 +296,25 @@ def test_track_updates_are_bounded_and_do_not_allow_unknown_lanes(tmp_path: Path
         state.update_track(track_id, muted=1)
     with pytest.raises(StudioStateError, match="not part"):
         state.update_track(new_project_id(), gain=0.5)
+
+
+def test_legacy_facade_uses_exact_load_token_and_rejects_stale_higher_revision(
+    tmp_path: Path,
+) -> None:
+    track_id = new_project_id()
+    take_dir, _project_value = _make_take(tmp_path, (track_id,))
+    client_a = load_studio_state(take_dir)
+    client_b = load_studio_state(take_dir)
+
+    save_studio_state(take_dir, client_a.update_track(track_id, pan=-0.5))
+    stale_higher_revision = client_b.update_track(track_id, gain=0.8).update_track(
+        track_id, muted=True
+    )
+
+    with pytest.raises(StudioStateError, match="changed after it was loaded"):
+        save_studio_state(take_dir, stale_higher_revision)
+
+    persisted = load_studio_state(take_dir).state_for(track_id)
+    assert persisted.pan == pytest.approx(-0.5)
+    assert persisted.gain == pytest.approx(1.0)
+    assert persisted.muted is False

@@ -26,6 +26,23 @@ from pathlib import Path
 from typing import Union
 
 
+def atomic_write_bytes(
+    path: Union[str, Path],
+    data: bytes,
+    *,
+    mode: int | None = None,
+) -> None:
+    """Atomically replace ``path`` with exact bytes.
+
+    This is the binary companion to :func:`atomic_write_text`.  It is used
+    when recovery must preserve the byte-for-byte contents of a prior or
+    corrupt metadata file instead of decoding and re-encoding it.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError("data must be bytes")
+    _atomic_write(path, data, mode=mode)
+
+
 def atomic_write_text(
     path: Union[str, Path],
     text: str,
@@ -47,6 +64,18 @@ def atomic_write_text(
         OSError: if the temp file cannot be created/written, or the
                  final rename fails.
     """
+    if not isinstance(text, str):
+        raise TypeError("text must be str")
+    _atomic_write(path, text.encode(encoding), mode=mode)
+
+
+def _atomic_write(
+    path: Union[str, Path],
+    data: bytes,
+    *,
+    mode: int | None,
+) -> None:
+    """Write already-encoded bytes through one fsynced sibling replacement."""
     target = Path(path)
     parent = target.parent or Path(".")
     parent.mkdir(parents=True, exist_ok=True)
@@ -59,8 +88,13 @@ def atomic_write_text(
     tmp_path = Path(tmp_name)
     try:
         try:
-            with os.fdopen(fd, "w", encoding=encoding) as f:
-                f.write(text)
+            with os.fdopen(fd, "wb") as f:
+                if mode is not None and hasattr(os, "fchmod"):
+                    # Apply private permissions to the already-open temporary
+                    # inode.  A path-based chmod after close would leave a
+                    # needless name-swap window before publication.
+                    os.fchmod(f.fileno(), mode)
+                f.write(data)
                 f.flush()
                 os.fsync(f.fileno())
         except Exception:
@@ -70,7 +104,7 @@ def atomic_write_text(
                 pass
             raise
 
-        if mode is not None:
+        if mode is not None and not hasattr(os, "fchmod"):
             os.chmod(tmp_path, mode)
 
         # os.replace is atomic on POSIX and Windows (Python 3.3+).

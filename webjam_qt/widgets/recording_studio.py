@@ -46,11 +46,14 @@ from core.take_export import (
 )
 from core.take_library import TakeInfo, TakeValidationResult, discover_takes
 from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
-from core.studio_state import (
-    StudioStateError,
-    StudioTakeState,
-    load_studio_state,
-    save_studio_state,
+from core.studio_project import (
+    StudioDocument,
+    StudioProjectError,
+)
+from core.studio_store import (
+    StudioStoreError,
+    load_studio_document,
+    save_studio_document,
 )
 from webjam_qt.theme.tokens import Color, Space
 
@@ -1161,8 +1164,9 @@ class RecordingStudio(QWidget):
         self._excluded_track_export_track_ids: dict[Path, set[str]] = {}
         # Schema-v2 mix choices live in a separate, durable sidecar.  They are
         # deliberately never written into recording evidence or source media.
-        self._studio_state: StudioTakeState | None = None
+        self._studio_state: StudioDocument | None = None
         self._studio_state_take_path: Path | None = None
+        self._studio_state_token: str | None = None
         self._studio_state_dirty = False
         self._studio_state_error = ""
         self._pending_levels: dict[int, float] = {}
@@ -1558,28 +1562,32 @@ class RecordingStudio(QWidget):
         """Load schema-v2 mix choices without ever trusting an invalid sidecar."""
         self._studio_state = None
         self._studio_state_take_path = None
+        self._studio_state_token = None
         self._studio_state_dirty = False
         self._studio_state_error = ""
         if not _selectable_track_export_track_ids(take):
             return
         try:
-            state = load_studio_state(take.path)
-        except StudioStateError as exc:
+            result = load_studio_document(take.path)
+        except StudioStoreError as exc:
             LOGGER.warning("Ignoring Studio state for %s: %s", take.path, exc)
             self._studio_state_error = (
                 "Saved Studio choices couldn't be used. Default review settings are "
                 "shown; the recorded take is safe."
             )
             return
-        self._studio_state = state
+        self._studio_state = result.document
+        self._studio_state_token = result.token
         self._studio_state_take_path = take.path.expanduser().resolve()
+        if result.recovery_notice:
+            self._studio_state_error = result.recovery_notice
 
     def _saved_state_for_track(self, track_id: str):
         if self._studio_state is None or not track_id:
             return None
         try:
             return self._studio_state.state_for(track_id)
-        except StudioStateError:
+        except StudioProjectError:
             return None
 
     def _update_studio_state(self, channel_id: int, **changes: object) -> None:
@@ -1590,7 +1598,7 @@ class RecordingStudio(QWidget):
             return
         try:
             self._studio_state = self._studio_state.update_track(track_id, **changes)
-        except StudioStateError as exc:
+        except StudioProjectError as exc:
             LOGGER.warning("Could not update Studio state: %s", exc)
             self._studio_state_error = (
                 "Studio couldn't save that review choice. The recorded take is safe."
@@ -1602,7 +1610,7 @@ class RecordingStudio(QWidget):
         if self._selected_channel_id == int(channel_id):
             self._select_track(channel_id)
 
-    def _flush_studio_state(self) -> None:
+    def _flush_studio_state(self) -> bool:
         """Persist staged settings before changing takes or closing Studio."""
         if hasattr(self, "_studio_state_save_timer"):
             self._studio_state_save_timer.stop()
@@ -1611,17 +1619,26 @@ class RecordingStudio(QWidget):
             or self._studio_state is None
             or self._studio_state_take_path is None
         ):
-            return
+            return True
         try:
-            save_studio_state(self._studio_state_take_path, self._studio_state)
-        except StudioStateError as exc:
+            result = save_studio_document(
+                self._studio_state_take_path,
+                self._studio_state,
+                expected_token=self._studio_state_token,
+            )
+        except StudioStoreError as exc:
             LOGGER.warning("Could not save Studio state: %s", exc)
             self._studio_state_error = (
                 "Studio couldn't save those review choices. The recorded take is safe."
             )
             self._hint.setText(self._studio_state_error)
-        finally:
-            self._studio_state_dirty = False
+            # Keep the edit dirty. A later edit, hide, export, or shutdown
+            # retries instead of silently forgetting a low-disk/fsync failure.
+            return False
+        self._studio_state = result.document
+        self._studio_state_token = result.token
+        self._studio_state_dirty = False
+        return True
 
     def set_takes_directory(self, path: str) -> None:
         normalized = str(path or "")
@@ -2091,13 +2108,15 @@ class RecordingStudio(QWidget):
             self._select_track(next(iter(self._lanes)))
 
     def _show_live_session(self) -> None:
-        self._flush_studio_state()
+        saved = self._flush_studio_state()
         self._player.stop()
         self._current = None
-        self._studio_state = None
-        self._studio_state_take_path = None
-        self._studio_state_dirty = False
-        self._studio_state_error = ""
+        if saved:
+            self._studio_state = None
+            self._studio_state_take_path = None
+            self._studio_state_token = None
+            self._studio_state_dirty = False
+            self._studio_state_error = ""
         self._reveal_path = None
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.setText("Show Take")
@@ -2105,6 +2124,8 @@ class RecordingStudio(QWidget):
         self._viewing_live = True
         self._take_list.clearSelection()
         self._populate_live_lanes()
+        if not saved and self._studio_state_error:
+            self._hint.setText(self._studio_state_error)
 
     @staticmethod
     def _track_export_selection_key(take: TakeInfo) -> Path:
@@ -2198,7 +2219,21 @@ class RecordingStudio(QWidget):
     def _on_take_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._takes):
             return
-        self._flush_studio_state()
+        if not self._flush_studio_state():
+            if self._current is not None:
+                current_path = str(self._current.path)
+                self._take_list.blockSignals(True)
+                for previous_row in range(self._take_list.count()):
+                    if (
+                        self._take_list.item(previous_row).data(
+                            Qt.ItemDataRole.UserRole
+                        )
+                        == current_path
+                    ):
+                        self._take_list.setCurrentRow(previous_row)
+                        break
+                self._take_list.blockSignals(False)
+            return
         self._viewing_live = False
         take = self._takes[row]
         self._current = take
@@ -2382,7 +2417,8 @@ class RecordingStudio(QWidget):
             or not self._can_export_current_take()
         ):
             return
-        self._flush_studio_state()
+        if not self._flush_studio_state():
+            return
         self._stop_playback()
         selectable_track_ids = set(_selectable_track_export_track_ids(take))
         states: dict[int | str, TrackMixSettings] = {}

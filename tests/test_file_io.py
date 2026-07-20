@@ -9,10 +9,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from core.file_io import atomic_write_text
+from core.file_io import atomic_write_bytes, atomic_write_text
 
 
 class TestAtomicWriteText(unittest.TestCase):
+    def test_binary_writer_preserves_exact_non_utf8_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "recovery.bin"
+            payload = b"\x00\xff\r\nexact recovery bytes"
+
+            atomic_write_bytes(target, payload, mode=0o600)
+
+            self.assertEqual(target.read_bytes(), payload)
+
     def test_writes_text_to_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
