@@ -39,10 +39,12 @@ from core.studio_source_catalog import (
 from core.take_library import TakeInfo
 from core.take_player import PlaybackError
 from core.take_project import TakeProject, TakeProjectError, load_take_project
+from webjam_qt.widgets.studio_arrange import _format_frame_time
 from webjam_qt.widgets.studio_editing import (
     StudioCrossfadeTarget,
     StudioEditingContext,
 )
+from webjam_qt.widgets.studio_messages import arrange_edit_failure_message
 from webjam_qt.widgets.studio_review import (
     _fmt_db,
     _fmt_time,
@@ -570,10 +572,12 @@ class StudioArrangementWorkflowMixin:
                 merge_key=merge_key,
             )
         except (StudioControllerError, StudioProjectError, ValueError) as exc:
-            LOGGER.warning("Could not apply Studio Arrange edit: %s", exc)
-            self._hint.setText(
-                "Studio couldn't apply that edit safely. The recorded take is unchanged."
+            LOGGER.warning(
+                "Could not apply Studio Arrange edit: %s",
+                exc,
+                exc_info=True,
             )
+            self._hint.setText(arrange_edit_failure_message(exc))
             return False
         if after is before:
             return False
@@ -631,6 +635,19 @@ class StudioArrangementWorkflowMixin:
 
         if isinstance(target_frame, bool) or not isinstance(target_frame, int):
             return
+        document = self._studio_state
+        section = (
+            next(
+                (
+                    marker
+                    for marker in document.markers
+                    if marker.marker_id == section_marker_id and not marker.deleted
+                ),
+                None,
+            )
+            if document is not None
+            else None
+        )
         changed = self._perform_arrange_edit(
             "Move song section",
             lambda document: reorder_section(
@@ -641,8 +658,12 @@ class StudioArrangementWorkflowMixin:
             reload_audio=True,
         )
         if changed:
+            label = section.label if section is not None else "Section"
+            sample_rate = document.project_sample_rate if document is not None else 0
+            position = _format_frame_time(target_frame, sample_rate)
             self._hint.setText(
-                "Song section moved across every track. Undo is available."
+                f'Moved "{label}" to {position} across every track. '
+                "Undo is available."
             )
 
     def _trim_arrange_region(

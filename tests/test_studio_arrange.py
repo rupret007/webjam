@@ -245,6 +245,20 @@ def test_responsive_fixed_headers_accessibility_and_public_view_controls(
     assert arrange._canvas.viewport().accessibleName() == "Arrange timeline canvas"
     assert "off snapping" in arrange._canvas.viewport().accessibleDescription()
     assert "drag an edge" in arrange._canvas.viewport().toolTip().lower()
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    arrange.set_playhead(60_000)
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "chorus" section' in description
+
+    arrange.set_playhead(0)
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
 
     arrange.set_zoom(400)
     assert arrange.pixels_per_second == 400
@@ -625,6 +639,206 @@ def test_named_section_bar_drag_requests_whole_song_block_reorder(
     assert abs(frame - target_start) <= 100
     assert arrange._canvas._section_preview is None
     assert document.markers[1] == section
+    arrange.close()
+
+
+def test_playhead_only_refreshes_accessible_state_at_section_boundaries(
+    qapp: QApplication,
+) -> None:
+    """Playback advances the playhead ~16x/second.  Rebuilding the whole
+    accessible description that often floods a screen reader with identical
+    text, so only a named-section boundary crossing may refresh it."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    refreshes = 0
+    original = arrange._refresh_accessible_state
+
+    def _counting_refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+        original()
+
+    arrange._refresh_accessible_state = _counting_refresh
+
+    # Outside every section: repeated movement stays silent.
+    arrange.set_playhead(0)
+    for frame in range(1_000, 9_000, 1_000):
+        arrange.set_playhead(frame)
+    assert refreshes == 0
+    assert arrange._active_section_span is None
+
+    # Entering the section announces once.
+    arrange.set_playhead(section.start_frame)
+    assert refreshes == 1
+    assert arrange._active_section_span == (
+        section.marker_id,
+        section.start_frame,
+        int(section.end_frame),
+    )
+    assert (
+        'inside the "chorus" section'
+        in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # Ordinary movement inside the same section stays silent.
+    for offset in range(1_000, 20_000, 1_000):
+        arrange.set_playhead(section.start_frame + offset)
+    assert refreshes == 1
+
+    # Leaving the section announces exactly once more.
+    arrange.set_playhead(int(section.end_frame))
+    assert refreshes == 2
+    assert arrange._active_section_span is None
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # An explicit seek back inside announces again.
+    arrange.set_playhead(section.start_frame + 5_000)
+    assert refreshes == 3
+
+    arrange.close()
+
+
+def test_moving_between_adjacent_sections_refreshes_each_boundary(
+    qapp: QApplication,
+) -> None:
+    document = _document()
+    chorus = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    bridge = StudioMarker(
+        marker_id=_id("marker:bridge"),
+        start_frame=int(chorus.end_frame),
+        end_frame=int(chorus.end_frame) + 48_000,
+        label="Bridge",
+        kind=MarkerKind.SECTION,
+    )
+    document = replace(document, markers=(*document.markers, bridge))
+    arrange = _shown_arrange(qapp, document)
+    refreshes = 0
+    original = arrange._refresh_accessible_state
+
+    def _counting_refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+        original()
+
+    arrange._refresh_accessible_state = _counting_refresh
+
+    arrange.set_playhead(chorus.start_frame + 1_000)
+    assert refreshes == 1
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "chorus" section' in description
+
+    # Crossing directly from one section into the next must announce the new
+    # one rather than keeping the previous name.
+    arrange.set_playhead(bridge.start_frame + 1_000)
+    assert refreshes == 2
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "bridge" section' in description
+    assert "chorus" not in description
+    assert arrange._active_section_span == (
+        bridge.marker_id,
+        bridge.start_frame,
+        int(bridge.end_frame),
+    )
+
+    arrange.close()
+
+
+def test_replacing_the_document_invalidates_the_cached_section(
+    qapp: QApplication,
+) -> None:
+    """A cached section identity must never outlive the document it came
+    from, or Arrange would announce a section the take no longer has."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_playhead(section.start_frame + 1_000)
+    assert arrange._active_section_span is not None
+
+    without_sections = replace(
+        document,
+        markers=tuple(
+            marker
+            for marker in document.markers
+            if marker.kind is not MarkerKind.SECTION
+        ),
+    )
+    arrange.set_document(without_sections)
+
+    assert arrange._active_section_span is None
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # A later playhead move must not resurrect the removed section.
+    arrange.set_playhead(section.start_frame + 2_000)
+    assert arrange._active_section_span is None
+    assert "chorus" not in arrange._canvas.viewport().accessibleDescription().lower()
+
+    arrange.set_document(None)
+    assert arrange._active_section_span is None
+    assert (
+        arrange._canvas.viewport().accessibleDescription()
+        == "No Studio arrangement is open."
+    )
+
+    arrange.close()
+
+
+def test_named_section_drag_paints_full_height_destination_preview(
+    qapp: QApplication,
+) -> None:
+    """A section drag must show the destination across every track, not just
+    the ruler strip, so the whole-song-block scope is visually unambiguous."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_zoom(240)
+    arrange.scroll_to_frame(0, center=False)
+    viewport = arrange._canvas.viewport()
+
+    grab_frame = section.start_frame + 2_000
+    target_start = 12_000
+    press = QPoint(round(arrange._canvas.x_for_frame(grab_frame)), 22)
+    move_to = QPoint(round(arrange._canvas.x_for_frame(target_start + 2_000)), 22)
+    body_y = RULER_HEIGHT + TRACK_HEIGHT // 2
+    preview_x = round(arrange._canvas.x_for_frame(target_start) + 5)
+
+    def _sample(x: int):
+        image = QPixmap(viewport.size())
+        viewport.render(image)
+        qapp.processEvents()
+        return image.toImage().pixelColor(x, body_y)
+
+    before = _sample(preview_x)
+
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=press)
+    QTest.mouseMove(viewport, move_to)
+    assert arrange._canvas._section_preview is not None
+
+    during = _sample(preview_x)
+    assert during != before
+
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=move_to)
+    assert arrange._canvas._section_preview is None
+    after = _sample(preview_x)
+    assert after == before
+
     arrange.close()
 
 

@@ -32,8 +32,10 @@ from core.network_invite import local_band_address
 from core.studio_project import (
     MarkerKind,
     StudioMarker,
+    StudioProjectError,
     default_studio_document,
 )
+from core.studio_sections import StudioSectionError
 from core.take_library import TakeInfo, TrackInfo
 from core.take_player import PlaybackDeviceError, StudioPlaybackSourceError, TakePlayer
 from core.take_project import (
@@ -60,8 +62,17 @@ from webjam_qt.widgets.recording_studio import (
     _WaveformPeakCache,
     _composite_waveform_peaks,
     _studio_document_differs_from_default,
+    _studio_export_failure_message,
+    _track_export_failure_message,
     _waveform_peaks,
     _waveform_source_key,
+)
+from webjam_qt.widgets.studio_arrange import _format_frame_time
+from webjam_qt.widgets.studio_messages import (
+    ARRANGE_EDIT_FALLBACK,
+    MAX_DETAIL_CHARACTERS,
+    arrange_edit_failure_message,
+    safe_detail,
 )
 from webjam_qt.widgets.studio_waveforms import StudioWaveformCoordinatorError
 from webjam_qt.windows.recording_setup import (
@@ -1416,12 +1427,193 @@ def test_named_section_move_ripples_every_track_as_one_undoable_edit(tmp_path):
             ]
         assert studio._player._studio_renderer is not None
         assert studio._player._studio_renderer.document is moved
-        assert "every track" in studio._hint.text().lower()
+        hint_text = studio._hint.text()
+        assert "every track" in hint_text.lower()
+        assert "verse" in hint_text.lower()
+        assert _format_frame_time(RATE // 2, before_move.project_sample_rate) in (
+            hint_text
+        )
 
         studio._studio_arrange.undo_requested.emit()
         assert studio._studio_state == before_move
         studio._studio_arrange.redo_requested.emit()
         assert studio._studio_state == moved
+    finally:
+        studio.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_named_section_move_rejection_explains_the_specific_reason(tmp_path):
+    """A rejected section move must surface its real cause, not a generic
+    catch-all, so a musician knows the precise problem and corrective action."""
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        section_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Add Verse section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    label="Verse",
+                    kind=MarkerKind.SECTION,
+                    end_frame=RATE // 2,
+                )
+            ),
+            reload_audio=False,
+        )
+        before = studio._studio_state
+        assert before is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        # A target strictly inside the section's own span is rejected by
+        # core.studio_sections.reorder_section.
+        studio._studio_arrange.section_move_requested.emit(section_id, RATE // 4)
+
+        assert studio._studio_state == before
+        assert history.undo_depth == undo_depth
+        hint_text = studio._hint.text().lower()
+        assert "target start cannot be inside the section" in hint_text
+        assert "unchanged" in hint_text
+    finally:
+        studio.shutdown()
+
+
+_LEAKY_TEXT = (
+    "failed at /Users/musician/Music/WebJam Takes/take-01/media/server.wav "
+    "via https://example.invalid/session?token=abc "
+    "for device 0123456789abcdef0123456789abcdef"
+)
+
+
+def test_arrange_edit_message_keeps_known_reasons_and_bounds_unknown_text():
+    """Specific Studio validation reasons stay useful, but arbitrary exception
+    text must never become the musician-facing contract."""
+
+    known = StudioSectionError("The target start cannot be inside the section.")
+    message = arrange_edit_failure_message(known)
+    assert "The target start cannot be inside the section." in message
+    assert "The recorded take is unchanged." in message
+
+    # An unrecognised error type falls back rather than echoing its text.
+    unknown = ValueError("some unreviewed internal detail")
+    assert arrange_edit_failure_message(unknown) == ARRANGE_EDIT_FALLBACK
+    assert "unreviewed" not in arrange_edit_failure_message(unknown)
+
+    # A store error is a ValueError too, but wraps arbitrary filesystem text.
+    assert (
+        arrange_edit_failure_message(StudioStoreError("Could not open Studio state."))
+        == ARRANGE_EDIT_FALLBACK
+    )
+
+    # Even a displayable type is rejected when its text looks like a path,
+    # URL, address, or opaque token.
+    leaky = StudioProjectError(_LEAKY_TEXT)
+    leaky_message = arrange_edit_failure_message(leaky)
+    assert leaky_message == ARRANGE_EDIT_FALLBACK
+    for fragment in (
+        "/Users/musician",
+        "https://",
+        "example.invalid",
+        "token=abc",
+        "0123456789abcdef0123456789abcdef",
+        "server.wav",
+    ):
+        assert fragment not in leaky_message
+
+    # Long but otherwise safe text is bounded, not truncated mid-contract.
+    long_reason = StudioProjectError("A region fragment crosses a seam. " * 40)
+    long_message = arrange_edit_failure_message(long_reason)
+    assert safe_detail(long_reason)
+    assert len(safe_detail(long_reason)) <= MAX_DETAIL_CHARACTERS
+    assert "The recorded take is unchanged." in long_message
+
+    # Ordinary whitespace is normalized into one flowing sentence...
+    assert (
+        safe_detail(StudioProjectError("Broken\nmulti\tline  detail"))
+        == "Broken multi line detail."
+    )
+    # ...while genuinely non-printable control bytes are rejected outright.
+    assert safe_detail(StudioProjectError("Detail with \x00 a null byte")) == ""
+    assert safe_detail(StudioProjectError("Bell \x07 detail")) == ""
+    assert safe_detail(StudioProjectError("   ")) == ""
+
+
+def test_export_failure_copy_never_echoes_raw_worker_text():
+    """Export workers can raise text carrying local paths; the UI helpers must
+    return their own fixed copy instead of any part of it."""
+
+    for message in (
+        _studio_export_failure_message(_LEAKY_TEXT),
+        _track_export_failure_message(_LEAKY_TEXT),
+        _studio_export_failure_message(""),
+        _track_export_failure_message(None),
+    ):
+        for fragment in (
+            "/Users/musician",
+            "https://",
+            "example.invalid",
+            "token=abc",
+            "0123456789abcdef0123456789abcdef",
+            "server.wav",
+            "failed at",
+        ):
+            assert fragment not in message
+        assert "take is safe" in message.lower() or "are safe" in message.lower()
+
+    # The two recognised, actionable export reasons still keep their guidance.
+    silent = _studio_export_failure_message(
+        "WebJam found explicitly silent segments in selected performance tracks: "
+        "/Users/musician/Music/WebJam Takes/take-01/media/server.wav"
+    )
+    assert "explicitly silent segment" in silent
+    assert "/Users/musician" not in silent
+
+
+def test_arrange_edit_rejection_leaves_document_and_history_untouched(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    truth = {path: path.read_bytes() for path in (manifest, *media)}
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        before = studio._studio_state
+        assert before is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        def _raise_unreviewed(_document):
+            raise ValueError("unreviewed internal detail at /private/tmp/secret")
+
+        assert (
+            studio._perform_arrange_edit(
+                "Unsafe edit",
+                _raise_unreviewed,
+                reload_audio=False,
+            )
+            is False
+        )
+
+        assert studio._studio_state == before
+        assert history.undo_depth == undo_depth
+        hint = studio._hint.text()
+        assert hint == ARRANGE_EDIT_FALLBACK
+        assert "/private/tmp/secret" not in hint
+        assert "unreviewed" not in hint
     finally:
         studio.shutdown()
 
