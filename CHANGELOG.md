@@ -26,10 +26,12 @@ All notable improvements and features for the WebJam music collaboration platfor
   follows the block, and unsafe seam-crossing intervals fail atomically. The
   player reloads the result while source media and tombstones remain unchanged.
 - Enabled cycle ranges now loop playback on exact project frames even when a
-  boundary falls inside an output-device block. A deterministic short seam
-  fade covers short and multi-wrap device blocks without changing transport
-  frame counts. Source tests prove the discontinuity is removed; physical
-  click-free playback remains **NOT RUN**.
+  boundary falls inside an output-device block. For cycles of four frames or
+  more, a deterministic short seam fade covers short and multi-wrap device
+  blocks without changing transport frame counts. One- through three-frame
+  pathological cycles deliberately remain sample-exact and non-silent, so
+  their raw seam is not de-clicked. Physical click-free playback remains
+  **NOT RUN**.
 - Added repeated-take lanes for complete or explicitly recovered takes from the
   same session, sample rate, and unambiguous musician. Musicians can audition a
   lane without changing the saved comp and Option/Alt-drag ranges into a comp;
@@ -84,6 +86,12 @@ All notable improvements and features for the WebJam music collaboration platfor
   external-editor validation status of `NOT RUN`. Cancellation and
   pre-publication failures remove the unpublished package without changing
   source evidence.
+- Descriptor-relative edited Studio packages are available only on macOS and
+  Linux runtimes with the required secure directory APIs. Windows labels its
+  separate path **Export Aligned Originals**: it applies current trim, fader,
+  pan, mute, and solo choices to a reference mix, but excludes arrangement
+  edits, fades, comps, sections, master processing, and attached/repeated take
+  lanes. A failed edited Studio export never silently falls back to that path.
 
 ### Evidence boundary
 

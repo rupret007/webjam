@@ -69,7 +69,7 @@ The Studio boundary is layered:
 | `core.studio_renderer` | Shared gap-aware frame/rate/DSP truth for arranged playback and export |
 | `core.take_player` | Exact transport, output-device lifecycle, cycle delivery, and typed playback failures |
 | `core.studio_waveform` | Cancellable visible-range tiles, bounded cache, and descriptor-bound source verification |
-| `core.studio_export` | Fail-closed source snapshots and atomic evidence-rich 24-bit export publication |
+| `core.studio_export` | Fail-closed source snapshots and descriptor-relative evidence-rich 24-bit publication on supported macOS/Linux runtimes; unsupported platforms use the separate aligned-originals UI path |
 | `webjam_qt.widgets.studio_arrange` | Fixed-header Arrange viewport, frame-domain selection/gestures, keyboard editing, and bounded painted waveform bindings |
 | `webjam_qt.widgets.studio_editing` | Arrange, comp, section, snap, fade, and crossfade command surfaces |
 | `webjam_qt.widgets.studio_review` | Track review lanes, mixer controls, meters, timeline ruler, and waveform overview widgets |

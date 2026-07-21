@@ -37,7 +37,10 @@ That is the whole live-music path.
   Option/Alt-drag the parts you want in the comp.
 - **Export for another editor:** Track Export makes edited and original 24-bit
   stems, a rough mix, markers, instructions, provenance, and checksums. The
-  recording manifest and WAVs are never rewritten.
+  recording manifest and WAVs are never rewritten. Edited Studio packages use
+  the secure macOS/Linux path; Windows clearly offers aligned originals and a
+  reference mix without region edits, fades, comps, sections, master
+  processing, or attached/repeated take lanes.
 - **Verify an already-live jam:** choose **More → Band Check / Verify Sound**.
   It observes the session and does not replace Jamulus setup.
 

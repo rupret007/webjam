@@ -16,11 +16,49 @@ Run from the repository root:
 
 ```bash
 .venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
-.venv/bin/python -m compileall -q core services webjam_qt
-.venv/bin/pip check
+.venv/bin/python -m compileall -q core webjam_qt ui services api tests
+.venv/bin/python -m pip check
 git diff --check
+git diff --check origin/master...HEAD
+.venv/bin/python -m pip_audit --progress-spinner off
+.venv/bin/python ux_smoke_test.py
 QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q
 ```
+
+Audit the four native release locks separately. Windows/Linux use the exact
+lock with no dependency resolution; the narrowly documented macOS ignore is
+for sdist creation while native release jobs install checksum-pinned wheels:
+
+```bash
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/windows-x64.txt
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/linux-x64.txt
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps --ignore-vuln PYSEC-2026-3447 -r requirements-lock/macos-x64.txt
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps --ignore-vuln PYSEC-2026-3447 -r requirements-lock/macos-arm64.txt
+```
+
+The GitHub `build-desktop` matrix is the authoritative native package gate.
+A local PyInstaller bundle is useful smoke evidence only when its Python,
+setuptools, hashed release lock, staged Jamulus payload, and transport match
+the target job; it is not a substitute for fresh native matrix evidence.
+
+The transport and reference-service jobs are separate from the root pytest
+collection. Reproduce their practical local portions with:
+
+```bash
+(cd transport && make check)
+(cd transport && go test -race -count=1 ./...)
+(cd transport && go mod verify && go mod tidy -diff)
+(cd transport && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...)
+(cd transport && make build-all VERSION="$(git rev-parse HEAD)")
+.venv/bin/ruff check reference_service
+.venv/bin/python -m compileall -q reference_service/webjam_reference reference_service/tests
+PYTHONPATH=reference_service .venv/bin/python -m pytest -q reference_service/tests
+.venv/bin/python -m build reference_service
+```
+
+Record local tool-version differences. GitHub CI pins Go and Python versions,
+runs the Linux/JACK real-Jamulus path, health-checks the restricted reference
+container, and remains authoritative for those platform-specific gates.
 
 Review at minimum:
 
@@ -48,17 +86,24 @@ Review at minimum:
   load/edit/save/reopen, Arrange viewport/zoom, bounded waveform scheduling,
   cancelled export cleanup, and unchanged source hashes without treating that
   fixture as a real session.
-- Enabled cycle ranges loop on exact frames across output-block boundaries and
-  apply deterministic seam smoothing for short and multi-wrap blocks; automated
-  samples prove a zero-amplitude seam while physical click-free loop playback
-  remains a separate **NOT RUN** gate.
+- Enabled cycle ranges loop on exact frames across output-block boundaries.
+  Cycles of four frames or more apply deterministic seam smoothing across
+  short and multi-wrap blocks; one- through three-frame pathological cycles
+  remain sample-exact and non-silent and may retain a raw seam. Physical
+  click-free loop playback remains a separate **NOT RUN** gate.
 - Studio checksum/reader preparation is cancellable background work; a
   generation test rejects stale completion, and callback tests allow no
   pathname open/stat/fstat work.
 - Playback and export use the same arranged source catalog and render rules.
-- Export is an atomic, equal-length 24-bit package containing edited and
-  original stems, rough mix, markers, import instructions, exact arrangement,
-  source manifests, provenance, and SHA-256 checksums.
+- On macOS/Linux with the required secure directory APIs, Studio export is an
+  atomic, descriptor-relative, equal-length 24-bit package containing edited
+  and original stems, rough mix, markers, import instructions, exact
+  arrangement, source manifests, provenance, and SHA-256 checksums.
+- On Windows or another unsupported runtime, the button must read **Export
+  Aligned Originals**. Its reference mix may apply current trim, fader, pan,
+  mute, and solo, but arrangement edits, fades, comps, sections, master
+  processing, and attached/repeated take lanes must be explicitly excluded.
+  A failed edited Studio export must not silently enter this fallback.
 - Export fails closed when the saved Studio state, a source, a source take
   manifest, or cross-take identity changes before publication.
 - Cancel/End/Leave clean up owned processes safely.
@@ -73,7 +118,9 @@ Review at minimum:
    signatures, fresh extraction, and archive SHA-256.
 5. Launch the fresh app and inspect Host, Join, optional Webex, Recording
    Setup, Studio Arrange/comp/undo/autosave/export, End/Leave, and an
-   invalid/recovery state at 760×600, 1024×768, and 1440×900.
+   invalid/recovery state at 760×600, 1024×768, and 1440×900. On macOS/Linux,
+   inspect the edited Studio package. On Windows, verify the separately
+   labelled aligned-originals/reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 

@@ -67,6 +67,12 @@ preserved first, then becomes eligible for aligned export only when WebJam
 verifies it against that musician's intact Jamulus server reference; uncertain
 originals remain reviewable but cannot be represented as verified alignment.
 
+The edited evidence-rich package is available on macOS/Linux runtimes with the
+required secure directory APIs. Windows instead shows **Export Aligned
+Originals**: unity originals and a reference mix may use current trim, fader,
+pan, mute, and solo, but region edits, fades, comps, sections, master processing,
+and attached/repeated take lanes are excluded and stated before export.
+
 ## Jamulus profile and privacy
 
 On macOS WebJam launches Jamulus with the supported filename-only argument:

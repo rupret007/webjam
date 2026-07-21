@@ -83,11 +83,13 @@ the named section at the playhead. The accessible timeline description reports
 the current track, lane, region, frame range, snap state, and audition state.
 
 **Cycle Region** loops the selected range on exact project frames, including
-when a loop boundary falls inside an output-device block. Playback applies a
-deterministic short seam fade, including for short cycles and blocks spanning
-multiple wraps, without changing the exact transport frame count. Automated
-source tests verify the discontinuity is removed; click-free playback through a
-named physical interface remains a separate **NOT RUN** observation.
+when a loop boundary falls inside an output-device block. For cycles of four
+frames or more, playback applies a deterministic short seam fade, including
+for blocks spanning multiple wraps, without changing the exact transport frame
+count. One- through three-frame pathological cycles stay sample-exact and
+non-silent instead of being faded into silence, so their raw seam is not
+de-clicked. Click-free playback through a named physical interface remains a
+separate **NOT RUN** observation.
 
 ### Repeated takes and comping
 
@@ -166,6 +168,18 @@ Studio state before publication. A changed, missing, ambiguous, disabled, or
 unverified source fails closed. Cancellation and other pre-publication failures
 remove the temporary package; they do not leave a partial export presented as
 complete.
+
+Edited Studio-package publication is supported on macOS and Linux only when
+the runtime provides the required descriptor-relative directory APIs. On
+Windows or another unsupported runtime, Studio instead labels the action
+**Export Aligned Originals** and asks for confirmation when the saved Studio
+document differs from its default. That path exports unity aligned originals
+and a reference rough mix using current trim, fader, pan, mute, and solo
+choices. It explicitly excludes arrangement edits, region fades, comp choices,
+song sections, master gain/limiter processing, and recordings attached as
+repeated take lanes; export those recordings from their own takes. A failure
+after an edited Studio export begins never silently falls back to aligned
+originals.
 
 ## Non-destructive boundary
 

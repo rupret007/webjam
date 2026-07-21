@@ -87,6 +87,13 @@ manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
 v0.17.0 source candidate.
 
+Edited Studio packages require the secure descriptor-relative export available
+on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned
+Originals**. It creates unity aligned originals and a reference mix from the
+current trim, fader, pan, mute, and solo choices, while explicitly excluding
+region edits, fades, comps, sections, master processing, and attached/repeated
+take lanes.
+
 Studio never rewrites the take manifest or source recordings. Removing a region,
 take lane, or comp range changes only Studio's arrangement sidecar.
 
