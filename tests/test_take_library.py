@@ -15,6 +15,7 @@ from core.take_project import (
     RecoveryStatus,
     SessionEvidence,
     SessionTimelineEvent,
+    new_project_id,
 )
 
 from core.take_library import (
@@ -181,6 +182,58 @@ class TestDiscoverTakes(unittest.TestCase):
             takes = discover_takes(d)
         self.assertEqual(len(takes), 1)
         self.assertEqual(takes[0].track_count, 1)
+
+    def test_discovers_strict_evidence_only_project_without_media(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            take_dir = root / "Recovered interrupted take"
+            take_id = new_project_id()
+            result = write_take_manifest(
+                take_dir,
+                expected_tracks=0,
+                required_local_stems=0,
+                capture_errors=("Interrupted recording evidence recovered.",),
+                session_title="Recovered recording evidence",
+                session_id=new_project_id(),
+                take_id=take_id,
+                session_evidence=SessionEvidence(
+                    recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+                    recovery_notes=("No media survived the interruption.",),
+                    timeline=(SessionTimelineEvent("recording_evidence_recovered"),),
+                ),
+            )
+
+            takes = discover_takes(root)
+            validation = validate_take(take_dir)
+            payload = json.loads((take_dir / "webjam-take.json").read_text())
+
+        self.assertIsNotNone(result.take)
+        self.assertEqual(len(takes), 1)
+        recovered = takes[0]
+        self.assertEqual(recovered.take_id, take_id)
+        self.assertEqual(recovered.track_count, 0)
+        self.assertTrue(recovered.review_only)
+        self.assertFalse(recovered.is_exportable)
+        self.assertIn("cannot be exported", recovered.export_block_reason)
+        self.assertFalse(validation.ok)
+        self.assertEqual(validation.summary, "Review only · no audio preserved")
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["tracks"], [])
+
+    def test_empty_folder_and_empty_legacy_manifest_remain_hidden(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "empty-folder").mkdir()
+            legacy = root / "empty-legacy"
+            legacy.mkdir()
+            (legacy / "webjam-take.json").write_text(
+                json.dumps({"schema_version": 1, "tracks": []}),
+                encoding="utf-8",
+            )
+
+            takes = discover_takes(root)
+
+        self.assertEqual(takes, [])
 
 
 class TestTakeValidation(unittest.TestCase):

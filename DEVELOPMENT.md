@@ -1,4 +1,4 @@
-# Developing WebJam v0.16.2
+# Developing WebJam v0.17.0
 
 ## Local setup
 
@@ -6,9 +6,16 @@ Use the repository virtual environment:
 
 ```bash
 .venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
-.venv/bin/python -m py_compile webjam_qt/controllers/application_controller.py
+.venv/bin/python -m compileall -q core webjam_qt ui services api tests
+.venv/bin/python -m pip check
+.venv/bin/python ux_smoke_test.py
 .venv/bin/pytest -q
 ```
+
+For Studio arrangement changes, run the focused model, persistence, history,
+controller, renderer, comping, waveform, export, and Qt integration modules in
+addition to the full suite. The physical-output and external-editor gates in
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.17.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -54,14 +61,27 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m webjam_qt.theme.generate_brand_ico
 The normal session surface has one dominant next action. Avoid adding device
 forms, server fields, or technical diagnostics to Host/Join.
 
-## Packaging
+## Build and release hygiene
 
-The authoritative build is:
+The source tree reports `0.17.0`; no package with that version is promoted.
+The current published rollback/reference package remains:
+
+- Primary published artifact in GitHub Releases:
+  [`v0.16.3`](https://github.com/rupret007/webjam/releases/tag/v0.16.3) /
+  `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
+
+The local source-bundle smoke command is:
 
 ```bash
 .venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-Use the macOS staging/signing/transport verification in `.github/workflows/ci.yml`.
-Do not use the retired `build_webjam.py` release path. Package and visual
-verification are required before replacing the installed test-night app.
+This command alone is not release-package evidence. The authoritative native
+builders are the four-target `build-desktop` jobs with their exact hashed
+locks, staged Jamulus payloads, transport checks, and fresh package launch
+smokes in `.github/workflows/ci.yml`. Use the macOS staging/signing/transport
+verification there, and do not use the retired `build_webjam.py` release path.
+Package and visual verification are required before replacing the installed
+test-night app. The cross-platform support boundary, automated gates, and
+physical-hardware release checklist are in [Desktop release
+runbook](docs/DESKTOP_RELEASE_RUNBOOK.md).

@@ -8,14 +8,17 @@
 # Build a one-file executable (slower startup):
 #   pyinstaller webjam.spec --onefile
 #
-# macOS — after signing every nested component bottom-up, shallow-sign the
-# outer bundle so child signatures are not mutated after their manifests:
-#   codesign --force --verify --verbose \
-#     --sign "Developer ID Application: Your Name (TEAMID)" \
-#     dist/WebJam.app
-#   xcrun altool --notarize-app --primary-bundle-id "com.webjam.app" \
-#     --username your@apple.id --password @keychain:AC_PASSWORD \
-#     --file dist/WebJam.app
+# macOS production release: the protected CI job takes the tested ad-hoc source
+# bundle, re-signs every collected Mach-O plus the staged Jamulus and transport
+# code bottom-up with Developer ID and component-specific entitlements, then
+# shallow-signs WebJam.app last. It packages with ditto and a final DMG, uses
+# modern notarytool, and staples the accepted tickets:
+#   xcrun notarytool submit WebJam-macos-x64.zip \
+#     --key AuthKey_ID.p8 --key-id KEY_ID --issuer ISSUER_ID --wait
+#   xcrun stapler staple dist/WebJam.app
+#   xcrun stapler validate dist/WebJam.app
+# Tagged CI fails closed unless the protected signing environment is complete;
+# ordinary branch builds remain explicitly named ad-hoc test artifacts.
 #
 #   CAVEAT: CI stages the official Jamulus client/server apps under Resources,
 #   then deep ad-hoc signs each nested app without the upstream App Sandbox
@@ -116,7 +119,10 @@ if sys.platform == "win32":
 
 # On Windows, bundle the VB-CABLE installers so the app folder really does
 # contain the virtual-audio-cable setup the band guide points users to.
-# (Useless on macOS — that uses BlackHole — so only include it on Windows.)
+# The Windows Jamulus installer is PyInstaller data because the Launch dialog
+# resolves it through ``sys._MEIPASS``. Linux gets a visible archive-root
+# ``Jamulus/`` distribution dependency after PyInstaller finishes; macOS gets
+# runnable nested app bundles after PyInstaller finishes.
 _extra_datas = []
 if sys.platform == "win32":
     _vb_dir = ROOT / "VB"
@@ -125,13 +131,9 @@ if sys.platform == "win32":
             if _p.is_file():
                 _extra_datas.append((str(_p), "VB"))
 
-    # Bundle the official Jamulus Windows installer (staged by CI at build
-    # time into a repo-root Jamulus/ dir — see .github/workflows/ci.yml —
-    # absent in plain dev checkouts, matching the VB/ pattern above) so the
-    # Setup Wizard can offer an "Install Jamulus now" button instead of
-    # sending users to jamulus.io. Jamulus has no portable Windows binary
-    # to bundle directly (unlike macOS's Jamulus.app — see BUNDLE below),
-    # so this ships the unmodified upstream installer, not a runnable copy.
+if sys.platform == "win32":
+    # Bundle the checksum-pinned official installer staged by CI. PyInstaller
+    # places it below ``_internal/Jamulus`` in the onedir build.
     _jamulus_dir = ROOT / "Jamulus"
     if _jamulus_dir.is_dir():
         for _p in _jamulus_dir.iterdir():
@@ -274,14 +276,19 @@ if sys.platform == "darwin":
     # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
     # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
     # must be staged with `ditto` after this call produces dist/WebJam.app.
-    # CI then prepares each nested signature as documented above and finally
-    # shallow-signs WebJam.app so the added resources enter its outer seal.
+    # CI then prepares each nested signature as documented above. Ordinary
+    # branch builds refresh the ad-hoc outer seal; the protected release path
+    # re-signs every final code object inside-out with Developer ID and seals
+    # WebJam.app last.
     app = BUNDLE(
         coll,
         name="WebJam.app",
         icon=str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.icns"),
         bundle_identifier="com.webjam.app",
         info_plist={
+            "NSCameraUsageDescription":
+                "WebJam uses your camera only when you choose the optional "
+                "embedded Webex video companion.",
             "NSMicrophoneUsageDescription":
                 "WebJam uses your microphone or audio interface so your "
                 "bandmates can hear you, and to show your input level or "

@@ -4,8 +4,8 @@
 > the v0.11.0 remote-session vertical slice. It is not the current branch or
 > release-status record. Use
 > [`../../README.md`](../../README.md) and
-> [`../../SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) for the
-> current v0.16.2 source/package/physical proof boundary.
+> [`../../TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md) for the current v0.17.0
+> source/physical boundary and historical v0.16.3 package evidence.
 
 ## Product promise
 

@@ -9,6 +9,7 @@ reconnect-gating branches.  No real processes are spawned.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import unittest
@@ -163,6 +164,28 @@ class TestLaunchJamulusAlreadyRunning(unittest.TestCase):
             call.args[0] for call in bridge.set_status_banner.call_args_list
         ]
         self.assertTrue(any("already running" in b for b in banners), banners)
+
+    @patch("services.bridge_service.subprocess.Popen")
+    @patch("services.bridge_service.threading.Thread",
+           side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
+    def test_force_restart_replaces_hung_alive_process(self, _thread, popen):
+        old_proc = MagicMock()
+        old_proc.poll.return_value = None
+        new_proc = MagicMock()
+        new_proc.poll.return_value = None
+        popen.return_value = new_proc
+        bridge = _make_bridge()
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge.jamulus_process = old_proc
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            bridge.launch_jamulus(manual=False, reconnect=True, force_restart=True)
+
+        old_proc.terminate.assert_called_once()
+        bridge.jamulus_controller.stop.assert_called_once()
+        self.assertEqual(bridge.jamulus_state, "Running")
+        self.assertIs(bridge.jamulus_process, new_proc)
 
 
 @patch("services.bridge_service.time.sleep")
@@ -517,7 +540,7 @@ class TestBundledJamulusServerCandidate(unittest.TestCase):
             self.assertIsNone(_bundled_jamulus_server_candidate())
 
 class TestBundledJamulusInstaller(unittest.TestCase):
-    """Windows bundling: a Jamulus/ dir shipped next to WebJam.exe."""
+    """Windows bundling: a Jamulus/ dir in PyInstaller's frozen data root."""
 
     def test_returns_none_when_not_frozen(self):
         from services.bridge_service import _bundled_jamulus_installer
@@ -549,7 +572,37 @@ class TestBundledJamulusInstaller(unittest.TestCase):
 
             with patch.object(sys, "frozen", True, create=True), \
                  patch.object(sys, "platform", "win32"), \
-                 patch.object(sys, "executable", exe_path):
+                 patch.object(sys, "executable", exe_path), \
+                 patch(
+                     "services.bridge_service._PINNED_WINDOWS_JAMULUS_SHA256",
+                     hashlib.sha256(b"stub").hexdigest(),
+                 ):
+                result = _bundled_jamulus_installer()
+
+        self.assertEqual(result, str(installer))
+
+    def test_returns_installer_from_pyinstaller_internal_data_root(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp).resolve()
+            internal = app_dir / "_internal"
+            jamulus_dir = internal / "Jamulus"
+            jamulus_dir.mkdir(parents=True)
+            installer = jamulus_dir / "jamulus_3.12.2_win.exe"
+            installer.write_bytes(b"stub")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path), \
+                 patch.object(sys, "_MEIPASS", str(internal), create=True), \
+                 patch(
+                     "services.bridge_service._PINNED_WINDOWS_JAMULUS_SHA256",
+                     hashlib.sha256(b"stub").hexdigest(),
+                 ):
                 result = _bundled_jamulus_installer()
 
         self.assertEqual(result, str(installer))
@@ -566,7 +619,7 @@ class TestBundledJamulusInstaller(unittest.TestCase):
                  patch.object(sys, "executable", exe_path):
                 self.assertIsNone(_bundled_jamulus_installer())
 
-    def test_returns_none_when_no_exe_matches_pattern(self):
+    def test_returns_none_when_exact_installer_is_missing(self):
         import tempfile
         from pathlib import Path
         from services.bridge_service import _bundled_jamulus_installer
@@ -576,6 +629,25 @@ class TestBundledJamulusInstaller(unittest.TestCase):
             jamulus_dir = app_dir / "Jamulus"
             jamulus_dir.mkdir()
             (jamulus_dir / "JAMULUS_COPYING.txt").write_text("license")
+            exe_path = str(app_dir / "WebJam.exe")
+
+            with patch.object(sys, "frozen", True, create=True), \
+                 patch.object(sys, "platform", "win32"), \
+                 patch.object(sys, "executable", exe_path):
+                self.assertIsNone(_bundled_jamulus_installer())
+
+    def test_rejects_wrong_hash_and_never_selects_an_injected_wildcard(self):
+        import tempfile
+        from pathlib import Path
+        from services.bridge_service import _bundled_jamulus_installer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            app_dir = Path(tmp).resolve()
+            jamulus_dir = app_dir / "Jamulus"
+            jamulus_dir.mkdir()
+            (jamulus_dir / "jamulus_0_win.exe").write_bytes(b"injected")
+            installer = jamulus_dir / "jamulus_3.12.2_win.exe"
+            installer.write_bytes(b"replaced")
             exe_path = str(app_dir / "WebJam.exe")
 
             with patch.object(sys, "frozen", True, create=True), \

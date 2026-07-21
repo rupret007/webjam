@@ -17,9 +17,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import TYPE_CHECKING, Mapping, Optional
 
 from core.take_library import TakeInfo
+
+if TYPE_CHECKING:
+    from core.take_project import ProjectTrack, TakeProject
 
 
 class TakeExportError(RuntimeError):
@@ -147,6 +150,7 @@ def _to_stereo(block, pan: float):
     if block.shape[1] == 1:
         mono = block[:, 0]
         import numpy as np
+
         return np.column_stack(
             (
                 mono * (1.0 - max(0.0, value)),
@@ -266,14 +270,17 @@ def _write_processed_stem(
     import numpy as np
     import soundfile as sf  # type: ignore
 
-    with sf.SoundFile(str(source)) as reader, sf.SoundFile(
-        str(destination),
-        mode="w",
-        samplerate=samplerate,
-        channels=2,
-        format="WAV",
-        subtype="PCM_24",
-    ) as writer:
+    with (
+        sf.SoundFile(str(source)) as reader,
+        sf.SoundFile(
+            str(destination),
+            mode="w",
+            samplerate=samplerate,
+            channels=2,
+            format="WAV",
+            subtype="PCM_24",
+        ) as writer,
+    ):
         while True:
             block = reader.read(chunk_frames, dtype="float32", always_2d=True)
             if not len(block):
@@ -297,6 +304,7 @@ def _render_segment_block(
     source_rate: int,
     project_rate: int,
     drift_scale: float,
+    gaps=(),
 ):
     """Render one overlap using deterministic linear time conversion.
 
@@ -312,10 +320,7 @@ def _render_segment_block(
         return None
     output_positions = np.arange(overlap_start, overlap_end, dtype=np.float64)
     source_positions = (
-        (output_positions - segment_start)
-        / project_rate
-        / drift_scale
-        * source_rate
+        (output_positions - segment_start) / project_rate / drift_scale * source_rate
     )
     source_positions = np.clip(source_positions, 0.0, max(0.0, source_frames - 1.0))
     first = max(0, int(np.floor(source_positions[0])) - 1)
@@ -331,6 +336,23 @@ def _render_segment_block(
         rendered[:, channel] = np.interp(
             local_positions, grid, source[:, channel]
         ).astype(np.float32)
+    # Capture gaps describe source frames that were durably unavailable.  They
+    # must remain silence after rate/drift conversion exactly as they do in
+    # Studio playback; exporting interpolated neighboring samples here would
+    # falsely manufacture audio inside a disclosed dropout.
+    for gap in gaps:
+        gap_start = int(getattr(gap, "start_frame", 0))
+        gap_count = int(getattr(gap, "frame_count", 0))
+        gap_channels = tuple(getattr(gap, "channels", ()) or ())
+        inside = (source_positions >= gap_start) & (
+            source_positions < gap_start + gap_count
+        )
+        if not np.any(inside):
+            continue
+        targets = gap_channels or tuple(range(rendered.shape[1]))
+        for channel in targets:
+            if 0 <= channel < rendered.shape[1]:
+                rendered[inside, channel] = 0.0
     destination_start = overlap_start - output_start
     return destination_start, rendered
 
@@ -358,9 +380,7 @@ def _write_project_track(
     drift_scale = 1.0 + float(track.alignment.drift_ppm) / 1_000_000.0
     if drift_scale <= 0.0:
         raise TakeExportError(f"{track.name} has an invalid drift transform.")
-    offset_frames = int(
-        round(float(track.alignment.effective_offset_s) * project_rate)
-    )
+    offset_frames = int(round(float(track.alignment.effective_offset_s) * project_rate))
     prepared: list[tuple[object, object, int, int]] = []
     intervals: list[tuple[int, int]] = []
     try:
@@ -398,7 +418,12 @@ def _write_project_track(
                 )
             start = int(segment.project_start_frame) + offset_frames
             rendered_frames = int(
-                round(segment.frame_count / segment.sample_rate * drift_scale * project_rate)
+                round(
+                    segment.frame_count
+                    / segment.sample_rate
+                    * drift_scale
+                    * project_rate
+                )
             )
             end = start + max(0, rendered_frames)
             if intervals and start < intervals[-1][1]:
@@ -432,10 +457,13 @@ def _write_project_track(
                         source_rate=int(segment.sample_rate),
                         project_rate=project_rate,
                         drift_scale=drift_scale,
+                        gaps=segment.gaps,
                     )
                     if rendered is not None:
                         destination_start, audio = rendered
-                        block[destination_start : destination_start + len(audio)] = audio
+                        block[destination_start : destination_start + len(audio)] = (
+                            audio
+                        )
                 writer.write(block)
                 output_start += count
     finally:
@@ -449,7 +477,9 @@ def _project_timeline_frames(project) -> int:
     latest = 0
     for track in project.tracks:
         scale = 1.0 + float(track.alignment.drift_ppm) / 1_000_000.0
-        offset = int(round(track.alignment.effective_offset_s * project.project_sample_rate))
+        offset = int(
+            round(track.alignment.effective_offset_s * project.project_sample_rate)
+        )
         for segment in track.segments:
             duration = int(
                 round(
@@ -467,9 +497,7 @@ def _reference_fingerprint(track) -> str:
     """Match the immutable peer-reference fingerprint recorded at alignment."""
 
     digest = hashlib.sha256()
-    for segment in sorted(
-        tuple(track.segments), key=lambda item: item.segment_id
-    ):
+    for segment in sorted(tuple(track.segments), key=lambda item: item.segment_id):
         digest.update(str(segment.segment_id).encode("utf-8"))
         digest.update(b"\0")
         digest.update(str(segment.sha256 or "").lower().encode("ascii"))
@@ -557,8 +585,7 @@ def _unaligned_local_original_names(
             method.startswith(_PEER_VERIFIED_ALIGNMENT_PREFIX)
             and track.quality is SourceQuality.VERIFIED_ISOLATED
             and confidence >= _PEER_ALIGNMENT_MIN_CONFIDENCE
-            and float(track.alignment.residual_ms)
-            <= _PEER_ALIGNMENT_MAX_RESIDUAL_MS
+            and float(track.alignment.residual_ms) <= _PEER_ALIGNMENT_MAX_RESIDUAL_MS
             and len(track.alignment.anchors) >= _PEER_ALIGNMENT_MIN_ANCHORS
             and take_root is not None
             and _peer_reference_is_still_verified(
@@ -587,11 +614,77 @@ def _explicitly_silent_track_names(tracks) -> list[str]:
     ]
 
 
+def validated_project_export_tracks(
+    project: TakeProject,
+    take_root: Path,
+    *,
+    selected_track_ids: set[str] | None = None,
+) -> tuple[ProjectTrack, ...]:
+    """Return eligible schema-v2 tracks or raise an existing safety block.
+
+    Studio and the legacy track-package renderer share this gate so a new
+    arrangement export cannot bypass immutable selection, unavailable-media,
+    explicit-silence, or verified peer-alignment evidence.
+    """
+
+    from core.take_project import MediaStatus, ProjectStatus, TakeProject
+
+    if not isinstance(project, TakeProject):
+        raise TakeExportError("A schema-v2 take project is required for export.")
+    if project.status not in {ProjectStatus.COMPLETE, ProjectStatus.RECOVERED}:
+        raise TakeExportError(
+            "This take still needs review before a performance export can be made."
+        )
+    requested = None
+    if selected_track_ids is not None:
+        requested = {str(item) for item in selected_track_ids}
+    ordered = sorted(project.tracks, key=lambda item: (item.order, item.track_id))
+    selected = tuple(
+        track
+        for track in ordered
+        if track.selected_for_export
+        and (requested is None or track.track_id in requested)
+    )
+    if not selected:
+        raise TakeExportError("No project tracks are selected for export.")
+    usable = {MediaStatus.AVAILABLE, MediaStatus.RECOVERED}
+    blocked = [
+        track.name
+        for track in selected
+        if track.media_status not in usable
+        or any(segment.media_status not in usable for segment in track.segments)
+    ]
+    if blocked:
+        raise TakeExportError(
+            "Restore or review unavailable media before export: " + ", ".join(blocked)
+        )
+    explicitly_silent_tracks = _explicitly_silent_track_names(selected)
+    if explicitly_silent_tracks:
+        raise TakeExportError(
+            "WebJam found explicitly silent segments in selected performance tracks: "
+            + ", ".join(explicitly_silent_tracks)
+            + ". Review the recording or intentionally deselect the affected track "
+            "before export."
+        )
+    unaligned_local_originals = _unaligned_local_original_names(
+        selected,
+        all_tracks=project.tracks,
+        take_root=take_root,
+    )
+    if unaligned_local_originals:
+        raise TakeExportError(
+            "WebJam cannot create a timing-ready track export because these "
+            "local originals have no verified timeline alignment: "
+            + ", ".join(unaligned_local_originals)
+            + ". Keep the Jamulus server track for this take, or align and "
+            "verify each local original before exporting."
+        )
+    return selected
+
+
 def _write_checksum_manifest(folder: Path, destination: Path) -> None:
     files = sorted(
-        path
-        for path in folder.iterdir()
-        if path.is_file() and path != destination
+        path for path in folder.iterdir() if path.is_file() and path != destination
     )
     destination.write_text(
         "".join(f"{_sha256(path)}  {path.name}\n" for path in files),
@@ -630,54 +723,21 @@ def _export_project_track_package(
     include_processed_stems: bool,
 ) -> TrackExportResult:
     """Create the evidence-rich schema-v2 track package on one common timeline."""
-    from core.take_project import MediaStatus, SourceType
+    from core.take_project import SourceType
 
     if project.take_id != take.take_id and take.take_id:
         raise TakeExportError("The open take and its project manifest do not match.")
     ordered = sorted(project.tracks, key=lambda item: item.order)
-    selected = [
-        track
-        for track in ordered
-        if track.selected_for_export
-        and (selected_track_ids is None or track.track_id in selected_track_ids)
-    ]
-    if not selected:
-        raise TakeExportError("No project tracks are selected for export.")
-    usable = {MediaStatus.AVAILABLE, MediaStatus.RECOVERED}
-    blocked = [
-        track.name
-        for track in selected
-        if track.media_status not in usable
-        or any(segment.media_status not in usable for segment in track.segments)
-    ]
-    if blocked:
-        raise TakeExportError(
-            "Restore or review unavailable media before export: " + ", ".join(blocked)
-        )
-    explicitly_silent_tracks = _explicitly_silent_track_names(selected)
-    if explicitly_silent_tracks:
-        raise TakeExportError(
-            "WebJam found explicitly silent segments in selected performance tracks: "
-            + ", ".join(explicitly_silent_tracks)
-            + ". Review the recording or intentionally deselect the affected track "
-            "before export."
-        )
-    unaligned_local_originals = _unaligned_local_original_names(
-        selected,
-        all_tracks=project.tracks,
-        take_root=take.path.resolve(),
+    selected = validated_project_export_tracks(
+        project,
+        take.path.resolve(),
+        selected_track_ids=selected_track_ids,
     )
-    if unaligned_local_originals:
-        raise TakeExportError(
-            "WebJam cannot create a timing-ready track export because these "
-            "local originals have no verified timeline alignment: "
-            + ", ".join(unaligned_local_originals)
-            + ". Keep the Jamulus server track for this take, or align and "
-            "verify each local original before export."
-        )
     total_frames = _project_timeline_frames(project)
     if total_frames <= 0:
-        raise TakeExportError("No audio remains on the project timeline after alignment.")
+        raise TakeExportError(
+            "No audio remains on the project timeline after alignment."
+        )
     project_rate = int(project.project_sample_rate)
     root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -871,7 +931,9 @@ def _export_project_track_package(
             f"Project status: **{project.effective_status.value}**\n\n",
         ]
         if project.errors:
-            report_lines.extend(["## Errors\n\n", *[f"- {item}\n" for item in project.errors]])
+            report_lines.extend(
+                ["## Errors\n\n", *[f"- {item}\n" for item in project.errors]]
+            )
         if project.warnings:
             report_lines.extend(
                 ["\n## Warnings\n\n", *[f"- {item}\n" for item in project.warnings]]

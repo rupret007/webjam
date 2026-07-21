@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import wave
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -16,13 +17,25 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget, QWidget
+from PySide6.QtCore import QPoint, QThread, QTimer, Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QMessageBox,
+    QStackedWidget,
+    QWidget,
+)
 
 from core.settings import AppSettings
 from core.network_invite import local_band_address
+from core.studio_project import (
+    MarkerKind,
+    StudioMarker,
+    default_studio_document,
+)
 from core.take_library import TakeInfo, TrackInfo
-from core.take_player import TakePlayer
+from core.take_player import PlaybackDeviceError, StudioPlaybackSourceError, TakePlayer
 from core.take_project import (
     AlignmentState,
     GapInterval,
@@ -33,19 +46,24 @@ from core.take_project import (
     SourceQuality,
     SourceType,
     TakeProject,
+    load_take_project,
     new_project_id,
     write_take_project,
 )
 from core.studio_state import load_studio_state
+from core.studio_store import StudioStoreError
+from core.studio_source_catalog import StudioSourceCatalogError
 from webjam_qt.widgets.recording_studio import (
     _CompositeWaveformSpec,
     _WaveformSegmentSpec,
     RecordingStudio,
     _WaveformPeakCache,
     _composite_waveform_peaks,
+    _studio_document_differs_from_default,
     _waveform_peaks,
     _waveform_source_key,
 )
+from webjam_qt.widgets.studio_waveforms import StudioWaveformCoordinatorError
 from webjam_qt.windows.recording_setup import (
     LocalOriginalsChoiceDialog,
     RecordingSetupDialog,
@@ -55,6 +73,33 @@ from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
 APP = QApplication.instance() or QApplication([])
 RATE = 8000
+
+
+def _visible_enabled_focus_chain(
+    window: QWidget,
+    start: QWidget,
+) -> list[QWidget]:
+    """Return one complete keyboard-focus cycle, excluding skipped controls."""
+
+    result: list[QWidget] = []
+    visited: set[QWidget] = set()
+    current = start
+    while current not in visited:
+        visited.add(current)
+        if (
+            current.focusPolicy() != Qt.FocusPolicy.NoFocus
+            and current.isVisibleTo(window)
+            and current.isEnabled()
+        ):
+            result.append(current)
+        current = current.nextInFocusChain()
+    return result
+
+
+def _widget_rect_in(window: QWidget, widget: QWidget):
+    """Return one visible widget rectangle in window coordinates."""
+
+    return widget.rect().translated(widget.mapTo(window, QPoint(0, 0)))
 
 
 class _SilentSink:
@@ -106,9 +151,7 @@ def _impulse_wav(
             block = np.zeros(count, dtype="int16")
             for frame, amplitude in impulses.items():
                 if start <= frame < start + count:
-                    block[frame - start] = int(
-                        max(-1.0, min(1.0, amplitude)) * 32767
-                    )
+                    block[frame - start] = int(max(-1.0, min(1.0, amplitude)) * 32767)
             audio.writeframes(block.tobytes())
 
 
@@ -123,20 +166,33 @@ def _wait_until(predicate, timeout: float = 3.0) -> bool:
     return bool(predicate())
 
 
+def _wait_without_qt_events(predicate, timeout: float = 3.0) -> bool:
+    """Wait for worker-only state without allowing Qt timers to reschedule work."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return bool(predicate())
+
+
 def _mark_verified(take: Path, *filenames: str) -> None:
     (take / "webjam-take.json").write_text(
-        json.dumps({
-            "schema_version": 1,
-            "status": "complete",
-            "tracks": [
-                {
-                    "filename": name,
-                    "source": "jamulus_server",
-                    "offset_s": None,
-                }
-                for name in filenames
-            ],
-        }),
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "complete",
+                "tracks": [
+                    {
+                        "filename": name,
+                        "source": "jamulus_server",
+                        "offset_s": None,
+                    }
+                    for name in filenames
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -164,11 +220,7 @@ def _schema2_studio_take(tmp_path: Path) -> tuple[Path, tuple[str, str]]:
             media_status=MediaStatus.AVAILABLE,
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
             size_bytes=path.stat().st_size,
-            gaps=(
-                (GapInterval(1_000, 400, "test capture gap"),)
-                if gap
-                else ()
-            ),
+            gaps=((GapInterval(1_000, 400, "test capture gap"),) if gap else ()),
         )
 
     project = TakeProject(
@@ -212,14 +264,96 @@ def _schema2_studio_take(tmp_path: Path) -> tuple[Path, tuple[str, str]]:
     return take_dir, (server_id, local_id)
 
 
+def _schema2_repeated_take(
+    tmp_path: Path,
+    primary_dir: Path,
+) -> tuple[Path, str]:
+    primary = TakeProject.from_dict(
+        json.loads((primary_dir / "webjam-take.json").read_text(encoding="utf-8"))
+    )
+    take_dir = tmp_path / "Studio Project Take 2"
+    media = take_dir / "media"
+    media.mkdir(parents=True)
+    source = media / "server.wav"
+    _wav(source, 330)
+    track_id = new_project_id()
+    segment = MediaSegment(
+        segment_id=new_project_id(),
+        path=source.relative_to(take_dir).as_posix(),
+        project_start_frame=0,
+        frame_count=RATE,
+        sample_rate=RATE,
+        channels=1,
+        sample_format="PCM_16",
+        media_status=MediaStatus.AVAILABLE,
+        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        size_bytes=source.stat().st_size,
+        has_signal=True,
+    )
+    project = TakeProject(
+        session_id=primary.session_id,
+        take_id=new_project_id(),
+        session_title=primary.session_title,
+        take_name="Studio Project Take 2",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=primary.project_sample_rate,
+        participants=(),
+        tracks=(
+            ProjectTrack(
+                track_id=track_id,
+                source_id=new_project_id(),
+                participant_id=None,
+                name="Band Drums",
+                instrument="Drums",
+                source_type=SourceType.JAMULUS_SERVER,
+                quality=SourceQuality.NETWORK_TRACK,
+                media_status=MediaStatus.AVAILABLE,
+                order=0,
+                segments=(segment,),
+                alignment=AlignmentState(confidence=1.0, method="server-origin"),
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    return take_dir, track_id
+
+
+def _open_schema2_waveform_studio(
+    tmp_path: Path,
+) -> tuple[RecordingStudio, frozenset[str]]:
+    """Open a v2 arrangement with automatic UI drains held for assertions."""
+
+    _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    studio._timer.stop()
+    studio.resize(1440, 900)
+    studio.show()
+    APP.processEvents()
+    studio._take_list.setCurrentRow(0)
+    studio._studio_waveform_schedule_timer.stop()
+    assert studio._studio_state is not None
+    region_ids = frozenset(
+        region.region_id
+        for region in studio._studio_state.regions
+        if region.enabled and not region.deleted
+    )
+    assert region_ids
+    return studio, region_ids
+
+
 def test_live_session_arms_one_lane_per_musician():
     studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
     try:
         studio.set_can_record(True)
-        studio.set_live_participants([
-            SimpleNamespace(channel_id=0, name="Jeff", is_local=True),
-            SimpleNamespace(channel_id=3, name="Sam", is_local=False),
-        ])
+        studio.set_live_participants(
+            [
+                SimpleNamespace(channel_id=0, name="Jeff", is_local=True),
+                SimpleNamespace(channel_id=3, name="Sam", is_local=False),
+            ]
+        )
         studio.set_recording_phase("recording")
         assert set(studio._lanes) == {0, 3}
         assert studio._record_btn.text() == "■ Stop"
@@ -243,11 +377,11 @@ def test_recorded_take_renders_waveform_lanes_and_mixer_controls():
             studio._take_list.setCurrentRow(0)
             assert len(studio._lanes) == 2
             assert _wait_until(
-                lambda: all(
-                    lane.waveform._peaks for lane in studio._lanes.values()
-                )
+                lambda: all(lane.waveform._peaks for lane in studio._lanes.values())
             )
             lane = studio._lanes[0]
+            assert lane._trim.isHidden()
+            assert lane._trim_value.isHidden()
             lane._gain.setValue(50)
             lane._mute.setChecked(True)
             lane._pan.setValue(-40)
@@ -258,6 +392,29 @@ def test_recorded_take_renders_waveform_lanes_and_mixer_controls():
             assert studio._export_btn.isEnabled()
         finally:
             studio.shutdown()
+
+
+def test_legacy_ruler_origin_aligns_with_track_waveform_origin(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1200, 760)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        lane = studio._lanes[0]
+        waveform_x = lane.waveform.mapTo(studio, QPoint(0, 0)).x()
+        ruler_x = studio._timeline_ruler.mapTo(studio, QPoint(0, 0)).x()
+        assert ruler_x == waveform_x
+    finally:
+        studio.shutdown()
 
 
 def test_studio_ruler_selection_gap_and_meter_share_the_recorded_timeline(tmp_path):
@@ -283,15 +440,359 @@ def test_studio_ruler_selection_gap_and_meter_share_the_recorded_timeline(tmp_pa
             for lane in studio._lanes.values()
         )
 
-        studio._on_levels_bg({1: 0.73})
+        epoch = studio._player.playback_epoch
+        studio._on_levels_bg(epoch, {1: 0.73})
+        studio._on_stereo_levels_bg(epoch, {1: (0.25, 0.75, True)})
+        studio._on_stereo_levels_bg(epoch, {1: (0.3, 0.7, False)})
+        studio._on_master_level_bg(epoch, (0.4, 0.8, True))
+        studio._on_master_level_bg(epoch, (0.5, 0.6, False))
         studio._tick()
-        assert studio._lanes[1]._meter._level == pytest.approx(0.73)
+        assert studio._lanes[1]._meter._left == pytest.approx(0.3)
+        assert studio._lanes[1]._meter._right == pytest.approx(0.7)
+        assert studio._lanes[1]._meter._clipped is True
+        assert studio._master_meter._right == pytest.approx(0.6)
+        assert studio._master_meter._clipped is True
+
+        studio._on_stereo_levels_bg(epoch, {1: (0.2, 0.4, False)})
+        studio._on_master_level_bg(epoch, (0.1, 0.2, False))
+        studio._tick()
+        assert studio._lanes[1]._meter._clipped is False
+        assert studio._master_meter._clipped is False
         studio._select_track(1)
         assert studio._lanes[1]._selected
         assert not studio._lanes[0]._selected
         assert "Local original" in studio._inspector_values["source"].text()
         assert "1 recorded gap" in studio._inspector_values["gaps"].text()
         assert studio._timeline_ruler._trailing_inset >= 8
+    finally:
+        studio.shutdown()
+
+
+def test_schema2_waveforms_activate_schedule_and_publish_on_ui_drain(
+    tmp_path,
+    monkeypatch,
+):
+    studio, region_ids = _open_schema2_waveform_studio(tmp_path)
+    callback_threads: list[int] = []
+    original_add_tile = studio._studio_arrange.add_region_waveform_tile
+
+    def observed_add_tile(region_id, tile, *, generation=None):
+        callback_threads.append(threading.get_ident())
+        original_add_tile(region_id, tile, generation=generation)
+
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "add_region_waveform_tile",
+        observed_add_tile,
+    )
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_frame_range",
+        lambda: (0, RATE),
+    )
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_region_ids",
+        lambda: region_ids,
+    )
+    try:
+        coordinator = studio._studio_waveforms
+        activated = coordinator.stats
+        assert activated.active_regions == len(region_ids)
+        assert activated.sources == len(region_ids)
+        assert studio._studio_waveform_document_key is not None
+
+        studio._schedule_studio_waveforms()
+        scheduled = coordinator.stats
+        assert scheduled.schedules == activated.schedules + 1
+        assert studio._studio_arrange._waveform_generation == scheduled.generation
+        assert scheduled.in_flight <= 2
+        assert _wait_without_qt_events(
+            lambda: (
+                coordinator.stats.in_flight == 0
+                and coordinator.stats.pending == 0
+                and coordinator.stats.queued_results > 0
+            )
+        )
+
+        # Worker completion may enqueue results, but only the UI timer drain may
+        # mutate the Arrange widget.
+        assert callback_threads == []
+        assert studio._studio_arrange._waveform_tiles == {}
+        assert studio.thread() == QThread.currentThread()
+        ui_thread = threading.get_ident()
+        studio._tick()
+
+        assert callback_threads
+        assert set(callback_threads) == {ui_thread}
+        assert set(studio._studio_arrange._waveform_tiles).issubset(region_ids)
+        assert studio._studio_arrange._waveform_tiles
+        assert coordinator.stats.published_region_tiles == len(callback_threads)
+    finally:
+        studio.shutdown()
+
+
+def test_schema2_waveform_activation_failure_cancels_and_clears_ui(
+    tmp_path,
+):
+    studio, _region_ids = _open_schema2_waveform_studio(tmp_path)
+    try:
+        studio._studio_waveform_document_key = None
+        with (
+            patch.object(
+                studio._studio_waveforms,
+                "activate",
+                side_effect=StudioWaveformCoordinatorError("changed source"),
+            ),
+            patch.object(
+                studio._studio_waveforms,
+                "cancel",
+                wraps=studio._studio_waveforms.cancel,
+            ) as cancel,
+            patch.object(
+                studio._studio_arrange,
+                "clear_waveforms",
+                wraps=studio._studio_arrange.clear_waveforms,
+            ) as clear,
+        ):
+            studio._activate_studio_waveforms()
+
+        cancel.assert_called_once_with()
+        clear.assert_called_once_with()
+        assert studio._studio_waveform_document_key is None
+        assert studio._studio_arrange._waveform_tiles == {}
+    finally:
+        studio.shutdown()
+
+
+def test_schema2_repeated_viewport_schedules_stay_bounded_and_publish_current(
+    tmp_path,
+    monkeypatch,
+):
+    studio, region_ids = _open_schema2_waveform_studio(tmp_path)
+    viewport = [0, 1_000]
+    delivered = []
+    coordinator = studio._studio_waveforms
+    original_publish = coordinator._publish_tile
+
+    def observed_publish(result):
+        delivered.append(result)
+        original_publish(result)
+
+    monkeypatch.setattr(coordinator, "_publish_tile", observed_publish)
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_frame_range",
+        lambda: (viewport[0], viewport[1]),
+    )
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_region_ids",
+        lambda: region_ids,
+    )
+    try:
+        baseline = coordinator.stats
+        generations: list[int] = []
+        maximum_in_flight = 0
+        for start in (0, 6_000, 1_000, 5_000, 2_000, 4_000, 3_000, 7_000):
+            viewport[:] = (start, min(RATE, start + 1_000))
+            studio._schedule_studio_waveforms()
+            stats = coordinator.stats
+            generations.append(stats.generation)
+            maximum_in_flight = max(maximum_in_flight, stats.in_flight)
+            assert stats.in_flight <= 2
+            assert stats.pending <= 256
+
+        assert generations == sorted(set(generations))
+        current_generation = generations[-1]
+        assert coordinator.stats.schedules == baseline.schedules + len(generations)
+        assert maximum_in_flight <= 2
+        assert _wait_without_qt_events(
+            lambda: (
+                coordinator.stats.in_flight == 0
+                and coordinator.stats.pending == 0
+                and coordinator.stats.queued_results > 0
+            )
+        )
+
+        studio._tick()
+        assert delivered
+        assert {item.generation for item in delivered} == {current_generation}
+        assert coordinator.stats.in_flight == 0
+        assert coordinator.stats.pending == 0
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize("transition", ["live", "shutdown"])
+def test_schema2_waveform_lifecycle_stops_pending_publication(
+    tmp_path,
+    monkeypatch,
+    transition,
+):
+    studio, region_ids = _open_schema2_waveform_studio(tmp_path)
+    delivered = []
+    coordinator = studio._studio_waveforms
+    original_publish = coordinator._publish_tile
+
+    def observed_publish(result):
+        delivered.append(result)
+        original_publish(result)
+
+    monkeypatch.setattr(coordinator, "_publish_tile", observed_publish)
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_frame_range",
+        lambda: (0, RATE),
+    )
+    monkeypatch.setattr(
+        studio._studio_arrange,
+        "visible_region_ids",
+        lambda: region_ids,
+    )
+    try:
+        studio._schedule_studio_waveforms()
+        assert coordinator.stats.schedules >= 1
+        assert coordinator.stats.in_flight <= 2
+
+        if transition == "live":
+            studio._show_live_session()
+            assert studio._viewing_live is True
+            assert studio._studio_waveform_document_key is None
+        else:
+            studio.shutdown()
+            assert coordinator.stats.shutdown is True
+
+        assert _wait_without_qt_events(lambda: coordinator.stats.in_flight == 0)
+        assert coordinator.drain() == 0
+        assert delivered == []
+        assert coordinator.stats.published_region_tiles == 0
+        assert studio._studio_arrange._waveform_tiles == {}
+    finally:
+        studio.shutdown()
+
+
+def test_arrange_toolbar_edits_reload_cycle_and_preserve_source_truth(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    truth = {path: path.read_bytes() for path in (manifest, *media)}
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        document = studio._studio_state
+        assert document is not None
+        region = document.regions[0]
+        studio._studio_arrange._user_select_region(region)
+        studio._studio_arrange.set_playhead(1_234)
+
+        studio._add_arrange_marker("Verse")
+        studio._add_arrange_section("Chorus")
+        studio._toggle_selected_cycle()
+        studio._toggle_selected_region_fades()
+
+        edited = studio._studio_state
+        assert edited is not None
+        active_markers = [item for item in edited.markers if not item.deleted]
+        assert [(item.label, item.kind.value) for item in active_markers] == [
+            ("Verse", "marker"),
+            ("Chorus", "section"),
+        ]
+        assert active_markers[0].start_frame == 1_234
+        assert active_markers[1].start_frame == region.timeline_start_frame
+        assert active_markers[1].end_frame == region.timeline_end_frame
+        assert edited.cycle_range is not None
+        assert studio._player._studio_cycle_range == (
+            region.timeline_start_frame,
+            region.timeline_end_frame,
+        )
+        faded = edited.region_for(region.region_id)
+        assert faded.fade_in_frames == round(RATE * 0.005)
+        assert faded.fade_out_frames == round(RATE * 0.005)
+        assert faded.fade_in_curve.value == "equal_power"
+
+        duplicate_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Create overlap",
+            lambda value: value.duplicate_region(
+                region.region_id,
+                new_region_id=duplicate_id,
+                timeline_start_frame=RATE // 2,
+            ),
+            reload_audio=True,
+        )
+        studio._toggle_selected_crossfade()
+        crossfades = [
+            item for item in studio._studio_state.crossfades if not item.deleted
+        ]
+        assert len(crossfades) == 1
+        assert crossfades[0].start_frame == RATE // 2
+        assert crossfades[0].frame_count == RATE // 2
+        assert crossfades[0].curve.value == "equal_power"
+        assert studio._crossfade_btn.text() == "Remove Crossfade"
+
+        studio.resize(760, 600)
+        studio.show()
+        APP.processEvents()
+        bounds = studio.contentsRect()
+        assert studio._arrange_toolbar.isVisible()
+        for button in (
+            studio._add_marker_btn,
+            studio._add_section_btn,
+            studio._cycle_region_btn,
+            studio._region_fades_btn,
+            studio._crossfade_btn,
+        ):
+            assert bounds.contains(button.mapTo(studio, button.rect().topLeft()))
+            assert bounds.contains(button.mapTo(studio, button.rect().bottomRight()))
+
+        studio._toggle_selected_crossfade()
+        assert all(item.deleted for item in studio._studio_state.crossfades)
+        assert studio._flush_studio_state()
+    finally:
+        studio.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_mixer_drag_is_one_undo_and_separate_drags_remain_separate(tmp_path):
+    _take_dir, (track_id, _local_id) = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        lane = studio._lanes[0]
+
+        lane._gain.sliderPressed.emit()
+        lane._gain.setValue(110)
+        lane._gain.setValue(120)
+        lane._gain.setValue(130)
+        lane._gain.sliderReleased.emit()
+        assert studio._studio_state.state_for(track_id).fader_gain == pytest.approx(1.3)
+
+        studio._undo_arrange_edit()
+        assert studio._studio_state.state_for(track_id).fader_gain == pytest.approx(1.0)
+        assert lane._gain.value() == 100
+        assert studio._player.tracks[0].gain == pytest.approx(1.0)
+
+        studio._redo_arrange_edit()
+        assert studio._studio_state.state_for(track_id).fader_gain == pytest.approx(1.3)
+        assert lane._gain.value() == 130
+
+        lane._gain.sliderPressed.emit()
+        lane._gain.setValue(140)
+        lane._gain.setValue(150)
+        lane._gain.sliderReleased.emit()
+        assert studio._studio_state.state_for(track_id).fader_gain == pytest.approx(1.5)
+
+        studio._undo_arrange_edit()
+        assert studio._studio_state.state_for(track_id).fader_gain == pytest.approx(1.3)
+        assert lane._gain.value() == 130
     finally:
         studio.shutdown()
 
@@ -309,33 +810,41 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
     try:
         studio._take_list.setCurrentRow(0)
         lane = studio._lanes[1]
+        lane._trim.setValue(125)
         lane._gain.setValue(400)
         lane._pan.setValue(-40)
         lane._mute.setChecked(True)
         lane._solo.setChecked(True)
         lane._track_export_include.setChecked(False)
+        studio._master_gain.setValue(85)
+        studio._master_limiter.setChecked(False)
         studio._flush_studio_state()
     finally:
         studio.shutdown()
 
     state = load_studio_state(take_dir).state_for(local_id)
+    assert state.trim_gain == pytest.approx(1.25)
     assert state.gain == pytest.approx(4.0)
     assert state.pan == pytest.approx(-0.4)
     assert state.muted is True
     assert state.solo is True
     assert state.export_included is False
+    saved_document = load_studio_state(take_dir)
+    assert saved_document.master.gain == pytest.approx(0.85)
+    assert saved_document.master.limiter_enabled is False
     assert manifest.read_bytes() == manifest_before
     assert audio.read_bytes() == audio_before
 
     called = threading.Event()
     result = SimpleNamespace(
-        folder=take_dir / "Track Export",
-        stems=(),
-        samplerate=RATE,
+        folder=take_dir / "Studio Export",
+        edited_stems=(),
+        original_stems=(),
+        sample_rate=RATE,
     )
     with patch(
-        "webjam_qt.widgets.recording_studio.export_track_package",
-        side_effect=lambda *_args, **_kwargs: (called.set() or result),
+        "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+        side_effect=lambda *_args, **_kwargs: called.set() or result,
     ) as export:
         reopened = RecordingStudio(
             str(tmp_path),
@@ -344,21 +853,881 @@ def test_schema2_studio_choices_reopen_and_export_by_durable_track_id(tmp_path):
         try:
             reopened._take_list.setCurrentRow(0)
             lane = reopened._lanes[1]
+            assert not lane._trim.isHidden()
+            assert lane._trim.value() == 125
             assert lane._gain.value() == 400
             assert lane._pan.value() == -40
             assert lane._mute.isChecked()
             assert lane._solo.isChecked()
             assert not lane._track_export_include.isChecked()
+            assert reopened._master_gain.value() == 85
+            assert not reopened._master_limiter.isChecked()
             reopened._export_tracks()
             assert _wait_until(called.is_set)
-            assert export.call_args.kwargs["selected_track_ids"] == {server_id}
-            settings = export.call_args.kwargs["mix_settings"]
-            assert settings[local_id].gain == pytest.approx(4.0)
-            assert settings[local_id].pan == pytest.approx(-0.4)
-            assert settings[local_id].muted is True
-            assert settings[local_id].solo is True
+            exported_project, exported_document, exported_root = export.call_args.args
+            assert exported_project.take_id == reopened._studio_state.take_id
+            assert exported_root == take_dir.resolve()
+            assert exported_document.state_for(server_id).export_included is True
+            local_state = exported_document.state_for(local_id)
+            assert local_state.trim_gain == pytest.approx(1.25)
+            assert local_state.export_included is False
+            assert local_state.gain == pytest.approx(4.0)
+            assert local_state.pan == pytest.approx(-0.4)
+            assert local_state.muted is True
+            assert local_state.solo is True
+            assert export.call_args.kwargs["cancel_event"] is not None
         finally:
             reopened.shutdown()
+
+
+def test_studio_default_comparison_ignores_revision_only(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    project = load_take_project(take_dir)
+    default = default_studio_document(project)
+    resaved_default = replace(default, revision=default.revision + 20)
+
+    assert not _studio_document_differs_from_default(resaved_default, project)
+
+    edited = replace(
+        resaved_default,
+        master=replace(resaved_default.master, gain=0.75),
+    )
+    assert _studio_document_differs_from_default(edited, project)
+
+
+def test_unsupported_platform_schema2_exports_explicit_aligned_originals(tmp_path):
+    take_dir, (server_id, local_id) = _schema2_studio_take(tmp_path)
+    called = threading.Event()
+    result = SimpleNamespace(
+        folder=take_dir / "Track Exports" / "Track Export",
+        stems=(take_dir / "server.wav", take_dir / "local.wav"),
+        samplerate=RATE,
+    )
+    with (
+        patch(
+            "webjam_qt.widgets.recording_studio.studio_export_supported",
+            return_value=False,
+        ),
+        patch(
+            "webjam_qt.widgets.recording_studio.QMessageBox.question"
+        ) as confirmation,
+        patch(
+            "webjam_qt.widgets.recording_studio.export_track_package",
+            side_effect=lambda *_args, **_kwargs: called.set() or result,
+        ) as legacy_export,
+        patch(
+            "webjam_qt.widgets.recording_studio.export_studio_arrangement"
+        ) as studio_export,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+
+            assert studio._export_btn.text() == "Export Aligned Originals"
+            assert studio._export_btn.accessibleName() == (
+                "Export aligned originals without Studio edits"
+            )
+            assert "master controls" in studio._export_btn.toolTip().lower()
+            assert "repeated take-lane recordings" in (
+                studio._export_btn.toolTip().lower()
+            )
+            assert "excluded" in studio._hint.text().lower()
+
+            studio._export_tracks()
+            assert _wait_until(called.is_set)
+            assert _wait_until(lambda: not studio.export_in_progress)
+
+            confirmation.assert_not_called()
+            studio_export.assert_not_called()
+            selected = legacy_export.call_args.kwargs["selected_track_ids"]
+            assert selected == {server_id, local_id}
+            states = legacy_export.call_args.kwargs["mix_settings"]
+            assert set(states) == {server_id, local_id}
+            assert all(state.gain == pytest.approx(1.0) for state in states.values())
+            assert studio._reveal_btn.text() == "Show Aligned Originals"
+            assert "unity 24-bit" in studio._hint.text().lower()
+            assert "master controls are excluded" in studio._hint.text().lower()
+            assert "exported from their own take" in studio._hint.text().lower()
+        finally:
+            studio.shutdown()
+
+
+def test_unsupported_platform_edited_studio_requires_confirmation_and_lane_mix(
+    tmp_path,
+):
+    take_dir, (server_id, local_id) = _schema2_studio_take(tmp_path)
+    called = threading.Event()
+    result = SimpleNamespace(
+        folder=take_dir / "Track Exports" / "Track Export",
+        stems=(take_dir / "server.wav",),
+        samplerate=RATE,
+    )
+    with (
+        patch(
+            "webjam_qt.widgets.recording_studio.studio_export_supported",
+            return_value=False,
+        ),
+        patch(
+            "webjam_qt.widgets.recording_studio.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Cancel,
+        ) as confirmation,
+        patch(
+            "webjam_qt.widgets.recording_studio.export_track_package",
+            side_effect=lambda *_args, **_kwargs: called.set() or result,
+        ) as legacy_export,
+        patch(
+            "webjam_qt.widgets.recording_studio.export_studio_arrangement"
+        ) as studio_export,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+            studio._lanes[0]._trim.setValue(125)
+            studio._lanes[0]._gain.setValue(150)
+            studio._lanes[0]._pan.setValue(-25)
+            studio._lanes[0]._mute.setChecked(True)
+            studio._lanes[1]._track_export_include.setChecked(False)
+
+            studio._export_tracks()
+
+            confirmation.assert_called_once()
+            prompt = confirmation.call_args.args[2].lower()
+            assert "unity aligned wav" in prompt
+            assert "fades" in prompt
+            assert "comp choices" in prompt
+            assert "song sections" in prompt
+            assert "master gain" in prompt
+            assert "repeated take-lane recordings" in prompt
+            assert "from its own take" in prompt
+            legacy_export.assert_not_called()
+            studio_export.assert_not_called()
+            assert not studio.export_in_progress
+            assert "export canceled" in studio._hint.text().lower()
+
+            confirmation.reset_mock()
+            confirmation.return_value = QMessageBox.StandardButton.Yes
+            studio._export_tracks()
+            assert _wait_until(called.is_set)
+            assert _wait_until(lambda: not studio.export_in_progress)
+
+            confirmation.assert_called_once()
+            studio_export.assert_not_called()
+            assert legacy_export.call_count == 1
+            assert legacy_export.call_args.kwargs["selected_track_ids"] == {server_id}
+            states = legacy_export.call_args.kwargs["mix_settings"]
+            assert set(states) == {server_id, local_id}
+            assert states[server_id].gain == pytest.approx(1.25 * 1.5)
+            assert states[server_id].pan == pytest.approx(-0.25)
+            assert states[server_id].muted is True
+        finally:
+            studio.shutdown()
+
+
+def test_studio_export_failure_never_silently_falls_back(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    failed = threading.Event()
+
+    def fail_studio_export(*_args, **_kwargs):
+        failed.set()
+        raise RuntimeError("private Studio export implementation detail")
+
+    with (
+        patch(
+            "webjam_qt.widgets.recording_studio.studio_export_supported",
+            return_value=True,
+        ),
+        patch(
+            "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+            side_effect=fail_studio_export,
+        ) as studio_export,
+        patch(
+            "webjam_qt.widgets.recording_studio.export_track_package"
+        ) as legacy_export,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        try:
+            studio._take_list.setCurrentRow(0)
+            studio._export_tracks()
+            assert _wait_until(failed.is_set)
+            assert _wait_until(lambda: not studio.export_in_progress)
+
+            studio_export.assert_called_once()
+            legacy_export.assert_not_called()
+            hint = studio._hint.text().lower()
+            assert "did not create an aligned-originals fallback" in hint
+            assert "private" not in hint
+            assert "saved studio choices are safe" in hint
+        finally:
+            studio.shutdown()
+
+
+def test_schema2_export_shutdown_cancels_and_discards_worker_callback(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    started = threading.Event()
+    stopped = threading.Event()
+    observed_cancel: list[threading.Event] = []
+
+    def wait_for_shutdown(
+        _project,
+        _document,
+        _root,
+        *,
+        cancel_event,
+        source_catalog=None,
+    ):
+        assert source_catalog is not None
+        observed_cancel.append(cancel_event)
+        started.set()
+        assert cancel_event.wait(3.0)
+        stopped.set()
+        raise RuntimeError("cancelled after Studio shutdown")
+
+    with patch(
+        "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+        side_effect=wait_for_shutdown,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        studio._take_list.setCurrentRow(0)
+        studio._export_tracks()
+        assert _wait_until(started.is_set)
+        worker = studio._export_thread
+
+        studio.shutdown()
+        assert observed_cancel and observed_cancel[0].is_set()
+        assert _wait_until(stopped.is_set)
+        assert worker is not None
+        worker.join(timeout=1.0)
+        studio._drain_export_results()
+        assert finished == []
+        assert studio.export_in_progress is False
+
+
+def test_export_blocks_navigation_until_worker_result_is_drained(tmp_path):
+    primary_dir, _track_ids = _schema2_studio_take(tmp_path)
+    alternate_dir, _alternate_track_id = _schema2_repeated_take(tmp_path, primary_dir)
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_export(*_args, **_kwargs):
+        started.set()
+        assert release.wait(3.0)
+        raise RuntimeError("intentional export test failure")
+
+    with patch(
+        "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+        side_effect=blocked_export,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        try:
+            primary_row = next(
+                row
+                for row, take in enumerate(studio._takes)
+                if take.path.resolve() == primary_dir.resolve()
+            )
+            alternate_row = next(
+                row
+                for row, take in enumerate(studio._takes)
+                if take.path.resolve() == alternate_dir.resolve()
+            )
+            studio._take_list.setCurrentRow(primary_row)
+            studio.set_can_record(True)
+            studio.set_live_participants(
+                [SimpleNamespace(channel_id=1, name="Drummer", is_local=False)]
+            )
+            assert studio._record_btn.isEnabled()
+            current = studio._current
+            studio._export_tracks()
+            assert _wait_until(started.is_set)
+            assert not studio._take_list.isEnabled()
+            assert not studio._live_btn.isEnabled()
+            assert not studio._new_take_btn.isEnabled()
+            assert not studio._setup_btn.isEnabled()
+            assert not studio._record_btn.isEnabled()
+
+            studio._take_list.setCurrentRow(alternate_row)
+            assert studio._current is current
+            assert studio._take_list.currentRow() == primary_row
+            assert "finish the current export" in studio._hint.text().lower()
+
+            studio._show_live_session()
+            assert studio._current is current
+            assert studio._viewing_live is False
+            assert "finish the current export" in studio._hint.text().lower()
+
+            worker = studio._export_thread
+            release.set()
+            assert worker is not None
+            assert _wait_without_qt_events(lambda: not worker.is_alive())
+            studio._drain_export_results()
+            assert finished == [False]
+            assert studio._take_list.isEnabled()
+            assert studio._live_btn.isEnabled()
+            assert studio._new_take_btn.isEnabled()
+            assert studio._setup_btn.isEnabled()
+            assert studio._record_btn.isEnabled()
+        finally:
+            release.set()
+            studio.shutdown()
+
+
+def test_recording_preflight_blocks_export_before_worker_start(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio.set_recording_phase("preflight")
+        assert not studio._export_btn.isEnabled()
+
+        with patch(
+            "webjam_qt.widgets.recording_studio.export_studio_arrangement"
+        ) as export:
+            studio._export_tracks()
+
+        export.assert_not_called()
+        assert studio.export_in_progress is False
+    finally:
+        studio.shutdown()
+
+
+def test_recording_confirmation_cancels_raced_export_and_returns_live(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    observed_cancel: list[threading.Event] = []
+
+    def blocked_export(*_args, cancel_event, **_kwargs):
+        observed_cancel.append(cancel_event)
+        started.set()
+        assert release.wait(3.0)
+        raise RuntimeError("raced export cancelled for recording")
+
+    with patch(
+        "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+        side_effect=blocked_export,
+    ):
+        studio = RecordingStudio(
+            str(tmp_path),
+            player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+        )
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        try:
+            studio._take_list.setCurrentRow(0)
+            studio.set_can_record(True)
+            studio.set_live_participants(
+                [SimpleNamespace(channel_id=1, name="Drummer", is_local=False)]
+            )
+            studio._export_tracks()
+            assert _wait_until(started.is_set)
+            worker = studio._export_thread
+            assert worker is not None
+
+            studio.set_recording_phase("recording")
+
+            assert observed_cancel and observed_cancel[0].is_set()
+            assert studio.export_in_progress is False
+            assert studio._viewing_live is True
+            assert studio._current is None
+            assert studio._record_btn.text() == "■ Stop"
+            assert studio._record_btn.isEnabled()
+            assert finished == [False]
+
+            release.set()
+            assert _wait_without_qt_events(lambda: not worker.is_alive())
+            studio._drain_export_results()
+            assert finished == [False]
+        finally:
+            release.set()
+            studio.shutdown()
+
+
+def test_stale_export_result_restores_controls_and_emits_failure_once(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        reveal_before = studio._reveal_path
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        studio._exporting = True
+        studio._take_list.setEnabled(False)
+        studio._live_btn.setEnabled(False)
+        studio._new_take_btn.setEnabled(False)
+        studio._setup_btn.setEnabled(False)
+        studio._export_generation += 1
+        stale_generation = studio._export_generation
+        stale = SimpleNamespace(
+            generation=stale_generation,
+            take_path=tmp_path / "different-take",
+            result=SimpleNamespace(folder=tmp_path / "stale-export"),
+            error="",
+            published_folder=None,
+        )
+        studio._export_results.put(stale)
+        studio._export_results.put(stale)
+
+        studio._drain_export_results()
+
+        assert finished == [False]
+        assert studio.export_in_progress is False
+        assert studio._reveal_path == reveal_before
+        assert studio._take_list.isEnabled()
+        assert studio._live_btn.isEnabled()
+        assert studio._new_take_btn.isEnabled()
+        assert studio._setup_btn.isEnabled()
+    finally:
+        studio.shutdown()
+
+
+def test_arrange_edit_undo_redo_reopens_without_touching_recording_truth(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    manifest_before = manifest.read_bytes()
+    media_before = {path.name: path.read_bytes() for path in media}
+
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        assert studio._studio_state is not None
+        assert not studio._studio_arrange.isHidden()
+        region = studio._studio_state.regions[0]
+        original_start = region.timeline_start_frame
+
+        studio._studio_arrange.region_move_requested.emit(region.region_id, 256)
+        assert (
+            studio._studio_state.region_for(region.region_id).timeline_start_frame
+            == 256
+        )
+        assert studio._studio_controller.can_undo
+        assert studio._studio_state_dirty
+
+        studio._studio_arrange.undo_requested.emit()
+        assert (
+            studio._studio_state.region_for(region.region_id).timeline_start_frame
+            == original_start
+        )
+        studio._studio_arrange.redo_requested.emit()
+        assert (
+            studio._studio_state.region_for(region.region_id).timeline_start_frame
+            == 256
+        )
+        assert studio._flush_studio_state() is True
+        saved = studio._studio_state.to_dict()
+    finally:
+        studio.shutdown()
+
+    reopened = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        reopened._take_list.setCurrentRow(0)
+        assert reopened._studio_state is not None
+        assert reopened._studio_state.to_dict() == saved
+    finally:
+        reopened.shutdown()
+
+    assert manifest.read_bytes() == manifest_before
+    assert {path.name: path.read_bytes() for path in media} == media_before
+
+
+def test_named_section_move_ripples_every_track_as_one_undoable_edit(tmp_path):
+    take_dir, track_ids = _schema2_studio_take(tmp_path)
+    manifest = take_dir / "webjam-take.json"
+    media = tuple(sorted((take_dir / "media").glob("*.wav")))
+    truth = {path: path.read_bytes() for path in (manifest, *media)}
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        section_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Add Verse section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    label="Verse",
+                    kind=MarkerKind.SECTION,
+                    end_frame=RATE // 2,
+                )
+            ),
+            reload_audio=False,
+        )
+        before_move = studio._studio_state
+        assert before_move is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        studio._studio_arrange.section_move_requested.emit(section_id, RATE // 2)
+
+        moved = studio._studio_state
+        assert moved is not None
+        assert moved.revision == before_move.revision + 1
+        assert history.undo_depth == undo_depth + 1
+        section = next(item for item in moved.markers if item.marker_id == section_id)
+        assert (section.start_frame, section.end_frame) == (RATE // 2, RATE)
+        for track_id in track_ids:
+            fragments = sorted(
+                (
+                    item.timeline_start_frame,
+                    item.timeline_frame_count,
+                    item.source_start_frame,
+                    item.source_frame_count,
+                )
+                for item in moved.regions
+                if item.track_id == track_id and item.enabled and not item.deleted
+            )
+            assert fragments == [
+                (0, RATE // 2, RATE // 2, RATE // 2),
+                (RATE // 2, RATE // 2, 0, RATE // 2),
+            ]
+        assert studio._player._studio_renderer is not None
+        assert studio._player._studio_renderer.document is moved
+        assert "every track" in studio._hint.text().lower()
+
+        studio._studio_arrange.undo_requested.emit()
+        assert studio._studio_state == before_move
+        studio._studio_arrange.redo_requested.emit()
+        assert studio._studio_state == moved
+    finally:
+        studio.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path):
+    primary_dir, (destination_track_id, _local_id) = _schema2_studio_take(tmp_path)
+    alternate_dir, alternate_track_id = _schema2_repeated_take(
+        tmp_path,
+        primary_dir,
+    )
+    source_truth = {
+        path: path.read_bytes()
+        for path in (
+            primary_dir / "webjam-take.json",
+            primary_dir / "media" / "server.wav",
+            alternate_dir / "webjam-take.json",
+            alternate_dir / "media" / "server.wav",
+        )
+    }
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        primary_row = next(
+            index
+            for index, take in enumerate(studio._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        studio._take_list.setCurrentRow(primary_row)
+        studio._select_track(0)
+        sources = studio._available_comp_sources()
+        assert any(item[0] == alternate_dir.resolve() for item in sources)
+
+        studio._add_take_lane_from_source(alternate_dir, alternate_track_id)
+        assert studio._studio_source_catalog is not None
+        assert studio._studio_source_catalog.take_ids == (
+            studio._studio_project.take_id,
+            next(
+                item[1].take_id
+                for item in sources
+                if item[0] == alternate_dir.resolve()
+            ),
+        )
+        lane = next(
+            item
+            for item in studio._studio_state.take_lanes
+            if item.track_id == destination_track_id and not item.deleted
+        )
+        studio._select_comp_range(lane.lane_id, 1_000, 4_000)
+        active_comps = [
+            item
+            for item in studio._studio_state.comp_ranges
+            if not item.deleted and item.enabled
+        ]
+        assert len(active_comps) == 1
+        assert active_comps[0].lane_id == lane.lane_id
+
+        persisted_before_audition = studio._studio_state.to_dict()
+        studio._studio_arrange._user_select_lane(destination_track_id, lane.lane_id)
+        # 1001 / 8000 does not survive an int(seconds * rate) round-trip.
+        studio._player.seek_frame(1_001)
+        studio._toggle_take_lane_audition(lane.lane_id)
+        assert studio._player.position_frame == 1_001
+        assert studio._studio_audition_lane_id == lane.lane_id
+        assert studio._studio_arrange.audition_lane_id == lane.lane_id
+        assert studio._studio_state.to_dict() == persisted_before_audition
+        studio._toggle_take_lane_audition(lane.lane_id)
+        assert studio._player.position_frame == 1_001
+        assert studio._studio_audition_lane_id is None
+
+        called = threading.Event()
+        result = SimpleNamespace(
+            folder=primary_dir / "Studio Export",
+            edited_stems=(),
+            original_stems=(),
+            sample_rate=RATE,
+        )
+        with patch(
+            "webjam_qt.widgets.recording_studio.export_studio_arrangement",
+            side_effect=lambda *_args, **_kwargs: called.set() or result,
+        ) as export:
+            studio._export_tracks()
+            assert _wait_until(called.is_set)
+            assert export.call_args.kwargs["source_catalog"] is (
+                studio._studio_source_catalog
+            )
+        assert studio._flush_studio_state()
+        saved = studio._studio_state.to_dict()
+    finally:
+        studio.shutdown()
+
+    reopened = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        primary_row = next(
+            index
+            for index, take in enumerate(reopened._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        reopened._take_list.setCurrentRow(primary_row)
+        assert reopened._studio_state.to_dict() == saved
+        assert reopened._studio_source_catalog is not None
+        assert reopened._player.duration_s == pytest.approx(1.0)
+    finally:
+        reopened.shutdown()
+
+    assert all(path.read_bytes() == before for path, before in source_truth.items())
+
+
+def test_disabled_alternate_lane_source_stays_cataloged_for_reenable(tmp_path):
+    primary_dir, (destination_track_id, _local_id) = _schema2_studio_take(tmp_path)
+    alternate_dir, alternate_track_id = _schema2_repeated_take(tmp_path, primary_dir)
+    alternate_take_id = load_take_project(alternate_dir).take_id
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        primary_row = next(
+            row
+            for row, take in enumerate(studio._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        studio._take_list.setCurrentRow(primary_row)
+        studio._select_track(0)
+        studio._add_take_lane_from_source(alternate_dir, alternate_track_id)
+        lane = next(
+            item
+            for item in studio._studio_state.take_lanes
+            if item.track_id == destination_track_id and not item.deleted
+        )
+        region_id = lane.region_ids[0]
+        assert studio._perform_arrange_edit(
+            "Disable alternate lane region",
+            lambda document: document.set_region_enabled(region_id, False),
+            reload_audio=True,
+        )
+        assert studio._studio_source_catalog.take_ids == (
+            studio._studio_project.take_id,
+            alternate_take_id,
+        )
+        assert studio._flush_studio_state()
+    finally:
+        studio.shutdown()
+
+    reopened = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        primary_row = next(
+            row
+            for row, take in enumerate(reopened._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        reopened._take_list.setCurrentRow(primary_row)
+        assert reopened._studio_state.region_for(region_id).enabled is False
+        assert reopened._studio_source_catalog.take_ids == (
+            reopened._studio_project.take_id,
+            alternate_take_id,
+        )
+
+        reopened._enable_arrange_region(region_id, True)
+        assert reopened._studio_state.region_for(region_id).enabled is True
+        assert reopened._studio_source_catalog.take_ids == (
+            reopened._studio_project.take_id,
+            alternate_take_id,
+        )
+    finally:
+        reopened.shutdown()
+
+
+def test_lane_remove_undo_redo_rebuilds_cross_take_catalog_inventory(tmp_path):
+    primary_dir, (destination_track_id, _local_id) = _schema2_studio_take(tmp_path)
+    alternate_dir, alternate_track_id = _schema2_repeated_take(tmp_path, primary_dir)
+    alternate_project = load_take_project(alternate_dir)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        primary_row = next(
+            row
+            for row, take in enumerate(studio._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        studio._take_list.setCurrentRow(primary_row)
+        studio._select_track(0)
+        studio._add_take_lane_from_source(alternate_dir, alternate_track_id)
+        lane = next(
+            item
+            for item in studio._studio_state.take_lanes
+            if item.track_id == destination_track_id and not item.deleted
+        )
+        studio._studio_arrange._user_select_lane(destination_track_id, lane.lane_id)
+        studio._remove_selected_take_lane()
+        assert studio._studio_source_catalog.take_ids == (
+            studio._studio_project.take_id,
+        )
+
+        studio._undo_arrange_edit()
+        assert studio._studio_source_catalog.take_ids == (
+            studio._studio_project.take_id,
+            alternate_project.take_id,
+        )
+        studio._redo_arrange_edit()
+        assert studio._studio_source_catalog.take_ids == (
+            studio._studio_project.take_id,
+        )
+
+        manifest = alternate_dir / "webjam-take.json"
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        studio._studio_source_catalog.assert_current()
+        studio._reload_arranged_playback()
+        assert studio._player._studio_renderer is not None
+    finally:
+        studio.shutdown()
+
+
+def test_studio_autosave_failure_stays_dirty_and_retries_without_losing_edit(
+    tmp_path,
+):
+    take_dir, (_server_id, local_id) = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._lanes[1]._pan.setValue(35)
+        assert studio._studio_state_dirty is True
+
+        with patch(
+            "core.studio_controller.save_studio_document",
+            side_effect=StudioStoreError("disk full"),
+        ):
+            assert studio.prepare_close() is False
+            assert studio.shutdown() is False
+
+        assert studio._studio_state_dirty is True
+        assert studio._studio_controller.dirty is True
+        assert studio._studio_controller.is_shutdown is False
+        assert studio._waveform_shutdown is False
+        assert studio._studio_controller.document.state_for(
+            local_id
+        ).pan == pytest.approx(0.35)
+        assert "recorded take is safe" in studio._hint.text().lower()
+        assert studio.prepare_close() is True
+        assert studio._studio_state_dirty is False
+        assert studio.shutdown() is True
+        assert studio.shutdown() is True
+    finally:
+        studio.shutdown()
+
+    assert load_studio_state(take_dir).state_for(local_id).pan == pytest.approx(0.35)
+
+
+def test_failed_post_controller_activation_unloads_before_next_take(tmp_path):
+    primary_dir, _track_ids = _schema2_studio_take(tmp_path)
+    next_dir, _track_id = _schema2_repeated_take(tmp_path, primary_dir)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    original_catalog_builder = studio._source_catalog_for_document
+
+    def fail_primary(document, project, take_root):
+        if take_root == primary_dir.resolve():
+            raise StudioSourceCatalogError("intentional catalog failure")
+        return original_catalog_builder(document, project, take_root)
+
+    try:
+        with patch.object(
+            studio,
+            "_source_catalog_for_document",
+            side_effect=fail_primary,
+        ):
+            primary_row = next(
+                row
+                for row, take in enumerate(studio._takes)
+                if take.path.resolve() == primary_dir.resolve()
+            )
+            next_row = next(
+                row
+                for row, take in enumerate(studio._takes)
+                if take.path.resolve() == next_dir.resolve()
+            )
+            studio._take_list.setCurrentRow(primary_row)
+            assert studio._studio_state is None
+            assert studio._studio_controller.take_path is None
+            assert studio._studio_controller.dirty is False
+
+            studio._take_list.setCurrentRow(next_row)
+            assert studio._studio_state is not None
+            assert studio._studio_controller.take_path == next_dir.resolve()
+            assert studio._studio_state_take_path == next_dir.resolve()
+    finally:
+        studio.shutdown()
 
 
 def test_late_attached_track_refreshes_selected_take_without_reopening(tmp_path):
@@ -404,9 +1773,7 @@ def test_studio_reveals_preserved_originals_without_touching_media(tmp_path):
             "webjam_qt.widgets.recording_studio.QDesktopServices.openUrl",
             return_value=True,
         ) as open_url:
-            studio.set_local_originals_directory(
-                tmp_path / "WebJam Local Originals"
-            )
+            studio.set_local_originals_directory(tmp_path / "WebJam Local Originals")
             assert not studio._originals_btn.isHidden()
             assert studio._originals_btn.isEnabled()
             studio._originals_btn.click()
@@ -555,12 +1922,10 @@ def test_switching_takes_cancels_and_suppresses_stale_waveform_results(tmp_path)
         )
         try:
             first_row = next(
-                index for index, take in enumerate(studio._takes)
-                if take.path == first
+                index for index, take in enumerate(studio._takes) if take.path == first
             )
             second_row = next(
-                index for index, take in enumerate(studio._takes)
-                if take.path == second
+                index for index, take in enumerate(studio._takes) if take.path == second
             )
             studio._take_list.setCurrentRow(first_row)
             assert first_started.wait(timeout=1.0)
@@ -569,18 +1934,18 @@ def test_switching_takes_cancels_and_suppresses_stale_waveform_results(tmp_path)
             studio._take_list.setCurrentRow(second_row)
 
             assert first_cancelled.wait(timeout=1.0)
-            assert _wait_until(
-                lambda: studio._lanes[0].waveform._peaks == (0.35,)
-            )
+            assert _wait_until(lambda: studio._lanes[0].waveform._peaks == (0.35,))
             # Even a late/non-cooperative producer cannot overwrite the new
             # lane because results carry the selection generation.
-            studio._waveform_results.put((
-                stale_generation,
-                0,
-                first / "track.wav",
-                _waveform_source_key(first / "track.wav"),
-                (0.95,),
-            ))
+            studio._waveform_results.put(
+                (
+                    stale_generation,
+                    0,
+                    first / "track.wav",
+                    _waveform_source_key(first / "track.wav"),
+                    (0.95,),
+                )
+            )
             studio._drain_waveform_results()
             assert studio._current.path == second
             assert studio._lanes[0].waveform._peaks == (0.35,)
@@ -647,27 +2012,33 @@ def test_joiner_studio_explains_that_host_owns_recording():
         studio.shutdown()
 
 
-def test_studio_actions_fit_the_supported_compact_workspace():
+@pytest.mark.parametrize(
+    ("width", "height"),
+    ((760, 600), (1024, 768), (1440, 900)),
+)
+def test_studio_actions_fit_the_supported_workspace_sizes(width, height):
     with patch(
         "webjam_qt.widgets.recording_studio.list_output_devices",
-        return_value=[{
-            "name": "Very long SSL audio interface output name for layout testing",
-            "channels": 2,
-            "index": 4,
-        }],
+        return_value=[
+            {
+                "name": "Very long SSL audio interface output name for layout testing",
+                "channels": 2,
+                "index": 4,
+            }
+        ],
     ):
-        studio = RecordingStudio(
-            player=TakePlayer(samplerate=RATE, sink=_SilentSink())
-        )
+        studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
     try:
         studio._set_playback_controls_visible(True)
         studio._live_btn.setVisible(True)
         studio._library.setVisible(True)
-        studio.resize(760, 600)
+        studio.resize(width, height)
         studio.show()
         APP.processEvents()
-        assert studio.minimumSizeHint().width() <= 760
-        assert studio.width() == 760
+        assert studio.minimumSizeHint().width() <= width
+        assert studio.width() == width
+        assert studio.height() == height
+        assert studio._inspector.isVisibleTo(studio) is (width >= 1080)
         bounds = studio.contentsRect()
         for widget in (
             studio._record_btn,
@@ -680,9 +2051,167 @@ def test_studio_actions_fit_the_supported_compact_workspace():
             bottom_right = widget.mapTo(studio, widget.rect().bottomRight())
             assert bounds.contains(top_left)
             assert bounds.contains(bottom_right)
-        assert studio._export_btn.accessibleName() == (
-            "Export aligned tracks"
+        assert studio._export_btn.accessibleName() == ("Export aligned tracks")
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    ((760, 600), (1024, 768), (1440, 900)),
+)
+def test_loaded_schema2_studio_panels_fit_without_overlap(tmp_path, width, height):
+    _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(width, height)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        assert studio.size().toTuple() == (width, height)
+        assert studio.minimumSizeHint().width() <= width
+        assert studio.minimumSizeHint().height() <= height
+        assert studio._studio_arrange.height() >= 150
+        assert studio._track_scroll.height() >= 88
+
+        visible = {
+            "library": studio._library,
+            "play": studio._play_btn,
+            "stop": studio._stop_btn,
+            "scrub": studio._scrub,
+            "arrange tools": studio._arrange_toolbar,
+            "comp tools": studio._comp_toolbar,
+            "output": studio._output_picker,
+            "export": studio._export_btn,
+            "reveal": studio._reveal_btn,
+            "Arrange": studio._studio_arrange,
+            "mixer": studio._track_scroll,
+            "hint": studio._hint,
+        }
+        if width >= 1080:
+            visible["Inspector"] = studio._inspector
+        else:
+            visible["Inspector toggle"] = studio._inspector_btn
+
+        bounds = studio.contentsRect()
+        rectangles = {
+            name: _widget_rect_in(studio, widget) for name, widget in visible.items()
+        }
+        assert all(widget.isVisibleTo(studio) for widget in visible.values())
+        for name, rect in rectangles.items():
+            assert bounds.contains(rect), name
+        items = list(rectangles.items())
+        for index, (left_name, left) in enumerate(items):
+            for right_name, right in items[index + 1 :]:
+                assert not left.intersects(right), f"{left_name} overlaps {right_name}"
+    finally:
+        studio.shutdown()
+
+
+def test_compact_inspector_keyboard_toggle_restores_library_and_resizes(tmp_path):
+    _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(760, 600)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        assert studio._library.isVisibleTo(studio)
+        assert not studio._inspector.isVisibleTo(studio)
+        assert studio._inspector_btn.isVisibleTo(studio)
+        assert studio._inspector_btn in studio._studio_tab_order()
+        assert studio._inspector_btn.accessibleName() == "Show track details"
+        assert "restore the library" in (
+            studio._inspector_btn.accessibleDescription().lower()
         )
+
+        studio._inspector_btn.setFocus()
+        QTest.keyClick(studio._inspector_btn, Qt.Key.Key_Space)
+        APP.processEvents()
+
+        assert studio._inspector_btn.isChecked()
+        assert studio._inspector_btn.accessibleName() == "Hide track details"
+        assert not studio._library.isVisibleTo(studio)
+        assert studio._inspector.isVisibleTo(studio)
+        assert studio.width() == 760
+        assert studio._studio_arrange.width() >= 480
+        assert studio.contentsRect().contains(
+            _widget_rect_in(studio, studio._inspector)
+        )
+
+        # Growing to the normal three-panel layout closes the drawer and
+        # restores the exact library state. Shrinking again must not retain
+        # Qt's wider Inspector minimum.
+        studio.resize(1440, 900)
+        APP.processEvents()
+        assert studio._library.isVisibleTo(studio)
+        assert studio._inspector.isVisibleTo(studio)
+        assert not studio._inspector_btn.isVisibleTo(studio)
+        assert not studio._inspector_btn.isChecked()
+
+        studio.resize(760, 600)
+        APP.processEvents()
+        assert studio.size().toTuple() == (760, 600)
+        assert studio._library.isVisibleTo(studio)
+        assert not studio._inspector.isVisibleTo(studio)
+        assert studio._inspector_btn.isVisibleTo(studio)
+
+        studio._inspector_btn.setFocus()
+        QTest.keyClick(studio._inspector_btn, Qt.Key.Key_Space)
+        QTest.keyClick(studio._inspector_btn, Qt.Key.Key_Space)
+        APP.processEvents()
+        assert studio._library.isVisibleTo(studio)
+        assert not studio._inspector.isVisibleTo(studio)
+        assert studio._inspector_btn.accessibleName() == "Show track details"
+    finally:
+        studio.shutdown()
+
+
+def test_studio_visible_enabled_focus_chain_covers_complete_workflow(tmp_path):
+    _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio.resize(1024, 768)
+        studio.show()
+        studio._take_list.setCurrentRow(0)
+        APP.processEvents()
+
+        configured = [
+            widget
+            for widget in studio._studio_tab_order()
+            if (
+                widget.focusPolicy() != Qt.FocusPolicy.NoFocus
+                and widget.isVisibleTo(studio)
+                and widget.isEnabled()
+            )
+        ]
+        chain = _visible_enabled_focus_chain(studio, studio._take_list)
+        observed = [widget for widget in chain if widget in configured]
+
+        assert observed == configured
+        lane = studio._lanes[min(studio._lanes)]
+        arrange_canvas = studio._studio_arrange._canvas.viewport()
+        core_workflow = (
+            studio._take_list,
+            studio._play_btn,
+            studio._inspector_btn,
+            arrange_canvas,
+            lane._gain,
+            studio._export_btn,
+        )
+        assert all(widget in configured for widget in core_workflow)
+        assert all(widget.accessibleName() for widget in core_workflow)
     finally:
         studio.shutdown()
 
@@ -753,6 +2282,32 @@ def test_track_export_safety_blocks_are_actionable_without_raw_details(error, ex
             studio.shutdown()
 
 
+def test_published_but_unsynced_export_remains_revealable(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    published = take / "Studio Exports" / "Studio Export"
+    published.mkdir(parents=True)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        studio._exporting = True
+        studio._finish_export(None, "directory sync failed", published)
+
+        assert studio._reveal_path == published
+        assert studio._reveal_btn.text() == "Show Unverified Export"
+        assert "verify sha256sums.txt" in studio._hint.text().lower()
+        assert finished == [False]
+    finally:
+        studio.shutdown()
+
+
 def test_track_export_choices_are_accessible_and_non_destructive(tmp_path):
     take_dir = tmp_path / "Take 01"
     take_dir.mkdir()
@@ -778,13 +2333,16 @@ def test_track_export_choices_are_accessible_and_non_destructive(tmp_path):
         samplerate=RATE,
     )
     called = threading.Event()
-    with patch(
-        "webjam_qt.widgets.recording_studio.discover_takes",
-        return_value=[take],
-    ), patch(
-        "webjam_qt.widgets.recording_studio.export_track_package",
-        side_effect=lambda *_args, **_kwargs: (called.set() or result),
-    ) as export:
+    with (
+        patch(
+            "webjam_qt.widgets.recording_studio.discover_takes",
+            return_value=[take],
+        ),
+        patch(
+            "webjam_qt.widgets.recording_studio.export_track_package",
+            side_effect=lambda *_args, **_kwargs: called.set() or result,
+        ) as export,
+    ):
         studio = RecordingStudio(
             str(tmp_path),
             player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
@@ -875,9 +2433,11 @@ def test_unverified_take_is_truthfully_labeled_and_cannot_export():
 def test_live_lane_hides_playback_only_pan_control():
     studio = RecordingStudio(player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
     try:
-        studio.set_live_participants([
-            SimpleNamespace(channel_id=0, name="Jeff", is_local=True),
-        ])
+        studio.set_live_participants(
+            [
+                SimpleNamespace(channel_id=0, name="Jeff", is_local=True),
+            ]
+        )
         lane = studio._lanes[0]
         assert lane._pan.isHidden()
         assert lane._pan_value.isHidden()
@@ -910,6 +2470,418 @@ def test_studio_output_is_first_shown_when_a_take_is_opened(tmp_path):
         studio.shutdown()
 
 
+@pytest.mark.parametrize(
+    ("error", "expected", "unexpected"),
+    (
+        (
+            StudioPlaybackSourceError("private source detail"),
+            "source media",
+            "playback output",
+        ),
+        (
+            PlaybackDeviceError("private device detail"),
+            "playback output",
+            "source media",
+        ),
+    ),
+)
+def test_play_failure_distinguishes_source_media_from_output_device(
+    tmp_path,
+    error,
+    expected,
+    unexpected,
+):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        with patch.object(studio._player, "play", side_effect=error):
+            studio._toggle_play()
+
+        hint = studio._hint.text().lower()
+        assert expected in hint
+        assert unexpected not in hint
+        assert "private" not in hint
+        assert studio._play_btn.text() == "▶ Play"
+    finally:
+        studio.shutdown()
+
+
+def test_first_studio_play_prepares_checksums_off_ui_thread(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    ui_thread = threading.get_ident()
+    checksum_threads: list[int] = []
+    from core import studio_renderer
+
+    original_hash = studio_renderer._sha256_descriptor
+
+    def traced_hash(descriptor, cancel_check=None):
+        checksum_threads.append(threading.get_ident())
+        return original_hash(descriptor, cancel_check)
+
+    try:
+        studio._take_list.setCurrentRow(0)
+        with patch.object(studio_renderer, "_sha256_descriptor", traced_hash):
+            studio._toggle_play()
+
+            assert studio._play_btn.text() == "Preparing…"
+            assert not studio._play_btn.isEnabled()
+            assert sink.pull is None
+            assert _wait_until(lambda: studio._player.is_playing)
+
+        assert checksum_threads
+        assert all(thread_id != ui_thread for thread_id in checksum_threads)
+        assert studio._play_btn.text() == "⏸ Pause"
+        assert sink.starts == 1
+
+        reload_threads: list[int] = []
+
+        def traced_reload_hash(descriptor, cancel_check=None):
+            reload_threads.append(threading.get_ident())
+            return original_hash(descriptor, cancel_check)
+
+        with patch.object(
+            studio_renderer,
+            "_sha256_descriptor",
+            traced_reload_hash,
+        ):
+            studio._reload_arranged_playback()
+            assert studio._play_btn.text() == "Preparing…"
+            assert not studio._player.is_playing
+            assert _wait_until(lambda: studio._player.is_playing)
+        assert reload_threads
+        assert all(thread_id != ui_thread for thread_id in reload_threads)
+
+        # Stopping closes readers, while the renderer's exact current receipts
+        # remain reusable. A second preparation rechecks paths but does not hash.
+        studio._stop_playback()
+        reused_hashes: list[int] = []
+
+        def unexpected_rehash(descriptor, cancel_check=None):
+            reused_hashes.append(descriptor)
+            return original_hash(descriptor, cancel_check)
+
+        with patch.object(
+            studio_renderer,
+            "_sha256_descriptor",
+            unexpected_rehash,
+        ):
+            studio._toggle_play()
+            assert studio._play_btn.text() == "Preparing…"
+            assert _wait_until(lambda: studio._player.is_playing)
+        assert reused_hashes == []
+    finally:
+        studio.shutdown()
+
+
+def test_stale_studio_preparation_cannot_start_after_take_switch(tmp_path):
+    primary_dir, _track_ids = _schema2_studio_take(tmp_path)
+    second_dir, _track_id = _schema2_repeated_take(tmp_path, primary_dir)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+
+    def row_for(path: Path) -> int:
+        expected = str(path)
+        for row in range(studio._take_list.count()):
+            if studio._take_list.item(row).data(Qt.ItemDataRole.UserRole) == expected:
+                return row
+        raise AssertionError(f"take row not found: {path}")
+
+    try:
+        studio._take_list.setCurrentRow(row_for(primary_dir))
+        studio._toggle_play()
+        future = studio._playback_prepare_future
+        assert future is not None
+        # Do not process Qt events: let the worker enqueue a successful old
+        # result while its generation is still current.
+        assert _wait_without_qt_events(future.done)
+        assert sink.starts == 0
+
+        studio._take_list.setCurrentRow(row_for(second_dir))
+        assert studio._current is not None
+        assert studio._current.path == second_dir
+        studio._tick()
+
+        assert sink.starts == 0
+        assert not studio._player.is_playing
+        assert not studio._player.studio_playback_prepared
+        assert studio._play_btn.text() == "▶ Play"
+    finally:
+        studio.shutdown()
+
+
+def test_arrangement_reload_restarts_pending_autoplay_preparation(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    from core import studio_renderer
+
+    original_hash = studio_renderer._sha256_descriptor
+    first_hash_started = threading.Event()
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def cancellable_first_hash(descriptor, cancel_check=None):
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+            call = calls
+        if call == 1:
+            first_hash_started.set()
+            while True:
+                if cancel_check is not None:
+                    cancel_check()
+                time.sleep(0.005)
+        return original_hash(descriptor, cancel_check)
+
+    try:
+        studio._take_list.setCurrentRow(0)
+        with patch.object(
+            studio_renderer,
+            "_sha256_descriptor",
+            cancellable_first_hash,
+        ):
+            studio._toggle_play()
+            assert _wait_without_qt_events(first_hash_started.is_set)
+            first_generation = studio._playback_prepare_generation
+
+            # An edit reload while the requested Play is still preparing must
+            # cancel the old work and carry that autoplay intent forward.
+            studio._reload_arranged_playback()
+
+            assert studio._playback_prepare_generation > first_generation
+            assert studio._play_btn.text() == "Preparing…"
+            assert _wait_until(lambda: studio._player.is_playing)
+
+        assert sink.starts == 1
+        assert studio._play_btn.text() == "⏸ Pause"
+    finally:
+        studio.shutdown()
+
+
+def test_arrange_seek_preserves_integer_frame_and_catches_replaced_source(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+
+        studio._seek_from_arrange(27)
+        assert studio._player.position_frame == 27
+        assert studio._studio_arrange._playhead_frame == 27
+
+        studio._toggle_play()
+        assert studio._play_btn.text() == "Preparing…"
+        assert _wait_until(lambda: sink.pull is not None)
+        assert float(np.max(np.abs(sink.pull(1)))) > 0.0
+        stops_before_failure = sink.stops
+
+        source = take_dir / "media" / "server.wav"
+        parked = take_dir / "media" / "server-original.wav"
+        replacement = take_dir / "media" / "server-replacement.wav"
+        _wav(replacement, 880)
+        os.replace(source, parked)
+        os.replace(replacement, source)
+
+        # This is a Qt signal target: a typed source failure must be handled
+        # here instead of escaping into the event loop.
+        studio._seek_from_arrange(27)
+
+        assert sink.stops > stops_before_failure
+        assert studio._player.position_frame == 0
+        assert studio._player._studio_stream is None
+        assert studio._play_btn.text() == "▶ Play"
+        hint = studio._hint.text().lower()
+        assert "source media" in hint
+        assert "server.wav" not in hint
+    finally:
+        studio.shutdown()
+
+
+def test_midstream_source_error_drains_on_ui_tick_and_resets_meters(tmp_path):
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._toggle_play()
+        assert studio._play_btn.text() == "Preparing…"
+        assert _wait_until(lambda: sink.pull is not None)
+        assert float(np.max(np.abs(sink.pull(4)))) > 0.0
+        stops_before_failure = sink.stops
+        buffered_limit = studio._player.studio_buffer_capacity_frames
+        assert 0 < buffered_limit <= max(RATE // 10, studio._player.blocksize)
+
+        del take_dir
+        opened = next(iter(studio._player._studio_stream._readers.values()))
+        opened.reader.close()
+
+        # Descriptor-verified audio already in the bounded queue remains valid.
+        # Drain at most the bounded payload (100 ms or one configured callback
+        # quantum); the producer then reports one typed error and every later
+        # device pull is safe silence.
+        delivered_frames = 0
+        deadline = time.monotonic() + 1.0
+        while (
+            not studio._player._studio_terminal_notifications
+            and time.monotonic() < deadline
+        ):
+            block = sink.pull(4)
+            if float(np.max(np.abs(block))) > 0.0:
+                delivered_frames += len(block)
+            time.sleep(0.001)
+        assert delivered_frames <= buffered_limit
+        assert studio._player._studio_terminal_notifications
+        assert studio._player.terminal_error is None
+        np.testing.assert_array_equal(
+            sink.pull(4),
+            np.zeros((4, 2), dtype=np.float32),
+        )
+        assert sink.stops == stops_before_failure
+
+        studio._tick()
+
+        assert sink.stops > stops_before_failure
+        assert studio._player.terminal_error is None
+        assert studio._player._studio_stream is None
+        assert studio._player.position_frame == 0
+        assert studio._play_btn.text() == "▶ Play"
+        assert studio._master_meter._left == pytest.approx(0.0)
+        assert studio._master_meter._right == pytest.approx(0.0)
+        assert all(
+            lane._meter._left == pytest.approx(0.0)
+            and lane._meter._right == pytest.approx(0.0)
+            for lane in studio._lanes.values()
+        )
+        assert "source media" in studio._hint.text().lower()
+    finally:
+        studio.shutdown()
+
+
+def test_studio_audio_callback_never_waits_on_ui_meter_lock(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, blocksize=64, sink=sink),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._toggle_play()
+        assert _wait_until(lambda: sink.pull is not None)
+
+        rendered: list[np.ndarray] = []
+        durations: list[float] = []
+
+        def device_pull() -> None:
+            started = time.monotonic()
+            rendered.append(sink.pull(64))
+            durations.append(time.monotonic() - started)
+
+        studio._level_lock.acquire()
+        callback = threading.Thread(
+            target=device_pull,
+            name="test-portaudio-ui-lock-isolation",
+        )
+        callback.start()
+        callback.join(0.2)
+        blocked_on_ui = callback.is_alive()
+        studio._level_lock.release()
+        callback.join(1.0)
+
+        assert not blocked_on_ui
+        assert not callback.is_alive()
+        assert durations[0] < 0.1
+        assert float(np.max(np.abs(rendered[0]))) > 0.0
+        assert studio._pending_levels == {}
+        assert studio._pending_stereo_levels == {}
+        assert studio._pending_master_level is None
+        assert studio._player.studio_pending_notifications == 1
+
+        studio._tick()
+
+        assert studio._player.studio_pending_notifications == 0
+        assert studio._master_meter._left > 0.0
+        assert any(lane._meter._left > 0.0 for lane in studio._lanes.values())
+    finally:
+        if studio._level_lock.locked():
+            studio._level_lock.release()
+        studio.shutdown()
+
+
+def test_pause_clears_meters_and_old_epoch_cannot_stop_resumed_playback(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._toggle_play()
+        assert _wait_until(lambda: sink.pull is not None)
+        assert float(np.max(np.abs(sink.pull(64)))) > 0.0
+        studio._tick()
+        assert studio._master_meter._left > 0.0
+        assert any(lane._meter._left > 0.0 for lane in studio._lanes.values())
+
+        old_epoch = studio._player.playback_epoch
+        paused_frame = studio._player.position_frame
+        studio._toggle_play()
+
+        assert studio._player.position_frame == paused_frame
+        assert studio._master_meter._left == pytest.approx(0.0)
+        assert studio._master_meter._right == pytest.approx(0.0)
+        assert all(
+            lane._meter._left == pytest.approx(0.0)
+            and lane._meter._right == pytest.approx(0.0)
+            for lane in studio._lanes.values()
+        )
+
+        studio._toggle_play()
+        assert studio._player.is_playing
+        assert studio._player.playback_epoch > old_epoch
+        studio._on_stereo_levels_bg(old_epoch, {0: (0.9, 0.8, True)})
+        studio._on_master_level_bg(old_epoch, (0.9, 0.8, True))
+        studio._on_finished_bg(old_epoch)
+        studio._on_playback_error_bg(
+            old_epoch,
+            StudioPlaybackSourceError("private stale source detail"),
+        )
+
+        studio._tick()
+
+        assert studio._player.is_playing
+        assert studio._play_btn.text() == "⏸ Pause"
+        assert studio._master_meter._left == pytest.approx(0.0)
+        assert "source media" not in studio._hint.text().lower()
+    finally:
+        studio.shutdown()
+
+
 def test_output_change_resets_playback_label_and_position():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"
@@ -931,6 +2903,50 @@ def test_output_change_resets_playback_label_and_position():
             assert not studio._player.is_playing
         finally:
             studio.shutdown()
+
+
+def test_output_change_closes_stale_schema2_preparation_without_autoplay(tmp_path):
+    _take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    sink = _InspectableSink()
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=sink),
+    )
+    try:
+        studio._timer.stop()
+        studio._take_list.setCurrentRow(0)
+        studio._toggle_play()
+        future = studio._playback_prepare_future
+        assert future is not None
+        assert _wait_without_qt_events(future.done)
+
+        # Inspect and requeue the completed descriptor-bound result before the
+        # UI has a chance to install it. The output change must invalidate it,
+        # and the normal drain must close every prepared reader.
+        outcome = studio._playback_prepare_results.get_nowait()
+        preparation = outcome.preparation
+        assert preparation is not None
+        stream = preparation.stream
+        assert stream._readers
+        assert not stream._closed
+        studio._playback_prepare_results.put(outcome)
+
+        studio._output_picker.addItem("Second Studio output", "second-output")
+        studio._output_picker.setCurrentIndex(studio._output_picker.count() - 1)
+
+        assert studio._play_btn.text() == "▶ Play"
+        assert studio._scrub.value() == 0
+        assert not studio._player.is_playing
+        assert sink.starts == 0
+
+        studio._tick()
+
+        assert sink.starts == 0
+        assert not studio._player.studio_playback_prepared
+        assert stream._closed
+        assert not stream._readers
+    finally:
+        studio.shutdown()
 
 
 def test_leaving_studio_stops_playback_and_releases_output():
@@ -973,22 +2989,27 @@ def test_missing_manifest_track_has_lane_and_blocks_track_export():
         take = Path(tmp) / "Take 01"
         take.mkdir()
         _wav(take / "host.wav")
-        (take / "webjam-take.json").write_text(json.dumps({
-            "schema_version": 1,
-            "status": "complete",
-            "tracks": [
+        (take / "webjam-take.json").write_text(
+            json.dumps(
                 {
-                    "filename": "host.wav",
-                    "name": "Host",
-                    "source": "jamulus_server",
-                },
-                {
-                    "filename": "guest.wav",
-                    "name": "Guest",
-                    "source": "jamulus_server",
-                },
-            ],
-        }), encoding="utf-8")
+                    "schema_version": 1,
+                    "status": "complete",
+                    "tracks": [
+                        {
+                            "filename": "host.wav",
+                            "name": "Host",
+                            "source": "jamulus_server",
+                        },
+                        {
+                            "filename": "guest.wav",
+                            "name": "Guest",
+                            "source": "jamulus_server",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
         studio = RecordingStudio(
             tmp,
             player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
@@ -996,8 +3017,7 @@ def test_missing_manifest_track_has_lane_and_blocks_track_export():
         try:
             studio._take_list.setCurrentRow(0)
             guest_lane = next(
-                lane for lane in studio._lanes.values()
-                if lane._name.text() == "Guest"
+                lane for lane in studio._lanes.values() if lane._name.text() == "Guest"
             )
             assert "MISSING MEDIA" in guest_lane._detail.text()
             assert "1 missing" in studio._subtitle.text()
@@ -1106,7 +3126,9 @@ def test_simple_settings_does_not_disable_existing_recording_setup(tmp_path):
 
 
 def test_simple_settings_has_no_live_audio_choices_and_opens_jamulus(tmp_path):
-    dialog = SimpleSettingsDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "settings.json"))
+    )
     opened = MagicMock()
     dialog.audio_settings_requested.connect(opened)
 
@@ -1164,15 +3186,15 @@ def test_simple_settings_contains_no_blackhole_or_rpc_language(tmp_path):
     dialog = SimpleSettingsDialog(
         AppSettings(config_file=str(tmp_path / "settings.json"))
     )
-    rendered = " ".join(
-        widget.text() for widget in dialog.findChildren(QLabel)
-    ).lower()
+    rendered = " ".join(widget.text() for widget in dialog.findChildren(QLabel)).lower()
     assert "blackhole" not in rendered
     assert "rpc" not in rendered
     assert "port" not in rendered
 
 
-def test_recording_setup_saves_two_channel_capture_without_moving_studio_output(tmp_path):
+def test_recording_setup_saves_two_channel_capture_without_moving_studio_output(
+    tmp_path,
+):
     settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         host_server_enabled=True,
@@ -1221,9 +3243,7 @@ def test_recording_setup_preserves_explicit_joiner_local_original_preference(tmp
         host_server_enabled=False,
         local_capture_enabled=True,
     )
-    with patch(
-        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
-    ):
+    with patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]):
         dialog = RecordingSetupDialog(settings)
     assert dialog._capture.isEnabled()
     assert dialog._capture.isChecked()
@@ -1237,9 +3257,7 @@ def test_legacy_invite_disables_false_local_original_claim(tmp_path):
         host_server_enabled=False,
         local_capture_enabled=True,
     )
-    with patch(
-        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
-    ):
+    with patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]):
         dialog = RecordingSetupDialog(
             settings,
             local_originals_available=False,
@@ -1262,9 +3280,7 @@ def test_recording_setup_failed_save_does_not_mutate_live_settings(tmp_path):
         take_playback_output_device="Old Output",
         local_capture_enabled=False,
     )
-    with patch(
-        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
-    ):
+    with patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]):
         dialog = RecordingSetupDialog(settings)
 
     with patch(
@@ -1285,9 +3301,7 @@ def test_recording_setup_can_choose_a_new_takes_folder(tmp_path):
         takes_directory=str(tmp_path / "old-takes"),
     )
     chosen = tmp_path / "new-takes"
-    with patch(
-        "webjam_qt.windows.recording_setup.list_input_devices", return_value=[]
-    ):
+    with patch("webjam_qt.windows.recording_setup.list_input_devices", return_value=[]):
         dialog = RecordingSetupDialog(settings)
 
     with patch(
@@ -1328,11 +3342,13 @@ def test_simple_settings_failed_save_does_not_mutate_live_settings(tmp_path):
 def test_invite_chooses_a_non_loopback_address():
     sock = MagicMock()
     sock.getsockname.return_value = ("192.168.1.42", 49152)
-    with patch("core.network_invite.sys.platform", "linux"), patch(
-        "core.network_invite.socket.socket", return_value=sock
-    ), patch(
-        "core.network_invite.socket.gethostbyname_ex",
-        return_value=("host", [], ["127.0.0.1"]),
+    with (
+        patch("core.network_invite.sys.platform", "linux"),
+        patch("core.network_invite.socket.socket", return_value=sock),
+        patch(
+            "core.network_invite.socket.gethostbyname_ex",
+            return_value=("host", [], ["127.0.0.1"]),
+        ),
     ):
         assert local_band_address() == "192.168.1.42"
     sock.close.assert_called_once()

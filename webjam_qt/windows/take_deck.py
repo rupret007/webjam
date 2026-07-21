@@ -221,11 +221,15 @@ class TakeDeck(QDialog):
             return
         self._hint.setText("")
         for take in self._takes:
-            status = {
-                "complete": "Verified",
-                "needs_attention": "Needs Attention",
-                "validating": "Checking…",
-            }.get(take.validation_status, "Unchecked")
+            status = (
+                "Review Only"
+                if take.review_only
+                else {
+                    "complete": "Verified",
+                    "needs_attention": "Needs Attention",
+                    "validating": "Checking…",
+                }.get(take.validation_status, "Unchecked")
+            )
             if take.validation_status == "complete" and take.manifest_warnings:
                 count = len(take.manifest_warnings)
                 plural = "s" if count != 1 else ""
@@ -243,6 +247,32 @@ class TakeDeck(QDialog):
         take = self._takes[row]
         self._current = take
         self._player.load(take)
+        if take.review_only:
+            self._console.set_participants([])
+            self._console.set_empty_state(
+                "recovery_evidence",
+                "Recovery evidence only",
+                "No audio media survived this interrupted recording.",
+                show_primary=False,
+                show_ready_check=False,
+            )
+            self._play_btn.setEnabled(False)
+            self._play_btn.setText("▶ Play")
+            self._stop_btn.setEnabled(False)
+            self._scrub.setEnabled(False)
+            self._scrub.setValue(0)
+            self._update_pos_label(0.0, 0.0)
+            self._reveal_btn.setEnabled(True)
+            self._show_take_health(
+                take,
+                TakeValidationResult(
+                    take,
+                    take.manifest_errors,
+                    take.manifest_warnings,
+                    take.manifest_path,
+                ),
+            )
+            return
         self._console.set_participants([
             ParticipantPresentation(
                 channel_id=t.channel_id,
@@ -285,6 +315,13 @@ class TakeDeck(QDialog):
             self._show_take_health(take, result)
 
     def _show_take_health(self, take, validation: TakeValidationResult) -> None:
+        if take.review_only:
+            self._title.setText(f"{take.name}  ·  {validation.summary}")
+            self._hint.setText(
+                take.export_block_reason
+                or "This recovery project has no audio and cannot be exported."
+            )
+            return
         self._title.setText(f"{take.name}  ·  {validation.summary}")
         if validation.errors:
             message = (

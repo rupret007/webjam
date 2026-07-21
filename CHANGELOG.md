@@ -4,6 +4,200 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.17.0] — 2026-07-19 Studio arrangement source candidate
+
+### Arrange editing and take-lane comping
+
+- Replaced the mix-only Studio sidecar with an immutable, frame-domain
+  arrangement document. Studio now supports moving, trimming, splitting,
+  duplicating, disabling, and deleting regions; per-region fades and validated
+  crossfades; markers and sections; cycle/loop playback and snap state; track
+  trim/fader/pan, mute, solo, and export inclusion; and master gain/limiter
+  choices.
+- Added a responsive Arrange timeline with fixed track headers, zoom and
+  horizontal/vertical navigation, ruler/playhead, visible-region waveform
+  tiles, fades, crossfades, markers, cycle ranges, and keyboard undo/redo and
+  region actions. Arrow-key row/region selection, keyboard nudge/trim,
+  take-lane audition/comp, and named-section movement provide a mouse-free
+  editing path. Rendering work is culled to the visible viewport.
+- Named section bars can now be dragged to reorder Verse/Chorus song blocks as
+  one undoable ripple edit across every track. Regions split at permutation
+  seams with their exact affine source mapping, contained arrangement metadata
+  follows the block, and unsafe seam-crossing intervals fail atomically. The
+  player reloads the result while source media and tombstones remain unchanged.
+- Enabled cycle ranges now loop playback on exact project frames even when a
+  boundary falls inside an output-device block. For cycles of four frames or
+  more, a deterministic short seam fade covers short and multi-wrap device
+  blocks without changing transport frame counts. One- through three-frame
+  pathological cycles deliberately remain sample-exact and non-silent, so
+  their raw seam is not de-clicked. Physical click-free playback remains
+  **NOT RUN**.
+- Added repeated-take lanes for complete or explicitly recovered takes from the
+  same session, sample rate, and unambiguous musician. Musicians can audition a
+  lane without changing the saved comp and Option/Alt-drag ranges into a comp;
+  new selections split prior overlaps and use short equal-power boundaries.
+  Removing a lane tombstones only Studio choices—the repeated recording stays
+  in Takes.
+
+### Recording truth, persistence, and history
+
+- Arrangement state contains durable take/track/segment IDs and integer frames,
+  never source paths. The take manifest and every source WAV remain read-only
+  during load, edit, comp, undo/redo, autosave, playback, and export.
+- Added bounded immutable undo/redo history with exact snapshot restoration,
+  stable IDs, coalescing for adjacent continuous-control gestures, divergent
+  redo invalidation, and both entry-count and serialized-byte limits. An edit
+  remains current even when it is too large to retain as an undo step.
+- Added coalesced autosave of the schema-v2 Studio sidecar with exact-byte
+  compare-and-swap tokens, process and cross-process locking, atomic replace,
+  last-known-good backup recovery, and fail-closed conflict handling. A failed
+  save keeps the edit dirty and retryable; switching takes never silently
+  discards unsaved work, and application close is refused if the final save
+  retry still fails. Schema-v1 mix choices migrate in memory and their original
+  bytes are preserved on the first explicit schema-v2 save.
+
+### Waveforms, playback, and export provenance
+
+- Added cancellable, viewport-scoped waveform tiles with bounded LRU entry and
+  byte budgets. Declared recording gaps render as silence, stale generations
+  cannot publish into a newly selected take, mix-only changes reuse valid
+  tiles, and source-identity changes invalidate them. Trusted media is opened
+  without following symbolic links and is rechecked against its durable
+  identity and checksum.
+- Added a deterministic sparse 12-track, 60-minute workspace stress gate. It
+  passes load/edit/save/reopen, compact Arrange zoom/viewport, bounded waveform
+  scheduling, bounded-block export cancellation/cleanup, and unchanged source
+  hashes without allocating or playing a full session. Physical long-session
+  operation remains **NOT RUN**.
+- Playback and export now share the arrangement renderer for frame/rate
+  conversion, regions, fades, crossfades, comps, gaps, track state, and master
+  delivery behavior. Cross-take sources require a trusted full
+  take/track/segment catalog and fail closed if source or manifest truth changes.
+- Playback checksum validation and source-reader preparation now run on a
+  cancellable generation-tagged worker. Audio callbacks use preopened
+  descriptor-bound readers without open/stat/fstat work; stale take/edit
+  preparations cannot start output, and terminal source failures are drained on
+  the UI thread.
+- Studio export transactionally publishes equal-length 24-bit edited stems,
+  aligned unity originals, a rough mix, markers/sections CSV, import
+  instructions, the exact Studio document, source take manifests, provenance,
+  and SHA-256 checksums. Provenance records selected tracks and source keys,
+  input/output hashes, timeline identity, clipping counts, and an explicit
+  external-editor validation status of `NOT RUN`. Cancellation and
+  pre-publication failures remove the unpublished package without changing
+  source evidence.
+- Descriptor-relative edited Studio packages are available only on macOS and
+  Linux runtimes with the required secure directory APIs. Windows labels its
+  separate path **Export Aligned Originals**: it applies current trim, fader,
+  pan, mute, and solo choices to a reference mix, but excludes arrangement
+  edits, fades, comps, sections, master processing, and attached/repeated take
+  lanes. A failed edited Studio export never silently falls back to that path.
+
+### Evidence boundary
+
+- Automated model, persistence, history, controller, renderer, comping,
+  waveform, export, and headless Qt interaction tests cover the source
+  implementation. They do not prove physical audibility or hardware behavior.
+- No `v0.17.0` package has been promoted. Real two-Mac listening, physical
+  interface disconnect/reconnect, sleep/wake, interruption and recording
+  recovery, long-session operation, external-editor import, signed clean
+  installation, and platform trust/notarization gates remain **NOT RUN** for
+  this source candidate. The published `v0.16.3` private test artifact remains
+  the current rollback/reference package until those gates are performed.
+
+---
+
+## [0.16.3] — 2026-07-17 private cross-platform test build
+
+### Session stability and studio behavior
+
+- Kept the simple Host/Join-first flow from `v0.16.2` and carried forward the
+  recording/Studio behavior hardening from the then-active
+  `codex/webjam-zero-friction-recording-ultimate`
+  branch. Late callbacks remain guarded by generation checks, and Studio exports
+  continue to distinguish verified aligned alignment from unverified playback-only
+  originals.
+- Improved installer packaging reproducibility for Windows x64 and retained
+  artifact identity controls for cross-platform packaging output.
+- Added a force-restart recovery path when the Jamulus process stays alive but
+  stops answering JSON-RPC heartbeats, so auto-reconnect now recovers stalls
+  as well as hard process exits.
+
+### Release boundary
+
+- The primary GitHub release now points to `v0.16.3`, based on build ID
+  `4d8c04684ee29ab2ea36ae38dc3be8ac6d612c7a`.
+  Release assets have been intentionally cleaned to a single public artifact:
+  `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
+- This is still a private test candidate: Windows is unsigned, both macOS
+  builds are ad-hoc signed and not notarized, and physical two-machine,
+  browser-quarantine, and managed-device gates remain outstanding.
+
+### Native desktop packages
+
+- Added native Windows x64, Intel macOS x64, and Ubuntu 22.04 x64 build gates
+  from one source commit. Every deliverable is freshly installed, mounted, or
+  extracted and checked for application/transport architecture, exact build
+  provenance, transport hash and protocol lifecycle, required data, and a clean
+  frozen UI launch.
+- Added direct GitHub-ready desktop installers: a per-user Windows Setup `.exe`
+  with Start-menu and optional desktop shortcuts plus clean uninstall, and
+  drag-to-Applications `.dmg` files for Intel and Apple Silicon Macs. The
+  portable ZIPs remain available as fallbacks.
+- Added the first Linux client package. It carries the checksum-pinned official
+  Jamulus 3.12.2 Ubuntu `.deb`, visible install instructions, lowercase binary
+  discovery, x86-64 ELF validation, and a packaged-app smoke against a private
+  JACK graph with authenticated Jamulus RPC and clean process shutdown. Linux
+  and Windows remain truthfully Join-only; managed hosting remains macOS-only.
+- Fixed fresh Windows installs: the Host/Join dialog now exposes the packaged
+  Jamulus installer from PyInstaller's real `_internal` data root. WebJam
+  requires the exact 3.12.2 filename and pinned SHA-256 both at discovery and
+  immediately before launch.
+- Tagged Windows builds now require valid Authenticode credentials and verify
+  both payload executables, Setup, and the embedded uninstaller after a real
+  fresh-install cycle. Branch builds remain usable for legacy v1/v2 testing but
+  state that secure packaged v3 fails closed when unsigned. The upstream
+  Jamulus installer has its own unsigned-publisher UAC limitation.
+- Test Night evidence now records the actual desktop target, including Intel
+  macOS, Windows x64, and Linux x64. Release automation refuses to mutate a
+  previously published tag, creates new tag releases as drafts for exact
+  hardware certification, and attaches a verified SHA-256 manifest covering
+  the seven direct and portable release assets.
+- Tagged Mac builds now fail before packaging until the full Developer ID and
+  Apple notarization path is implemented and proven with release credentials.
+  Branch artifacts remain explicitly ad-hoc test packages, and the prepared
+  outer-app entitlement boundary includes hardened-runtime camera and direct
+  audio-input access plus Qt WebEngine's separate microphone entitlement.
+
+### Reliability
+
+- Increased the packaged guest transport's cold-start allowance to 30 seconds
+  before invitation enrollment. Slow first launch on Mac remains bounded and
+  retry-safe because the startup timeout still occurs before the one-use
+  capability is sent. Canceling during that wait is prompt, reaps the child,
+  and sends no protocol command.
+- Replaced an immediate JACK graph assertion with a bounded convergence check
+  that retains process-health checks and reports every missing route on timeout.
+  This removes an observed CI race without retrying or weakening the real
+  Jamulus integration gate.
+
+### Distribution boundary
+
+- Intel/Apple Silicon macOS apps and DMGs remain ad-hoc signed and non-notarized
+  private test builds. Windows publisher signing, physical interface audio,
+  audible two-musician proof, and Ubuntu hardware audio remain release gates;
+  automation does not claim human audibility.
+
+### Source verification
+
+- PR #2's description recorded **1,908 passed**; its later authoritative
+  GitHub run `29546741915` recorded **1,909 passed**, 19 environment-bound
+  skips, one dependency warning, and 6 subtests passed. Ruff, Go tests/vet,
+  workflow YAML, and Actionlint passed; native archive evidence is recorded
+  only after the matrix builds finish from the committed candidate.
+
+---
+
 ## [0.16.2] — 2026-07-16 test-build release candidate
 
 ### Simple session flow and take safety
@@ -26,8 +220,8 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ### Release boundary
 
-- The GitHub Latest release contains the macOS Apple-Silicon test build from
-  `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
+- The GitHub Latest release publishes the primary macOS Apple-Silicon test build
+  from `c4bc5e8fd40f54efc85d0a4af504cf627ec44106`:
   `WebJam-v0.16.2-TEST-NIGHT-macos-arm64.zip`, SHA-256
   `5855af408c5182408d091c9029bdfa61d8f9abf96801822df319d55f649e688d`.
   A fresh extraction passed deep signature, bundled-engine executable, and

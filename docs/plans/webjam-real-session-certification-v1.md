@@ -2,13 +2,14 @@
 
 This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
-evidence. The current v0.16.2 test-build and physical-evidence boundary is
-[`README.md`](../../README.md) and [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md).
+evidence. The current v0.17.0 source/physical boundary is
+[`README.md`](../../README.md) and [`TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md);
+v0.16.3 remains the published rollback/reference package.
 The preserved
 v0.12.0, v0.13.0, and v0.14.0 packages remain evidence only for themselves.
 Historical references below to a Logic export name do not describe the current
-product: v0.16 has a Logic-like Studio review surface and does not integrate
-with an external editor.
+product: v0.17 has an editor-neutral Studio Arrange surface and evidence-rich
+export, but does not integrate with an external editor.
 
 ## Product promise
 
@@ -43,8 +44,8 @@ with an external editor.
 ## Historical v0.13 package addendum — physical evidence still separate
 
 This section records the v0.13 implementation/package boundary. It is not the
-current candidate status: use the v0.16.2 release record and pilot worksheet
-for that.
+current candidate status: use the v0.17.0 source procedure and the preserved
+v0.16.3 package record for that.
 
 - **Interrupted local capture:** the writer periodically flushes and
   synchronizes its audio before recording opaque IDs, durable frames, gaps, and
@@ -64,10 +65,11 @@ for that.
   not change the reusable v2 same-LAN invitation described in the historical
   architecture below, nor does it establish public remote service.
 
-The v0.13.0 artifact remains historical package evidence. The current v0.16.2
-test build's fresh-extraction package verification and ad-hoc signing result
-are recorded in the README and GitHub release notes. Physical interruption
-recovery, two-Mac results, and external-editor import remain **NOT RUN**.
+The v0.13.0 artifact remains historical package evidence. The v0.16.3 test
+build's fresh-extraction package verification and ad-hoc signing result are
+recorded in the README and GitHub release notes. v0.17.0 has no promoted
+package; physical interruption recovery, two-Mac results, Arrange/comp
+playback, and external-editor import remain **NOT RUN**.
 
 ## Repository and preserved baseline — 2026-07-13
 
@@ -273,7 +275,8 @@ server tracks, not an independently captured acoustic/live-output feed.
 - [x] Complete the exact candidate's packaged runtime smoke after its passed
   build, nested signing, ZIP, hash, and fresh-extraction gates.
 - [x] Maintain a concise physical worksheet at
-  [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md).
+  [`V017_TWO_MAC_PILOT.md`](../../V017_TWO_MAC_PILOT.md); retain
+  [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md) as v0.16 history.
 - [ ] Complete the worksheet on two Macs and attach its evidence.
 - [x] Keep all unavailable physical evidence explicitly **NOT RUN** and do not
   call the candidate physically certified or release-ready before it exists.
@@ -664,16 +667,16 @@ Logic Pro import:        NOT RUN
 
 ## Historical continuation point
 
-For the current v0.16.2 test build and historical v0.14/v0.13/v0.12 package
-baselines, use the README, `TEST-NIGHT-READ-ME.txt`,
-[`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md), and
-[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps
-below are retained only to explain what remained after the v0.10 package.
+For the current v0.17.0 source boundary, preserved v0.16.3 package, and
+historical v0.14/v0.13/v0.12 package baselines, use the README,
+[`TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md), and
+[`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps below
+are retained only to explain what remained after the v0.10 package.
 
 1. Complete the remaining human-confirmed packaged Band Check, Join, recording,
    Studio, support-button, and interface-route checks on the pilot Macs.
 2. Put that exact new ZIP on two Macs and complete
-   [`SUNDAY_TWO_MAC_PILOT.md`](../../SUNDAY_TWO_MAC_PILOT.md). Preserve failure
+   [`V017_TWO_MAC_PILOT.md`](../../V017_TWO_MAC_PILOT.md). Preserve failure
    media and the support bundle before changing any variable.
 3. Import the exact export into Logic Pro and record the project rate, track
    identities, alignment, references, and result. Until then keep the result

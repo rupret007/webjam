@@ -278,3 +278,29 @@ def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):
     assert window.confirm_close() is True
     window.close.assert_called_once_with()
     qt_app.quit.assert_not_called()
+
+
+def test_frozen_launch_only_smoke_closes_real_role_dialog_cleanly(qapp):
+    from webjam_qt import app as app_module
+
+    settings = AppSettings(config_file="/configured.json")
+    launcher = MagicMock()
+    dialog_code = app_module.LaunchDialog.DialogCode
+    launcher.exec.return_value = dialog_code.Rejected
+    with patch.dict(os.environ, {
+             "WEBJAM_SMOKE_LAUNCH_ONLY": "1",
+             "WEBJAM_SMOKE_EXIT_MS": "4000",
+         }), patch.object(
+             app_module.sys, "frozen", True, create=True,
+         ), patch.object(
+             app_module, "load_settings", return_value=settings,
+         ), patch.object(
+             app_module, "LaunchDialog", return_value=launcher,
+         ) as launcher_class, patch.object(
+             app_module.QTimer, "singleShot",
+         ) as single_shot:
+        launcher_class.DialogCode = dialog_code
+        assert app_module.run() == 0
+
+    single_shot.assert_called_once_with(4000, launcher.reject)
+    launcher.exec.assert_called_once_with()

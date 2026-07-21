@@ -270,6 +270,7 @@ class _JamulusPage(QWizardPage):
             layout.addWidget(_body_label(
                 "macOS: /Applications/Jamulus.app/Contents/MacOS/Jamulus\n"
                 "Windows: C:\\Program Files\\Jamulus\\Jamulus.exe\n"
+                "Linux: /usr/bin/jamulus\n"
                 "Required — WebJam launches Jamulus for you (free at jamulus.io)."
             ))
 
@@ -335,6 +336,17 @@ class _JamulusPage(QWizardPage):
         (Jamulus-owned) installer UI and UAC prompt.
         """
         if not self._bundled_installer_path:
+            return
+        from services.bridge_service import _is_pinned_jamulus_installer
+
+        if not _is_pinned_jamulus_installer(self._bundled_installer_path):
+            self._bundled_installer_path = None
+            self._install_jamulus_btn.setEnabled(False)
+            self._install_status.setText(
+                "The included Jamulus installer failed its integrity check. "
+                "Re-extract an official WebJam download and try again."
+            )
+            self._install_status.setVisible(True)
             return
         try:
             subprocess.Popen([self._bundled_installer_path], shell=False)

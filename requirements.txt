@@ -1,14 +1,19 @@
 # WebJam - Music Collaboration Platform
 # Python dependencies
+# Development and test jobs resolve these declarations normally. Native release
+# packaging must use the target-specific hashed files under requirements-lock/.
 
-# Primary UI framework (Qt) — new Conductor UI
-PySide6>=6.6.0
+# Primary UI framework (Qt) — new Conductor UI. Release packaging inventories
+# Qt's nested helper/framework layout and exact helper entitlements, so keep the
+# audited release dependency stable until that policy is deliberately updated.
+PySide6==6.11.1
 
 # Legacy UI (retained until Qt port reaches parity)
 customtkinter>=5.2.0
 
-# For building executables
-pyinstaller>=5.13.0
+# For building executables. This is the version retained for the v0.17.0 source
+# candidate bundle layout; the source pin alone does not certify native packages.
+pyinstaller==6.21.0
 
 # Core modernization dependencies
 numpy>=1.26.0
@@ -18,4 +23,3 @@ fastapi>=0.111.0
 uvicorn>=0.30.0
 httpx>=0.27.0
 sentry-sdk>=2.0.0
-

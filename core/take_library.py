@@ -33,6 +33,11 @@ _logger = logging.getLogger("webjam.take_library")
 
 _AUDIO_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif"}
 
+EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
+    "No audio media was preserved. This recovery project is review-only and "
+    "cannot be exported."
+)
+
 
 def _is_visible_take_directory(path: Path) -> bool:
     """Return whether an immediate child may represent a musician-facing take.
@@ -110,6 +115,11 @@ class TakeInfo:
     session_id: str = ""
     take_id: str = ""
     project_samplerate: int = 0
+    # A recovery journal can prove that a recording was interrupted even when
+    # no source media survived. Keep that truth visible without inventing a
+    # placeholder WAV or offering audio actions that cannot be truthful.
+    review_only: bool = False
+    export_block_reason: str = ""
 
     @property
     def track_count(self) -> int:
@@ -124,6 +134,19 @@ class TakeInfo:
     def display_name(self) -> str:
         """Musician-facing name, falling back to the recorder folder name."""
         return self.session_title.strip() or self.name
+
+    @property
+    def is_exportable(self) -> bool:
+        """Whether this take has media for an export attempt.
+
+        The exporter still revalidates source integrity, alignment, and the
+        selected tracks. This property exposes the earlier evidence-only gate.
+        """
+        return (
+            bool(self.tracks)
+            and not self.review_only
+            and not self.export_block_reason
+        )
 
 
 @dataclass(frozen=True)
@@ -143,6 +166,8 @@ class TakeValidationResult:
     def summary(self) -> str:
         if self.take is None:
             return "No completed take was found."
+        if self.take.review_only:
+            return "Review only · no audio preserved"
         rate_values = {t.samplerate for t in self.take.tracks if t.samplerate > 0}
         rate = (
             f"{next(iter(rate_values)) / 1000:g} kHz"
@@ -246,6 +271,17 @@ def validate_take(take_dir: str | Path, *, expected_tracks: int = 0,
     take = load_take(path)
     if take is None:
         return TakeValidationResult(None, ("No readable audio tracks were created.",))
+
+    if take.review_only:
+        errors = take.manifest_errors or (
+            take.export_block_reason or EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
+        )
+        return TakeValidationResult(
+            take,
+            tuple(errors),
+            take.manifest_warnings,
+            take.manifest_path,
+        )
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -447,6 +483,7 @@ def write_take_manifest(
         Participant,
         ProjectStatus,
         ProjectTrack,
+        RecoveryStatus,
         SessionEvidence,
         SessionTimelineEvent,
         SourceQuality,
@@ -467,6 +504,84 @@ def write_take_manifest(
         final_session_evidence = session_evidence
     else:
         raise TypeError("session_evidence must be a SessionEvidence instance.")
+
+    def _id_or_new(value: str) -> str:
+        try:
+            return str(uuid.UUID(str(value)))
+        except (TypeError, ValueError, AttributeError):
+            return new_project_id()
+
+    stable_session_id = _id_or_new(session_id)
+    stable_take_id = _id_or_new(take_id)
+    stable_local_participant_id = (
+        _id_or_new(local_participant_id)
+        if local_participant_id
+        else str(uuid.uuid5(
+            uuid.UUID(stable_session_id), "participant:local-recorder"
+        ))
+    )
+
+    def _child_id(label: str) -> str:
+        return str(uuid.uuid5(uuid.UUID(stable_take_id), label))
+
+    # A trusted journal can outlive every media writer. Publish its recovery
+    # truth directly as schema v2 instead of fabricating a zero-frame WAV just
+    # to pass the legacy discovery path. This branch is intentionally narrow:
+    # any real media, expected track, or ordinary session uses the normal
+    # validation/inventory flow below unchanged.
+    try:
+        has_audio_media = path.is_dir() and any(
+            item.is_file() and item.suffix.lower() in _AUDIO_EXTS
+            for item in path.iterdir()
+        )
+    except OSError:
+        has_audio_media = False
+    evidence_only = (
+        expected_tracks == 0
+        and required_local_stems == 0
+        and not has_audio_media
+        and final_session_evidence.recovery_status
+        is RecoveryStatus.NEEDS_ATTENTION
+    )
+    if evidence_only:
+        evidence_errors = list(dict.fromkeys(capture_errors))
+        if not any(
+            EVIDENCE_ONLY_EXPORT_BLOCK_REASON in item
+            for item in evidence_errors
+        ):
+            evidence_errors.append(EVIDENCE_ONLY_EXPORT_BLOCK_REASON)
+        errors = tuple(evidence_errors)
+        participants = ()
+        if final_session_evidence.host.participant_id:
+            participants = (
+                Participant(
+                    final_session_evidence.host.participant_id,
+                    final_session_evidence.host.display_name or "Recovered host",
+                ),
+            )
+        project = TakeProject(
+            session_id=stable_session_id,
+            take_id=stable_take_id,
+            session_title=str(session_title or "").strip(),
+            take_name=path.name or "Recovered recording evidence",
+            status=ProjectStatus.NEEDS_ATTENTION,
+            # An evidence-only project has no audio rate to infer. 48 kHz is
+            # the project timeline convention, not a claim about missing media.
+            project_sample_rate=48000,
+            participants=participants,
+            tracks=(),
+            app_version=app_version,
+            created_utc=local_started_utc,
+            errors=errors,
+            session_evidence=final_session_evidence,
+        )
+        manifest_path = write_take_project(path, project)
+        loaded = load_take(path)
+        if loaded is None or not loaded.review_only:
+            raise RuntimeError(
+                "The evidence-only recovery project could not be reopened safely."
+            )
+        return TakeValidationResult(loaded, errors, (), manifest_path)
 
     durable_frame_limit: int | None = None
     if local_durable_frames is not None:
@@ -538,25 +653,6 @@ def write_take_manifest(
         return TakeValidationResult(
             None, tuple(errors), result.warnings, manifest_path,
         )
-
-    def _id_or_new(value: str) -> str:
-        try:
-            return str(uuid.UUID(str(value)))
-        except (TypeError, ValueError, AttributeError):
-            return new_project_id()
-
-    stable_session_id = _id_or_new(session_id)
-    stable_take_id = _id_or_new(take_id)
-    stable_local_participant_id = (
-        _id_or_new(local_participant_id)
-        if local_participant_id
-        else str(uuid.uuid5(
-            uuid.UUID(stable_session_id), "participant:local-recorder"
-        ))
-    )
-
-    def _child_id(label: str) -> str:
-        return str(uuid.uuid5(uuid.UUID(stable_take_id), label))
 
     participants_by_id: dict[str, Participant] = {}
     project_tracks: list[ProjectTrack] = []
@@ -883,13 +979,15 @@ def _safe_finite_float(value: object, default: float = 0.0) -> float:
 
 
 def load_take(take_dir: Path) -> Optional[TakeInfo]:
-    """Build a TakeInfo from a single take folder, or None if it has no
-    audio tracks or manifest-declared media.
+    """Build a TakeInfo from a single take folder.
 
     A completed manifest is the take's expected-media inventory, not merely a
     source of labels for whichever files still happen to exist.  Preserve
     declared missing tracks in the returned model and downgrade stale
-    ``complete`` state so review/export can never hide the loss.
+    ``complete`` state so review/export can never hide the loss. A strictly
+    valid schema-v2 recovery project may also contain zero tracks when only an
+    interrupted-session evidence journal survived; ordinary empty folders and
+    empty legacy manifests remain invisible.
     """
     take_dir = Path(take_dir)
     if not take_dir.is_dir():
@@ -935,8 +1033,21 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
             manifest_tracks[filename] = item
             declared_filenames.append(filename)
 
+    evidence_only = False
     if not audio_files and not declared_filenames:
-        return None
+        try:
+            from core.take_project import RecoveryStatus, TakeProject
+
+            empty_project = TakeProject.from_dict(manifest)
+        except (TypeError, ValueError):
+            return None
+        evidence_only = (
+            not empty_project.tracks
+            and empty_project.session_evidence.recovery_status
+            is RecoveryStatus.NEEDS_ATTENTION
+        )
+        if not evidence_only:
+            return None
 
     # Offsets: prefer a .lof if present, then manifest overrides for local stems.
     offsets: dict[str, float] = {}
@@ -1190,11 +1301,13 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         return tuple(item for item in value if isinstance(item, str))
 
     manifest_errors = list(_string_items("errors"))
+    if evidence_only and EVIDENCE_ONLY_EXPORT_BLOCK_REASON not in manifest_errors:
+        manifest_errors.append(EVIDENCE_ONLY_EXPORT_BLOCK_REASON)
     for error in reconciliation_errors:
         if error not in manifest_errors:
             manifest_errors.append(error)
     validation_status = str(manifest.get("status") or "unchecked")
-    if reconciliation_errors:
+    if evidence_only or reconciliation_errors:
         validation_status = "needs_attention"
 
     return TakeInfo(
@@ -1210,15 +1323,20 @@ def load_take(take_dir: Path) -> Optional[TakeInfo]:
         session_id=str(manifest.get("session_id") or ""),
         take_id=str(manifest.get("take_id") or ""),
         project_samplerate=project_rate,
+        review_only=evidence_only,
+        export_block_reason=(
+            EVIDENCE_ONLY_EXPORT_BLOCK_REASON if evidence_only else ""
+        ),
     )
 
 
 def discover_takes(root: str | Path) -> List[TakeInfo]:
     """Scan ``root`` for take folders, newest first.
 
-    A take folder is any immediate subdirectory containing audio files; if
-    ``root`` itself directly contains audio files it's treated as a single
-    take. Never raises — an unreadable root yields an empty list.
+    A take folder is an immediate subdirectory containing audio files or a
+    strictly valid evidence-only schema-v2 recovery manifest. If ``root``
+    itself is a take it is included too. Never raises — an unreadable root
+    yields an empty list.
     """
     root = Path(root).expanduser()
     if not root.is_dir():

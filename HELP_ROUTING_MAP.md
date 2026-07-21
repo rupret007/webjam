@@ -1,4 +1,4 @@
-# WebJam help routing — v0.16
+# WebJam help routing — v0.17.0
 
 | Musician says | Answer / action |
 | --- | --- |
@@ -8,6 +8,9 @@
 | “Can WebJam mute Webex?” | No. WebJam can open a link; Webex owns its meeting controls. Keep Webex muted while playing. |
 | “Do I need recording setup to play?” | No. Recording is optional and appears only at Record time. |
 | “Where do I choose a Studio speaker?” | Open a take in Studio. Playback output is a Studio choice. |
+| “How do I combine another take?” | In Studio, select the musician's track, add a safely matched take lane, then Option/Alt-drag the range to comp. |
+| “Did Delete erase my recording?” | No. Arrange edits change only the Studio sidecar; the take manifest and WAVs remain recording truth. |
+| “What comes with Track Export?” | Equal-length edited/original 24-bit stems, rough mix, markers, instructions, provenance, and checksums. |
 | “How do I verify sound?” | Play a note and make sure a bandmate hears you. Use **More → Band Check / Verify Sound** if you need help. |
 | “Jamulus closed or lost sound.” | Bring Jamulus forward, fix sound there, then return to WebJam’s safe retry path. |
 

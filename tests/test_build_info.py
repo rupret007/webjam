@@ -4,7 +4,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core.build_info import build_id
+from core.build_info import build_id, desktop_target
+
+
+def test_desktop_target_matches_every_release_matrix_name() -> None:
+    assert desktop_target(platform_name="darwin", machine="arm64") == "macos-arm64"
+    assert desktop_target(platform_name="darwin", machine="x86_64") == "macos-x64"
+    assert desktop_target(platform_name="win32", machine="AMD64") == "windows-x64"
+    assert desktop_target(platform_name="linux", machine="x86_64") == "linux-x64"
+
+
+def test_desktop_target_rejects_unknown_platforms_and_architectures() -> None:
+    assert desktop_target(platform_name="freebsd", machine="x86_64") == ""
+    assert desktop_target(platform_name="linux", machine="riscv64") == ""
 
 
 def test_explicit_build_id_is_validated_and_normalized() -> None:

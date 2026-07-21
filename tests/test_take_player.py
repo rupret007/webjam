@@ -4,6 +4,7 @@ TakePlayer — multitrack mixing, transport, gain/mute/solo, offsets.
 Fully headless: a synchronous test sink pulls blocks on demand and captures
 the mixed output, so the whole engine is verified without audio hardware.
 """
+
 from __future__ import annotations
 
 import struct
@@ -19,7 +20,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from core.take_player import PlaybackError, SoundDeviceSink, TakePlayer
+from core.take_player import (
+    PlaybackDeviceError,
+    SoundDeviceSink,
+    TakePlayer,
+)
 
 
 RATE = 8000  # small rate keeps tests fast
@@ -141,20 +146,64 @@ def _take_from(tmp: str, specs):
             _write_sine(p, secs)
         else:
             _write_const(p, secs, value)
-        tracks.append(_Track(path=p, name=name, offset_s=offset,
-                             duration_s=secs))
+        tracks.append(_Track(path=p, name=name, offset_s=offset, duration_s=secs))
     return _Take(tracks=tracks)
 
 
 class TestTransportAndDuration(unittest.TestCase):
+    def test_playback_epoch_rejects_a_pull_from_a_paused_run(self):
+        class MultiRunSink:
+            def __init__(self):
+                self.pulls = []
+
+            def start(self, _samplerate, _blocksize, pull):
+                self.pulls.append(pull)
+
+            def stop(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as d:
+            take = _take_from(d, [("a.wav", 0.5, 0.4, 0.0)])
+            sink = MultiRunSink()
+            player = TakePlayer(samplerate=RATE, blocksize=32, sink=sink)
+            tagged_levels: list[tuple[int, dict[int, float]]] = []
+            player._on_levels_epoch = lambda epoch, levels: tagged_levels.append(
+                (epoch, levels)
+            )
+            player.load(take)
+            player.play()
+            first_epoch = player.playback_epoch
+            first_pull = sink.pulls[-1]
+            self.assertGreater(float(np.max(np.abs(first_pull(32)))), 0.0)
+
+            player.pause()
+            paused_position = player.position_frame
+            player.play()
+            second_epoch = player.playback_epoch
+            second_pull = sink.pulls[-1]
+            tagged_levels.clear()
+
+            np.testing.assert_array_equal(
+                first_pull(32),
+                np.zeros((32, 2), dtype=np.float32),
+            )
+            self.assertEqual(player.position_frame, paused_position)
+            self.assertEqual(tagged_levels, [])
+            self.assertGreater(float(np.max(np.abs(second_pull(32)))), 0.0)
+            self.assertEqual(tagged_levels[-1][0], second_epoch)
+            self.assertGreater(second_epoch, first_epoch)
+            player.stop()
+
     def test_load_computes_duration_from_offsets(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _take_from(d, [
-                ("a.wav", 1.0, 0.3, 0.0),
-                ("b.wav", 1.0, 0.3, 2.0),   # ends at 3.0
-            ])
-            player = TakePlayer(samplerate=RATE, blocksize=256,
-                                sink=CapturingSink())
+            take = _take_from(
+                d,
+                [
+                    ("a.wav", 1.0, 0.3, 0.0),
+                    ("b.wav", 1.0, 0.3, 2.0),  # ends at 3.0
+                ],
+            )
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=CapturingSink())
             player.load(take)
         self.assertAlmostEqual(player.duration_s, 3.0, places=2)
         self.assertEqual(len(player.tracks), 2)
@@ -239,9 +288,7 @@ class TestTransportAndDuration(unittest.TestCase):
             player = TakePlayer(samplerate=RATE, blocksize=64, sink=sink)
             player.load(SimpleNamespace(tracks=[track], project_samplerate=RATE))
             player.play()
-            rendered = np.concatenate(
-                [sink.pull(64)[:, 0] for _ in range(60)]
-            )
+            rendered = np.concatenate([sink.pull(64)[:, 0] for _ in range(60)])
             player.stop()
         self.assertLess(np.max(np.abs(rendered[: int(0.049 * RATE)])), 0.01)
         self.assertGreater(np.max(np.abs(rendered[int(0.05 * RATE) : 550])), 0.2)
@@ -261,14 +308,18 @@ class TestTransportAndDuration(unittest.TestCase):
             take = _take_from(d, [("a.wav", 0.5, 0.4, 0.0)])
             sink = CapturingSink()
             finished = []
-            player = TakePlayer(samplerate=RATE, blocksize=256, sink=sink,
-                                on_finished=lambda: finished.append(True))
+            player = TakePlayer(
+                samplerate=RATE,
+                blocksize=256,
+                sink=sink,
+                on_finished=lambda: finished.append(True),
+            )
             player.load(take)
             player.play()
         self.assertTrue(sink.started)
         # captured audio should be non-silent for the first ~0.5s
         mixed = sink.mixed()
-        self.assertGreater(np.abs(mixed[:RATE // 4]).max(), 0.1)
+        self.assertGreater(np.abs(mixed[: RATE // 4]).max(), 0.1)
         self.assertTrue(finished)
 
 
@@ -284,40 +335,46 @@ class TestMixing(unittest.TestCase):
 
     def test_two_tracks_sum(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _take_from(d, [
-                ("a.wav", 0.5, 0.3, 0.0),
-                ("b.wav", 0.5, 0.3, 0.0),
-            ])
+            take = _take_from(
+                d,
+                [
+                    ("a.wav", 0.5, 0.3, 0.0),
+                    ("b.wav", 0.5, 0.3, 0.0),
+                ],
+            )
             _, mixed = self._render(take)
         # two +0.3 constants sum to ~0.6 early in the take
         self.assertAlmostEqual(float(mixed[100]), 0.6, delta=0.05)
 
     def test_mute_removes_a_track(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _take_from(d, [
-                ("a.wav", 0.5, 0.3, 0.0),
-                ("b.wav", 0.5, 0.3, 0.0),
-            ])
-            _, mixed = self._render(
-                take, mutate=lambda p: p.set_muted(1, True))
+            take = _take_from(
+                d,
+                [
+                    ("a.wav", 0.5, 0.3, 0.0),
+                    ("b.wav", 0.5, 0.3, 0.0),
+                ],
+            )
+            _, mixed = self._render(take, mutate=lambda p: p.set_muted(1, True))
         self.assertAlmostEqual(float(mixed[100]), 0.3, delta=0.05)
 
     def test_solo_isolates(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _take_from(d, [
-                ("a.wav", 0.5, 0.3, 0.0),
-                ("b.wav", 0.5, 0.2, 0.0),
-            ])
-            _, mixed = self._render(
-                take, mutate=lambda p: p.set_solo(1, True))
+            take = _take_from(
+                d,
+                [
+                    ("a.wav", 0.5, 0.3, 0.0),
+                    ("b.wav", 0.5, 0.2, 0.0),
+                ],
+            )
+            _, mixed = self._render(take, mutate=lambda p: p.set_solo(1, True))
         # only track b (0.2) audible
         self.assertAlmostEqual(float(mixed[100]), 0.2, delta=0.05)
 
     def test_gain_scales(self):
         with tempfile.TemporaryDirectory() as d:
             take = _take_from(d, [("a.wav", 0.5, 0.4, 0.0)])
-            _, mixed = self._render(
-                take, mutate=lambda p: p.set_gain(0, 0.5))
+            _, mixed = self._render(take, mutate=lambda p: p.set_gain(0, 0.5))
         self.assertAlmostEqual(float(mixed[100]), 0.2, delta=0.05)
 
     def test_pan_places_a_mono_track_in_the_stereo_field(self):
@@ -349,18 +406,23 @@ class TestMixing(unittest.TestCase):
             p = Path(d) / "host-guitar.wav"
             n_lead = int(0.25 * RATE)
             n_body = int(0.5 * RATE)
-            samples = np.concatenate((
-                np.zeros(n_lead, dtype=np.float32),      # silent pre-roll
-                np.full(n_body, 0.4, dtype=np.float32),  # audible body
-            ))
+            samples = np.concatenate(
+                (
+                    np.zeros(n_lead, dtype=np.float32),  # silent pre-roll
+                    np.full(n_body, 0.4, dtype=np.float32),  # audible body
+                )
+            )
             ints = np.int16(np.clip(samples, -1, 1) * 32767)
             with wave.open(str(p), "wb") as w:
                 w.setnchannels(1)
                 w.setsampwidth(2)
                 w.setframerate(RATE)
                 w.writeframes(struct.pack("<%dh" % len(ints), *ints.tolist()))
-            take = _Take(tracks=[_Track(path=p, name="host-guitar",
-                                        offset_s=-0.25, duration_s=0.75)])
+            take = _Take(
+                tracks=[
+                    _Track(path=p, name="host-guitar", offset_s=-0.25, duration_s=0.75)
+                ]
+            )
             player, mixed = self._render(take)
         # With offset -0.25 the audible body lands at take time 0, so the
         # very start of the mix is already audible …
@@ -368,15 +430,18 @@ class TestMixing(unittest.TestCase):
         # … and the take is only the 0.5 s body long, not 0.75 s.
         self.assertAlmostEqual(player.duration_s, 0.5, places=2)
         # Nothing audible remains past the shortened end.
-        self.assertLess(np.abs(mixed[int(0.55 * RATE):]).max(initial=0.0), 0.01)
+        self.assertLess(np.abs(mixed[int(0.55 * RATE) :]).max(initial=0.0), 0.01)
 
     def test_soft_clip_prevents_overflow(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _take_from(d, [
-                ("a.wav", 0.3, 0.9, 0.0),
-                ("b.wav", 0.3, 0.9, 0.0),
-                ("c.wav", 0.3, 0.9, 0.0),
-            ])
+            take = _take_from(
+                d,
+                [
+                    ("a.wav", 0.3, 0.9, 0.0),
+                    ("b.wav", 0.3, 0.9, 0.0),
+                    ("c.wav", 0.3, 0.9, 0.0),
+                ],
+            )
             _, mixed = self._render(take)
         self.assertLessEqual(float(np.abs(mixed).max()), 1.0 + 1e-6)
 
@@ -385,8 +450,7 @@ class TestSeekAndLevels(unittest.TestCase):
     def test_seek_sets_position(self):
         with tempfile.TemporaryDirectory() as d:
             take = _take_from(d, [("a.wav", 2.0, 0.3, 0.0)])
-            player = TakePlayer(samplerate=RATE, blocksize=256,
-                                sink=CapturingSink())
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=CapturingSink())
             player.load(take)
             player.seek(1.0)
         self.assertAlmostEqual(player.position_s, 1.0, places=2)
@@ -394,8 +458,7 @@ class TestSeekAndLevels(unittest.TestCase):
     def test_seek_clamped_to_duration(self):
         with tempfile.TemporaryDirectory() as d:
             take = _take_from(d, [("a.wav", 1.0, 0.3, 0.0)])
-            player = TakePlayer(samplerate=RATE, blocksize=256,
-                                sink=CapturingSink())
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=CapturingSink())
             player.load(take)
             player.seek(999.0)
         self.assertLessEqual(player.position_s, player.duration_s + 0.01)
@@ -424,7 +487,9 @@ class TestSeekAndLevels(unittest.TestCase):
             take = _take_from(d, [("a.wav", 0.3, 0.5, 0.0)])
             seen = {}
             player = TakePlayer(
-                samplerate=RATE, blocksize=256, sink=CapturingSink(),
+                samplerate=RATE,
+                blocksize=256,
+                sink=CapturingSink(),
                 on_levels=lambda lv: seen.update(lv),
             )
             player.load(take)
@@ -436,13 +501,18 @@ class TestSeekAndLevels(unittest.TestCase):
 class TestMissingFilesAreGraceful(unittest.TestCase):
     def test_missing_track_file_plays_silence(self):
         with tempfile.TemporaryDirectory() as d:
-            take = _Take(tracks=[_Track(
-                path=Path(d) / "gone.wav", name="gone",
-                offset_s=0.0, duration_s=0.5,
-            )])
+            take = _Take(
+                tracks=[
+                    _Track(
+                        path=Path(d) / "gone.wav",
+                        name="gone",
+                        offset_s=0.0,
+                        duration_s=0.5,
+                    )
+                ]
+            )
             # loader records duration 0 (no probe); force a total so pull runs
-            player = TakePlayer(samplerate=RATE, blocksize=256,
-                                sink=CapturingSink())
+            player = TakePlayer(samplerate=RATE, blocksize=256, sink=CapturingSink())
             player.load(take)
             player._total_frames = int(0.3 * RATE)
             player.play()  # must not raise
@@ -463,7 +533,7 @@ class TestMissingFilesAreGraceful(unittest.TestCase):
             sink = _FailingSink()
             player = TakePlayer(samplerate=RATE, sink=sink)
             player.load(take)
-            with self.assertRaisesRegex(PlaybackError, "device busy"):
+            with self.assertRaisesRegex(PlaybackDeviceError, "device busy"):
                 player.play()
         self.assertFalse(player.is_playing)
         self.assertTrue(sink.stopped)

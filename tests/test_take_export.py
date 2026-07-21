@@ -17,7 +17,7 @@ from core.take_export import (
     export_logic_package,
     export_track_package,
 )
-from core.take_library import TakeInfo, TrackInfo
+from core.take_library import TakeInfo, TrackInfo, load_take
 from core.take_project import (
     AlignmentAnchor,
     AlignmentState,
@@ -29,6 +29,7 @@ from core.take_project import (
     ProjectMarker,
     ProjectStatus,
     ProjectTrack,
+    RecoveryStatus,
     SourceQuality,
     SourceType,
     SessionEvidence,
@@ -48,6 +49,39 @@ def _write(path: Path, data, *, rate: int = RATE) -> None:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_evidence_only_recovery_blocks_export_without_writing_output(tmp_path):
+    take_dir = tmp_path / "Recovered evidence"
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Recovered recording evidence",
+        take_name=take_dir.name,
+        status=ProjectStatus.NEEDS_ATTENTION,
+        project_sample_rate=48_000,
+        participants=(),
+        tracks=(),
+        errors=("No audio media was preserved.",),
+        session_evidence=SessionEvidence(
+            recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+            recovery_notes=("Interrupted recording evidence recovered.",),
+        ),
+    )
+    manifest = write_take_project(take_dir, project)
+    before = manifest.read_bytes()
+    take = load_take(take_dir)
+    destination = tmp_path / "exports"
+
+    assert take is not None
+    assert take.review_only is True
+    assert take.is_exportable is False
+    with pytest.raises(TakeExportError, match="no audio tracks to export"):
+        export_track_package(take, destination_root=destination)
+
+    assert not destination.exists()
+    assert manifest.read_bytes() == before
+    assert not tuple(take_dir.glob("*.wav"))
 
 
 def test_track_export_aligns_signed_offsets_and_preserves_originals(tmp_path):
@@ -340,6 +374,7 @@ def test_schema2_track_export_resamples_drift_segments_and_writes_evidence(tmp_p
     _write(local_a, local_fixture, rate=44_100)
     local_fixture_b = np.zeros(8_820, dtype="float32")
     local_fixture_b[0:20] = 0.4
+    local_fixture_b[80:180] = 0.4
     _write(local_b, local_fixture_b, rate=44_100)
     before = {_digest(path) for path in (network, local_a, local_b)}
 
@@ -440,6 +475,11 @@ def test_schema2_track_export_resamples_drift_segments_and_writes_evidence(tmp_p
     assert np.max(np.abs(local_render[int(0.160 * rate) : int(0.162 * rate)])) > 0.5
     # Explicit reconnect gap remains silence between segments.
     assert np.max(np.abs(local_render[int(0.45 * rate) : int(0.64 * rate)])) < 1e-5
+    # The declared in-file writer gap is also silence after mixed-rate/drift
+    # conversion, with intact source audio immediately on both sides.
+    assert np.max(np.abs(local_render[31_768:31_782])) > 0.3
+    assert np.max(np.abs(local_render[31_792:31_838])) < 1e-5
+    assert np.max(np.abs(local_render[31_850:31_865])) > 0.3
     assert {_digest(path) for path in (network, local_a, local_b)} == before
 
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
