@@ -98,7 +98,9 @@ reader log or video for the no-churn check.
 
 ## Exit rule
 
-Do not promote or release v0.18 while a required physical or credentialed row
-is **NOT RUN** or **FAIL**. A source-complete draft pull request may accurately
-retain these rows as NOT RUN; automated evidence must never be rewritten as
-human audibility, hardware, import, signing, or notarization proof.
+An explicitly labeled unsigned private test candidate may be published while a
+physical or credentialed row is **NOT RUN**, provided the release and filenames
+state that boundary and no result is inferred. Do not promote a candidate as a
+production-trusted release while any required row is **NOT RUN** or **FAIL**.
+Automated evidence must never be rewritten as human audibility, hardware,
+import, signing, or notarization proof.

@@ -4,6 +4,42 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.18.1] — 2026-07-21 unsigned private test candidate
+
+### Downloadable candidate lane
+
+- Restored the reviewed pre-certificate distribution model as an explicit
+  candidate lane: version tags build Windows x64, Ubuntu 22.04 x64, Intel Mac,
+  and Apple-silicon Mac from one commit and create a draft GitHub release
+  without requiring Apple Developer or Windows publisher credentials.
+- Candidate filenames state their trust boundary. Windows packages contain
+  `UNSIGNED-TEST-ONLY`; macOS packages contain `ADHOC-TEST-ONLY`. The release
+  title and opening warning identify the release as a private test candidate,
+  and a verified SHA-256 manifest covers the exact seven-package inventory.
+- Protected Windows signing and macOS Developer ID/notarization remain intact
+  as manual, environment-gated rehearsal jobs for a future trusted release.
+
+### macOS installation helpers
+
+- Both Mac architectures now carry a guided `Install WebJam.command`, a
+  separately labeled advanced quarantine-removal helper, candidate metadata,
+  and `READ ME FIRST.txt` in the DMG and portable ZIP.
+- Both helpers verify the ad-hoc signature, version, build ID, architecture,
+  executable inventory, and transport checksum before staging an installation.
+  Replacement is rollback-safe and uses `/Applications` when writable or
+  `~/Applications` otherwise; neither helper invokes `sudo` or disables
+  Gatekeeper globally.
+- The guided path preserves quarantine and explains Apple's Open Anyway flow.
+  The advanced path requires explicit confirmation and removes quarantine only
+  from the installed WebJam bundle before launch.
+
+### Evidence boundary
+
+- Windows remains unsigned and macOS remains ad-hoc signed and unnotarized.
+  Physical audio, real interface, clean-download Gatekeeper/SmartScreen,
+  signing, and notarization evidence remain **NOT RUN** unless separately
+  recorded against the exact v0.18.1 package hashes.
+
 ## [0.18.0] — 2026-07-21 unified musician guidance source candidate
 
 ### One dependable workflow

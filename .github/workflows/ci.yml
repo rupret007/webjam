@@ -954,19 +954,101 @@ jobs:
             test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | awk '{print $1}')" = \
               "$(tr -d '\n' < dist/WebJam.app/Contents/Resources/webjam-fabric.sha256)"
-            # macOS: ditto preserves resource forks and extended attributes.
-            ditto -c -k --sequesterRsrc --keepParent \
-              dist/WebJam.app \
+            # macOS candidate containers carry two explicit installation
+            # helpers and immutable build metadata beside the app. Ditto
+            # preserves resource forks and extended attributes.
+            candidate_extras="$RUNNER_TEMP/webjam-candidate-extras-${{ matrix.target }}"
+            candidate_root="$RUNNER_TEMP/webjam-candidate-root-${{ matrix.target }}"
+            rm -rf -- "$candidate_extras" "$candidate_root"
+            mkdir -p "$candidate_extras" "$candidate_root"
+            install -m 755 "packaging/macos/Install WebJam.command" \
+              "$candidate_extras/Install WebJam.command"
+            install -m 755 \
+              "packaging/macos/Install WebJam - Remove Quarantine.command" \
+              "$candidate_extras/Install WebJam - Remove Quarantine.command"
+            install -m 644 "packaging/macos/READ ME FIRST.txt" \
+              "$candidate_extras/READ ME FIRST.txt"
+            printf '%s\n' \
+              'format=1' \
+              "version=$expected_version" \
+              "build_id=$build_id" \
+              "target=${{ matrix.target }}" \
+              "architecture=$expected_machine" \
+              'trust=ad-hoc-unnotarized' \
+              > "$candidate_extras/WebJam Candidate Info.txt"
+            ditto dist/WebJam.app "$candidate_root/WebJam.app"
+            for name in \
+              "Install WebJam.command" \
+              "Install WebJam - Remove Quarantine.command" \
+              "READ ME FIRST.txt" \
+              "WebJam Candidate Info.txt"; do
+              ditto "$candidate_extras/$name" "$candidate_root/$name"
+            done
+            ditto -c -k --sequesterRsrc "$candidate_root" \
               "out/WebJam-${{ matrix.target }}.zip"
             fresh_dir="$RUNNER_TEMP/webjam-fresh-${{ matrix.target }}"
             mkdir -p "$fresh_dir"
             ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
             codesign --verify --deep --strict "$fresh_dir/WebJam.app"
+            test -x "$fresh_dir/Install WebJam.command"
+            test -x "$fresh_dir/Install WebJam - Remove Quarantine.command"
+            test -f "$fresh_dir/READ ME FIRST.txt"
+            test -f "$fresh_dir/WebJam Candidate Info.txt"
+            grep -Fxq "version=$expected_version" \
+              "$fresh_dir/WebJam Candidate Info.txt"
+            grep -Fxq "build_id=$build_id" \
+              "$fresh_dir/WebJam Candidate Info.txt"
+            grep -Fxq "target=${{ matrix.target }}" \
+              "$fresh_dir/WebJam Candidate Info.txt"
+            grep -Fxq "architecture=$expected_machine" \
+              "$fresh_dir/WebJam Candidate Info.txt"
             python -m tests.support.verify_packaged_transport \
               --binary "$fresh_dir/WebJam.app/Contents/MacOS/webjam-fabric" \
               --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
               --machine "$expected_machine"
+
+            # Exercise both clickable installers against the real ad-hoc app.
+            # A fake opener keeps CI non-interactive while preserving the
+            # exact open arguments for the guided Settings assertion.
+            fake_open="$RUNNER_TEMP/webjam-candidate-fake-open-${{ matrix.target }}"
+            open_log="$RUNNER_TEMP/webjam-candidate-open-${{ matrix.target }}.log"
+            printf '%s\n' \
+              '#!/bin/bash' \
+              'printf "%s\\n" "$*" >> "$WEBJAM_FAKE_OPEN_LOG"' \
+              > "$fake_open"
+            chmod 755 "$fake_open"
+            : > "$open_log"
+            quarantine='0083;00000000;WebJamCI;candidate'
+            xattr -w com.apple.quarantine "$quarantine" "$fresh_dir/WebJam.app"
+
+            guided_dest="$RUNNER_TEMP/webjam-guided-${{ matrix.target }}/WebJam.app"
+            mkdir -p "$(dirname "$guided_dest")"
+            WEBJAM_INSTALL_ASSUME_YES=1 \
+            WEBJAM_INSTALL_DESTINATION="$guided_dest" \
+            WEBJAM_INSTALL_NO_PAUSE=1 \
+            WEBJAM_FAKE_OPEN_LOG="$open_log" \
+            WEBJAM_OPEN_BIN="$fake_open" \
+              "$fresh_dir/Install WebJam.command"
+            test "$(xattr -p com.apple.quarantine "$guided_dest")" = "$quarantine"
+            grep -Fxq "$guided_dest" "$open_log"
+            grep -Fxq -- '-a System Settings' "$open_log"
+
+            unrelated="$RUNNER_TEMP/WebJam-Unrelated-${{ matrix.target }}.app"
+            mkdir -p "$unrelated"
+            xattr -w com.apple.quarantine "$quarantine" "$unrelated"
+            advanced_dest="$RUNNER_TEMP/webjam-advanced-${{ matrix.target }}/WebJam.app"
+            mkdir -p "$(dirname "$advanced_dest")"
+            WEBJAM_INSTALL_ASSUME_YES=1 \
+            WEBJAM_INSTALL_DESTINATION="$advanced_dest" \
+            WEBJAM_INSTALL_NO_PAUSE=1 \
+            WEBJAM_FAKE_OPEN_LOG="$open_log" \
+            WEBJAM_OPEN_BIN="$fake_open" \
+              "$fresh_dir/Install WebJam - Remove Quarantine.command"
+            ! xattr -lr "$advanced_dest" | grep -Fq com.apple.quarantine
+            test "$(xattr -p com.apple.quarantine "$unrelated")" = "$quarantine"
+            codesign --verify --deep --strict "$guided_dest"
+            codesign --verify --deep --strict "$advanced_dest"
             fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
             mkdir -p "$fresh_home"
             HOME="$fresh_home" \
@@ -989,7 +1071,8 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"
           packaging/macos/create-dmg.sh \
-            dist/WebJam.app "$dmg" "WebJam $version"
+            dist/WebJam.app "$dmg" "WebJam $version" \
+            "$RUNNER_TEMP/webjam-candidate-extras-${{ matrix.target }}"
           hdiutil verify "$dmg"
 
       - name: Verify mounted macOS disk image
@@ -1015,6 +1098,16 @@ jobs:
           test -d "$mount_dir/WebJam.app"
           test -L "$mount_dir/Applications"
           test "$(readlink "$mount_dir/Applications")" = /Applications
+          test -x "$mount_dir/Install WebJam.command"
+          test -x "$mount_dir/Install WebJam - Remove Quarantine.command"
+          test -f "$mount_dir/READ ME FIRST.txt"
+          test -f "$mount_dir/WebJam Candidate Info.txt"
+          grep -Fxq "version=$version" "$mount_dir/WebJam Candidate Info.txt"
+          grep -Fxq "build_id=$build_id" "$mount_dir/WebJam Candidate Info.txt"
+          grep -Fxq "target=${{ matrix.target }}" \
+            "$mount_dir/WebJam Candidate Info.txt"
+          grep -Fxq "architecture=$expected_machine" \
+            "$mount_dir/WebJam Candidate Info.txt"
           test "$(stat -f '%Lp' "$mount_dir")" = 755
           ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"
           hdiutil detach "$mount_dir"
@@ -1467,7 +1560,7 @@ jobs:
   # Protected Windows release trust
   #
   # The ordinary matrix creates and fully exercises an unsigned source Setup.
-  # Only a tag or explicit rehearsal can enter this environment-gated job,
+  # Only an explicit rehearsal can enter this environment-gated job,
   # which validates the pinned publisher certificate, signs owned executables,
   # rebuilds/signs Setup and its uninstaller, removes the private key, and then
   # repeats installation and launch checks on the final signed container.
@@ -1476,9 +1569,8 @@ jobs:
     name: Windows Release Trust (windows-x64)
     needs: build-desktop
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' &&
-      inputs.windows_signing_rehearsal)
+      github.event_name == 'workflow_dispatch' &&
+      inputs.windows_signing_rehearsal
     runs-on: windows-2025
     timeout-minutes: 90
     environment:
@@ -2051,19 +2143,18 @@ jobs:
   # ------------------------------------------------------------------
   # Protected macOS release trust
   #
-  # The ordinary matrix above never receives Apple credentials. A tag or an
-  # explicit rehearsal first builds and exercises an ad-hoc source artifact,
-  # then this separate job requests approval for the protected macos-release
-  # environment before any environment secret becomes available. Only this
-  # job's Developer ID/notarized outputs can flow into a GitHub Release.
+  # The ordinary matrix above never receives Apple credentials. An explicit
+  # rehearsal first builds and exercises an ad-hoc source artifact, then this
+  # separate job requests approval for the protected macos-release environment
+  # before any environment secret becomes available. It remains available for
+  # a future production-trusted release without blocking private candidates.
   # ------------------------------------------------------------------
   macos-release-trust:
     name: macOS Release Trust (${{ matrix.target }})
     needs: build-desktop
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' &&
-      inputs.macos_signing_rehearsal)
+      github.event_name == 'workflow_dispatch' &&
+      inputs.macos_signing_rehearsal
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     environment:
@@ -2288,13 +2379,13 @@ jobs:
   # ------------------------------------------------------------------
   # GitHub Release
   # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
-  # Publishes the exact verified cross-platform inventory plus its checksum
-  # manifest as a draft. Existing published tags are immutable, and no release
-  # or asset is pruned or silently replaced by this job.
+  # Publishes the exact tested unsigned/ad-hoc cross-platform candidate plus
+  # its checksum manifest as a draft. Existing published tags are immutable,
+  # and no release or asset is pruned or silently replaced by this job.
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release
-    needs: [build-desktop, windows-release-trust, macos-release-trust]
+    needs: build-desktop
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -2342,19 +2433,19 @@ jobs:
       - name: Download windows-x64 artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: webjam-release-windows-x64
+          name: webjam-windows-x64
           path: release-assets/
 
       - name: Download macos-arm64 artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: webjam-release-macos-arm64
+          name: webjam-macos-arm64
           path: release-assets/
 
       - name: Download macos-x64 artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: webjam-release-macos-x64
+          name: webjam-macos-x64
           path: release-assets/
 
       - name: Download linux-x64 artifact
@@ -2371,12 +2462,12 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           assets=(
             "WebJam-linux-x64.zip"
-            "WebJam-macos-arm64.zip"
-            "WebJam-macos-x64.zip"
-            "WebJam-v${version}-macos-arm64.dmg"
-            "WebJam-v${version}-macos-x64.dmg"
-            "WebJam-v${version}-windows-x64-setup.exe"
-            "WebJam-windows-x64.zip"
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip"
+            "WebJam-v${version}-macos-arm64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${version}-macos-x64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
           )
           for asset in "${assets[@]}"; do
             test -s "$asset"
@@ -2392,18 +2483,30 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          # Hardware validation is a release gate. Tags create a reviewable
-          # draft; a maintainer publishes only after exact artifacts pass.
-          # Upload only the verified inventory and its checksum manifest.
+          # Candidate tags create a reviewable draft. A maintainer publishes
+          # only after verifying the exact inventory and warning text.
+          name: WebJam ${{ github.ref_name }} — unsigned private test candidate
           draft: true
+          prerelease: false
           generate_release_notes: true
+          body: |
+            > [!WARNING]
+            > This is an unsigned private test candidate, not a production-trusted release.
+            > Windows packages are unsigned. macOS packages are ad-hoc signed and are not
+            > notarized or reviewed by Apple. Physical audio, hardware, Gatekeeper,
+            > SmartScreen, signing, and notarization gates remain **NOT RUN** unless the
+            > release notes explicitly record otherwise.
+
+            The macOS DMGs and ZIPs include a guided installer plus a separately labeled
+            advanced helper that removes quarantine from the installed WebJam app only.
+            Verify the attached SHA-256 manifest before installing.
           fail_on_unmatched_files: true
           files: |
             release-assets/WebJam-linux-x64.zip
-            release-assets/WebJam-macos-arm64.zip
-            release-assets/WebJam-macos-x64.zip
-            release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg
-            release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg
-            release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe
-            release-assets/WebJam-windows-x64.zip
+            release-assets/WebJam-macos-arm64-ADHOC-TEST-ONLY.zip
+            release-assets/WebJam-macos-x64-ADHOC-TEST-ONLY.zip
+            release-assets/WebJam-${{ github.ref_name }}-macos-arm64-ADHOC-TEST-ONLY.dmg
+            release-assets/WebJam-${{ github.ref_name }}-macos-x64-ADHOC-TEST-ONLY.dmg
+            release-assets/WebJam-${{ github.ref_name }}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe
+            release-assets/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
             release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt
