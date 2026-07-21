@@ -5,14 +5,14 @@ matching its native package. These locks preserve the Python dependency graph
 that is reviewed and tested before signing; `requirements.txt` remains the
 human-maintained application dependency declaration.
 
-The v0.17.0 release locks target CPython 3.11.9 on Windows and both macOS
+The v0.18.0 release locks target CPython 3.11.9 on Windows and both macOS
 targets, CPython 3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and
 setuptools 83.0.0 elsewhere. PyInstaller 6.21's macOS `pkg_resources`
 runtime hook requires `NullProvider`, which setuptools 82+ no longer ships.
 Regenerate all locks with uv 0.11.29 after a deliberate dependency change,
 then rerun the entire native matrix before creating a release tag:
 
-No v0.17.0 native matrix, signed package, or physical-audio gate is claimed by
+No v0.18.0 native matrix, signed package, or physical-audio gate is claimed by
 these lock files; they record the dependency graph the release workflow must use.
 
 The macOS-only pin is a narrow exception to GHSA-h35f-9h28-mq5c. That issue

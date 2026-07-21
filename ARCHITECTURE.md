@@ -1,4 +1,4 @@
-# WebJam architecture — v0.17.0
+# WebJam architecture — v0.18.0
 
 ## Product boundary
 
@@ -12,6 +12,58 @@ The boundary is deliberate:
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
 | Webex | Conversation/video meeting state and device controls |
+
+## Unified musician guidance
+
+`core/musician_guidance.py` is a pure projection, not another lifecycle or
+state machine. It accepts one already generation/revision-guarded
+`SessionConductorSnapshot`, optional bounded lifecycle transitions, and the
+local creative pulse. It returns an immutable `MusicianGuidanceSnapshot` used
+by every renderer.
+
+| Owner | Facts it owns | Guidance responsibility |
+| --- | --- | --- |
+| `SessionConductor` | canonical role, phase, one action, evidence limit, attempt generation/revision | operational backbone and stale-observation rejection |
+| `SessionLifecycle` | bounded accepted transition history and cleanup/recovery phase | reason-free recent events only |
+| `RecordingCoordinator` | requested/starting/recording/stopping state, take availability, validation result | recording and take output status |
+| `GuestPeerSession` / transfer store | active local capture, durable queue, verified receipt, missing/recovered media | bounded guest-media and preservation status |
+| `RecordingStudio` / `StudioProjectController` | selected-take revision, validation, dirty/save state, export eligibility | review, non-destructive edit, and export readiness facts |
+| Studio export worker | exporting/completed/needs-attention result | export output status; completion is cleared by a new take or edit |
+| `session_intelligence` | deterministic structures extracted from intentional local notes | creative suggestion only; never operational evidence |
+| `ApplicationController` | fact collection, topology-specific fixed display overrides, semantic command routing | distributes one snapshot; it does not manufacture success |
+
+Dependency direction is core facts → conductor → pure guidance → controller →
+Qt/public renderers. Core imports no Qt. Renderers do not derive their own next
+action. Fixed native-setup and topology recovery wording uses
+`GuidanceDisplayOverride`: it may clarify title, message, action ID, and local
+label, while the accepted conductor phase, evidence, outputs, generation, and
+revision remain authoritative.
+
+Operational and creative information remain separate. Notes can create local
+decisions, actions, blockers, questions, references, and checkpoints, but are
+excluded from `to_public_dict()` and cannot change connection, audibility,
+recording, take, transfer, Studio, export, or cleanup facts.
+
+Refreshes are semantic and idempotent. Recorder phases, accepted connection or
+lifecycle transitions, Studio selection/dirty/save/export changes, and a
+debounced note edit can produce a new snapshot. Meter, waveform, playhead,
+animation, audio callback, capture callback, and playback callback loops do not
+derive or announce guidance. A projection or renderer exception is logged and
+discarded; it cannot interrupt audio, recording, transfer, or playback.
+
+The public representation contains only finite enum values, booleans,
+non-negative generation/revision numbers, fixed output keys/states, and up to
+five reason-free ISO-timestamped lifecycle transitions. Diagnostics re-sanitize
+that allowlist. The optional localhost Companion API additionally anonymizes
+participants into session-local slots. Neither surface receives notes, titles,
+musician names, channel IDs, invitations, addresses, device names, paths,
+tokens, credentials, or raw exceptions.
+
+No model SDK or cloud assistant is part of v0.18. A future model-assisted
+creative feature may be considered only as explicit opt-in, off the real-time
+path, read-only, privacy-gated, unable to issue session commands or create
+operational facts, and visibly labeled as a suggestion. The deterministic
+offline path must remain available.
 
 ## Jamulus-native launch
 
@@ -31,8 +83,8 @@ RPC calls.
 
 ## Startup state machine
 
-`ApplicationController` projects a role-aware startup attempt into
-`SessionHud`:
+`ApplicationController` projects a role-aware startup attempt through the
+shared guidance contract and into `SessionHud`, the stage, Canvas, and Studio:
 
 1. host server start (host only);
 2. visible native Jamulus launch and sound setup;

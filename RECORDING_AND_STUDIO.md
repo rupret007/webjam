@@ -1,4 +1,4 @@
-# Recording and Studio — v0.17.0
+# Recording and Studio — v0.18.0
 
 ## Recording is separate from live music
 
@@ -192,7 +192,7 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.17.0 evidence boundary
+## v0.18.0 evidence boundary
 
 Automated source tests cover the arrangement model, persistence/recovery,
 history/controller behavior, renderer, comping, source catalog, waveform
@@ -203,4 +203,4 @@ For this source candidate, real two-Mac listening, interface
 disconnect/reconnect, sleep/wake, interruption and long-recording recovery,
 external-editor import of an exported package, signed clean installation, and
 platform trust/notarization are **NOT RUN**. Record those separately before
-promoting a v0.17.0 package.
+promoting a v0.18.0 package.

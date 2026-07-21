@@ -91,7 +91,7 @@ Sources: [JSON-RPC.md](https://github.com/jamulussoftware/jamulus/blob/main/docs
 ## Recommended next step
 
 Current recommendation: treat the v0.14.0, v0.13.0, and v0.12.0 candidates as
-preserved historical package evidence. Source reports v0.17.0, but no v0.17.0
+preserved historical package evidence. Source reports v0.18.0, but no v0.18.0
 package is promoted. The public `WebJam v0.16.3 RC 4d8c046` build remains the
 rollback/reference artifact and is unsigned on Windows and ad-hoc signed, not
 notarized, on macOS. `SUNDAY_TWO_MAC_PILOT.md` remains historical for v0.16.0.

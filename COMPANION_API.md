@@ -1,50 +1,42 @@
-# WebJam Companion API
+# WebJam Companion API — v0.18
 
-The WebJam Companion API is an optional localhost HTTP API that lets external tools (DAWs, editors, scripts) read live session state from a running WebJam instance. It is off by default and starts only when explicitly enabled and FastAPI/uvicorn are installed.
+The Companion API is an optional, read-only localhost HTTP surface for a DAW,
+editor, or script. It is off by default. WebJam runs normally when it is off or
+when FastAPI/Uvicorn are unavailable.
 
-## Overview
+## Boundary
 
-- **Host:** `127.0.0.1`
-- **Port:** `8765`
-- **Protocol:** HTTP (REST)
-- **Availability:** Best-effort. If `fastapi` and `uvicorn` are not installed, the API does not start; the app runs normally without it.
+- Bind: `127.0.0.1` only, default port `8765`.
+- Requests require a loopback `Host` header (`localhost`, `127.0.0.1`, or
+  `[::1]`, with an optional port). Other hosts receive `403`.
+- The API has no command, recording, session-control, note, or media endpoint.
+- Payloads exclude musician names, internal channel IDs, invitations, network
+  addresses, device names, paths, tokens, credentials, Webex state, authored
+  notes, creative summaries, and raw exceptions.
+- Callback failures return fixed text. Internal exception messages are never
+  copied into HTTP responses.
 
 ## Endpoints
 
-### GET /health
+### `GET /health`
 
-Simple liveness check.
-
-**Request:**
-```
-GET http://127.0.0.1:8765/health
-```
-
-**Response:** `200 OK`
 ```json
-{
-  "status": "ok"
-}
+{"status": "ok"}
 ```
 
----
+This proves only that the optional local HTTP process can answer. It does not
+prove a Jamulus connection, participant, recording, take, or export.
 
-### GET /participants
+### `GET /participants`
 
-Returns the current mixer participants (channels) with their state.
+Returns anonymous, session-local mixer slots. A slot is useful only for the
+current process and is not a durable musician or Jamulus identity.
 
-**Request:**
-```
-GET http://127.0.0.1:8765/participants
-```
-
-**Response:** `200 OK`
 ```json
 {
   "participants": [
     {
-      "channel_id": 0,
-      "name": "You",
+      "slot": 1,
       "fader_level": 100,
       "pan": 50,
       "muted": false,
@@ -52,8 +44,7 @@ GET http://127.0.0.1:8765/participants
       "is_local": true
     },
     {
-      "channel_id": 1,
-      "name": "Guitarist",
+      "slot": 2,
       "fader_level": 80,
       "pan": 25,
       "muted": false,
@@ -64,89 +55,81 @@ GET http://127.0.0.1:8765/participants
 }
 ```
 
----
+Do not persist a slot or use it to identify a person. Consumers must tolerate
+slot reassignment and missing optional fields.
 
-### GET /diagnostics
+### `GET /diagnostics`
 
-Returns non-sensitive session state from the running Qt Conductor (no secrets).
+Returns a finite, privacy-safe operational summary. Example fields may be
+omitted when their owner has no evidence.
 
-**Request:**
-```
-GET http://127.0.0.1:8765/diagnostics
-```
-
-**Response:** `200 OK`
 ```json
 {
   "diagnostics": {
-    "jamulus_state": "Running",
-    "webex_state": "Opened externally",
-    "jamulus_connected": "True",
-    "participant_count": "3",
-    "jamulus_server": "jam.example.com:22124",
+    "participant_count": 2,
     "session_health": {
       "process_state": "Running",
       "rpc_available": true,
-      "participant_count": 3
+      "participant_count": 2
+    },
+    "session_lifecycle": {
+      "phase": "connected",
+      "recovery_attempt": 0
+    },
+    "musician_guidance": {
+      "schema": 1,
+      "generation": 1,
+      "revision": 8,
+      "role": "host",
+      "phase": "live",
+      "primary_action": "record",
+      "primary_enabled": true,
+      "evidence": "human_confirmation",
+      "recovery": "none",
+      "outputs": [
+        {"key": "recording", "state": "not_started"},
+        {"key": "take", "state": "not_started"},
+        {"key": "guest_media", "state": "not_required"},
+        {"key": "studio", "state": "not_started"},
+        {"key": "export", "state": "not_started"}
+      ],
+      "transitions": []
     }
   }
 }
 ```
 
-`webex_state` reports only WebJam's external-launch handoff. `Opened
-externally` does not mean WebJam observed a successful meeting join, and the
-API exposes no native Webex mute or participant control.
+Guidance is an allowlist of enums, booleans, non-negative attempt counters,
+fixed output keys/states, and at most five reason-free UTC lifecycle
+transitions. Local titles, explanations, recovery prose, and Creative Pulse
+content are deliberately absent. A consumer should use `generation` and
+`revision` to discard an older observation and should treat unknown enum values
+as unsupported rather than guessing.
 
----
+## Enable and query
 
-## Usage
+Set one of the following before launch:
 
-1. Launch WebJam.
-2. Enable the API first (`companion_api_enabled: true` or `WEBJAM_COMPANION_API=1`); then it starts in the background when the app initializes, if FastAPI/Uvicorn are available.
-3. Call the endpoints from your tool, script, or DAW integration.
+| Setting | Environment variable | Default |
+| --- | --- | --- |
+| `companion_api_enabled` | `WEBJAM_COMPANION_API` | `false` |
+| `companion_api_port` | `WEBJAM_COMPANION_API_PORT` | `8765` |
 
-**Example (curl):**
+Then query locally:
+
 ```bash
 curl http://127.0.0.1:8765/health
 curl http://127.0.0.1:8765/participants
 curl http://127.0.0.1:8765/diagnostics
 ```
 
-**Example (Python):**
-```python
-import requests
-
-r = requests.get("http://127.0.0.1:8765/participants")
-data = r.json()
-for p in data["participants"]:
-    print(f"{p['name']}: fader={p['fader_level']}, muted={p['muted']}")
-```
-
-## Configuration
-
-The API is opt-in. It starts on launch only when enabled and its dependencies are installed. Control it via settings in `~/.webjam_config.json` or environment variables:
-
-| Setting | Env var | Default | Meaning |
-|---------|---------|---------|---------|
-| `companion_api_enabled` | `WEBJAM_COMPANION_API` | `false` | Set to `true`/`1` to enable the API. |
-| `companion_api_port` | `WEBJAM_COMPANION_API_PORT` | `8765` | Localhost port to serve on. |
-
-## Security
-
-- Binds to `127.0.0.1` only.
-- Every request must carry a loopback `Host` header (`localhost`, `127.0.0.1`, or `[::1]`, optional port); any other Host gets `403 Forbidden`. This blocks DNS-rebinding attacks where a malicious web page tries to read your session state through the browser. Normal localhost HTTP clients send a loopback Host automatically.
-- All endpoints are read-only and the `/diagnostics` payload never includes secrets.
-
-## Dependencies
-
-To enable the Companion API, install:
+FastAPI and Uvicorn are optional dependencies. Install them only when this
+local integration is wanted:
 
 ```bash
 pip install fastapi uvicorn
 ```
 
-These are optional; WebJam runs without them. The API is not available when they are missing.
-
-## Versioning
-
-The API is currently unversioned. Endpoints and response shapes may evolve. For integrations, prefer defensive parsing (e.g. handle missing keys) and optional fields.
+The API remains intentionally unversioned at the URL level. Parse defensively,
+ignore unknown fields, and do not depend on musician identity or private
+machine details being added later.

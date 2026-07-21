@@ -78,11 +78,18 @@ class SessionPrimaryAction(str, Enum):
     RUN_BAND_CHECK = "run_band_check"
     START_SESSION = "start_session"
     COPY_INVITE = "copy_invite"
+    RESET_INVITE = "reset_invite"
+    OPEN_AUDIO_SETTINGS = "open_audio_settings"
+    ADD_CONVERSATION = "add_conversation"
+    SAVE_CONVERSATION = "save_conversation"
+    ENTER_JAM = "enter_jam"
+    RETRY_SETUP = "retry_setup"
     WAIT = "wait"
     TRY_RECONNECT = "try_reconnect"
     RECORD = "record"
     STOP_RECORDING = "stop_recording"
     REVIEW_TAKE = "review_take"
+    SELECT_TAKE = "select_take"
     EXPORT_TRACKS = "export_tracks"
     END_SESSION = "end_session"
     OPEN_DETAILS = "open_details"
@@ -97,11 +104,18 @@ class SessionPrimaryAction(str, Enum):
             SessionPrimaryAction.RUN_BAND_CHECK: "Run Band Check",
             SessionPrimaryAction.START_SESSION: "Start Session",
             SessionPrimaryAction.COPY_INVITE: "Copy Invite",
+            SessionPrimaryAction.RESET_INVITE: "Reset Invite",
+            SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "Open Audio Setup",
+            SessionPrimaryAction.ADD_CONVERSATION: "Add Conversation",
+            SessionPrimaryAction.SAVE_CONVERSATION: "Save Conversation",
+            SessionPrimaryAction.ENTER_JAM: "Enter Jam",
+            SessionPrimaryAction.RETRY_SETUP: "Try Setup Again",
             SessionPrimaryAction.WAIT: "Please wait",
             SessionPrimaryAction.TRY_RECONNECT: "Try Reconnect",
             SessionPrimaryAction.RECORD: "Record",
             SessionPrimaryAction.STOP_RECORDING: "Stop Recording",
             SessionPrimaryAction.REVIEW_TAKE: "Review Take",
+            SessionPrimaryAction.SELECT_TAKE: "Choose a Take",
             SessionPrimaryAction.EXPORT_TRACKS: "Export Tracks",
             SessionPrimaryAction.END_SESSION: "End Session",
             SessionPrimaryAction.OPEN_DETAILS: "Open Details",
@@ -276,6 +290,9 @@ class SessionFacts:
     take_available: bool = False
     human_two_way_audibility: EvidenceState = EvidenceState.NOT_STARTED
     studio: ReviewState = ReviewState.IDLE
+    studio_take: EvidenceState = EvidenceState.NOT_STARTED
+    studio_edits: EvidenceState = EvidenceState.NOT_REQUIRED
+    studio_export_available: bool = False
     export: ExportState = ExportState.IDLE
     cleanup: CleanupState = CleanupState.NOT_REQUESTED
     failure: FailureDisposition = FailureDisposition.NONE
@@ -349,6 +366,13 @@ class SessionFacts:
             EvidenceState(self.human_two_way_audibility),
         )
         object.__setattr__(self, "studio", ReviewState(self.studio))
+        object.__setattr__(self, "studio_take", EvidenceState(self.studio_take))
+        object.__setattr__(self, "studio_edits", EvidenceState(self.studio_edits))
+        object.__setattr__(
+            self,
+            "studio_export_available",
+            bool(self.studio_export_available),
+        )
         object.__setattr__(self, "export", ExportState(self.export))
         object.__setattr__(self, "cleanup", CleanupState(self.cleanup))
         object.__setattr__(self, "failure", FailureDisposition(self.failure))
@@ -706,12 +730,72 @@ def _presentation(
             preservation or "WebJam could not confirm whether all media was preserved.",
         )
     if phase is SessionConductorPhase.REVIEWING:
+        if facts.studio_edits in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.OPEN_DETAILS,
+                "Studio choices need attention",
+                "WebJam couldn't confirm that the latest non-destructive choices were saved.",
+                "The recorded take is unchanged, but the latest Studio choices are not confirmed.",
+                preservation,
+            )
+        if facts.studio_take is EvidenceState.NOT_STARTED:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.NONE,
+                "No takes yet",
+                "Record a take in the live session, then return to Studio to review it.",
+                "Opening Studio does not create or validate a recording.",
+                preservation,
+            )
+        if facts.studio_take is EvidenceState.UNKNOWN:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.SELECT_TAKE,
+                "Choose a take to review",
+                "Select a take in Studio to check its sources, arrangement, and export readiness.",
+                "Opening Studio does not select or validate a take by itself.",
+                preservation,
+            )
+        if facts.studio_take in {EvidenceState.FAILED, EvidenceState.BLOCKED}:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.OPEN_DETAILS,
+                "Review this take",
+                "The selected take has source or validation details that need attention.",
+                "WebJam will not enable export until the selected take is safe to use.",
+                preservation,
+            )
+        if facts.studio_edits is EvidenceState.IN_PROGRESS:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.WAIT,
+                "Saving Studio choices",
+                "WebJam is saving the latest non-destructive arrangement choices.",
+                "Export waits until those choices reach the durable Studio sidecar.",
+                preservation,
+            )
+        if not facts.studio_export_available:
+            return SessionConductorPresentation(
+                phase,
+                role,
+                SessionPrimaryAction.REVIEW_TAKE,
+                "Review this take",
+                "Check the selected take and its source details before export.",
+                "The selected take is open, but Studio has not enabled a safe export yet.",
+                preservation,
+            )
         return SessionConductorPresentation(
             phase,
             role,
             SessionPrimaryAction.EXPORT_TRACKS,
-            "Review before exporting",
-            "Studio is open. Check sources, known gaps, and alignment before export.",
+            "Ready to export",
+            "The selected take is verified and its current Studio choices are saved.",
             "Studio review is non-destructive and does not prove an external-editor import.",
             preservation,
         )

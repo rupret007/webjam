@@ -11,7 +11,7 @@ PySide6==6.11.1
 # Legacy UI (retained until Qt port reaches parity)
 customtkinter>=5.2.0
 
-# For building executables. This is the version retained for the v0.17.0 source
+# For building executables. This is the version retained for the v0.18.0 source
 # candidate bundle layout; the source pin alone does not certify native packages.
 pyinstaller==6.21.0
 

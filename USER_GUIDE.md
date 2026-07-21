@@ -1,4 +1,18 @@
-# WebJam musician guide — v0.17.0
+# WebJam musician guide — v0.18.0
+
+## Follow the current guide
+
+The always-visible Session HUD is the dominant action surface. **Notes** opens
+Session Canvas, where **NOW** repeats the same status, next step, evidence-based
+reason, output results, and recent meaningful events. Studio repeats the shared
+next step while showing take validation, non-destructive edit/save state, and
+export outcome. These are views of one result, not separate checklists.
+
+The **Creative Pulse** below NOW summarizes explicit decisions, actions,
+blockers, questions, references, and rehearsal checkpoints from your local
+notes. It can help decide what to play or arrange next, but it never changes
+WebJam's operational status. For example, typing “recording finished” cannot
+create a take or unlock export.
 
 ## What each app does
 
@@ -85,7 +99,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.17.0 source candidate.
+v0.18.0 source candidate.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned
@@ -96,6 +110,11 @@ take lanes.
 
 Studio never rewrites the take manifest or source recordings. Removing a region,
 take lane, or comp range changes only Studio's arrangement sidecar.
+
+If Studio cannot save an arrangement choice, it keeps the edit dirty, keeps the
+take open, and blocks switching away or quitting until a later retry succeeds.
+An earlier export result is cleared when you change takes or make a new edit;
+WebJam never presents one take's export as proof for another.
 
 ## Recovery
 

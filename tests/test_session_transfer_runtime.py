@@ -377,6 +377,7 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
         credentials.invite_token,
     )
     originals_updates: list[Path] = []
+    guidance_updates: list[str] = []
     guest = GuestPeerSession(
         invite,
         display_name="Alex",
@@ -386,6 +387,7 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
         capture_config=lambda: (7, 48_000, 128),
         capture_factory=_FakeCapture,
         on_originals_changed=originals_updates.append,
+        on_guidance_changed=lambda: guidance_updates.append("changed"),
     )
     assert os.stat(guest.originals_root).st_mode & 0o777 == 0o700
     guest.observe_presence(4, "Alex")
@@ -401,6 +403,7 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
     capture = _FakeCapture.instances[0]
     assert capture.started
     assert guest.active_take_id == take_id
+    assert guidance_updates == ["changed"]
     assert capture.take_id == take_id
     assert capture.session_id == credentials.session_id
 
@@ -426,6 +429,7 @@ def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_an
         transfers.status(item.descriptor).complete for item in guest.pending_segments
     )
     assert originals_updates == [guest.originals_root]
+    assert guidance_updates == ["changed", "changed"]
     guest.stop()
 
 

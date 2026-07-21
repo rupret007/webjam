@@ -20,7 +20,14 @@ import tempfile
 from typing import Any
 import zipfile
 
+from core.musician_guidance import GuidanceEvidence, GuidanceRecovery, GuidanceState
 from core.redaction import REDACTED, redact_text
+from core.session_conductor import (
+    SessionConductorPhase,
+    SessionPrimaryAction,
+    SessionRole,
+)
+from core.session_lifecycle import SessionLifecyclePhase
 
 
 SCHEMA_VERSION = 1
@@ -81,6 +88,9 @@ _PORT_FIELDS = frozenset(
 )
 _RECONNECT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
 _EXPORT_COUNT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
+_GUIDANCE_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+)
 
 _LOG_ARCHIVE_NAMES = {
     "webjam": "logs/webjam.log",
@@ -102,6 +112,7 @@ class SupportFacts:
     jamulus_version: str = ""
     jamulus_state: str = ""
     session_transitions: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
+    musician_guidance: Mapping[str, Any] = field(default_factory=dict)
     engine_capabilities: Mapping[str, Any] = field(default_factory=dict)
     sample_rate_hz: int | float | None = None
     channels: Mapping[str, Any] = field(default_factory=dict)
@@ -244,6 +255,7 @@ def build_support_bundle(
             },
             "jamulus": {"state": _safe_text(facts.jamulus_state)},
             "session": {
+                "guidance": _sanitize_guidance(facts.musician_guidance),
                 "transitions": _sanitize_records(
                     facts.session_transitions, _TRANSITION_FIELDS
                 ),
@@ -315,6 +327,70 @@ def _recorder_report(facts: SupportFacts) -> dict[str, Any]:
     if facts.dropped_blocks is not None:
         report["dropped_blocks"] = _safe_nonnegative_int(facts.dropped_blocks)
     return report
+
+
+def _sanitize_guidance(value: Mapping[str, Any] | Any) -> dict[str, Any]:
+    """Accept only the guidance model's finite public representation."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Any] = {"schema": 1}
+    for key in ("generation", "revision"):
+        raw = value.get(key)
+        if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0:
+            result[key] = raw
+    enum_fields = {
+        "role": {item.value for item in SessionRole},
+        "phase": {item.value for item in SessionConductorPhase},
+        "primary_action": {item.value for item in SessionPrimaryAction},
+        "evidence": {item.value for item in GuidanceEvidence},
+        "recovery": {item.value for item in GuidanceRecovery},
+    }
+    for key, allowed in enum_fields.items():
+        raw = value.get(key)
+        if isinstance(raw, str) and raw in allowed:
+            result[key] = raw
+    if isinstance(value.get("primary_enabled"), bool):
+        result["primary_enabled"] = value["primary_enabled"]
+
+    outputs: list[dict[str, str]] = []
+    raw_outputs = value.get("outputs", ())
+    if isinstance(raw_outputs, Sequence) and not isinstance(
+        raw_outputs, (str, bytes)
+    ):
+        for raw in raw_outputs[:_MAX_RECORDS]:
+            if not isinstance(raw, Mapping):
+                continue
+            key = raw.get("key")
+            state = raw.get("state")
+            if key in {"recording", "take", "guest_media", "studio", "export"} and (
+                isinstance(state, str)
+                and state in {item.value for item in GuidanceState}
+            ):
+                outputs.append({"key": key, "state": state})
+    result["outputs"] = outputs
+
+    transitions: list[dict[str, str]] = []
+    raw_transitions = value.get("transitions", ())
+    lifecycle_values = {item.value for item in SessionLifecyclePhase}
+    if isinstance(raw_transitions, Sequence) and not isinstance(
+        raw_transitions, (str, bytes)
+    ):
+        for raw in raw_transitions[:_MAX_RECORDS]:
+            if not isinstance(raw, Mapping):
+                continue
+            at = raw.get("at")
+            previous = raw.get("from")
+            current = raw.get("to")
+            if (
+                isinstance(at, str)
+                and _GUIDANCE_TIMESTAMP_RE.fullmatch(at)
+                and previous in lifecycle_values
+                and current in lifecycle_values
+            ):
+                transitions.append({"at": at, "from": previous, "to": current})
+    result["transitions"] = transitions
+    return _compact_mapping(result)
 
 
 def _sanitize_mapping(

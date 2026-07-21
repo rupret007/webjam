@@ -518,24 +518,31 @@ QLineEdit#CanvasChatInput {
     padding: ${SPACE_SM}px ${SPACE_LG}px;
 }
 
-#SessionPulse {
+#SessionPulse, #MusicianGuidance {
     background-color: ${COLOR_BG_CARD};
     border: 1px solid ${COLOR_BORDER_STRONG};
-    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
     border-radius: ${RADIUS_MD}px;
     margin: 0 ${SPACE_MD}px;
 }
 
-#PulseHeader, #PulseSignals {
+#MusicianGuidance {
+    border-left: 3px solid ${COLOR_ACCENT_PRIMARY};
+}
+
+#SessionPulse {
+    border-left: 3px solid ${COLOR_BORDER_STRONG};
+}
+
+#PulseHeader, #PulseSignals, #GuidanceWhy, #GuidanceRecent {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
 }
 
-#PulseStage, #PulseNext, #PulseSummary {
+#PulseStage, #PulseNext, #PulseSummary, #GuidanceNext, #GuidanceOutputs {
     color: ${COLOR_TEXT_PRIMARY};
 }
 
-#PulseStage, #PulseNext {
+#PulseStage, #PulseNext, #GuidanceNext {
     font-weight: ${FONT_WEIGHT_BOLD};
 }
 
@@ -1123,6 +1130,10 @@ QPushButton#StudioSoloButton:checked {
     background-color: ${COLOR_BG_CARD};
     border-radius: ${RADIUS_SM}px;
     padding: ${SPACE_SM}px;
+}
+
+#StudioHint[compact="true"] {
+    padding: 0 ${SPACE_XS}px;
 }
 
 #StudioPanValue {

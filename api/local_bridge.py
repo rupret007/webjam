@@ -72,14 +72,20 @@ class LocalApiBridge:
             try:
                 return {"participants": self.get_participants()}
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"participants callback failed: {exc}") from exc
+                raise HTTPException(
+                    status_code=500,
+                    detail="participants callback failed",
+                ) from exc
 
         @app.get("/diagnostics")
         def diagnostics() -> Dict[str, Dict[str, Any]]:
             try:
                 return {"diagnostics": self.get_diagnostics()}
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"diagnostics callback failed: {exc}") from exc
+                raise HTTPException(
+                    status_code=500,
+                    detail="diagnostics callback failed",
+                ) from exc
 
         return app
 

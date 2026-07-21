@@ -1,8 +1,8 @@
-# WebJam v0.17.0 source and physical test procedure
+# WebJam v0.18.0 source and physical test procedure
 
-> The source tree reports v0.17.0. No v0.17.0 package has been promoted. The
+> The source tree reports v0.18.0. No v0.18.0 package has been promoted. The
 > v0.16.3 package record below remains immutable rollback/reference evidence;
-> it does not certify the new Studio implementation.
+> it does not certify unified guidance or the current Studio implementation.
 
 ## Scope
 
@@ -62,6 +62,21 @@ container, and remains authoritative for those platform-specific gates.
 
 Review at minimum:
 
+- One accepted conductor snapshot drives HUD, passive stage, Session Canvas,
+  recording/Studio feedback, diagnostics, and Companion guidance without
+  contradictory phase or action copy.
+- Host, guest, and practice roles cover setup, Band Check, invite/join, live,
+  record/stop/validation, guest media, Studio, export, reconnect, cleanup,
+  final failure, and indeterminate restart recovery.
+- Notes and Creative Pulse cannot change operational phase/action/output facts
+  and never enter diagnostics or Companion output.
+- Guidance generation/revision guards reject stale observations; identical
+  semantic snapshots do not repeat accessibility updates.
+- Meter, waveform, playhead, animation, audio, capture, and playback callbacks
+  do not derive or announce guidance.
+- Companion participants are anonymous slots. Diagnostics/public errors contain
+  no names, channel IDs, invitations, addresses, devices, paths, tokens,
+  authored content, or raw exceptions.
 - Host starts a private server before launching the client.
 - Guest launches native Jamulus from one parsed invite.
 - The normal launch has no WebJam input/output form or Band Check gate.
@@ -135,13 +150,13 @@ Review at minimum:
   Jamulus/JamulusServer verification, transport checks, and a frozen Host smoke.
   Keep a rollback package on hand before installing this verified candidate.
 
-## v0.17.0 physical and credentialed ledger
+## v0.18.0 physical and credentialed ledger
 
 The source suite does not replace this ledger. Every item remains **NOT RUN**
-for v0.17.0 until a dated package/build identity and evidence location are
+for v0.18.0 until a dated package/build identity and evidence location are
 recorded.
 
-| Gate | v0.17.0 status |
+| Gate | v0.18.0 status |
 | --- | --- |
 | Two Macs hear each other through physical Jamulus interfaces | **NOT RUN** |
 | Host/guest native setup and returning path on both Macs | **NOT RUN** |
@@ -153,3 +168,7 @@ recorded.
 | Import edited/original stems, markers, and provenance in an external editor | **NOT RUN** |
 | Webex optional behavior without duplicated music | **NOT RUN** |
 | Signed clean install, quarantine/SmartScreen, trust, and notarization | **NOT RUN** |
+
+Use [V018_UNIFIED_GUIDANCE_PILOT.md](V018_UNIFIED_GUIDANCE_PILOT.md) for the
+musician-facing cross-surface observations and exact evidence to record during
+those physical runs.

@@ -68,17 +68,24 @@ class TestCompanionApiWiring(_ControllerFixture):
         c = self._build()
         c._apply_jamulus_participants([_jp(0, "Me", is_local=True), _jp(1, "Alice", fader_level=80)])
         data = c._companion_get_participants()
-        by_id = {d["channel_id"]: d for d in data}
-        self.assertEqual(set(by_id), {0, 1})
-        self.assertTrue(by_id[0]["is_local"])
-        self.assertEqual(by_id[1]["name"], "Alice")
-        self.assertEqual(by_id[1]["fader_level"], 80)
+        by_slot = {d["slot"]: d for d in data}
+        self.assertEqual(set(by_slot), {1, 2})
+        self.assertTrue(by_slot[1]["is_local"])
+        self.assertEqual(by_slot[2]["fader_level"], 80)
+        self.assertNotIn("name", str(data))
+        self.assertNotIn("Alice", str(data))
+        self.assertNotIn("channel_id", str(data))
 
     def test_diagnostics_callback_has_no_secret(self):
-        c = self._build(sentry_dsn="TOPSECRET")
+        c = self._build(
+            sentry_dsn="TOPSECRET",
+            jamulus_server="private.example",
+        )
         diag = c._companion_get_diagnostics()
         self.assertNotIn("TOPSECRET", " ".join(map(str, diag.values())))
-        self.assertIn("jamulus_state", diag)
+        self.assertIn("musician_guidance", diag)
+        self.assertNotIn("jamulus_server", diag)
+        self.assertNotIn("private.example", str(diag))
 
     def test_start_respects_disabled_setting(self):
         c = self._build(companion_api_enabled=False)
@@ -143,11 +150,14 @@ class TestCompanionApiWiring(_ControllerFixture):
         client = TestClient(app, base_url="http://127.0.0.1")
         resp = client.get("/participants")
         self.assertEqual(resp.status_code, 200)
-        names = {p["name"] for p in resp.json()["participants"]}
-        self.assertEqual(names, {"Me", "Bob"})
+        participants = resp.json()["participants"]
+        self.assertEqual({p["slot"] for p in participants}, {1, 2})
+        self.assertNotIn("Me", str(participants))
+        self.assertNotIn("Bob", str(participants))
         diag = client.get("/diagnostics")
         self.assertEqual(diag.status_code, 200)
         self.assertIn("participant_count", diag.json()["diagnostics"])
+        self.assertIn("musician_guidance", diag.json()["diagnostics"])
 
 
 if __name__ == "__main__":
