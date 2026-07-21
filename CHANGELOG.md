@@ -52,6 +52,9 @@ All notable improvements and features for the WebJam music collaboration platfor
 - Support bundles strictly re-sanitize guidance. Recorder and localhost API
   failure responses use fixed messages rather than raw exceptions, paths, or
   tokens.
+- Updated the native transport dependency set to `golang.org/x/net` 0.56.0
+  (with its compatible `x/crypto` and `x/sys` versions) after the CI
+  vulnerability gate identified GO-2026-5942 in the prior indirect version.
 
 ### Evidence boundary
 
