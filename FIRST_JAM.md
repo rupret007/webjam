@@ -1,4 +1,4 @@
-# First Jam — WebJam v0.17.0
+# First Jam — WebJam v0.18.0
 
 ## Host
 
@@ -14,6 +14,9 @@
    / Verify Sound** if you need help.
 7. Add Webex only if your band wants it: **More → Webex / Conversation**.
    Jamulus remains the music path.
+8. Follow the single next action in the Session HUD. Open **Notes** when you
+   want the same status plus output results, recent events, and your Creative
+   Pulse in one session record.
 
 ## Join
 

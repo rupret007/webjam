@@ -2,7 +2,7 @@
 
 This is the historical recovery record, architecture truth, and evidence
 ledger for the v0.10 certification effort. Its results remain valid historical
-evidence. The current v0.17.0 source/physical boundary is
+evidence. The current v0.18.0 source/physical boundary is
 [`README.md`](../../README.md) and [`TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md);
 v0.16.3 remains the published rollback/reference package.
 The preserved
@@ -44,7 +44,7 @@ export, but does not integrate with an external editor.
 ## Historical v0.13 package addendum — physical evidence still separate
 
 This section records the v0.13 implementation/package boundary. It is not the
-current candidate status: use the v0.17.0 source procedure and the preserved
+current candidate status: use the v0.18.0 source procedure and the preserved
 v0.16.3 package record for that.
 
 - **Interrupted local capture:** the writer periodically flushes and
@@ -67,7 +67,7 @@ v0.16.3 package record for that.
 
 The v0.13.0 artifact remains historical package evidence. The v0.16.3 test
 build's fresh-extraction package verification and ad-hoc signing result are
-recorded in the README and GitHub release notes. v0.17.0 has no promoted
+recorded in the README and GitHub release notes. v0.18.0 has no promoted
 package; physical interruption recovery, two-Mac results, Arrange/comp
 playback, and external-editor import remain **NOT RUN**.
 
@@ -667,7 +667,7 @@ Logic Pro import:        NOT RUN
 
 ## Historical continuation point
 
-For the current v0.17.0 source boundary, preserved v0.16.3 package, and
+For the current v0.18.0 source boundary, preserved v0.16.3 package, and
 historical v0.14/v0.13/v0.12 package baselines, use the README,
 [`TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md), and
 [`WEBJAM_V1_LAST_MILE_PLAN.md`](../WEBJAM_V1_LAST_MILE_PLAN.md). The steps below

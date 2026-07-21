@@ -5,7 +5,7 @@
   host plus one guest. The profile remains loopback-only and is not a deployed
   public service.
 - Architecture: [ADR 0001](../adr/0001-remote-session-transport.md)
-- Last reviewed: 2026-07-14
+- Last reviewed: 2026-07-21
 
 This document defines the security and privacy boundary for the v3 remote
 session. It is an implementation and release gate, not evidence that a public
@@ -64,6 +64,35 @@ The endpoint application, signed sidecar, bundled Jamulus, and the user's OS
 account form the trusted endpoint computing base. Administrator/root access,
 same-user malware, compromised audio drivers, and endpoint memory inspection
 are residual endpoint risks.
+
+## v0.18 guidance and public-data boundary
+
+Musician guidance is derived locally from an accepted, generation/revision-
+guarded conductor snapshot. It is not transport authority and cannot start,
+stop, retry, record, export, or attest audibility while being rendered. A
+failure in projection or presentation is contained and cannot interrupt live
+audio, capture, transfer, recording, or playback.
+
+The full local snapshot may contain fixed musician-facing explanations and a
+Creative Pulse derived from intentional notes. Its public form is a separate
+allowlist containing only role/phase/action/evidence/recovery enums, an enabled
+boolean, non-negative generation/revision, fixed output keys/states, and up to
+five reason-free lifecycle transitions. Authored content and display prose are
+never serialized publicly.
+
+Support bundles re-sanitize that public mapping rather than trusting arbitrary
+callers. The optional Companion API is disabled by default, read-only,
+loopback-bound, Host-header restricted, and exposes anonymous session-local
+participant slots. It excludes names, internal channel IDs, invitations,
+addresses, device names, paths, tokens, credentials, Webex state, notes, and
+raw exceptions. Fixed HTTP error details prevent an exception path or token
+from becoming a localhost response.
+
+No telemetry, external upload, cloud model, chatbot, or autonomous agent is
+added by v0.18. A future optional creative model is outside this release and
+must be opt-in, off the real-time path, read-only, privacy-gated, unable to
+control a session or create operational truth, and clearly labeled as a
+suggestion.
 
 ## Assets and actors
 

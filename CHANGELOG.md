@@ -4,6 +4,63 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.18.0] — 2026-07-21 unified musician guidance source candidate
+
+### One dependable workflow
+
+- Added one immutable musician-guidance projection over the guarded session
+  conductor. The Session HUD, passive participant stage, Session Canvas,
+  recorder/Studio feedback, support bundle, and optional Companion API now use
+  the same phase, stable action ID, evidence category, recovery category, and
+  recording/take/guest-media/Studio/export results.
+- Brought native Jamulus setup and topology-specific recovery wording through
+  bounded typed display overrides. The fixed copy can be more helpful without
+  replacing conductor phase/evidence truth or producing a separate UI state
+  machine. Studio-owned actions remain in Studio instead of adding a duplicate
+  HUD button.
+- Evolved Session Canvas with a calm NOW record for status, next action, why,
+  output results, and recent reason-free transitions. The separate Creative
+  Pulse continues to extract local decisions, actions, blockers, questions,
+  references, and checkpoints, but notes cannot create operational truth.
+
+### Recording, Studio, and recovery truth
+
+- Connected confirmed recorder, take validation, guest Local Original capture
+  and transfer, Studio selection/validation/dirty/save state, and export worker
+  outcomes into one output vocabulary. Process start, button press, stop
+  request, meter activity, and note text remain insufficient proof.
+- Added a non-identifying Studio take revision so a completed export is cleared
+  after selecting another take or making a new edit. Manifest warnings no
+  longer block an otherwise supported export, while actual manifest errors,
+  review-only state, or export blockers still require attention.
+- Separated Studio persistence failure from safe load/recovery notices. A
+  failed arrangement save stays dirty and keeps the take open; leaving Studio
+  or closing the app cannot make that unsaved work inaccessible.
+- Guidance refresh is semantic and idempotent. It does not run from meter,
+  waveform, playhead, animation, audio, capture, or playback timers/callbacks.
+
+### Privacy, accessibility, and public contracts
+
+- Added bounded accessible descriptions and visible shared guidance to Canvas
+  and normal-size Studio while retaining the tested 760×600 composition. The
+  compact Studio continues to rely on the always-visible HUD for its dominant
+  next action and exposes the full state to assistive technology.
+- Reduced Companion participants to anonymous session-local slots and removed
+  musician names, internal channel IDs, server address, Webex state, and raw
+  connection objects. Public guidance contains finite values only; creative
+  notes and local explanatory copy remain private.
+- Support bundles strictly re-sanitize guidance. Recorder and localhost API
+  failure responses use fixed messages rather than raw exceptions, paths, or
+  tokens.
+
+### Evidence boundary
+
+- No v0.18.0 package has been promoted. Physical two-Mac audibility,
+  interface disconnect/reconnect, sleep/wake, Local Originals on real devices,
+  long-session use, real-output Studio review, external-editor import, signed
+  clean installation, and platform trust/notarization remain **NOT RUN** until
+  recorded against an exact candidate build.
+
 ## [0.17.0] — 2026-07-19 Studio arrangement source candidate
 
 ### Arrange editing and take-lane comping

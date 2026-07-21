@@ -1,4 +1,4 @@
-# WebJam v0.17.0 Studio source candidate
+# WebJam v0.18.0 unified-guidance source candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -26,6 +26,22 @@ It is a conductor, not a replacement for the tools musicians already trust.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
+
+## One musician guide
+
+The Session HUD, stage, Session Canvas, recorder, Studio, sanitized diagnostics,
+and optional Companion API now render one deterministic guidance snapshot. It
+answers what WebJam is doing, what to do next, why that action is safe, which
+recording/validation/Studio/export outputs are actually confirmed, and how to
+recover. Topology-specific recovery copy still comes from observed facts, but
+it passes through the same typed projection so the surfaces cannot disagree.
+
+Session Canvas keeps operational truth separate from the local **Creative
+Pulse** extracted from intentional notes. A note can suggest an arrangement or
+next rehearsal action; it cannot claim a connection, recording, validated take,
+transfer, export, or human audibility. Guidance is local, deterministic,
+inspectable, offline, and event-driven. It performs no work on meter, waveform,
+playhead, animation, audio, capture, or playback callbacks.
 
 ## Recording and Studio
 
@@ -89,8 +105,8 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and published release state
 
-The source tree reports **v0.17.0** and contains the Studio arrangement work
-described above. No v0.17.0 desktop package has been promoted. The current
+The source tree reports **v0.18.0** and contains the unified guidance and Studio
+work described above. No v0.18.0 desktop package has been promoted. The current
 published rollback/reference release remains
 [**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3), a
 private test candidate with one promoted primary artifact:
@@ -131,7 +147,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 current test artifacts must not be promoted as public installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.17.0,
+integrity—not a substitute for musicians hearing one another. For v0.18.0,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the new evidence-rich export, signed clean installation, and platform
@@ -141,7 +157,8 @@ package or claim audibility.
 
 ## Guides
 
-- [v0.17.0 release notes and changelog](CHANGELOG.md)
+- [v0.18.0 release notes and changelog](CHANGELOG.md)
+- [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)

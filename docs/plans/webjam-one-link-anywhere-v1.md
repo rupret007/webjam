@@ -4,7 +4,7 @@
 > the v0.11.0 remote-session vertical slice. It is not the current branch or
 > release-status record. Use
 > [`../../README.md`](../../README.md) and
-> [`../../TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md) for the current v0.17.0
+> [`../../TEST_PROCEDURE.md`](../../TEST_PROCEDURE.md) for the current v0.18.0
 > source/physical boundary and historical v0.16.3 package evidence.
 
 ## Product promise

@@ -1,4 +1,4 @@
-# WebJam quick help — v0.17.0
+# WebJam quick help — v0.18.0
 
 | Need | Use |
 | --- | --- |

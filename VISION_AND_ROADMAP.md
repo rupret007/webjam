@@ -1,4 +1,4 @@
-# WebJam vision and roadmap — v0.17.0
+# WebJam vision and roadmap — v0.18.0
 
 ## Product direction
 
@@ -47,7 +47,7 @@ The next work is physical validation, not invention of more startup screens:
   editor;
 - packaged-code-signing and installation evidence.
 
-Those physical and credentialed v0.17.0 gates remain **NOT RUN**. Automated
+Those physical and credentialed v0.18.0 gates remain **NOT RUN**. Automated
 source coverage is necessary evidence, but it does not promote a package or
 prove audibility.
 

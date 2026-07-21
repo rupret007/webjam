@@ -1,4 +1,23 @@
-# WebJam v0.17.0 UX acceptance checklist
+# WebJam v0.18.0 UX acceptance checklist
+
+## Unified guidance
+
+- [ ] HUD, passive stage, Session Canvas, recorder, and Studio use the same
+      current status and next action at every meaningful transition.
+- [ ] Session Canvas explains why the action is valid, shows recent meaningful
+      events, and distinguishes recording, take, guest-media, Studio, and
+      export outcomes.
+- [ ] Creative Pulse remains clearly separate; typing an operational claim in
+      notes never changes connection, recording, take, or export truth.
+- [ ] A topology-specific recovery remains specific without showing a
+      contradictory generic message on another surface.
+- [ ] Opening Studio leaves its take list/export control as the action owner;
+      no duplicate HUD button competes with it.
+- [ ] Switching takes or editing after export clears the old export result.
+- [ ] A failed Studio save keeps the take and dirty edit open and offers safe
+      retry wording.
+- [ ] Repeated equivalent updates do not churn screen-reader descriptions;
+      playhead, waveform, meter, and animation timers emit no guidance updates.
 
 ## Launch: understandable in five seconds
 
@@ -99,6 +118,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.17.0 remains a source candidate until real-output Arrange/comp playback,
+- [ ] v0.18.0 remains a source candidate until real-output guidance review,
+      Arrange/comp playback,
       external-editor import, signed clean installation, and platform trust
       gates have evidence; all currently remain **NOT RUN**.

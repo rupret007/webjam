@@ -1,4 +1,4 @@
-# Developing WebJam v0.17.0
+# Developing WebJam v0.18.0
 
 ## Local setup
 
@@ -15,7 +15,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.17.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.18.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -48,6 +48,30 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - Keep Local Originals behind explicit Recording Setup and Studio output in
   Studio.
 
+## Guidance ownership rules
+
+- Add operational facts to their real owner, then map finite values into
+  `SessionConductorFacts`. Do not infer success from a button, process, meter,
+  UI label, note, or request.
+- `core/session_conductor.py` owns canonical phase and action;
+  `core/musician_guidance.py` is the pure shared projection. Do not create a
+  renderer-specific lifecycle or next-action table.
+- Controllers may use `GuidanceDisplayOverride` only for fixed, bounded setup
+  or topology recovery wording. An override cannot replace generation,
+  revision, phase, evidence, output, or preservation truth.
+- UI surfaces render the shared snapshot and route semantic actions back to an
+  owner. They must not start work while rendering.
+- Creative Pulse content stays local and cannot mutate conductor facts. No
+  cloud model, agent, or SDK belongs in the v0.18 production path.
+- Public consumers get only `to_public_dict()` followed by their own strict
+  allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
+  devices, paths, invitations, credentials, tokens, or raw exceptions.
+- Guidance refresh is event-driven and idempotent. Never call it from meter,
+  waveform, playhead, animation, audio, capture, or playback timers/callbacks.
+- Add pure phase/action/output tests, cross-surface consistency tests, public
+  sanitization tests, an accessibility/no-churn assertion, and 760×600 coverage
+  for any new meaningful guidance state.
+
 ## UI rules
 
 Use black, white, neutral gray, and burnt orange only. The native three-loop
@@ -63,7 +87,7 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.17.0`; no package with that version is promoted.
+The source tree reports `0.18.0`; no package with that version is promoted.
 The current published rollback/reference package remains:
 
 - Primary published artifact in GitHub Releases:
