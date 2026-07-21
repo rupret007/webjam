@@ -36,6 +36,10 @@ from PySide6.QtWidgets import (
 )
 
 from core.audio_routing import list_output_devices
+from core.musician_guidance import (
+    MusicianGuidanceSnapshot,
+    StudioGuidanceFacts,
+)
 from core.studio_controller import StudioProjectController
 from core.studio_export import (
     StudioExportPublishedError,
@@ -223,6 +227,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     # external-editor import, alignment, or musician review successful on its own.
     export_started = Signal()
     export_finished = Signal(bool)
+    guidance_changed = Signal()
 
     def __init__(
         self,
@@ -233,6 +238,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("RecordingStudio")
+        self.setAccessibleName("Multitrack Studio")
         self._takes_dir = str(takes_dir or "")
         self._takes: list[TakeInfo] = []
         self._current: Optional[TakeInfo] = None
@@ -249,6 +255,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._studio_state_token: str | None = None
         self._studio_state_dirty = False
         self._studio_state_error = ""
+        self._studio_persistence_failed = False
         self._studio_project: TakeProject | None = None
         self._studio_source_catalog: StudioSourceCatalog | None = None
         self._studio_audition_lane_id: str | None = None
@@ -290,7 +297,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._recording = False
         self._can_record = True
         self._phase_name = "idle"
+        self._phase_label = "READY"
+        self._shared_guidance_text = ""
         self._viewing_live = True
+        self._guidance_take_revision = 0
+        self._last_guidance_facts: StudioGuidanceFacts | None = None
         self._compact_inspector_open = False
         self._compact_inspector_library_was_visible = True
         self._waveform_cache = _WaveformPeakCache()
@@ -890,6 +901,11 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             ):
                 widget.setMinimumHeight(0)
                 widget.setMaximumHeight(16_777_215)
+        if self._hint.property("compact") != compact:
+            self._hint.setProperty("compact", compact)
+            self._hint.setWordWrap(not compact)
+            self._hint.style().unpolish(self._hint)
+            self._hint.style().polish(self._hint)
         self._phase.setVisible(not compact)
         self._comp_help.setVisible(not compact)
 
@@ -1023,6 +1039,74 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if reason and not enabled:
             self._hint.setText(reason)
 
+    def guidance_facts(self) -> StudioGuidanceFacts:
+        """Return path-free semantic Studio facts for the session conductor."""
+
+        take = self._current if not self._viewing_live else None
+        selected = take is not None
+        validated = bool(
+            selected
+            and take.validation_status == "complete"
+            and not take.manifest_errors
+        )
+        needs_attention = bool(
+            selected
+            and (
+                take.manifest_errors
+                or take.review_only
+                or take.export_block_reason
+            )
+        )
+        return StudioGuidanceFacts(
+            take_revision=self._guidance_take_revision,
+            take_available=bool(self._takes),
+            take_selected=selected,
+            take_validated=validated,
+            take_needs_attention=needs_attention,
+            arrangement_available=bool(selected and self._studio_state is not None),
+            dirty=bool(
+                selected
+                and (
+                    self._studio_state_dirty
+                    or self._studio_controller.dirty
+                )
+            ),
+            save_failed=bool(selected and self._studio_persistence_failed),
+            can_export=bool(selected and self._can_export_current_take()),
+        )
+
+    def set_musician_guidance(
+        self,
+        guidance: MusicianGuidanceSnapshot,
+    ) -> None:
+        """Render the shared next step without adding another primary button."""
+
+        studio = guidance.output("studio")
+        next_step = guidance.next_step
+        text = f"{studio.detail} · Next: {next_step}"
+        if not self._viewing_live and self._studio_state is not None:
+            text = f"Non-destructive · {text}"
+        self._shared_guidance_text = text
+        self._render_studio_phase()
+        self._phase.setAccessibleDescription(guidance.accessible_description)
+        self._phase.setToolTip(guidance.accessible_description)
+        self.setAccessibleDescription(guidance.accessible_description)
+
+    def _render_studio_phase(self) -> None:
+        text = self._phase_label
+        if self._shared_guidance_text:
+            text = f"{text} · {self._shared_guidance_text}"
+        self._phase.setText(text)
+
+    def _emit_guidance_changed(self) -> None:
+        """Publish semantic changes once; timers and playheads never call this."""
+
+        facts = self.guidance_facts()
+        if facts == self._last_guidance_facts:
+            return
+        self._last_guidance_facts = facts
+        self.guidance_changed.emit()
+
     def set_live_participants(self, participants: Iterable) -> None:
         incoming = list(participants)
         signature = tuple(
@@ -1071,7 +1155,8 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             "stop_failed": "● STILL RECORDING · stop was not confirmed",
             "error": "RECORDING NEEDS ATTENTION",
         }
-        self._phase.setText(labels.get(phase, phase.upper()))
+        self._phase_label = labels.get(phase, phase.upper())
+        self._render_studio_phase()
         self._recording = phase in {"recording", "stop_failed"}
         if self._recording:
             if phase == "recording":
@@ -1143,8 +1228,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     return
         if not self._takes and not self._live_participants:
             self._hint.setText(
-                "Start Session to bring musicians into the studio. Press Record and "
-                "WebJam will create one synchronized track for everyone automatically."
+                "Start Session to add musicians, then press Record for synchronized tracks."
             )
         if self._current is None:
             self._export_btn.setEnabled(False)
@@ -1611,7 +1695,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             )
         else:
             self._hint.setText(
-                "Start Session and your musicians will appear here as tracks."
+                "Start Session to add musicians, then press Record for synchronized tracks."
             )
         self._sync_timeline_ruler_inset()
         if self._lanes:
@@ -1624,29 +1708,36 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             )
             return
         saved = self._flush_studio_state()
+        if not saved:
+            if self._studio_state_error:
+                self._hint.setText(self._studio_state_error)
+            self._emit_guidance_changed()
+            return
         self._cancel_playback_preparation(restore_controls=False)
         self._player.stop()
         self._cancel_studio_waveforms(clear=True)
+        changed_take = self._current is not None or not self._viewing_live
         self._current = None
-        if saved:
-            self._studio_state = None
-            self._studio_state_take_path = None
-            self._studio_state_token = None
-            self._studio_state_dirty = False
-            self._studio_state_error = ""
-            self._studio_project = None
-            self._studio_source_catalog = None
-            self._studio_audition_lane_id = None
-            self._studio_arrange.set_document(None)
+        self._studio_state = None
+        self._studio_state_take_path = None
+        self._studio_state_token = None
+        self._studio_state_dirty = False
+        self._studio_state_error = ""
+        self._studio_persistence_failed = False
+        self._studio_project = None
+        self._studio_source_catalog = None
+        self._studio_audition_lane_id = None
+        self._studio_arrange.set_document(None)
         self._reveal_path = None
         self._reveal_btn.setEnabled(False)
         self._reveal_btn.setText("Show Take")
         self._export_btn.setEnabled(False)
         self._viewing_live = True
+        if changed_take:
+            self._guidance_take_revision += 1
         self._take_list.clearSelection()
         self._populate_live_lanes()
-        if not saved and self._studio_state_error:
-            self._hint.setText(self._studio_state_error)
+        self._emit_guidance_changed()
 
     @staticmethod
     def _track_export_selection_key(take: TakeInfo) -> Path:
@@ -1798,6 +1889,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._viewing_live = False
         take = self._takes[row]
         self._current = take
+        self._guidance_take_revision += 1
         self._load_studio_state(take)
         if self._studio_state is not None and self._studio_project is not None:
             try:
@@ -1998,6 +2090,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 )
             else:
                 self._hint.setText("Take verified and ready to mix or export.")
+        self._emit_guidance_changed()
 
     def _export_tracks(self) -> None:
         """Publish a portable track package without creating an editor project."""

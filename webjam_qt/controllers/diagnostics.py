@@ -46,6 +46,7 @@ class DiagnosticsExporter:
         jamulus_version: str = "",
         session_health: Any = None,
         session_lifecycle: Any = None,
+        musician_guidance: Any = None,
         recording_coordinator: Any = None,
         metrics_service: Any = None,
     ) -> None:
@@ -57,6 +58,7 @@ class DiagnosticsExporter:
         self.jamulus_version = jamulus_version
         self.session_health = session_health
         self.session_lifecycle = session_lifecycle
+        self.musician_guidance = musician_guidance
         self.recording = recording_coordinator
         self.metrics = metrics_service
         self._artifact_cache: SupportBundleArtifact | None = None
@@ -160,6 +162,7 @@ class DiagnosticsExporter:
             jamulus_state=str(
                 _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
             ),
+            musician_guidance=self._musician_guidance(),
             session_transitions=self._session_transitions(),
             engine_capabilities=engine_capabilities,
             sample_rate_hz=(
@@ -191,6 +194,16 @@ class DiagnosticsExporter:
         if not isinstance(values, tuple):
             return ()
         return tuple(value for value in values if isinstance(value, dict))
+
+    def _musician_guidance(self) -> dict[str, Any]:
+        public = getattr(self.musician_guidance, "to_public_dict", None)
+        if not callable(public):
+            return {}
+        try:
+            value = public()
+        except Exception:  # noqa: BLE001 - diagnostics remains best effort
+            return {}
+        return dict(value) if isinstance(value, dict) else {}
 
     def _metric_values(self) -> dict[str, Any]:
         try:
@@ -252,7 +265,7 @@ class DiagnosticsExporter:
                     )
                 )
             if errors:
-                result["last_error"] = str(tuple(errors)[0])
+                result["last_error"] = "take_needs_attention"
         return result
 
     def _cleanup_snapshot(

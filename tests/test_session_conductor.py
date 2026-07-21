@@ -282,6 +282,9 @@ def test_recording_take_transfer_review_and_export_are_truthful_separate_phases(
             validating_facts,
             take_validation=TakeValidationState.VALID,
             studio=ReviewState.REVIEWING,
+            studio_take=EvidenceState.VERIFIED,
+            studio_edits=EvidenceState.VERIFIED,
+            studio_export_available=True,
         )
     )
     assert reviewing.phase is SessionConductorPhase.REVIEWING

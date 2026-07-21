@@ -895,6 +895,7 @@ class StudioArrangementWorkflowMixin:
         self._studio_state_token = None
         self._studio_state_dirty = False
         self._studio_state_error = ""
+        self._studio_persistence_failed = False
         self._studio_project = None
         self._studio_source_catalog = None
         self._studio_audition_lane_id = None
@@ -980,6 +981,9 @@ class StudioArrangementWorkflowMixin:
             self._sync_mixer_controls_from_document()
             self._activate_studio_waveforms()
         self._refresh_comp_controls()
+        notify = getattr(self, "_emit_guidance_changed", None)
+        if callable(notify):
+            notify()
 
     def _sync_mixer_controls_from_document(self) -> None:
         """Reflect undo/redo snapshots without emitting another mixer edit."""
@@ -1029,10 +1033,14 @@ class StudioArrangementWorkflowMixin:
             self._sync_studio_controller_snapshot()
         except (StudioControllerError, StudioProjectError) as exc:
             LOGGER.warning("Could not update Studio state: %s", exc)
+            self._studio_persistence_failed = True
             self._studio_state_error = (
                 "Studio couldn't save that review choice. The recorded take is safe."
             )
             self._hint.setText(self._studio_state_error)
+            notify = getattr(self, "_emit_guidance_changed", None)
+            if callable(notify):
+                notify()
             return
         if self._selected_channel_id == int(channel_id):
             self._select_track(channel_id, sync_controller=False)
@@ -1044,6 +1052,7 @@ class StudioArrangementWorkflowMixin:
         if self._studio_state is None or self._studio_state_take_path is None:
             return True
         if not self._studio_controller.dirty:
+            self._studio_persistence_failed = False
             self._sync_studio_controller_snapshot()
             return True
         if not self._studio_controller.save():
@@ -1054,9 +1063,14 @@ class StudioArrangementWorkflowMixin:
             self._studio_state_error = (
                 "Studio couldn't save those review choices. The recorded take is safe."
             )
+            self._studio_persistence_failed = True
             self._hint.setText(self._studio_state_error)
+            notify = getattr(self, "_emit_guidance_changed", None)
+            if callable(notify):
+                notify()
             # Keep the edit dirty. A later edit, hide, export, or shutdown
             # retries instead of silently forgetting a low-disk/fsync failure.
             return False
+        self._studio_persistence_failed = False
         self._sync_studio_controller_snapshot()
         return True

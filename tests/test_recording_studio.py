@@ -1859,6 +1859,10 @@ def test_studio_autosave_failure_stays_dirty_and_retries_without_losing_edit(
             side_effect=StudioStoreError("disk full"),
         ):
             assert studio.prepare_close() is False
+            current = studio._current
+            studio._show_live_session()
+            assert studio._current is current
+            assert studio._viewing_live is False
             assert studio.shutdown() is False
 
         assert studio._studio_state_dirty is True

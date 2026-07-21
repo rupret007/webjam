@@ -29,6 +29,35 @@ def _artifact():
             architecture="arm64",
             jamulus_version="3.12.2",
             jamulus_state="Running",
+            musician_guidance={
+                "schema": 1,
+                "generation": 3,
+                "revision": 7,
+                "role": "host",
+                "phase": "recording",
+                "primary_action": "stop_recording",
+                "primary_enabled": True,
+                "evidence": "recorder",
+                "recovery": "none",
+                "title": "Alice's private unreleased song",
+                "outputs": [
+                    {"key": "recording", "state": "active", "path": "/private"},
+                    {"key": "evil", "state": "private-token"},
+                ],
+                "transitions": [
+                    {
+                        "at": "2026-07-13T12:00:00Z",
+                        "from": "preparing",
+                        "to": "connected",
+                        "reason": "invitation=private-value",
+                    },
+                    {
+                        "at": "/Users/alice/private",
+                        "from": "connected",
+                        "to": "completed",
+                    },
+                ],
+            },
             session_transitions=(
                 {
                     "at": "2026-07-13T12:00:00Z",
@@ -202,10 +231,27 @@ class TestSupportArtifact(unittest.TestCase):
         self.assertEqual(report["versions"]["webjam"], "0.9.0")
         self.assertEqual(report["audio"]["sample_rate_hz"], 48_000)
         self.assertEqual(report["audio"]["channels"], {"input": 2, "output": 2})
+        self.assertEqual(report["session"]["guidance"]["phase"], "recording")
+        self.assertEqual(
+            report["session"]["guidance"]["outputs"],
+            [{"key": "recording", "state": "active"}],
+        )
+        self.assertEqual(
+            report["session"]["guidance"]["transitions"],
+            [
+                {
+                    "at": "2026-07-13T12:00:00Z",
+                    "from": "preparing",
+                    "to": "connected",
+                }
+            ],
+        )
         self.assertNotIn("device_name", encoded)
         self.assertNotIn("environment", encoded)
         self.assertNotIn("recording_path", encoded)
         self.assertNotIn("private_notes", encoded)
+        self.assertNotIn("Alice's private unreleased song", encoded)
+        self.assertNotIn("private-value", encoded)
         self.assertNotIn("traceback", encoded)
         self.assertNotIn("PRIVATE-UID", encoded)
         self.assertNotIn("very-secret", encoded)

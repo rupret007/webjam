@@ -123,23 +123,29 @@ class TestLocalApiBridgeEndpoints(unittest.TestCase):
 
     def test_participants_callback_error_returns_500(self):
         def failing_cb():
-            raise RuntimeError("boom")
+            raise RuntimeError("/Users/private/take.wav?token=TOPSECRET")
         bridge = LocalApiBridge(get_participants=failing_cb, get_diagnostics=lambda: {})
         from fastapi import FastAPI, HTTPException
         app = bridge._create_app(FastAPI, HTTPException)
         client = TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1")
         resp = client.get("/participants")
         self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.json()["detail"], "participants callback failed")
+        self.assertNotIn("TOPSECRET", resp.text)
+        self.assertNotIn("/Users/private", resp.text)
 
     def test_diagnostics_callback_error_returns_500(self):
         def failing_cb():
-            raise RuntimeError("boom")
+            raise RuntimeError("/Users/private/take.wav?token=TOPSECRET")
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=failing_cb)
         from fastapi import FastAPI, HTTPException
         app = bridge._create_app(FastAPI, HTTPException)
         client = TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1")
         resp = client.get("/diagnostics")
         self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.json()["detail"], "diagnostics callback failed")
+        self.assertNotIn("TOPSECRET", resp.text)
+        self.assertNotIn("/Users/private", resp.text)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from webjam_qt.theme.tokens import Space
+from core.musician_guidance import GuidanceState, MusicianGuidanceSnapshot
 from core.session_intelligence import SessionPulse
 
 
@@ -50,6 +51,8 @@ class SessionCanvas(QFrame):
         self.setMinimumWidth(self.CANVAS_MIN_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._current_pulse: SessionPulse | None = None
+        self._current_guidance: MusicianGuidanceSnapshot | None = None
+        self._compact_guidance = False
 
         header = QLabel("Session Canvas")
         header.setObjectName("CanvasHeader")
@@ -89,10 +92,47 @@ class SessionCanvas(QFrame):
         btn_row.addWidget(clear_btn)
         self._toolbar_buttons = (ts_btn, self._export_button, clear_btn)
 
+        self._guidance = QFrame()
+        self._guidance.setObjectName("MusicianGuidance")
+        self._guidance.setAccessibleName("Session guidance")
+        guidance_header = QLabel("NOW")
+        guidance_header.setObjectName("PulseHeader")
+        self._guidance_status = QLabel("Ready when you are")
+        self._guidance_status.setObjectName("PulseStage")
+        self._guidance_next = QLabel("Next: Start Session")
+        self._guidance_next.setObjectName("GuidanceNext")
+        self._guidance_why = QLabel(
+            "Why: WebJam has not checked a live music path yet."
+        )
+        self._guidance_why.setObjectName("GuidanceWhy")
+        self._guidance_outputs = QLabel("No recording or export is confirmed yet.")
+        self._guidance_outputs.setObjectName("GuidanceOutputs")
+        self._guidance_recent = QLabel("Session record: no transitions yet")
+        self._guidance_recent.setObjectName("GuidanceRecent")
+        for label in (
+            guidance_header,
+            self._guidance_status,
+            self._guidance_next,
+            self._guidance_why,
+            self._guidance_outputs,
+            self._guidance_recent,
+        ):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+        guidance_layout = QVBoxLayout(self._guidance)
+        guidance_layout.setContentsMargins(Space.MD, Space.SM, Space.MD, Space.SM)
+        guidance_layout.setSpacing(Space.XS)
+        guidance_layout.addWidget(guidance_header)
+        guidance_layout.addWidget(self._guidance_status)
+        guidance_layout.addWidget(self._guidance_next)
+        guidance_layout.addWidget(self._guidance_why)
+        guidance_layout.addWidget(self._guidance_outputs)
+        guidance_layout.addWidget(self._guidance_recent)
+
         self._pulse = QFrame()
         self._pulse.setObjectName("SessionPulse")
         self._pulse.setAccessibleName("Session pulse")
-        pulse_header = QLabel("Session Pulse")
+        pulse_header = QLabel("CREATIVE PULSE")
         pulse_header.setObjectName("PulseHeader")
         pulse_header.setTextFormat(Qt.TextFormat.PlainText)
         self._pulse_stage = QLabel("Ready")
@@ -142,6 +182,7 @@ class SessionCanvas(QFrame):
         layout.setSpacing(Space.SM)
         layout.addWidget(header)
         layout.addLayout(btn_row)
+        layout.addWidget(self._guidance)
         layout.addWidget(self._pulse)
         layout.addWidget(self._notes, stretch=1)
         chat_row = QHBoxLayout()
@@ -170,6 +211,50 @@ class SessionCanvas(QFrame):
         self._pulse_next.setText(f"Next: {pulse.next_step}")
         self._pulse_signals.setText(pulse.signal_line)
 
+    def set_musician_guidance(
+        self,
+        guidance: MusicianGuidanceSnapshot,
+    ) -> None:
+        """Render the shared truth without duplicating its primary control."""
+
+        self._current_guidance = guidance
+        self._guidance_status.setText(guidance.title)
+        self._guidance_next.setText(f"Next: {guidance.next_step}")
+        self._guidance_why.setText(f"Why: {guidance.why}")
+        self._guidance_outputs.setText(guidance.output_line)
+        self._guidance_outputs.setVisible(
+            any(
+                output.state
+                not in {GuidanceState.NOT_STARTED, GuidanceState.NOT_REQUIRED}
+                for output in guidance.outputs
+            )
+        )
+        self._render_guidance_record()
+        self._guidance.setAccessibleDescription(guidance.accessible_description)
+
+    def _render_guidance_record(self) -> None:
+        guidance = self._current_guidance
+        if guidance is None or not guidance.transitions:
+            self._guidance_recent.setVisible(False)
+            return
+        count = 1 if self._compact_guidance else 3
+        recent = guidance.transitions[-count:]
+        self._guidance_recent.setText(
+            "Recent: "
+            + " · ".join(f"{item.at[11:16]} {item.label}" for item in recent)
+        )
+        self._guidance_recent.setVisible(True)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        compact = self.height() < 500
+        if compact != self._compact_guidance:
+            self._compact_guidance = compact
+            self._pulse_stage.setVisible(not compact)
+            self._pulse_summary.setVisible(not compact)
+            self._pulse_signals.setVisible(not compact)
+            self._render_guidance_record()
+        super().resizeEvent(event)
+
     def clear_session_pulse(self) -> None:
         """Discard stale derived content while preserving the raw notes."""
         self._current_pulse = None
@@ -181,9 +266,12 @@ class SessionCanvas(QFrame):
     def current_session_brief(self) -> str:
         """Return the current structured brief followed by the raw notes."""
         notes = self.current_notes().strip()
-        if self._current_pulse is None:
+        if self._current_guidance is not None:
+            brief = self._current_guidance.to_markdown()
+        elif self._current_pulse is not None:
+            brief = self._current_pulse.to_markdown()
+        else:
             return notes
-        brief = self._current_pulse.to_markdown()
         if notes:
             brief = f"{brief}\n\n## Notes\n{notes}"
         return brief

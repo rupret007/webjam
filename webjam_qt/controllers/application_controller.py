@@ -29,6 +29,11 @@ from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.session_health import SessionHealth
+from core.musician_guidance import (
+    GuidanceDisplayOverride,
+    StudioGuidanceFacts,
+    build_musician_guidance,
+)
 from core.session_conductor import (
     CleanupState,
     EvidenceState,
@@ -44,6 +49,7 @@ from core.session_conductor import (
     SessionPrimaryAction,
     SessionRole,
     SessionConductor,
+    SessionConductorSnapshot,
     SessionConductorToken,
     TakeValidationState,
 )
@@ -261,6 +267,11 @@ class ApplicationController(QObject):
         self._conductor_studio_reviewing = False
         self._conductor_export = ExportState.IDLE
         self._last_session_conductor = None
+        self._last_session_conductor_snapshot = None
+        self._last_musician_guidance = None
+        self._last_guidance_display_override = None
+        self._last_studio_guidance_facts = None
+        self._current_session_pulse = None
         # The editable title must not steal the first keystroke from the
         # musician-facing action. We move initial focus only once and only
         # while the title still owns it; later intentional title edits stay
@@ -499,6 +510,7 @@ class ApplicationController(QObject):
                     int(self.settings.audio_blocksize),
                 ),
                 on_originals_changed=self._on_guest_originals_changed,
+                on_guidance_changed=self._on_guest_media_guidance_changed,
             )
             self._on_guest_originals_changed(self.guest_peer.originals_root)
             if self.guest_peer.recovered_captures:
@@ -653,14 +665,61 @@ class ApplicationController(QObject):
         self._ui_invoker.invoke(refresh)
 
     def _on_guest_originals_changed(self, path: Path) -> None:
-        """Keep one safe Finder action current as guest originals arrive."""
+        """Refresh preserved-originals UI after a semantic transfer change."""
 
         def refresh() -> None:
             if self._shutdown:
                 return
             self.window.recording_studio.set_local_originals_directory(path)
+            self._update_session_hud()
 
         self._ui_invoker.invoke(refresh)
+
+    def _on_guest_media_guidance_changed(self) -> None:
+        """Refresh transfer guidance without treating it as a file change."""
+
+        def refresh() -> None:
+            if not self._shutdown:
+                self._update_session_hud()
+
+        self._ui_invoker.invoke(refresh)
+
+    def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
+        """Map the guest transfer owner's finite facts without exposing errors."""
+
+        guest = getattr(self, "guest_peer", None)
+        if guest is None or not bool(getattr(self.settings, "local_capture_enabled", False)):
+            return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
+        try:
+            segments = tuple(guest.pending_segments)
+        except Exception:  # noqa: BLE001 - guidance cannot interrupt capture
+            return GuestMediaState.UNKNOWN, EvidenceState.UNKNOWN
+        if bool(getattr(guest, "active_take_id", "")):
+            return GuestMediaState.WAITING, EvidenceState.IN_PROGRESS
+        if bool(getattr(guest, "recovered_captures", ())):
+            return GuestMediaState.NEEDS_ATTENTION, EvidenceState.VERIFIED
+        if not segments:
+            return GuestMediaState.WAITING, EvidenceState.NOT_STARTED
+        statuses = {
+            str(getattr(segment, "status", "pending") or "pending")
+            for segment in segments
+        }
+        preservation = (
+            EvidenceState.VERIFIED
+            if all(
+                callable(
+                    getattr(getattr(segment, "source", None), "is_file", None)
+                )
+                and bool(segment.source.is_file())
+                for segment in segments
+            )
+            else EvidenceState.FAILED
+        )
+        if any(status in {"missing_local_original", "failed"} for status in statuses):
+            return GuestMediaState.NEEDS_ATTENTION, preservation
+        if statuses == {"verified"}:
+            return GuestMediaState.VERIFIED, preservation
+        return GuestMediaState.TRANSFERRING, preservation
 
     def _sync_local_originals_action(self) -> None:
         takes_root = Path(
@@ -1074,13 +1133,12 @@ class ApplicationController(QObject):
         return []
 
     def _companion_get_participants(self) -> list[dict]:
-        """Snapshot of the current mixer participants for the companion API."""
+        """Return anonymous, read-only mixer slots for the companion API."""
         out: list[dict] = []
-        for p in self._snapshot_participants():
+        for slot, p in enumerate(self._snapshot_participants(), start=1):
             out.append(
                 {
-                    "channel_id": p.channel_id,
-                    "name": p.name,
+                    "slot": slot,
                     "fader_level": p.fader_level,
                     "pan": getattr(p, "pan", 50),
                     "muted": bool(p.muted),
@@ -1092,14 +1150,14 @@ class ApplicationController(QObject):
 
     def _companion_get_diagnostics(self) -> dict:
         """Non-sensitive session state for the companion API (no secrets)."""
+        guidance = getattr(self, "_last_musician_guidance", None)
         return {
-            "jamulus_state": str(self.bridge.jamulus_state),
-            "webex_state": str(self.bridge.webex_state),
-            "jamulus_connected": str(self._jamulus_connected),
-            "participant_count": str(len(self._snapshot_participants())),
-            "jamulus_server": f"{self.settings.jamulus_server}:{self.settings.jamulus_port}",
+            "participant_count": len(self._snapshot_participants()),
             "session_health": self.session_health.to_public_dict(),
             "session_lifecycle": self.session_lifecycle.snapshot.to_public_dict(),
+            "musician_guidance": (
+                guidance.to_public_dict() if guidance is not None else {}
+            ),
         }
 
     def _attach_jamulus_callbacks(self) -> None:
@@ -1155,6 +1213,9 @@ class ApplicationController(QObject):
             export_started.connect(self._on_studio_export_started)
         if export_finished is not None:
             export_finished.connect(self._on_studio_export_finished)
+        guidance_changed = getattr(studio, "guidance_changed", None)
+        if guidance_changed is not None:
+            guidance_changed.connect(self._on_studio_guidance_changed)
 
         # Save/Load mix shortcuts
         self.window._save_mix_shortcut.activated.connect(self._on_save_mix)
@@ -2160,7 +2221,7 @@ class ApplicationController(QObject):
         # while the controller migration is in progress.  It nevertheless
         # feeds the same live conductor as normal/recovery rendering so an old
         # worker cannot later replace this attempt's facts.
-        self._observe_session_conductor_facts(
+        snapshot = self._observe_session_conductor_facts(
             self._session_conductor_facts(),
             token=(
                 attempt.get("conductor_token")
@@ -2287,6 +2348,105 @@ class ApplicationController(QObject):
             )
         self._focus_initial_hud_action()
         self._persist_startup_attempt(attempt)
+        if not isinstance(snapshot, SessionConductorSnapshot):
+            return
+        override = self._startup_guidance_override(attempt)
+        self._last_session_conductor_snapshot = snapshot
+        self._last_session_conductor = snapshot.presentation
+        self._last_guidance_display_override = override
+        self._publish_musician_guidance(snapshot, display_override=override)
+        self.window.participant_grid.set_session_state(
+            SessionUiState(
+                self._conductor_stage_phase(snapshot.presentation.phase),
+                override.title,
+                override.message,
+                primary_text=override.action_label
+                or override.primary_action.label
+                or "Continue",
+                primary_enabled=override.primary_action
+                not in {
+                    SessionPrimaryAction.NONE,
+                    SessionPrimaryAction.WAIT,
+                },
+                show_primary=False,
+                show_ready_check=False,
+                show_practice=False,
+                primary_action="start",
+            )
+        )
+
+    @staticmethod
+    def _startup_guidance_override(attempt: dict[str, object]) -> GuidanceDisplayOverride:
+        """Return fixed, path-free guidance for the active native setup step."""
+
+        phase = str(attempt.get("phase", ""))
+        role = str(attempt.get("role", "guest"))
+        values = {
+            "starting_server": GuidanceDisplayOverride(
+                "Starting your private jam",
+                "WebJam is starting the band server. Your sound setup comes next in Jamulus.",
+                SessionPrimaryAction.WAIT,
+            ),
+            "launching_client": GuidanceDisplayOverride(
+                "Set up your sound in Jamulus",
+                "Choose your interface, input channels, headphones, and buffer in Jamulus.",
+                SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
+                "Bring Jamulus Forward",
+            ),
+            "native_sound_setup": GuidanceDisplayOverride(
+                "Set up your sound in Jamulus",
+                "Choose your interface, input channels, headphones, and buffer in Jamulus.",
+                SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
+                "Bring Jamulus Forward",
+            ),
+            "verifying_music": GuidanceDisplayOverride(
+                "Checking your music connection",
+                "WebJam is confirming the client, private server, and your place in the band.",
+                SessionPrimaryAction.WAIT,
+            ),
+            "confirm_sound": GuidanceDisplayOverride(
+                "Listen for your instrument",
+                "Confirm only after you hear your instrument returning cleanly from the jam.",
+                SessionPrimaryAction.CONFIRM_SOUND,
+                "Yes, It Sounds Right",
+            ),
+            "conversation": GuidanceDisplayOverride(
+                "Add conversation if you use it",
+                "Jamulus carries the music. Conversation or video is optional.",
+                SessionPrimaryAction.ADD_CONVERSATION,
+                "Add Webex",
+            ),
+            "conversation_link": GuidanceDisplayOverride(
+                "Add Webex",
+                "Paste a valid Webex link, or continue without conversation video.",
+                SessionPrimaryAction.SAVE_CONVERSATION,
+                "Save Webex",
+            ),
+            "cancelling": GuidanceDisplayOverride(
+                "Closing this setup",
+                "WebJam is safely releasing the private music session.",
+                SessionPrimaryAction.WAIT,
+            ),
+            "failed": GuidanceDisplayOverride(
+                "Music setup needs attention",
+                "WebJam could not finish this music setup. Retry after the prior attempt stops safely.",
+                SessionPrimaryAction.RETRY_SETUP,
+                "Try Again",
+            ),
+        }
+        if phase == "invite_ready":
+            if role == "host":
+                return GuidanceDisplayOverride(
+                    "Your jam is ready",
+                    "Invite your band when you are ready. Jamulus carries the music.",
+                    SessionPrimaryAction.COPY_INVITE,
+                )
+            return GuidanceDisplayOverride(
+                "Ready to play",
+                "Your music connection is ready.",
+                SessionPrimaryAction.ENTER_JAM,
+            )
+        return values.get(phase, values["failed"])
 
     def start_session_or_band_check(self) -> None:
         """Reuse a matching verification or gate startup with Band Check.
@@ -2351,6 +2511,8 @@ class ApplicationController(QObject):
             SessionLifecyclePhase.RUNNING_PREFLIGHT,
             "Checking saved Band Check evidence",
         )
+        if hasattr(self, "audio"):
+            self._update_session_hud()
 
         def worker() -> None:
             verified = False
@@ -3384,6 +3546,7 @@ class ApplicationController(QObject):
                 "Finding the fastest path",
                 "WebJam is opening your private music connection.",
             )
+            self._update_session_hud()
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
             if snapshot.role.value == "guest":
@@ -3495,6 +3658,16 @@ class ApplicationController(QObject):
             flash_message,
             ms=7000,
         )
+        if guest_enrollment:
+            self._update_session_hud()
+        else:
+            self._render_session_conductor(
+                GuidanceDisplayOverride(
+                    "The private music path could not open",
+                    "Ask the host to confirm the session, then try again.",
+                    SessionPrimaryAction.NONE,
+                )
+            )
 
     def _remote_join_retry_pending(self) -> bool:
         """Return whether a failed v3 enrollment proved no invite was used."""
@@ -3654,7 +3827,7 @@ class ApplicationController(QObject):
 
         self._last_shared_lan_address = ""
 
-    def _update_session_hud_legacy(self) -> None:
+    def _update_session_hud_legacy(self) -> GuidanceDisplayOverride | None:
         """Maintain exceptional legacy status copy while facts are projected.
 
         The conductor below owns the normal musician-facing lifecycle and its
@@ -3707,10 +3880,20 @@ class ApplicationController(QObject):
             return
         if self._remote_join_retry_pending():
             self._render_remote_retry_hud()
-            return
+            return GuidanceDisplayOverride(
+                "Private connection unavailable",
+                "WebJam could not start its secure connection. Try again with this invitation.",
+                SessionPrimaryAction.TRY_RECONNECT,
+                "Try Again",
+            )
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
-            return
+            return GuidanceDisplayOverride(
+                "Fresh invitation required",
+                "This invitation cannot be reused safely. Ask the host for a new link, then open it here.",
+                SessionPrimaryAction.NONE,
+                "New invite needed",
+            )
         from webjam_qt.platform_permissions import microphone_permission_status
 
         if not connected and microphone_permission_status() in {"denied", "restricted"}:
@@ -3718,7 +3901,11 @@ class ApplicationController(QObject):
                 "Microphone access is off",
                 "Open System Settings below, allow access, then return to WebJam.",
             )
-            return
+            return GuidanceDisplayOverride(
+                "Microphone access is off",
+                "Open System Settings below, allow access, then return to WebJam.",
+                SessionPrimaryAction.NONE,
+            )
         if self.audio.connection_timed_out:
             self.window.session_hud.set_state(
                 "Something needs attention",
@@ -3792,15 +3979,26 @@ class ApplicationController(QObject):
                     action_visible=True,
                     action_kind="invite",
                 )
-                return
+                return GuidanceDisplayOverride(
+                    "Your Wi-Fi changed",
+                    "Copy a new invite before asking your bandmate to join.",
+                    SessionPrimaryAction.COPY_INVITE,
+                    "Copy New Invite",
+                )
             if not invite_available:
                 if remote_owner is not None:
                     self.window.session_hud.set_state(
                         "Create a fresh invitation",
                         "Open More and choose Reset Invite, then copy the new link.",
-                        action_visible=False,
+                        action_text="Reset Invite",
+                        action_visible=True,
+                        action_kind="reset_invite",
                     )
-                    return
+                    return GuidanceDisplayOverride(
+                        "Create a fresh invitation",
+                        "Reset the old invitation, then copy the new private link.",
+                        SessionPrimaryAction.RESET_INVITE,
+                    )
                 if share_readiness is not None:
                     self._transition_lifecycle(
                         SessionLifecyclePhase.WAITING_FOR_REACHABILITY,
@@ -3813,7 +4011,14 @@ class ApplicationController(QObject):
                         action_visible=(share_readiness.action != "Wait for WebJam"),
                         action_kind="retry",
                     )
-                    return
+                    if share_readiness.action != "Wait for WebJam":
+                        return GuidanceDisplayOverride(
+                            share_readiness.title,
+                            share_readiness.detail,
+                            SessionPrimaryAction.TRY_RECONNECT,
+                            share_readiness.action,
+                        )
+                    return None
                 self.window.session_hud.set_state(
                     "Something needs attention",
                     "Connect this Mac to Wi-Fi, then try again.",
@@ -3845,7 +4050,11 @@ class ApplicationController(QObject):
                     action_visible=False,
                     ready=connected,
                 )
-                return
+                return GuidanceDisplayOverride(
+                    "Automatic Local Originals are off",
+                    "Bandmates can still join and play. Use the band take or have each musician record separately.",
+                    SessionPrimaryAction.NONE,
+                )
             if bandmates and not connected:
                 self.window.session_hud.set_state(
                     "Connecting your audio…",
@@ -4078,9 +4287,12 @@ class ApplicationController(QObject):
         else:
             take_validation = TakeValidationState.NOT_STARTED
         take_available = completed_take is not None
+        guest_media, guest_preservation = self._guest_media_state()
         media_preservation = (
             EvidenceState.VERIFIED
             if take_available
+            else guest_preservation
+            if guest_media is not GuestMediaState.NOT_EXPECTED
             else EvidenceState.UNKNOWN
             if recorder_state is RecorderState.FAILED
             else EvidenceState.NOT_REQUIRED
@@ -4126,6 +4338,21 @@ class ApplicationController(QObject):
             if lifecycle_phase is SessionLifecyclePhase.COMPLETED
             else CleanupState.NOT_REQUESTED
         )
+        studio_widget = getattr(
+            getattr(self, "window", None),
+            "recording_studio",
+            None,
+        )
+        studio_facts_provider = getattr(studio_widget, "guidance_facts", None)
+        try:
+            studio_facts = (
+                studio_facts_provider()
+                if callable(studio_facts_provider)
+                else StudioGuidanceFacts()
+            )
+        except Exception:  # noqa: BLE001 - guidance must never interrupt audio
+            LOGGER.warning("Studio guidance facts were unavailable", exc_info=True)
+            studio_facts = StudioGuidanceFacts()
         return SessionConductorFacts(
             role=role,
             setup_requested=setup_requested,
@@ -4149,60 +4376,20 @@ class ApplicationController(QObject):
             recorder=recorder_state,
             take_validation=take_validation,
             take_available=take_available,
-            guest_media=GuestMediaState.NOT_EXPECTED,
+            guest_media=guest_media,
             media_preservation=media_preservation,
             studio=(
                 ReviewState.REVIEWING
                 if bool(getattr(self, "_conductor_studio_reviewing", False))
                 else ReviewState.IDLE
             ),
+            studio_take=studio_facts.take_evidence,
+            studio_edits=studio_facts.edit_evidence,
+            studio_export_available=studio_facts.can_export,
             export=getattr(self, "_conductor_export", ExportState.IDLE),
             cleanup=cleanup,
             failure=failure,
         )
-
-    def _conductor_requires_legacy_copy(self, facts: SessionConductorFacts) -> bool:
-        """Keep topology-specific recovery copy out of the generic conductor."""
-
-        if self._remote_join_retry_pending() or bool(
-            getattr(self, "_remote_invitation_requires_replacement", False)
-        ):
-            return True
-        # The generic conductor knows that the host listener is not ready but
-        # not why. Preserve the legacy's one actionable LAN recovery when the
-        # actual pre-share probe says Wi-Fi or port inspection needs a human
-        # response; only the passive "wait" state may be replaced by the
-        # neutral conductor wording.
-        if (
-            facts.role is SessionRole.HOST
-            and getattr(self, "_remote_invite_owner", None) is None
-        ):
-            try:
-                readiness = self._host_share_readiness()
-                if not readiness.shareable and readiness.action != "Wait for WebJam":
-                    return True
-            except Exception:  # noqa: BLE001 - preserve generic safe copy
-                pass
-        if bool(getattr(self, "_host_peer_warning", "")):
-            return True
-        try:
-            from webjam_qt.platform_permissions import microphone_permission_status
-
-            if (
-                facts.music_path is not MusicPathState.AUTHENTICATED
-                and microphone_permission_status() in {"denied", "restricted"}
-            ):
-                return True
-        except Exception:  # noqa: BLE001 - no permission observation is not a block
-            pass
-        status_widget = getattr(
-            getattr(self.window, "session_hud", None), "_status", None
-        )
-        status_text = str(getattr(status_widget, "text", lambda: "")())
-        return status_text in {
-            "Your Wi-Fi changed",
-            "Create a fresh invitation",
-        }
 
     @staticmethod
     def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
@@ -4237,17 +4424,27 @@ class ApplicationController(QObject):
             SessionPrimaryAction.CONFIRM_SOUND: "confirm_sound",
             SessionPrimaryAction.RUN_BAND_CHECK: "run_band_check",
             SessionPrimaryAction.COPY_INVITE: "copy_invite",
+            SessionPrimaryAction.RESET_INVITE: "reset_invite",
+            SessionPrimaryAction.OPEN_AUDIO_SETTINGS: "bring_jamulus",
+            SessionPrimaryAction.ADD_CONVERSATION: "add_webex",
+            SessionPrimaryAction.SAVE_CONVERSATION: "save_webex",
+            SessionPrimaryAction.ENTER_JAM: "enter_jam",
+            SessionPrimaryAction.RETRY_SETUP: "retry_startup",
             SessionPrimaryAction.TRY_RECONNECT: "try_reconnect",
             SessionPrimaryAction.RECORD: "record",
             SessionPrimaryAction.STOP_RECORDING: "stop_recording",
             SessionPrimaryAction.REVIEW_TAKE: "review_take",
+            SessionPrimaryAction.SELECT_TAKE: "select_take",
             SessionPrimaryAction.EXPORT_TRACKS: "export_tracks",
             SessionPrimaryAction.END_SESSION: "end_session",
             SessionPrimaryAction.OPEN_DETAILS: "open_details",
             SessionPrimaryAction.CHECK_SESSION: "check_session",
         }.get(action, "primary")
 
-    def _render_session_conductor(self) -> None:
+    def _render_session_conductor(
+        self,
+        display_override: GuidanceDisplayOverride | None = None,
+    ) -> None:
         """Render the canonical conductor without replacing real UI evidence."""
 
         facts = self._session_conductor_facts()
@@ -4264,9 +4461,33 @@ class ApplicationController(QObject):
             ),
         )
         presentation = snapshot.presentation
+        self._last_guidance_display_override = display_override
+        self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
         self._record_pilot_conductor_presentation(presentation)
-        if self._conductor_requires_legacy_copy(facts):
+        self._publish_musician_guidance(snapshot, display_override=display_override)
+        if display_override is not None:
+            self.window.participant_grid.set_session_state(
+                SessionUiState(
+                    self._conductor_stage_phase(presentation.phase),
+                    display_override.title,
+                    display_override.message,
+                    primary_text=(
+                        display_override.action_label
+                        or display_override.primary_action.label
+                        or "Continue"
+                    ),
+                    primary_enabled=display_override.primary_action
+                    not in {
+                        SessionPrimaryAction.NONE,
+                        SessionPrimaryAction.WAIT,
+                    },
+                    show_primary=False,
+                    show_ready_check=False,
+                    show_practice=False,
+                    primary_action="start",
+                )
+            )
             return
 
         action = presentation.primary_action
@@ -4275,6 +4496,15 @@ class ApplicationController(QObject):
             SessionPrimaryAction.STOP_RECORDING,
             SessionPrimaryAction.END_SESSION,
         }
+        studio_owned = bool(
+            facts.studio is ReviewState.REVIEWING
+            and action
+            in {
+                SessionPrimaryAction.SELECT_TAKE,
+                SessionPrimaryAction.REVIEW_TAKE,
+                SessionPrimaryAction.EXPORT_TRACKS,
+            }
+        )
         action_visible = (
             action
             not in {
@@ -4282,6 +4512,7 @@ class ApplicationController(QObject):
                 SessionPrimaryAction.WAIT,
             }
             and not header_owned
+            and not studio_owned
         )
         detail = presentation.message
         if presentation.preservation:
@@ -4332,6 +4563,36 @@ class ApplicationController(QObject):
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
 
+    def _publish_musician_guidance(
+        self,
+        snapshot,
+        *,
+        display_override: GuidanceDisplayOverride | None = None,
+    ) -> None:
+        """Distribute one immutable projection to every local renderer."""
+
+        lifecycle = getattr(self, "session_lifecycle", None)
+        timeline = getattr(lifecycle, "public_timeline", None)
+        try:
+            events = timeline() if callable(timeline) else ()
+        except Exception:  # noqa: BLE001 - guidance remains best effort
+            LOGGER.warning("Session guidance timeline was unavailable", exc_info=True)
+            events = ()
+        try:
+            guidance = build_musician_guidance(
+                snapshot,
+                creative=getattr(self, "_current_session_pulse", None),
+                lifecycle_events=events,
+                display_override=display_override,
+            )
+            if guidance == getattr(self, "_last_musician_guidance", None):
+                return
+            self._last_musician_guidance = guidance
+            self.window.session_canvas.set_musician_guidance(guidance)
+            self.window.recording_studio.set_musician_guidance(guidance)
+        except Exception:  # noqa: BLE001 - never disturb live session work
+            LOGGER.warning("Musician guidance could not be refreshed", exc_info=True)
+
     def _focus_initial_hud_action(self) -> None:
         """Give the first visible session action keyboard focus once."""
 
@@ -4373,8 +4634,8 @@ class ApplicationController(QObject):
         if getattr(self, "_startup_attempt", None) is not None:
             self._render_startup_journey()
             return
-        self._update_session_hud_legacy()
-        self._render_session_conductor()
+        display_override = self._update_session_hud_legacy()
+        self._render_session_conductor(display_override)
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
         """Route the one visible conductor action to its real owner."""
@@ -4394,6 +4655,8 @@ class ApplicationController(QObject):
             self._enter_startup_jam()
         elif action in {"invite", "copy_invite"}:
             self._copy_band_invite()
+        elif action == "reset_invite":
+            self._reset_remote_invite()
         elif action in {"retry", "try_reconnect", "check_session"}:
             self._retry_session()
         elif action in {"primary", "start_session"}:
@@ -4404,6 +4667,11 @@ class ApplicationController(QObject):
             self._on_record_requested()
         elif action == "review_take":
             self._on_rail_view_changed("takes")
+        elif action == "select_take":
+            self._on_rail_view_changed("takes")
+            take_list = getattr(self.window.recording_studio, "_take_list", None)
+            if take_list is not None:
+                take_list.setFocus(Qt.FocusReason.OtherFocusReason)
         elif action == "export_tracks":
             export = getattr(self.window.recording_studio, "_export_tracks", None)
             if callable(export):
@@ -4506,6 +4774,26 @@ class ApplicationController(QObject):
             state_after=self._pilot_state_from_presentation(),
             evidence_reference=EvidenceReference.EXPORT_MANIFEST,
         )
+        self._update_session_hud()
+
+    def _on_studio_guidance_changed(self) -> None:
+        """Refresh after semantic Studio changes, never its 60 ms tick."""
+
+        studio = getattr(getattr(self, "window", None), "recording_studio", None)
+        provider = getattr(studio, "guidance_facts", None)
+        try:
+            current = provider() if callable(provider) else None
+        except Exception:  # noqa: BLE001 - guidance cannot interrupt Studio
+            current = None
+        previous = getattr(self, "_last_studio_guidance_facts", None)
+        if current is not None:
+            if (
+                previous is not None
+                and current != previous
+                and self._conductor_export is not ExportState.EXPORTING
+            ):
+                self._conductor_export = ExportState.IDLE
+            self._last_studio_guidance_facts = current
         self._update_session_hud()
 
     def _reset_session_conductor_attempt(self) -> None:
@@ -5767,6 +6055,7 @@ class ApplicationController(QObject):
             build_id=build_id(),
             session_health=self.session_health,
             session_lifecycle=self.session_lifecycle,
+            musician_guidance=getattr(self, "_last_musician_guidance", None),
             recording_coordinator=self.recording,
             metrics_service=self.metrics,
         )
@@ -6145,6 +6434,7 @@ class ApplicationController(QObject):
                 self.window.workspace_stack.setCurrentWidget(
                     self.window.center_splitter
                 )
+                self.window.participant_grid.setVisible(True)
                 self.window.session_canvas.setVisible(False)
                 splitter.setSizes([total, 0])
             elif key == "canvas":
@@ -6152,8 +6442,17 @@ class ApplicationController(QObject):
                     self.window.center_splitter
                 )
                 self.window.session_canvas.setVisible(True)
-                # Canvas: expand the notes panel
-                splitter.setSizes([int(total * 0.28), int(total * 0.72)])
+                # At the supported compact floor the squeezed stage repeats
+                # the same guidance and clips its large title. Give the notes
+                # record the workspace instead; normal desktops retain useful
+                # stage context beside it.
+                compact_canvas = self.window.width() < 900
+                self.window.participant_grid.setVisible(not compact_canvas)
+                splitter.setSizes(
+                    [0, total]
+                    if compact_canvas
+                    else [int(total * 0.28), int(total * 0.72)]
+                )
             elif key == "takes":
                 self.window.recording_studio.reload()
                 self.window.workspace_stack.setCurrentWidget(
@@ -6210,11 +6509,23 @@ class ApplicationController(QObject):
                 notes=self.window.session_canvas.current_notes(),
                 participants=self._session_pulse_participants(),
             )
+            self._current_session_pulse = pulse
             self.window.session_canvas.set_session_pulse(pulse)
+            snapshot = getattr(self, "_last_session_conductor_snapshot", None)
+            if snapshot is not None:
+                self._publish_musician_guidance(
+                    snapshot,
+                    display_override=getattr(
+                        self,
+                        "_last_guidance_display_override",
+                        None,
+                    ),
+                )
         except Exception:  # noqa: BLE001
             # Never leave stale derived content beside newer raw notes. Brief
             # export then safely falls back to the notes themselves.
             self.window.session_canvas.clear_session_pulse()
+            self._current_session_pulse = None
             LOGGER.warning("Session pulse refresh failed", exc_info=True)
 
     # ------------------------------------------------------------------

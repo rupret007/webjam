@@ -1258,6 +1258,7 @@ class GuestPeerSession:
         capture_config: Callable[[], tuple[int, int, int]],
         capture_factory: Callable[..., object] | None = None,
         on_originals_changed: Callable[[Path], None] | None = None,
+        on_guidance_changed: Callable[[], None] | None = None,
     ) -> None:
         if not invite.peer_enabled:
             raise SessionTransferError(
@@ -1273,6 +1274,7 @@ class GuestPeerSession:
         self.capture_config = capture_config
         self.capture_factory = capture_factory
         self._on_originals_changed = on_originals_changed
+        self._on_guidance_changed = on_guidance_changed
         self.client = SessionPeerClient(
             invite.host,
             invite.peer_port,
@@ -1479,6 +1481,7 @@ class GuestPeerSession:
         self._capture = capture
         self._active_take_id = take_id
         self._capture_started_config = (int(device), int(rate), int(blocksize))
+        self._notify_guidance_changed()
 
     def _finalize_capture(self, *, needs_attention: str = "") -> None:
         capture = self._capture
@@ -1585,6 +1588,15 @@ class GuestPeerSession:
             # refresh must never make capture finalization look unsuccessful.
             LOGGER.exception("Could not publish Local Originals update")
 
+    def _notify_guidance_changed(self) -> None:
+        callback = self._on_guidance_changed
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception:  # noqa: BLE001 - guidance cannot affect transfer
+            LOGGER.exception("Could not publish Local Originals guidance")
+
     def _upload_pending(self) -> None:
         enrollment = self.enrollment
         if enrollment is None:
@@ -1627,6 +1639,7 @@ class GuestPeerSession:
                 break
         if changed:
             self._save_queue()
+            self._notify_guidance_changed()
 
     def _save_queue(self) -> None:
         with self._lock:
