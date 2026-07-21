@@ -1,4 +1,4 @@
-# WebJam v0.18.0 unified-guidance source candidate
+# WebJam v0.18.1 unsigned private test candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -105,20 +105,19 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and published release state
 
-The source tree reports **v0.18.0** and contains the unified guidance and Studio
-work described above. No v0.18.0 desktop package has been promoted. The current
-published rollback/reference release remains
-[**v0.16.3**](https://github.com/rupret007/webjam/releases/tag/v0.16.3), a
-private test candidate with one promoted primary artifact:
-
-- `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`
+The source tree reports **v0.18.1** and contains the unified guidance, Studio,
+and reviewed unsigned-candidate packaging described above. The corresponding
+[**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
+is deliberately a private test candidate, not a production-trusted release.
+It provides Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac
+packages plus one exact SHA-256 manifest.
 
 The source tree also contains the reviewed cross-platform packaging path for a
 direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
 portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and
-Linux distributions are not certified. The published v0.16.3 build is still a
-private test candidate. Windows signing, macOS notarization, and other
-production gates remain pending, so use it only as a reviewed test release.
+Linux distributions are not certified. Windows signing, macOS notarization,
+and other production gates remain pending, so use v0.18.1 only as a reviewed
+test release.
 
 Generic Windows x64 and Intel macOS archives from earlier CI/tag runs are
 historical outputs, not promoted release packages. In particular, the v0.16.2
@@ -127,27 +126,33 @@ wrong packaged-data location. Those v0.16.2 assets stay immutable as build
 evidence; the fixes were versioned in v0.16.3 instead of silently replacing
 files on the old tag.
 
-The v0.16.3 installer formats improve download and installation, but they do
-not substitute for platform trust. Ordinary Actions downloads are visibly
-named `UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. The source
-now isolates Authenticode and Developer ID credentials in separate protected
-`windows-release` and `macos-release` environment jobs. Those jobs pin the
-expected publisher/Team identity, sign and verify the direct Setup/DMG assets,
-remove private keys before launch, and retain trust evidence. Native packaging
-also installs the reviewed Python graph from target-specific, hash-locked wheel
-files rather than resolving new dependencies during a release build.
+The v0.18.1 installer formats improve download and installation, but they do
+not substitute for platform trust. Release assets are visibly named
+`UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. Each Mac DMG
+and ZIP includes a guided `Install WebJam.command`, an explicitly advanced
+quarantine-removal helper, candidate metadata, and a plain-language warning.
+The guided path preserves quarantine and points to Apple's Open Anyway flow;
+the advanced path removes quarantine from the installed WebJam app only.
+
+The source continues to isolate Authenticode and Developer ID credentials in
+separate protected `windows-release` and `macos-release` manual rehearsal jobs.
+Those optional jobs preserve the future production-trust path without blocking
+private test candidates. Native packaging installs the reviewed Python graph
+from target-specific, hash-locked wheel files rather than resolving new
+dependencies during a release build.
 
 The implemented Windows PFX path is suitable only when the project already has
 an eligible exportable legacy or internal-enterprise code-signing key. Newly
 issued public code-signing keys are normally hardware- or service-backed, so a
-public release still needs an explicit signing-provider choice and integration.
+production-trusted release still needs an explicit signing-provider choice and
+integration.
 The repository does not yet have the protected GitHub Environments or
 credentials configured, and no credentialed rehearsal has completed. A managed
 Windows PC may still require IT approval even after valid publisher signing;
-current test artifacts must not be promoted as public installers.
+candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.18.0,
+integrity—not a substitute for musicians hearing one another. For v0.18.1,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the new evidence-rich export, signed clean installation, and platform
@@ -157,7 +162,7 @@ package or claim audibility.
 
 ## Guides
 
-- [v0.18.0 release notes and changelog](CHANGELOG.md)
+- [v0.18.1 release notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

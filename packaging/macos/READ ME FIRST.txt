@@ -1,0 +1,28 @@
+WEBJAM PRIVATE TEST CANDIDATE — PLEASE READ
+
+This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
+Only install it if you downloaded it from the official WebJam GitHub release
+and the release checksum matches your download.
+
+Recommended installation
+------------------------
+1. Double-click "Install WebJam.command".
+2. The helper verifies the adjacent WebJam.app and installs it in Applications.
+3. If macOS blocks the first launch, open System Settings > Privacy & Security,
+   scroll to Security, click Open Anyway for WebJam, and confirm Open.
+
+If macOS blocks the helper itself, Control-click the helper, choose Open, and
+confirm that you want to open it. Managed Macs may prevent this approval.
+
+Advanced installation
+---------------------
+"Install WebJam - Remove Quarantine.command" performs the same package checks,
+installs WebJam, and then removes Apple's quarantine attribute from the
+installed WebJam.app only. It does not disable Gatekeeper globally and does not
+change any other application. This is less safe than Apple's Open Anyway flow.
+
+Neither helper uses sudo. It installs into /Applications when that folder is
+writable and otherwise falls back to your personal ~/Applications folder.
+
+Apple's guidance for unidentified apps:
+https://support.apple.com/en-us/102445

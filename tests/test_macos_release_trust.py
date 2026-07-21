@@ -128,7 +128,7 @@ def _run_keychain_validate(credentials: dict[str, str]) -> subprocess.CompletedP
     )
 
 
-def test_workflow_gates_exactly_five_macos_secrets_to_tags_or_rehearsals() -> None:
+def test_workflow_gates_exactly_five_macos_secrets_to_manual_rehearsals() -> None:
     trust_job = _workflow_job("macos-release-trust")
     build_job = _workflow_job("build-desktop")
     validate = _workflow_step("Validate protected macOS release credentials")
@@ -150,9 +150,8 @@ def test_workflow_gates_exactly_five_macos_secrets_to_tags_or_rehearsals() -> No
         trust_job.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
     )
     assert condition == (
-        "startsWith(github.ref, 'refs/tags/v') || "
-        "(github.event_name == 'workflow_dispatch' && "
-        "inputs.macos_signing_rehearsal)"
+        "github.event_name == 'workflow_dispatch' && "
+        "inputs.macos_signing_rehearsal"
     )
     dispatch = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split(
         "\n\n# Default:", 1
@@ -244,20 +243,22 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     )
 
 
-def test_release_remains_a_tag_only_draft_with_direct_installers() -> None:
+def test_candidate_release_is_a_tag_only_draft_from_tested_builds() -> None:
     release = _workflow_job("release")
-    assert (
-        "needs: [build-desktop, windows-release-trust, macos-release-trust]" in release
-    )
+    assert "needs: build-desktop" in release
+    assert "windows-release-trust" not in release
+    assert "macos-release-trust" not in release
     assert "if: startsWith(github.ref, 'refs/tags/v')" in release
-    assert "name: webjam-release-macos-arm64" in release
-    assert "name: webjam-release-macos-x64" in release
+    assert "name: webjam-macos-arm64" in release
+    assert "name: webjam-macos-x64" in release
     create = _workflow_step("Create GitHub Release")
     assert (
         "uses: softprops/action-gh-release@"
         "3d0d9888cb7fd7b750713d6e236d1fcb99157228" in create
     )
     assert "draft: true" in create
+    assert "prerelease: false" in create
+    assert "unsigned private test candidate" in create
     assert "fail_on_unmatched_files: true" in create
     uploads = set(
         re.findall(
@@ -267,12 +268,12 @@ def test_release_remains_a_tag_only_draft_with_direct_installers() -> None:
     )
     assert uploads == {
         "release-assets/WebJam-linux-x64.zip",
-        "release-assets/WebJam-macos-arm64.zip",
-        "release-assets/WebJam-macos-x64.zip",
-        "release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg",
-        "release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg",
-        "release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe",
-        "release-assets/WebJam-windows-x64.zip",
+        "release-assets/WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+        "release-assets/WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-arm64-ADHOC-TEST-ONLY.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-x64-ADHOC-TEST-ONLY.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "release-assets/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
         "release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt",
     }
 

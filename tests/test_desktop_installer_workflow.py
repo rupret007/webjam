@@ -34,6 +34,9 @@ def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert os.access(DMG_SCRIPT_PATH, os.X_OK)
     assert 'ditto "$source_app" "$stage_root/WebJam.app"' in DMG_SCRIPT
     assert 'ln -s /Applications "$stage_root/Applications"' in DMG_SCRIPT
+    assert '"Install WebJam.command"' in DMG_SCRIPT
+    assert '"Install WebJam - Remove Quarantine.command"' in DMG_SCRIPT
+    assert '"WebJam Candidate Info.txt"' in DMG_SCRIPT
     assert "-format UDZO" in DMG_SCRIPT
     assert 'hdiutil verify "$output_dmg"' in DMG_SCRIPT
 
@@ -55,6 +58,9 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert 'dmg="out/WebJam-v${version}-${{ matrix.target }}.dmg"' in WORKFLOW
     assert 'hdiutil attach "$dmg" -readonly -nobrowse' in WORKFLOW
     assert 'test -L "$mount_dir/Applications"' in WORKFLOW
+    assert 'test -x "$mount_dir/Install WebJam.command"' in WORKFLOW
+    assert 'test -x "$mount_dir/Install WebJam - Remove Quarantine.command"' in WORKFLOW
+    assert 'test -f "$mount_dir/WebJam Candidate Info.txt"' in WORKFLOW
     assert "stat -f '%Lp' \"$mount_dir\"" in WORKFLOW
     assert 'ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"' in WORKFLOW
     assert 'codesign --verify --deep --strict "$copied_app"' in WORKFLOW
@@ -63,6 +69,12 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert '-verify_arch "$expected_machine"' in WORKFLOW
     assert "'Print :CFBundleVersion'" in WORKFLOW
     assert '"$copied_app/Contents/MacOS/WebJam"' in WORKFLOW
+    assert 'xattr -w com.apple.quarantine "$quarantine" "$fresh_dir/WebJam.app"' in WORKFLOW
+    assert '"$fresh_dir/Install WebJam.command"' in WORKFLOW
+    assert '"$fresh_dir/Install WebJam - Remove Quarantine.command"' in WORKFLOW
+    assert 'xattr -p com.apple.quarantine "$guided_dest"' in WORKFLOW
+    assert '! xattr -lr "$advanced_dest" | grep -Fq com.apple.quarantine' in WORKFLOW
+    assert 'xattr -p com.apple.quarantine "$unrelated"' in WORKFLOW
 
 
 def test_windows_ci_builds_and_exercises_the_direct_setup_executable() -> None:
@@ -106,9 +118,8 @@ def test_windows_signing_secrets_are_isolated_to_a_protected_job() -> None:
         trust.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
     )
     assert condition == (
-        "startsWith(github.ref, 'refs/tags/v') || "
-        "(github.event_name == 'workflow_dispatch' && "
-        "inputs.windows_signing_rehearsal)"
+        "github.event_name == 'workflow_dispatch' && "
+        "inputs.windows_signing_rehearsal"
     )
     assert "windows_signing_rehearsal:" in WORKFLOW
     for name in ("WINDOWS_CODESIGN_PFX", "WINDOWS_CODESIGN_PASSWORD"):
@@ -270,7 +281,8 @@ def test_protected_windows_release_is_verified_after_key_cleanup() -> None:
     assert "out/WebJam-v*-windows-x64-setup.exe" in trust
     assert "name: webjam-windows-signing-evidence" in trust
     release = _workflow_job("release")
-    assert "name: webjam-release-windows-x64" in release
+    assert "name: webjam-windows-x64" in release
+    assert "name: webjam-release-windows-x64" not in release
 
 
 def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> None:
@@ -281,6 +293,8 @@ def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> No
     assert "Mark unsigned platform source artifacts as test-only" in WORKFLOW
     assert "UNSIGNED-TEST-ONLY" in WORKFLOW
     assert "ADHOC-TEST-ONLY" in WORKFLOW
+    assert 'install -m 755 "packaging/macos/Install WebJam.command"' in WORKFLOW
+    assert 'ditto -c -k --sequesterRsrc "$candidate_root"' in WORKFLOW
 
 
 def test_signing_rehearsals_do_not_implicitly_start_the_one_hour_soak() -> None:
@@ -311,12 +325,12 @@ def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> 
     assert "Generate and verify release checksum manifest" in release_job
     expected_assets = {
         "WebJam-linux-x64.zip",
-        "WebJam-macos-arm64.zip",
-        "WebJam-macos-x64.zip",
-        "WebJam-v${version}-macos-arm64.dmg",
-        "WebJam-v${version}-macos-x64.dmg",
-        "WebJam-v${version}-windows-x64-setup.exe",
-        "WebJam-windows-x64.zip",
+        "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+        "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+        "WebJam-v${version}-macos-arm64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-v${version}-macos-x64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
     }
     asset_block = release_job.split("          assets=(\n", 1)[1].split(
         "          )\n", 1
@@ -333,12 +347,12 @@ def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> 
     assert 'test "${#downloaded[@]}" -eq "${#assets[@]}"' in release_job
     expected_uploads = {
         "release-assets/WebJam-linux-x64.zip",
-        "release-assets/WebJam-macos-arm64.zip",
-        "release-assets/WebJam-macos-x64.zip",
-        "release-assets/WebJam-${{ github.ref_name }}-macos-arm64.dmg",
-        "release-assets/WebJam-${{ github.ref_name }}-macos-x64.dmg",
-        "release-assets/WebJam-${{ github.ref_name }}-windows-x64-setup.exe",
-        "release-assets/WebJam-windows-x64.zip",
+        "release-assets/WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+        "release-assets/WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-arm64-ADHOC-TEST-ONLY.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-macos-x64-ADHOC-TEST-ONLY.dmg",
+        "release-assets/WebJam-${{ github.ref_name }}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "release-assets/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
         "release-assets/WebJam-${{ github.ref_name }}-SHA256SUMS.txt",
     }
     upload_block = release_job.split("          files: |\n", 1)[1]

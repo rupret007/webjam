@@ -1,10 +1,12 @@
 # Desktop release runbook
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
-Actions `build-desktop` matrix is the authoritative source builder. The
-environment-gated `windows-release-trust` and `macos-release-trust` jobs are the
-only authoritative packagers for signed platform releases. Do not reuse a
-package from a different source commit or replace assets on a published tag.
+Actions `build-desktop` matrix is the authoritative source builder. Version
+tags may promote its explicitly unsigned/ad-hoc outputs as a private test
+candidate. The environment-gated `windows-release-trust` and
+`macos-release-trust` jobs remain the only authoritative packagers for a future
+signed platform release. Do not reuse a package from a different source commit
+or replace assets on a published tag.
 
 ## Supported targets
 
@@ -17,6 +19,26 @@ package from a different source commit or replace assets on a published tag.
 
 Windows and Linux deliberately leave **Host a Jam** disabled. A release must
 not describe them as hosting replacements for the managed macOS Jamulus server.
+
+## Private test-candidate lane
+
+A `v*` tag builds all four targets from one commit and creates a reviewable
+draft without requesting signing credentials. Windows filenames include
+`UNSIGNED-TEST-ONLY`; macOS filenames include `ADHOC-TEST-ONLY`. Publishing the
+draft as Latest does not change that trust status and must retain the warning in
+the release title and opening notes. Physical audio, hardware, SmartScreen,
+Gatekeeper, signing, and notarization results remain **NOT RUN** unless recorded
+against the exact attached hashes.
+
+Each candidate Mac DMG and ZIP contains `Install WebJam.command`,
+`Install WebJam - Remove Quarantine.command`, `READ ME FIRST.txt`, and fixed
+candidate metadata beside `WebJam.app`. The guided helper validates and installs
+the app, preserves quarantine, attempts launch, and opens the path to Apple's
+Open Anyway approval. The advanced helper performs the same validation, asks
+for explicit confirmation, and removes quarantine from the installed
+`WebJam.app` only. Neither path uses `sudo`, disables Gatekeeper, or changes
+another application. Both prefer `/Applications` and fall back to
+`~/Applications` when the system folder is not writable.
 
 ## Automated build gates
 
@@ -52,8 +74,8 @@ app, checks both requested shortcuts, and uninstalls it. The gate proves owned
 files and shortcuts are removed while an unowned sentinel is preserved.
 Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload.
 
-A `v*` tag, or a manual `workflow_dispatch` with
-`windows_signing_rehearsal=true`, runs a separate job bound to the protected
+A manual `workflow_dispatch` with `windows_signing_rehearsal=true` runs a
+separate job bound to the protected
 `windows-release` environment. It requires environment secrets
 `WINDOWS_CODESIGN_PFX` and `WINDOWS_CODESIGN_PASSWORD` plus the non-secret
 environment variable `WINDOWS_CODESIGN_SUBJECT`. The job requires exactly one
@@ -91,11 +113,11 @@ against that copy. Ordinary branch apps remain ad-hoc signed, are neither
 Developer ID signed nor notarized, and are renamed `ADHOC-TEST-ONLY` before
 upload.
 
-A `v*` tag, or a manual `workflow_dispatch` with
-`macos_signing_rehearsal=true`, selects the fail-closed release-trust path. The
-manual rehearsal signs and notarizes both Mac architectures but cannot create
-a GitHub Release; use it to prove credentials and Apple acceptance before
-creating a version tag. Both modes require all five GitHub Actions secrets:
+A manual `workflow_dispatch` with `macos_signing_rehearsal=true` selects the
+fail-closed release-trust path. The rehearsal signs and notarizes both Mac
+architectures but cannot create
+a GitHub Release; use it to prove credentials and Apple acceptance before a
+future production-trusted release. It requires all five GitHub Actions secrets:
 
 - `MACOS_DEVELOPER_ID_P12`: base64 PKCS#12 containing the Developer ID
   Application certificate and private key;
@@ -133,7 +155,8 @@ operation, before WebJam is launched from the mounted image or any artifact
 upload action runs.
 
 The macOS orchestration and conditional Windows PFX orchestration are
-implemented but have not yet completed a real credentialed rehearsal. If no
+implemented but have not yet completed a real credentialed rehearsal. These
+manual rehearsals do not block the private candidate lane. If no
 eligible Windows PFX already exists, remote/provider-backed signing integration
 is still required. Missing credentials, an unexpected Windows publisher,
 rejected signatures/notarization, failed stapling, or failed platform trust
@@ -157,8 +180,8 @@ and tags to the approved rehearsal ref and version tags. Both workflow jobs are
 already isolated and explicitly bound to those environments with
 `deployment: false`; environment secrets remain unavailable until protection
 rules pass. Do not copy these values into repository-level secrets. The current
-repository reports zero configured Environments, so administrator configuration
-and credential provisioning remain release blockers.
+environments contain no release credentials, so credential provisioning remains
+a production-trusted-release blocker but not a private-candidate blocker.
 
 ## Manual release gates
 
@@ -176,20 +199,24 @@ Before publishing, record the exact artifact SHA-256 and complete:
    and prove no WebJam/Jamulus/fabric process residue.
 3. Ubuntu 22.04 x64: fresh extraction, `./install-jamulus.sh`, Join from a Mac
    host, real JACK/ALSA interface I/O, Leave cleanup, and no process residue.
-4. Gatekeeper/SmartScreen behavior appropriate to the actual signatures; do
-   not record an ad-hoc or unsigned package as a public distribution pass.
+4. Gatekeeper/SmartScreen behavior appropriate to the actual signatures; an
+   ad-hoc or unsigned result may be recorded only as private-candidate evidence,
+   never as a production-trusted distribution pass.
 
 If any gate is not run, report it as **NOT RUN**. A process launch, synthetic
 JACK graph, or connected roster is not evidence that a person heard audio.
 
 ## Version and publication rule
 
-The public `v0.16.2` tag and its attached assets are immutable historical
-evidence. Post-tag packaging fixes require a new version and tag (normally
-`v0.16.3`); never move `v0.16.2` or silently replace its published archives.
-Once the credentialed rehearsal and manual gates above pass, tag CI attaches
-the direct Setup executable, both DMGs, Linux ZIP, and portable ZIP fallbacks
-to a draft GitHub release. It also generates, verifies, and attaches
-`WebJam-v<VERSION>-SHA256SUMS.txt` for that exact seven-file asset set. A
-maintainer publishes the draft only after the manual gates above refer to the
-exact downloaded assets and manifest hashes.
+The public tags and attached assets are immutable historical evidence. The
+failed `v0.18.0` credentialed release attempt remains fixed at its source
+commit; the candidate-lane change is versioned as `v0.18.1`. Never move a tag
+or silently replace archives on a published release.
+
+Candidate tag CI attaches the explicitly labeled unsigned Windows Setup and
+ZIP, both explicitly labeled ad-hoc Mac DMGs and ZIPs, and the Ubuntu ZIP to a
+draft. It generates, verifies, and attaches
+`WebJam-v<VERSION>-SHA256SUMS.txt` for that exact seven-package set. A
+maintainer verifies the inventory and warning text, publishes it as a
+non-prerelease, and explicitly marks it Latest. Any later production-trusted
+release still requires the credentialed rehearsals and physical gates above.

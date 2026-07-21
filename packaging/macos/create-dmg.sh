@@ -7,15 +7,16 @@
 set -euo pipefail
 
 usage() {
-  printf 'Usage: %s <WebJam.app> <output.dmg> [volume-name]\n' "$0" >&2
+  printf 'Usage: %s <WebJam.app> <output.dmg> [volume-name] [candidate-extras]\n' "$0" >&2
   exit 64
 }
 
-[[ $# -ge 2 && $# -le 3 ]] || usage
+[[ $# -ge 2 && $# -le 4 ]] || usage
 
 source_app=$1
 output_dmg=$2
 volume_name=${3:-WebJam}
+candidate_extras=${4:-}
 
 [[ -d "$source_app" ]] || {
   printf 'Source application does not exist: %s\n' "$source_app" >&2
@@ -33,6 +34,30 @@ volume_name=${3:-WebJam}
   printf 'Volume name must not be empty.\n' >&2
   exit 65
 }
+if [[ -n "$candidate_extras" ]]; then
+  [[ -d "$candidate_extras" && ! -L "$candidate_extras" ]] || {
+    printf 'Candidate extras must be a real directory: %s\n' "$candidate_extras" >&2
+    exit 66
+  }
+  for name in \
+    "Install WebJam.command" \
+    "Install WebJam - Remove Quarantine.command" \
+    "READ ME FIRST.txt" \
+    "WebJam Candidate Info.txt"; do
+    [[ -f "$candidate_extras/$name" && ! -L "$candidate_extras/$name" ]] || {
+      printf 'Candidate extra is missing or unsafe: %s\n' "$name" >&2
+      exit 66
+    }
+  done
+  [[ -x "$candidate_extras/Install WebJam.command" ]] || {
+    printf 'Guided candidate helper is not executable.\n' >&2
+    exit 66
+  }
+  [[ -x "$candidate_extras/Install WebJam - Remove Quarantine.command" ]] || {
+    printf 'Advanced candidate helper is not executable.\n' >&2
+    exit 66
+  }
+fi
 [[ ! -e "$output_dmg" ]] || {
   printf 'Refusing to replace an existing disk image: %s\n' "$output_dmg" >&2
   exit 73
@@ -67,6 +92,15 @@ trap cleanup EXIT
 # inaccessible to other accounts if it were copied as-is.
 chmod 755 "$stage_root"
 ditto "$source_app" "$stage_root/WebJam.app"
+if [[ -n "$candidate_extras" ]]; then
+  for name in \
+    "Install WebJam.command" \
+    "Install WebJam - Remove Quarantine.command" \
+    "READ ME FIRST.txt" \
+    "WebJam Candidate Info.txt"; do
+    ditto "$candidate_extras/$name" "$stage_root/$name"
+  done
+fi
 ln -s /Applications "$stage_root/Applications"
 
 hdiutil create \
