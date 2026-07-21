@@ -245,6 +245,20 @@ def test_responsive_fixed_headers_accessibility_and_public_view_controls(
     assert arrange._canvas.viewport().accessibleName() == "Arrange timeline canvas"
     assert "off snapping" in arrange._canvas.viewport().accessibleDescription()
     assert "drag an edge" in arrange._canvas.viewport().toolTip().lower()
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    arrange.set_playhead(60_000)
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "chorus" section' in description
+
+    arrange.set_playhead(0)
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
 
     arrange.set_zoom(400)
     assert arrange.pixels_per_second == 400
@@ -625,6 +639,51 @@ def test_named_section_bar_drag_requests_whole_song_block_reorder(
     assert abs(frame - target_start) <= 100
     assert arrange._canvas._section_preview is None
     assert document.markers[1] == section
+    arrange.close()
+
+
+def test_named_section_drag_paints_full_height_destination_preview(
+    qapp: QApplication,
+) -> None:
+    """A section drag must show the destination across every track, not just
+    the ruler strip, so the whole-song-block scope is visually unambiguous."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_zoom(240)
+    arrange.scroll_to_frame(0, center=False)
+    viewport = arrange._canvas.viewport()
+
+    grab_frame = section.start_frame + 2_000
+    target_start = 12_000
+    press = QPoint(round(arrange._canvas.x_for_frame(grab_frame)), 22)
+    move_to = QPoint(round(arrange._canvas.x_for_frame(target_start + 2_000)), 22)
+    body_y = RULER_HEIGHT + TRACK_HEIGHT // 2
+    preview_x = round(arrange._canvas.x_for_frame(target_start) + 5)
+
+    def _sample(x: int):
+        image = QPixmap(viewport.size())
+        viewport.render(image)
+        qapp.processEvents()
+        return image.toImage().pixelColor(x, body_y)
+
+    before = _sample(preview_x)
+
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=press)
+    QTest.mouseMove(viewport, move_to)
+    assert arrange._canvas._section_preview is not None
+
+    during = _sample(preview_x)
+    assert during != before
+
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=move_to)
+    assert arrange._canvas._section_preview is None
+    after = _sample(preview_x)
+    assert after == before
+
     arrange.close()
 
 

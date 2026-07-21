@@ -744,6 +744,7 @@ class _ArrangeScrollArea(QAbstractScrollArea):
             visible_end,
         )
         self._draw_comp_preview(painter)
+        self._draw_section_move_preview(painter)
         crossfade_count = self._draw_crossfades(
             painter,
             document,
@@ -1143,6 +1144,40 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         painter.fillRect(overlay, fill)
         painter.setPen(QPen(QColor(Color.ACCENT_PRIMARY), 2, Qt.PenStyle.DashLine))
         painter.drawRect(overlay)
+
+    def _draw_section_move_preview(self, painter: QPainter) -> None:
+        """Show the whole-song-block destination across every track row.
+
+        A named-section drag ripples every track at once; the ruler-strip
+        label preview alone does not make that "all tracks" scope visually
+        obvious, so this mirrors ``_draw_comp_preview``'s dashed-outline
+        treatment across the full track area instead of one row.
+        """
+
+        preview = self._section_preview
+        if preview is None:
+            return
+        _marker_id, start_frame, end_frame = preview
+        left = max(0.0, self.x_for_frame(start_frame))
+        right = min(float(self.viewport().width()), self.x_for_frame(end_frame))
+        if right <= left:
+            return
+        overlay = QRectF(
+            left,
+            RULER_HEIGHT,
+            right - left,
+            self.viewport().height() - RULER_HEIGHT,
+        )
+        fill = QColor(Color.ACCENT_PRIMARY)
+        fill.setAlpha(40)
+        painter.fillRect(overlay, fill)
+        painter.setPen(QPen(QColor(Color.ACCENT_PRIMARY), 2, Qt.PenStyle.DashLine))
+        painter.drawLine(
+            int(left), RULER_HEIGHT, int(left), self.viewport().height()
+        )
+        painter.drawLine(
+            int(right), RULER_HEIGHT, int(right), self.viewport().height()
+        )
 
     def _draw_crossfades(
         self,
@@ -1969,6 +2004,7 @@ class StudioArrange(QWidget):
             self._canvas._rebuild_timeline_bounds()
             self._canvas._update_scrollbars(scroll_start=start)
         self._canvas.viewport().update()
+        self._refresh_accessible_state()
 
     def set_track_names(self, names: Mapping[str, str]) -> None:
         """Set presentation-only names keyed by durable Studio track ID."""
@@ -2224,10 +2260,26 @@ class StudioArrange(QWidget):
             if self._audition_lane_id is not None
             else ""
         )
+        current_section = next(
+            (
+                marker
+                for marker in document.markers
+                if not marker.deleted
+                and marker.kind is MarkerKind.SECTION
+                and marker.end_frame is not None
+                and marker.start_frame <= self._playhead_frame < int(marker.end_frame)
+            ),
+            None,
+        )
+        section_note = (
+            f' The playhead is inside the "{current_section.label}" section.'
+            if current_section is not None
+            else ""
+        )
         self._canvas.viewport().setAccessibleDescription(
             "Frame-accurate regions, markers, take lanes, fades, and playhead. "
             f"{len(document.tracks)} tracks; {document.snap_mode.value} snapping. "
-            f"{selection}{audition} Arrow keys select rows and regions; Alt plus "
+            f"{selection}{audition}{section_note} Arrow keys select rows and regions; Alt plus "
             "Left or Right nudges; Control plus left or right bracket trims to "
             "the playhead; Control Alt C comps a selected lane region; Control "
             "Alt A auditions its lane; Control Alt Left or Right moves the named "

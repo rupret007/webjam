@@ -63,6 +63,7 @@ from webjam_qt.widgets.recording_studio import (
     _waveform_peaks,
     _waveform_source_key,
 )
+from webjam_qt.widgets.studio_arrange import _format_frame_time
 from webjam_qt.widgets.studio_waveforms import StudioWaveformCoordinatorError
 from webjam_qt.windows.recording_setup import (
     LocalOriginalsChoiceDialog,
@@ -1416,7 +1417,12 @@ def test_named_section_move_ripples_every_track_as_one_undoable_edit(tmp_path):
             ]
         assert studio._player._studio_renderer is not None
         assert studio._player._studio_renderer.document is moved
-        assert "every track" in studio._hint.text().lower()
+        hint_text = studio._hint.text()
+        assert "every track" in hint_text.lower()
+        assert "verse" in hint_text.lower()
+        assert _format_frame_time(RATE // 2, before_move.project_sample_rate) in (
+            hint_text
+        )
 
         studio._studio_arrange.undo_requested.emit()
         assert studio._studio_state == before_move
@@ -1426,6 +1432,50 @@ def test_named_section_move_ripples_every_track_as_one_undoable_edit(tmp_path):
         studio.shutdown()
 
     assert all(path.read_bytes() == before for path, before in truth.items())
+
+
+def test_named_section_move_rejection_explains_the_specific_reason(tmp_path):
+    """A rejected section move must surface its real cause, not a generic
+    catch-all, so a musician knows the precise problem and corrective action."""
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        section_id = new_project_id()
+        assert studio._perform_arrange_edit(
+            "Add Verse section",
+            lambda document: document.upsert_marker(
+                StudioMarker(
+                    marker_id=section_id,
+                    start_frame=0,
+                    label="Verse",
+                    kind=MarkerKind.SECTION,
+                    end_frame=RATE // 2,
+                )
+            ),
+            reload_audio=False,
+        )
+        before = studio._studio_state
+        assert before is not None
+        history = studio._studio_controller._history
+        assert history is not None
+        undo_depth = history.undo_depth
+
+        # A target strictly inside the section's own span is rejected by
+        # core.studio_sections.reorder_section.
+        studio._studio_arrange.section_move_requested.emit(section_id, RATE // 4)
+
+        assert studio._studio_state == before
+        assert history.undo_depth == undo_depth
+        hint_text = studio._hint.text().lower()
+        assert "target start cannot be inside the section" in hint_text
+        assert "unchanged" in hint_text
+    finally:
+        studio.shutdown()
 
 
 def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path):
