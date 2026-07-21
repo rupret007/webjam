@@ -1747,6 +1747,10 @@ class StudioArrange(QWidget):
         self._selected_region_id: str | None = None
         self._selected_lane_id: str | None = None
         self._audition_lane_id: str | None = None
+        # Cached identity of the named section containing the playhead.
+        # ``_refresh_accessible_state`` is its only writer, so a document,
+        # selection, lane, or audition change cannot leave it stale.
+        self._active_section_span: tuple[str, int, int] | None = None
         self._region_by_id: dict[str, StudioRegion] = {}
         self._waveform_tiles: dict[str, dict[WaveformTileKey, WaveformTile]] = {}
         self._waveform_bindings: OrderedDict[
@@ -2004,7 +2008,25 @@ class StudioArrange(QWidget):
             self._canvas._rebuild_timeline_bounds()
             self._canvas._update_scrollbars(scroll_start=start)
         self._canvas.viewport().update()
-        self._refresh_accessible_state()
+        if self._playhead_section_changed(value):
+            self._refresh_accessible_state()
+
+    def _playhead_section_changed(self, frame: int) -> bool:
+        """Report whether the playhead crossed a named-section boundary.
+
+        Playback advances the playhead roughly every 60 ms.  Rebuilding the
+        whole accessible description that often would flood a screen reader
+        with identical text, so ordinary movement inside the cached section
+        answers ``False`` without rescanning the document at all.
+        """
+
+        cached = self._active_section_span
+        if cached is not None and cached[1] <= frame < cached[2]:
+            return False
+        document = self._document
+        if document is None:
+            return cached is not None
+        return self._section_span(self._section_containing(document, frame)) != cached
 
     def set_track_names(self, names: Mapping[str, str]) -> None:
         """Set presentation-only names keyed by durable Studio track ID."""
@@ -2218,9 +2240,35 @@ class StudioArrange(QWidget):
         self.track_selected.emit(region.track_id)
         self.region_selected.emit(region.region_id)
 
+    @staticmethod
+    def _section_containing(
+        document: StudioDocument,
+        frame: int,
+    ) -> StudioMarker | None:
+        """Return the active named section whose half-open span holds ``frame``."""
+
+        return next(
+            (
+                marker
+                for marker in document.markers
+                if not marker.deleted
+                and marker.kind is MarkerKind.SECTION
+                and marker.end_frame is not None
+                and marker.start_frame <= frame < int(marker.end_frame)
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _section_span(marker: StudioMarker | None) -> tuple[str, int, int] | None:
+        if marker is None:
+            return None
+        return (marker.marker_id, marker.start_frame, int(marker.end_frame))
+
     def _refresh_accessible_state(self) -> None:
         document = self._document
         if document is None:
+            self._active_section_span = None
             self._canvas.viewport().setAccessibleDescription(
                 "No Studio arrangement is open."
             )
@@ -2260,17 +2308,8 @@ class StudioArrange(QWidget):
             if self._audition_lane_id is not None
             else ""
         )
-        current_section = next(
-            (
-                marker
-                for marker in document.markers
-                if not marker.deleted
-                and marker.kind is MarkerKind.SECTION
-                and marker.end_frame is not None
-                and marker.start_frame <= self._playhead_frame < int(marker.end_frame)
-            ),
-            None,
-        )
+        current_section = self._section_containing(document, self._playhead_frame)
+        self._active_section_span = self._section_span(current_section)
         section_note = (
             f' The playhead is inside the "{current_section.label}" section.'
             if current_section is not None

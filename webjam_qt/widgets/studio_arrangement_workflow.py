@@ -44,6 +44,7 @@ from webjam_qt.widgets.studio_editing import (
     StudioCrossfadeTarget,
     StudioEditingContext,
 )
+from webjam_qt.widgets.studio_messages import arrange_edit_failure_message
 from webjam_qt.widgets.studio_review import (
     _fmt_db,
     _fmt_time,
@@ -571,11 +572,12 @@ class StudioArrangementWorkflowMixin:
                 merge_key=merge_key,
             )
         except (StudioControllerError, StudioProjectError, ValueError) as exc:
-            LOGGER.warning("Could not apply Studio Arrange edit: %s", exc)
-            self._hint.setText(
-                f"Studio couldn't apply that edit safely: {exc} "
-                "The recorded take is unchanged."
+            LOGGER.warning(
+                "Could not apply Studio Arrange edit: %s",
+                exc,
+                exc_info=True,
             )
+            self._hint.setText(arrange_edit_failure_message(exc))
             return False
         if after is before:
             return False

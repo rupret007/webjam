@@ -642,6 +642,161 @@ def test_named_section_bar_drag_requests_whole_song_block_reorder(
     arrange.close()
 
 
+def test_playhead_only_refreshes_accessible_state_at_section_boundaries(
+    qapp: QApplication,
+) -> None:
+    """Playback advances the playhead ~16x/second.  Rebuilding the whole
+    accessible description that often floods a screen reader with identical
+    text, so only a named-section boundary crossing may refresh it."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    refreshes = 0
+    original = arrange._refresh_accessible_state
+
+    def _counting_refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+        original()
+
+    arrange._refresh_accessible_state = _counting_refresh
+
+    # Outside every section: repeated movement stays silent.
+    arrange.set_playhead(0)
+    for frame in range(1_000, 9_000, 1_000):
+        arrange.set_playhead(frame)
+    assert refreshes == 0
+    assert arrange._active_section_span is None
+
+    # Entering the section announces once.
+    arrange.set_playhead(section.start_frame)
+    assert refreshes == 1
+    assert arrange._active_section_span == (
+        section.marker_id,
+        section.start_frame,
+        int(section.end_frame),
+    )
+    assert (
+        'inside the "chorus" section'
+        in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # Ordinary movement inside the same section stays silent.
+    for offset in range(1_000, 20_000, 1_000):
+        arrange.set_playhead(section.start_frame + offset)
+    assert refreshes == 1
+
+    # Leaving the section announces exactly once more.
+    arrange.set_playhead(int(section.end_frame))
+    assert refreshes == 2
+    assert arrange._active_section_span is None
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # An explicit seek back inside announces again.
+    arrange.set_playhead(section.start_frame + 5_000)
+    assert refreshes == 3
+
+    arrange.close()
+
+
+def test_moving_between_adjacent_sections_refreshes_each_boundary(
+    qapp: QApplication,
+) -> None:
+    document = _document()
+    chorus = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    bridge = StudioMarker(
+        marker_id=_id("marker:bridge"),
+        start_frame=int(chorus.end_frame),
+        end_frame=int(chorus.end_frame) + 48_000,
+        label="Bridge",
+        kind=MarkerKind.SECTION,
+    )
+    document = replace(document, markers=(*document.markers, bridge))
+    arrange = _shown_arrange(qapp, document)
+    refreshes = 0
+    original = arrange._refresh_accessible_state
+
+    def _counting_refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+        original()
+
+    arrange._refresh_accessible_state = _counting_refresh
+
+    arrange.set_playhead(chorus.start_frame + 1_000)
+    assert refreshes == 1
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "chorus" section' in description
+
+    # Crossing directly from one section into the next must announce the new
+    # one rather than keeping the previous name.
+    arrange.set_playhead(bridge.start_frame + 1_000)
+    assert refreshes == 2
+    description = arrange._canvas.viewport().accessibleDescription().lower()
+    assert 'inside the "bridge" section' in description
+    assert "chorus" not in description
+    assert arrange._active_section_span == (
+        bridge.marker_id,
+        bridge.start_frame,
+        int(bridge.end_frame),
+    )
+
+    arrange.close()
+
+
+def test_replacing_the_document_invalidates_the_cached_section(
+    qapp: QApplication,
+) -> None:
+    """A cached section identity must never outlive the document it came
+    from, or Arrange would announce a section the take no longer has."""
+
+    document = _document()
+    section = next(
+        marker for marker in document.markers if marker.kind is MarkerKind.SECTION
+    )
+    arrange = _shown_arrange(qapp, document)
+    arrange.set_playhead(section.start_frame + 1_000)
+    assert arrange._active_section_span is not None
+
+    without_sections = replace(
+        document,
+        markers=tuple(
+            marker
+            for marker in document.markers
+            if marker.kind is not MarkerKind.SECTION
+        ),
+    )
+    arrange.set_document(without_sections)
+
+    assert arrange._active_section_span is None
+    assert (
+        'inside the "chorus" section'
+        not in arrange._canvas.viewport().accessibleDescription().lower()
+    )
+
+    # A later playhead move must not resurrect the removed section.
+    arrange.set_playhead(section.start_frame + 2_000)
+    assert arrange._active_section_span is None
+    assert "chorus" not in arrange._canvas.viewport().accessibleDescription().lower()
+
+    arrange.set_document(None)
+    assert arrange._active_section_span is None
+    assert (
+        arrange._canvas.viewport().accessibleDescription()
+        == "No Studio arrangement is open."
+    )
+
+    arrange.close()
+
+
 def test_named_section_drag_paints_full_height_destination_preview(
     qapp: QApplication,
 ) -> None:
