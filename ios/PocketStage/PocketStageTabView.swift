@@ -66,6 +66,9 @@ private struct ConnectionStatus: View {
             Spacer()
         }
         .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pocket Stage connection")
+        .accessibilityValue(connection.phase.label)
     }
 
     private var color: Color {
@@ -362,6 +365,7 @@ private struct MixChannelRow: View {
             }
             HStack(spacing: 10) {
                 Image(systemName: "speaker.wave.1")
+                    .accessibilityHidden(true)
                 Slider(value: $fader, in: 0...100) { editing in
                     if editing {
                         if !faderIsEditing {
@@ -387,7 +391,10 @@ private struct MixChannelRow: View {
                 .accessibilityLabel("\(participant.label) monitor level")
                 .accessibilityValue("\(Int(fader.rounded())) percent")
                 .disabled(!connection.canSendControls)
-                Text(Int(fader), format: .number).font(.caption.monospacedDigit()).frame(width: 42)
+                Text(Int(fader), format: .number)
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 42)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 4)

@@ -12,8 +12,9 @@ All notable improvements and features for the WebJam music collaboration platfor
   by the exact SHA-256 of its leaf DER bytes.
 - Added a strict desktop protocol/core, one-use pairing registry, immutable
   mobile projection, bounded gateway, pairing dialog, controller command
-  routing, Swift protocol/transport tests, and a native SwiftUI owner-device
-  app generated reproducibly from a checked-in XcodeGen specification.
+  routing, deterministic Swift protocol/transport/state-model tests, and a
+  native SwiftUI owner-device app generated reproducibly from a checked-in
+  XcodeGen specification.
 - The explicitly paired phone can see current session/recording state and
   session-local mix slots with bounded paired-private display labels, then
   change fader/mute, add a Session Canvas marker, or request host recording

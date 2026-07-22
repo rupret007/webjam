@@ -34,7 +34,8 @@ desktop-package claim. Run the focused desktop tests with:
   tests/test_pocket_stage_controller.py
 ```
 
-On macOS, run the Swift protocol package tests separately:
+On macOS, run the Swift protocol, transport, and deterministic connection-state
+tests separately:
 
 ```bash
 cd ios

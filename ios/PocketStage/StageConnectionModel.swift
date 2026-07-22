@@ -29,10 +29,29 @@ private struct QueuedStageCommand {
 
 private struct InFlightStageCommand {
     let intent: QueuedStageCommand
-    let sentAt: ContinuousClock.Instant
+    let sentAt: Duration
     var receiptStatus: CommandStatus?
     var receiptRevision: Int?
 }
+
+struct StageConnectionTiming: Sendable {
+    let now: @MainActor @Sendable () -> Duration
+    let sleep: @Sendable (Duration) async throws -> Void
+
+    static func live() -> StageConnectionTiming {
+        let clock = ContinuousClock()
+        let origin = clock.now
+        return StageConnectionTiming(
+            now: { origin.duration(to: clock.now) },
+            sleep: { duration in try await clock.sleep(for: duration) }
+        )
+    }
+}
+
+typealias StageSocketFactory = @MainActor @Sendable (
+    URL,
+    Data
+) -> any StageSocketClient
 
 @MainActor
 final class StageConnectionModel: ObservableObject {
@@ -78,15 +97,26 @@ final class StageConnectionModel: ObservableObject {
         }
     }
 
-    private var socket: StageSocket?
+    private var socket: (any StageSocketClient)?
     private var pendingPairing: PairingPayload?
     private var pairClaimID = CanonicalUUID()
     private var sendTail: Task<Void, Never>?
     private var freshnessTask: Task<Void, Never>?
-    private let clock = ContinuousClock()
-    private var lastMessageAt: ContinuousClock.Instant?
+    private let socketFactory: StageSocketFactory
+    private let timing: StageConnectionTiming
+    private var lastMessageAt: Duration?
     private var commandQueue: [QueuedStageCommand] = []
     private var inFlightCommand: InFlightStageCommand?
+
+    init(
+        socketFactory: @escaping StageSocketFactory = {
+            StageSocket(url: $0, certificatePin: $1)
+        },
+        timing: StageConnectionTiming = .live()
+    ) {
+        self.socketFactory = socketFactory
+        self.timing = timing
+    }
 
     var hasActiveConnection: Bool {
         phase == .connecting || phase == .connected
@@ -217,7 +247,10 @@ final class StageConnectionModel: ObservableObject {
         controlBusy = false
         latestCanceledCommandID = nil
         phase = .connecting
-        let newSocket = StageSocket(url: payload.endpoint.url, certificatePin: payload.certificateFingerprint.digest)
+        let newSocket = socketFactory(
+            payload.endpoint.url,
+            payload.certificateFingerprint.digest
+        )
         newSocket.onEvent = { [weak self, weak newSocket] event in
             Task { @MainActor [weak self, weak newSocket] in
                 guard let self, let newSocket else { return }
@@ -230,7 +263,10 @@ final class StageConnectionModel: ObservableObject {
         armFreshnessMonitor(for: newSocket)
     }
 
-    private func handle(_ event: StageSocket.Event, from source: StageSocket) {
+    private func handle(
+        _ event: StageSocketEvent,
+        from source: any StageSocketClient
+    ) {
         guard socket === source else { return }
         switch event {
         case .opened:
@@ -249,12 +285,18 @@ final class StageConnectionModel: ObservableObject {
             }
         case let .message(.snapshot(envelope)):
             guard acceptServerSequence(envelope.sequence) else { return }
-            lastMessageAt = clock.now
+            lastMessageAt = timing.now()
             let snapshot = envelope.body
             if phase == .connected && snapshot.generation != currentGeneration {
                 source.disconnect()
                 socket = nil
                 retirePairing("The desktop session changed. Scan a fresh code before sending more controls.")
+                return
+            }
+            if phase == .connected && snapshot.revision < revision {
+                source.disconnect()
+                socket = nil
+                retirePairing("The desktop state moved backward. Scan a fresh code before sending more controls.")
                 return
             }
             phase = .connected
@@ -282,7 +324,7 @@ final class StageConnectionModel: ObservableObject {
             reconcileInFlightAfterSnapshot()
         case let .message(.receipt(envelope)):
             guard acceptServerSequence(envelope.sequence) else { return }
-            lastMessageAt = clock.now
+            lastMessageAt = timing.now()
             latestReceipt = envelope.body
             if envelope.body.commandID == pendingRecordingCommandID {
                 if envelope.body.status == .rejected {
@@ -290,8 +332,10 @@ final class StageConnectionModel: ObservableObject {
                     commandStatus = nil
                     commandIssue = "Recording request rejected: \(envelope.body.reason.rawValue.replacingOccurrences(of: "_", with: " "))"
                 } else if envelope.body.status == .confirmed {
-                    clearPendingRecording()
-                    commandStatus = nil
+                    // A transport receipt confirms only that the desktop
+                    // handled the command. Keep the destructive recording UI
+                    // pending until a later authoritative snapshot proves the
+                    // recorder reached the requested state.
                     commandIssue = nil
                 }
             } else if envelope.body.status == .rejected {
@@ -403,7 +447,7 @@ final class StageConnectionModel: ObservableObject {
             )
             inFlightCommand = InFlightStageCommand(
                 intent: intent,
-                sentAt: clock.now
+                sentAt: timing.now()
             )
             controlBusy = true
         } catch {
@@ -451,18 +495,18 @@ final class StageConnectionModel: ObservableObject {
     private var pendingRecordingCommandID: CanonicalUUID?
     private var pendingRecordingTarget: String?
 
-    private func armFreshnessMonitor(for source: StageSocket) {
+    private func armFreshnessMonitor(for source: any StageSocketClient) {
         freshnessTask?.cancel()
-        let connectionStartedAt = clock.now
+        let connectionStartedAt = timing.now()
         freshnessTask = Task { @MainActor [weak self, weak source] in
             while !Task.isCancelled {
-                do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+                do { try await self?.timing.sleep(.seconds(1)) }
                 catch { return }
                 guard let self, let source, self.socket === source else { return }
                 guard let lastMessageAt = self.lastMessageAt else {
                     // Leave enough time for a musician to read and approve
                     // iOS's first-run Local Network permission sheet.
-                    if connectionStartedAt.duration(to: self.clock.now) > .seconds(60) {
+                    if self.timing.now() - connectionStartedAt > .seconds(60) {
                         source.disconnect()
                         self.socket = nil
                         self.retirePairing("The desktop did not answer. Confirm both devices use the same private Wi-Fi, then scan a fresh code.")
@@ -470,14 +514,14 @@ final class StageConnectionModel: ObservableObject {
                     }
                     continue
                 }
-                if lastMessageAt.duration(to: self.clock.now) > .seconds(5) {
+                if self.timing.now() - lastMessageAt > .seconds(5) {
                     source.disconnect()
                     self.socket = nil
                     self.retirePairing("The iPhone connection became stale. The desktop jam keeps running; scan a fresh code to return.")
                     return
                 }
                 if let inFlight = self.inFlightCommand {
-                    let age = inFlight.sentAt.duration(to: self.clock.now)
+                    let age = self.timing.now() - inFlight.sentAt
                     let limit: Duration = inFlight.receiptStatus == .pending
                         ? .seconds(30)
                         : .seconds(8)
@@ -569,7 +613,10 @@ final class StageConnectionModel: ObservableObject {
         clearPendingRecording()
     }
 
-    private func enqueue<T: Encodable>(_ message: T, through source: StageSocket) throws {
+    private func enqueue<T: Encodable>(
+        _ message: T,
+        through source: any StageSocketClient
+    ) throws {
         guard socket === source else { throw URLError(.cancelled) }
         let text = try WireCodec.encodeText(message)
         let previous = sendTail

@@ -26,7 +26,7 @@ credential.
 | Desktop pairing dialog | `webjam_qt/windows/pocket_stage_pairing.py` |
 | Desktop projection/command routing | `webjam_qt/controllers/application_controller.py` |
 | More-menu entry/state | `webjam_qt/widgets/session_strip.py` |
-| Swift protocol package/tests | `ios/Sources/` and `ios/Tests/` |
+| Swift protocol, transport, and state-model tests | `ios/Sources/` and `ios/Tests/` |
 | SwiftUI app + reproducible target | `ios/PocketStage/` and `ios/project.yml` |
 
 The desktop entry point is **More -> Use iPhone**. It starts a dedicated gateway

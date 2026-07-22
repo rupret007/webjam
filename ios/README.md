@@ -9,7 +9,7 @@ their own Apple team and bundle identifier without changing shared source.
 
 - `PocketStageProtocol`: a macOS/iOS Swift Package with strict QR parsing,
   version validation, endpoint validation, certificate fingerprints, JSON wire
-  models, and tests.
+  models, and deterministic protocol, transport, and connection-state tests.
 - `PocketStage/`: SwiftUI screens for **Pair**, **Live / Now**, **Band**,
   **My Mix**, and **Cues**; connection state; and a
   `URLSessionWebSocketTask` client that
@@ -32,7 +32,9 @@ swift test
 ```
 
 This is deliberately macOS-testable and does not need Xcode, an iPhone, or a
-network connection.
+network connection. The state-model tests use injected socket and monotonic-time
+drivers; the separate opt-in integration still exercises the real pinned WSS
+transport.
 
 ## Install on your iPhone with a Personal Team
 

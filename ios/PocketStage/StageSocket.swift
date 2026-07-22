@@ -3,15 +3,24 @@ import CryptoKit
 import Security
 import PocketStageProtocol
 
+enum StageSocketEvent: Sendable {
+    case opened
+    case message(IncomingMessage)
+    case closed
+    case failed(String)
+}
+
+protocol StageSocketClient: AnyObject, Sendable {
+    @MainActor var onEvent: (@MainActor @Sendable (StageSocketEvent) -> Void)? { get set }
+    @MainActor func connect()
+    @MainActor func disconnect()
+    @MainActor func send(text: String) async throws
+}
+
 /// A pinned WebSocket transport for the desktop's intentionally self-signed
 /// leaf certificate. There is no unpinned or public-CA fallback.
-final class StageSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
-    enum Event: Sendable {
-        case opened
-        case message(IncomingMessage)
-        case closed
-        case failed(String)
-    }
+final class StageSocket: NSObject, URLSessionWebSocketDelegate, StageSocketClient, @unchecked Sendable {
+    typealias Event = StageSocketEvent
 
     @MainActor var onEvent: (@MainActor @Sendable (Event) -> Void)?
     private let url: URL
@@ -54,7 +63,7 @@ final class StageSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Senda
         receiveNext(for: task)
     }
 
-    func disconnect() {
+    @MainActor func disconnect() {
         stateLock.lock()
         let task = self.task
         let session = self.session
@@ -65,7 +74,7 @@ final class StageSocket: NSObject, URLSessionWebSocketDelegate, @unchecked Senda
         session?.invalidateAndCancel()
     }
 
-    func send(text: String) async throws {
+    @MainActor func send(text: String) async throws {
         let task = stateLock.withLock { self.task }
         guard let task else { throw URLError(.notConnectedToInternet) }
         try await task.send(.string(text))

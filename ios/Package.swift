@@ -22,10 +22,9 @@ let package = Package(
                 "Info.plist.template",
                 "PairingQRScanner.swift",
                 "PocketStageApp.swift",
-                "PocketStageTabView.swift",
-                "StageConnectionModel.swift"
+                "PocketStageTabView.swift"
             ],
-            sources: ["StageSocket.swift"]
+            sources: ["StageSocket.swift", "StageConnectionModel.swift"]
         ),
         .testTarget(
             name: "PocketStageProtocolTests",
