@@ -79,6 +79,37 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
   WebJam release. The manual-path override above remains available if
   you need a newer (or different) Jamulus version sooner.
 
+## Pocket Stage Python runtime dependency inventory
+
+The Pocket Stage source and frozen-application specification use the following
+Python runtime packages. Versions are pinned in
+`requirements-lock/release-constraints.txt` and the target-specific hash locks:
+
+- [`cryptography` 48.0.1](https://github.com/pyca/cryptography) — ephemeral
+  certificate/key creation and certificate serialization. License:
+  [Apache License 2.0 OR BSD 3-Clause License](https://github.com/pyca/cryptography/blob/main/LICENSE);
+  WebJam redistributes it under the verified BSD option copied from the pinned
+  distribution at [`licenses/CRYPTOGRAPHY_LICENSE.txt`](licenses/CRYPTOGRAPHY_LICENSE.txt).
+- [`websockets` 16.1.1](https://github.com/python-websockets/websockets) —
+  secure WebSocket runtime support used by the Pocket Stage gateway stack.
+  License: [BSD 3-Clause License](https://github.com/python-websockets/websockets/blob/main/LICENSE),
+  with the verified pinned-distribution text at
+  [`licenses/WEBSOCKETS_LICENSE.txt`](licenses/WEBSOCKETS_LICENSE.txt).
+- [`Segno` 1.6.6](https://github.com/heuer/segno) — QR-code rendering in the
+  desktop pairing dialog. License:
+  [BSD 3-Clause License](https://github.com/heuer/segno/blob/master/LICENSE),
+  with the verified pinned-distribution text at
+  [`licenses/SEGNO_LICENSE.txt`](licenses/SEGNO_LICENSE.txt).
+
+This section is a dependency and license inventory, not an assertion that the
+Pocket Stage developer preview is present in the already-published v0.18.1
+packages. The links above identify the upstream projects and authoritative
+license text. The three local copies were taken from the exact installed pinned
+distributions and the frozen-application specification is configured to place
+them in `THIRD_PARTY_LICENSES`; this does not claim that an already-published
+artifact contains them. Any future promoted package must inventory its exact
+dependency graph and verify the staged license files during package inspection.
+
 ## WebJam fabric transport
 
 WebJam bundles `webjam-fabric`, its statically compiled native transport

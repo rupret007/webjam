@@ -4,6 +4,33 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## Unreleased — Pocket Stage v1 developer preview
+
+- Added an owner-device Pocket Stage vertical slice behind **More -> Use iPhone**.
+  It starts a separate private-Wi-Fi WSS gateway, renders a one-use QR that
+  expires in two minutes, and uses an ephemeral self-signed certificate pinned
+  by the exact SHA-256 of its leaf DER bytes.
+- Added a strict desktop protocol/core, one-use pairing registry, immutable
+  mobile projection, bounded gateway, pairing dialog, controller command
+  routing, Swift protocol/transport tests, and a native SwiftUI owner-device
+  app generated reproducibly from a checked-in XcodeGen specification.
+- The explicitly paired phone can see current session/recording state and
+  session-local mix slots with bounded paired-private display labels, then
+  change fader/mute, add a Session Canvas marker, or request host recording
+  after desktop setup. Labels are excluded from logs, diagnostics, support
+  bundles, and the anonymous public Local Companion API.
+- Pan remains in the forward-compatible snapshot/protocol vocabulary but is
+  not presented or accepted: the pinned Jamulus client has no proven pan RPC.
+- Deliberate limits: no phone audio, chat, reactions, solo command, rehearsal
+  plan, section/Studio transport, media transfer, or durable reconnect
+  credential. The existing Local API and Jamulus audio path are unchanged.
+- CI generates and compiles the complete unsigned iOS app and an automated gate
+  pairs the real Swift transport with the live Python WSS gateway. Installation
+  on an owner's iPhone still requires selecting an Apple Personal Team in Xcode;
+  the app is not included in the published v0.18.1 packages. Physical iPhone
+  pairing, permissions/firewalls, interruption, accessibility, realtime
+  mix/recording, and rehearsal non-interference remain **NOT RUN**.
+
 ## [0.18.1] — 2026-07-21 unsigned private test candidate
 
 ### Downloadable candidate lane

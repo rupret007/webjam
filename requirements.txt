@@ -21,5 +21,10 @@ sounddevice>=0.4.7
 soundfile>=0.12.1  # Take Deck: multitrack playback file IO
 fastapi>=0.111.0
 uvicorn>=0.30.0
+# Pocket Stage: issue an ephemeral local TLS identity, serve WSS through
+# Uvicorn's supported WebSocket backend, and render dependency-light pairing QR.
+cryptography>=46.0.0
+websockets>=15.0.0
+segno>=1.6.0
 httpx>=0.27.0
 sentry-sdk>=2.0.0

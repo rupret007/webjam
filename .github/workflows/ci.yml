@@ -255,6 +255,71 @@ jobs:
           exit 1
 
   # ------------------------------------------------------------------
+  # Pocket Stage iPhone companion: generate the real app project from the
+  # checked-in spec, test the shared protocol, and compile the full iOS app.
+  # Signing is intentionally disabled; owner-device Personal Team signing is
+  # selected locally in Xcode and no Apple credential enters CI.
+  # ------------------------------------------------------------------
+  pocket-stage-ios:
+    name: Pocket Stage (iOS app)
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python for the live gateway interoperability gate
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install checksum-pinned XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen-2.45.4.zip"
+          tool="$RUNNER_TEMP/xcodegen-2.45.4"
+          curl -fsSL -o "$archive" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.45.4/xcodegen.zip
+          echo "090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef  $archive" \
+            | shasum -a 256 -c -
+          ditto -x -k "$archive" "$tool"
+          test "$("$tool/xcodegen/bin/xcodegen" version)" = "Version: 2.45.4"
+          echo "XCODEGEN=$tool/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+
+      - name: Test Pocket Stage wire protocol
+        working-directory: ios
+        run: swift test
+
+      - name: Prove Swift URLSession against the live pinned-WSS gateway
+        run: |
+          python3 -m pip install \
+            "cryptography==48.0.1" \
+            "fastapi==0.139.2" \
+            "pytest==8.3.5" \
+            "uvicorn==0.51.0" \
+            "websockets==16.1.1"
+          WEBJAM_RUN_SWIFT_POCKET_STAGE_INTEGRATION=1 \
+            python3 -m pytest -q tests/test_pocket_stage_swift_integration.py
+
+      - name: Generate Pocket Stage Xcode project
+        working-directory: ios
+        run: |
+          "$XCODEGEN" generate --spec project.yml
+
+      - name: Build full Pocket Stage app for iOS Simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project WebJamPocketStage.xcodeproj \
+            -scheme PocketStage \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  # ------------------------------------------------------------------
   # Manual release certification: one uninterrupted hour on a native
   # GitHub-hosted Ubuntu/amd64 VM. It never runs for pushes or PRs. The
   # workflow already exists on the default branch, so maintainers can run
@@ -343,7 +408,7 @@ jobs:
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
-    needs: [test, integration-jamulus, transport, reference-service]
+    needs: [test, integration-jamulus, transport, reference-service, pocket-stage-ios]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -766,6 +831,9 @@ jobs:
             test -x "$fresh_dir/WebJam/install-jamulus.sh"
             test -f "$fresh_dir/WebJam/Jamulus/JAMULUS_COPYING.txt"
             echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  $fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
+            python -m tests.support.run_frozen_pocket_stage_smoke \
+              --binary "$fresh_dir/WebJam/WebJam" \
+              --cwd "$fresh_dir/WebJam"
             fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
             mkdir -p "$fresh_home"
             HOME="$fresh_home" \
@@ -1141,6 +1209,9 @@ jobs:
             --manifest "$copied_app/Contents/Resources/webjam-fabric.sha256" \
             --build-id "$build_id" \
             --machine "$expected_machine"
+          python -m tests.support.run_frozen_pocket_stage_smoke \
+            --binary "$copied_app/Contents/MacOS/WebJam" \
+            --cwd "$copied_app/Contents/MacOS"
           HOME="$smoke_home" \
             WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
             WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
@@ -1187,6 +1258,9 @@ jobs:
           $env:HOME = $smokeHome
           $env:USERPROFILE = $smokeHome
           $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
+          python -m tests.support.run_frozen_pocket_stage_smoke `
+            --binary $app `
+            --cwd $appDir
           $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
           $env:WEBJAM_SMOKE_EXIT_MS = "5000"
           [IO.File]::WriteAllText(

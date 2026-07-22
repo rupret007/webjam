@@ -380,6 +380,24 @@ def _run_app() -> int:
 
 def run() -> int:
     """Run WebJam with one plain-language last-resort failure screen."""
+    if (
+        getattr(sys, "frozen", False)
+        and os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME") == "1"
+    ):
+        try:
+            from services.pocket_stage_packaged_smoke import (
+                run_frozen_pocket_stage_smoke,
+            )
+
+            result_path = Path(
+                os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RESULT", "")
+            )
+            return run_frozen_pocket_stage_smoke(result_path=result_path)
+        except Exception:  # noqa: BLE001 - bounded CI-only frozen proof
+            logging.getLogger("webjam.qt").exception(
+                "Frozen Pocket Stage runtime smoke failed"
+            )
+            return 1
     try:
         return _run_app()
     except Exception:  # noqa: BLE001 - this is the process-level safety net

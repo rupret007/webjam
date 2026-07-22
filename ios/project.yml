@@ -1,0 +1,57 @@
+name: WebJamPocketStage
+options:
+  minimumXcodeGenVersion: 2.45.4
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  PocketStageProtocol:
+    path: .
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  PocketStage:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PocketStage
+        excludes:
+          - Info.plist.template
+    dependencies:
+      - package: PocketStageProtocol
+        product: PocketStageProtocol
+    info:
+      path: PocketStage/Info.plist
+      properties:
+        CFBundleDisplayName: Pocket Stage
+        NSCameraUsageDescription: Pocket Stage scans a WebJam pairing QR code.
+        NSLocalNetworkUsageDescription: Pocket Stage connects to the WebJam session on your local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.webjam.PocketStage
+        PRODUCT_NAME: Pocket Stage
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  PocketStage:
+    build:
+      targets:
+        PocketStage: all
+    run:
+      config: Debug
+    archive:
+      config: Release

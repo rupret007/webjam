@@ -43,6 +43,42 @@ transfer, export, or human audibility. Guidance is local, deterministic,
 inspectable, offline, and event-driven. It performs no work on meter, waveform,
 playhead, animation, audio, capture, or playback callbacks.
 
+## Pocket Stage iPhone developer preview
+
+The source tree contains a narrow Pocket Stage v1 vertical slice for an owner's
+iPhone; it is not part of the published v0.18.1 desktop packages. On the desktop,
+choose **More -> Use iPhone** after both devices are on the same private Wi-Fi.
+WebJam displays a one-use QR code that expires after two minutes and starts a
+separate secure local gateway only for this explicitly requested sharing
+session.
+
+The gateway creates an ephemeral self-signed certificate. The QR carries the
+exact SHA-256 fingerprint of that certificate's DER bytes, and the iPhone pins
+the presented certificate to that value. The code can be claimed once; after a
+disconnect, create a fresh code because this preview has no durable reconnect
+credential.
+
+The paired phone can display current session and recording state plus
+session-local mix slots with bounded participant display labels. Those labels
+are paired-private content and stay out of logs, diagnostics, support bundles,
+and the anonymous public Local Companion API. Current controls are fader,
+mute, a timestamped Session Canvas marker, and—only for a prepared host—record
+start/stop after Recording Setup is completed on the desktop.
+
+Pan remains in the versioned snapshot/protocol vocabulary for forward
+compatibility, but this preview does not present or accept it as a live control:
+the pinned Jamulus client has no proven pan command.
+
+This preview has no phone audio, chat, reactions, solo command, rehearsal plan,
+section/Studio transport, editing, or media transfer. The checked-in XcodeGen
+spec reproducibly generates and CI-compiles the native SwiftUI app; an owner
+still selects their Apple Personal Team in Xcode to install it on their own
+iPhone. No packaged iOS app or physical iPhone/rehearsal result is claimed; all
+physical tests remain **NOT RUN**. The existing loopback Local API and Jamulus
+audio path are unchanged. See the
+[Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
+and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
+
 ## Recording and Studio
 
 Recording is optional and starts only when the host presses **Record**. On a
@@ -168,6 +204,8 @@ package or claim audibility.
 - [Musician guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
+- [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
+- [Pocket Stage threat model](docs/security/pocket-stage-mobile-threat-model.md)
 - [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md)
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Test procedure](TEST_PROCEDURE.md)
