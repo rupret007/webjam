@@ -9,12 +9,34 @@ from pathlib import Path
 
 import pytest
 
-from core.pocket_stage import PairingScope
+from core.pocket_stage import (
+    MobileRecordingState,
+    MobileSessionProjection,
+    PairingScope,
+)
+from core.session_conductor import (
+    SessionConductorPhase,
+    SessionPrimaryAction,
+    SessionRole,
+)
 from services.pocket_stage_gateway import PocketStageGateway
-from tests.test_pocket_stage_gateway import _projection
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _projection() -> MobileSessionProjection:
+    """Keep the live gate independent from FastAPI's optional test client."""
+
+    return MobileSessionProjection(
+        generation=3,
+        revision=9,
+        role=SessionRole.HOST,
+        phase=SessionConductorPhase.CONNECTED,
+        primary_action=SessionPrimaryAction.NONE,
+        primary_enabled=False,
+        recording_state=MobileRecordingState.IDLE,
+    )
 
 
 @pytest.mark.skipif(
