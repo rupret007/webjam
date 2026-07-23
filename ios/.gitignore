@@ -1,0 +1,8 @@
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+WebJamPocketStage.xcodeproj/
+PocketStage/Info.plist

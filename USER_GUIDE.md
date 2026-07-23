@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.18.0
+# WebJam musician guide — v0.18.1
 
 ## Follow the current guide
 
@@ -55,10 +55,67 @@ invitation succeeded.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
 | Studio | Reviews and arranges takes; playback output appears only for review |
 | Notes | Opens session notes |
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
+
+## Use iPhone as Pocket Stage — developer preview
+
+Pocket Stage is currently an owner-device Xcode developer preview, not an
+iPhone binary included with the published WebJam packages. Generate the
+checked-in app project with `ios/Generate Pocket Stage Project.command`, select
+your Apple Personal Team and unique bundle identifier in Xcode, and run it on
+your iPhone. The app includes an in-app QR scanner. Its text field is a
+Simulator/developer aid, not a physical-user fallback, because the desktop
+intentionally does not expose the bearer pairing text. If Camera permission is
+off, restore it in iPhone Settings and scan a fresh code.
+
+To try it, put the Mac and iPhone on the same private Wi-Fi, start the desktop
+session normally, and choose **More -> Use iPhone as Pocket Stage…**. The code is
+one-use and expires after two minutes. It pins the phone to the desktop's
+temporary self-signed certificate using the SHA-256 fingerprint of the exact
+certificate DER bytes. If the phone disconnects, choose **New Code** and pair
+again; the old QR and phone-local state are not reconnect credentials.
+
+On macOS 15 or later, allow WebJam's **Local Network** request when you first
+turn on Pocket Stage. If the phone remains on “Connecting,” open **System
+Settings → Privacy & Security → Local Network**, enable WebJam, then stop and
+restart iPhone sharing. macOS Application Firewall is separate: if needed,
+allow WebJam in **System Settings → Network → Firewall → Options**. On Windows,
+allow WebJam through Defender Firewall on **Private networks only**, never
+public networks. On Linux, any firewall exception should likewise be limited
+to the trusted private LAN. WebJam never changes a firewall rule or asks for
+administrator access. An ad-hoc unsigned test build may be treated as a new app
+identity after rebuilding and ask again.
+
+After a computer sleep/wake gap or network-address change, WebJam retires the
+old Pocket Stage listener and certificate rather than advertising a possibly
+stale address. Open Pocket Stage again from **More** and scan the fresh code.
+New codes are also refused before the temporary certificate could expire; stop
+and reopen iPhone sharing to create a fresh identity.
+
+After pairing, Pocket Stage can show current session/recording state and
+session-local mix slots with bounded participant display labels. These labels
+are visible only in the explicitly paired experience; the public Local
+Companion API remains anonymous, and labels are excluded from logs,
+diagnostics, and support bundles. The phone can change fader or mute and
+add a timestamped marker to Session Canvas. A host may request recording
+start/stop only after hosting, Jamulus connection, and the first-record /
+Recording Setup choice are already complete on the desktop.
+
+Pan remains a versioned snapshot field and reserved command, but this preview
+does not present or apply it because Jamulus 3.12.2 has no proven client pan
+command.
+
+The current preview has no phone audio, participant identity beyond the bounded
+paired-private labels, chat, reactions, solo command, rehearsal plan, section
+or Studio transport, Studio editing, media transfer, or durable reconnect
+credential. The existing Local API and Jamulus audio path do not change.
+Physical iPhone pairing, OS permission/firewall recovery, interruption,
+accessibility, mix correctness, recording, and rehearsal tests are **NOT RUN**
+until recorded against exact builds.
 
 ## Recording
 
@@ -99,7 +156,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.18.0 source candidate.
+v0.18.1 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

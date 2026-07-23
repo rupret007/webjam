@@ -1,4 +1,4 @@
-# Developing WebJam v0.18.0
+# Developing WebJam v0.18.1
 
 ## Local setup
 
@@ -15,11 +15,72 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.18.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.18.1.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
 jitter settings.
+
+## Pocket Stage developer preview
+
+Pocket Stage is owner-device development work, not a distributed iOS binary or
+desktop-package claim. Run the focused desktop tests with:
+
+```bash
+.venv/bin/python -m pytest -q \
+  tests/test_pocket_stage.py \
+  tests/test_pocket_stage_gateway.py \
+  tests/test_pocket_stage_tls.py \
+  tests/test_pocket_stage_controller.py
+```
+
+On macOS, run the Swift protocol, transport, and deterministic connection-state
+tests separately:
+
+```bash
+cd ios
+swift test
+```
+
+The opt-in Python test below launches the real Python WSS gateway and proves the
+real Swift `URLSessionWebSocketTask` client can authenticate, pair, receive a
+snapshot, and close cleanly:
+
+```bash
+WEBJAM_RUN_SWIFT_POCKET_STAGE_INTEGRATION=1 \
+  .venv/bin/pytest -q tests/test_pocket_stage_swift_integration.py
+```
+
+For an owner-device experiment, follow `ios/README.md`: run the checked-in
+generator, select a unique bundle identifier and the owner's Apple Personal
+Team in the generated target, then install from Xcode. The generated target
+already contains the local package and required privacy/network keys. The Pair
+view uses a native QR scanner; text injection is only a Simulator/developer
+aid, not a physical-user fallback. App Store/TestFlight distribution is not
+implemented.
+
+Preserve these boundaries in every Pocket Stage change:
+
+- the gateway stays off until **More -> Use iPhone** and binds only a selected
+  private interface, never wildcard/public or plaintext WebSocket;
+- the QR capability is one-use, expires in 120 seconds, and pins the exact
+  SHA-256 of the ephemeral leaf certificate's DER bytes;
+- there is no durable reconnect credential; a disconnected phone needs a fresh
+  QR;
+- slot display labels are bounded paired-private content and never enter logs,
+  diagnostics, support bundles, or the anonymous public Local API;
+- commands remain finite, bounded, scope/generation/revision guarded, and
+  marshalled to the Qt owner thread;
+- there is no phone audio, chat/reactions, solo command, rehearsal plan,
+  section/Studio transport, or media path in this slice;
+- the Local API and Jamulus audio path remain unchanged, and companion work
+  stays off audio/capture/meter/waveform/playback/export callbacks.
+
+Automated tests do not establish installed-device behavior. Physical pairing,
+camera and Local Network permission, operating-system firewall allow/deny and
+recovery, sleep/wake or IP-change fresh-code recovery, accessibility, correct
+mix control, host recording, long-session resources, and audio non-interference
+remain **NOT RUN**.
 
 ## Dual-musician rehearsal lab
 
@@ -87,12 +148,12 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.18.0`; no package with that version is promoted.
-The current published rollback/reference package remains:
+The source tree reports `0.18.1`. The published v0.18.1 desktop assets are the
+unsigned/ad-hoc private test candidate; the later Pocket Stage source preview is
+not claimed to be inside those packages. The current published candidate is:
 
-- Primary published artifact in GitHub Releases:
-  [`v0.16.3`](https://github.com/rupret007/webjam/releases/tag/v0.16.3) /
-  `WebJam-v0.16.3-RC-4d8c046-windows-x64-setup.exe`.
+- GitHub release: [`v0.18.1`](https://github.com/rupret007/webjam/releases/tag/v0.18.1),
+  clearly labeled as an unsigned/unnotarized private test candidate.
 
 The local source-bundle smoke command is:
 

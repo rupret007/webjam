@@ -1,4 +1,4 @@
-# WebJam architecture — v0.18.0
+# WebJam architecture — v0.18.1
 
 ## Product boundary
 
@@ -10,6 +10,9 @@ The boundary is deliberate:
 | `webjam_qt` | Host/Join launch, Session HUD, invitations, recording/Studio UI, recovery messages |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, external Webex launch |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
+| `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
+| `services/pocket_stage_gateway.py` / `services/pocket_stage_tls.py` | Explicit private-Wi-Fi WSS listener and ephemeral pinned TLS identity, separate from the Local API |
+| `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
 | Webex | Conversation/video meeting state and device controls |
 
@@ -64,6 +67,60 @@ creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
 offline path must remain available.
+
+## Pocket Stage developer-preview boundary
+
+Pocket Stage is an owner-device iPhone companion vertical slice. It is activated
+by **More -> Use iPhone** and binds a dedicated WSS gateway to one current
+private IPv4 interface and a random port. The normal Host/Join path does not
+start it. The existing loopback, read-only Local Companion API is neither
+modified nor exposed to the LAN.
+
+```text
+generated native SwiftUI app
+  -> pinned WSS protocol v1
+  -> PocketStageGateway
+  -> immutable MobileSessionProjection / finite PocketCommand
+  -> ApplicationController on the Qt owner thread
+  -> existing Jamulus controller or RecordingCoordinator
+```
+
+Each sharing session creates an ephemeral self-signed certificate/key. A
+one-use, 120-second QR capability contains the endpoint and the exact SHA-256
+fingerprint of the leaf certificate's DER bytes. The phone authenticates the
+server with that pin and submits one atomic capability claim. There is no
+server-issued reconnect credential: the capability authorizes the active
+socket only, and disconnection requires a fresh QR.
+
+`MobileSessionProjection` carries session generation/revision, role, phase,
+primary guidance, recording state, and session-local participant slots. An
+explicitly paired phone may receive a bounded participant display label plus
+fader, pan, mute, solo, local-slot, and connection state. Labels are
+paired-private content: they are excluded from gateway logs, diagnostics,
+support bundles, and the anonymous public Local API. Provider IDs, paths,
+invitations, credentials, device names, and raw exceptions never enter the
+projection.
+
+The implemented command path permits fader, mute, a timestamped Session
+Canvas marker, and host recording start/stop after desktop setup. Commands are
+finite, bounded, rate-limited, idempotent by command ID, and guarded by expected
+generation/revision and pairing scope. Solo is read-only. Rehearsal-plan and
+section transport are not granted/applied, and Studio has no mobile command
+surface.
+
+Pan remains in the bounded projection and reserved protocol vocabulary, but
+the desktop rejects the command and the iPhone does not present it because the
+pinned Jamulus client has no proven pan provider path.
+
+Pocket Stage carries no audio or media. It does not enter Jamulus packets,
+device selection, capture, meters, playback, waveforms, Studio export, or other
+realtime callbacks. A checked-in XcodeGen spec reproducibly generates the
+native app target, which CI builds without signing; owner-device installation
+still requires selecting an Apple Personal Team in Xcode. It is not a packaged
+iOS release. The real Swift transport has paired with the live Python gateway
+under automation, but physical iPhone pairing, OS permission/firewall behavior,
+interruption, accessibility, recording, long-session resource use, and Jamulus
+non-interference are **NOT RUN**.
 
 ## Jamulus-native launch
 

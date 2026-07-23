@@ -17,6 +17,9 @@ PKG = Path(webjam_qt.__file__).resolve().parent
 ROOT = PKG.parent
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
 CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+POCKET_SMOKE_RUNNER = (
+    ROOT / "tests" / "support" / "run_frozen_pocket_stage_smoke.py"
+).read_text(encoding="utf-8")
 
 
 class TestPackagedDataFiles(unittest.TestCase):
@@ -51,6 +54,13 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("WEBJAM_BUILD_ID", SPEC)
         self.assertIn("INTER_OFL.txt", SPEC)
         self.assertTrue((ROOT / "licenses" / "INTER_OFL.txt").is_file())
+        for name in (
+            "CRYPTOGRAPHY_LICENSE.txt",
+            "WEBSOCKETS_LICENSE.txt",
+            "SEGNO_LICENSE.txt",
+        ):
+            self.assertIn(name, SPEC)
+            self.assertTrue((ROOT / "licenses" / name).is_file())
         self.assertIn('"transport" / "NOTICE.md"', SPEC)
         self.assertIn('"transport" / "DEPENDENCIES.md"', SPEC)
         self.assertIn('"transport" / "licenses"', SPEC)
@@ -88,6 +98,17 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("accepted valid authentication secret", CI)
         self.assertIn("webjam-linux-x64", CI)
         self.assertIn("Verify tag matches packaged version", CI)
+        self.assertIn("run_frozen_pocket_stage_smoke", CI)
+        self.assertIn("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", POCKET_SMOKE_RUNNER)
+
+    def test_ci_selects_swift_testing_capable_xcode_for_pocket_stage(self):
+        self.assertIn(
+            "DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer",
+            CI,
+        )
+        self.assertIn('test "$(xcodebuild -version | head -1)" = "Xcode 16.2"', CI)
+        self.assertIn("swift test", CI)
+        self.assertIn("-sdk iphonesimulator", CI)
 
     def test_linux_release_instructions_and_installer_helper_are_packaged(self):
         linux = ROOT / "packaging" / "linux"
@@ -111,10 +132,29 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("bandmates can hear you", SPEC)
         self.assertNotIn("optional local recording.\"", SPEC)
 
+    def test_macos_bundle_declares_pocket_stage_local_network_purpose(self):
+        self.assertIn("NSLocalNetworkUsageDescription", SPEC)
+        self.assertIn("iPhone Pocket Stage", SPEC)
+        self.assertIn("private local network", SPEC)
+
     def test_spec_keeps_late_studio_modules_in_the_frozen_archive(self):
         self.assertIn('"core.take_export"', SPEC)
         self.assertIn('"webjam_qt.widgets.recording_studio"', SPEC)
         self.assertIn('"webjam_qt.windows.recording_setup"', SPEC)
+
+    def test_spec_keeps_opt_in_pocket_stage_runtime_in_frozen_app(self):
+        for module in (
+            "core.pocket_stage",
+            "services.pocket_stage_gateway",
+            "services.pocket_stage_packaged_smoke",
+            "services.pocket_stage_tls",
+            "webjam_qt.windows.pocket_stage_pairing",
+            "cryptography",
+            "websockets",
+            "websockets.sync.client",
+            "segno",
+        ):
+            self.assertIn(f'"{module}"', SPEC)
 
 
 if __name__ == "__main__":

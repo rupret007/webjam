@@ -155,6 +155,18 @@ a = Analysis(
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
         (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
+        (
+            str(ROOT / "licenses" / "CRYPTOGRAPHY_LICENSE.txt"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(ROOT / "licenses" / "WEBSOCKETS_LICENSE.txt"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(ROOT / "licenses" / "SEGNO_LICENSE.txt"),
+            "THIRD_PARTY_LICENSES",
+        ),
         # The native transport is staged beside the main executable after
         # PyInstaller so it can be process-owned without PATH lookup. Its
         # license inventory is ordinary bundle data and ships on every target.
@@ -203,18 +215,31 @@ a = Analysis(
         # candidate includes the complete v0.16 path even if module-graph
         # analysis changes how it follows function-local imports.
         "core.session_conductor",
+        "core.pocket_stage",
         "core.pilot_evidence",
         "core.jamulus_server_rpc",
         "webjam_qt.windows.take_deck",
         "webjam_qt.widgets.recording_studio",
         "webjam_qt.windows.recording_setup",
         "webjam_qt.windows.test_night",
+        "services.pocket_stage_gateway",
+        "services.pocket_stage_packaged_smoke",
+        "services.pocket_stage_tls",
+        "webjam_qt.windows.pocket_stage_pairing",
         "soundfile",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",
         "numpy",
         "httpx",
         "sentry_sdk",
+        # Pocket Stage's TLS identity, Uvicorn WSS backend, and pairing QR are
+        # imported behind opt-in desktop flows. Keep them discoverable in a
+        # frozen app; the maintained cryptography/websockets hooks collect
+        # their compiled bindings and lazily loaded submodules.
+        "cryptography",
+        "websockets",
+        "websockets.sync.client",
+        "segno",
     ],
     hookspath=[],
     hooksconfig={},
@@ -293,6 +318,9 @@ if sys.platform == "darwin":
                 "WebJam uses your microphone or audio interface so your "
                 "bandmates can hear you, and to show your input level or "
                 "record when you choose.",
+            "NSLocalNetworkUsageDescription":
+                "WebJam connects your iPhone Pocket Stage and band session "
+                "devices on your private local network when you choose.",
             "NSHighResolutionCapable": True,
             # The bundled Jamulus 3.12.2 client/server declare macOS 13.
             # Match that real floor so Finder never offers a launch that the

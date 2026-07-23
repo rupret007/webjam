@@ -11,6 +11,7 @@ anyio==4.14.2
 certifi==2026.6.17
 cffi==2.1.0
 click==8.4.2
+cryptography==48.0.1
 customtkinter==6.0.0
 darkdetect==0.8.0
 fastapi==0.139.2
@@ -25,6 +26,7 @@ pydantic==2.13.4
 pydantic-core==2.46.4
 pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
+segno==1.6.6
 sentry-sdk==2.66.0
 # PyInstaller 6.21's macOS pkg_resources runtime hook still requires
 # pkg_resources.NullProvider. Setuptools 82+ removes pkg_resources entirely,
@@ -38,6 +40,7 @@ typing-extensions==4.16.0
 typing-inspection==0.4.2
 urllib3==2.7.0
 uvicorn==0.51.0
+websockets==16.1.1
 colorama==0.4.6; sys_platform == "win32"
 pefile==2024.8.26; sys_platform == "win32"
 pywin32-ctypes==0.2.3; sys_platform == "win32"

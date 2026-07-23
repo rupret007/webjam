@@ -19,6 +19,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +28,18 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.network_invite import BandInvite
+from core.pocket_stage import (
+    MobileParticipant,
+    MobileParticipantState,
+    MobileRecordingState,
+    MobileSessionProjection,
+    PairingScope,
+    PocketCommand,
+    PocketCommandReceipt,
+    PocketCommandRejectionReason,
+    PocketCommandRequest,
+    PocketCommandStatus,
+)
 from core.remote_invitation import RemoteInvitation
 from core.session_health import SessionHealth
 from core.musician_guidance import (
@@ -293,6 +306,38 @@ class ApplicationController(QObject):
             SessionConductorFacts(role=initial_role)
         )
         self._session_conductor_token = self.session_conductor.token
+        # Pocket Stage is a separate, opt-in mobile service.  The gateway
+        # thread reads only this immutable projection; a Qt timer refreshes it
+        # from UI-owned state while sharing is active.  No network worker ever
+        # reads widgets, Jamulus state, or the participant dict directly.
+        initial_conductor = self.session_conductor.snapshot
+        self._pocket_projection_lock = threading.RLock()
+        self._pocket_projection_generation = initial_conductor.token.generation
+        self._pocket_projection_revision = 0
+        self._pocket_projection_fingerprint: tuple[object, ...] = ()
+        self._pocket_roster_binding_epoch = 0
+        self._pocket_roster_binding_signature: tuple[object, ...] = ()
+        self._pocket_projection = MobileSessionProjection(
+            generation=initial_conductor.token.generation,
+            revision=0,
+            role=initial_conductor.token.role,
+            phase=initial_conductor.presentation.phase,
+            primary_action=initial_conductor.presentation.primary_action,
+            primary_enabled=False,
+            recording_state=MobileRecordingState.IDLE,
+        )
+        self._pocket_stage_dialog = None
+        self._pocket_stage_starting = False
+        self._pocket_stage_stopping = False
+        self._pocket_stage_stop_unresolved = False
+        self._pocket_stage_retire_after_start = False
+        self._pocket_stage_network_change_stop = False
+        from services.pocket_stage_gateway import PocketStageGateway
+
+        self.pocket_stage_gateway = PocketStageGateway(
+            snapshot_provider=self._get_pocket_projection,
+            command_handler=self._handle_pocket_command,
+        )
         # One role-aware, generation-scoped startup journey replaces the old
         # modal device picker + pre-session Band Check chain. Its durable
         # confirmation record is deliberately profile-hash-only: no invite,
@@ -320,6 +365,10 @@ class ApplicationController(QObject):
         self._reconnect_timer.timeout.connect(self._on_reconnect_tick)
         self._reconnect_timer.start()
         self._last_reconnect_tick_monotonic = time.monotonic()
+        # Python's macOS monotonic source may pause while the machine sleeps.
+        # Pair it with wall time so the portable reconnect tick can detect a
+        # suspend gap without trusting wall-clock rollback as a negative age.
+        self._last_reconnect_tick_wall = time.time()
 
         # Single global LevelMeter decay tick — replaces N per-card timers.
         # See LevelMeter docstring; started in _bootstrap_ui, stopped in shutdown.
@@ -339,6 +388,15 @@ class ApplicationController(QObject):
         self._pulse_refresh_timer.setSingleShot(True)
         self._pulse_refresh_timer.setInterval(200)
         self._pulse_refresh_timer.timeout.connect(self._refresh_session_pulse)
+
+        # Semantic mobile state is sampled only while the user has explicitly
+        # enabled Pocket Stage.  Participant meters are deliberately absent,
+        # so this timer cannot turn audio animation into network/UI work.
+        self._pocket_projection_timer = QTimer(self)
+        self._pocket_projection_timer.setInterval(100)
+        self._pocket_projection_timer.timeout.connect(
+            self._refresh_pocket_projection
+        )
 
         self._connection_timer = QTimer(self)
         self._connection_timer.setSingleShot(True)
@@ -420,6 +478,9 @@ class ApplicationController(QObject):
         self._meter_tick_timer.stop()
         self._token_refresh_timer.stop()
         self._pulse_refresh_timer.stop()
+        pocket_projection_timer = getattr(self, "_pocket_projection_timer", None)
+        if pocket_projection_timer is not None:
+            pocket_projection_timer.stop()
         self._connection_timer.stop()
         # Quitting mid-recording must keep the audio, not discard it.
         self.recording.salvage_on_shutdown()
@@ -486,6 +547,12 @@ class ApplicationController(QObject):
             self.api_bridge.stop()
         except Exception:  # noqa: BLE001
             LOGGER.exception("Companion API stop failed")
+        pocket_stage_gateway = getattr(self, "pocket_stage_gateway", None)
+        if pocket_stage_gateway is not None:
+            try:
+                pocket_stage_gateway.stop()
+            except Exception:  # noqa: BLE001
+                LOGGER.error("Pocket Stage shutdown failed")
         return True
 
     def _configure_guest_peer(self, invite) -> None:
@@ -1159,6 +1226,455 @@ class ApplicationController(QObject):
                 guidance.to_public_dict() if guidance is not None else {}
             ),
         }
+
+    # ------------------------------------------------------------------
+    # Pocket Stage — immutable mobile projection and semantic commands
+    # ------------------------------------------------------------------
+    def _pocket_participant_slots(self) -> list[ParticipantPresentation]:
+        """Return the stable slot order used by one accepted projection."""
+
+        return sorted(self.participants.values(), key=lambda item: item.channel_id)
+
+    def _update_pocket_roster_binding_epoch(self) -> None:
+        """Advance private slot identity without exposing provider IDs on wire."""
+
+        signature: tuple[object, ...] = tuple(
+            (
+                channel_id,
+                id(participant),
+                str(getattr(participant, "participant_id", "") or ""),
+            )
+            for channel_id, participant in sorted(self.participants.items())
+        )
+        if signature != self._pocket_roster_binding_signature:
+            self._pocket_roster_binding_signature = signature
+            self._pocket_roster_binding_epoch += 1
+
+    def _pocket_recording_state(self) -> MobileRecordingState:
+        phase = str(getattr(getattr(self, "recording", None), "phase", "idle"))
+        if "." in phase:
+            phase = phase.rsplit(".", 1)[-1].lower()
+        return {
+            "preflight": MobileRecordingState.STARTING,
+            "starting": MobileRecordingState.STARTING,
+            "recording": MobileRecordingState.RECORDING,
+            "stopping": MobileRecordingState.STOPPING,
+            "validating": MobileRecordingState.VERIFYING,
+            "complete": MobileRecordingState.READY,
+            "needs_attention": MobileRecordingState.NEEDS_ATTENTION,
+            "stop_failed": MobileRecordingState.NEEDS_ATTENTION,
+            "error": MobileRecordingState.NEEDS_ATTENTION,
+        }.get(phase, MobileRecordingState.IDLE)
+
+    @staticmethod
+    def _pocket_safe_text(
+        value: object,
+        *,
+        max_bytes: int,
+        fallback: str = "",
+    ) -> str:
+        """Normalize UI-owned text before it crosses the strict wire boundary."""
+
+        raw = unicodedata.normalize("NFC", str(value or ""))
+        raw = "".join(
+            " " if ord(character) < 32 or ord(character) == 127 else character
+            for character in raw
+        ).strip()
+        encoded = raw.encode("utf-8", errors="replace")[:max_bytes]
+        normalized = encoded.decode("utf-8", errors="ignore").strip()
+        return normalized or fallback
+
+    def _refresh_pocket_projection(self) -> None:
+        """Publish an immutable snapshot from the Qt owner thread."""
+
+        self._update_pocket_roster_binding_epoch()
+        conductor = self.session_conductor.snapshot
+        presentation = conductor.presentation
+        guidance = getattr(self, "_last_musician_guidance", None)
+        guidance_matches = bool(
+            guidance is not None
+            and guidance.generation == conductor.token.generation
+        )
+        primary_enabled = bool(
+            guidance.primary_enabled
+            if guidance_matches
+            else presentation.primary_action
+            not in {SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT}
+        )
+        cue = self._pocket_safe_text(
+            guidance.title if guidance_matches else presentation.title,
+            max_bytes=512,
+        )
+
+        mobile_participants: list[MobileParticipant] = []
+        for slot, participant in enumerate(self._pocket_participant_slots(), start=1):
+            if bool(getattr(participant, "is_connected", False)):
+                connection_state = (
+                    MobileParticipantState.READY
+                    if self._jamulus_connected
+                    else MobileParticipantState.DEGRADED
+                )
+            else:
+                connection_state = MobileParticipantState.DISCONNECTED
+            mobile_participants.append(
+                MobileParticipant(
+                    slot=slot,
+                    label=self._pocket_safe_text(
+                        getattr(participant, "name", ""),
+                        max_bytes=80,
+                        fallback=f"Channel {slot}",
+                    ),
+                    fader_level=max(
+                        0,
+                        min(
+                            100,
+                            round(int(getattr(participant, "fader_level", 100)) * 100 / 127),
+                        ),
+                    ),
+                    pan=max(0, min(100, int(getattr(participant, "pan", 50)))),
+                    muted=bool(getattr(participant, "muted", False)),
+                    solo=bool(getattr(participant, "solo", False)),
+                    is_local=bool(getattr(participant, "is_local", False)),
+                    connection_state=connection_state,
+                )
+            )
+
+        recording_state = self._pocket_recording_state()
+        semantic: tuple[object, ...] = (
+            conductor.token.generation,
+            self._pocket_roster_binding_epoch,
+            conductor.token.role.value,
+            presentation.phase.value,
+            presentation.primary_action.value,
+            primary_enabled,
+            recording_state.value,
+            tuple(
+                (
+                    item.slot,
+                    item.label,
+                    item.fader_level,
+                    item.pan,
+                    item.muted,
+                    item.solo,
+                    item.is_local,
+                    item.connection_state.value,
+                )
+                for item in mobile_participants
+            ),
+            cue,
+        )
+        with self._pocket_projection_lock:
+            if conductor.token.generation != self._pocket_projection_generation:
+                self._pocket_projection_generation = conductor.token.generation
+                self._pocket_projection_revision = 0
+                self._pocket_projection_fingerprint = ()
+            if semantic != self._pocket_projection_fingerprint:
+                self._pocket_projection_revision += 1
+                self._pocket_projection_fingerprint = semantic
+            self._pocket_projection = MobileSessionProjection(
+                generation=conductor.token.generation,
+                revision=self._pocket_projection_revision,
+                role=conductor.token.role,
+                phase=presentation.phase,
+                primary_action=presentation.primary_action,
+                primary_enabled=primary_enabled,
+                recording_state=recording_state,
+                participants=tuple(mobile_participants),
+                # Live rehearsal cues are intentionally separate from Studio
+                # arrangement markers.  That revisioned plan is a later slice.
+                sections=(),
+                current_section_ordinal=None,
+                cue=cue,
+            )
+
+    def _get_pocket_projection(self) -> MobileSessionProjection:
+        """Thread-safe getter used by the gateway; returns immutable state."""
+
+        with self._pocket_projection_lock:
+            return self._pocket_projection
+
+    @staticmethod
+    def _pocket_rejection(
+        request: PocketCommandRequest,
+        current: MobileSessionProjection,
+        reason: PocketCommandRejectionReason,
+    ) -> PocketCommandReceipt:
+        return PocketCommandReceipt(
+            command_id=request.command_id,
+            status=PocketCommandStatus.REJECTED,
+            generation=current.generation,
+            revision=current.revision,
+            reason=reason,
+        )
+
+    def _handle_pocket_command(
+        self,
+        request: PocketCommandRequest,
+        scopes: tuple[PairingScope, ...],
+        gateway_epoch: int,
+        command_lease_id: str,
+    ) -> PocketCommandReceipt:
+        """Marshal one validated gateway request onto the Qt owner thread."""
+
+        current = self._get_pocket_projection()
+        if self._shutdown:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.UNAVAILABLE,
+            )
+        completed = threading.Event()
+        result: dict[str, PocketCommandReceipt] = {}
+        completion_lock = threading.Lock()
+        returned_pending = False
+
+        def _apply() -> None:
+            nonlocal returned_pending
+            try:
+                with self.pocket_stage_gateway.command_lease(
+                    gateway_epoch,
+                    command_lease_id,
+                ) as lease_active:
+                    if lease_active:
+                        receipt = self._apply_pocket_command(request, scopes)
+                    else:
+                        receipt = self._pocket_rejection(
+                            request,
+                            self._get_pocket_projection(),
+                            PocketCommandRejectionReason.UNAVAILABLE,
+                        )
+            except Exception as exc:  # noqa: BLE001 - never expose UI/provider detail
+                LOGGER.error(
+                    "Pocket Stage owner command failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                receipt = self._pocket_rejection(
+                    request,
+                    self._get_pocket_projection(),
+                    PocketCommandRejectionReason.INTERNAL_FAILURE,
+                )
+            with completion_lock:
+                result["receipt"] = receipt
+                publish_late = returned_pending
+                completed.set()
+            if publish_late:
+                self.pocket_stage_gateway.complete_pending_command(receipt)
+
+        self._ui_invoker.invoke(_apply)
+        if completed.wait(timeout=3):
+            return result["receipt"]
+        with completion_lock:
+            # Close the narrow race where the UI completed just after wait()
+            # returned but before this path marked the result as deferred.
+            if completed.is_set():
+                return result["receipt"]
+            returned_pending = True
+        # The UI has accepted queued work but did not produce a fresh owner
+        # observation in time. Never replay it: _apply publishes its eventual
+        # authoritative result through the gateway's late-completion channel.
+        current = self._get_pocket_projection()
+        return PocketCommandReceipt(
+            command_id=request.command_id,
+            status=PocketCommandStatus.PENDING,
+            generation=current.generation,
+            revision=current.revision,
+        )
+
+    def _apply_pocket_command(
+        self,
+        request: PocketCommandRequest,
+        scopes: tuple[PairingScope, ...],
+    ) -> PocketCommandReceipt:
+        """Revalidate and apply a finite semantic command on the UI thread."""
+
+        # A roster callback may have run after the gateway's last 100-ms
+        # projection sample. Refresh on the owner thread before checking the
+        # request revision so a shifted slot can never target a new musician
+        # under an old snapshot revision.
+        self._refresh_pocket_projection()
+        current = self._get_pocket_projection()
+        if request.required_scope not in scopes:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.UNAUTHORIZED,
+            )
+        if request.generation != current.generation:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.STALE_GENERATION,
+            )
+        if request.expected_revision != current.revision:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.STALE_REVISION,
+            )
+
+        arguments = request.argument_map
+        # The pinned Jamulus 3.12.2 client has no supported pan RPC.  Its
+        # legacy UDP adapter is deliberately disabled, so presenting pan as a
+        # confirmed live control would be false.  Keep the protocol value for
+        # a future proven provider path, but fail closed in this release.
+        if request.command is PocketCommand.SET_PARTICIPANT_PAN:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.UNSUPPORTED,
+            )
+        if request.command in {
+            PocketCommand.SET_PARTICIPANT_FADER,
+            PocketCommand.SET_PARTICIPANT_MUTE,
+        }:
+            slot = int(arguments["slot"])
+            slots = self._pocket_participant_slots()
+            if slot > len(slots):
+                return self._pocket_rejection(
+                    request,
+                    current,
+                    PocketCommandRejectionReason.UNAVAILABLE,
+                )
+            participant = slots[slot - 1]
+            if not self._jamulus_connected or not bool(
+                getattr(participant, "is_connected", False)
+            ):
+                return self._pocket_rejection(
+                    request,
+                    current,
+                    PocketCommandRejectionReason.UNAVAILABLE,
+                )
+            if request.command is PocketCommand.SET_PARTICIPANT_FADER:
+                phone_level = int(arguments["fader_level"])
+                self._on_fader_changed(
+                    participant.channel_id,
+                    round(phone_level * 127 / 100),
+                )
+            elif request.command is PocketCommand.SET_PARTICIPANT_MUTE:
+                self._on_mute_toggled(
+                    participant.channel_id,
+                    bool(arguments["muted"]),
+                )
+            # Jamulus exposes these as fire-and-forget mixer calls.  ACCEPTED
+            # means the desktop owner took the intent; the following full
+            # snapshot is the phone's reconciliation authority.  Do not call
+            # this provider-confirmed when Jamulus has no acknowledgement.
+            status = PocketCommandStatus.ACCEPTED
+        elif request.command is PocketCommand.ADD_MARKER:
+            elapsed = max(
+                0,
+                int(getattr(self.window.session_strip, "_elapsed_seconds", 0)),
+            )
+            label = str(arguments["label"] or "Mark this")
+            self.window.session_canvas.append_line(
+                f"Pocket Stage · {elapsed // 60:02d}:{elapsed % 60:02d} · {label}"
+            )
+            self._save_notes()
+            self._refresh_session_pulse()
+            status = PocketCommandStatus.CONFIRMED
+        elif request.command is PocketCommand.GO_TO_SECTION:
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.UNSUPPORTED,
+            )
+        elif request.command in {
+            PocketCommand.START_RECORDING,
+            PocketCommand.STOP_RECORDING,
+        }:
+            phase = self._pocket_recording_state()
+            wants_start = request.command is PocketCommand.START_RECORDING
+            conductor_role = self.session_conductor.snapshot.token.role
+            is_host = conductor_role is SessionRole.HOST
+            setup_complete = bool(
+                getattr(self.settings, "local_capture_choice_made", False)
+            )
+            studio = getattr(self.window, "recording_studio", None)
+            export_in_progress = bool(
+                getattr(studio, "export_in_progress", False)
+            )
+            recorder_secret_ready = bool(
+                str(
+                    getattr(self.settings, "server_rpc_secret_file", "") or ""
+                ).strip()
+            )
+            if (
+                not is_host
+                or not bool(getattr(self.settings, "host_server_enabled", False))
+                or not self._jamulus_connected
+                or not setup_complete
+                or export_in_progress
+                or not recorder_secret_ready
+            ):
+                return self._pocket_rejection(
+                    request,
+                    current,
+                    PocketCommandRejectionReason.INVALID_STATE,
+                )
+            if wants_start and phase is MobileRecordingState.RECORDING:
+                status = PocketCommandStatus.CONFIRMED
+            elif not wants_start and phase is MobileRecordingState.IDLE:
+                status = PocketCommandStatus.CONFIRMED
+            elif wants_start and phase not in {
+                MobileRecordingState.IDLE,
+                MobileRecordingState.READY,
+            }:
+                return self._pocket_rejection(
+                    request,
+                    current,
+                    PocketCommandRejectionReason.INVALID_STATE,
+                )
+            elif not wants_start and phase not in {
+                MobileRecordingState.RECORDING,
+                MobileRecordingState.NEEDS_ATTENTION,
+            }:
+                return self._pocket_rejection(
+                    request,
+                    current,
+                    PocketCommandRejectionReason.INVALID_STATE,
+                )
+            else:
+                is_armed = bool(self._recorder_armed or self._server_recording)
+                if wants_start and is_armed:
+                    return self._pocket_rejection(
+                        request,
+                        current,
+                        PocketCommandRejectionReason.INVALID_STATE,
+                    )
+                if not wants_start and not is_armed:
+                    return self._pocket_rejection(
+                        request,
+                        current,
+                        PocketCommandRejectionReason.INVALID_STATE,
+                    )
+                self.recording.on_record_requested()
+                # Preflight can fail synchronously (for example storage or
+                # roster checks).  Surface that as a finite rejection rather
+                # than leaving a phone waiting forever.  Successful recorder
+                # transitions remain pending and resolve through snapshots.
+                if self._pocket_recording_state() is MobileRecordingState.NEEDS_ATTENTION:
+                    self._refresh_pocket_projection()
+                    return self._pocket_rejection(
+                        request,
+                        self._get_pocket_projection(),
+                        PocketCommandRejectionReason.INVALID_STATE,
+                    )
+                status = PocketCommandStatus.PENDING
+        else:  # finite enum, retained as a fail-closed compatibility guard
+            return self._pocket_rejection(
+                request,
+                current,
+                PocketCommandRejectionReason.UNSUPPORTED,
+            )
+
+        self._refresh_pocket_projection()
+        latest = self._get_pocket_projection()
+        return PocketCommandReceipt(
+            command_id=request.command_id,
+            status=status,
+            generation=latest.generation,
+            revision=latest.revision,
+        )
 
     def _attach_jamulus_callbacks(self) -> None:
         """Attach UI callbacks to the current JamulusController instance."""
@@ -2716,6 +3232,7 @@ class ApplicationController(QObject):
             durable = self.peer_participant_id_for_channel(channel_id)
             if durable:
                 presentation.participant_id = durable
+        self._update_pocket_roster_binding_epoch()
         self.window.recording_studio.set_live_participants(self.participants.values())
         self._update_session_hud()
 
@@ -5573,6 +6090,19 @@ class ApplicationController(QObject):
         if self._jamulus_connected:
             self.jamulus.set_fader_level(channel_id, level)
 
+    def _on_pan_changed(self, channel_id: int, pan: int) -> None:
+        """Apply a personal-monitor pan change from a semantic remote."""
+
+        bounded = max(0, min(100, int(pan)))
+        participant = self.participants.get(channel_id)
+        if participant is not None:
+            # ParticipantPresentation predates the mobile pan control, but the
+            # live Jamulus model and companion projection already support it.
+            participant.pan = bounded
+        self._mix_dirty = True
+        if self._jamulus_connected:
+            self.jamulus.set_pan(channel_id, bounded)
+
     def _on_mute_toggled(self, channel_id: int, muted: bool) -> None:
         p = self.participants.get(channel_id)
         if p is not None:
@@ -5773,11 +6303,32 @@ class ApplicationController(QObject):
         it does not claim to distinguish every platform sleep notification.
         """
 
-        now = time.monotonic()
-        previous = float(getattr(self, "_last_reconnect_tick_monotonic", now))
-        self._last_reconnect_tick_monotonic = now
-        if now - previous < self._WAKE_REVALIDATION_GAP_SECONDS:
+        now_monotonic = time.monotonic()
+        now_wall = time.time()
+        previous_monotonic = float(
+            getattr(self, "_last_reconnect_tick_monotonic", now_monotonic)
+        )
+        previous_wall = float(getattr(self, "_last_reconnect_tick_wall", now_wall))
+        self._last_reconnect_tick_monotonic = now_monotonic
+        self._last_reconnect_tick_wall = now_wall
+        # ``max(0, ...)`` makes backward wall-clock changes harmless. A large
+        # forward correction triggers the same conservative revalidation as a
+        # wake, which is safe for ephemeral network credentials and live truth.
+        observed_gap = max(
+            max(0.0, now_monotonic - previous_monotonic),
+            max(0.0, now_wall - previous_wall),
+        )
+        if observed_gap < self._WAKE_REVALIDATION_GAP_SECONDS:
             return
+        if self._pocket_stage_starting:
+            self._pocket_stage_retire_after_start = True
+        elif self.pocket_stage_gateway.running and not self._pocket_stage_stopping:
+            self.window.flash_message(
+                "This computer may have changed networks. WebJam retired the old "
+                "iPhone link; open Pocket Stage again for a fresh code.",
+                ms=8000,
+            )
+            self._stop_pocket_stage(network_changed=True)
         if (
             self._shutdown
             or self.audio.stopping
@@ -5812,6 +6363,7 @@ class ApplicationController(QObject):
         invisible).
         """
         self._revalidate_after_wake_gap()
+        self._revalidate_pocket_stage_route()
 
         # Detect Jamulus dying: launch was intended, process exists but exited.
         proc = self.bridge.jamulus_process
@@ -5961,6 +6513,26 @@ class ApplicationController(QObject):
         # silently looking current; it never claims Internet reachability.
         if bool(getattr(self.settings, "host_server_enabled", False)):
             self._update_session_hud()
+
+    def _revalidate_pocket_stage_route(self) -> None:
+        """Retire a listener whose advertised private address is no longer current."""
+
+        if (
+            self._shutdown
+            or self._pocket_stage_starting
+            or self._pocket_stage_stopping
+            or self._pocket_stage_stop_unresolved
+            or not self.pocket_stage_gateway.running
+        ):
+            return
+        if self.pocket_stage_gateway.bound_route_is_current():
+            return
+        self.window.flash_message(
+            "This computer's private network address changed. WebJam retired "
+            "the old iPhone link; open Pocket Stage again for a fresh code.",
+            ms=8000,
+        )
+        self._stop_pocket_stage(network_changed=True)
 
     def _on_token_refresh_tick(self) -> None:
         """Compatibility no-op: native Webex owns its authentication."""
@@ -6409,7 +6981,9 @@ class ApplicationController(QObject):
         # Keys that represent actual view changes (persist selection)
         _CONTENT_KEYS = frozenset({"stage", "canvas", "takes"})
 
-        if key == "diagnostics":
+        if key == "pocket_stage":
+            self._open_pocket_stage()
+        elif key == "diagnostics":
             self._on_ready_check()
         elif key == "audio_settings":
             self._bring_jamulus_forward()
@@ -6459,6 +7033,211 @@ class ApplicationController(QObject):
                     self.window.recording_studio
                 )
             self._update_session_hud()
+
+    def _open_pocket_stage(self) -> None:
+        """Explicitly start or reopen the session-scoped iPhone pairing UI."""
+
+        if self._shutdown:
+            return
+        if self._pocket_stage_stop_unresolved:
+            self.window.flash_message(
+                "iPhone sharing did not fully stop. Quit WebJam before leaving "
+                "this network.",
+                ms=9000,
+            )
+            return
+        if self._pocket_stage_stopping:
+            self.window.flash_message("iPhone sharing is still stopping…", ms=2500)
+            return
+        if self.pocket_stage_gateway.running:
+            self._refresh_pocket_projection()
+            self._show_pocket_stage_offer()
+            return
+        if self._pocket_stage_starting:
+            self.window.flash_message("Preparing the secure iPhone link…", ms=2500)
+            return
+
+        self._pocket_stage_starting = True
+        self._refresh_pocket_projection()
+        self._pocket_projection_timer.start()
+        self.window.session_strip.set_pocket_stage_state("starting")
+        self.window.flash_message("Preparing the secure iPhone link…", ms=2500)
+
+        def _start() -> None:
+            from services.pocket_stage_gateway import PocketStageGatewayError
+
+            try:
+                self.pocket_stage_gateway.start()
+            except PocketStageGatewayError as exc:
+                message = str(exc) or "WebJam could not start Pocket Stage."
+                self._ui_invoker.invoke(
+                    lambda safe_message=message: self._pocket_stage_start_failed(
+                        safe_message
+                    )
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 - never expose raw detail
+                LOGGER.error(
+                    "Pocket Stage start failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                self._ui_invoker.invoke(
+                    lambda: self._pocket_stage_start_failed(
+                        "WebJam could not start Pocket Stage."
+                    )
+                )
+                return
+            self._ui_invoker.invoke(self._pocket_stage_started)
+
+        threading.Thread(
+            target=_start,
+            name="PocketStageStart",
+            daemon=True,
+        ).start()
+
+    def _pocket_stage_started(self) -> None:
+        if self._shutdown:
+            self.pocket_stage_gateway.stop()
+            return
+        self._pocket_stage_starting = False
+        self._pocket_stage_stop_unresolved = False
+        self.window.session_strip.set_pocket_stage_state("on")
+        if self._pocket_stage_retire_after_start:
+            self._pocket_stage_retire_after_start = False
+            self._stop_pocket_stage(network_changed=True)
+            return
+        self._show_pocket_stage_offer()
+
+    def _pocket_stage_start_failed(self, message: str) -> None:
+        self._pocket_stage_starting = False
+        self._pocket_stage_retire_after_start = False
+        if self._pocket_stage_stop_unresolved:
+            self.window.session_strip.set_pocket_stage_state("stop_failed")
+        else:
+            self._pocket_projection_timer.stop()
+            self.window.session_strip.set_pocket_stage_state("off")
+        self.window.flash_message(message, ms=7000)
+
+    def _pocket_stage_scopes(self) -> tuple[PairingScope, ...]:
+        scopes = [PairingScope.OBSERVE, PairingScope.MARKERS, PairingScope.MIX]
+        if self.session_conductor.snapshot.token.role is SessionRole.HOST:
+            scopes.append(PairingScope.RECORD)
+        return tuple(scopes)
+
+    def _show_pocket_stage_offer(self) -> None:
+        try:
+            offer = self.pocket_stage_gateway.issue_pairing_offer(
+                scopes=self._pocket_stage_scopes(),
+                ttl_seconds=120,
+                display_name=self.window.session_strip.current_title(),
+            )
+        except Exception as exc:
+            from services.pocket_stage_gateway import PocketStageGatewayError
+
+            LOGGER.error("Pocket Stage pairing offer could not be created")
+            message = (
+                str(exc)
+                if isinstance(exc, PocketStageGatewayError)
+                else "WebJam couldn't create a fresh iPhone pairing code. Try again."
+            )
+            self.window.flash_message(
+                message,
+                ms=6000,
+            )
+            return
+
+        from webjam_qt.windows.pocket_stage_pairing import PocketStagePairingDialog
+
+        dialog = self._pocket_stage_dialog
+        if dialog is None:
+            dialog = PocketStagePairingDialog(
+                self.pocket_stage_gateway,
+                offer,
+                parent=self.window,
+            )
+            dialog.refresh_requested.connect(self._show_pocket_stage_offer)
+            dialog.stop_requested.connect(self._stop_pocket_stage)
+            self._pocket_stage_dialog = dialog
+        else:
+            dialog.set_offer(offer)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _stop_pocket_stage(self, *, network_changed: bool = False) -> None:
+        if (
+            self._pocket_stage_starting
+            or self._pocket_stage_stopping
+            or self._pocket_stage_stop_unresolved
+        ):
+            return
+        self._pocket_stage_stopping = True
+        self._pocket_stage_network_change_stop = bool(network_changed)
+        self.window.session_strip.set_pocket_stage_state("stopping")
+
+        def _stop() -> None:
+            from services.pocket_stage_gateway import PocketStageGatewayError
+
+            try:
+                self.pocket_stage_gateway.stop()
+            except PocketStageGatewayError as exc:
+                message = str(exc) or "WebJam could not fully stop iPhone sharing."
+                self._ui_invoker.invoke(
+                    lambda safe_message=message: self._pocket_stage_stop_failed(
+                        safe_message
+                    )
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 - never expose raw detail
+                LOGGER.error(
+                    "Pocket Stage stop failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                self._ui_invoker.invoke(
+                    lambda: self._pocket_stage_stop_failed(
+                        "WebJam could not fully stop iPhone sharing. Quit WebJam "
+                        "before leaving this network."
+                    )
+                )
+                return
+            self._ui_invoker.invoke(self._pocket_stage_stopped)
+
+        threading.Thread(
+            target=_stop,
+            name="PocketStageStop",
+            daemon=True,
+        ).start()
+
+    def _pocket_stage_stop_failed(self, message: str) -> None:
+        # The listener's termination is unresolved. Keep the projection timer
+        # and dialog alive, freeze actions, and never claim sharing off.
+        self._pocket_stage_stop_unresolved = True
+        self._pocket_stage_stopping = False
+        self.window.session_strip.set_pocket_stage_state("stop_failed")
+        if self._pocket_stage_dialog is not None:
+            self._pocket_stage_dialog.set_stop_unresolved()
+        self.window.flash_message(message, ms=9000)
+
+    def _pocket_stage_stopped(self) -> None:
+        self._pocket_stage_stop_unresolved = False
+        self._pocket_stage_stopping = False
+        self._pocket_projection_timer.stop()
+        self.window.session_strip.set_pocket_stage_state("off")
+        if self._pocket_stage_dialog is not None:
+            self._pocket_stage_dialog.close()
+            self._pocket_stage_dialog.deleteLater()
+            self._pocket_stage_dialog = None
+        network_changed = self._pocket_stage_network_change_stop
+        self._pocket_stage_network_change_stop = False
+        self.window.flash_message(
+            (
+                "The old iPhone link was retired after a network or wake change. "
+                "Open Pocket Stage again for a fresh code."
+                if network_changed
+                else "iPhone sharing stopped. Your desktop jam keeps running."
+            ),
+            ms=7000 if network_changed else 4000,
+        )
 
     # ------------------------------------------------------------------
     # Session notes persistence

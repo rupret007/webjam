@@ -304,3 +304,28 @@ def test_frozen_launch_only_smoke_closes_real_role_dialog_cleanly(qapp):
 
     single_shot.assert_called_once_with(4000, launcher.reject)
     launcher.exec.assert_called_once_with()
+
+
+def test_frozen_pocket_stage_runtime_smoke_bypasses_interactive_qt(qapp, tmp_path):
+    from webjam_qt import app as app_module
+
+    with (
+        patch.object(app_module.sys, "frozen", True, create=True),
+        patch.dict(
+            os.environ,
+            {
+                "WEBJAM_SMOKE_POCKET_STAGE_RUNTIME": "1",
+                "WEBJAM_SMOKE_POCKET_STAGE_RESULT": str(tmp_path / "result.txt"),
+            },
+            clear=False,
+        ),
+        patch(
+            "services.pocket_stage_packaged_smoke.run_frozen_pocket_stage_smoke",
+            return_value=0,
+        ) as smoke,
+        patch.object(app_module, "_run_app") as interactive,
+    ):
+        assert app_module.run() == 0
+
+    smoke.assert_called_once_with(result_path=tmp_path / "result.txt")
+    interactive.assert_not_called()
