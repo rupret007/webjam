@@ -4,13 +4,13 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [0.19.0] — unreleased Pocket Stage owner-device test candidate
+## [0.19.0] — 2026-07-22 Pocket Stage owner-device test candidate
 
 ### Download and startup correction
 
 - Corrected the release/source mismatch that made GitHub's **Latest** v0.18.1
   package appear to contain Pocket Stage even though that immutable release
-  predates the feature. The next candidate now has its own v0.19.0 identity.
+  predates the feature. The candidate now has its own v0.19.0 identity.
 - Added a self-contained **Pocket Stage iPhone Setup** folder to both Mac DMGs
   and ZIPs. It carries the exact generated Xcode project that CI compiled, its
   complete local Swift package, matching desktop version/build metadata, and a

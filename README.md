@@ -148,10 +148,10 @@ credentials, device identifiers, raw paths, or notes.
 
 The source tree reports **v0.19.0** and contains Pocket Stage, unified guidance,
 Studio, and the reviewed unsigned-candidate packaging described above. The
-currently published [**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
-predates Pocket Stage and remains immutable historical evidence; it must not be
-mistaken for this candidate. A v0.19.0 tag will build Windows x64, Ubuntu 22.04
-x64, Intel Mac, and Apple-silicon Mac packages plus one exact SHA-256 manifest.
+immutable [**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
+predates Pocket Stage and must not be mistaken for this candidate. The v0.19.0
+candidate workflow builds Windows x64, Ubuntu 22.04 x64, Intel Mac, and
+Apple-silicon Mac packages plus one exact SHA-256 manifest.
 
 The source tree also contains the reviewed cross-platform packaging path for a
 direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
