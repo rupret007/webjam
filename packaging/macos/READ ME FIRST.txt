@@ -24,5 +24,16 @@ change any other application. This is less safe than Apple's Open Anyway flow.
 Neither helper uses sudo. It installs into /Applications when that folder is
 writable and otherwise falls back to your personal ~/Applications folder.
 
+iPhone Pocket Stage setup
+-------------------------
+The "Pocket Stage iPhone Setup" folder contains the exact generated Xcode
+project compiled by this candidate's CI run. Install the full Xcode app, add
+your Apple ID in Xcode > Settings > Accounts, then double-click "Open Pocket
+Stage in Xcode.command". In Xcode, choose your free Personal Team, enter a
+unique bundle identifier, connect your iPhone, and press Run. A paid Apple
+Developer Program membership and XcodeGen are not required for this
+owner-device test. This is source for temporary Personal Team installation,
+not a pre-signed or App Store-distributed iPhone app.
+
 Apple's guidance for unidentified apps:
 https://support.apple.com/en-us/102445

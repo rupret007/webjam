@@ -4,7 +4,23 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## Unreleased — Pocket Stage v1 developer preview
+## [0.19.0] — unreleased Pocket Stage owner-device test candidate
+
+### Download and startup correction
+
+- Corrected the release/source mismatch that made GitHub's **Latest** v0.18.1
+  package appear to contain Pocket Stage even though that immutable release
+  predates the feature. The next candidate now has its own v0.19.0 identity.
+- Added a self-contained **Pocket Stage iPhone Setup** folder to both Mac DMGs
+  and ZIPs. It carries the exact generated Xcode project that CI compiled, its
+  complete local Swift package, matching desktop version/build metadata, and a
+  clickable **Open Pocket Stage in Xcode.command** helper.
+- The packaged owner-device path no longer requires cloning the repository or
+  installing XcodeGen. It still requires full Xcode, a user-selected unique
+  bundle identifier, and an Apple ID Personal Team; no paid Apple Developer
+  Program membership or pre-signed iOS binary is claimed.
+
+### Pocket Stage v1
 
 - Added an owner-device Pocket Stage vertical slice behind **More -> Use iPhone**.
   It starts a separate private-Wi-Fi WSS gateway, renders a one-use QR that
@@ -28,9 +44,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 - CI generates and compiles the complete unsigned iOS app and an automated gate
   pairs the real Swift transport with the live Python WSS gateway. Installation
   on an owner's iPhone still requires selecting an Apple Personal Team in Xcode;
-  the app is not included in the published v0.18.1 packages. Physical iPhone
-  pairing, permissions/firewalls, interruption, accessibility, realtime
-  mix/recording, and rehearsal non-interference remain **NOT RUN**.
+  both v0.19.0 Mac containers include the complete owner-device Xcode setup kit,
+  but no pre-signed iOS app. Physical iPhone pairing, permissions/firewalls,
+  interruption, accessibility, realtime mix/recording, and rehearsal
+  non-interference remain **NOT RUN**.
 
 ## [0.18.1] — 2026-07-21 unsigned private test candidate
 

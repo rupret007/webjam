@@ -1,8 +1,8 @@
-# WebJam v0.18.0 source and physical test procedure
+# WebJam v0.19.0 source and physical test procedure
 
-> The source tree reports v0.18.0. No v0.18.0 package has been promoted. The
-> v0.16.3 package record below remains immutable rollback/reference evidence;
-> it does not certify unified guidance or the current Studio implementation.
+> The source tree reports v0.19.0. The published v0.18.1 candidate predates
+> Pocket Stage and remains immutable rollback/reference evidence; it does not
+> certify the v0.19.0 iPhone companion or setup kit.
 
 ## Scope
 

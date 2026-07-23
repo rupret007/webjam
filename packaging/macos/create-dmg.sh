@@ -49,6 +49,25 @@ if [[ -n "$candidate_extras" ]]; then
       exit 66
     }
   done
+  [[ -d "$candidate_extras/Pocket Stage iPhone Setup" \
+    && ! -L "$candidate_extras/Pocket Stage iPhone Setup" ]] || {
+    printf 'Pocket Stage iPhone setup kit is missing or unsafe.\n' >&2
+    exit 66
+  }
+  if find "$candidate_extras/Pocket Stage iPhone Setup" \
+    -type l -print -quit | grep -q .; then
+    printf 'Pocket Stage iPhone setup kit contains a symbolic link.\n' >&2
+    exit 66
+  fi
+  [[ -x "$candidate_extras/Pocket Stage iPhone Setup/Open Pocket Stage in Xcode.command" ]] || {
+    printf 'Pocket Stage Xcode helper is not executable.\n' >&2
+    exit 66
+  }
+  [[ -f "$candidate_extras/Pocket Stage iPhone Setup/WebJamPocketStage.xcodeproj/project.pbxproj" \
+    && ! -L "$candidate_extras/Pocket Stage iPhone Setup/WebJamPocketStage.xcodeproj/project.pbxproj" ]] || {
+    printf 'Pocket Stage Xcode project is missing or unsafe.\n' >&2
+    exit 66
+  }
   [[ -x "$candidate_extras/Install WebJam.command" ]] || {
     printf 'Guided candidate helper is not executable.\n' >&2
     exit 66
@@ -97,7 +116,8 @@ if [[ -n "$candidate_extras" ]]; then
     "Install WebJam.command" \
     "Install WebJam - Remove Quarantine.command" \
     "READ ME FIRST.txt" \
-    "WebJam Candidate Info.txt"; do
+    "WebJam Candidate Info.txt" \
+    "Pocket Stage iPhone Setup"; do
     ditto "$candidate_extras/$name" "$stage_root/$name"
   done
 fi

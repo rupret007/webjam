@@ -326,6 +326,28 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Prepare self-contained Pocket Stage owner-device setup kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'from webjam_qt import __version__; print(__version__)')"
+          build_id="$(git rev-parse HEAD)"
+          artifact_root="$RUNNER_TEMP/pocket-stage-kit-artifact"
+          mkdir -p "$artifact_root"
+          packaging/ios/prepare-pocket-stage-kit.sh \
+            ios "$artifact_root/Pocket Stage iPhone Setup" \
+            "$version" "$build_id"
+          ditto -c -k --sequesterRsrc "$artifact_root" \
+            "$RUNNER_TEMP/pocket-stage-ios-setup.zip"
+
+      - name: Upload Pocket Stage owner-device setup kit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-pocket-stage-ios-setup-${{ github.sha }}
+          path: ${{ runner.temp }}/pocket-stage-ios-setup.zip
+          if-no-files-found: error
+          retention-days: 7
+
   # ------------------------------------------------------------------
   # Manual release certification: one uninterrupted hour on a native
   # GitHub-hosted Ubuntu/amd64 VM. It never runs for pushes or PRs. The
@@ -449,6 +471,33 @@ jobs:
         with:
           go-version: "1.25.12"
           cache-dependency-path: transport/go.sum
+
+      - name: Download Pocket Stage owner-device setup kit
+        if: startsWith(matrix.target, 'macos-')
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: webjam-pocket-stage-ios-setup-${{ github.sha }}
+          path: ${{ runner.temp }}/pocket-stage-kit-download
+
+      - name: Verify Pocket Stage owner-device setup kit
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/pocket-stage-kit-download/pocket-stage-ios-setup.zip"
+          extract="$RUNNER_TEMP/pocket-stage-kit"
+          ditto -x -k "$archive" "$extract"
+          kit="$extract/Pocket Stage iPhone Setup"
+          test -x "$kit/Open Pocket Stage in Xcode.command"
+          test -f "$kit/WebJamPocketStage.xcodeproj/project.pbxproj"
+          test -f "$kit/PocketStage/Info.plist"
+          test -f "$kit/Pocket Stage Build Info.txt"
+          grep -Fxq "desktop_version=$(python -c \
+            'from webjam_qt import __version__; print(__version__)')" \
+            "$kit/Pocket Stage Build Info.txt"
+          grep -Fxq "desktop_build_id=$(git rev-parse HEAD)" \
+            "$kit/Pocket Stage Build Info.txt"
+          ! find "$kit" -type l -print -quit | grep -q .
 
       - name: Verify Windows release helper fails closed without credentials
         if: matrix.target == 'windows-x64'
@@ -1043,6 +1092,8 @@ jobs:
               "$candidate_extras/Install WebJam - Remove Quarantine.command"
             install -m 644 "packaging/macos/READ ME FIRST.txt" \
               "$candidate_extras/READ ME FIRST.txt"
+            ditto "$RUNNER_TEMP/pocket-stage-kit/Pocket Stage iPhone Setup" \
+              "$candidate_extras/Pocket Stage iPhone Setup"
             printf '%s\n' \
               'format=1' \
               "version=$expected_version" \
@@ -1056,7 +1107,8 @@ jobs:
               "Install WebJam.command" \
               "Install WebJam - Remove Quarantine.command" \
               "READ ME FIRST.txt" \
-              "WebJam Candidate Info.txt"; do
+              "WebJam Candidate Info.txt" \
+              "Pocket Stage iPhone Setup"; do
               ditto "$candidate_extras/$name" "$candidate_root/$name"
             done
             ditto -c -k --sequesterRsrc "$candidate_root" \
@@ -1069,6 +1121,13 @@ jobs:
             test -x "$fresh_dir/Install WebJam - Remove Quarantine.command"
             test -f "$fresh_dir/READ ME FIRST.txt"
             test -f "$fresh_dir/WebJam Candidate Info.txt"
+            test -x "$fresh_dir/Pocket Stage iPhone Setup/Open Pocket Stage in Xcode.command"
+            test -f "$fresh_dir/Pocket Stage iPhone Setup/WebJamPocketStage.xcodeproj/project.pbxproj"
+            test -f "$fresh_dir/Pocket Stage iPhone Setup/PocketStage/Info.plist"
+            grep -Fxq "desktop_version=$expected_version" \
+              "$fresh_dir/Pocket Stage iPhone Setup/Pocket Stage Build Info.txt"
+            grep -Fxq "desktop_build_id=$build_id" \
+              "$fresh_dir/Pocket Stage iPhone Setup/Pocket Stage Build Info.txt"
             grep -Fxq "version=$expected_version" \
               "$fresh_dir/WebJam Candidate Info.txt"
             grep -Fxq "build_id=$build_id" \
@@ -1177,6 +1236,13 @@ jobs:
           test -x "$mount_dir/Install WebJam - Remove Quarantine.command"
           test -f "$mount_dir/READ ME FIRST.txt"
           test -f "$mount_dir/WebJam Candidate Info.txt"
+          test -x "$mount_dir/Pocket Stage iPhone Setup/Open Pocket Stage in Xcode.command"
+          test -f "$mount_dir/Pocket Stage iPhone Setup/WebJamPocketStage.xcodeproj/project.pbxproj"
+          test -f "$mount_dir/Pocket Stage iPhone Setup/PocketStage/Info.plist"
+          grep -Fxq "desktop_version=$version" \
+            "$mount_dir/Pocket Stage iPhone Setup/Pocket Stage Build Info.txt"
+          grep -Fxq "desktop_build_id=$build_id" \
+            "$mount_dir/Pocket Stage iPhone Setup/Pocket Stage Build Info.txt"
           grep -Fxq "version=$version" "$mount_dir/WebJam Candidate Info.txt"
           grep -Fxq "build_id=$build_id" "$mount_dir/WebJam Candidate Info.txt"
           grep -Fxq "target=${{ matrix.target }}" \
@@ -2580,6 +2646,8 @@ jobs:
 
             The macOS DMGs and ZIPs include a guided installer plus a separately labeled
             advanced helper that removes quarantine from the installed WebJam app only.
+            They also include a self-contained **Pocket Stage iPhone Setup** Xcode project;
+            an Apple ID with a free Personal Team is sufficient for owner-device testing.
             Verify the attached SHA-256 manifest before installing.
           fail_on_unmatched_files: true
           files: |

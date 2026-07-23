@@ -213,6 +213,14 @@ failed `v0.18.0` credentialed release attempt remains fixed at its source
 commit; the candidate-lane change is versioned as `v0.18.1`. Never move a tag
 or silently replace archives on a published release.
 
+Pocket Stage begins with the separately versioned v0.19.0 candidate. Both Mac
+containers must carry **Pocket Stage iPhone Setup** with the generated Xcode
+project, complete local Swift package, executable opener, and desktop
+version/build metadata produced by the same CI run. Mount/extract both targets
+and verify that inventory before publishing. The kit uses an Apple Personal
+Team for temporary owner-device installation; it is not a pre-signed iOS
+release asset and does not change the exact eight-file GitHub release inventory.
+
 Candidate tag CI attaches the explicitly labeled unsigned Windows Setup and
 ZIP, both explicitly labeled ad-hoc Mac DMGs and ZIPs, and the Ubuntu ZIP to a
 draft. It generates, verifies, and attaches

@@ -1,4 +1,4 @@
-# WebJam v0.18.1 unsigned private test candidate
+# WebJam v0.19.0 unsigned private test candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -43,11 +43,11 @@ transfer, export, or human audibility. Guidance is local, deterministic,
 inspectable, offline, and event-driven. It performs no work on meter, waveform,
 playhead, animation, audio, capture, or playback callbacks.
 
-## Pocket Stage iPhone developer preview
+## Pocket Stage iPhone owner-device preview
 
-The source tree contains a narrow Pocket Stage v1 vertical slice for an owner's
-iPhone; it is not part of the published v0.18.1 desktop packages. On the desktop,
-choose **More -> Use iPhone** after both devices are on the same private Wi-Fi.
+The v0.19.0 candidate contains a narrow Pocket Stage v1 vertical slice for an
+owner's iPhone. On the desktop, choose **More -> Use iPhone** after both devices
+are on the same private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
 separate secure local gateway only for this explicitly requested sharing
 session.
@@ -73,9 +73,14 @@ This preview has no phone audio, chat, reactions, solo command, rehearsal plan,
 section/Studio transport, editing, or media transfer. The checked-in XcodeGen
 spec reproducibly generates and CI-compiles the native SwiftUI app; an owner
 still selects their Apple Personal Team in Xcode to install it on their own
-iPhone. No packaged iOS app or physical iPhone/rehearsal result is claimed; all
-physical tests remain **NOT RUN**. The existing loopback Local API and Jamulus
-audio path are unchanged. See the
+iPhone. Both Mac downloads include a self-contained **Pocket Stage iPhone
+Setup** folder with the generated, CI-compiled Xcode project and a clickable
+opener, so release users do not need to clone the repository or install
+XcodeGen. A paid Apple Developer Program membership is not required for this
+owner-device path, although free Personal Team provisioning expires and must be
+renewed periodically. No pre-signed iOS app or physical iPhone/rehearsal result
+is claimed; all physical tests remain **NOT RUN**. The existing loopback Local
+API and Jamulus audio path are unchanged. See the
 [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
 
@@ -139,21 +144,21 @@ musician's normal `Jamulus.ini`. WebJam’s private restart records contain only
 allowlisted profile and phase hashes—never invitation URLs, Webex URLs,
 credentials, device identifiers, raw paths, or notes.
 
-## Source and published release state
+## Source and candidate state
 
-The source tree reports **v0.18.1** and contains the unified guidance, Studio,
-and reviewed unsigned-candidate packaging described above. The corresponding
-[**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
-is deliberately a private test candidate, not a production-trusted release.
-It provides Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac
-packages plus one exact SHA-256 manifest.
+The source tree reports **v0.19.0** and contains Pocket Stage, unified guidance,
+Studio, and the reviewed unsigned-candidate packaging described above. The
+currently published [**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
+predates Pocket Stage and remains immutable historical evidence; it must not be
+mistaken for this candidate. A v0.19.0 tag will build Windows x64, Ubuntu 22.04
+x64, Intel Mac, and Apple-silicon Mac packages plus one exact SHA-256 manifest.
 
 The source tree also contains the reviewed cross-platform packaging path for a
 direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
 portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and
 Linux distributions are not certified. Windows signing, macOS notarization,
-and other production gates remain pending, so use v0.18.1 only as a reviewed
-test release.
+and other production gates remain pending, so use every downloadable candidate
+only within its explicitly stated test boundary.
 
 Generic Windows x64 and Intel macOS archives from earlier CI/tag runs are
 historical outputs, not promoted release packages. In particular, the v0.16.2
@@ -162,7 +167,7 @@ wrong packaged-data location. Those v0.16.2 assets stay immutable as build
 evidence; the fixes were versioned in v0.16.3 instead of silently replacing
 files on the old tag.
 
-The v0.18.1 installer formats improve download and installation, but they do
+The candidate installer formats improve download and installation, but they do
 not substitute for platform trust. Release assets are visibly named
 `UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. Each Mac DMG
 and ZIP includes a guided `Install WebJam.command`, an explicitly advanced
@@ -188,7 +193,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.18.1,
+integrity—not a substitute for musicians hearing one another. For v0.19.0,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the new evidence-rich export, signed clean installation, and platform
@@ -198,7 +203,7 @@ package or claim audibility.
 
 ## Guides
 
-- [v0.18.1 release notes and changelog](CHANGELOG.md)
+- [v0.19.0 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

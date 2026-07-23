@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 DMG_SCRIPT_PATH = ROOT / "packaging" / "macos" / "create-dmg.sh"
 DMG_SCRIPT = DMG_SCRIPT_PATH.read_text(encoding="utf-8")
+POCKET_STAGE_KIT_PATH = ROOT / "packaging" / "ios" / "prepare-pocket-stage-kit.sh"
+POCKET_STAGE_KIT = POCKET_STAGE_KIT_PATH.read_text(encoding="utf-8")
+POCKET_STAGE_OPEN_PATH = (
+    ROOT / "packaging" / "ios" / "Open Pocket Stage in Xcode.command"
+)
+POCKET_STAGE_OPEN = POCKET_STAGE_OPEN_PATH.read_text(encoding="utf-8")
 WINDOWS_CERTIFICATE_PATH = ROOT / "packaging" / "windows" / "release-certificate.ps1"
 WINDOWS_CERTIFICATE = WINDOWS_CERTIFICATE_PATH.read_text(encoding="utf-8")
 RELEASE_LOCK_ROOT = ROOT / "requirements-lock"
@@ -18,6 +24,8 @@ LINUX_README = (ROOT / "packaging" / "linux" / "README-LINUX.txt").read_text(
     encoding="utf-8"
 )
 PROJECT_README = (ROOT / "README.md").read_text(encoding="utf-8")
+CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+VERSION_SOURCE = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 THIRD_PARTY_NOTICES = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
 
@@ -30,6 +38,18 @@ def _workflow_job(name: str) -> str:
     return match.group(0)
 
 
+def test_current_candidate_identity_cannot_be_confused_with_latest_old_release() -> None:
+    match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
+    assert match is not None
+    version = match.group(1)
+    assert version == "0.19.0"
+    assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
+    assert f"## [{version}]" in CHANGELOG
+    assert "v0.18.1 release" in PROJECT_README
+    assert "predates Pocket Stage" in PROJECT_README
+    assert re.search(r"Pocket Stage iPhone\s+Setup", PROJECT_README)
+
+
 def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert os.access(DMG_SCRIPT_PATH, os.X_OK)
     assert 'ditto "$source_app" "$stage_root/WebJam.app"' in DMG_SCRIPT
@@ -37,6 +57,9 @@ def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert '"Install WebJam.command"' in DMG_SCRIPT
     assert '"Install WebJam - Remove Quarantine.command"' in DMG_SCRIPT
     assert '"WebJam Candidate Info.txt"' in DMG_SCRIPT
+    assert '"Pocket Stage iPhone Setup"' in DMG_SCRIPT
+    assert "Open Pocket Stage in Xcode.command" in DMG_SCRIPT
+    assert "Pocket Stage iPhone setup kit contains a symbolic link" in DMG_SCRIPT
     assert "-format UDZO" in DMG_SCRIPT
     assert 'hdiutil verify "$output_dmg"' in DMG_SCRIPT
 
@@ -61,6 +84,14 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert 'test -x "$mount_dir/Install WebJam.command"' in WORKFLOW
     assert 'test -x "$mount_dir/Install WebJam - Remove Quarantine.command"' in WORKFLOW
     assert 'test -f "$mount_dir/WebJam Candidate Info.txt"' in WORKFLOW
+    assert (
+        'test -x "$mount_dir/Pocket Stage iPhone Setup/'
+        'Open Pocket Stage in Xcode.command"' in WORKFLOW
+    )
+    assert (
+        'test -f "$mount_dir/Pocket Stage iPhone Setup/'
+        'WebJamPocketStage.xcodeproj/project.pbxproj"' in WORKFLOW
+    )
     assert "stat -f '%Lp' \"$mount_dir\"" in WORKFLOW
     assert 'ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"' in WORKFLOW
     assert 'codesign --verify --deep --strict "$copied_app"' in WORKFLOW
@@ -75,6 +106,41 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert 'xattr -p com.apple.quarantine "$guided_dest"' in WORKFLOW
     assert '! xattr -lr "$advanced_dest" | grep -Fq com.apple.quarantine' in WORKFLOW
     assert 'xattr -p com.apple.quarantine "$unrelated"' in WORKFLOW
+
+
+def test_pocket_stage_setup_kit_is_generated_compiled_and_carried_by_mac_packages() -> None:
+    assert os.access(POCKET_STAGE_KIT_PATH, os.X_OK)
+    assert os.access(POCKET_STAGE_OPEN_PATH, os.X_OK)
+    assert "Build full Pocket Stage app for iOS Simulator" in WORKFLOW
+    assert "Prepare self-contained Pocket Stage owner-device setup kit" in WORKFLOW
+    assert 'packaging/ios/prepare-pocket-stage-kit.sh' in WORKFLOW
+    assert 'name: webjam-pocket-stage-ios-setup-${{ github.sha }}' in WORKFLOW
+    assert "Download Pocket Stage owner-device setup kit" in WORKFLOW
+    assert (
+        'ditto "$RUNNER_TEMP/pocket-stage-kit/Pocket Stage iPhone Setup"' in WORKFLOW
+    )
+    assert '"Pocket Stage iPhone Setup"' in DMG_SCRIPT
+    assert "desktop_version=$expected_version" in WORKFLOW
+    assert "desktop_build_id=$build_id" in WORKFLOW
+
+
+def test_pocket_stage_owner_device_kit_has_a_bounded_non_privileged_open_path() -> None:
+    assert "WebJamPocketStage.xcodeproj/project.pbxproj" in POCKET_STAGE_KIT
+    assert '"PocketStage/Info.plist"' in POCKET_STAGE_KIT
+    assert '"Sources/PocketStageProtocol/PocketStageProtocol.swift"' in POCKET_STAGE_KIT
+    assert "Pocket Stage Build Info.txt" in POCKET_STAGE_KIT
+    assert "Refusing to replace an existing Pocket Stage setup kit" in POCKET_STAGE_KIT
+    assert "contains a symbolic link" in POCKET_STAGE_KIT
+    assert "/usr/bin/xcodebuild -version" in POCKET_STAGE_OPEN
+    assert 'xcode_app="/Applications/Xcode.app"' in POCKET_STAGE_OPEN
+    assert 'DEVELOPER_DIR="$xcode_app/Contents/Developer"' in POCKET_STAGE_OPEN
+    assert '/usr/bin/open -a "$xcode_app" "$project"' in POCKET_STAGE_OPEN
+    assert "free Personal Team" in POCKET_STAGE_OPEN
+    combined = POCKET_STAGE_KIT + POCKET_STAGE_OPEN
+    assert "sudo" not in combined
+    assert "spctl --master-disable" not in combined
+    assert "xattr" not in combined
+    assert "xcodegen" not in POCKET_STAGE_OPEN.lower()
 
 
 def test_windows_ci_builds_and_exercises_the_direct_setup_executable() -> None:
@@ -294,6 +360,7 @@ def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> No
     assert "UNSIGNED-TEST-ONLY" in WORKFLOW
     assert "ADHOC-TEST-ONLY" in WORKFLOW
     assert 'install -m 755 "packaging/macos/Install WebJam.command"' in WORKFLOW
+    assert '"$candidate_extras/Pocket Stage iPhone Setup"' in WORKFLOW
     assert 'ditto -c -k --sequesterRsrc "$candidate_root"' in WORKFLOW
 
 

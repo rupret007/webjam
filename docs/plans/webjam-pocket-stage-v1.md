@@ -2,7 +2,7 @@
 
 - Date: 2026-07-21
 - Status: Reproducible app vertical slice implemented; physical validation **NOT RUN**
-- Distribution: Generated Xcode project + Apple Personal Team development only
+- Distribution: Generated Xcode project in Mac candidates + Apple Personal Team development only
 
 ## Goal
 
@@ -42,23 +42,25 @@ mute, a Session Canvas marker, and host recording start/stop after the desktop
 has completed Recording Setup. Solo may be displayed as state but cannot be
 changed from the phone.
 
-## Developer setup boundary
+## Owner-device setup boundary
 
 There is no packaged iOS app or App Store/TestFlight build. On the development
-Mac:
+Mac, either use the setup kit carried by the matching v0.19.0 Mac candidate or
+generate it from source:
 
-1. Install Xcode, add the owner's Apple ID in **Xcode → Settings → Accounts**,
-   install XcodeGen, then run
-   `ios/Generate Pocket Stage Project.command` to generate and open the exact
-   checked-in app target.
+1. Install Xcode and add the owner's Apple ID in **Xcode → Settings → Accounts**.
+   In a downloaded candidate, open **Pocket Stage iPhone Setup** and run
+   **Open Pocket Stage in Xcode.command**; the included project is the exact one
+   generated and compiled by CI. Source developers may instead install
+   XcodeGen and run `ios/Generate Pocket Stage Project.command`.
 2. Choose an app identifier and the owner's Apple **Personal Team** for manual
    signing.
 3. Install from Xcode onto the owner's unlocked iPhone. If prompted, enable
    **Settings → Privacy & Security → Developer Mode**, restart, and confirm;
    then approve only the required camera/local-network prompts.
-4. Run the matching WebJam source tree on the Mac. Do not treat the published
-   v0.18.1 desktop packages as containing this post-candidate developer preview
-   unless a separately identified package is later built and inspected.
+4. Run the matching WebJam desktop build recorded in **Pocket Stage Build
+   Info.txt**. The immutable published v0.18.1 packages predate Pocket Stage and
+   cannot be used for this flow.
 
 Personal Team provisioning is temporary development access, not a distribution
 channel. No iOS binary should be published as a normal WebJam release asset.

@@ -40,11 +40,13 @@ transport.
 
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
-   Team. Install XcodeGen 2.45.4 or newer (`brew install xcodegen`).
-2. Double-click **Generate Pocket Stage Project.command** in this folder. It
-   validates the tools, generates `WebJamPocketStage.xcodeproj` from the
-   checked-in `project.yml`, and opens it. The project is reproducible and is
-   also built without signing in CI.
+   Team.
+2. From a v0.19.0 Mac download, open **Pocket Stage iPhone Setup** and
+   double-click **Open Pocket Stage in Xcode.command**. That folder already
+   contains the exact generated project compiled by CI, so release users do not
+   need XcodeGen. Source developers instead install XcodeGen 2.45.4 or newer
+   (`brew install xcodegen`) and run **Generate Pocket Stage Project.command**
+   to regenerate the project from `project.yml`.
 3. In the PocketStage target's **Signing & Capabilities**, set its bundle
    identifier to one you control, for example
    `com.yourname.pocketstage`, then select your **Personal Team** in
