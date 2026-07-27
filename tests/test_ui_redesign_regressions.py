@@ -109,6 +109,7 @@ def test_launch_hierarchy_is_one_primary_then_one_secondary(
 ):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
+    assert dialog.height() <= 540
     dialog.resize(460, 600)
     dialog.show()
     styled_qapp.processEvents()
@@ -619,6 +620,38 @@ def test_track_export_in_progress_blocks_close_without_stopping_the_jam():
     information.assert_called_once()
     question.assert_not_called()
     controller.recording.confirm_quit.assert_not_called()
+
+
+def test_close_is_vetoed_while_end_leave_or_invite_switch_is_still_running():
+    controller = SimpleNamespace(
+        audio=SimpleNamespace(stopping=True),
+        _invite_switch_in_flight=False,
+        window=object(),
+    )
+    with patch.object(QMessageBox, "information") as information, patch.object(
+        QMessageBox, "question"
+    ) as question:
+        assert ApplicationController._confirm_close(controller) is False
+    information.assert_called_once()
+    assert "still running" in information.call_args.args[1].lower()
+    question.assert_not_called()
+
+
+def test_close_after_failed_cleanup_points_to_the_retry_action():
+    controller = SimpleNamespace(
+        audio=SimpleNamespace(
+            stopping=False,
+            cleanup_retry_required=True,
+        ),
+        _invite_switch_in_flight=False,
+        settings=SimpleNamespace(host_server_enabled=False),
+        window=object(),
+    )
+    with patch.object(QMessageBox, "information") as information:
+        assert ApplicationController._confirm_close(controller) is False
+
+    assert information.call_args.args[1] == "Finish session cleanup first"
+    assert "Try Leave Jam" in information.call_args.args[2]
 
 
 def test_unsaved_studio_edits_veto_window_close_until_save_retry(qapp):

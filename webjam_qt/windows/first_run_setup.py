@@ -36,7 +36,11 @@ from core.settings import (
     hosted_server_recordings_dir,
     hosted_server_secret_path,
 )
-from core.webex_url import normalize_webex_url, webex_url_error
+from core.webex_url import (
+    normalize_webex_url,
+    webex_site_hostname,
+    webex_url_error,
+)
 from webjam_qt.theme import Space
 
 LOGGER = logging.getLogger("webjam.qt.first_run")
@@ -271,18 +275,31 @@ class FirstRunSetupDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.MD)
 
-        url_label = QLabel("Webex meeting URL")
+        url_label = QLabel("Meeting or Personal Room link")
         url_label.setObjectName("FirstRunFieldLabel")
         self._webex_url = QLineEdit(self._settings.webex_url)
-        self._webex_url.setPlaceholderText("https://company.webex.com/meet/bandroom")
-        self._webex_url.setAccessibleName("Webex meeting URL")
+        self._webex_url.setPlaceholderText(
+            "https://your-site.webex.com/meet/your-room"
+        )
+        self._webex_url.setAccessibleName("Webex meeting or Personal Room link")
         self._webex_url.textChanged.connect(self._on_webex_text_changed)
         self._webex_error = _body("", name="FirstRunError")
-        self._webex_error.setAccessibleName("Webex meeting URL error")
+        self._webex_error.setAccessibleName(
+            "Webex meeting or Personal Room link error"
+        )
         self._webex_error.setVisible(False)
+        self._webex_site = _body("", name="FirstRunStatus")
+        self._webex_site.setAccessibleName("Webex site")
+        self._webex_site.setVisible(False)
         layout.addWidget(url_label)
         layout.addWidget(self._webex_url)
+        layout.addWidget(self._webex_site)
         layout.addWidget(self._webex_error)
+        layout.addWidget(_body(
+            "Webex handles sign-in, your camera and microphone, and the "
+            "meeting itself. Your WebJam musician name does not change your "
+            "Webex identity."
+        ))
 
         signal_flow = QLabel("MUSIC  ·  JAMULUS      TALK  ·  WEBEX")
         signal_flow.setObjectName("FirstRunSignalFlow")
@@ -320,6 +337,7 @@ class FirstRunSetupDialog(QDialog):
         layout.addWidget(next_note)
         layout.addStretch(1)
         self._on_capture_toggled(False)
+        self._on_webex_text_changed(self._webex_url.text())
         return page
 
     def _join_endpoint_from_settings(self) -> str:
@@ -375,9 +393,12 @@ class FirstRunSetupDialog(QDialog):
         self._server_error.setVisible(False)
         self._refresh_navigation()
 
-    def _on_webex_text_changed(self, _text: str) -> None:
+    def _on_webex_text_changed(self, text: str) -> None:
         self._webex_error.clear()
         self._webex_error.setVisible(False)
+        hostname = webex_site_hostname(text)
+        self._webex_site.setText(f"Webex site: {hostname}" if hostname else "")
+        self._webex_site.setVisible(bool(hostname))
         self._refresh_navigation()
 
     def _on_capture_toggled(self, checked: bool) -> None:
@@ -525,7 +546,6 @@ class FirstRunSetupDialog(QDialog):
             "musician_name": result.musician_name,
             "host_server_enabled": result.role == "host",
             "webex_url": result.webex_url,
-            "webex_audio_mode": "talkback",
             "local_capture_enabled": result.local_capture_enabled,
             "audio_input_device_index": result.audio_input_device_index,
         })
@@ -542,6 +562,7 @@ class FirstRunSetupDialog(QDialog):
         for key in (
             "webex_guest_issuer_id", "webex_guest_issuer_secret",
             "webex_display_name", "webex_audio_bridge_enabled",
+            "webex_audio_mode",
         ):
             cfg.pop(key, None)
         try:

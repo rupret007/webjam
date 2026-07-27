@@ -759,6 +759,90 @@ class TestFindJamulusFallback(unittest.TestCase):
             )
 
 
+class TestFindReferenceTrackJamulus(unittest.TestCase):
+    def _frozen_fixture(self):
+        import tempfile
+        from pathlib import Path
+
+        temporary = tempfile.TemporaryDirectory()
+        app = Path(temporary.name) / "WebJam.app"
+        executable = app / "Contents" / "MacOS" / "WebJam"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"outer")
+        resources = app / "Contents" / "Resources"
+        companion = (
+            resources
+            / "JamulusHeadlessClient.app"
+            / "Contents"
+            / "MacOS"
+            / "JamulusHeadlessClient"
+        )
+        companion.parent.mkdir(parents=True)
+        companion.write_bytes(b"true headless fixture")
+        companion.chmod(0o700)
+        digest = hashlib.sha256(companion.read_bytes()).hexdigest()
+        manifest = resources / "JamulusHeadlessClient.sha256"
+        manifest.write_text(
+            f"{digest}  "
+            "JamulusHeadlessClient.app/Contents/MacOS/"
+            "JamulusHeadlessClient\n",
+            encoding="ascii",
+        )
+        return temporary, executable, companion, manifest
+
+    def test_frozen_mac_resolves_only_checksum_verified_companion(self):
+        from services.bridge_service import (
+            _bundled_reference_track_jamulus_candidate,
+        )
+
+        temporary, executable, companion, _manifest = self._frozen_fixture()
+        try:
+            with (
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "platform", "darwin"),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertEqual(
+                    _bundled_reference_track_jamulus_candidate(),
+                    str(companion.resolve()),
+                )
+                companion.write_bytes(b"replaced")
+                companion.chmod(0o700)
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+        finally:
+            temporary.cleanup()
+
+    def test_malformed_manifest_and_source_run_have_no_fallback(self):
+        from services.bridge_service import (
+            _bundled_reference_track_jamulus_candidate,
+        )
+
+        temporary, executable, _companion, manifest = self._frozen_fixture()
+        bridge = _make_bridge()
+        try:
+            manifest.write_text(
+                "0" * 64 + "  Jamulus.app/Contents/MacOS/Jamulus\n",
+                encoding="ascii",
+            )
+            with (
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "platform", "darwin"),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+                self.assertIsNone(bridge.find_reference_track_jamulus())
+            with patch.object(sys, "frozen", False, create=True):
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+        finally:
+            temporary.cleanup()
+
+
 @patch("services.bridge_service.time.sleep")
 @patch("services.bridge_service.threading.Thread",
        side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))

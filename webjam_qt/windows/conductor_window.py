@@ -75,6 +75,12 @@ class ConductorWindow(QMainWindow):
         self.setMinimumSize(760, 600)
         # Controller-injected veto (e.g. "a recording is running — quit?").
         self.confirm_close: Optional[Callable[[], bool]] = None
+        # A second synchronous gate owns teardown that can still fail after
+        # the musician confirms closing (for example, an unsaved Studio
+        # document or an unproved Reference Track process stop).  A Qt signal
+        # cannot return that result, so closeEvent must call this callback
+        # directly before accepting the native close.
+        self.finalize_close: Optional[Callable[[], bool]] = None
         self.operator_mode = bool(operator_mode)
 
         # --- Central widgets
@@ -474,6 +480,9 @@ class ConductorWindow(QMainWindow):
     # ------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self.confirm_close is not None and not self.confirm_close():
+            event.ignore()
+            return
+        if self.finalize_close is not None and not self.finalize_close():
             event.ignore()
             return
         self.close_requested.emit()

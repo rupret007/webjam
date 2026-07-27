@@ -41,6 +41,19 @@ class TestExternalWebexLauncher(unittest.TestCase):
         self.assertFalse(hasattr(controller, "start_screen_share"))
         self.assertFalse(hasattr(controller, "leave_meeting"))
 
+    def test_stop_never_claims_to_close_an_external_meeting(self):
+        controller = WebexController("https://example.webex.com/meet/test")
+        with patch("webex_integration.webbrowser.open", return_value=True):
+            self.assertTrue(controller.join_meeting())
+
+        controller.stop()
+
+        self.assertEqual(
+            controller.launch_state, WebexLaunchState.OPENED_EXTERNALLY
+        )
+        self.assertTrue(controller.browser_opened)
+        self.assertFalse(controller.is_connected)
+
     def test_launcher_logs_hostname_without_meeting_secret(self):
         controller = WebexController(
             "https://team.webex.com/meet/private-room?token=super-secret#frag"

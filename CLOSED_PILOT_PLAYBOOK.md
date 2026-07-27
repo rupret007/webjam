@@ -1,6 +1,6 @@
 # WebJam closed-pilot handoff
 
-The current v0.19.0 private test candidate validates a simple rehearsal and
+The current v0.20.0 private test candidate validates a simple rehearsal and
 arranging experience:
 
 1. Host or Join.

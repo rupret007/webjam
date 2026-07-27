@@ -1,4 +1,4 @@
-# WebJam architecture — v0.18.1
+# WebJam architecture — v0.20.0
 
 ## Product boundary
 

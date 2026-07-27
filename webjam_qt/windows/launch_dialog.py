@@ -167,7 +167,8 @@ class LaunchDialog(QDialog):
         self.setWindowTitle("WebJam")
         self.setModal(True)
         self.setMinimumSize(460, 520)
-        self.resize(620, 600)
+        # Leave room for the native title bar on the supported 760×600 floor.
+        self.resize(620, 540)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.XL, Space.XXL, Space.XL)

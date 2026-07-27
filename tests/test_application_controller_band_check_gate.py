@@ -368,7 +368,7 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
         controller.shutdown()
 
 
-def test_successful_leave_forgets_the_private_guest_invite() -> None:
+def test_successful_leave_finishes_ui_after_worker_owned_private_cleanup() -> None:
     controller = _bare_controller()
     controller.window = SimpleNamespace(
         session_strip=SimpleNamespace(
@@ -387,7 +387,10 @@ def test_successful_leave_forgets_the_private_guest_invite() -> None:
 
     controller.audio._finish_session_stop_ui()
 
-    controller._stop_session_peer.assert_called_once_with(clear_invite=True)
+    # Private owners are stopped and checked in the worker before the primary
+    # music client. The UI completion callback must not run that teardown a
+    # second time or discard its result.
+    controller._stop_session_peer.assert_not_called()
     controller.audio.reset_to_idle.assert_called_once_with()
 
 

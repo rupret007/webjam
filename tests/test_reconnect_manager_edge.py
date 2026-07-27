@@ -302,6 +302,9 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         self.assertEqual(bridge.webex_state, "Opened externally")
         bridge.metrics_service.increment.assert_any_call("metric_webex_open_success")
+        bridge.set_status_banner.assert_any_call(
+            "Opened externally—finish joining in Webex."
+        )
         self.assertNotIn(
             "metric_webex_open_failed",
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
@@ -331,6 +334,24 @@ class TestReconnectManagerEdge(unittest.TestCase):
             "metric_webex_open_success",
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
         )
+
+    @patch(
+        "services.bridge_service.threading.Thread",
+        side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw),
+    )
+    def test_webex_open_failure_does_not_interrupt_running_jamulus(
+        self, _thread_mock
+    ):
+        bridge = _make_bridge()
+        bridge.jamulus_state = "Running"
+        bridge.webex_controller.join_meeting.return_value = False
+        bridge.webex_controller.last_error = "RuntimeError"
+
+        bridge.launch_webex(manual=True, reconnect=False)
+
+        self.assertEqual(bridge.webex_state, "Open failed")
+        self.assertEqual(bridge.jamulus_state, "Running")
+        bridge.jamulus_controller.stop.assert_not_called()
 
 
 class TestStopJamulus(unittest.TestCase):

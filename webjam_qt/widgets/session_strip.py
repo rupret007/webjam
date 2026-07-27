@@ -196,6 +196,13 @@ class SessionStrip(QFrame):
         recording_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
         )
+        self._reference_track_action = QAction("Reference Track…", tools_menu)
+        self._reference_track_action.setToolTip(
+            "Route a host-controlled song into the jam as its own Jamulus participant."
+        )
+        self._reference_track_action.triggered.connect(
+            lambda: self.tool_requested.emit("reference_track")
+        )
         studio_action = QAction("Studio", tools_menu)
         studio_action.triggered.connect(lambda: self.tool_requested.emit("takes"))
         notes_action = QAction("Notes", tools_menu)
@@ -221,6 +228,7 @@ class SessionStrip(QFrame):
         tools_menu.addAction(audio_action)
         tools_menu.addAction(conversation_action)
         tools_menu.addAction(recording_action)
+        tools_menu.addAction(self._reference_track_action)
         tools_menu.addAction(studio_action)
         tools_menu.addAction(notes_action)
         tools_menu.addAction(self._pocket_stage_action)
@@ -305,7 +313,16 @@ class SessionStrip(QFrame):
         # Start/retry lives in the focused stage card. The header owns only
         # the in-session End action, avoiding duplicate primary buttons.
         self._audio_button.setVisible(
-            label in {"End Session", "Leave Jam", "Ending…", "Leaving…", "Stopping…"}
+            label
+            in {
+                "End Session",
+                "Leave Jam",
+                "Ending…",
+                "Leaving…",
+                "Stopping…",
+                "Try End Session",
+                "Try Leave Jam",
+            }
         )
         self._audio_button.setAccessibleName(label)
         self._audio_button.setAccessibleDescription(
@@ -425,6 +442,12 @@ class SessionStrip(QFrame):
         self._record_elapsed.setVisible(
             bool(available) and self._record_elapsed.isVisible()
         )
+
+    def set_reference_track_available(self, host: bool) -> None:
+        """Keep the backing-track surface host-only without hiding its state."""
+
+        self._reference_track_action.setVisible(bool(host))
+        self._reference_track_action.setEnabled(bool(host))
 
     def set_invite_available(self, available: bool) -> None:
         self._invite_button.setVisible(bool(available))

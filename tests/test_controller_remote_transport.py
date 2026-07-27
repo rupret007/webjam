@@ -109,6 +109,66 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     controller.shutdown()
 
 
+def test_successful_leave_restores_remote_base_after_worker_cleanup(
+    qapp,
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    base_settings = controller.settings
+    routed_settings = AppSettings(
+        config_file=base_settings.config_file,
+        host_server_enabled=False,
+        jamulus_server="127.0.0.1",
+        jamulus_port=43123,
+    )
+    controller.settings = routed_settings
+    controller._remote_route_base_settings = base_settings
+    runtime = mock.MagicMock()
+    runtime.snapshot.error_code = None
+    controller._remote_session = runtime
+
+    with (
+        mock.patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller,
+            "_stop_session_peer",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "stop_jamulus",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "hosted_server_alive",
+            return_value=False,
+        ),
+        mock.patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+        mock.patch.object(
+            controller,
+            "_reconfigure_services_after_settings",
+            wraps=controller._reconfigure_services_after_settings,
+        ) as reconfigure,
+    ):
+        controller.audio._stop_session_services(False)
+
+    runtime.stop.assert_called_once_with()
+    assert controller._remote_session is None
+    assert controller._remote_route_base_settings is None
+    assert controller.settings is base_settings
+    reconfigure.assert_called_once_with(routed_settings)
+    controller.shutdown()
+
+
 def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_through(
     qapp, tmp_path, monkeypatch
 ) -> None:
@@ -368,8 +428,10 @@ def test_v3_guest_fails_closed_when_v2_peer_cleanup_fails(tmp_path) -> None:
     old_peer.stop.assert_called_once_with()
     controller._begin_remote_join.assert_not_called()
     assert controller._remote_invitation is None
-    assert controller._guest_invite is None
+    assert controller.guest_peer is old_peer
+    assert controller._guest_invite is mock.sentinel.v2_invitation
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    old_peer.stop.side_effect = None
     controller.shutdown()
 
 
@@ -392,9 +454,12 @@ def test_v3_replacement_fails_closed_when_prior_v3_cleanup_fails(
     prior.stop.assert_called_once_with()
     controller._begin_remote_join.assert_not_called()
     assert controller._remote_invitation is None
-    assert controller._remote_session is None
-    assert controller._remote_invite_owner is None
+    assert controller._remote_session is prior
+    assert controller._remote_invite_owner is (
+        prior if prior_kind == "owner" else None
+    )
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    prior.stop.side_effect = None
     controller.shutdown()
 
 

@@ -1,8 +1,8 @@
-# WebJam v0.19.0 source and physical test procedure
+# WebJam v0.20.0 source and physical test procedure
 
-> The source tree reports v0.19.0. The published v0.18.1 candidate predates
-> Pocket Stage and remains immutable rollback/reference evidence; it does not
-> certify the v0.19.0 iPhone companion or setup kit.
+> The source tree reports v0.20.0. Published candidates remain immutable
+> rollback/reference evidence; they do not certify the v0.20.0 external Webex
+> handoff, Reference Track pilot, or matching iPhone setup kit.
 
 ## Scope
 

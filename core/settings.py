@@ -55,7 +55,7 @@ def _coerce_settings_data(data: dict) -> None:
             candidates = []
         data["jamulus_candidates"] = candidates if candidates else defaults["jamulus_candidates"]
     # String fields: ensure str
-    for key in ("jamulus_server", "webex_url", "config_file", "mix_file", "webex_config_file",
+    for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
                 "server_rpc_secret_file", "takes_directory",
                 "take_playback_output_device", "jamulus_audio_input_uid",
                 "jamulus_audio_output_uid",
@@ -70,7 +70,7 @@ class AppSettings:
     # jamulus_server / webex_url intentionally default to EMPTY: the old
     # defaults (a private LAN IP and a sandbox meeting link) were dead for
     # anyone but the original dev box, and silently "working" against them
-    # was worse than being asked.  The first-run wizard requires both.
+    # was worse than explicit configuration. Webex remains optional.
     jamulus_server: str = ""
     jamulus_port: int = 22124
     jamulus_rpc_port: int = 22222   # JSON-RPC server port (--jsonrpcport flag)
@@ -90,7 +90,6 @@ class AppSettings:
     ])
     config_file: str = str(Path.home() / ".webjam_config.json")
     mix_file: str = str(Path.home() / ".webjam_mix.json")
-    webex_config_file: str = str(Path.home() / ".webjam_webex_config.json")
     audio_blocksize: int = 0
     audio_samplerate: int = 48000
     audio_latency: str = "low"
@@ -367,8 +366,16 @@ def hosted_server_recordings_dir() -> Path:
 
 
 def save_settings(settings: AppSettings) -> None:
-    """Atomically persist all current settings with private-file permissions."""
+    """Atomically persist durable settings with private-file permissions.
+
+    ``webex_audio_mode`` remains an in-memory/environment compatibility seam
+    for old audience-bridge deployments. It is not a musician preference in
+    the external-only Webex product, so ``webex_url`` is the only persisted
+    Webex value.
+    """
     from core.file_io import atomic_write_text
 
     path = Path(settings.config_file).expanduser()
-    atomic_write_text(path, json.dumps(asdict(settings), indent=2), mode=0o600)
+    payload = asdict(settings)
+    payload.pop("webex_audio_mode", None)
+    atomic_write_text(path, json.dumps(payload, indent=2), mode=0o600)

@@ -200,8 +200,9 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "WebJam couldn’t finish cleanly",
-            "Close WebJam, then reopen it before starting another jam.",
-            "Close and reopen WebJam",
+            "Use Try End Session or Try Leave Jam to finish releasing the "
+            "current session. If it keeps failing, quit and reopen WebJam.",
+            "Session cleanup needs attention",
             False,
             False,
         )

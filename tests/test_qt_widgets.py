@@ -254,6 +254,7 @@ class TestSessionStrip(unittest.TestCase):
         expected_tools = {
             "Audio Settings in Jamulus": "audio_settings",
             "Recording Setup": "recording_setup",
+            "Reference Track…": "reference_track",
             "Studio": "takes",
             "Notes": "canvas",
             "Use iPhone as Pocket Stage…": "pocket_stage",
@@ -352,6 +353,14 @@ class TestSessionStrip(unittest.TestCase):
             ) + 40,
         )
         s.close()
+
+    def test_cleanup_retry_action_is_visible_and_named(self):
+        s = self._strip()
+        s.set_audio_state("Try Leave Jam", enabled=True)
+
+        self.assertFalse(s._audio_button.isHidden())
+        self.assertTrue(s._audio_button.isEnabled())
+        self.assertEqual(s._audio_button.accessibleName(), "Try Leave Jam")
 
     def test_recording_validation_and_attention_states_are_explicit(self):
         s = self._strip()
@@ -756,7 +765,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.19.0", body)
+        self.assertIn("WebJam v0.20.0", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)
@@ -792,6 +801,19 @@ class TestConductorWindow(unittest.TestCase):
         w.show()
         self.assertTrue(w.close())
         self.assertEqual(emitted, [True])
+
+    def test_close_event_respects_late_teardown_veto(self):
+        w = self._window()
+        emitted = []
+        w.close_requested.connect(lambda: emitted.append(True))
+        w.confirm_close = lambda: True
+        w.finalize_close = lambda: False
+        w.show()
+        self.assertFalse(w.close())
+        self.assertEqual(emitted, [])
+        self.assertTrue(w.isVisible())
+        w.finalize_close = None
+        w.close()
 
     def test_center_splitter_panes_are_not_collapsible(self):
         w = self._window()

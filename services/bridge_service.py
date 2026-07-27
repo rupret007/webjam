@@ -24,17 +24,21 @@ _PINNED_WINDOWS_JAMULUS_INSTALLER = "jamulus_3.12.2_win.exe"
 _PINNED_WINDOWS_JAMULUS_SHA256 = (
     "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9"
 )
+_REFERENCE_HEADLESS_MANIFEST_NAME = "JamulusHeadlessClient.sha256"
+_REFERENCE_HEADLESS_MANIFEST_TARGET = (
+    "JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient"
+)
 _HASH_CHUNK_BYTES = 1024 * 1024
 
 
 def _bundled_jamulus_candidate() -> Optional[str]:
     """Path to the copy of Jamulus bundled inside WebJam's own app, if any.
 
-    macOS builds nest an unmodified, Apple-signed/notarized ``Jamulus.app``
-    at ``WebJam.app/Contents/Resources/Jamulus.app`` (see
-    ``.github/workflows/ci.yml``'s macOS build steps), so a fresh install
-    works with zero configuration. This returns the path to the executable
-    inside that nested bundle when present.
+    macOS builds nest the official ``Jamulus.app`` at
+    ``WebJam.app/Contents/Resources/Jamulus.app`` and prepare it as part of
+    the enclosing candidate's ad-hoc signature (see
+    ``.github/workflows/ci.yml``). This returns the executable inside that
+    nested bundle when present.
 
     Windows has no portable Jamulus binary to bundle this way — Jamulus
     only ships an installer there (see ``_bundled_jamulus_installer``) —
@@ -58,6 +62,51 @@ def _bundled_jamulus_candidate() -> Optional[str]:
     except OSError:
         return None
     return str(candidate) if candidate.is_file() else None
+
+
+def _bundled_reference_track_jamulus_candidate() -> Optional[str]:
+    """Return only the verified, true-HEADLESS Reference Track companion.
+
+    The ordinary interactive Jamulus client cannot apply hidden mixer-fader
+    RPC commands in Jamulus 3.12.2, even when launched with ``--nogui``.
+    Reference Track therefore has no configured-path or interactive-client
+    fallback. The adjacent manifest is checked again at resolution time so a
+    replaced companion cannot inherit WebJam's playback affordance.
+    """
+
+    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return None
+    try:
+        macos_dir = Path(sys.executable).resolve().parent
+        resources = macos_dir.parent / "Resources"
+        candidate = resources / _REFERENCE_HEADLESS_MANIFEST_TARGET
+        manifest = resources / _REFERENCE_HEADLESS_MANIFEST_NAME
+        if (
+            not candidate.is_file()
+            or candidate.is_symlink()
+            or not os.access(candidate, os.X_OK)
+            or not manifest.is_file()
+            or manifest.is_symlink()
+        ):
+            return None
+        line = manifest.read_text(encoding="ascii").strip()
+        pieces = line.split()
+        if (
+            len(pieces) != 2
+            or len(pieces[0]) != 64
+            or any(character not in "0123456789abcdef" for character in pieces[0])
+            or pieces[1] != _REFERENCE_HEADLESS_MANIFEST_TARGET
+        ):
+            return None
+        digest = hashlib.sha256()
+        with candidate.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(_HASH_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        if not hmac.compare_digest(digest.hexdigest(), pieces[0]):
+            return None
+    except (OSError, UnicodeError):
+        return None
+    return str(candidate)
 
 
 def _bundled_jamulus_server_candidate() -> Optional[str]:
@@ -460,6 +509,11 @@ class BridgeService:
                 if resolved:
                     return resolved
         return None
+
+    def find_reference_track_jamulus(self) -> Optional[str]:
+        """Resolve the packaged HEADLESS companion with no GUI fallback."""
+
+        return _bundled_reference_track_jamulus_candidate()
 
     @property
     def native_profile_plan(self):
@@ -1921,7 +1975,7 @@ class BridgeService:
                 if manual:
                     self.schedule_ui_callback(
                         lambda: self.set_status_banner(
-                            "Webex opened externally — finish joining there."
+                            "Opened externally—finish joining in Webex."
                         )
                     )
             except Exception as exc:
@@ -1934,7 +1988,10 @@ class BridgeService:
                         "Webex Open Failed",
                         what_failed="The configured Webex meeting could not be opened.",
                         likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
-                        next_action="Verify URL in diagnostics/setup wizard and retry.",
+                        next_action=(
+                            "Open Settings, verify the Meeting or Personal "
+                            "Room link, then try again."
+                        ),
                         retry_callback=lambda: self.launch_webex(manual=True),
                         copy_text=self.settings.webex_url,
                     )

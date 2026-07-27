@@ -28,7 +28,7 @@ except ImportError:
 # ====== CONFIG ======
 JAMULUS_SERVER = "172.24.194.9"
 JAMULUS_PORT = "22124"
-WEBEX_URL = "https://webjam-sbx.webex.com/meet/webjam01"
+WEBEX_URL = "https://example.webex.com/meet/example-room"
 CONFIG_FILE = Path.home() / ".webjam_config.json"
 
 # Jamulus install locations
@@ -672,4 +672,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

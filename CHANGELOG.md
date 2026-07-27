@@ -4,8 +4,26 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## Unreleased — demo-readiness hardening
+## [0.20.0] — 2026-07-27 Webex handoff and Reference Track test candidate
 
+- Added a host-controlled **Reference Track** source pilot behind **More**.
+  The bounded 48-kHz engine, separate `WebJam Track` client, authenticated RPC,
+  zero-fader checks, transport controls, and path-free decoding are present.
+  Production playback is locked before native work because CoreAudio has a
+  reported false input-device result after a device switch and Jamulus 3.12.2
+  has no independent live-device RPC. Only an explicit constructor seam can
+  exercise the backend in controlled source tests; there is no packaged
+  setting, environment, command-line, or UI bypass.
+- The retained Reference Track implementation fails closed on
+  host/session/route/RPC loss and tears down before the primary musician
+  client. It is described as Jamulus-routed, not latency eliminated. Physical
+  two-endpoint audibility, device-switch truth, BlackHole exclusivity,
+  independent mixes, direct-monitor isolation, recording-stem behavior, and
+  long-session use remain **NOT RUN**.
+- Removed the dormant embedded Webex browser and guest-token path. WebJam now
+  persists only the musician's optional Meeting or Personal Room link, opens
+  it externally after an explicit action, and reports only that handoff—not a
+  Webex join, mute, participant, camera, or microphone state.
 - Fixed the visible startup **Bring Jamulus Forward** action, late macOS
   invitation-error delivery, and failed Notes chat sends. An unsent message is
   restored to the composer and is never falsely added to the session record.
@@ -21,7 +39,7 @@ All notable improvements and features for the WebJam music collaboration platfor
   block quarantined `.command` files from Finder.
 - Added visible-menu routing, dynamic Studio **Add Take**, failure-state,
   accessibility, and package-instruction regression coverage. Active guides
-  now identify the v0.19.0 candidate consistently.
+  now identify the v0.20.0 candidate consistently.
 
 ## [0.19.0] — 2026-07-22 Pocket Stage owner-device test candidate
 

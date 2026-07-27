@@ -222,7 +222,6 @@ def test_shutdown_stops_owned_server_then_clears_owner_and_ephemeral_mode() -> N
     controller._level_timer = timer
     controller._reconnect_timer = timer
     controller._meter_tick_timer = timer
-    controller._token_refresh_timer = timer
     controller._pulse_refresh_timer = timer
     controller._connection_timer = timer
     controller.window = SimpleNamespace(
@@ -294,6 +293,24 @@ def test_failed_owned_server_stop_keeps_remote_mode_constraint() -> None:
     owner.stop.assert_called_once_with()
     bridge.disable_remote_host_mode.assert_not_called()
     assert controller._remote_invite_owner is None
+
+
+def test_failed_remote_owner_stop_retains_retryable_owner_and_mode() -> None:
+    controller = ApplicationController.__new__(ApplicationController)
+    owner = mock.Mock()
+    owner.stop.side_effect = RuntimeError("still active")
+    bridge = mock.Mock()
+    bridge.hosted_server_alive.return_value = False
+    controller._remote_invite_owner = owner
+    controller._remote_session = owner
+    controller.bridge = bridge
+
+    assert not controller._clear_remote_invite_owner()
+
+    owner.stop.assert_called_once_with()
+    bridge.disable_remote_host_mode.assert_not_called()
+    assert controller._remote_invite_owner is owner
+    assert controller._remote_session is owner
 
 
 def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(

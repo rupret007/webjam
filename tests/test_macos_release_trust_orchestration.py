@@ -35,7 +35,6 @@ def _make_app(root: Path) -> Path:
         {
             "CFBundleExecutable": "WebJam",
             "NSMicrophoneUsageDescription": "Record a rehearsal.",
-            "NSCameraUsageDescription": "Show the Webex companion.",
         },
     )
     _write_executable(app / "Contents" / "MacOS" / "WebJam")
@@ -44,10 +43,14 @@ def _make_app(root: Path) -> Path:
     (app / "Contents" / "Resources" / "webjam-fabric.sha256").write_text(
         "pre-sign-placeholder\n", encoding="utf-8"
     )
+    (
+        app / "Contents" / "Resources" / "JamulusHeadlessClient.sha256"
+    ).write_text("pre-sign-placeholder\n", encoding="utf-8")
 
     for name, executable in (
         ("Jamulus.app", "Jamulus"),
         ("JamulusServer.app", "JamulusServer"),
+        ("JamulusHeadlessClient.app", "JamulusHeadlessClient"),
     ):
         nested = app / "Contents" / "Resources" / name
         _write_plist(
@@ -58,37 +61,17 @@ def _make_app(root: Path) -> Path:
             },
         )
         _write_executable(nested / "Contents" / "MacOS" / executable)
+        if name == "JamulusHeadlessClient.app":
+            source = (
+                nested
+                / "Contents"
+                / "Resources"
+                / "THIRD_PARTY_LICENSES"
+                / "JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz"
+            )
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(b"inert corresponding-source fixture\n")
 
-    framework = (
-        app
-        / "Contents"
-        / "Frameworks"
-        / "PySide6"
-        / "Qt"
-        / "lib"
-        / "QtWebEngineCore.framework"
-    )
-    _write_executable(framework / "Versions" / "A" / "libfixture.dylib")
-    helper = framework / "Versions" / "A" / "Helpers" / "QtWebEngineProcess.app"
-    _write_plist(
-        helper / "Contents" / "Info.plist",
-        {"CFBundleExecutable": "QtWebEngineProcess"},
-    )
-    _write_executable(
-        helper / "Contents" / "MacOS" / "QtWebEngineProcess"
-    )
-    helper_entitlements = (
-        helper / "Contents" / "Resources" / "QtWebEngineProcess.entitlements"
-    )
-    _write_plist(
-        helper_entitlements,
-        {
-            "com.apple.security.cs.allow-jit": True,
-            "com.apple.security.cs.allow-unsigned-executable-memory": True,
-            "com.apple.security.cs.disable-executable-page-protection": True,
-            "com.apple.security.cs.disable-library-validation": True,
-        },
-    )
     return app
 
 
@@ -116,9 +99,8 @@ with log_path.open("a", encoding="utf-8") as stream:
 def entitlement_path(target):
     normalized = target.replace(os.sep, "/")
     repo = pathlib.Path(os.environ["FAKE_REPO_ROOT"])
-    if "QtWebEngineProcess.app" in normalized:
-        marker = normalized.split("QtWebEngineProcess.app", 1)[0]
-        return pathlib.Path(marker + "QtWebEngineProcess.app") / "Contents" / "Resources" / "QtWebEngineProcess.entitlements"
+    if "JamulusHeadlessClient.app" in normalized:
+        return repo / "packaging" / "macos" / "Jamulus.entitlements"
     if "JamulusServer.app" in normalized:
         return repo / "packaging" / "macos" / "Jamulus.entitlements"
     if "Jamulus.app" in normalized:
@@ -329,22 +311,15 @@ def test_app_and_dmg_release_rehearsal_is_inside_out_and_fail_closed(
     jamulus_signs = [
         event
         for event in app_sign_events
-        if str(event["args"][-1]).endswith(("Jamulus.app", "JamulusServer.app"))
+        if str(event["args"][-1]).endswith(
+            ("Jamulus.app", "JamulusServer.app", "JamulusHeadlessClient.app")
+        )
     ]
-    assert len(jamulus_signs) == 2
+    assert len(jamulus_signs) == 3
     for event in jamulus_signs:
         assert str(ROOT / "packaging" / "macos" / "Jamulus.entitlements") in event["args"]
-    helper_sign = next(
-        event
-        for event in app_sign_events
-        if str(event["args"][-1]).endswith("QtWebEngineProcess.app")
-    )
-    assert any(
-        str(value).endswith("QtWebEngineProcess.entitlements")
-        for value in helper_sign["args"]
-    )
-    assert any(
-        str(event["args"][-1]).endswith("QtWebEngineCore.framework")
+    assert not any(
+        "QtWebEngine" in str(event["args"][-1])
         for event in app_sign_events
     )
 
@@ -366,6 +341,67 @@ def test_app_and_dmg_release_rehearsal_is_inside_out_and_fail_closed(
     assert (evidence / "dmg-notary-log.json").is_file()
     assert (evidence / "app-final-zip.sha256").is_file()
     assert (evidence / "dmg-final-stapled.sha256").is_file()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="release trust orchestration is Bash")
+def test_retired_webengine_runtime_is_rejected_before_signing(
+    tmp_path: Path,
+    trust_rehearsal: tuple[Path, dict[str, str], Path],
+) -> None:
+    app, env, log = trust_rehearsal
+    retired = (
+        app
+        / "Contents"
+        / "Frameworks"
+        / "PySide6"
+        / "QtWebEngineCore.framework"
+    )
+    _write_executable(retired / "Versions" / "A" / "QtWebEngineCore")
+
+    result = _run(
+        tmp_path,
+        env,
+        "app",
+        str(app.relative_to(tmp_path)),
+        "WebJam-macos-x64.zip",
+        "evidence",
+    )
+
+    assert result.returncode != 0
+    assert "retired Qt WebEngine runtime is present" in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="release trust orchestration is Bash")
+def test_missing_headless_corresponding_source_is_rejected_before_signing(
+    tmp_path: Path,
+    trust_rehearsal: tuple[Path, dict[str, str], Path],
+) -> None:
+    app, env, log = trust_rehearsal
+    source = (
+        app
+        / "Contents"
+        / "Resources"
+        / "JamulusHeadlessClient.app"
+        / "Contents"
+        / "Resources"
+        / "THIRD_PARTY_LICENSES"
+        / "JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz"
+    )
+    source.unlink()
+
+    result = _run(
+        tmp_path,
+        env,
+        "app",
+        str(app.relative_to(tmp_path)),
+        "WebJam-macos-x64.zip",
+        "evidence",
+    )
+
+    assert result.returncode != 0
+    assert "Jamulus HEADLESS corresponding source is missing" in result.stderr
+    assert not log.exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="release trust orchestration is Bash")

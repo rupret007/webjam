@@ -5,7 +5,7 @@ Guides new users through:
   Page 0 — Welcome
   Page 1 — Jamulus server (host + port)
   Page 2 — Webex meeting (URL)
-  Page 3 — Music/conversation role and optional local recording input
+  Page 3 — Optional local recording input
   Page 4 — All done
 
 The wizard saves settings to ``~/.webjam_config.json`` on Finish.
@@ -23,19 +23,16 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
@@ -45,7 +42,11 @@ from PySide6.QtWidgets import (
 )
 
 from core.settings import AppSettings, load_settings
-from core.webex_url import normalize_webex_url, webex_url_error
+from core.webex_url import (
+    normalize_webex_url,
+    webex_site_hostname,
+    webex_url_error,
+)
 from webjam_qt.theme.tokens import Color, Font, Space
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
@@ -100,7 +101,7 @@ class _WelcomePage(QWizardPage):
             "This short wizard will configure:\n\n"
             "  \u2022  Your Jamulus server connection\n"
             "  \u2022  Your Webex meeting link\n"
-            "  \u2022  Separate music and conversation audio paths\n\n"
+            "  \u2022  An optional local meter and recording input\n\n"
             "You can change any setting later from the Settings panel."
         ))
 
@@ -529,22 +530,25 @@ class _JamulusPage(QWizardPage):
 class _WebexPage(QWizardPage):
     def __init__(self, settings: AppSettings) -> None:
         super().__init__()
-        self.setTitle("Webex Meeting")
+        self.setTitle("Webex Conversation")
         self.setSubTitle(
-            "Enter the Webex meeting URL your band uses for video calls."
+            "Enter the meeting or Personal Room link your band uses."
         )
 
         layout = QVBoxLayout(self)
         layout.setSpacing(Space.MD)
 
-        layout.addWidget(_section_label("Meeting URL"))
+        layout.addWidget(_section_label("Meeting or Personal Room link"))
         self._url = QLineEdit(settings.webex_url)
-        self._url.setPlaceholderText("https://myorg.webex.com/meet/bandroom")
-        self._url.setAccessibleName("Webex meeting URL")
+        self._url.setPlaceholderText(
+            "https://your-site.webex.com/meet/your-room"
+        )
+        self._url.setAccessibleName("Webex meeting or Personal Room link")
         self._url.setToolTip(
-            "Enter your Webex meeting URL. If you forget the https:// prefix, "
+            "Enter your Webex Meeting or Personal Room link. If you forget "
+            "the https:// prefix, "
             "we'll add it for you.\n\n"
-            "Example: https://myorg.webex.com/meet/bandroom"
+            "Example: https://your-site.webex.com/meet/your-room"
         )
         layout.addWidget(self._url)
 
@@ -555,12 +559,21 @@ class _WebexPage(QWizardPage):
         layout.addWidget(self._url_hint)
         self._url.textChanged.connect(self._validate_url_live)
 
+        self._site = _body_label("")
+        self._site.setTextFormat(Qt.TextFormat.PlainText)
+        self._site.setAccessibleName("Webex site")
+        self._site.setVisible(False)
+        layout.addWidget(self._site)
+
         layout.addWidget(_body_label(
             "WebJam opens this room in the native Webex app or your default "
-            "browser. It does not store Webex credentials or claim to know "
-            "whether you joined. Choose your audio role on the next page."
+            "browser. Webex handles sign-in, camera, microphone, and meeting "
+            "controls. Your WebJam musician name does not change your Webex "
+            "identity, and WebJam never claims to know whether you joined. "
+            "Jamulus remains the performance-audio path."
         ))
         layout.addStretch(1)
+        self._validate_url_live(self._url.text())
 
         # Not a mandatory ("*") field: a value pre-filled from saved settings
         # would leave Next permanently disabled (Qt only counts a mandatory
@@ -571,6 +584,9 @@ class _WebexPage(QWizardPage):
     def _validate_url_live(self, text: str) -> None:
         """Show a typing-time hint about obvious URL-input mistakes."""
         stripped = text.strip()
+        hostname = webex_site_hostname(stripped)
+        self._site.setText(f"Webex site: {hostname}" if hostname else "")
+        self._site.setVisible(bool(hostname))
         if not stripped:
             self._url_hint.setVisible(False)
             return
@@ -612,68 +628,22 @@ class _WebexPage(QWizardPage):
         return normalize_webex_url(self._url.text())
 
 # ---------------------------------------------------------------------------
-# Page 3 — Audio routing
+# Page 3 — Optional local recording
 # ---------------------------------------------------------------------------
 class _RoutingPage(QWizardPage):
-    # Emitted from background scan thread; Qt auto-queues it to the UI thread
-    _scan_complete = Signal()
-
     def __init__(self, settings: Optional[AppSettings] = None) -> None:
         super().__init__()
-        self._scan_complete.connect(self._apply_routing)
-        self.setTitle("Music and Conversation")
+        self.setTitle("Local Meter and Recording")
         self.setSubTitle(
-            "Jamulus carries music. Choose how this Mac uses Webex audio."
+            "Jamulus owns band audio and Webex owns conversation. "
+            "This optional input is for WebJam's meter and local stems only."
         )
         self._complete = True
         self._saved_device_index = settings.audio_input_device_index if settings else -1
-        self._mode = (
-            getattr(settings, "webex_audio_mode", "talkback")
-            if settings else "talkback"
-        )
-        if self._mode not in {"talkback", "video_only", "audience_bridge"}:
-            self._mode = "talkback"
         self._local_capture_enabled = bool(
             getattr(settings, "local_capture_enabled", False) if settings else False
         )
-        self._status_label = _body_label("")
 
-        self._mode_group = QButtonGroup(self)
-        self._mode_group.setExclusive(True)
-        self._talkback_radio = QRadioButton("Musician conversation (recommended)")
-        self._talkback_radio.setAccessibleName("Musician with Webex conversation")
-        self._talkback_radio.setAccessibleDescription(
-            "Use Jamulus for music and native Webex for speech."
-        )
-        self._video_only_radio = QRadioButton("Video only")
-        self._video_only_radio.setAccessibleName("Webex video without computer audio")
-        self._video_only_radio.setAccessibleDescription(
-            "Join Webex without computer audio; Jamulus carries all sound."
-        )
-        self._audience_bridge_radio = QRadioButton("Audience broadcast bridge")
-        self._audience_bridge_radio.setAccessibleName(
-            "Advanced Webex audience broadcast bridge"
-        )
-        self._audience_bridge_radio.setAccessibleDescription(
-            "Send the Jamulus program mix to Webex through a virtual device."
-        )
-        self._mode_group.addButton(self._talkback_radio)
-        self._mode_group.addButton(self._video_only_radio)
-        self._mode_group.addButton(self._audience_bridge_radio)
-        {
-            "talkback": self._talkback_radio,
-            "video_only": self._video_only_radio,
-            "audience_bridge": self._audience_bridge_radio,
-        }[self._mode].setChecked(True)
-        self._mode_group.buttonToggled.connect(self._on_mode_changed)
-
-        install_btn = QPushButton("Show me how to set this up")
-        install_btn.setObjectName("GhostButton")
-        install_btn.clicked.connect(self._open_install_url)
-        install_btn.setVisible(False)
-        self._install_btn = install_btn
-
-        # Local capture is independent of the selected Webex role.
         self._capture_chk = QCheckBox("Record a supplemental local input stem")
         self._capture_chk.setAccessibleName("Enable supplemental local recording")
         self._capture_chk.setChecked(self._local_capture_enabled)
@@ -712,14 +682,10 @@ class _RoutingPage(QWizardPage):
         self._device_picker.setAccessibleName("Meter and local recording input")
         self._device_picker.addItem("System default", -1)
 
-        skip_chk = QCheckBox("Skip for now — I'll set this up later")
-        skip_chk.stateChanged.connect(self._on_skip_changed)
-        self._skip_chk = skip_chk
-
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setAccessibleName("Music and conversation setup options")
+        scroll.setAccessibleName("Local meter and recording setup options")
         content = QWidget()
         scroll.setWidget(content)
         page_layout = QVBoxLayout(self)
@@ -728,31 +694,11 @@ class _RoutingPage(QWizardPage):
 
         layout = QVBoxLayout(content)
         layout.setSpacing(Space.MD)
-        layout.addWidget(self._talkback_radio)
         layout.addWidget(_body_label(
-            "Use Jamulus for music and native Webex for conversation. Join "
-            "Webex muted and use a dedicated speech mic when possible. Before "
-            "speaking, mute the audio interface or end the WebJam session. Use "
-            "Standard Mic Mode and Optimize for My Voice."
+            "This selection does not configure Jamulus or Webex. Choose the "
+            "input whose signal WebJam should meter. Enable the optional stem "
+            "only if you also want WebJam to record that local input."
         ))
-        layout.addWidget(self._video_only_radio)
-        layout.addWidget(_body_label(
-            "Join Webex without computer audio. This is the simplest option "
-            "when Jamulus should carry every sound."
-        ))
-
-        advanced = QGroupBox("Advanced")
-        advanced.setAccessibleName("Advanced audience bridge mode")
-        advanced_layout = QVBoxLayout(advanced)
-        advanced_layout.addWidget(self._audience_bridge_radio)
-        advanced_layout.addWidget(_body_label(
-            "Send the complete Jamulus mix to Webex through BlackHole or "
-            "VB-CABLE. Musicians in that meeting must disconnect Webex audio "
-            "to avoid delayed duplicate music."
-        ))
-        layout.addWidget(advanced)
-        layout.addWidget(self._status_label)
-        layout.addWidget(install_btn)
         layout.addWidget(self._capture_chk)
         layout.addWidget(self._capture_hint)
         layout.addWidget(self._takes_label)
@@ -760,71 +706,11 @@ class _RoutingPage(QWizardPage):
         layout.addWidget(self._device_label)
         layout.addWidget(self._device_picker)
         layout.addStretch(1)
-        layout.addWidget(skip_chk)
         self._update_capture_controls()
-        self._update_mode_status()
 
     def initializePage(self) -> None:
         self._populate_device_picker()
-        if self.audio_mode != "audience_bridge":
-            self._complete = True
-            self._update_mode_status()
-            self.completeChanged.emit()
-            return
-        self._start_loopback_scan()
-
-    def _start_loopback_scan(self) -> None:
-        if getattr(self, "_scan_running", False):
-            return
-
-        from core.audio_routing import scan_loopback_devices
-        import threading
-
-        def _scan():
-            status = scan_loopback_devices()
-            self._routing_status = status
-            # Signal emission is thread-safe; Qt will queue it to the UI thread
-            self._scan_complete.emit()
-
-        self._routing_status = None
-        self._scan_running = True
-        self._status_label.setText("Checking for BlackHole or VB-CABLE…")
-        self._scan_thread = threading.Thread(target=_scan, daemon=True)
-        self._scan_thread.start()
-
-    @Slot()
-    def _apply_routing(self) -> None:  # noqa: N802 (called via invokeMethod)
-        self._scan_running = False
-        if not self.isVisible():
-            return
-        status = getattr(self, "_routing_status", None)
-        if status is None:
-            return
-        if self.audio_mode != "audience_bridge":
-            self._complete = True
-            self._update_mode_status()
-            self.completeChanged.emit()
-            return
-        if status.ok:
-            self._status_label.setText(
-                f"\u2705  Virtual audio device detected:\n\n"
-                f"    {status.device_name}\n\n"
-                "Configure Jamulus output and the native Webex microphone "
-                "explicitly before the session."
-            )
-            self._install_btn.setVisible(False)
-            self._complete = True
-        else:
-            if self.audio_mode == "audience_bridge":
-                self._status_label.setText(
-                    "\u26a0\ufe0f  No Webex bridge device found.\n\n"
-                    f"{status.install_hint}.\n\n"
-                    "After installing, restart WebJam to activate audio routing."
-                )
-                self._install_btn.setVisible(True)
-                self._complete = False
-            self._install_url = status.install_url
-        self._scan_done = True
+        self._complete = True
         self.completeChanged.emit()
 
     def _populate_device_picker(self) -> None:
@@ -861,58 +747,6 @@ class _RoutingPage(QWizardPage):
         finally:
             self._device_picker.blockSignals(False)
         self._picker_populated = True
-
-    def _open_install_url(self) -> None:
-        url = getattr(self, "_install_url", "https://existential.audio/blackhole/")
-        QDesktopServices.openUrl(QUrl(url))
-
-    def _on_skip_changed(self, state: int) -> None:
-        if self.audio_mode != "audience_bridge":
-            self._complete = True
-        elif state:
-            self._complete = True
-        else:
-            status = getattr(self, "_routing_status", None)
-            self._complete = bool(status and status.ok)
-        self.completeChanged.emit()
-
-    def _on_mode_changed(self, button: QRadioButton, checked: bool) -> None:
-        if not checked:
-            return
-        self._skip_chk.setChecked(False)
-        self._skip_chk.setVisible(button is self._audience_bridge_radio)
-        self._scan_done = False
-        self._complete = True
-        self._update_mode_status()
-        if button is self._audience_bridge_radio and self.isVisible():
-            self._complete = False
-            self._start_loopback_scan()
-        self.completeChanged.emit()
-
-    def _update_mode_status(self) -> None:
-        if self.audio_mode == "talkback":
-            self._skip_chk.setVisible(False)
-            self._status_label.setText(
-                "No virtual audio device is required. Keep Webex muted while "
-                "playing. To speak, mute your audio interface or end the "
-                "WebJam session first."
-            )
-            self._install_btn.setVisible(False)
-        elif self.audio_mode == "video_only":
-            self._skip_chk.setVisible(False)
-            self._status_label.setText(
-                "No virtual audio device is required. Choose “Don't connect "
-                "to audio” when joining Webex."
-            )
-            self._install_btn.setVisible(False)
-        else:
-            self._skip_chk.setVisible(True)
-            status = getattr(self, "_routing_status", None)
-            if status is None:
-                self._status_label.setText("Audience bridge requires BlackHole or VB-CABLE.")
-                self._install_btn.setVisible(False)
-            else:
-                self._apply_routing()
 
     def _on_capture_changed(self, state: int) -> None:
         self._local_capture_enabled = bool(state)
@@ -953,14 +787,6 @@ class _RoutingPage(QWizardPage):
             return int(data)
         except (TypeError, ValueError):
             return -1
-
-    @property
-    def audio_mode(self) -> str:
-        if self._audience_bridge_radio.isChecked():
-            return "audience_bridge"
-        if self._video_only_radio.isChecked():
-            return "video_only"
-        return "talkback"
 
     @property
     def local_capture_enabled(self) -> bool:
@@ -1057,7 +883,6 @@ class SetupWizard(QWizard):
         cfg["host_server_enabled"]        = self._jamulus.host_server_enabled
         cfg["webex_url"]                  = self._webex.webex_url
         cfg["audio_input_device_index"]   = self._routing.device_index
-        cfg["webex_audio_mode"]           = self._routing.audio_mode
         cfg["local_capture_enabled"]       = self._routing.local_capture_enabled
         cfg["takes_directory"]             = self._routing.takes_directory
         if cfg["host_server_enabled"]:
@@ -1074,6 +899,7 @@ class SetupWizard(QWizard):
         cfg.pop("webex_guest_issuer_secret", None)
         cfg.pop("webex_display_name", None)
         cfg.pop("webex_audio_bridge_enabled", None)
+        cfg.pop("webex_audio_mode", None)
 
         # Insert user-specified Jamulus path at the front of candidates
         jamulus_path = self._jamulus.jamulus_path

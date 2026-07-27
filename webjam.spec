@@ -17,8 +17,8 @@
 #     --key AuthKey_ID.p8 --key-id KEY_ID --issuer ISSUER_ID --wait
 #   xcrun stapler staple dist/WebJam.app
 #   xcrun stapler validate dist/WebJam.app
-# Tagged CI fails closed unless the protected signing environment is complete;
-# ordinary branch builds remain explicitly named ad-hoc test artifacts.
+# Candidate tags publish only the tested unsigned/ad-hoc artifacts. Protected
+# Developer ID signing remains an explicit, environment-gated manual rehearsal.
 #
 #   CAVEAT: CI stages the official Jamulus client/server apps under Resources,
 #   then deep ad-hoc signs each nested app without the upstream App Sandbox
@@ -179,23 +179,16 @@ a = Analysis(
             str(ROOT / "transport" / "licenses"),
             "THIRD_PARTY_LICENSES/transport",
         ),
-        # Webex widget HTML template
-        (str(ROOT / "webjam_qt" / "webex_widget.html"), "webjam_qt"),
         (str(_build_info_path), "."),
         *_extra_datas,
     ],
     hiddenimports=[
-        # PySide6 WebEngine (not always auto-discovered)
-        "PySide6.QtWebEngineWidgets",
-        "PySide6.QtWebEngineCore",
-        "PySide6.QtWebChannel",
         # Core modules
         "core.settings",
         "core.audio_engine",
         "core.audio_routing",
         "core.jamulus_protocol",
         "core.jamulus_rpc_client",
-        "core.webex_guest_token",
         "services.bridge_service",
         "services.native_remote_transport",
         "services.remote_invitation_owner",
@@ -216,6 +209,7 @@ a = Analysis(
         # analysis changes how it follows function-local imports.
         "core.session_conductor",
         "core.pocket_stage",
+        "core.reference_track",
         "core.pilot_evidence",
         "core.jamulus_server_rpc",
         "webjam_qt.windows.take_deck",
@@ -225,12 +219,13 @@ a = Analysis(
         "services.pocket_stage_gateway",
         "services.pocket_stage_packaged_smoke",
         "services.pocket_stage_tls",
+        "services.reference_track_backend",
         "webjam_qt.windows.pocket_stage_pairing",
+        "webjam_qt.windows.reference_track",
         "soundfile",
         # Optional heavy deps — suppress import errors if absent
         "sounddevice",
         "numpy",
-        "httpx",
         "sentry_sdk",
         # Pocket Stage's TLS identity, Uvicorn WSS backend, and pairing QR are
         # imported behind opt-in desktop flows. Keep them discoverable in a
@@ -252,6 +247,12 @@ a = Analysis(
         "PIL",
         "IPython",
         "jupyter",
+        # Webex is external-only. Do not ship an unused Chromium runtime,
+        # WebChannel bridge, embedded meeting page, or Guest Issuer surface.
+        "PySide6.QtWebChannel",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineQuick",
+        "PySide6.QtWebEngineWidgets",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -297,23 +298,21 @@ coll = COLLECT(
 )
 
 if sys.platform == "darwin":
-    # NOTE: the bundled Jamulus client/server apps (macOS zero-install —
-    # see THIRD_PARTY_NOTICES.md) is NOT added here as a datas/BUNDLE entry.
-    # PyInstaller's BUNDLE() copies file *contents* it controls; Jamulus.app
-    # must be staged with `ditto` after this call produces dist/WebJam.app.
-    # CI then prepares each nested signature as documented above. Ordinary
-    # branch builds refresh the ad-hoc outer seal; the protected release path
-    # re-signs every final code object inside-out with Developer ID and seals
-    # WebJam.app last.
+    # NOTE: the bundled Jamulus client/server apps and the separately built
+    # true-HEADLESS Reference Track client (macOS zero-install — see
+    # THIRD_PARTY_NOTICES.md) are NOT added here as datas/BUNDLE entries.
+    # PyInstaller's BUNDLE() copies file *contents* it controls; CI must stage
+    # the three complete bundles with `ditto` after this call produces
+    # dist/WebJam.app. CI then verifies each nested signature and the HEADLESS
+    # companion's provenance/checksum. Ordinary branch builds refresh the
+    # ad-hoc outer seal; the protected release path re-signs every final code
+    # object inside-out with Developer ID and seals WebJam.app last.
     app = BUNDLE(
         coll,
         name="WebJam.app",
         icon=str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.icns"),
         bundle_identifier="com.webjam.app",
         info_plist={
-            "NSCameraUsageDescription":
-                "WebJam uses your camera only when you choose the optional "
-                "embedded Webex video companion.",
             "NSMicrophoneUsageDescription":
                 "WebJam uses your microphone or audio interface so your "
                 "bandmates can hear you, and to show your input level or "

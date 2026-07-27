@@ -71,6 +71,34 @@ def test_gateway_is_constructed_but_listener_and_projection_timer_are_opt_in(con
     assert "Use iPhone as Pocket Stage…" in labels
 
 
+def test_pairing_is_blocked_until_the_desktop_has_a_live_jam(controller) -> None:
+    controller._jamulus_connected = False
+    with (
+        mock.patch.object(controller, "_is_jamulus_running", return_value=False),
+        mock.patch.object(controller.pocket_stage_gateway, "start") as start,
+        mock.patch.object(controller.window, "flash_message") as flash,
+    ):
+        controller._open_pocket_stage()
+
+    start.assert_not_called()
+    assert "Connect to the jam first" in flash.call_args.args[0]
+
+
+def test_pairing_is_blocked_during_session_teardown(controller) -> None:
+    controller._jamulus_connected = True
+    controller.audio.stopping = True
+    with (
+        mock.patch.object(controller, "_is_jamulus_running", return_value=True),
+        mock.patch.object(controller.pocket_stage_gateway, "start") as start,
+        mock.patch.object(controller.window, "flash_message") as flash,
+    ):
+        controller._open_pocket_stage()
+
+    start.assert_not_called()
+    assert "session change" in flash.call_args.args[0]
+    controller.audio.stopping = False
+
+
 def test_projection_is_paired_private_and_scales_jamulus_gain(controller) -> None:
     controller._jamulus_connected = True
     controller.participants = {
@@ -441,6 +469,59 @@ def test_shutdown_always_stops_mobile_gateway(controller) -> None:
     with mock.patch.object(controller.pocket_stage_gateway, "stop") as stop:
         assert controller.shutdown() is True
     stop.assert_called_once()
+
+
+def test_session_end_retires_phone_authority_and_requires_fresh_pairing(
+    controller,
+) -> None:
+    gateway = controller.pocket_stage_gateway
+    with gateway._state_lock:
+        gateway._running = True
+        gateway._connection_epoch = 7
+        gateway._active_command_leases.add("old-phone")
+
+    def stop_gateway() -> None:
+        with gateway._state_lock:
+            gateway._running = False
+            gateway._connection_epoch += 1
+            gateway._active_command_leases.clear()
+
+    controller._pocket_projection_timer.start()
+    controller._prepare_pocket_stage_for_session_end()
+    with mock.patch.object(gateway, "stop", side_effect=stop_gateway) as stop:
+        assert controller._stop_pocket_stage_for_session_end() is True
+    controller._complete_pocket_stage_session_end(succeeded=True)
+
+    stop.assert_called_once_with()
+    assert gateway.running is False
+    assert gateway._connection_epoch == 8
+    assert gateway._active_command_leases == set()
+    assert controller._pocket_projection_timer.isActive() is False
+    assert controller.window.session_strip._pocket_stage_action.text() == (
+        "Use iPhone as Pocket Stage…"
+    )
+
+
+def test_late_gateway_start_after_session_end_is_retired_before_pairing(
+    controller,
+) -> None:
+    gateway = controller.pocket_stage_gateway
+    controller._pocket_stage_starting = True
+    controller._prepare_pocket_stage_for_session_end()
+
+    with mock.patch.object(gateway, "stop"):
+        assert controller._stop_pocket_stage_for_session_end() is True
+    controller._complete_pocket_stage_session_end(succeeded=True)
+
+    assert controller._pocket_stage_retire_after_start is True
+    with (
+        mock.patch.object(controller, "_stop_pocket_stage") as stop,
+        mock.patch.object(controller, "_show_pocket_stage_offer") as show,
+    ):
+        controller._pocket_stage_started()
+
+    stop.assert_called_once_with(network_changed=True)
+    show.assert_not_called()
 
 
 def test_stop_failure_keeps_sharing_visibly_unresolved(controller) -> None:

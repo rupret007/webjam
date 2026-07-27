@@ -48,6 +48,24 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     `JamulusServer.app` from the same release is prepared the same way and
     nested beside the client so a designated host needs no separate install.
     WebJam launches each as an independent process.
+    Reference Track additionally uses `JamulusHeadlessClient.app`, a separate
+    client-capable build from the same exact Jamulus commit
+    (`ffca974ed4e47b8f4621f3b583c00db2f87974fa`). It is compiled with
+    `CONFIG+=headless` and explicitly without `serveronly`, using Qt 6.10.2
+    downloaded by the wheel-only, SHA-256-locked aqtinstall 3.3.0 build
+    environment. It includes
+    only QtCore, QtNetwork, QtXml, and QtConcurrent—not QtGui, QtWidgets, or
+    QtMultimedia. The complete patched corresponding-source archive accompanies
+    the binary inside the companion app; it includes the two-file compatibility
+    patch, pinned dependency lock, build instructions, build/verifier scripts,
+    and signing configuration. The four dynamically linked Qt frameworks are
+    distributed under LGPLv3 with a dedicated notice and the exact unmodified
+    Qt 6.10.2 qtbase source archive in the companion. Provenance, license text,
+    both source archives, and the final executable checksum ship with the
+    candidate and are verified before packaging.
+    This companion does not replace the ordinary musician-facing `Jamulus.app`.
+    Pinned inputs make the build auditable and repeatable, but WebJam does not
+    claim bit-for-bit identity across different Apple clang or SDK builds.
     The resulting nested apps, and the private WebJam artifact that contains
     them, are ad-hoc signed and are **not notarized**; do not describe the
     prepared copies as upstream-notarized nested apps.
@@ -138,5 +156,5 @@ installer.
 ## Webex
 
 WebJam opens Cisco Webex externally for native speech/video. Webex itself is
-not bundled. The deprecated Guest Issuer flow is not used or configured by
-the current application; legacy source remains only for compatibility review.
+not bundled. WebJam also does not bundle the retired Webex web widget,
+Qt WebEngine meeting runtime, or deprecated Guest Issuer token exchange.

@@ -382,16 +382,21 @@ def _check_recorder(settings) -> CheckItem:
 
 
 def _check_webex(settings) -> CheckItem:
-    from core.webex_url import normalize_webex_url, webex_url_error
-    url = str(getattr(settings, "webex_url", "") or "").strip()
-    if not url:
+    from core.webex_url import webex_site_hostname, webex_url_error
+
+    url = str(getattr(settings, "webex_url", "") or "")
+    if not url.strip():
         return CheckItem(
             "Webex companion", True, "not configured — optional", required=False
         )
     error = webex_url_error(url)
     if error is None:
+        hostname = webex_site_hostname(url)
         return CheckItem(
-            "Webex companion", True, normalize_webex_url(url), required=False
+            "Webex companion",
+            True,
+            f"{hostname} configured — opens externally",
+            required=False,
         )
     return CheckItem("Webex companion", False, error, required=False)
 

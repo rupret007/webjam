@@ -1008,8 +1008,13 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     controller.bridge.stop_jamulus = MagicMock(
         side_effect=lambda: events.append("client-stop") or True
     )
+    def stop_hosted_server() -> bool:
+        events.append("server-stop")
+        controller.bridge.hosted_server_alive.return_value = False
+        return True
+
     controller.bridge.stop_hosted_server = MagicMock(
-        side_effect=lambda: events.append("server-stop") or True
+        side_effect=stop_hosted_server
     )
     controller.begin_startup_journey = MagicMock(
         side_effect=lambda: events.append("new-join-start")
@@ -1037,6 +1042,115 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     ]
     assert controller.settings.host_server_enabled is False
     controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_running_invite_switch_save_failure_returns_to_recoverable_ui(
+    qapp,
+    tmp_path,
+):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=False,
+        jamulus_server="192.168.1.10",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Old Join Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.bridge.hosted_server_owned = MagicMock(return_value=False)
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    controller.begin_startup_journey = MagicMock()
+    link = create_invite_link("192.168.1.42", session_name="New Join Jam")
+
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+        patch("core.settings.save_settings", side_effect=OSError("read only")),
+    ):
+        # The invitation was accepted for asynchronous switching even though
+        # its later settings write could not complete.
+        assert controller.accept_invite_url(link) is True
+
+    assert controller._invite_switch_in_flight is False
+    assert controller.audio.stopping is False
+    assert controller.audio.cleanup_retry_required is False
+    assert window.session_strip._tools_button.isEnabled()
+    assert window.session_strip._audio_button.text() == "Start Session"
+    assert not window.session_strip._audio_button.isEnabled()
+    controller.begin_startup_journey.assert_not_called()
+    assert "did not finish" in window.statusBar().currentMessage()
+
+    controller.bridge.jamulus_state = "Stopped"
+    controller.shutdown()
+
+
+def test_running_invite_switch_is_single_flight(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_server="192.168.1.10",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Current Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.bridge.hosted_server_owned = MagicMock(return_value=False)
+    first = create_invite_link("192.168.1.42", session_name="First New Jam")
+    second = create_invite_link("192.168.1.43", session_name="Second New Jam")
+
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question,
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _DeferredThread(*args, **kwargs),
+        ),
+        patch.object(window, "flash_message") as flash,
+    ):
+        assert controller.accept_invite_url(first) is True
+        assert controller.accept_invite_url(second) is False
+
+    assert controller._invite_switch_in_flight is True
+    assert controller.audio.stopping is True
+    assert question.call_count == 1
+    assert "still ending, leaving, or switching" in flash.call_args.args[0]
+
+    # The worker is deliberately suspended in this regression; restore the
+    # fixture to a settled state before exercising normal shutdown.
+    controller._invite_switch_in_flight = False
+    controller.audio.stopping = False
+    controller.bridge.jamulus_state = "Stopped"
     controller.shutdown()
 
 
@@ -1153,3 +1267,11 @@ class _ImmediateThread:
     def start(self):
         if self._target is not None:
             self._target()
+
+
+class _DeferredThread:
+    def __init__(self, *args, target=None, **kwargs):
+        self._target = target
+
+    def start(self):
+        pass

@@ -1,4 +1,4 @@
-# WebJam v0.19.0 unsigned private test candidate
+# WebJam v0.20.0 unsigned private test candidate
 
 WebJam is the simplest way to start a private band rehearsal: choose **Host a
 Jam** or **Join a Jam**, set up sound in Jamulus, then play.
@@ -45,7 +45,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.19.0 candidate contains a narrow Pocket Stage v1 vertical slice for an
+The v0.20.0 candidate contains a narrow Pocket Stage v1 vertical slice for an
 owner's iPhone. On the desktop, choose **More -> Use iPhone** after both devices
 are on the same private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
@@ -83,6 +83,40 @@ is claimed; all physical tests remain **NOT RUN**. The existing loopback Local
 API and Jamulus audio path are unchanged. See the
 [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
+
+## Host-controlled Reference Track pilot
+
+The source tree contains a macOS-first Reference Track engine and host UI under
+**More**. Its intended route sends a local WAV, AIFF, FLAC, or
+decoder-supported MP3 through a separately owned `WebJam Track` Jamulus client,
+so the song becomes one participant with an independent level and recording
+stem.
+
+Playback is deliberately **locked in the v0.20.0 private test candidate**.
+Apple's CoreAudio process-device property has a reported case where its input
+result becomes the process's output device after an input switch. Jamulus
+3.12.2 has no independent live-device RPC, and its saved profile is not
+sufficient proof. Because physical BlackHole isolation and direct-monitor
+tests are also **NOT RUN**, production wiring refuses playback before scanning,
+launching a backing client, or opening audio. There is no setting, environment
+variable, command-line switch, or UI override.
+
+The retained source-pilot implementation is exercised only through an explicit
+constructor-only certification seam. It requires macOS 14.2 or later, an
+unambiguous 48-kHz BlackHole 16ch/64ch route, live PID-bound primary-route
+checks, a dedicated profile and ports, private authenticated RPC, a connected
+roster, and zero return faders. Lost or stale proof emits silence and retires
+the backing client without ending the primary connection. These mechanisms are
+implementation evidence, not permission for a release package to play.
+
+This is **Jamulus-routed**, not latency eliminated. The track receives normal
+Jamulus buffering, jitter handling, and network latency like another musician.
+The source path is memory-only and excluded from settings and logs. Windows and
+Linux backends, plus physical macOS audibility, independent-mix, recording,
+route-removal, direct-monitor, device-switch, and long-rehearsal evidence
+remain **NOT RUN**. See the
+[architecture decision](docs/adr/0005-reference-track-jamulus-participant.md)
+and [physical pilot runbook](docs/plans/webjam-reference-track-macos-pilot.md).
 
 ## Recording and Studio
 
@@ -146,12 +180,14 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and candidate state
 
-The source tree reports **v0.19.0** and contains Pocket Stage, unified guidance,
-Studio, and the reviewed unsigned-candidate packaging described above. The
-immutable [**v0.18.1 release**](https://github.com/rupret007/webjam/releases/tag/v0.18.1)
-predates Pocket Stage and must not be mistaken for this candidate. The v0.19.0
-candidate workflow builds Windows x64, Ubuntu 22.04 x64, Intel Mac, and
-Apple-silicon Mac packages plus one exact SHA-256 manifest.
+The source tree reports **v0.20.0** and contains Pocket Stage, external Webex
+handoff, the macOS Reference Track pilot, Studio, and the reviewed
+unsigned-candidate packaging described above. Published releases are immutable
+historical evidence: the [**published v0.19.0 release**](https://github.com/rupret007/webjam/releases/tag/v0.19.0)
+predates the Webex cleanup and Reference Track pilot and must not be mistaken
+for this newer source candidate. The v0.20.0 candidate workflow builds Windows
+x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac packages plus one exact
+SHA-256 manifest.
 
 The source tree also contains the reviewed cross-platform packaging path for a
 direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
@@ -195,7 +231,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.19.0,
+integrity—not a substitute for musicians hearing one another. For v0.20.0,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the new evidence-rich export, signed clean installation, and platform
@@ -205,7 +241,7 @@ package or claim audibility.
 
 ## Guides
 
-- [v0.19.0 candidate notes and changelog](CHANGELOG.md)
+- [v0.20.0 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)
@@ -213,6 +249,9 @@ package or claim audibility.
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
 - [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 - [Pocket Stage threat model](docs/security/pocket-stage-mobile-threat-model.md)
+- [Reference Track architecture](docs/adr/0005-reference-track-jamulus-participant.md)
+- [Reference Track macOS physical pilot](docs/plans/webjam-reference-track-macos-pilot.md)
+- [Webex sandbox demo gate](docs/plans/webjam-webex-sandbox-demo-gate.md)
 - [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md)
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Test procedure](TEST_PROCEDURE.md)

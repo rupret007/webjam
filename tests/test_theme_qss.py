@@ -116,7 +116,7 @@ class TestStrictProductPalette(unittest.TestCase):
             re.IGNORECASE,
         )
         offenders: list[str] = []
-        for relative in ("theme/conductor.qss", "webex_widget.html"):
+        for relative in ("theme/conductor.qss",):
             path = UI_ROOT / relative
             for line_number, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(), start=1

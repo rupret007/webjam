@@ -720,6 +720,12 @@ class TestHostedControllerFlows(unittest.TestCase):
         c = self.controller
         c.window.flash_message = MagicMock()
         c.settings.host_server_enabled = True
+        # This class intentionally reuses one controller. A failed cleanup is
+        # durable in production, so reset that truth explicitly between
+        # independent examples.
+        c.audio.stopping = False
+        c.audio.cleanup_retry_required = False
+        c.audio.ended_by_user = False
         c.bridge.hosted_server_alive = MagicMock(return_value=True)
         c.bridge.hosted_server_owned = MagicMock(return_value=True)
         c.bridge.hosted_server_adopted = MagicMock(return_value=False)
@@ -838,6 +844,8 @@ class TestHostedControllerFlows(unittest.TestCase):
             patch.object(c.recording, "on_audio_session_stopped") as reset_recording,
             patch.object(c.bridge, "stop_jamulus", return_value=False),
             patch.object(c.bridge, "stop_hosted_server", return_value=True),
+            patch.object(c, "_clear_remote_invite_owner") as clear_owner,
+            patch.object(c, "_stop_remote_transport") as stop_transport,
             patch.object(c._ui_invoker, "invoke", side_effect=lambda callback: callback()),
             patch(
                 "webjam_qt.controllers.audio_coordinator.threading.Thread",
@@ -857,6 +865,47 @@ class TestHostedControllerFlows(unittest.TestCase):
         self.assertFalse(c.audio.stopping)
         self.assertFalse(c.audio.ended_by_user)
         reset_recording.assert_not_called()
+        clear_owner.assert_not_called()
+        stop_transport.assert_not_called()
+
+    def test_end_jam_retains_failed_private_peer_before_primary_shutdown(self):
+        c = self.controller
+        failed_peer = MagicMock()
+        failed_peer.stop.side_effect = RuntimeError("still active")
+        c.guest_peer = failed_peer
+        c._guest_invite = MagicMock()
+
+        try:
+            with patch.object(
+                c.recording,
+                "stop_server_recording_for_shutdown",
+                return_value=True,
+            ), patch.object(
+                c.bridge,
+                "stop_jamulus",
+            ) as client_stop, patch.object(
+                c.bridge,
+                "stop_hosted_server",
+            ) as server_stop, patch.object(
+                c._ui_invoker,
+                "invoke",
+                side_effect=lambda callback: callback(),
+            ):
+                c.audio._stop_session_services(True)
+
+            failed_peer.stop.assert_called_once_with()
+            client_stop.assert_not_called()
+            server_stop.assert_not_called()
+            self.assertIs(c.guest_peer, failed_peer)
+            self.assertTrue(c.audio.cleanup_retry_required)
+            self.assertEqual(
+                c.window.session_strip._audio_button.text(),
+                "Try End Session",
+            )
+        finally:
+            failed_peer.stop.side_effect = None
+            c._stop_session_peer(clear_invite=True)
+            c.audio.cleanup_retry_required = False
 
     def test_idle_hero_offers_host_and_start(self):
         c = self.controller

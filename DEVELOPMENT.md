@@ -1,4 +1,4 @@
-# Developing WebJam v0.19.0
+# Developing WebJam v0.20.0
 
 ## Local setup
 
@@ -15,7 +15,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.19.0.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.20.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -148,9 +148,9 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.19.0`. The published v0.19.0 desktop assets are the
-unsigned/ad-hoc private test candidate and carry the Pocket Stage owner-device
-Xcode setup kit in both Mac containers. The current published candidate is:
+The source tree reports `0.20.0`. The published v0.19.0 desktop assets remain
+immutable historical evidence and carry the Pocket Stage owner-device Xcode
+setup kit in both Mac containers. The current published candidate is:
 
 - GitHub release: [`v0.19.0`](https://github.com/rupret007/webjam/releases/tag/v0.19.0),
   clearly labeled as an unsigned/unnotarized private test candidate.

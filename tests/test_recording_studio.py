@@ -3339,7 +3339,7 @@ def test_simple_settings_changes_preferences_without_connection_plumbing(tmp_pat
     assert data["jamulus_server"] == "127.0.0.1"
     assert data["jamulus_port"] == 22124
     assert data["server_rpc_port"] == 22240
-    assert data["webex_audio_mode"] == "talkback"
+    assert "webex_audio_mode" not in data
     assert data["local_capture_enabled"] is False
     assert data["musician_name"] == "Jeff — Guitar"
 
