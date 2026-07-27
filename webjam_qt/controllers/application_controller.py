@@ -6204,7 +6204,7 @@ class ApplicationController(QObject):
                 else self._connection_failure_state()
             )
             self.window.participant_grid.set_session_state(state)
-        # Settings and Troubleshooting remain available precisely when a
+        # Settings and Band Check remain available precisely when a
         # connection is slow or failed.
         self.window.session_strip.set_tools_enabled(True)
         self.window.set_status_audio(audio_state)

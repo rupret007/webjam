@@ -112,7 +112,8 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Couldn’t start the jam",
-            "Try again. If it keeps happening, open More → Troubleshooting.",
+            "Try again. If it keeps happening, open "
+            "More → Band Check / Verify Sound.",
             "Try Again",
             show_ready_check=False,
         )

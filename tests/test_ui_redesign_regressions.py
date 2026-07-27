@@ -359,6 +359,13 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
         _destroy(window)
 
 
+def test_host_start_failure_points_to_the_real_band_check_menu():
+    state = SessionUiState.host_start_failed()
+
+    assert "More → Band Check / Verify Sound" in state.message
+    assert "Troubleshooting" not in state.message
+
+
 def test_initial_focus_moves_from_title_to_visible_hud_action(qapp, tmp_path):
     window = _window()
     controller = ApplicationController(window, settings=_settings(tmp_path))
