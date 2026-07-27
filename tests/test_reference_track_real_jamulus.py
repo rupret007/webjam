@@ -74,12 +74,15 @@ def test_reference_track_is_a_separate_real_client_with_independent_faders() -> 
 
         stopped = harness.set_recording(False)
         assert stopped["enabled"] is False
+        # Jamulus 3.12.2 sanitizes spaces in the client name to underscores
+        # before using it as the recorder stem prefix.
+        recording_prefix = harness.REFERENCE_TRACK_NAME.replace(" ", "_")
         track_wavs = tuple(
             path
             for path in harness.recording_artifacts()
             if (
                 path.suffix.lower() == ".wav"
-                and path.name.startswith(f"{harness.REFERENCE_TRACK_NAME}-")
+                and path.name.startswith(f"{recording_prefix}-")
             )
         )
         assert len(track_wavs) == 1, track_wavs
