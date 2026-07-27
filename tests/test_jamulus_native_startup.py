@@ -471,6 +471,15 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
     assert "secondary_action_text" not in call.kwargs
 
 
+def test_native_sound_setup_primary_action_brings_jamulus_forward() -> None:
+    controller = _controller(hosting=False)
+    controller._bring_jamulus_forward = mock.Mock()
+
+    controller._on_conductor_action_requested("bring_jamulus")
+
+    controller._bring_jamulus_forward.assert_called_once_with()
+
+
 def test_native_guest_peer_never_starts_for_a_cancelled_or_remote_journey() -> None:
     controller = _controller(hosting=False)
     guest = mock.Mock()

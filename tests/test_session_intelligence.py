@@ -17,6 +17,11 @@ class TestSessionIntelligence(unittest.TestCase):
         self.assertEqual(pulse.mode_label, "Music Jam")
         self.assertEqual(pulse.stage, "Sound Check")
         self.assertIn("sound check", pulse.next_step.lower())
+        self.assertEqual(
+            pulse.summary,
+            "No creative notes yet; capture the shared goal when you’re ready.",
+        )
+        self.assertNotIn("Music Jam is ready", pulse.summary)
         self.assertEqual(pulse.participant_signal.count, 1)
         self.assertTrue(pulse.participant_signal.local_present)
 

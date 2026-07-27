@@ -238,6 +238,60 @@ class TestSessionStrip(unittest.TestCase):
         s._video_button.click()
         self.assertEqual(len(results), 1)
 
+    def test_webex_menu_label_recovers_after_link_is_configured(self):
+        s = self._strip()
+        s.set_video_configured(False)
+        self.assertEqual(s._video_action.text(), "Add Webex / Conversation")
+        s.set_video_configured(True)
+        self.assertEqual(s._video_action.text(), "Webex / Conversation")
+
+    def test_every_more_menu_action_emits_its_semantic_request(self):
+        s = self._strip()
+        tools: list[str] = []
+        video: list[bool] = []
+        s.tool_requested.connect(tools.append)
+        s.join_video_requested.connect(lambda: video.append(True))
+        expected_tools = {
+            "Audio Settings in Jamulus": "audio_settings",
+            "Recording Setup": "recording_setup",
+            "Studio": "takes",
+            "Notes": "canvas",
+            "Use iPhone as Pocket Stage…": "pocket_stage",
+            "Band Check / Verify Sound\tF2": "diagnostics",
+            "Help": "help",
+            "Support": "support",
+            "About WebJam": "about",
+            "WebJam Settings": "settings",
+        }
+        actions = {
+            action.text(): action
+            for action in s._tools_button.menu().actions()
+            if not action.isSeparator()
+        }
+
+        self.assertTrue(expected_tools.keys() <= actions.keys())
+        for label, request in expected_tools.items():
+            with self.subTest(label=label):
+                tools.clear()
+                actions[label].trigger()
+                self.assertEqual(tools, [request])
+
+        actions["Webex / Conversation"].trigger()
+        self.assertEqual(video, [True])
+
+    def test_band_check_menu_actions_emit_once(self):
+        s = self._strip()
+        ready: list[bool] = []
+        practice: list[bool] = []
+        s.ready_check_requested.connect(lambda: ready.append(True))
+        s.practice_requested.connect(lambda: practice.append(True))
+
+        s._ready_action.trigger()
+        s._practice_action.trigger()
+
+        self.assertEqual(ready, [True])
+        self.assertEqual(practice, [True])
+
     def test_mode_changed_signal_emits_on_picker_change(self):
         s = self._strip()
         results = []
@@ -643,6 +697,50 @@ class TestConductorWindow(unittest.TestCase):
     def test_flash_message_does_not_raise(self):
         w = self._window()
         w.flash_message("Test message", ms=100)
+
+    def test_help_copy_names_the_discoverable_studio_menu_item(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("More → Studio", body)
+        self.assertNotIn("Multitrack Studio", body)
+
+    def test_about_copy_reports_version_build_target_and_trust(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "core.build_info.build_id",
+            return_value="a" * 40,
+        ), mock.patch(
+            "core.build_info.desktop_target",
+            return_value="macos-arm64",
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text, mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setDetailedText",
+        ) as set_detail:
+            w.show_about()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("WebJam v0.19.0", body)
+        self.assertIn("aaaaaaaaaaaa", body)
+        self.assertIn("macos-arm64", body)
+        self.assertIn("Private test candidate", body)
+        self.assertIn("not Apple-notarized", body)
+        set_detail.assert_called_once_with(f"Full build ID: {'a' * 40}")
 
     def test_fullscreen_toggle_roundtrip(self):
         w = self._window()

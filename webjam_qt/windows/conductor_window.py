@@ -314,7 +314,7 @@ class ConductorWindow(QMainWindow):
         else:
             self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
         # F1 — show help dialog
-        QShortcut(QKeySequence(Qt.Key.Key_F1), self, self._show_help)
+        QShortcut(QKeySequence(Qt.Key.Key_F1), self, self.show_help)
         QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.side_rail.trigger("stage"))
         QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.side_rail.trigger("canvas"))
         QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.side_rail.trigger("takes"))
@@ -342,7 +342,7 @@ class ConductorWindow(QMainWindow):
         for current, following in zip(order, order[1:]):
             QWidget.setTabOrder(current, following)
 
-    def _show_help(self) -> None:
+    def show_help(self) -> None:
         """Display the same short workflow the live screen presents."""
         from PySide6.QtWidgets import QMessageBox
         from webjam_qt import __version__
@@ -353,7 +353,7 @@ class ConductorWindow(QMainWindow):
             "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
             "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
             "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
-            "<b>5.</b> Use <b>More → Multitrack Studio</b> to review a take.<br>"
+            "<b>5.</b> Use <b>More → Studio</b> to review a take.<br>"
             "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
             "<b>Useful shortcuts</b><br>"
             "F2 — Band Check<br>"
@@ -365,6 +365,34 @@ class ConductorWindow(QMainWindow):
         box.setWindowTitle("WebJam Help")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(body)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.exec()
+
+    def show_about(self) -> None:
+        """Show privacy-safe package identity and the candidate trust boundary."""
+
+        from PySide6.QtWidgets import QMessageBox
+
+        from core.build_info import build_id, desktop_target
+        from webjam_qt import __version__
+
+        commit = build_id()
+        short_build = commit[:12] if commit else "unavailable"
+        target = desktop_target() or "unknown target"
+        body = (
+            f"<b>WebJam v{__version__}</b><br>"
+            "Unified creative collaboration for musicians.<br><br>"
+            f"<b>Build:</b> {short_build}<br>"
+            f"<b>Target:</b> {target}<br>"
+            "<b>Trust:</b> Private test candidate<br><br>"
+            "macOS test builds are ad-hoc signed and are not Apple-notarized."
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle("About WebJam")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(body)
+        if commit:
+            box.setDetailedText(f"Full build ID: {commit}")
         box.setIcon(QMessageBox.Icon.Information)
         box.exec()
 

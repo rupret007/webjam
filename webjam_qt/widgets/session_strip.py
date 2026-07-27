@@ -211,8 +211,12 @@ class SessionStrip(QFrame):
         diagnostics_action.triggered.connect(
             lambda: self.tool_requested.emit("diagnostics")
         )
+        help_action = QAction("Help", tools_menu)
+        help_action.triggered.connect(lambda: self.tool_requested.emit("help"))
         support_action = QAction("Support", tools_menu)
         support_action.triggered.connect(lambda: self.tool_requested.emit("support"))
+        about_action = QAction("About WebJam", tools_menu)
+        about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
         tools_menu.addAction(audio_action)
         tools_menu.addAction(conversation_action)
@@ -222,7 +226,9 @@ class SessionStrip(QFrame):
         tools_menu.addAction(self._pocket_stage_action)
         tools_menu.addSeparator()
         tools_menu.addAction(diagnostics_action)
+        tools_menu.addAction(help_action)
         tools_menu.addAction(support_action)
+        tools_menu.addAction(about_action)
         self._reset_invite_action = QAction("Reset Invite", tools_menu)
         self._reset_invite_action.setToolTip(
             "Revoke the current private invitation and create a new one."
@@ -322,7 +328,10 @@ class SessionStrip(QFrame):
         self._video_action.setEnabled(enabled)
 
     def set_video_configured(self, configured: bool) -> None:
-        if not configured:
+        if configured:
+            if self._video_action.text() == "Add Webex / Conversation":
+                self._video_action.setText("Webex / Conversation")
+        else:
             self._video_action.setText("Add Webex / Conversation")
 
     def set_tools_enabled(self, enabled: bool) -> None:

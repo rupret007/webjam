@@ -125,6 +125,19 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.window.webex_embed.leave_meeting.assert_not_called()
 
 
+class TestJamulusForegroundGuidance(_ControllerTestBase):
+    def test_unavailable_jamulus_never_claims_it_is_opening(self):
+        c = self.controller
+        c.bridge.bring_jamulus_forward = MagicMock(return_value=False)
+
+        c._bring_jamulus_forward()
+
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("isn’t open yet", message)
+        self.assertIn("Start or retry", message)
+        self.assertNotIn("still opening", message)
+
+
 class TestTruthfulWebexState(_ControllerTestBase):
     def test_obsolete_embed_state_is_ignored(self):
         c = self.controller
@@ -293,6 +306,13 @@ class TestReconnectCrashBanner(_ControllerTestBase):
 
 
 class TestRailViewChanges(_ControllerTestBase):
+    def _more_action(self, label: str):
+        return next(
+            action
+            for action in self.window.session_strip._tools_button.menu().actions()
+            if action.text() == label
+        )
+
     def test_canvas_expands_notes_panel(self):
         c = self.controller
         c._on_rail_view_changed("canvas")
@@ -323,6 +343,31 @@ class TestRailViewChanges(_ControllerTestBase):
         c.window.side_rail.set_active_key.assert_called_once_with("stage")
         c._open_settings_wizard.assert_called_once()
         del c.__dict__["_open_settings_wizard"]
+
+    def test_visible_more_actions_reach_their_controller_owners(self):
+        c = self.controller
+        routes = (
+            ("Audio Settings in Jamulus", "_bring_jamulus_forward"),
+            ("Recording Setup", "_open_recording_setup"),
+            ("Use iPhone as Pocket Stage…", "_open_pocket_stage"),
+            ("Band Check / Verify Sound\tF2", "_on_ready_check"),
+            ("Support", "_on_save_support_bundle"),
+            ("WebJam Settings", "_open_settings_wizard"),
+        )
+        for label, handler_name in routes:
+            with self.subTest(label=label), patch.object(
+                c,
+                handler_name,
+            ) as handler:
+                self._more_action(label).trigger()
+                handler.assert_called_once_with()
+
+        with patch.object(c.window, "show_help") as show_help:
+            self._more_action("Help").trigger()
+            show_help.assert_called_once_with()
+        with patch.object(c.window, "show_about") as show_about:
+            self._more_action("About WebJam").trigger()
+            show_about.assert_called_once_with()
 
 
 class TestSettingsWizard(_ControllerTestBase):

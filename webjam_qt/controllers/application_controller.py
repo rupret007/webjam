@@ -1694,7 +1694,7 @@ class ApplicationController(QObject):
         strip.record_requested.connect(self._on_record_requested)
         strip.ready_check_requested.connect(self._on_ready_check)
         strip.invite_requested.connect(self._copy_band_invite)
-        strip.reset_invite_requested.connect(self._reset_remote_invite)
+        strip.reset_invite_requested.connect(self._confirm_reset_remote_invite)
         strip.tool_requested.connect(self._on_rail_view_changed)
         if self._operator_mode:
             self.window.test_night_requested.connect(self._open_test_night)
@@ -2630,8 +2630,9 @@ class ApplicationController(QObject):
             )
             return
         self.window.flash_message(
-            "Jamulus is still opening. Try Bring Jamulus Forward again in a moment.",
-            ms=6000,
+            "Jamulus isn’t open yet. Start or retry the session, then choose "
+            "Audio Settings in Jamulus again.",
+            ms=7_000,
         )
 
     def _persist_startup_attempt(self, attempt: dict[str, object]) -> None:
@@ -3176,12 +3177,18 @@ class ApplicationController(QObject):
         )
 
     def _on_chat_submitted(self, text: str) -> None:
-        """User sent a chat message from the canvas box — send to the band and
-        echo it locally so the sender sees their own message."""
+        """Send chat only when Jamulus confirms the RPC command was accepted."""
         text = (text or "").strip()
         if not text:
             return
-        self.jamulus.send_chat(text)
+        if not self.jamulus.send_chat(text):
+            self.window.session_canvas.restore_unsent_chat(text)
+            self.window.flash_message(
+                "Message not sent. Reconnect to your band, then press Enter "
+                "to try again.",
+                ms=6_000,
+            )
+            return
         self.window.session_canvas.append_line(f"You: {text}")
 
     def _on_recorder_state(self, recording: bool, raw_state: int) -> None:
@@ -4241,6 +4248,23 @@ class ApplicationController(QObject):
         )
         self._update_session_hud()
 
+    def _confirm_reset_remote_invite(self) -> None:
+        """Confirm the visible destructive menu action before revoking a link."""
+
+        if getattr(self, "_remote_invite_owner", None) is None:
+            self._reset_remote_invite()
+            return
+        reply = QMessageBox.question(
+            self.window,
+            "Reset private invitation?",
+            "Resetting revokes the link you already shared. Bandmates will "
+            "need the new invitation.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._reset_remote_invite()
+
     def _on_connection_timeout(self) -> None:
         """Turn an endless spinner into one plain recovery action."""
         if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
@@ -5180,6 +5204,8 @@ class ApplicationController(QObject):
             self._on_session_audio_requested()
         elif action in {"confirm_sound", "run_band_check"}:
             self._open_band_check(start_session_when_ready=True)
+        elif action == "bring_jamulus":
+            self._bring_jamulus_forward()
         elif action in {"record", "stop_recording"}:
             self._on_record_requested()
         elif action == "review_take":
@@ -6985,6 +7011,10 @@ class ApplicationController(QObject):
             self._open_pocket_stage()
         elif key == "diagnostics":
             self._on_ready_check()
+        elif key == "help":
+            self.window.show_help()
+        elif key == "about":
+            self.window.show_about()
         elif key == "audio_settings":
             self._bring_jamulus_forward()
         elif key == "recording_setup":

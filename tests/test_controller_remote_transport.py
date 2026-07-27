@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from core.network_invite import create_invite_link
 from core.remote_invitation import issue_remote_invitation
@@ -587,4 +587,25 @@ def test_host_hud_hides_consumed_copy_but_keeps_reset_available(
     controller._update_session_hud()
     assert controller.window.session_strip._invite_button.isHidden()
     assert controller.window.session_strip._reset_invite_action.isVisible()
+    controller.shutdown()
+
+
+def test_visible_reset_invite_requires_explicit_confirmation(tmp_path) -> None:
+    controller = _controller(tmp_path, hosting=True)
+    controller._remote_invite_owner = mock.MagicMock()
+    controller._reset_remote_invite = mock.MagicMock()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ):
+        controller.window.session_strip._reset_invite_action.trigger()
+    controller._reset_remote_invite.assert_not_called()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        controller.window.session_strip._reset_invite_action.trigger()
+    controller._reset_remote_invite.assert_called_once_with()
     controller.shutdown()

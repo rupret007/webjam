@@ -21,6 +21,7 @@ from core.settings import AppSettings
 from webjam_qt.app import (
     WebJamApplication,
     _invite_from_arguments,
+    _show_live_invitation_error,
     qt_arguments_without_test_night,
 )
 from webjam_qt.windows.launch_dialog import LaunchDialog
@@ -205,6 +206,17 @@ def test_invalid_file_open_retains_only_fixed_error_copy() -> None:
     assert "PRIVATE-SENTINEL" not in fake_application._pending_invitation_error
     assert raw not in repr(vars(fake_application))
     fake_application.invitation_error.emit.assert_called_once()
+
+
+def test_live_invitation_error_uses_keyword_only_flash_duration() -> None:
+    window = SimpleNamespace(flash_message=MagicMock())
+
+    _show_live_invitation_error(window, "That invitation is no longer valid.")
+
+    window.flash_message.assert_called_once_with(
+        "That invitation is no longer valid.",
+        ms=5_000,
+    )
 
 
 def test_run_ignores_v3_argv_instead_of_passing_raw_text(qapp) -> None:

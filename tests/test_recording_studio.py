@@ -1620,6 +1620,43 @@ def test_arrange_edit_rejection_leaves_document_and_history_untouched(tmp_path):
     assert all(path.read_bytes() == before for path, before in truth.items())
 
 
+def test_add_take_popup_action_reaches_the_selected_source(tmp_path):
+    primary_dir, _track_ids = _schema2_studio_take(tmp_path)
+    alternate_dir, alternate_track_id = _schema2_repeated_take(
+        tmp_path,
+        primary_dir,
+    )
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+
+    try:
+        primary_row = next(
+            index
+            for index, take in enumerate(studio._takes)
+            if take.path.resolve() == primary_dir.resolve()
+        )
+        studio._take_list.setCurrentRow(primary_row)
+        studio._select_track(0)
+        sources = studio._available_comp_sources()
+        with patch.object(studio, "_add_take_lane_from_source") as add_lane:
+            menu = studio._build_add_take_lane_menu(sources)
+            assert menu.accessibleName() == "Matching repeated takes"
+            actions = [action for action in menu.actions() if not action.isSeparator()]
+            assert len(actions) == 1
+            assert "Take" in actions[0].text()
+
+            actions[0].trigger()
+
+            add_lane.assert_called_once_with(
+                alternate_dir.resolve(),
+                alternate_track_id,
+            )
+    finally:
+        studio.shutdown()
+
+
 def test_repeated_take_lane_comp_audition_export_and_reopen(tmp_path):
     primary_dir, (destination_track_id, _local_id) = _schema2_studio_take(tmp_path)
     alternate_dir, alternate_track_id = _schema2_repeated_take(

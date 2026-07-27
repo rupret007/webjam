@@ -368,6 +368,16 @@ class StudioArrangementWorkflowMixin:
                 "selected musician."
             )
             return
+        menu = self._build_add_take_lane_menu(sources)
+        menu.exec(
+            self._add_take_lane_btn.mapToGlobal(
+                self._add_take_lane_btn.rect().bottomLeft()
+            )
+        )
+
+    def _build_add_take_lane_menu(self, sources) -> QMenu:
+        """Create the real repeated-take menu without entering its modal loop."""
+
         menu = QMenu(self)
         menu.setAccessibleName("Matching repeated takes")
         for path, project, source_track in sources:
@@ -378,11 +388,7 @@ class StudioArrangementWorkflowMixin:
                     self._add_take_lane_from_source(source_path, track_id)
                 )
             )
-        menu.exec(
-            self._add_take_lane_btn.mapToGlobal(
-                self._add_take_lane_btn.rect().bottomLeft()
-            )
-        )
+        return menu
 
     def _add_take_lane_from_source(
         self,

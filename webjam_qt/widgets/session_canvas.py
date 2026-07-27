@@ -174,6 +174,7 @@ class SessionCanvas(QFrame):
         # Chat box — send a message to the whole band (Jamulus chat).
         self._chat_input = QLineEdit()
         self._chat_input.setObjectName("CanvasChatInput")
+        self._chat_input.setAccessibleName("Band chat message")
         self._chat_input.setPlaceholderText("Message your band… (Enter to send)")
         self._chat_input.returnPressed.connect(self._on_chat_entered)
 
@@ -282,6 +283,16 @@ class SessionCanvas(QFrame):
             return
         self._chat_input.clear()
         self.chat_submitted.emit(text)
+
+    def restore_unsent_chat(self, text: str) -> None:
+        """Return a failed message to the composer without overwriting typing."""
+
+        message = str(text or "").strip()
+        if not message or self._chat_input.text():
+            return
+        self._chat_input.setText(message)
+        self._chat_input.selectAll()
+        self._chat_input.setFocus()
 
     def append_line(self, text: str) -> None:
         """Append a line to the end of the notes (e.g. incoming band chat),
