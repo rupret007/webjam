@@ -909,11 +909,17 @@ class TestHostedControllerFlows(unittest.TestCase):
 
     def test_idle_hero_offers_host_and_start(self):
         c = self.controller
+        c.window.session_strip.set_audio_state("Ending…", enabled=False)
         c.audio.reset_to_idle()
         self.assertEqual(
             self.window.participant_grid._empty_primary.text().replace("&&", "&"),
             "Start Session",
         )
+        self.assertEqual(
+            self.window.session_strip._audio_button.text(),
+            "Start Session",
+        )
+        self.assertTrue(self.window.session_strip._audio_button.isEnabled())
         self.assertIn(
             "Multitrack recording is ready",
             self.window.participant_grid._empty_hint.text(),

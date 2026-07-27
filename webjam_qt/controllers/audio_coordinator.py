@@ -473,6 +473,13 @@ class AudioCoordinator:
                 ),
             )
         )
+        # End/Leave changes this control to a disabled progress label before
+        # teardown. Reset it explicitly because the readiness timer is stopped
+        # during a clean session end and may not refresh the strip again.
+        self._c.window.session_strip.set_audio_state(
+            "Start Session",
+            enabled=True,
+        )
         self._c._update_session_hud()
 
     def reset_to_demo(self) -> None:
