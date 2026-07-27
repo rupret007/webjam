@@ -32,13 +32,16 @@ against the exact attached hashes.
 
 Each candidate Mac DMG and ZIP contains `Install WebJam.command`,
 `Install WebJam - Remove Quarantine.command`, `READ ME FIRST.txt`, and fixed
-candidate metadata beside `WebJam.app`. The guided helper validates and installs
-the app, preserves quarantine, attempts launch, and opens the path to Apple's
-Open Anyway approval. The advanced helper performs the same validation, asks
-for explicit confirmation, and removes quarantine from the installed
-`WebJam.app` only. Neither path uses `sudo`, disables Gatekeeper, or changes
-another application. Both prefer `/Applications` and fall back to
-`~/Applications` when the system folder is not writable.
+candidate metadata beside `WebJam.app`. Dragging `WebJam.app` onto the
+Applications shortcut is the primary installation path because current macOS
+versions can block a quarantined `.command` file without offering app-bundle
+Open Anyway approval. The README documents explicit Terminal invocation for
+the optional helpers. The guided helper validates and installs the app,
+preserves quarantine, and attempts launch. The advanced helper performs the
+same validation, asks for explicit confirmation, and removes quarantine from
+the installed `WebJam.app` only. Neither helper uses `sudo`, disables
+Gatekeeper, or changes another application. Both prefer `/Applications` and
+fall back to `~/Applications` when the system folder is not writable.
 
 ## Automated build gates
 

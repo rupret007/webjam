@@ -27,6 +27,9 @@ PROJECT_README = (ROOT / "README.md").read_text(encoding="utf-8")
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 VERSION_SOURCE = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 THIRD_PARTY_NOTICES = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+MACOS_README = (ROOT / "packaging" / "macos" / "READ ME FIRST.txt").read_text(
+    encoding="utf-8"
+)
 
 
 def _workflow_job(name: str) -> str:
@@ -62,6 +65,15 @@ def test_macos_dmg_builder_is_executable_and_preserves_the_app_bundle() -> None:
     assert "Pocket Stage iPhone setup kit contains a symbolic link" in DMG_SCRIPT
     assert "-format UDZO" in DMG_SCRIPT
     assert 'hdiutil verify "$output_dmg"' in DMG_SCRIPT
+
+
+def test_macos_readme_uses_the_working_app_bundle_approval_path() -> None:
+    assert "Drag WebJam.app onto the Applications shortcut" in MACOS_README
+    assert "open WebJam from Applications" in MACOS_README
+    assert "Open Anyway for WebJam" in MACOS_README
+    assert "Recent macOS versions can block downloaded" in MACOS_README
+    assert "Control-click the helper" not in MACOS_README
+    assert "/bin/bash " in MACOS_README
 
 
 def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:

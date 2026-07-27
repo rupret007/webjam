@@ -1,4 +1,4 @@
-# Developing WebJam v0.18.1
+# Developing WebJam v0.19.0
 
 ## Local setup
 
@@ -15,7 +15,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.18.1.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.19.0.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -123,7 +123,7 @@ Linux/JACK real-Jamulus companion and its evidence boundary are documented in
 - UI surfaces render the shared snapshot and route semantic actions back to an
   owner. They must not start work while rendering.
 - Creative Pulse content stays local and cannot mutate conductor facts. No
-  cloud model, agent, or SDK belongs in the v0.18 production path.
+  cloud model, agent, or SDK belongs in the v0.19 production path.
 - Public consumers get only `to_public_dict()` followed by their own strict
   allowlist. Never add free-form copy, notes, names, channel IDs, addresses,
   devices, paths, invitations, credentials, tokens, or raw exceptions.
@@ -148,11 +148,11 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.18.1`. The published v0.18.1 desktop assets are the
-unsigned/ad-hoc private test candidate; the later Pocket Stage source preview is
-not claimed to be inside those packages. The current published candidate is:
+The source tree reports `0.19.0`. The published v0.19.0 desktop assets are the
+unsigned/ad-hoc private test candidate and carry the Pocket Stage owner-device
+Xcode setup kit in both Mac containers. The current published candidate is:
 
-- GitHub release: [`v0.18.1`](https://github.com/rupret007/webjam/releases/tag/v0.18.1),
+- GitHub release: [`v0.19.0`](https://github.com/rupret007/webjam/releases/tag/v0.19.0),
   clearly labeled as an unsigned/unnotarized private test candidate.
 
 The local source-bundle smoke command is:

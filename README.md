@@ -170,10 +170,12 @@ files on the old tag.
 The candidate installer formats improve download and installation, but they do
 not substitute for platform trust. Release assets are visibly named
 `UNSIGNED-TEST-ONLY` on Windows and `ADHOC-TEST-ONLY` on macOS. Each Mac DMG
-and ZIP includes a guided `Install WebJam.command`, an explicitly advanced
-quarantine-removal helper, candidate metadata, and a plain-language warning.
-The guided path preserves quarantine and points to Apple's Open Anyway flow;
-the advanced path removes quarantine from the installed WebJam app only.
+and ZIP includes a drag-to-Applications app, an optional verified
+`Install WebJam.command`, an explicitly advanced quarantine-removal helper,
+candidate metadata, and a plain-language warning. Dragging the app to
+Applications and using Apple's app-bundle Open Anyway flow is the primary
+macOS path. Recent macOS versions may block downloaded `.command` files from
+Finder, so those helpers are documented for explicit Terminal use instead.
 
 The source continues to isolate Authenticode and Developer ID credentials in
 separate protected `windows-release` and `macos-release` manual rehearsal jobs.

@@ -1,4 +1,4 @@
-# First Jam — WebJam v0.18.0
+# First Jam — WebJam v0.19.0
 
 ## Host
 

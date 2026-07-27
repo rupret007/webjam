@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.18.1
+# WebJam musician guide — v0.19.0
 
 ## Follow the current guide
 
@@ -156,7 +156,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.18.1 source tree.
+v0.19.0 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

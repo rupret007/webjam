@@ -1,6 +1,6 @@
 # WebJam closed-pilot handoff
 
-The current v0.17 source-candidate pilot validates a simple rehearsal and
+The current v0.19.0 private test candidate validates a simple rehearsal and
 arranging experience:
 
 1. Host or Join.
@@ -19,8 +19,7 @@ Two-Mac audio, interface loss, sleep/wake, take recovery, Local Originals,
 Arrange/comp playback, click-free cycle playback, and external-editor import
 require real musician observations.
 
-Use [`V017_TWO_MAC_PILOT.md`](V017_TWO_MAC_PILOT.md) for the new candidate's
-blank identity fields and outcomes. Keep
+Use [`TEST_PROCEDURE.md`](TEST_PROCEDURE.md) for current candidate evidence.
+Keep [`V017_TWO_MAC_PILOT.md`](V017_TWO_MAC_PILOT.md) as historical evidence,
 [`SUNDAY_TWO_MAC_PILOT.md`](SUNDAY_TWO_MAC_PILOT.md) unchanged as the archived
-v0.16.0 worksheet, and preserve the published v0.16.3 package as rollback
-evidence until the v0.17 package and physical checks are complete.
+v0.16.0 worksheet, and preserve published packages as immutable evidence.

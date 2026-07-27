@@ -4,6 +4,25 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## Unreleased — demo-readiness hardening
+
+- Fixed the visible startup **Bring Jamulus Forward** action, late macOS
+  invitation-error delivery, and failed Notes chat sends. An unsent message is
+  restored to the composer and is never falsely added to the session record.
+- Added discoverable **Help** and **About WebJam** actions under **More**. About
+  reports the candidate version, target, trust boundary, and privacy-safe build
+  identity.
+- Resetting a private invitation now requires explicit confirmation. Webex
+  menu wording recovers after a link is configured, and unavailable Jamulus
+  guidance no longer claims the application is still opening.
+- Made drag-to-Applications plus Apple's app-bundle **Open Anyway** flow the
+  primary macOS installation guidance. Optional integrity-checking helpers are
+  documented for explicit Terminal use because current macOS versions may
+  block quarantined `.command` files from Finder.
+- Added visible-menu routing, dynamic Studio **Add Take**, failure-state,
+  accessibility, and package-instruction regression coverage. Active guides
+  now identify the v0.19.0 candidate consistently.
+
 ## [0.19.0] — 2026-07-22 Pocket Stage owner-device test candidate
 
 ### Download and startup correction
