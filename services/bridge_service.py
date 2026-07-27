@@ -898,6 +898,24 @@ class BridgeService:
                         == "offscreen"
                     ):
                         child_environment.pop("QT_QPA_PLATFORM", None)
+                    if sys.platform == "darwin":
+                        # Jamulus 3.12.2's bundled Qt 6.10.2 can emit a final
+                        # default-category qWarning after AppleUnifiedLogger's
+                        # static state has already been destroyed, aborting
+                        # during an otherwise clean shutdown.  Appending the
+                        # narrow last-match rule prevents that late warning
+                        # from reaching the dead handler while preserving
+                        # inherited category rules and stronger diagnostics.
+                        logging_rules = (
+                            child_environment.get("QT_LOGGING_RULES", "")
+                            .strip()
+                            .rstrip(";")
+                        )
+                        child_environment["QT_LOGGING_RULES"] = (
+                            f"{logging_rules};default.warning=false"
+                            if logging_rules
+                            else "default.warning=false"
+                        )
                     popen_kwargs["env"] = child_environment
                     if native_profile is not None:
                         popen_kwargs["cwd"] = str(native_profile.working_directory)

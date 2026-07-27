@@ -714,6 +714,27 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("More → Studio", body)
         self.assertNotIn("Multitrack Studio", body)
 
+    def test_help_copy_uses_real_macos_shortcut_modifiers(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "sys.platform",
+            "darwin",
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("⌘1 / ⌘2 / ⌘3 — Live / Notes / Studio", body)
+        self.assertIn("⌘S / ⌘O — Save / load your monitor mix", body)
+        self.assertIn("Control+Shift+R — Reset every fader", body)
+        self.assertNotIn("Ctrl+1", body)
+
     def test_about_copy_reports_version_build_target_and_trust(self):
         w = self._window()
         from unittest import mock

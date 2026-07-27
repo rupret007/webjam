@@ -344,8 +344,19 @@ class ConductorWindow(QMainWindow):
 
     def show_help(self) -> None:
         """Display the same short workflow the live screen presents."""
+        import sys
+
         from PySide6.QtWidgets import QMessageBox
         from webjam_qt import __version__
+
+        if sys.platform == "darwin":
+            navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
+            mix_shortcuts = "⌘S / ⌘O"
+            reset_shortcut = "Control+Shift+R"
+        else:
+            navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
+            mix_shortcuts = "Ctrl+S / Ctrl+O"
+            reset_shortcut = "Ctrl+Shift+R"
         body = (
             f"<b>WebJam v{__version__}</b><br>"
             "<i>Host. Share. Join. Play.</i><br><br>"
@@ -357,8 +368,9 @@ class ConductorWindow(QMainWindow):
             "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
             "<b>Useful shortcuts</b><br>"
             "F2 — Band Check<br>"
-            "Ctrl+1 / Ctrl+2 / Ctrl+3 — Live / Notes / Studio<br>"
-            "Ctrl+Shift+R — Reset every fader to 0 dB<br>"
+            f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+            f"{mix_shortcuts} — Save / load your monitor mix<br>"
+            f"{reset_shortcut} — Reset every fader to 0 dB<br>"
             "F11 / Esc — Enter / leave full screen"
         )
         box = QMessageBox(self)
