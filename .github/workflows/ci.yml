@@ -69,7 +69,7 @@ jobs:
           # a docs-only push cannot skip the actual product checks.
           python -m pip install --upgrade pip "setuptools>=83.0.0"
           pip install -r requirements.txt
-          pip install pytest ruff "pip-audit==2.10.1"
+          pip install pytest "ruff==0.15.22" "pip-audit==2.10.1"
 
       - name: Verify source environment and syntax
         run: |
@@ -233,7 +233,7 @@ jobs:
       - name: Verify protocol, package, and privacy gates
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ruff build "./reference_service[test]"
+          python -m pip install "ruff==0.15.22" build "./reference_service[test]"
           ruff check reference_service
           python -m compileall -q reference_service/webjam_reference reference_service/tests
           pytest -q reference_service/tests

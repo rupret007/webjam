@@ -117,6 +117,11 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("run_frozen_pocket_stage_smoke", CI)
         self.assertIn("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", POCKET_SMOKE_RUNNER)
 
+    def test_ci_pins_the_reviewed_ruff_contract(self):
+        self.assertEqual(CI.count('"ruff==0.15.22"'), 2)
+        self.assertNotIn("pip install pytest ruff ", CI)
+        self.assertNotIn("pip install ruff build", CI)
+
     def test_ci_selects_swift_testing_capable_xcode_for_pocket_stage(self):
         self.assertIn(
             "DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer",
