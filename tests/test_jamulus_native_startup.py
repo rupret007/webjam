@@ -445,6 +445,31 @@ def test_v2_guest_peer_starts_once_after_native_connection_proof() -> None:
     assert controller._startup_attempt["webex_decision"] == "skipped"
 
 
+def test_starting_state_cannot_fail_a_queued_native_restart() -> None:
+    """Startup polling must wait while the accepted worker is still launching."""
+
+    controller = _controller(hosting=True)
+    controller.bridge.jamulus_state = "Starting"
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "host",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "setup_finished": True,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=False)
+    controller._render_startup_journey = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+    controller._fail_startup_journey = mock.Mock()
+
+    controller._poll_startup_connection(1)
+
+    controller._fail_startup_journey.assert_not_called()
+    controller._render_startup_journey.assert_called_once_with()
+    controller._schedule_startup_poll.assert_called_once_with(1)
+    assert controller._startup_attempt["phase"] == "verifying_music"
+
+
 def test_native_sound_setup_watches_connection_without_a_completion_click() -> None:
     """Jamulus setup stays visible, but it is not a WebJam approval gate."""
 

@@ -206,6 +206,7 @@ class JamulusState(str, Enum):
     NOT_FOUND      = "Not found"
     ALREADY        = "Already running"
     PORT_IN_USE    = "Port in use"
+    STARTING       = "Starting"
     RUNNING        = "Running"
     LAUNCH_FAILED  = "Launch failed"
     STOPPED        = "Stopped"
@@ -810,6 +811,26 @@ class BridgeService:
                     "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
                 )
             return False
+
+        # A previous clean End/Leave intentionally publishes ``Stopped``.
+        # Replace that terminal value synchronously once this exact launch
+        # request has passed every preflight.  The startup journey begins
+        # polling before the asynchronous worker necessarily reaches Popen;
+        # leaving the stale value visible during that window would falsely
+        # classify a healthy immediate restart as failed even though the new
+        # client subsequently connects.
+        #
+        # Keep the generation/cancellation check under the control lock so a
+        # concurrent Stop or superseding launch wins without this older
+        # request overwriting its state.
+        with self._jamulus_launch_control_lock:
+            if (
+                self._pending_jamulus_launch_cancel is not launch_cancel
+                or launch_cancel.is_set()
+                or self.shutdown_requested()
+            ):
+                return False
+            self._set_jamulus_state(JamulusState.STARTING)
 
         banner_text = "Starting your band audio…" if not reconnect else "Reconnecting band audio…"
         if self.practice_mode:

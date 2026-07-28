@@ -5198,9 +5198,46 @@ class ApplicationController(QObject):
             "Not found",
             "Port in use",
         }
+        startup_attempt = getattr(self, "_startup_attempt", None)
+        startup_phase = (
+            str(startup_attempt.get("phase", ""))
+            if isinstance(startup_attempt, dict)
+            else ""
+        )
+        startup_token = (
+            startup_attempt.get("conductor_token")
+            if isinstance(startup_attempt, dict)
+            else None
+        )
+        current_conductor_token = getattr(
+            getattr(self, "session_conductor", None),
+            "token",
+            None,
+        )
+        startup_cancel_event = (
+            startup_attempt.get("cancel_event")
+            if isinstance(startup_attempt, dict)
+            else None
+        )
+        startup_cancelled = bool(
+            getattr(startup_cancel_event, "is_set", lambda: False)()
+        )
+        native_startup_in_progress = bool(
+            isinstance(startup_token, SessionConductorToken)
+            and startup_token == current_conductor_token
+            and not startup_cancelled
+            and startup_phase
+            in {
+                "starting_server",
+                "launching_client",
+                "native_sound_setup",
+                "verifying_music",
+            }
+        )
         launch_intended = bool(getattr(bridge, "jamulus_launch_intended", False))
         setup_requested = bool(
             getattr(self, "_conductor_setup_requested", False)
+            or native_startup_in_progress
             or launch_intended
             or connected
             or bool(getattr(audio, "recovering", False))
@@ -5220,6 +5257,19 @@ class ApplicationController(QObject):
             # AudioCoordinator promotes this only after fresh roster truth,
             # including the local host entry when hosting.
             music_path = MusicPathState.AUTHENTICATED
+        elif (
+            native_startup_in_progress
+            and not self._conductor_had_authenticated_connection
+        ):
+            # ``begin_startup_journey`` deliberately renders the new attempt
+            # before it starts the host/server worker. During an immediate
+            # restart the bridge can therefore still expose the previous
+            # attempt's clean ``Stopped`` value for this first render. The
+            # generation-bound startup attempt is stronger evidence of current
+            # intent than that stale terminal value, but only until this
+            # attempt has authenticated once; a later loss remains a real
+            # disconnect.
+            music_path = MusicPathState.STARTING
         elif launch_intended or jamulus_state in {"Running", "Already running"}:
             music_path = MusicPathState.STARTING
         elif self._conductor_had_authenticated_connection:
@@ -5237,7 +5287,7 @@ class ApplicationController(QObject):
                 server_alive = False
         if server_alive:
             host_process = ProcessState.RUNNING
-        elif hosting and launch_intended:
+        elif hosting and (startup_phase == "starting_server" or launch_intended):
             host_process = ProcessState.STARTING
         elif hosting and jamulus_state in terminal_jamulus_states and setup_requested:
             host_process = ProcessState.FAILED

@@ -125,3 +125,38 @@ def test_cancelled_port_preflight_cannot_publish_conflict_after_stop() -> None:
         item.args == ("metric_jamulus_port_conflict",)
         for item in bridge.metrics_service.increment.call_args_list
     )
+
+
+def test_accepted_restart_replaces_stale_stopped_state_before_worker_poll() -> None:
+    """A queued worker must not expose the prior session's terminal state."""
+
+    bridge = _bridge()
+    bridge.jamulus_state = "Stopped"
+    bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+    with patch("services.bridge_service.threading.Thread") as thread_class:
+        thread_class.return_value = MagicMock()
+        assert bridge.launch_jamulus(manual=True) is True
+
+    thread_class.return_value.start.assert_called_once_with()
+    assert bridge.jamulus_state == "Starting"
+    assert bridge.jamulus_launch_intended is True
+
+
+def test_stop_during_successful_port_preflight_cannot_publish_starting() -> None:
+    """A Stop that wins preflight keeps the terminal state and spawns nothing."""
+
+    bridge = _bridge()
+    bridge.jamulus_state = "Stopped"
+
+    def probe_port() -> bool:
+        assert bridge.stop_jamulus() is True
+        return False
+
+    bridge._is_rpc_port_in_use = probe_port
+    with patch("services.bridge_service.threading.Thread") as thread_class:
+        assert bridge.launch_jamulus(manual=True) is False
+
+    thread_class.assert_not_called()
+    assert bridge.jamulus_state == "Stopped"
+    assert bridge.jamulus_launch_intended is False
