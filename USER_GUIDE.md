@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.20.0
+# WebJam musician guide — v0.21.0
 
 ## Follow the current guide
 
@@ -55,7 +55,7 @@ invitation succeeded.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.20.0 pending the physical macOS isolation pilot |
+| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.21.0 pending the physical macOS isolation pilot |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
 | Studio | Reviews and arranges takes; playback output appears only for review |
 | Notes | Opens session notes |
@@ -132,7 +132,7 @@ on BlackHole channels 3/4. The host must then hear it only through the normal
 primary Jamulus mix, and every musician can adjust the `WebJam Track`
 participant independently.
 
-The v0.20.0 private test candidate keeps playback locked even on a Mac with
+The v0.21.0 private test candidate keeps playback locked even on a Mac with
 BlackHole installed. CoreAudio has a reported device-switch failure where its
 process input query returns the output device instead, while Jamulus 3.12.2
 does not expose an independent live-device query. Physical BlackHole,
@@ -198,7 +198,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.20.0 source tree.
+v0.21.0 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

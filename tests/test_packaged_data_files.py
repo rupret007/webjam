@@ -20,6 +20,9 @@ CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 POCKET_SMOKE_RUNNER = (
     ROOT / "tests" / "support" / "run_frozen_pocket_stage_smoke.py"
 ).read_text(encoding="utf-8")
+REFERENCE_STUDIO_SMOKE_RUNNER = (
+    ROOT / "tests" / "support" / "run_frozen_reference_studio_smoke.py"
+).read_text(encoding="utf-8")
 
 
 class TestPackagedDataFiles(unittest.TestCase):
@@ -116,6 +119,11 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("Verify tag matches packaged version", CI)
         self.assertIn("run_frozen_pocket_stage_smoke", CI)
         self.assertIn("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", POCKET_SMOKE_RUNNER)
+        self.assertEqual(CI.count("run_frozen_reference_studio_smoke"), 3)
+        self.assertIn(
+            "WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME",
+            REFERENCE_STUDIO_SMOKE_RUNNER,
+        )
 
     def test_ci_pins_the_reviewed_ruff_contract(self):
         self.assertEqual(CI.count('"ruff==0.15.22"'), 2)
@@ -187,6 +195,9 @@ class TestPackagedDataFiles(unittest.TestCase):
             "numpy",
         ):
             self.assertIn(f'"{module}"', SPEC)
+
+    def test_spec_keeps_reference_studio_runtime_smoke_in_frozen_app(self):
+        self.assertIn('"services.reference_studio_packaged_smoke"', SPEC)
 
 
 if __name__ == "__main__":

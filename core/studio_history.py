@@ -17,7 +17,12 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
-from core.studio_project import StudioDocument, StudioProjectError
+from core.studio_project import (
+    STUDIO_PROJECT_SCHEMA_VERSION,
+    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+    StudioDocument,
+    StudioProjectError,
+)
 
 
 DEFAULT_MAX_ENTRIES = 128
@@ -89,19 +94,32 @@ def _validated_text(value: object, field_name: str) -> tuple[str, int]:
 def _validate_transition(before: StudioDocument, after: StudioDocument) -> None:
     """Reject snapshots that cannot be a forward edit of ``before``."""
 
-    before_identity = (
-        before.session_id,
-        before.take_id,
-        before.project_sample_rate,
-    )
-    after_identity = (
-        after.session_id,
-        after.take_id,
-        after.project_sample_rate,
-    )
+    if before.schema_version != after.schema_version:
+        raise StudioProjectError(
+            "Studio history edits must preserve the document schema."
+        )
+    if before.schema_version == STUDIO_PROJECT_SCHEMA_VERSION:
+        before_identity = (
+            before.session_id,
+            before.take_id,
+            before.project_sample_rate,
+        )
+        after_identity = (
+            after.session_id,
+            after.take_id,
+            after.project_sample_rate,
+        )
+    else:
+        before_identity = (before.project_id, before.project_sample_rate)
+        after_identity = (after.project_id, after.project_sample_rate)
     if after_identity != before_identity:
         raise StudioProjectError(
-            "Studio history edits must preserve session, take, and sample-rate identity."
+            "Studio history edits must preserve project and sample-rate identity."
+            if before.schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else (
+                "Studio history edits must preserve session, take, and "
+                "sample-rate identity."
+            )
         )
     if after.revision <= before.revision:
         raise StudioProjectError(

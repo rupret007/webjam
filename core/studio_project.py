@@ -19,12 +19,16 @@ import math
 import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from core.take_project import TakeProject
 
+if TYPE_CHECKING:
+    from core.song_project import SongProject
+
 
 STUDIO_PROJECT_SCHEMA_VERSION = 2
+STUDIO_SONG_PROJECT_SCHEMA_VERSION = 3
 MAX_STUDIO_TRACKS = 512
 MAX_STUDIO_REGIONS = 50_000
 MAX_STUDIO_TAKE_LANES = 4_096
@@ -33,6 +37,13 @@ MAX_STUDIO_MARKERS = 10_000
 MAX_STUDIO_CROSSFADES = 50_000
 MAX_PROJECT_FRAMES = (1 << 62) - 1
 MAX_GAIN = 4.0
+MAX_STUDIO_TRACK_CHANNELS = 64
+MAX_STUDIO_SENDS_PER_TRACK = 16
+MAX_STUDIO_AUTOMATION_LANES_PER_TRACK = 3
+MAX_STUDIO_AUTOMATION_POINTS_PER_LANE = 100_000
+MAX_STUDIO_AUTOMATION_POINTS = 1_000_000
+MAX_STUDIO_EFFECTS_PER_TRACK = 8
+MAX_STUDIO_BUS_TRACKS = 64
 
 _DEFAULT_ID_NAMESPACE = uuid.UUID("d1a65b4c-9f50-4f6b-9599-b117fa27572d")
 
@@ -56,6 +67,40 @@ class FadeCurve(str, Enum):
 class MarkerKind(str, Enum):
     MARKER = "marker"
     SECTION = "section"
+
+
+class StudioTrackKind(str, Enum):
+    """Signal-flow role for a standalone song-project track."""
+
+    BACKING = "backing"
+    AUDIO = "audio"
+    BUS = "bus"
+    MASTER = "master"
+
+
+class StudioAutomationParameter(str, Enum):
+    """A bounded set of sample-accurate channel-strip automation targets."""
+
+    VOLUME = "volume"
+    PAN = "pan"
+    MUTE = "mute"
+
+
+class StudioAutomationInterpolation(str, Enum):
+    """How values change between exact integer-frame breakpoints."""
+
+    LINEAR = "linear"
+    HOLD = "hold"
+
+
+class StudioEffectKind(str, Enum):
+    """Small built-in effects implemented by WebJam's deterministic mixer."""
+
+    HPF = "hpf"
+    EQ = "eq"
+    COMPRESSOR = "compressor"
+    GATE = "gate"
+    REVERB = "reverb"
 
 
 def _canonical_uuid(value: object, field_name: str, *, optional: bool = False) -> str:
@@ -275,6 +320,363 @@ def _interval_is_covered(
 
 
 @dataclass(frozen=True)
+class StudioAutomationPoint:
+    """One exact integer-frame automation value."""
+
+    frame: int
+    value: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "frame",
+            _timeline_frame(self.frame, "automation_point.frame"),
+        )
+        object.__setattr__(
+            self,
+            "value",
+            _bounded_float(
+                self.value,
+                "automation_point.value",
+                minimum=-MAX_GAIN,
+                maximum=MAX_GAIN,
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"frame": self.frame, "value": self.value}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "StudioAutomationPoint":
+        _strict_keys(
+            value,
+            allowed={"frame", "value"},
+            required={"frame", "value"},
+            field_name="Studio automation point",
+        )
+        return cls(frame=value["frame"], value=value["value"])
+
+
+@dataclass(frozen=True)
+class StudioAutomationLane:
+    """One parameter lane with deterministic interpolation.
+
+    An enabled lane owns its parameter for the whole timeline: its first value
+    extends backward and its last value extends forward. Volume replaces the
+    static fader (trim remains separate), pan replaces static pan, and mute
+    replaces the static mute switch.
+    """
+
+    lane_id: str
+    parameter: StudioAutomationParameter
+    points: tuple[StudioAutomationPoint, ...]
+    interpolation: StudioAutomationInterpolation = (
+        StudioAutomationInterpolation.LINEAR
+    )
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "lane_id",
+            _canonical_uuid(self.lane_id, "automation.lane_id"),
+        )
+        parameter = _enum_value(
+            StudioAutomationParameter,
+            self.parameter,
+            "automation.parameter",
+        )
+        interpolation = _enum_value(
+            StudioAutomationInterpolation,
+            self.interpolation,
+            "automation.interpolation",
+        )
+        try:
+            points = tuple(self.points)
+        except TypeError as exc:
+            raise StudioProjectError(
+                "Studio automation points must be a sequence."
+            ) from exc
+        if not points:
+            raise StudioProjectError(
+                "Studio automation requires at least one breakpoint."
+            )
+        if len(points) > MAX_STUDIO_AUTOMATION_POINTS_PER_LANE:
+            raise StudioProjectError(
+                "Studio automation contains too many breakpoints."
+            )
+        if any(not isinstance(item, StudioAutomationPoint) for item in points):
+            raise StudioProjectError(
+                "Studio automation points must be StudioAutomationPoint values."
+            )
+        frames = tuple(item.frame for item in points)
+        if tuple(sorted(frames)) != frames or len(frames) != len(set(frames)):
+            raise StudioProjectError(
+                "Studio automation breakpoints must have unique ascending frames."
+            )
+        if parameter is StudioAutomationParameter.VOLUME:
+            if any(not 0.0 <= item.value <= MAX_GAIN for item in points):
+                raise StudioProjectError(
+                    "Volume automation values must be between 0 and 4."
+                )
+        elif parameter is StudioAutomationParameter.PAN:
+            if any(not -1.0 <= item.value <= 1.0 for item in points):
+                raise StudioProjectError(
+                    "Pan automation values must be between -1 and 1."
+                )
+        else:
+            if interpolation is not StudioAutomationInterpolation.HOLD:
+                raise StudioProjectError("Mute automation must use hold interpolation.")
+            if any(item.value not in {0.0, 1.0} for item in points):
+                raise StudioProjectError("Mute automation values must be 0 or 1.")
+        object.__setattr__(self, "parameter", parameter)
+        object.__setattr__(self, "interpolation", interpolation)
+        object.__setattr__(self, "points", points)
+        object.__setattr__(
+            self,
+            "enabled",
+            _strict_bool(self.enabled, "automation.enabled"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "lane_id": self.lane_id,
+            "parameter": self.parameter.value,
+            "interpolation": self.interpolation.value,
+            "enabled": self.enabled,
+            "points": [item.to_dict() for item in self.points],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "StudioAutomationLane":
+        _strict_keys(
+            value,
+            allowed={
+                "lane_id",
+                "parameter",
+                "interpolation",
+                "enabled",
+                "points",
+            },
+            required={
+                "lane_id",
+                "parameter",
+                "interpolation",
+                "enabled",
+                "points",
+            },
+            field_name="Studio automation lane",
+        )
+        return cls(
+            lane_id=value["lane_id"],
+            parameter=value["parameter"],
+            interpolation=value["interpolation"],
+            enabled=value["enabled"],
+            points=tuple(
+                StudioAutomationPoint.from_dict(item)
+                for item in _mapping_items(value["points"], "automation.points")
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class StudioSend:
+    """One bounded pre- or post-fader send to a Studio bus.
+
+    The pre-fader tap follows trim and built-in inserts but precedes automated
+    volume, pan, and mute. The post-fader tap follows the complete strip.
+    """
+
+    send_id: str
+    target_bus_id: str
+    gain: float = 1.0
+    pre_fader: bool = False
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "send_id",
+            _canonical_uuid(self.send_id, "send.send_id"),
+        )
+        object.__setattr__(
+            self,
+            "target_bus_id",
+            _canonical_uuid(self.target_bus_id, "send.target_bus_id"),
+        )
+        object.__setattr__(
+            self,
+            "gain",
+            _bounded_float(
+                self.gain,
+                "send.gain",
+                minimum=0.0,
+                maximum=MAX_GAIN,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "pre_fader",
+            _strict_bool(self.pre_fader, "send.pre_fader"),
+        )
+        object.__setattr__(
+            self,
+            "enabled",
+            _strict_bool(self.enabled, "send.enabled"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "send_id": self.send_id,
+            "target_bus_id": self.target_bus_id,
+            "gain": self.gain,
+            "pre_fader": self.pre_fader,
+            "enabled": self.enabled,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "StudioSend":
+        _strict_keys(
+            value,
+            allowed={"send_id", "target_bus_id", "gain", "pre_fader", "enabled"},
+            required={"send_id", "target_bus_id", "gain", "pre_fader", "enabled"},
+            field_name="Studio send",
+        )
+        return cls(
+            send_id=value["send_id"],
+            target_bus_id=value["target_bus_id"],
+            gain=value["gain"],
+            pre_fader=value["pre_fader"],
+            enabled=value["enabled"],
+        )
+
+
+@dataclass(frozen=True)
+class StudioEffect:
+    """One parameter-complete built-in effect in channel-strip order."""
+
+    effect_id: str
+    kind: StudioEffectKind
+    enabled: bool = True
+    hpf_frequency_hz: float = 80.0
+    eq_frequency_hz: float = 1_000.0
+    eq_gain_db: float = 0.0
+    eq_q: float = 0.707
+    compressor_threshold_db: float = -18.0
+    compressor_ratio: float = 3.0
+    compressor_attack_ms: float = 10.0
+    compressor_release_ms: float = 100.0
+    compressor_makeup_db: float = 0.0
+    gate_threshold_db: float = -55.0
+    gate_attack_ms: float = 2.0
+    gate_release_ms: float = 120.0
+    reverb_mix: float = 0.2
+    reverb_decay: float = 0.4
+    reverb_delay_ms: float = 45.0
+    reverb_damping: float = 0.35
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "effect_id",
+            _canonical_uuid(self.effect_id, "effect.effect_id"),
+        )
+        object.__setattr__(
+            self,
+            "kind",
+            _enum_value(StudioEffectKind, self.kind, "effect.kind"),
+        )
+        object.__setattr__(
+            self,
+            "enabled",
+            _strict_bool(self.enabled, "effect.enabled"),
+        )
+        bounds = {
+            "hpf_frequency_hz": (10.0, 96_000.0),
+            "eq_frequency_hz": (10.0, 96_000.0),
+            "eq_gain_db": (-18.0, 18.0),
+            "eq_q": (0.1, 12.0),
+            "compressor_threshold_db": (-80.0, 0.0),
+            "compressor_ratio": (1.0, 20.0),
+            "compressor_attack_ms": (0.1, 500.0),
+            "compressor_release_ms": (1.0, 5_000.0),
+            "compressor_makeup_db": (-12.0, 24.0),
+            "gate_threshold_db": (-100.0, 0.0),
+            "gate_attack_ms": (0.1, 500.0),
+            "gate_release_ms": (1.0, 5_000.0),
+            "reverb_mix": (0.0, 1.0),
+            "reverb_decay": (0.0, 0.95),
+            "reverb_delay_ms": (5.0, 250.0),
+            "reverb_damping": (0.0, 0.99),
+        }
+        for attribute, (minimum, maximum) in bounds.items():
+            object.__setattr__(
+                self,
+                attribute,
+                _bounded_float(
+                    getattr(self, attribute),
+                    f"effect.{attribute}",
+                    minimum=minimum,
+                    maximum=maximum,
+                ),
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "effect_id": self.effect_id,
+            "kind": self.kind.value,
+            "enabled": self.enabled,
+            "hpf_frequency_hz": self.hpf_frequency_hz,
+            "eq_frequency_hz": self.eq_frequency_hz,
+            "eq_gain_db": self.eq_gain_db,
+            "eq_q": self.eq_q,
+            "compressor_threshold_db": self.compressor_threshold_db,
+            "compressor_ratio": self.compressor_ratio,
+            "compressor_attack_ms": self.compressor_attack_ms,
+            "compressor_release_ms": self.compressor_release_ms,
+            "compressor_makeup_db": self.compressor_makeup_db,
+            "gate_threshold_db": self.gate_threshold_db,
+            "gate_attack_ms": self.gate_attack_ms,
+            "gate_release_ms": self.gate_release_ms,
+            "reverb_mix": self.reverb_mix,
+            "reverb_decay": self.reverb_decay,
+            "reverb_delay_ms": self.reverb_delay_ms,
+            "reverb_damping": self.reverb_damping,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "StudioEffect":
+        expected = {
+            "effect_id",
+            "kind",
+            "enabled",
+            "hpf_frequency_hz",
+            "eq_frequency_hz",
+            "eq_gain_db",
+            "eq_q",
+            "compressor_threshold_db",
+            "compressor_ratio",
+            "compressor_attack_ms",
+            "compressor_release_ms",
+            "compressor_makeup_db",
+            "gate_threshold_db",
+            "gate_attack_ms",
+            "gate_release_ms",
+            "reverb_mix",
+            "reverb_decay",
+            "reverb_delay_ms",
+            "reverb_damping",
+        }
+        _strict_keys(
+            value,
+            allowed=expected,
+            required=expected,
+            field_name="Studio effect",
+        )
+        return cls(**{key: value[key] for key in expected})
+
+
+@dataclass(frozen=True)
 class StudioTrack:
     """Persistent mix state for one durable project track."""
 
@@ -286,6 +688,15 @@ class StudioTrack:
     muted: bool = False
     solo: bool = False
     export_included: bool = True
+    name: str = ""
+    kind: StudioTrackKind = StudioTrackKind.AUDIO
+    channel_count: int = 1
+    armed: bool = False
+    input_monitoring: bool = False
+    output_bus_id: str = ""
+    sends: tuple[StudioSend, ...] = ()
+    automation: tuple[StudioAutomationLane, ...] = ()
+    effects: tuple[StudioEffect, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -324,6 +735,74 @@ class StudioTrack:
             "export_included",
             _strict_bool(self.export_included, "track.export_included"),
         )
+        object.__setattr__(self, "name", _label(self.name, "track.name"))
+        kind = _enum_value(StudioTrackKind, self.kind, "track.kind")
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(
+            self,
+            "channel_count",
+            _integer(
+                self.channel_count,
+                "track.channel_count",
+                minimum=1,
+                maximum=MAX_STUDIO_TRACK_CHANNELS,
+            ),
+        )
+        armed = _strict_bool(self.armed, "track.armed")
+        monitoring = _strict_bool(
+            self.input_monitoring,
+            "track.input_monitoring",
+        )
+        if kind is not StudioTrackKind.AUDIO and (armed or monitoring):
+            raise StudioProjectError(
+                "Only audio tracks can be armed or input-monitored."
+            )
+        object.__setattr__(self, "armed", armed)
+        object.__setattr__(self, "input_monitoring", monitoring)
+        object.__setattr__(
+            self,
+            "output_bus_id",
+            _canonical_uuid(
+                self.output_bus_id,
+                "track.output_bus_id",
+                optional=True,
+            ),
+        )
+        try:
+            sends = tuple(self.sends)
+            automation = tuple(self.automation)
+            effects = tuple(self.effects)
+        except TypeError as exc:
+            raise StudioProjectError(
+                "Studio track mixer settings must be sequences."
+            ) from exc
+        if len(sends) > MAX_STUDIO_SENDS_PER_TRACK:
+            raise StudioProjectError("A Studio track contains too many sends.")
+        if len(automation) > MAX_STUDIO_AUTOMATION_LANES_PER_TRACK:
+            raise StudioProjectError(
+                "A Studio track contains too many automation lanes."
+            )
+        if len(effects) > MAX_STUDIO_EFFECTS_PER_TRACK:
+            raise StudioProjectError("A Studio track contains too many effects.")
+        if any(not isinstance(item, StudioSend) for item in sends):
+            raise StudioProjectError("Studio track sends contain an invalid value.")
+        if any(not isinstance(item, StudioAutomationLane) for item in automation):
+            raise StudioProjectError(
+                "Studio track automation contains an invalid value."
+            )
+        if any(not isinstance(item, StudioEffect) for item in effects):
+            raise StudioProjectError("Studio track effects contain an invalid value.")
+        _ensure_unique((item.send_id for item in sends), "send IDs")
+        _ensure_unique((item.lane_id for item in automation), "automation lane IDs")
+        _ensure_unique((item.effect_id for item in effects), "effect IDs")
+        _ensure_unique(
+            (item.parameter.value for item in automation),
+            "automation parameters",
+        )
+        _ensure_unique((item.kind.value for item in effects), "effect kinds")
+        object.__setattr__(self, "sends", sends)
+        object.__setattr__(self, "automation", automation)
+        object.__setattr__(self, "effects", effects)
 
     @property
     def gain(self) -> float:
@@ -331,8 +810,18 @@ class StudioTrack:
 
         return self.fader_gain
 
-    def to_dict(self) -> dict[str, object]:
-        return {
+    def to_dict(
+        self,
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> dict[str, object]:
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        result: dict[str, object] = {
             "track_id": self.track_id,
             "order": self.order,
             "trim_gain": self.trim_gain,
@@ -342,31 +831,72 @@ class StudioTrack:
             "solo": self.solo,
             "export_included": self.export_included,
         }
+        if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION:
+            result.update(
+                {
+                    "name": self.name,
+                    "kind": self.kind.value,
+                    "channel_count": self.channel_count,
+                    "armed": self.armed,
+                    "input_monitoring": self.input_monitoring,
+                    "output_bus_id": self.output_bus_id,
+                    "sends": [item.to_dict() for item in self.sends],
+                    "automation": [item.to_dict() for item in self.automation],
+                    "effects": [item.to_dict() for item in self.effects],
+                }
+            )
+        return result
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioTrack":
+    def from_dict(
+        cls,
+        value: Mapping[str, Any],
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> "StudioTrack":
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        legacy_fields = {
+            "track_id",
+            "order",
+            "trim_gain",
+            "fader_gain",
+            "pan",
+            "muted",
+            "solo",
+            "export_included",
+        }
+        song_fields = {
+            "name",
+            "kind",
+            "channel_count",
+            "armed",
+            "input_monitoring",
+        }
+        mixer_fields = {
+            "output_bus_id",
+            "sends",
+            "automation",
+            "effects",
+        }
+        expected = (
+            legacy_fields | song_fields | mixer_fields
+            if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else legacy_fields
+        )
+        required = (
+            legacy_fields | song_fields
+            if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else legacy_fields
+        )
         _strict_keys(
             value,
-            allowed={
-                "track_id",
-                "order",
-                "trim_gain",
-                "fader_gain",
-                "pan",
-                "muted",
-                "solo",
-                "export_included",
-            },
-            required={
-                "track_id",
-                "order",
-                "trim_gain",
-                "fader_gain",
-                "pan",
-                "muted",
-                "solo",
-                "export_included",
-            },
+            allowed=expected,
+            required=required,
             field_name="Studio track",
         )
         return cls(
@@ -378,6 +908,69 @@ class StudioTrack:
             muted=value["muted"],
             solo=value["solo"],
             export_included=value["export_included"],
+            name=(
+                value["name"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
+            kind=(
+                value["kind"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else StudioTrackKind.AUDIO
+            ),
+            channel_count=(
+                value["channel_count"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else 1
+            ),
+            armed=(
+                value["armed"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else False
+            ),
+            input_monitoring=(
+                value["input_monitoring"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else False
+            ),
+            output_bus_id=(
+                value.get("output_bus_id", "")
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
+            sends=(
+                tuple(
+                    StudioSend.from_dict(item)
+                    for item in _mapping_items(
+                        value.get("sends", ()),
+                        "track.sends",
+                    )
+                )
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ()
+            ),
+            automation=(
+                tuple(
+                    StudioAutomationLane.from_dict(item)
+                    for item in _mapping_items(
+                        value.get("automation", ()),
+                        "track.automation",
+                    )
+                )
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ()
+            ),
+            effects=(
+                tuple(
+                    StudioEffect.from_dict(item)
+                    for item in _mapping_items(
+                        value.get("effects", ()),
+                        "track.effects",
+                    )
+                )
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ()
+            ),
         )
 
 
@@ -387,13 +980,13 @@ class StudioRegion:
 
     region_id: str
     track_id: str
-    source_take_id: str
-    source_track_id: str
-    source_segment_id: str
-    source_start_frame: int
-    source_frame_count: int
-    timeline_start_frame: int
-    timeline_frame_count: int
+    source_take_id: str = ""
+    source_track_id: str = ""
+    source_segment_id: str = ""
+    source_start_frame: int = 0
+    source_frame_count: int = 0
+    timeline_start_frame: int = 0
+    timeline_frame_count: int = 0
     mapping_source_start_frame: int | None = None
     mapping_timeline_start_frame: int | None = None
     mapping_source_frame_count: int | None = None
@@ -404,19 +997,42 @@ class StudioRegion:
     fade_out_frames: int = 0
     fade_in_curve: FadeCurve = FadeCurve.LINEAR
     fade_out_curve: FadeCurve = FadeCurve.LINEAR
+    source_media_id: str = ""
 
     def __post_init__(self) -> None:
-        for attribute in (
-            "region_id",
-            "track_id",
-            "source_take_id",
-            "source_track_id",
-            "source_segment_id",
-        ):
+        for attribute in ("region_id", "track_id"):
             object.__setattr__(
                 self,
                 attribute,
                 _canonical_uuid(getattr(self, attribute), f"region.{attribute}"),
+            )
+        for attribute in (
+            "source_take_id",
+            "source_track_id",
+            "source_segment_id",
+            "source_media_id",
+        ):
+            object.__setattr__(
+                self,
+                attribute,
+                _canonical_uuid(
+                    getattr(self, attribute),
+                    f"region.{attribute}",
+                    optional=True,
+                ),
+            )
+        legacy_identity = (
+            self.source_take_id,
+            self.source_track_id,
+            self.source_segment_id,
+        )
+        if any(legacy_identity) and not all(legacy_identity):
+            raise StudioProjectError(
+                "Region take, track, and segment source IDs must be provided together."
+            )
+        if bool(self.source_media_id) == bool(all(legacy_identity)):
+            raise StudioProjectError(
+                "Region requires exactly one media ID or take/track/segment source."
             )
         object.__setattr__(
             self,
@@ -564,13 +1180,20 @@ class StudioRegion:
             int(self.mapping_source_frame_count),
         )
 
-    def to_dict(self) -> dict[str, object]:
-        return {
+    def to_dict(
+        self,
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> dict[str, object]:
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        result: dict[str, object] = {
             "region_id": self.region_id,
             "track_id": self.track_id,
-            "source_take_id": self.source_take_id,
-            "source_track_id": self.source_track_id,
-            "source_segment_id": self.source_segment_id,
             "source_start_frame": self.source_start_frame,
             "source_frame_count": self.source_frame_count,
             "timeline_start_frame": self.timeline_start_frame,
@@ -586,15 +1209,53 @@ class StudioRegion:
             "fade_in_curve": self.fade_in_curve.value,
             "fade_out_curve": self.fade_out_curve.value,
         }
+        if schema == STUDIO_PROJECT_SCHEMA_VERSION:
+            result.update(
+                {
+                    "source_take_id": self.source_take_id,
+                    "source_track_id": self.source_track_id,
+                    "source_segment_id": self.source_segment_id,
+                }
+            )
+            # Preserve the exact schema-2 key insertion order.
+            return {
+                "region_id": result["region_id"],
+                "track_id": result["track_id"],
+                "source_take_id": result["source_take_id"],
+                "source_track_id": result["source_track_id"],
+                "source_segment_id": result["source_segment_id"],
+                **{
+                    key: item
+                    for key, item in result.items()
+                    if key
+                    not in {
+                        "region_id",
+                        "track_id",
+                        "source_take_id",
+                        "source_track_id",
+                        "source_segment_id",
+                    }
+                },
+            }
+        result["source_media_id"] = self.source_media_id
+        return result
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioRegion":
-        allowed = {
+    def from_dict(
+        cls,
+        value: Mapping[str, Any],
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> "StudioRegion":
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        common = {
             "region_id",
             "track_id",
-            "source_take_id",
-            "source_track_id",
-            "source_segment_id",
             "source_start_frame",
             "source_frame_count",
             "timeline_start_frame",
@@ -610,39 +1271,36 @@ class StudioRegion:
             "fade_in_curve",
             "fade_out_curve",
         }
-        required = {
-            "region_id",
-            "track_id",
-            "source_take_id",
-            "source_track_id",
-            "source_segment_id",
-            "source_start_frame",
-            "source_frame_count",
-            "timeline_start_frame",
-            "timeline_frame_count",
-            "mapping_source_start_frame",
-            "mapping_timeline_start_frame",
-            "mapping_source_frame_count",
-            "mapping_timeline_frame_count",
-            "enabled",
-            "deleted",
-            "fade_in_frames",
-            "fade_out_frames",
-            "fade_in_curve",
-            "fade_out_curve",
-        }
+        identity = (
+            {"source_media_id"}
+            if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else {"source_take_id", "source_track_id", "source_segment_id"}
+        )
+        expected = common | identity
         _strict_keys(
             value,
-            allowed=allowed,
-            required=required,
+            allowed=expected,
+            required=expected,
             field_name="Studio region",
         )
         return cls(
             region_id=value["region_id"],
             track_id=value["track_id"],
-            source_take_id=value["source_take_id"],
-            source_track_id=value["source_track_id"],
-            source_segment_id=value["source_segment_id"],
+            source_take_id=(
+                value["source_take_id"]
+                if schema == STUDIO_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
+            source_track_id=(
+                value["source_track_id"]
+                if schema == STUDIO_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
+            source_segment_id=(
+                value["source_segment_id"]
+                if schema == STUDIO_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
             source_start_frame=value["source_start_frame"],
             source_frame_count=value["source_frame_count"],
             timeline_start_frame=value["timeline_start_frame"],
@@ -657,6 +1315,11 @@ class StudioRegion:
             fade_out_frames=value["fade_out_frames"],
             fade_in_curve=value["fade_in_curve"],
             fade_out_curve=value["fade_out_curve"],
+            source_media_id=(
+                value["source_media_id"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
         )
 
 
@@ -673,6 +1336,7 @@ class StudioTakeLane:
     region_ids: tuple[str, ...] = ()
     enabled: bool = True
     deleted: bool = False
+    source_media_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -703,6 +1367,19 @@ class StudioTakeLane:
             raise StudioProjectError(
                 "Take-lane source take and track IDs must be provided together."
             )
+        object.__setattr__(
+            self,
+            "source_media_id",
+            _canonical_uuid(
+                self.source_media_id,
+                "take_lane.source_media_id",
+                optional=True,
+            ),
+        )
+        if self.source_media_id and self.source_take_id:
+            raise StudioProjectError(
+                "Take lane cannot mix media and take/track source identity."
+            )
         object.__setattr__(self, "name", _label(self.name, "take_lane.name"))
         object.__setattr__(self, "order", _integer(self.order, "take_lane.order"))
         object.__setattr__(
@@ -719,57 +1396,98 @@ class StudioTakeLane:
         if self.deleted and self.enabled:
             raise StudioProjectError("A deleted take lane cannot be enabled.")
 
-    def to_dict(self) -> dict[str, object]:
-        return {
+    def to_dict(
+        self,
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> dict[str, object]:
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        result: dict[str, object] = {
             "lane_id": self.lane_id,
             "track_id": self.track_id,
-            "source_take_id": self.source_take_id,
-            "source_track_id": self.source_track_id,
             "name": self.name,
             "order": self.order,
             "region_ids": list(self.region_ids),
             "enabled": self.enabled,
             "deleted": self.deleted,
         }
+        if schema == STUDIO_PROJECT_SCHEMA_VERSION:
+            return {
+                "lane_id": result["lane_id"],
+                "track_id": result["track_id"],
+                "source_take_id": self.source_take_id,
+                "source_track_id": self.source_track_id,
+                "name": result["name"],
+                "order": result["order"],
+                "region_ids": result["region_ids"],
+                "enabled": result["enabled"],
+                "deleted": result["deleted"],
+            }
+        result["source_media_id"] = self.source_media_id
+        return result
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "StudioTakeLane":
+    def from_dict(
+        cls,
+        value: Mapping[str, Any],
+        *,
+        schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION,
+    ) -> "StudioTakeLane":
+        schema = _integer(
+            schema_version,
+            "schema_version",
+            minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+        )
+        common = {
+            "lane_id",
+            "track_id",
+            "name",
+            "order",
+            "region_ids",
+            "enabled",
+            "deleted",
+        }
+        identity = (
+            {"source_media_id"}
+            if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else {"source_take_id", "source_track_id"}
+        )
+        expected = common | identity
         _strict_keys(
             value,
-            allowed={
-                "lane_id",
-                "track_id",
-                "source_take_id",
-                "source_track_id",
-                "name",
-                "order",
-                "region_ids",
-                "enabled",
-                "deleted",
-            },
-            required={
-                "lane_id",
-                "track_id",
-                "source_take_id",
-                "source_track_id",
-                "name",
-                "order",
-                "region_ids",
-                "enabled",
-                "deleted",
-            },
+            allowed=expected,
+            required=expected,
             field_name="Studio take lane",
         )
         return cls(
             lane_id=value["lane_id"],
             track_id=value["track_id"],
-            source_take_id=value["source_take_id"],
-            source_track_id=value["source_track_id"],
+            source_take_id=(
+                value["source_take_id"]
+                if schema == STUDIO_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
+            source_track_id=(
+                value["source_track_id"]
+                if schema == STUDIO_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
             name=value["name"],
             order=value["order"],
             region_ids=_uuid_tuple(value["region_ids"], "take_lane.region_ids"),
             enabled=value["enabled"],
             deleted=value["deleted"],
+            source_media_id=(
+                value["source_media_id"]
+                if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                else ""
+            ),
         )
 
 
@@ -1153,12 +1871,12 @@ class StudioMaster:
 
 @dataclass(frozen=True)
 class StudioDocument:
-    """A complete immutable Studio arrangement for one recorded take."""
+    """A complete immutable arrangement for a take or standalone song project."""
 
-    session_id: str
-    take_id: str
-    project_sample_rate: int
-    tracks: tuple[StudioTrack, ...]
+    session_id: str = ""
+    take_id: str = ""
+    project_sample_rate: int = 48_000
+    tracks: tuple[StudioTrack, ...] = ()
     regions: tuple[StudioRegion, ...] = ()
     take_lanes: tuple[StudioTakeLane, ...] = ()
     comp_ranges: tuple[StudioCompRange, ...] = ()
@@ -1169,6 +1887,7 @@ class StudioDocument:
     master: StudioMaster = field(default_factory=StudioMaster)
     revision: int = 1
     schema_version: int = STUDIO_PROJECT_SCHEMA_VERSION
+    project_id: str = ""
     _store_token: str | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -1176,13 +1895,42 @@ class StudioDocument:
             self.schema_version,
             "schema_version",
             minimum=STUDIO_PROJECT_SCHEMA_VERSION,
-            maximum=STUDIO_PROJECT_SCHEMA_VERSION,
+            maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
         )
         object.__setattr__(self, "schema_version", schema_version)
-        object.__setattr__(
-            self, "session_id", _canonical_uuid(self.session_id, "session_id")
-        )
-        object.__setattr__(self, "take_id", _canonical_uuid(self.take_id, "take_id"))
+        if schema_version == STUDIO_PROJECT_SCHEMA_VERSION:
+            object.__setattr__(
+                self,
+                "session_id",
+                _canonical_uuid(self.session_id, "session_id"),
+            )
+            object.__setattr__(
+                self,
+                "take_id",
+                _canonical_uuid(self.take_id, "take_id"),
+            )
+            project_id = _canonical_uuid(
+                self.project_id,
+                "project_id",
+                optional=True,
+            )
+            if project_id:
+                raise StudioProjectError(
+                    "Schema-2 Studio documents cannot contain project_id."
+                )
+            object.__setattr__(self, "project_id", "")
+        else:
+            if self.session_id or self.take_id:
+                raise StudioProjectError(
+                    "Schema-3 Studio documents use project_id, not session/take IDs."
+                )
+            object.__setattr__(self, "session_id", "")
+            object.__setattr__(self, "take_id", "")
+            object.__setattr__(
+                self,
+                "project_id",
+                _canonical_uuid(self.project_id, "project_id"),
+            )
         rate = _positive_frames(self.project_sample_rate, "project_sample_rate")
         if rate > 768_000:
             raise StudioProjectError(
@@ -1238,13 +1986,196 @@ class StudioDocument:
         ):
             _ensure_unique((getattr(item, identifier) for item in values), name)
 
-        track_ids = {track.track_id for track in tracks}
+        track_by_id = {track.track_id: track for track in tracks}
+        track_ids = set(track_by_id)
+        if schema_version == STUDIO_PROJECT_SCHEMA_VERSION:
+            for track in tracks:
+                if (
+                    track.name
+                    or track.kind is not StudioTrackKind.AUDIO
+                    or track.channel_count != 1
+                    or track.armed
+                    or track.input_monitoring
+                    or track.output_bus_id
+                    or track.sends
+                    or track.automation
+                    or track.effects
+                ):
+                    raise StudioProjectError(
+                        "Schema-2 Studio tracks cannot contain song-track fields."
+                    )
+            if any(region.source_media_id for region in regions):
+                raise StudioProjectError(
+                    "Schema-2 Studio regions require take/track/segment sources."
+                )
+            if any(lane.source_media_id for lane in lanes):
+                raise StudioProjectError(
+                    "Schema-2 take lanes cannot contain media source IDs."
+                )
+        else:
+            if any(not track.name for track in tracks):
+                raise StudioProjectError(
+                    "Schema-3 Studio tracks require a name."
+                )
+            orders = tuple(track.order for track in tracks)
+            if len(orders) != len(set(orders)):
+                raise StudioProjectError(
+                    "Schema-3 Studio tracks require unique order values."
+                )
+            if any(
+                region.source_take_id
+                or region.source_track_id
+                or region.source_segment_id
+                or not region.source_media_id
+                for region in regions
+            ):
+                raise StudioProjectError(
+                    "Schema-3 Studio regions require only source_media_id."
+                )
+            if any(
+                lane.source_take_id
+                or lane.source_track_id
+                or not lane.source_media_id
+                for lane in lanes
+            ):
+                raise StudioProjectError(
+                    "Schema-3 take lanes require only source_media_id."
+                )
+            bus_ids = {
+                track.track_id
+                for track in tracks
+                if track.kind is StudioTrackKind.BUS
+            }
+            if len(bus_ids) > MAX_STUDIO_BUS_TRACKS:
+                raise StudioProjectError(
+                    "A Studio document contains too many bus tracks."
+                )
+            if (
+                sum(
+                    len(lane.points)
+                    for track in tracks
+                    for lane in track.automation
+                )
+                > MAX_STUDIO_AUTOMATION_POINTS
+            ):
+                raise StudioProjectError(
+                    "A Studio document contains too many automation breakpoints."
+                )
+            masters = tuple(
+                track
+                for track in tracks
+                if track.kind is StudioTrackKind.MASTER
+            )
+            if len(masters) > 1:
+                raise StudioProjectError(
+                    "Schema-3 Studio supports at most one master track."
+                )
+            nyquist = self.project_sample_rate / 2.0
+            routing_edges: dict[str, set[str]] = {
+                track.track_id: set() for track in tracks
+            }
+            for track in tracks:
+                if (
+                    track.kind in {StudioTrackKind.BUS, StudioTrackKind.MASTER}
+                    and track.channel_count != 2
+                ):
+                    raise StudioProjectError(
+                        "Studio bus and master tracks must be stereo."
+                    )
+                if track.kind is StudioTrackKind.MASTER:
+                    if track.output_bus_id or track.sends:
+                        raise StudioProjectError(
+                            "The Studio master track cannot route to a bus or send."
+                        )
+                    if track.solo:
+                        raise StudioProjectError(
+                            "The Studio master track cannot be soloed."
+                        )
+                elif track.kind is StudioTrackKind.BUS and track.solo:
+                    raise StudioProjectError(
+                        "Studio bus solo is not available; solo source tracks."
+                    )
+                elif track.output_bus_id:
+                    target = track_by_id.get(track.output_bus_id)
+                    if target is None or target.kind is not StudioTrackKind.BUS:
+                        raise StudioProjectError(
+                            "A Studio output route must target a bus track."
+                        )
+                    if target.track_id == track.track_id:
+                        raise StudioProjectError(
+                            "A Studio track cannot route to itself."
+                        )
+                    routing_edges[track.track_id].add(target.track_id)
+                for send in track.sends:
+                    if send.target_bus_id not in bus_ids:
+                        raise StudioProjectError(
+                            "A Studio send must target a bus track."
+                        )
+                    if send.target_bus_id == track.track_id:
+                        raise StudioProjectError(
+                            "A Studio track cannot send to itself."
+                        )
+                    routing_edges[track.track_id].add(send.target_bus_id)
+                if (
+                    track.kind is not StudioTrackKind.BUS
+                    and any(
+                        effect.kind is StudioEffectKind.REVERB
+                        for effect in track.effects
+                    )
+                ):
+                    raise StudioProjectError(
+                        "Shared reverb is available only on a Studio bus."
+                    )
+                for effect in track.effects:
+                    if (
+                        (
+                            effect.kind is StudioEffectKind.HPF
+                            and effect.hpf_frequency_hz >= nyquist
+                        )
+                        or (
+                            effect.kind is StudioEffectKind.EQ
+                            and effect.eq_frequency_hz >= nyquist
+                        )
+                    ):
+                        raise StudioProjectError(
+                            "Studio filter frequencies must stay below Nyquist."
+                        )
+
+            visiting: set[str] = set()
+            visited: set[str] = set()
+
+            def visit(track_id: str) -> None:
+                if track_id in visiting:
+                    raise StudioProjectError(
+                        "Studio bus routing must not contain a cycle."
+                    )
+                if track_id in visited:
+                    return
+                visiting.add(track_id)
+                for target_id in sorted(routing_edges[track_id]):
+                    visit(target_id)
+                visiting.remove(track_id)
+                visited.add(track_id)
+
+            for track_id in sorted(track_ids):
+                visit(track_id)
+
         region_map = {region.region_id: region for region in regions}
         lane_map = {lane.lane_id: lane for lane in lanes}
         for region in regions:
             if region.track_id not in track_ids:
                 raise StudioProjectError("Region references an unknown Studio track.")
             if (
+                schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                and track_by_id[region.track_id].kind
+                in {StudioTrackKind.BUS, StudioTrackKind.MASTER}
+            ):
+                raise StudioProjectError(
+                    "Studio bus and master tracks cannot contain source regions."
+                )
+            if (
+                schema_version == STUDIO_PROJECT_SCHEMA_VERSION
+                and
                 region.source_take_id == self.take_id
                 and region.source_track_id not in track_ids
             ):
@@ -1257,10 +2188,22 @@ class StudioDocument:
                 raise StudioProjectError(
                     "Take lane references an unknown Studio track."
                 )
-            if lane.region_ids and not lane.source_take_id:
+            if (
+                schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                and track_by_id[lane.track_id].kind
+                in {StudioTrackKind.BUS, StudioTrackKind.MASTER}
+            ):
                 raise StudioProjectError(
-                    "A take lane with regions requires source take and track IDs."
+                    "Studio bus and master tracks cannot contain take lanes."
                 )
+            if lane.region_ids:
+                if (
+                    schema_version == STUDIO_PROJECT_SCHEMA_VERSION
+                    and not lane.source_take_id
+                ):
+                    raise StudioProjectError(
+                        "A take lane with regions requires source take and track IDs."
+                    )
             for region_id in lane.region_ids:
                 region = region_map.get(region_id)
                 if region is None:
@@ -1276,6 +2219,13 @@ class StudioDocument:
                     raise StudioProjectError(
                         "Take lane source IDs do not match its regions."
                     )
+                if (
+                    lane.source_media_id
+                    and region.source_media_id != lane.source_media_id
+                ):
+                    raise StudioProjectError(
+                        "Take lane media ID does not match its regions."
+                    )
                 if not lane.deleted:
                     owner = owned_lane_regions.setdefault(region_id, lane.lane_id)
                     if owner != lane.lane_id:
@@ -1284,6 +2234,8 @@ class StudioDocument:
                         )
         for region in regions:
             if (
+                schema_version == STUDIO_PROJECT_SCHEMA_VERSION
+                and
                 not region.deleted
                 and region.enabled
                 and region.source_take_id != self.take_id
@@ -1445,6 +2397,20 @@ class StudioDocument:
             "solo",
             "export_included",
         }
+        if self.schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION:
+            allowed.update(
+                {
+                    "name",
+                    "kind",
+                    "channel_count",
+                    "armed",
+                    "input_monitoring",
+                    "output_bus_id",
+                    "sends",
+                    "automation",
+                    "effects",
+                }
+            )
         unknown = set(changes).difference(allowed)
         if unknown:
             raise StudioProjectError(
@@ -1906,11 +2872,20 @@ class StudioDocument:
             raise StudioProjectError(
                 "Take-lane region IDs must exactly match the supplied regions."
             )
-        if any(
-            item.track_id != lane.track_id
-            or item.source_take_id != lane.source_take_id
+        if any(item.track_id != lane.track_id for item in incoming):
+            raise StudioProjectError(
+                "Take-lane regions do not match the lane's destination/source IDs."
+            )
+        if self.schema_version == STUDIO_PROJECT_SCHEMA_VERSION and any(
+            item.source_take_id != lane.source_take_id
             or item.source_track_id != lane.source_track_id
             for item in incoming
+        ):
+            raise StudioProjectError(
+                "Take-lane regions do not match the lane's destination/source IDs."
+            )
+        if self.schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION and any(
+            item.source_media_id != lane.source_media_id for item in incoming
         ):
             raise StudioProjectError(
                 "Take-lane regions do not match the lane's destination/source IDs."
@@ -2049,16 +3024,23 @@ class StudioDocument:
         return self._bumped(comp_ranges=tuple(values))
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        common: dict[str, object] = {
             "schema_version": self.schema_version,
             "revision": self.revision,
-            "session_id": self.session_id,
-            "take_id": self.take_id,
             "project_sample_rate": self.project_sample_rate,
             "snap_mode": self.snap_mode.value,
-            "tracks": [item.to_dict() for item in self.tracks],
-            "regions": [item.to_dict() for item in self.regions],
-            "take_lanes": [item.to_dict() for item in self.take_lanes],
+            "tracks": [
+                item.to_dict(schema_version=self.schema_version)
+                for item in self.tracks
+            ],
+            "regions": [
+                item.to_dict(schema_version=self.schema_version)
+                for item in self.regions
+            ],
+            "take_lanes": [
+                item.to_dict(schema_version=self.schema_version)
+                for item in self.take_lanes
+            ],
             "comp_ranges": [item.to_dict() for item in self.comp_ranges],
             "markers": [item.to_dict() for item in self.markers],
             "crossfades": [item.to_dict() for item in self.crossfades],
@@ -2066,6 +3048,39 @@ class StudioDocument:
                 self.cycle_range.to_dict() if self.cycle_range is not None else None
             ),
             "master": self.master.to_dict(),
+        }
+        if self.schema_version == STUDIO_PROJECT_SCHEMA_VERSION:
+            # Keep the schema-2 key set and insertion order exactly stable.
+            return {
+                "schema_version": common["schema_version"],
+                "revision": common["revision"],
+                "session_id": self.session_id,
+                "take_id": self.take_id,
+                "project_sample_rate": common["project_sample_rate"],
+                "snap_mode": common["snap_mode"],
+                "tracks": common["tracks"],
+                "regions": common["regions"],
+                "take_lanes": common["take_lanes"],
+                "comp_ranges": common["comp_ranges"],
+                "markers": common["markers"],
+                "crossfades": common["crossfades"],
+                "cycle_range": common["cycle_range"],
+                "master": common["master"],
+            }
+        return {
+            "schema_version": common["schema_version"],
+            "revision": common["revision"],
+            "project_id": self.project_id,
+            "project_sample_rate": common["project_sample_rate"],
+            "snap_mode": common["snap_mode"],
+            "tracks": common["tracks"],
+            "regions": common["regions"],
+            "take_lanes": common["take_lanes"],
+            "comp_ranges": common["comp_ranges"],
+            "markers": common["markers"],
+            "crossfades": common["crossfades"],
+            "cycle_range": common["cycle_range"],
+            "master": common["master"],
         }
 
 
@@ -2160,6 +3175,114 @@ def default_studio_document(project: TakeProject) -> StudioDocument:
         tracks=tracks,
         regions=regions,
         markers=markers,
+    )
+
+
+def _song_backing_track_id(project_id: str) -> str:
+    return str(
+        uuid.uuid5(
+            _DEFAULT_ID_NAMESPACE,
+            f"song-backing-track:{project_id}",
+        )
+    )
+
+
+def _song_backing_region_id(project_id: str, media_id: str) -> str:
+    return str(
+        uuid.uuid5(
+            _DEFAULT_ID_NAMESPACE,
+            f"song-backing-region:{project_id}:{media_id}",
+        )
+    )
+
+
+def default_song_studio_document(project: "SongProject") -> StudioDocument:
+    """Return deterministic schema-3 arrangement defaults for a song project.
+
+    The Studio snapshot deliberately retains only durable project/media IDs
+    and exact frame mappings.  Checksums, relative bundle names, and all other
+    media inventory remain owned by :class:`core.song_project.SongProject`.
+    """
+
+    # Keep the legacy take model import surface independent from song projects.
+    # The local import also prevents an accidental circular dependency if the
+    # song-project persistence layer later refers to Studio documents.
+    from core.song_project import SongProject
+
+    if not isinstance(project, SongProject):
+        raise StudioProjectError(
+            "Default song Studio state requires a SongProject."
+        )
+
+    backing = (
+        project.media_by_id(project.backing_media_id)
+        if project.backing_media_id is not None
+        else None
+    )
+    track_offset = 1 if backing is not None else 0
+    tracks: list[StudioTrack] = []
+    regions: list[StudioRegion] = []
+    if backing is not None:
+        backing_track_id = _song_backing_track_id(project.project_id)
+        if any(item.track_id == backing_track_id for item in project.tracks):
+            raise StudioProjectError(
+                "Backing-track ID collides with a project track ID."
+            )
+        timeline_count = _rounded_ratio(
+            backing.frame_count,
+            project.project_sample_rate,
+            backing.sample_rate,
+        )
+        if timeline_count <= 0:
+            raise StudioProjectError(
+                "Backing media has no project-frame duration."
+            )
+        tracks.append(
+            StudioTrack(
+                track_id=backing_track_id,
+                order=0,
+                name="Backing Track",
+                kind=StudioTrackKind.BACKING,
+                channel_count=backing.channels,
+            )
+        )
+        regions.append(
+            StudioRegion(
+                region_id=_song_backing_region_id(
+                    project.project_id,
+                    backing.media_id,
+                ),
+                track_id=backing_track_id,
+                source_media_id=backing.media_id,
+                source_start_frame=0,
+                source_frame_count=backing.frame_count,
+                timeline_start_frame=0,
+                timeline_frame_count=timeline_count,
+            )
+        )
+
+    tracks.extend(
+        StudioTrack(
+            track_id=track.track_id,
+            order=track.order + track_offset,
+            name=track.name,
+            kind=StudioTrackKind.AUDIO,
+            channel_count=(
+                len(track.input_mapping.channels)
+                if track.input_mapping is not None
+                else 1
+            ),
+            armed=track.armed,
+            input_monitoring=track.input_monitoring,
+        )
+        for track in project.tracks
+    )
+    return StudioDocument(
+        project_id=project.project_id,
+        project_sample_rate=project.project_sample_rate,
+        tracks=tuple(tracks),
+        regions=tuple(regions),
+        schema_version=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
     )
 
 
@@ -2324,50 +3447,54 @@ def reconcile_studio_document(
 
 
 def studio_document_from_dict(value: Mapping[str, Any]) -> StudioDocument:
-    """Strictly parse one schema-2 Studio document."""
+    """Strictly parse a legacy take or standalone song Studio document."""
 
     if not isinstance(value, Mapping):
         raise StudioProjectError("Studio document root must be an object.")
+    if "schema_version" not in value:
+        raise StudioProjectError(
+            "Studio document is missing required fields: schema_version."
+        )
+    raw_schema = value["schema_version"]
+    if (
+        raw_schema != STUDIO_PROJECT_SCHEMA_VERSION
+        and raw_schema != STUDIO_SONG_PROJECT_SCHEMA_VERSION
+    ):
+        raise StudioProjectError(
+            f"Unsupported Studio schema: {raw_schema!r}."
+        )
+    schema = _integer(
+        raw_schema,
+        "schema_version",
+        minimum=STUDIO_PROJECT_SCHEMA_VERSION,
+        maximum=STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+    )
+    common_fields = {
+        "schema_version",
+        "revision",
+        "project_sample_rate",
+        "snap_mode",
+        "tracks",
+        "regions",
+        "take_lanes",
+        "comp_ranges",
+        "markers",
+        "crossfades",
+        "cycle_range",
+        "master",
+    }
+    identity_fields = (
+        {"project_id"}
+        if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+        else {"session_id", "take_id"}
+    )
+    expected_fields = common_fields | identity_fields
     _strict_keys(
         value,
-        allowed={
-            "schema_version",
-            "revision",
-            "session_id",
-            "take_id",
-            "project_sample_rate",
-            "snap_mode",
-            "tracks",
-            "regions",
-            "take_lanes",
-            "comp_ranges",
-            "markers",
-            "crossfades",
-            "cycle_range",
-            "master",
-        },
-        required={
-            "schema_version",
-            "revision",
-            "session_id",
-            "take_id",
-            "project_sample_rate",
-            "snap_mode",
-            "tracks",
-            "regions",
-            "take_lanes",
-            "comp_ranges",
-            "markers",
-            "crossfades",
-            "cycle_range",
-            "master",
-        },
+        allowed=expected_fields,
+        required=expected_fields,
         field_name="Studio document",
     )
-    if value["schema_version"] != STUDIO_PROJECT_SCHEMA_VERSION:
-        raise StudioProjectError(
-            f"Unsupported Studio schema: {value['schema_version']!r}."
-        )
     cycle_value = value["cycle_range"]
     if cycle_value is not None and not isinstance(cycle_value, Mapping):
         raise StudioProjectError("Studio cycle range must be an object or null.")
@@ -2375,19 +3502,32 @@ def studio_document_from_dict(value: Mapping[str, Any]) -> StudioDocument:
     if not isinstance(master_value, Mapping):
         raise StudioProjectError("Studio master must be an object.")
     return StudioDocument(
-        session_id=value["session_id"],
-        take_id=value["take_id"],
+        session_id=(
+            value["session_id"]
+            if schema == STUDIO_PROJECT_SCHEMA_VERSION
+            else ""
+        ),
+        take_id=(
+            value["take_id"]
+            if schema == STUDIO_PROJECT_SCHEMA_VERSION
+            else ""
+        ),
+        project_id=(
+            value["project_id"]
+            if schema == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else ""
+        ),
         project_sample_rate=value["project_sample_rate"],
         tracks=tuple(
-            StudioTrack.from_dict(item)
+            StudioTrack.from_dict(item, schema_version=schema)
             for item in _mapping_items(value["tracks"], "tracks")
         ),
         regions=tuple(
-            StudioRegion.from_dict(item)
+            StudioRegion.from_dict(item, schema_version=schema)
             for item in _mapping_items(value["regions"], "regions")
         ),
         take_lanes=tuple(
-            StudioTakeLane.from_dict(item)
+            StudioTakeLane.from_dict(item, schema_version=schema)
             for item in _mapping_items(value["take_lanes"], "take_lanes")
         ),
         comp_ranges=tuple(
@@ -2410,7 +3550,7 @@ def studio_document_from_dict(value: Mapping[str, Any]) -> StudioDocument:
         snap_mode=value["snap_mode"],
         master=StudioMaster.from_dict(master_value),
         revision=value["revision"],
-        schema_version=value["schema_version"],
+        schema_version=schema,
     )
 
 
@@ -2419,17 +3559,27 @@ __all__ = [
     "MarkerKind",
     "SnapMode",
     "STUDIO_PROJECT_SCHEMA_VERSION",
+    "STUDIO_SONG_PROJECT_SCHEMA_VERSION",
+    "StudioAutomationInterpolation",
+    "StudioAutomationLane",
+    "StudioAutomationParameter",
+    "StudioAutomationPoint",
     "StudioCompRange",
     "StudioCrossfade",
     "StudioCycleRange",
     "StudioDocument",
+    "StudioEffect",
+    "StudioEffectKind",
     "StudioMarker",
     "StudioMaster",
     "StudioProjectError",
     "StudioRegion",
+    "StudioSend",
     "StudioTakeLane",
     "StudioTrack",
+    "StudioTrackKind",
     "crossfade_gains",
+    "default_song_studio_document",
     "default_studio_document",
     "fade_gain",
     "reconcile_studio_document",

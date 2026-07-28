@@ -49,7 +49,7 @@ route. It resolves the owned primary Jamulus PID to its CoreAudio Process
 AudioObject, requires exactly one actively running input and output, rejects
 ambiguous or BlackHole routes, and repeats that proof during playback.
 
-That proof is not enabled in production v0.20.0 wiring. A reported CoreAudio
+That proof is not enabled in production v0.21.0 wiring. A reported CoreAudio
 failure can return a process's output device for the input scope after an input
 switch. Jamulus 3.12.2 exposes no independent live sound-device RPC, and a
 saved profile is only a secondary consistency check. Until the exact physical

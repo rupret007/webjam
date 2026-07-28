@@ -153,6 +153,29 @@ def test_shutdown_does_not_hide_a_live_companion_listener(tmp_path) -> None:
         controller.shutdown()
 
 
+def test_shutdown_waits_for_the_existing_session_teardown_owner(tmp_path) -> None:
+    controller = _controller(tmp_path)
+    controller.audio.stopping = True
+    controller._invite_switch_in_flight = True
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    controller._stop_session_peer = MagicMock(return_value=True)
+
+    try:
+        with patch.object(controller.window, "flash_message") as flash:
+            assert controller.shutdown() is False
+
+        assert controller._shutdown is False
+        assert controller._shutdown_in_progress is False
+        assert controller._shutdown_cleanup_pending is False
+        controller._stop_session_peer.assert_not_called()
+        controller.bridge.stop_jamulus.assert_not_called()
+        assert "Session cleanup is still running" in flash.call_args.args[0]
+    finally:
+        controller.audio.stopping = False
+        controller._invite_switch_in_flight = False
+        controller.shutdown()
+
+
 def test_unexpected_shutdown_exception_keeps_explicit_retry_working(
     tmp_path,
 ) -> None:

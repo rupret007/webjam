@@ -416,16 +416,22 @@ class TestSettingsWizard(_ControllerTestBase):
     def test_settings_are_blocked_during_session_cleanup(self):
         c = self.controller
         c.audio.stopping = True
-        with patch(
-            "webjam_qt.windows.simple_settings.SimpleSettingsDialog"
-        ) as wizard_cls:
-            c._open_settings_wizard()
+        try:
+            with patch(
+                "webjam_qt.windows.simple_settings.SimpleSettingsDialog"
+            ) as wizard_cls:
+                c._open_settings_wizard()
 
-        wizard_cls.assert_not_called()
-        self.assertIn(
-            "session change",
-            c.window.flash_message.call_args.args[0],
-        )
+            wizard_cls.assert_not_called()
+            self.assertIn(
+                "session change",
+                c.window.flash_message.call_args.args[0],
+            )
+        finally:
+            # The production guard deliberately keeps this latch owned by the
+            # in-progress End/Leave worker. This test has no such worker, so
+            # restore settled fixture state before class-level shutdown.
+            c.audio.stopping = False
 
     def test_accepted_wizard_reloads_and_pushes_settings(self):
         c = self.controller

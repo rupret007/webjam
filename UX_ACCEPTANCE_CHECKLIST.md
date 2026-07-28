@@ -1,4 +1,4 @@
-# WebJam v0.20.0 UX acceptance checklist
+# WebJam v0.21.0 UX acceptance checklist
 
 ## Unified guidance
 
@@ -62,6 +62,8 @@
 - [ ] First host Record offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
 - [ ] Studio playback output is shown only in Studio review.
+- [ ] Reference Studio opens independently of Host/Join, retains the canonical
+      trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
       Logic integration.
 - [ ] Arrange exposes visible timeline/ruler, fixed track headers, zoom/scroll,
@@ -118,7 +120,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.20.0 remains a private test candidate until real-output guidance review,
-      Arrange/comp playback,
-      external-editor import, signed clean installation, and platform trust
-      gates have evidence; all currently remain **NOT RUN**.
+- [ ] v0.21.0 remains a private test candidate until real-output guidance
+      review, Arrange/comp playback, physical Reference Studio playback and
+      recording, external-editor import, signed clean installation, and
+      platform trust gates have evidence; all currently remain **NOT RUN**.

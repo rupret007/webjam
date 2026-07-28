@@ -109,6 +109,31 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     controller.shutdown()
 
 
+def test_false_transport_stop_retains_runtime_and_route_for_retry(
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    runtime = mock.MagicMock()
+    runtime.stop.return_value = False
+    runtime.snapshot.error_code = None
+    base_settings = controller.settings
+    controller._remote_session = runtime
+    controller._remote_route_base_settings = base_settings
+    controller._remote_route_generation = 7
+    controller.bridge.disable_remote_guest_mode = mock.MagicMock()
+
+    assert controller._stop_remote_transport() is False
+
+    runtime.stop.assert_called_once_with()
+    assert controller._remote_session is runtime
+    assert controller._remote_route_base_settings is base_settings
+    assert controller._remote_route_generation == 7
+    controller.bridge.disable_remote_guest_mode.assert_not_called()
+
+    runtime.stop.return_value = None
+    controller.shutdown()
+
+
 def test_successful_leave_restores_remote_base_after_worker_cleanup(
     qapp,
     tmp_path,
@@ -166,6 +191,56 @@ def test_successful_leave_restores_remote_base_after_worker_cleanup(
     assert controller._remote_route_base_settings is None
     assert controller.settings is base_settings
     reconfigure.assert_called_once_with(routed_settings)
+    controller.shutdown()
+
+
+def test_leave_failure_keeps_unstopped_remote_transport_retryable(
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    runtime = mock.MagicMock()
+    runtime.stop.return_value = False
+    runtime.snapshot.error_code = None
+    controller._remote_session = runtime
+    controller.audio.stopping = True
+
+    with (
+        mock.patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller,
+            "_stop_session_peer",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "stop_jamulus",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "hosted_server_alive",
+            return_value=False,
+        ),
+        mock.patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        controller.audio._stop_session_services(False)
+
+    assert controller._remote_session is runtime
+    assert controller.audio.stopping is False
+    assert controller.audio.cleanup_retry_required is True
+    assert controller.window.session_strip._audio_button.text() == "Try Leave Jam"
+    assert controller.window.session_strip._audio_button.isEnabled()
+
+    runtime.stop.return_value = None
+    controller.audio.cleanup_retry_required = False
     controller.shutdown()
 
 

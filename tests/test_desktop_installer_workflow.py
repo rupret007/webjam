@@ -45,11 +45,11 @@ def test_current_candidate_identity_cannot_be_confused_with_latest_old_release()
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.20.0"
+    assert version == "0.21.0"
     assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
     assert f"## [{version}]" in CHANGELOG
-    assert "published v0.19.0 release" in PROJECT_README
-    assert "predates the Webex cleanup and Reference Track pilot" in PROJECT_README
+    assert "v0.20.0 history must not be moved" in PROJECT_README
+    assert "standalone Reference Studio" in PROJECT_README
     assert re.search(r"Pocket Stage iPhone\s+Setup", PROJECT_README)
 
 

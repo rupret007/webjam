@@ -137,11 +137,12 @@ def apply_remote_join_defaults(settings: AppSettings) -> None:
 
 
 class LaunchDialog(QDialog):
-    """Two choices on launch; one pasted link after choosing Join.
+    """Three musician choices; one pasted link after choosing Join.
 
-    The selected role is persisted once before the main window opens.  The
-    invitation bearer remains memory-only; only the non-secret host/port
-    fields needed by the legacy LAN client are saved for a returning musician.
+    Host/Join is persisted once before the main window opens.  Reference
+    Studio is an offline workspace choice and does not rewrite live-session
+    settings.  Invitation bearers remain memory-only; only the non-secret
+    host/port fields needed by the legacy LAN client are saved.
     """
 
     def __init__(
@@ -180,9 +181,7 @@ class LaunchDialog(QDialog):
         brand_row.setSpacing(Space.SM)
         self._logo = BrandMark(30)
         self._logo.setObjectName("LaunchBrandMark")
-        self._wordmark = QLabel(
-            'Web<span style="color: #BF5700;">Jam</span>'
-        )
+        self._wordmark = QLabel('Web<span style="color: #BF5700;">Jam</span>')
         self._wordmark.setObjectName("LaunchLogo")
         self._wordmark.setTextFormat(Qt.TextFormat.RichText)
         self._wordmark.setAccessibleName("WebJam")
@@ -229,10 +228,10 @@ class LaunchDialog(QDialog):
         graphic = JamSignalGraphic()
         layout.addWidget(graphic)
 
-        title = QLabel("Play together.")
+        title = QLabel("Make music.")
         title.setObjectName("LaunchTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        subtitle = QLabel("Start a private jam or join your band.")
+        subtitle = QLabel("Play together live, or build and rehearse a song offline.")
         subtitle.setObjectName("LaunchSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         subtitle.setWordWrap(True)
@@ -247,6 +246,9 @@ class LaunchDialog(QDialog):
         self._join_button = QPushButton("Join a Jam")
         self._join_button.setObjectName("LaunchSecondary")
         self._join_button.setMinimumHeight(52)
+        self._studio_button = QPushButton("Play Along / Record")
+        self._studio_button.setObjectName("LaunchSecondary")
+        self._studio_button.setMinimumHeight(52)
         self._host_button.setAccessibleName("Host a Jam")
         self._host_button.setAccessibleDescription(
             "Start a band session on this Mac and create an invitation link."
@@ -255,12 +257,19 @@ class LaunchDialog(QDialog):
         self._join_button.setAccessibleDescription(
             "Join a band session using one WebJam invitation link."
         )
+        self._studio_button.setAccessibleName("Play Along / Record")
+        self._studio_button.setAccessibleDescription(
+            "Open Reference Studio for an offline song project without "
+            "starting Jamulus or joining a live session."
+        )
         if not self._host_available:
             self._host_button.setEnabled(False)
         self._host_button.clicked.connect(self._host)
         self._join_button.clicked.connect(self.show_join)
+        self._studio_button.clicked.connect(self._studio)
         layout.addWidget(self._host_button)
         layout.addWidget(self._join_button)
+        layout.addWidget(self._studio_button)
 
         self._install_jamulus_button = QPushButton("Install Jamulus")
         self._install_jamulus_button.setObjectName("GhostButton")
@@ -273,9 +282,11 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._install_jamulus_button)
 
         helper_text = (
-            "One link. No setup."
+            "Jam live, or work offline in Reference Studio."
             if self._host_available
-            else "Hosting is available in the macOS app."
+            else (
+                "Join live or work offline here. Hosting is available in the macOS app."
+            )
         )
         self._choice_helper = QLabel(helper_text)
         self._choice_helper.setObjectName("LaunchHelper")
@@ -418,6 +429,15 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
+    def _studio(self) -> None:
+        if not self._begin_submission(self._studio_button, "Opening…"):
+            return
+        self.selected_role = "studio"
+        self.session_name = "Reference Studio"
+        self.band_invite = None
+        self.remote_invitation = None
+        self.accept()
+
     def _join(self) -> None:
         value = self._invite_input.text()
         self._invite_input.clear()
@@ -504,7 +524,9 @@ class LaunchDialog(QDialog):
 
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.clear()
-        self._join_error.setText(str(message or "WebJam could not open that invitation."))
+        self._join_error.setText(
+            str(message or "WebJam could not open that invitation.")
+        )
         self._announce_error(self._join_error, focus=self._invite_input)
 
     def take_remote_invitation(self) -> RemoteInvitation | None:
@@ -525,6 +547,7 @@ class LaunchDialog(QDialog):
         self._submitting = True
         self._host_button.setEnabled(False)
         self._join_button.setEnabled(False)
+        self._studio_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
         button.setText(label)
         button.setAccessibleName(label)
@@ -538,6 +561,9 @@ class LaunchDialog(QDialog):
         self._join_button.setText("Join a Jam")
         self._join_button.setAccessibleName("Join a Jam")
         self._join_button.setEnabled(True)
+        self._studio_button.setText("Play Along / Record")
+        self._studio_button.setAccessibleName("Play Along / Record")
+        self._studio_button.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
             self._join_button_primary.setText("Join Jam")
             self._join_button_primary.setAccessibleName("Join Jam")

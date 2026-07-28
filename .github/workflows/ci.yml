@@ -75,6 +75,7 @@ jobs:
         run: |
           python -m pip check
           python -m compileall -q core webjam_qt ui services api tests
+          python tools/runtime_dependency_policy.py --check
           git diff --check HEAD
 
       - name: Lint (ruff)
@@ -734,6 +735,7 @@ jobs:
           python -m pip install --require-hashes --only-binary=:all: -r requirements-lock/bootstrap.txt
           python -m pip install --force-reinstall --require-hashes --only-binary=:all: -r requirements-lock/${{ matrix.target }}.txt
           python -m pip check
+          python tools/runtime_dependency_policy.py --check
           python -VV
           python -m pip freeze --all
 
@@ -851,6 +853,12 @@ jobs:
         run: |
           mkdir -p out
           python -m PyInstaller --clean --noconfirm webjam.spec
+          dependency_bundle_root=dist/WebJam
+          if [[ "${{ matrix.target }}" == macos-* ]]; then
+            dependency_bundle_root=dist/WebJam.app
+          fi
+          python tools/runtime_dependency_policy.py \
+            --verify-bundle "$dependency_bundle_root"
           build_id="$(git rev-parse HEAD)"
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
@@ -917,6 +925,9 @@ jobs:
             test -f "$fresh_dir/WebJam/Jamulus/JAMULUS_COPYING.txt"
             echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  $fresh_dir/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
             python -m tests.support.run_frozen_pocket_stage_smoke \
+              --binary "$fresh_dir/WebJam/WebJam" \
+              --cwd "$fresh_dir/WebJam"
+            python -m tests.support.run_frozen_reference_studio_smoke \
               --binary "$fresh_dir/WebJam/WebJam" \
               --cwd "$fresh_dir/WebJam"
             fresh_home="$RUNNER_TEMP/webjam-home-${{ matrix.target }}"
@@ -1362,6 +1373,9 @@ jobs:
           python -m tests.support.run_frozen_pocket_stage_smoke \
             --binary "$copied_app/Contents/MacOS/WebJam" \
             --cwd "$copied_app/Contents/MacOS"
+          python -m tests.support.run_frozen_reference_studio_smoke \
+            --binary "$copied_app/Contents/MacOS/WebJam" \
+            --cwd "$copied_app/Contents/MacOS"
           HOME="$smoke_home" \
             WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
             WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
@@ -1411,6 +1425,9 @@ jobs:
           $env:USERPROFILE = $smokeHome
           $env:WEBJAM_LOG_FILE = Join-Path $smokeHome "webjam.log"
           python -m tests.support.run_frozen_pocket_stage_smoke `
+            --binary $app `
+            --cwd $appDir
+          python -m tests.support.run_frozen_reference_studio_smoke `
             --binary $app `
             --cwd $appDir
           $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
@@ -1552,6 +1569,8 @@ jobs:
           $readmePath = Join-Path $installDir "README-WINDOWS.txt"
           $licensePath = Join-Path $installDir "LICENSE.txt"
           $noticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
+          $runtimeNoticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES_RUNTIME.md"
+          $runtimeSbomPath = Join-Path $installDir "WebJam-runtime-sbom.cdx.json"
           $jamulusInstaller = Join-Path $installDir `
             "_internal\Jamulus\jamulus_3.12.2_win.exe"
           $requiredFiles = @(
@@ -1561,7 +1580,9 @@ jobs:
             $jamulusInstaller,
             $readmePath,
             $licensePath,
-            $noticesPath
+            $noticesPath,
+            $runtimeNoticesPath,
+            $runtimeSbomPath
           )
           foreach ($required in $requiredFiles) {
             if (-not (Test-Path $required)) { throw "Installed file is missing: $required" }
@@ -1706,6 +1727,8 @@ jobs:
             $readmePath,
             $licensePath,
             $noticesPath,
+            $runtimeNoticesPath,
+            $runtimeSbomPath,
             (Join-Path $installDir "_internal")
           )
           for ($attempt = 0; $attempt -lt 50; $attempt++) {
@@ -2254,6 +2277,8 @@ jobs:
           $readmePath = Join-Path $installDir "README-WINDOWS.txt"
           $licensePath = Join-Path $installDir "LICENSE.txt"
           $noticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES.md"
+          $runtimeNoticesPath = Join-Path $installDir "THIRD_PARTY_NOTICES_RUNTIME.md"
+          $runtimeSbomPath = Join-Path $installDir "WebJam-runtime-sbom.cdx.json"
           $jamulusInstaller = Join-Path $installDir `
             "_internal\Jamulus\jamulus_3.12.2_win.exe"
           $requiredFiles = @(
@@ -2263,7 +2288,9 @@ jobs:
             $jamulusInstaller,
             $readmePath,
             $licensePath,
-            $noticesPath
+            $noticesPath,
+            $runtimeNoticesPath,
+            $runtimeSbomPath
           )
           foreach ($required in $requiredFiles) {
             if (-not (Test-Path $required)) { throw "Signed install is missing $required" }
@@ -2385,6 +2412,8 @@ jobs:
             $readmePath,
             $licensePath,
             $noticesPath,
+            $runtimeNoticesPath,
+            $runtimeSbomPath,
             (Join-Path $installDir "_internal")
           )
           for ($attempt = 0; $attempt -lt 50; $attempt++) {

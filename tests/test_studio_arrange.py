@@ -260,6 +260,35 @@ def test_responsive_fixed_headers_accessibility_and_public_view_controls(
         not in arrange._canvas.viewport().accessibleDescription().lower()
     )
 
+    arrange.set_ruler_mode(
+        "bars",
+        tempo_bpm=120.0,
+        beats_per_bar=4,
+    )
+    musical_ticks = arrange._canvas._ruler_ticks(0, 96_000)
+    assert arrange.ruler_mode == "bars"
+    assert musical_ticks[0] == (0, "1.1")
+    assert any(label == "2.1" for _frame, label in musical_ticks)
+    assert "bars and beats" in arrange._canvas.viewport().accessibleName()
+
+    arrange.set_ruler_mode(
+        "bars",
+        tempo_bpm=120.0,
+        beats_per_bar=6,
+        beat_denominator=8,
+    )
+    compound_ticks = arrange._canvas._ruler_ticks(0, 96_000)
+    assert arrange.ruler_beat_denominator == 8
+    assert (72_000, "2.1") in compound_ticks
+
+    arrange.set_ruler_mode(
+        "time",
+        tempo_bpm=120.0,
+        beats_per_bar=4,
+    )
+    assert arrange.ruler_mode == "time"
+    assert arrange._canvas._ruler_ticks(0, 96_000)[0][1].startswith("0:")
+
     arrange.set_zoom(400)
     assert arrange.pixels_per_second == 400
     arrange.set_zoom(0)

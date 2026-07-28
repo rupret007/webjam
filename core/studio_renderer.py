@@ -1,16 +1,18 @@
 """Deterministic, streaming rendering for Studio arrangements.
 
-``TakeProject`` (plus an optional repeated-take ``StudioSourceCatalog``) is the
-immutable source inventory and ``StudioDocument`` is the non-destructive edit
-list.  This module is the boundary where those forms of truth become audio. It
-deliberately has no playback-device or export-file policy: both callers consume
-the same :class:`StudioRenderStream` blocks.
+``TakeProject``/``StudioSourceCatalog`` and standalone
+``SongProject``/``SongMediaCatalog`` pairs are immutable source inventories;
+``StudioDocument`` is the non-destructive edit and mix list.  This module is
+the boundary where those forms of truth become audio. It deliberately has no
+playback-device or export-file policy: both callers consume the same
+:class:`StudioRenderStream` blocks.
 
 The renderer resolves every active region through durable take, track, and
-segment IDs before opening media.  Source files are opened read-only, checked
+segment/media IDs before opening media.  Source files are opened read-only, checked
 against their declared facts (and checksum when one is present), and sampled
 in bounded blocks.  No operation rewrites a recorder file or materializes a
-whole song in memory.
+whole song in memory. Schema-3 automation, buses, sends, built-in DSP, and
+master routing share this exact stream for playback and bounce.
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ import numpy as np
 from core.studio_project import (
     FadeCurve,
     MAX_PROJECT_FRAMES,
+    STUDIO_PROJECT_SCHEMA_VERSION,
+    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
     StudioCompRange,
     StudioCrossfade,
     StudioDocument,
@@ -37,7 +41,20 @@ from core.studio_project import (
     StudioRegion,
     StudioTakeLane,
     StudioTrack,
+    StudioTrackKind,
 )
+from core.studio_mixer import (
+    StudioMixEngine,
+    StudioMixResult,
+    StudioMixerError,
+    studio_effect_tail_frames,
+    studio_mixer_capability,
+)
+from core.song_media_catalog import (
+    SongMediaCatalog,
+    SongMediaCatalogError,
+)
+from core.song_project import SongMedia, SongProject
 from core.studio_source_catalog import (
     StudioSourceCatalog,
     StudioSourceCatalogError,
@@ -649,8 +666,8 @@ def studio_delivery_block(block: np.ndarray) -> tuple[np.ndarray, int]:
 @dataclass(frozen=True)
 class _SourcePlan:
     key: StudioSourceKey
-    track: ProjectTrack
-    segment: MediaSegment
+    track: ProjectTrack | _SongSourceTrack
+    segment: MediaSegment | _SongSourceSegment
     take_root: Path
     relative_path: str
     expected_root_identity: tuple[int, int, int] | None
@@ -658,6 +675,41 @@ class _SourcePlan:
     @property
     def path(self) -> Path:
         return self.take_root.joinpath(*self.relative_path.split("/"))
+
+
+@dataclass(frozen=True)
+class _SongSourceTrack:
+    """Minimal immutable source facts consumed by the shared renderer."""
+
+    track_id: str
+    media_status: MediaStatus = MediaStatus.AVAILABLE
+
+
+@dataclass(frozen=True)
+class _SongSourceSegment:
+    """SongMedia adapter; never masquerades as a recorder TakeProject."""
+
+    segment_id: str
+    path: str
+    sha256: str
+    size_bytes: int
+    sample_rate: int
+    channels: int
+    frame_count: int
+    media_status: MediaStatus = MediaStatus.AVAILABLE
+    gaps: tuple[object, ...] = ()
+
+    @classmethod
+    def from_media(cls, media: SongMedia) -> "_SongSourceSegment":
+        return cls(
+            segment_id=media.media_id,
+            path=media.path,
+            sha256=media.sha256,
+            size_bytes=media.size_bytes,
+            sample_rate=media.sample_rate,
+            channels=media.channels,
+            frame_count=media.frame_count,
+        )
 
 
 @dataclass(frozen=True)
@@ -736,7 +788,7 @@ class StudioRenderer:
 
     def __init__(
         self,
-        project: TakeProject,
+        project: TakeProject | SongProject,
         document: StudioDocument,
         take_root: str | Path,
         *,
@@ -745,16 +797,35 @@ class StudioRenderer:
         respect_export_included: bool = False,
         apply_master: bool = True,
         verify_checksums: bool = True,
-        source_catalog: StudioSourceCatalog | None = None,
+        source_catalog: StudioSourceCatalog | SongMediaCatalog | None = None,
     ) -> None:
-        if not isinstance(project, TakeProject):
-            raise StudioRenderError("Studio rendering requires a TakeProject.")
         if not isinstance(document, StudioDocument):
             raise StudioRenderError("Studio rendering requires a StudioDocument.")
-        if project.session_id != document.session_id:
-            raise StudioRenderError("Studio document belongs to a different session.")
-        if project.take_id != document.take_id:
-            raise StudioRenderError("Studio document belongs to a different take.")
+        self._song_project = isinstance(project, SongProject)
+        if isinstance(project, TakeProject):
+            if document.schema_version != STUDIO_PROJECT_SCHEMA_VERSION:
+                raise StudioRenderError(
+                    "A recorded-take renderer requires a schema-2 Studio document."
+                )
+            if project.session_id != document.session_id:
+                raise StudioRenderError(
+                    "Studio document belongs to a different session."
+                )
+            if project.take_id != document.take_id:
+                raise StudioRenderError("Studio document belongs to a different take.")
+        elif isinstance(project, SongProject):
+            if document.schema_version != STUDIO_SONG_PROJECT_SCHEMA_VERSION:
+                raise StudioRenderError(
+                    "A song-project renderer requires a schema-3 Studio document."
+                )
+            if project.project_id != document.project_id:
+                raise StudioRenderError(
+                    "Studio document belongs to a different song project."
+                )
+        else:
+            raise StudioRenderError(
+                "Studio rendering requires a TakeProject or SongProject."
+            )
         if project.project_sample_rate != document.project_sample_rate:
             raise StudioRenderError(
                 "Studio document and source catalog use different sample rates."
@@ -772,22 +843,32 @@ class StudioRenderer:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if (
-            source_catalog is not None
-            and type(source_catalog) is not StudioSourceCatalog
-        ):
+        if isinstance(project, TakeProject):
+            if (
+                source_catalog is not None
+                and type(source_catalog) is not StudioSourceCatalog
+            ):
+                raise StudioRenderError(
+                    "Recorded takes require a trusted StudioSourceCatalog."
+                )
+        elif type(source_catalog) is not SongMediaCatalog:
             raise StudioRenderError(
-                "source_catalog must be a trusted StudioSourceCatalog."
+                "Song projects require a trusted SongMediaCatalog."
             )
 
         self.project = project
         self.document = document
         self.take_root = Path(take_root).expanduser().resolve()
         self.source_catalog = source_catalog
-        if source_catalog is not None:
+        if type(source_catalog) is StudioSourceCatalog:
             try:
                 source_catalog.require_primary(project, take_root)
             except StudioSourceCatalogError as exc:
+                raise StudioRenderError(str(exc)) from exc
+        elif type(source_catalog) is SongMediaCatalog:
+            try:
+                source_catalog.require_project(project, take_root)
+            except SongMediaCatalogError as exc:
                 raise StudioRenderError(str(exc)) from exc
         self.block_frames = _block_count(block_frames, "block_frames")
         self.apply_master = apply_master
@@ -811,18 +892,48 @@ class StudioRenderer:
                 raise StudioRenderError(
                     "A requested render track is not in the Studio document."
                 )
+            if self._song_project:
+                by_id = {item.track_id: item for item in document.tracks}
+                if any(
+                    by_id[item].kind
+                    in {StudioTrackKind.BUS, StudioTrackKind.MASTER}
+                    for item in requested_values
+                ):
+                    raise StudioRenderError(
+                        "Schema-3 stems select source tracks, not shared bus or "
+                        "master tracks."
+                    )
             requested = frozenset(requested_values)
 
         self._sources, all_regions, lane_by_region, comps_by_track = self._catalog()
-        selected_tracks = tuple(
-            track
-            for track in sorted(
-                document.tracks, key=lambda item: (item.order, item.track_id)
-            )
-            if (requested is None or track.track_id in requested)
-            and (not respect_export_included or track.export_included)
+        ordered_tracks = tuple(
+            sorted(document.tracks, key=lambda item: (item.order, item.track_id))
         )
-        selected_ids = {item.track_id for item in selected_tracks}
+        if self._song_project:
+            selected_source_tracks = tuple(
+                track
+                for track in ordered_tracks
+                if track.kind in {StudioTrackKind.AUDIO, StudioTrackKind.BACKING}
+                and (requested is None or track.track_id in requested)
+                and (not respect_export_included or track.export_included)
+            )
+            source_ids = {item.track_id for item in selected_source_tracks}
+            selected_tracks = tuple(
+                track
+                for track in ordered_tracks
+                if track.track_id in source_ids
+                or track.kind in {StudioTrackKind.BUS, StudioTrackKind.MASTER}
+            )
+            reported_tracks = selected_source_tracks
+        else:
+            selected_tracks = tuple(
+                track
+                for track in ordered_tracks
+                if (requested is None or track.track_id in requested)
+                and (not respect_export_included or track.export_included)
+            )
+            reported_tracks = selected_tracks
+        selected_ids = {item.track_id for item in reported_tracks}
         plans: list[_TrackPlan] = []
         for track in selected_tracks:
             comp_ranges = comps_by_track.get(track.track_id, ())
@@ -830,13 +941,7 @@ class StudioRenderer:
                 _RegionPlan(
                     region=region,
                     track=track,
-                    source=self._sources[
-                        (
-                            region.source_take_id,
-                            region.source_track_id,
-                            region.source_segment_id,
-                        )
-                    ],
+                    source=self._sources[self._region_source_key(region)],
                     lane_id=lane_by_region.get(region.region_id, ""),
                 )
                 for region in all_regions
@@ -878,7 +983,23 @@ class StudioRenderer:
         self.timeline_end_frame = max(
             (item.timeline_end_frame for item in rendered_regions), default=0
         )
+        if self._song_project and rendered_regions:
+            tail_frames = studio_effect_tail_frames(document)
+            if self.timeline_end_frame > MAX_PROJECT_FRAMES - tail_frames:
+                raise StudioRenderError(
+                    "Studio effect tail exceeds the supported timeline."
+                )
+            self.timeline_end_frame += tail_frames
         self.total_frames = max(0, self.timeline_end_frame)
+
+    def _region_source_key(self, region: StudioRegion) -> StudioSourceKey:
+        if self._song_project:
+            return ("", "", region.source_media_id)
+        return (
+            region.source_take_id,
+            region.source_track_id,
+            region.source_segment_id,
+        )
 
     @property
     def sample_rate(self) -> int:
@@ -886,7 +1007,50 @@ class StudioRenderer:
 
     @property
     def track_ids(self) -> tuple[str, ...]:
-        return tuple(item.track.track_id for item in self._track_plans)
+        return tuple(
+            item.track.track_id
+            for item in self._track_plans
+            if item.track.track_id in self._selected_track_ids
+        )
+
+    @property
+    def stem_semantics(self) -> str:
+        """Describe exactly where requested track stems are tapped."""
+
+        if self._song_project:
+            return "selected-source-through-shared-routing-and-master"
+        return "selected-track-post-fader-through-master"
+
+    def _require_catalog_current(
+        self,
+        cancel_check: Callable[[], None] | None = None,
+    ) -> None:
+        if type(self.source_catalog) is StudioSourceCatalog:
+            try:
+                self.source_catalog.assert_current(cancel_check)
+            except StudioSourceCatalogError as exc:
+                raise StudioRenderError(str(exc)) from exc
+        elif type(self.source_catalog) is SongMediaCatalog:
+            try:
+                self.source_catalog.assert_current(cancel_check=cancel_check)
+            except SongMediaCatalogError as exc:
+                raise StudioRenderError(str(exc)) from exc
+
+    def _same_project_identity(self, other: "StudioRenderer") -> bool:
+        if self._song_project != other._song_project:
+            return False
+        if self._song_project:
+            return (
+                isinstance(self.project, SongProject)
+                and isinstance(other.project, SongProject)
+                and self.project.project_id == other.project.project_id
+            )
+        return (
+            isinstance(self.project, TakeProject)
+            and isinstance(other.project, TakeProject)
+            and self.project.session_id == other.project.session_id
+            and self.project.take_id == other.project.take_id
+        )
 
     def _catalog(
         self,
@@ -897,6 +1061,9 @@ class StudioRenderer:
         dict[str, tuple[StudioCompRange, ...]],
     ]:
         """Resolve the complete active edit list against immutable catalog IDs."""
+
+        if self._song_project:
+            return self._catalog_song()
 
         project_tracks = {item.track_id: item for item in self.project.tracks}
         segments: dict[StudioSourceKey, tuple[ProjectTrack, MediaSegment]] = {}
@@ -1006,6 +1173,131 @@ class StudioRenderer:
                 ):
                     raise StudioRenderError(
                         "Take-lane media does not match its declared source."
+                    )
+
+        comps_by_track: dict[str, list[StudioCompRange]] = {}
+        for comp_range in sorted(
+            (item for item in self.document.comp_ranges if _active_comp(item)),
+            key=lambda item: (
+                item.track_id,
+                item.timeline_start_frame,
+                item.comp_range_id,
+            ),
+        ):
+            lane = active_lanes.get(comp_range.lane_id)
+            if lane is None:
+                raise StudioRenderError("Comp range references an inactive take lane.")
+            if (
+                comp_range.fade_in_frames + comp_range.fade_out_frames
+                > comp_range.frame_count
+            ):
+                raise StudioRenderError(
+                    "Comp fade ranges overlap and cannot be rendered safely."
+                )
+            lane_regions = tuple(
+                region_by_id[region_id]
+                for region_id in lane.region_ids
+                if region_id in region_by_id
+            )
+            self._require_comp_coverage(comp_range, lane_regions)
+            comps_by_track.setdefault(comp_range.track_id, []).append(comp_range)
+
+        return (
+            source_plans,
+            active_regions,
+            lane_by_region,
+            {key: tuple(value) for key, value in comps_by_track.items()},
+        )
+
+    def _catalog_song(
+        self,
+    ) -> tuple[
+        dict[StudioSourceKey, _SourcePlan],
+        tuple[StudioRegion, ...],
+        dict[str, str],
+        dict[str, tuple[StudioCompRange, ...]],
+    ]:
+        """Resolve schema-3 media IDs through one sealed song catalog."""
+
+        if (
+            not isinstance(self.project, SongProject)
+            or type(self.source_catalog) is not SongMediaCatalog
+        ):
+            raise StudioRenderError(
+                "Song Studio rendering requires a trusted project media catalog."
+            )
+        active_regions = tuple(
+            sorted(
+                (item for item in self.document.regions if _active_region(item)),
+                key=lambda item: (
+                    item.track_id,
+                    item.timeline_start_frame,
+                    item.timeline_end_frame,
+                    item.region_id,
+                ),
+            )
+        )
+        source_plans: dict[StudioSourceKey, _SourcePlan] = {}
+        for region in active_regions:
+            source_key = self._region_source_key(region)
+            try:
+                catalog_source = self.source_catalog.resolve(region.source_media_id)
+            except SongMediaCatalogError as exc:
+                raise StudioRenderError(str(exc)) from exc
+            media = catalog_source.media
+            if media.media_id not in {item.media_id for item in self.project.media}:
+                raise StudioRenderError(
+                    "Studio region does not match the song media catalog."
+                )
+            if region.source_end_frame > media.frame_count:
+                raise StudioRenderError(
+                    "Studio region extends beyond its cataloged source media."
+                )
+            mapping_source_start = int(region.mapping_source_start_frame)
+            mapping_source_count = int(region.mapping_source_frame_count)
+            if (
+                mapping_source_start < 0
+                or mapping_source_start + mapping_source_count > media.frame_count
+            ):
+                raise StudioRenderError(
+                    "Studio region's affine map escapes its source media."
+                )
+            source_plans.setdefault(
+                source_key,
+                _SourcePlan(
+                    key=source_key,
+                    track=_SongSourceTrack(track_id=region.track_id),
+                    segment=_SongSourceSegment.from_media(media),
+                    take_root=catalog_source.bundle_root,
+                    relative_path=media.path,
+                    expected_root_identity=catalog_source.bundle_identity,
+                ),
+            )
+
+        owned_lanes = {
+            item.lane_id: item for item in self.document.take_lanes if not item.deleted
+        }
+        active_lanes = {
+            lane_id: lane for lane_id, lane in owned_lanes.items() if _active_lane(lane)
+        }
+        region_by_id = {item.region_id: item for item in active_regions}
+        lane_by_region: dict[str, str] = {}
+        for lane in sorted(owned_lanes.values(), key=lambda item: item.lane_id):
+            for region_id in lane.region_ids:
+                region = region_by_id.get(region_id)
+                if region is None:
+                    continue
+                previous = lane_by_region.setdefault(region_id, lane.lane_id)
+                if previous != lane.lane_id:
+                    raise StudioRenderError(
+                        "An active Studio region belongs to more than one take lane."
+                    )
+                if (
+                    region.track_id != lane.track_id
+                    or region.source_media_id != lane.source_media_id
+                ):
+                    raise StudioRenderError(
+                        "Take-lane media does not match its declared song source."
                     )
 
         comps_by_track: dict[str, list[StudioCompRange]] = {}
@@ -1182,11 +1474,7 @@ class StudioRenderer:
             raise StudioRenderError("cancel_check must be callable or null.")
         if not self.take_root.is_dir():
             raise StudioRenderError("The take folder is missing.")
-        if self.source_catalog is not None:
-            try:
-                self.source_catalog.assert_current(cancel_check)
-            except StudioSourceCatalogError as exc:
-                raise StudioRenderError(str(exc)) from exc
+        self._require_catalog_current(cancel_check)
         try:
             import soundfile as sf  # type: ignore
         except ImportError as exc:  # pragma: no cover - packaged dependency
@@ -1303,8 +1591,7 @@ class StudioRenderer:
         if not validated_renderer._media_validated:
             raise StudioRenderError("The source renderer has not validated media.")
         if (
-            self.project.session_id != validated_renderer.project.session_id
-            or self.project.take_id != validated_renderer.project.take_id
+            not self._same_project_identity(validated_renderer)
             or self.take_root != validated_renderer.take_root
             or self.source_catalog is not validated_renderer.source_catalog
         ):
@@ -1342,11 +1629,10 @@ class StudioRenderer:
     ) -> bool:
         if cancel_check is not None and not callable(cancel_check):
             raise StudioRenderError("cancel_check must be callable or null.")
-        if self.source_catalog is not None:
-            try:
-                self.source_catalog.assert_current(cancel_check)
-            except StudioSourceCatalogError:
-                return False
+        try:
+            self._require_catalog_current(cancel_check)
+        except StudioRenderError:
+            return False
         if not self._media_validated or len(self._validated_sources) != len(
             self._required_source_keys
         ):
@@ -1401,6 +1687,17 @@ class StudioRenderer:
             raise StudioRenderError("cancel_check must be callable or null.")
         if not isinstance(realtime_safe, bool):
             raise StudioRenderError("realtime_safe must be true or false.")
+        if (
+            realtime_safe
+            and self._song_project
+            and not studio_mixer_capability(
+                self.document
+            ).realtime_playback_supported
+        ):
+            raise StudioRenderError(
+                "This effect graph is available for offline bounce but exceeds "
+                "the tested interactive playback budget."
+            )
         if not self._media_validated:
             self.validate_media(cancel_check)
         elif not self._media_validation_is_current(cancel_check):
@@ -1412,6 +1709,7 @@ class StudioRenderer:
             start_frame=start,
             end_frame=end,
             realtime_safe=realtime_safe,
+            cancel_check=cancel_check,
         )
         if realtime_safe:
             try:
@@ -1427,6 +1725,7 @@ class StudioRenderer:
         start_frame: int = 0,
         end_frame: int | None = None,
         block_frames: int | None = None,
+        cancel_check: Callable[[], None] | None = None,
     ) -> Iterator[np.ndarray]:
         """Yield consecutive stereo float32 blocks from the authoritative path."""
 
@@ -1435,14 +1734,24 @@ class StudioRenderer:
             if block_frames is None
             else _block_count(block_frames, "block_frames")
         )
-        with self.open(start_frame=start_frame, end_frame=end_frame) as stream:
+        with self.open(
+            start_frame=start_frame,
+            end_frame=end_frame,
+            cancel_check=cancel_check,
+        ) as stream:
             while True:
                 block = stream.read(count)
                 if not len(block):
                     return
                 yield block
 
-    def render_block(self, start_frame: int, frame_count: int) -> np.ndarray:
+    def render_block(
+        self,
+        start_frame: int,
+        frame_count: int,
+        *,
+        cancel_check: Callable[[], None] | None = None,
+    ) -> np.ndarray:
         """Render one random-access block through the same streaming mixer."""
 
         start = _integer_frame(start_frame, "start_frame")
@@ -1450,7 +1759,11 @@ class StudioRenderer:
         end = start + count
         if end > MAX_PROJECT_FRAMES:
             raise StudioRenderError("Requested render block is outside the timeline.")
-        with self.open(start_frame=start, end_frame=end) as stream:
+        with self.open(
+            start_frame=start,
+            end_frame=end,
+            cancel_check=cancel_check,
+        ) as stream:
             return stream.read(count)
 
     def _region_envelope(
@@ -1564,19 +1877,49 @@ class StudioRenderStream:
         start_frame: int,
         end_frame: int,
         realtime_safe: bool = False,
+        cancel_check: Callable[[], None] | None = None,
     ) -> None:
         self.renderer = renderer
         self.start_frame = start_frame
         self.end_frame = end_frame
         self.position_frame = start_frame
         self._readers: OrderedDict[StudioSourceKey, _OpenSourceReader] = OrderedDict()
-        self._track_states = {
-            item.track.track_id: item.track for item in renderer._track_plans
+        visible_ids = {
+            item.track.track_id for item in renderer._track_plans
         }
+        if renderer._song_project:
+            self._track_states = {}
+            for track in renderer.document.tracks:
+                if (
+                    track.track_id not in visible_ids
+                    and track.kind
+                    in {StudioTrackKind.AUDIO, StudioTrackKind.BACKING}
+                ):
+                    self._track_states[track.track_id] = replace(
+                        track,
+                        muted=True,
+                        solo=False,
+                    )
+                else:
+                    self._track_states[track.track_id] = track
+            try:
+                self._mix_engine: StudioMixEngine | None = StudioMixEngine(
+                    renderer.document
+                )
+            except StudioMixerError as exc:
+                raise StudioRenderError(str(exc)) from exc
+        else:
+            self._track_states = {
+                item.track.track_id: item.track for item in renderer._track_plans
+            }
+            self._mix_engine = None
+        self._visible_track_ids = frozenset(visible_ids)
         self._master = renderer.document.master
         self._closed = False
         self._realtime_safe = bool(realtime_safe)
         self._preparing_sources = False
+        self._cancel_check = cancel_check
+        self._cancel_exception: Exception | None = None
 
     @property
     def sample_rate(self) -> int:
@@ -1635,6 +1978,7 @@ class StudioRenderStream:
                 self._reader_for(sources[source_key])
             if cancel_check is not None:
                 cancel_check()
+            self._ensure_mix_ready(self.position_frame)
         finally:
             self._preparing_sources = False
 
@@ -1768,6 +2112,8 @@ class StudioRenderStream:
         if target < self.start_frame or target > self.end_frame:
             raise StudioRenderError("Seek frame is outside this render stream.")
         self.position_frame = target
+        if self._mix_engine is not None:
+            self._mix_engine.reset()
         return target
 
     def set_track_mix(self, track_id: str, **changes: object) -> StudioTrack:
@@ -1775,8 +2121,9 @@ class StudioRenderStream:
 
         if self._closed:
             raise StudioRenderError("Studio render stream is closed.")
-        state = self._track_states.get(str(track_id))
-        if state is None:
+        canonical = str(track_id)
+        state = self._track_states.get(canonical)
+        if state is None or canonical not in self._visible_track_ids:
             raise StudioRenderError("Render stream does not contain that track.")
         allowed = {
             "trim_gain",
@@ -1828,13 +2175,32 @@ class StudioRenderStream:
         if count <= 0:
             return np.zeros((0, 2), dtype=np.float32), {
                 track_id: np.zeros((0, 2), dtype=np.float32)
-                for track_id in self._track_states
+                for track_id in self._visible_track_ids
             }
         start = self.position_frame
+        self._cancel_exception = None
         try:
+            self._ensure_mix_ready(start)
             tracks = self._render_tracks(start, count)
-            block = self._mix_tracks(tracks, count)
+            if self._mix_engine is None:
+                block = self._mix_tracks(tracks, count)
+            else:
+                result = self._mix_song_tracks(tracks, start, count)
+                block = result.master
+                tracks = {
+                    track_id: value
+                    for track_id, value in result.tracks.items()
+                    if track_id in self._visible_track_ids
+                }
         except Exception as exc:
+            if self._mix_engine is not None:
+                # A cancelled/failed stateful block is never reusable because
+                # some processors may have advanced before the exception.
+                self._mix_engine.reset()
+            cancellation = self._cancel_exception
+            self._cancel_exception = None
+            if cancellation is not None:
+                raise cancellation
             if isinstance(exc, StudioRenderError):
                 raise
             raise StudioRenderError(
@@ -1845,12 +2211,18 @@ class StudioRenderStream:
 
     def _render_tracks(self, start: int, count: int) -> dict[str, np.ndarray]:
         rendered_tracks: dict[str, np.ndarray] = {}
+        song_mix = self._mix_engine is not None
         any_solo = any(state.solo for state in self._track_states.values())
         for track_plan in self.renderer._track_plans:
             state = self._track_states[track_plan.track.track_id]
-            audible = not state.muted and (state.solo or not any_solo)
+            audible = song_mix or (
+                not state.muted and (state.solo or not any_solo)
+            )
             track_mix = np.zeros((count, 2), dtype=np.float32)
-            if not audible or state.trim_gain <= 0.0 or state.fader_gain <= 0.0:
+            if not audible or (
+                not song_mix
+                and (state.trim_gain <= 0.0 or state.fader_gain <= 0.0)
+            ):
                 rendered_tracks[state.track_id] = track_mix
                 continue
             for region_plan in track_plan.regions:
@@ -1869,14 +2241,63 @@ class StudioRenderStream:
                 stereo = self._to_stereo(source)
                 track_mix[destination : destination + len(stereo)] += stereo
 
-            pan = np.float32(state.pan)
-            if pan < 0.0:
-                track_mix[:, 1] *= np.float32(1.0) + pan
-            elif pan > 0.0:
-                track_mix[:, 0] *= np.float32(1.0) - pan
-            track_mix *= np.float32(state.trim_gain * state.fader_gain)
+            if not song_mix:
+                pan = np.float32(state.pan)
+                if pan < 0.0:
+                    track_mix[:, 1] *= np.float32(1.0) + pan
+                elif pan > 0.0:
+                    track_mix[:, 0] *= np.float32(1.0) - pan
+                track_mix *= np.float32(state.trim_gain * state.fader_gain)
             rendered_tracks[state.track_id] = track_mix
         return rendered_tracks
+
+    def _mix_song_tracks(
+        self,
+        tracks: dict[str, np.ndarray],
+        start: int,
+        count: int,
+    ) -> StudioMixResult:
+        assert self._mix_engine is not None
+        try:
+            return self._mix_engine.process_block(
+                start_frame=start,
+                frame_count=count,
+                raw_tracks=tracks,
+                track_states=self._track_states,
+                master=self._master,
+                apply_master=self.renderer.apply_master,
+                cancel_check=(
+                    self._check_cancel
+                    if self._cancel_check is not None
+                    else None
+                ),
+            )
+        except StudioMixerError as exc:
+            raise StudioRenderError(str(exc)) from exc
+
+    def _ensure_mix_ready(self, target_frame: int) -> None:
+        """Reset and boundedly pre-roll stateful schema-3 DSP after a seek."""
+
+        engine = self._mix_engine
+        if engine is None or engine.expected_frame == target_frame:
+            return
+        engine.reset()
+        cursor = min(target_frame, self.renderer.timeline_start_frame)
+        while cursor < target_frame:
+            self._check_cancel()
+            count = min(self.renderer.block_frames, target_frame - cursor)
+            tracks = self._render_tracks(cursor, count)
+            self._mix_song_tracks(tracks, cursor, count)
+            cursor += count
+
+    def _check_cancel(self) -> None:
+        if self._cancel_check is None:
+            return
+        try:
+            self._cancel_check()
+        except Exception as exc:
+            self._cancel_exception = exc
+            raise
 
     def _mix_tracks(self, tracks: dict[str, np.ndarray], count: int) -> np.ndarray:
         mix = np.zeros((count, 2), dtype=np.float32)
@@ -1994,7 +2415,7 @@ class StudioRenderStream:
 
 
 def iter_studio_blocks(
-    project: TakeProject,
+    project: TakeProject | SongProject,
     document: StudioDocument,
     take_root: str | Path,
     *,
@@ -2005,7 +2426,8 @@ def iter_studio_blocks(
     respect_export_included: bool = False,
     apply_master: bool = True,
     verify_checksums: bool = True,
-    source_catalog: StudioSourceCatalog | None = None,
+    source_catalog: StudioSourceCatalog | SongMediaCatalog | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[np.ndarray]:
     """Convenience iterator over :class:`StudioRenderer`'s shared path."""
 
@@ -2024,6 +2446,7 @@ def iter_studio_blocks(
         start_frame=start_frame,
         end_frame=end_frame,
         block_frames=block_frames,
+        cancel_check=cancel_check,
     )
 
 

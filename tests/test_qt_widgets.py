@@ -746,6 +746,8 @@ class TestConductorWindow(unittest.TestCase):
 
         body = set_text.call_args.args[0]
         self.assertIn("More → Studio", body)
+        self.assertIn("build a song project", body)
+        self.assertIn("review completed session takes", body)
         self.assertNotIn("Multitrack Studio", body)
 
     def test_help_copy_uses_real_macos_shortcut_modifiers(self):
@@ -765,7 +767,10 @@ class TestConductorWindow(unittest.TestCase):
 
         body = set_text.call_args.args[0]
         self.assertIn("⌘1 / ⌘2 / ⌘3 — Live / Notes / Studio", body)
-        self.assertIn("⌘S / ⌘O — Save / load your monitor mix", body)
+        self.assertIn(
+            "⌘S / ⌘O — Save / load your monitor mix while Live is open",
+            body,
+        )
         self.assertIn("Control+Shift+R — Reset every fader", body)
         self.assertNotIn("Ctrl+1", body)
 
@@ -790,7 +795,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.20.0", body)
+        self.assertIn("WebJam v0.21.0", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)
@@ -838,6 +843,63 @@ class TestConductorWindow(unittest.TestCase):
     def test_settings_shortcut_exists(self):
         w = self._window()
         self.assertIsNotNone(w._settings_shortcut)
+
+    def test_live_session_shortcuts_cannot_compete_with_studio_commands(self):
+        from PySide6.QtCore import Qt
+
+        w = self._window()
+        for shortcut in (
+            w._save_mix_shortcut,
+            w._load_mix_shortcut,
+            w._save_mix_as_shortcut,
+            w._load_mix_from_shortcut,
+            w._timestamp_shortcut,
+            w._practice_shortcut,
+            w._mute_all_shortcut,
+            w._reset_faders_shortcut,
+        ):
+            self.assertIs(shortcut.parent(), w.center_splitter)
+            self.assertEqual(
+                shortcut.context(),
+                Qt.ShortcutContext.WidgetWithChildrenShortcut,
+            )
+
+    def test_offline_reference_studio_disables_hidden_live_navigation(self):
+        w = self._window()
+        w.show_reference_studio_only()
+        self.assertTrue(w._reference_studio_only)
+        self.assertFalse(w.session_strip.isVisible())
+        self.assertFalse(w.session_hud.isVisible())
+        self.assertFalse(w.session_controls.isVisible())
+        self.assertFalse(w.side_rail.isVisible())
+        self.assertFalse(w._title_shortcut.isEnabled())
+        self.assertFalse(w._ready_check_shortcut.isEnabled())
+        self.assertTrue(
+            all(not shortcut.isEnabled() for shortcut in w._navigation_shortcuts)
+        )
+        self.assertIs(
+            w.workspace_stack.currentWidget(),
+            w.reference_studio,
+        )
+
+    def test_offline_reference_studio_help_does_not_describe_live_setup(self):
+        w = self._window()
+        from unittest import mock
+
+        w.show_reference_studio_only()
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("Build and rehearse a song offline", body)
+        self.assertIn("Import a backing track", body)
+        self.assertIn("separate from Jamulus", body)
+        self.assertNotIn("Copy Invite", body)
 
     def test_close_event_respects_confirm_close_veto(self):
         w = self._window()

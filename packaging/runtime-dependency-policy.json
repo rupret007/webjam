@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "targets": [
+    "linux-x64",
+    "macos-arm64",
+    "macos-x64",
+    "windows-x64"
+  ],
+  "allowed_runtime_license_ids": [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "LGPL-2.0-or-later",
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-only",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "PSF-2.0",
+    "Zlib"
+  ],
+  "packages": {
+    "altgraph": {
+      "scope": "build",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/ronaldoussoren/altgraph"
+    },
+    "annotated-doc": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/fastapi/annotated-doc"
+    },
+    "annotated-types": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/annotated-types/annotated-types"
+    },
+    "anyio": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/agronholm/anyio"
+    },
+    "certifi": {
+      "scope": "runtime",
+      "license_expression": "MPL-2.0",
+      "homepage": "https://github.com/certifi/python-certifi"
+    },
+    "cffi": {
+      "scope": "runtime",
+      "license_expression": "MIT-0",
+      "homepage": "https://github.com/python-cffi/cffi"
+    },
+    "click": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/pallets/click"
+    },
+    "colorama": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/tartley/colorama"
+    },
+    "cryptography": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/pyca/cryptography"
+    },
+    "customtkinter": {
+      "scope": "excluded",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/TomSchimansky/CustomTkinter"
+    },
+    "darkdetect": {
+      "scope": "excluded",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/albertosottile/darkdetect"
+    },
+    "fastapi": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/fastapi/fastapi"
+    },
+    "h11": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/python-hyper/h11"
+    },
+    "httpcore": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/encode/httpcore"
+    },
+    "httpx": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/encode/httpx"
+    },
+    "idna": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/kjd/idna"
+    },
+    "macholib": {
+      "scope": "build",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/ronaldoussoren/macholib"
+    },
+    "numpy": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "homepage": "https://github.com/numpy/numpy"
+    },
+    "packaging": {
+      "scope": "runtime",
+      "license_expression": "BSD-2-Clause",
+      "homepage": "https://github.com/pypa/packaging"
+    },
+    "pefile": {
+      "scope": "build",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/erocarrera/pefile"
+    },
+    "pycparser": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/eliben/pycparser"
+    },
+    "pydantic": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/pydantic/pydantic"
+    },
+    "pydantic-core": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/pydantic/pydantic-core"
+    },
+    "pyinstaller": {
+      "scope": "build",
+      "license_expression": "GPL-2.0-or-later WITH Bootloader-exception",
+      "homepage": "https://github.com/pyinstaller/pyinstaller"
+    },
+    "pyinstaller-hooks-contrib": {
+      "scope": "build",
+      "license_expression": "Apache-2.0 OR GPL-2.0-or-later",
+      "homepage": "https://github.com/pyinstaller/pyinstaller-hooks-contrib"
+    },
+    "pyside6": {
+      "scope": "runtime",
+      "license_expression": "LGPL-3.0-only",
+      "homepage": "https://code.qt.io/cgit/pyside/pyside-setup.git/"
+    },
+    "pyside6-addons": {
+      "scope": "runtime",
+      "license_expression": "LGPL-3.0-only",
+      "homepage": "https://code.qt.io/cgit/pyside/pyside-setup.git/"
+    },
+    "pyside6-essentials": {
+      "scope": "runtime",
+      "license_expression": "LGPL-3.0-only",
+      "homepage": "https://code.qt.io/cgit/pyside/pyside-setup.git/"
+    },
+    "pywin32-ctypes": {
+      "scope": "build",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/enthought/pywin32-ctypes"
+    },
+    "segno": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/heuer/segno"
+    },
+    "sentry-sdk": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/getsentry/sentry-python"
+    },
+    "setuptools": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/pypa/setuptools"
+    },
+    "shiboken6": {
+      "scope": "runtime",
+      "license_expression": "LGPL-3.0-only",
+      "homepage": "https://code.qt.io/cgit/pyside/pyside-setup.git/"
+    },
+    "sounddevice": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/spatialaudio/python-sounddevice"
+    },
+    "soundfile": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/bastibe/python-soundfile"
+    },
+    "starlette": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/Kludex/starlette"
+    },
+    "typing-extensions": {
+      "scope": "runtime",
+      "license_expression": "PSF-2.0",
+      "homepage": "https://github.com/python/typing_extensions"
+    },
+    "typing-inspection": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/pydantic/typing-inspection"
+    },
+    "urllib3": {
+      "scope": "runtime",
+      "license_expression": "MIT",
+      "homepage": "https://github.com/urllib3/urllib3"
+    },
+    "uvicorn": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/encode/uvicorn"
+    },
+    "websockets": {
+      "scope": "runtime",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/python-websockets/websockets"
+    }
+  },
+  "soundfile_bundled_native_components": [
+    {
+      "name": "libsndfile",
+      "version": "1.2.2",
+      "license_expression": "LGPL-2.1-or-later",
+      "homepage": "https://github.com/libsndfile/libsndfile",
+      "mp3": true
+    },
+    {
+      "name": "libFLAC",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/xiph/flac",
+      "mp3": false
+    },
+    {
+      "name": "libmp3lame",
+      "license_expression": "LGPL-2.0-or-later",
+      "homepage": "https://sourceforge.net/p/lame/svn/HEAD/tree/",
+      "mp3": true
+    },
+    {
+      "name": "libmpg123",
+      "license_expression": "LGPL-2.1-only",
+      "homepage": "https://www.mpg123.de/",
+      "mp3": true
+    },
+    {
+      "name": "libogg",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/xiph/ogg",
+      "mp3": false
+    },
+    {
+      "name": "libopus",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/xiph/opus",
+      "mp3": false
+    },
+    {
+      "name": "libvorbis",
+      "license_expression": "BSD-3-Clause",
+      "homepage": "https://github.com/xiph/vorbis",
+      "mp3": false
+    }
+  ],
+  "mp3_capability": {
+    "import": {
+      "availability": "runtime-probed",
+      "probe": "soundfile.check_format('MP3')"
+    },
+    "bounce": {
+      "availability": "disabled-by-default",
+      "bundled_default_adapter": false
+    },
+    "bundled_standalone_encoder": false
+  },
+  "packaged_license_evidence": [
+    {
+      "component": "NumPy 2.4.6 and bundled sources",
+      "path_suffix": "numpy-2.4.6.dist-info/licenses/LICENSE.txt",
+      "sha256": "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf"
+    },
+    {
+      "component": "libsndfile LGPL-2.1",
+      "path_suffix": "_soundfile_data/COPYING",
+      "sha256": "ad01ea5cd2755f6048383c8d54c88459cd6fcb17757c5c8892f8c5ea060f6140"
+    },
+    {
+      "component": "SoundFile wheel native-component notes",
+      "path_suffix": "THIRD_PARTY_LICENSES/SOUNDFILE_WHEEL_LICENSE_NOTES.md",
+      "sha256": "35630e1f59b5c54b0bcbe2ec173bcf5a63b727a6e2f7834ca6d35a1af91a2b5f"
+    },
+    {
+      "component": "SoundFile BSD-3-Clause",
+      "path_suffix": "THIRD_PARTY_LICENSES/SOUNDFILE_LICENSE.txt",
+      "sha256": "0dd2e411fed553ba891845077e5a32c5b726d1bbc46ff31a2118ae1ccf816752"
+    }
+  ]
+}

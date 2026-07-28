@@ -72,15 +72,27 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
     dialog = ReferenceTrackDialog()
     try:
         dialog.setStyleSheet(load_stylesheet())
-        for width in (620, 760):
-            dialog.resize(width, 540)
+        locked = _snapshot(_State.UNAVAILABLE, available=False)
+        locked.capability.detail = (
+            "Reference Track is locked until BlackHole 16ch is installed and "
+            "its isolated send-only route is verified. Playback remains "
+            "disabled to prevent feedback or direct-monitor doubling."
+        )
+        dialog.set_snapshot(locked)
+        for width, height in ((500, 500), (620, 540), (760, 540)):
+            dialog.resize(width, height)
             dialog.show()
+            _app.processEvents()
+            vertical = dialog._scroll_area.verticalScrollBar()
+            vertical.setValue(0)
             _app.processEvents()
 
             assert dialog.width() <= 760
             assert dialog.height() <= 540
+            assert dialog._route.isVisibleTo(dialog)
+            assert "locked until BlackHole" in dialog._route.text()
+            assert dialog._route.width() <= dialog._scroll_area.viewport().width()
             assert dialog._scroll_area.horizontalScrollBar().maximum() == 0
-            vertical = dialog._scroll_area.verticalScrollBar()
             assert vertical.maximum() > 0
             assert "Scroll vertically" in (
                 dialog._scroll_area.accessibleDescription()

@@ -327,16 +327,20 @@ class TestControllerOpensDeck(unittest.TestCase):
         c._on_rail_view_changed("takes")
         self.assertIs(
             c.window.workspace_stack.currentWidget(),
-            c.window.recording_studio,
+            c.window.reference_studio,
         )
+        self.assertIs(c.window.reference_studio.take_review, c.window.recording_studio)
+        self.assertEqual(c.window.reference_studio.current_view(), "takes")
 
     def test_compatibility_open_take_deck_reveals_studio(self):
         c = self.controller
         c._open_take_deck()
         self.assertIs(
             c.window.workspace_stack.currentWidget(),
-            c.window.recording_studio,
+            c.window.reference_studio,
         )
+        self.assertIs(c.window.reference_studio.take_review, c.window.recording_studio)
+        self.assertEqual(c.window.reference_studio.current_view(), "takes")
 
 
 if __name__ == "__main__":

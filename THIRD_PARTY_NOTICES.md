@@ -128,6 +128,33 @@ them in `THIRD_PARTY_LICENSES`; this does not claim that an already-published
 artifact contains them. Any future promoted package must inventory its exact
 dependency graph and verify the staged license files during package inspection.
 
+## Complete frozen Python runtime and audio-codec inventory
+
+The exact four-target Python release locks are classified by the reviewed
+policy in
+[`packaging/runtime-dependency-policy.json`](packaging/runtime-dependency-policy.json).
+Its deterministic checker fails closed if a locked distribution is
+unattributed, if a reviewed entry becomes stale, or if a selected frozen
+runtime license is GPL or AGPL. LGPL remains permitted and attributed. This
+Python-runtime rule does not reclassify the separately executed Jamulus
+distribution above or PyInstaller's freeze-time bootloader exception.
+
+The generated human-readable inventory is
+[`THIRD_PARTY_NOTICES_RUNTIME.md`](THIRD_PARTY_NOTICES_RUNTIME.md), with a
+matching CycloneDX 1.5 artifact at
+[`packaging/WebJam-runtime-sbom.cdx.json`](packaging/WebJam-runtime-sbom.cdx.json). Both
+files, the reviewed policy, SoundFile's exact BSD notice, SoundFile's wheel
+codec notes, NumPy's wheel license inventory, and libsndfile's wheel-provided
+LGPL text are verified in every native package.
+
+Reference Studio does not add FFmpeg or a separate MP3 executable. MP3 import
+remains a packaged-codec capability: WebJam must probe
+`soundfile.check_format("MP3")` and hide or refuse MP3 operations when that
+probe fails. Reference Studio MP3 bounce remains disabled by default and must
+not be enabled by the import probe alone; no default encoder adapter is
+bundled. SoundFile's libsndfile wheel payload and its libmpg123/libmp3lame
+terms are recorded in the generated runtime notice.
+
 ## WebJam fabric transport
 
 WebJam bundles `webjam-fabric`, its statically compiled native transport

@@ -14,6 +14,9 @@ Linux and Windows builds currently join a jam hosted from the macOS build.
 "Host a Jam" remains disabled on this platform; this package does not claim
 to provide the macOS-only managed band server.
 
+Standalone Reference Studio remains available for local songwriting,
+recording, arranging, mixing, and WAV/FLAC bounce without joining Jamulus.
+
 FIRST RUN
 
 1. Install the included, checksum-verified Jamulus 3.12.2 package:

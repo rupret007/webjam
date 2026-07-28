@@ -163,7 +163,10 @@ def test_open_failure_is_announced_and_keeps_retry_action_focused(tmp_path):
     dialog.close()
 
 
-def test_save_failure_is_announced_without_moving_from_retry_action(tmp_path):
+def test_save_failure_is_announced_without_leaking_or_moving_from_retry_action(
+    tmp_path,
+    caplog,
+):
     dialog = _dialog(tmp_path, opener=lambda _url: True)
     dialog.show()
     _app.processEvents()
@@ -177,7 +180,9 @@ def test_save_failure_is_announced_without_moving_from_retry_action(tmp_path):
     with (
         patch(
             "webjam_qt.windows.simple_settings.save_settings",
-            side_effect=OSError("private path"),
+            side_effect=OSError(
+                "/Users/private/WebJam/settings.json contained secret-token"
+            ),
         ),
         patch(
             "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
@@ -190,6 +195,9 @@ def test_save_failure_is_announced_without_moving_from_retry_action(tmp_path):
     assert dialog._error.accessibleDescription() == dialog._error.text()
     assert save.hasFocus()
     announce.assert_called_once()
+    assert "OSError" in caplog.text
+    assert "/Users/private" not in caplog.text
+    assert "secret-token" not in caplog.text
     dialog.close()
 
 

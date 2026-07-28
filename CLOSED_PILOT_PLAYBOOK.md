@@ -1,7 +1,7 @@
 # WebJam closed-pilot handoff
 
-The current v0.20.0 private test candidate validates a simple rehearsal and
-arranging experience:
+The current v0.21.0 private test candidate validates a simple live rehearsal,
+session-arranging, and standalone Reference Studio experience:
 
 1. Host or Join.
 2. Native Jamulus sound setup; WebJam moves into the session automatically

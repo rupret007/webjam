@@ -87,6 +87,8 @@ def test_upgrade_replaces_only_the_owned_pyinstaller_tree() -> None:
 def test_user_facing_legal_and_managed_pc_context_are_included() -> None:
     assert "LicenseFile=..\\..\\LICENSE" in SCRIPT
     assert 'Source: "..\\..\\THIRD_PARTY_NOTICES.md"' in SCRIPT
+    assert 'Source: "..\\..\\THIRD_PARTY_NOTICES_RUNTIME.md"' in SCRIPT
+    assert 'DestName: "WebJam-runtime-sbom.cdx.json"' in SCRIPT
     assert 'Source: "README-WINDOWS.txt"' in SCRIPT
     assert "does not require administrator access" in README
     assert "may require IT approval" in README

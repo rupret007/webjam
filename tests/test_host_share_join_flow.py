@@ -34,6 +34,7 @@ from webjam_qt.windows.launch_dialog import apply_join_invite
 def qapp():
     return QApplication.instance() or QApplication(sys.argv[:1])
 
+
 def test_invite_link_round_trip_contains_only_public_connection_data():
     link = create_invite_link(
         "192.168.1.42", port=22124, session_name="Sunday Rehearsal"
@@ -63,7 +64,7 @@ def test_invite_parser_rejects_wrong_or_ambiguous_links(value):
         parse_invite_link(value)
 
 
-def test_launch_initially_shows_only_host_and_join_actions(qapp, tmp_path):
+def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
@@ -77,10 +78,30 @@ def test_launch_initially_shows_only_host_and_join_actions(qapp, tmp_path):
     assert [button.accessibleName() for button in visible_actions] == [
         "Host a Jam",
         "Join a Jam",
+        "Play Along / Record",
     ]
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
+
+
+def test_reference_studio_choice_does_not_rewrite_live_settings(qapp, tmp_path):
+    config = tmp_path / "settings.json"
+    settings = AppSettings(
+        config_file=str(config),
+        jamulus_server="band.example",
+        host_server_enabled=False,
+    )
+    dialog = LaunchDialog(settings)
+
+    dialog._studio_button.click()
+
+    assert dialog.selected_role == "studio"
+    assert dialog.session_name == "Reference Studio"
+    assert dialog.result() == dialog.DialogCode.Accepted
+    assert not config.exists()
+    assert settings.jamulus_server == "band.example"
+    assert settings.host_server_enabled is False
 
 
 def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
@@ -91,13 +112,18 @@ def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
         config_file=str(tmp_path / "settings.json"),
         jamulus_candidates=[],
     )
-    with patch.object(sys, "platform", "win32"), patch(
-        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
-        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
-    ), patch(
-        "services.bridge_service._is_pinned_jamulus_installer",
-        return_value=True,
-    ), patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen:
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+            return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+        ),
+        patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=True,
+        ),
+        patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen,
+    ):
         dialog = LaunchDialog(settings)
         dialog.show()
         qapp.processEvents()
@@ -120,9 +146,12 @@ def test_windows_installer_button_stays_hidden_when_jamulus_is_installed(
     installed = tmp_path / "Jamulus.exe"
     installed.write_bytes(b"stub")
     settings = AppSettings(jamulus_candidates=[str(installed)])
-    with patch.object(sys, "platform", "win32"), patch(
-        "services.bridge_service._bundled_jamulus_installer",
-        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "services.bridge_service._bundled_jamulus_installer",
+            return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+        ),
     ):
         dialog = LaunchDialog(settings)
         dialog.show()
@@ -133,15 +162,20 @@ def test_windows_installer_button_stays_hidden_when_jamulus_is_installed(
 
 def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
     settings = AppSettings(jamulus_candidates=[])
-    with patch.object(sys, "platform", "win32"), patch(
-        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
-        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
-    ), patch(
-        "services.bridge_service._is_pinned_jamulus_installer",
-        return_value=True,
-    ), patch(
-        "webjam_qt.windows.launch_dialog.subprocess.Popen",
-        side_effect=OSError("blocked"),
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+            return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+        ),
+        patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=True,
+        ),
+        patch(
+            "webjam_qt.windows.launch_dialog.subprocess.Popen",
+            side_effect=OSError("blocked"),
+        ),
     ):
         dialog = LaunchDialog(settings)
         dialog._install_jamulus_button.click()
@@ -151,13 +185,18 @@ def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
 
 def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path):
     settings = AppSettings(jamulus_candidates=[])
-    with patch.object(sys, "platform", "win32"), patch(
-        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
-        return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
-    ), patch(
-        "services.bridge_service._is_pinned_jamulus_installer",
-        return_value=False,
-    ), patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen:
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+            return_value="C:/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe",
+        ),
+        patch(
+            "services.bridge_service._is_pinned_jamulus_installer",
+            return_value=False,
+        ),
+        patch("webjam_qt.windows.launch_dialog.subprocess.Popen") as popen,
+    ):
         dialog = LaunchDialog(settings)
         dialog._install_jamulus_button.click()
 
@@ -236,15 +275,11 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     dialog.show()
     qapp.processEvents()
     visible_fields = [
-        field
-        for field in dialog.findChildren(QLineEdit)
-        if field.isVisibleTo(dialog)
+        field for field in dialog.findChildren(QLineEdit) if field.isVisibleTo(dialog)
     ]
     assert visible_fields == [dialog._invite_input]
     dialog._invite_input.setText(
-        create_invite_link(
-            "192.168.1.42", session_name="Drummer Test"
-        )
+        create_invite_link("192.168.1.42", session_name="Drummer Test")
     )
     dialog._join_button_primary.click()
     data = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
@@ -499,9 +534,7 @@ def test_peer_bind_failure_keeps_jamulus_invite_with_persistent_plain_warning(
         side_effect=SessionTransferError("address already in use")
     )
 
-    with patch(
-        "core.network_invite.local_band_address", return_value="192.168.1.42"
-    ):
+    with patch("core.network_invite.local_band_address", return_value="192.168.1.42"):
         controller._update_session_hud()
         invite = parse_invite_link(controller._current_invite_url())
         controller._update_session_hud()
@@ -672,9 +705,7 @@ def test_native_startup_handoff_uses_host_share_gate_before_showing_copy_invite(
     controller.shutdown()
 
 
-def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(
-    qapp, tmp_path
-):
+def test_host_calls_out_a_copied_lan_invite_after_wifi_address_changes(qapp, tmp_path):
     from core.host_share_readiness import (
         HostShareReadiness,
         HostShareReadinessStatus,
@@ -968,9 +999,9 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
         "_current_invite_url",
         return_value=create_invite_link("192.168.1.42"),
     ):
-        controller._apply_jamulus_participants([
-            JamulusParticipant(channel_id=7, name="Guest", is_local=False)
-        ])
+        controller._apply_jamulus_participants(
+            [JamulusParticipant(channel_id=7, name="Guest", is_local=False)]
+        )
     assert controller._jamulus_connected is False
     assert 7 in controller.participants
     assert controller._connection_timer.isActive()
@@ -978,13 +1009,13 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
     assert controller.window.session_hud._action.isHidden()
     assert "Connected to the jam" not in controller.window.session_hud._status.text()
 
-    with patch(
-        "core.network_invite.local_band_address", return_value="192.168.1.42"
-    ):
-        controller._apply_jamulus_participants([
-            JamulusParticipant(channel_id=3, name="Host", is_local=True),
-            JamulusParticipant(channel_id=7, name="Guest", is_local=False),
-        ])
+    with patch("core.network_invite.local_band_address", return_value="192.168.1.42"):
+        controller._apply_jamulus_participants(
+            [
+                JamulusParticipant(channel_id=3, name="Host", is_local=True),
+                JamulusParticipant(channel_id=7, name="Guest", is_local=False),
+            ]
+        )
     assert controller._jamulus_connected is True
     assert not controller._connection_timer.isActive()
     controller.bridge.jamulus_launch_intended = False
@@ -1021,9 +1052,7 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
     stale_dialog.close.side_effect = close_stale_dialog
     controller._ready_check_dialog = stale_dialog
     old_generation = controller._settings_generation
-    link = create_invite_link(
-        "192.168.1.42", session_name="New Jam"
-    )
+    link = create_invite_link("192.168.1.42", session_name="New Jam")
     assert controller.accept_invite_url(link) is True
     assert controller.settings.jamulus_server == "192.168.1.42"
     assert controller.settings.host_server_enabled is False
@@ -1108,27 +1137,30 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     controller.bridge.stop_jamulus = MagicMock(
         side_effect=lambda: events.append("client-stop") or True
     )
+
     def stop_hosted_server() -> bool:
         events.append("server-stop")
         controller.bridge.hosted_server_alive.return_value = False
         return True
 
-    controller.bridge.stop_hosted_server = MagicMock(
-        side_effect=stop_hosted_server
-    )
+    controller.bridge.stop_hosted_server = MagicMock(side_effect=stop_hosted_server)
     controller.begin_startup_journey = MagicMock(
         side_effect=lambda: events.append("new-join-start")
     )
     link = create_invite_link("192.168.1.42", session_name="New Join Jam")
-    with patch.object(
-        QMessageBox,
-        "question",
-        return_value=QMessageBox.StandardButton.Yes,
-    ) as question, patch(
-        "webjam_qt.controllers.application_controller.threading.Thread",
-        side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
-    ), patch.object(
-        controller._ui_invoker, "invoke", side_effect=lambda callback: callback()
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question,
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        ),
     ):
         assert controller.accept_invite_url(link) is True
 
@@ -1218,9 +1250,7 @@ def test_failed_host_invite_switch_retries_with_host_cleanup_role(
     with (
         patch(
             "webjam_qt.controllers.audio_coordinator.threading.Thread",
-            side_effect=lambda *args, **kwargs: _ImmediateArgsThread(
-                *args, **kwargs
-            ),
+            side_effect=lambda *args, **kwargs: _ImmediateArgsThread(*args, **kwargs),
         ),
         patch.object(
             controller._ui_invoker,
@@ -1230,9 +1260,7 @@ def test_failed_host_invite_switch_retries_with_host_cleanup_role(
     ):
         controller.audio.retry_stop()
 
-    assert (
-        controller.recording.stop_server_recording_for_shutdown.call_count == 2
-    )
+    assert controller.recording.stop_server_recording_for_shutdown.call_count == 2
     controller.bridge.stop_jamulus.assert_called_once_with()
     controller.bridge.stop_hosted_server.assert_called_once_with()
     assert controller.audio.cleanup_retry_required is False
@@ -1377,7 +1405,7 @@ def test_running_invite_switch_save_failure_returns_to_recoverable_ui(
     controller.shutdown()
 
 
-def test_running_invite_switch_is_single_flight(qapp, tmp_path):
+def test_running_invite_switch_is_single_flight_and_latest_wins(qapp, tmp_path):
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -1395,8 +1423,11 @@ def test_running_invite_switch_is_single_flight(qapp, tmp_path):
     controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=False)
     controller.bridge.hosted_server_owned = MagicMock(return_value=False)
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    controller.begin_startup_journey = MagicMock()
     first = create_invite_link("192.168.1.42", session_name="First New Jam")
     second = create_invite_link("192.168.1.43", session_name="Second New Jam")
+    worker: dict[str, object] = {}
 
     with (
         patch.object(
@@ -1406,22 +1437,89 @@ def test_running_invite_switch_is_single_flight(qapp, tmp_path):
         ) as question,
         patch(
             "webjam_qt.controllers.application_controller.threading.Thread",
-            side_effect=lambda *args, **kwargs: _DeferredThread(*args, **kwargs),
+            side_effect=lambda *args, **kwargs: (
+                worker.update(target=kwargs["target"])
+                or _DeferredThread(*args, **kwargs)
+            ),
+        ) as thread,
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
         ),
         patch.object(window, "flash_message") as flash,
     ):
         assert controller.accept_invite_url(first) is True
-        assert controller.accept_invite_url(second) is False
+        assert controller.accept_invite_url(second) is True
+        assert controller._invite_switch_in_flight is True
+        assert controller.audio.stopping is True
+        assert question.call_count == 1
+        assert thread.call_count == 1
+        assert "newer invitation" in flash.call_args.args[0]
+        worker["target"]()
 
-    assert controller._invite_switch_in_flight is True
-    assert controller.audio.stopping is True
-    assert question.call_count == 1
-    assert "still ending, leaving, or switching" in flash.call_args.args[0]
+    assert controller._invite_switch_in_flight is False
+    assert controller._pending_invitation is None
+    assert controller.audio.stopping is False
+    assert controller.settings.jamulus_server == "192.168.1.43"
+    assert controller.window.session_strip.current_title() == "Second New Jam"
+    controller.begin_startup_journey.assert_called_once_with()
+    controller.bridge.jamulus_state = "Stopped"
+    controller.shutdown()
 
-    # The worker is deliberately suspended in this regression; restore the
-    # fixture to a settled state before exercising normal shutdown.
-    controller._invite_switch_in_flight = False
-    controller.audio.stopping = False
+
+def test_running_invite_launch_failure_clears_switch_latches(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        jamulus_server="192.168.1.10",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Current Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.bridge.hosted_server_owned = MagicMock(return_value=False)
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    controller.begin_startup_journey = MagicMock(
+        side_effect=RuntimeError("launch failed")
+    )
+    link = create_invite_link("192.168.1.42", session_name="New Jam")
+
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        assert controller.accept_invite_url(link) is True
+
+    assert controller._invite_switch_in_flight is False
+    assert controller._pending_invitation is None
+    assert controller.audio.stopping is False
+    assert controller.audio.cleanup_retry_required is False
+    assert window.session_strip._tools_button.isEnabled()
+    assert window.session_strip._audio_button.text() == "Start Session"
+    assert not window.session_strip._audio_button.isEnabled()
+    assert "did not finish" in window.statusBar().currentMessage()
+
+    controller.begin_startup_journey.side_effect = None
     controller.bridge.jamulus_state = "Stopped"
     controller.shutdown()
 
@@ -1448,9 +1546,10 @@ def test_running_host_must_finish_take_before_switching_invites(qapp, tmp_path):
     controller._server_recording = True
     controller._recorder_armed = True
     link = create_invite_link("192.168.1.42", session_name="New Join Jam")
-    with patch.object(QMessageBox, "information") as information, patch.object(
-        QMessageBox, "question"
-    ) as question:
+    with (
+        patch.object(QMessageBox, "information") as information,
+        patch.object(QMessageBox, "question") as question,
+    ):
         assert controller.accept_invite_url(link) is False
     information.assert_called_once()
     question.assert_not_called()
@@ -1473,25 +1572,22 @@ def test_returning_user_gets_host_join_gate_then_native_startup_journey(qapp):
     qt_app = MagicMock()
     qt_app.exec.return_value = 0
     controller = MagicMock()
-    with patch.dict(os.environ, {}, clear=False), patch.object(
-        app_module, "load_settings", side_effect=[initial, saved]
-    ), patch.object(
-        app_module, "LaunchDialog", return_value=launcher
-    ) as launcher_class, patch.object(
-        app_module.QApplication, "instance", return_value=qt_app
-    ), patch.object(
-        app_module, "load_stylesheet", return_value=""
-    ), patch.object(
-        app_module, "ConductorWindow", return_value=MagicMock()
-    ), patch.object(
-        app_module, "ApplicationController", return_value=controller
-    ), patch.object(app_module.QTimer, "singleShot") as single_shot:
+    with (
+        patch.dict(os.environ, {}, clear=False),
+        patch.object(app_module, "load_settings", side_effect=[initial, saved]),
+        patch.object(
+            app_module, "LaunchDialog", return_value=launcher
+        ) as launcher_class,
+        patch.object(app_module.QApplication, "instance", return_value=qt_app),
+        patch.object(app_module, "load_stylesheet", return_value=""),
+        patch.object(app_module, "ConductorWindow", return_value=MagicMock()),
+        patch.object(app_module, "ApplicationController", return_value=controller),
+        patch.object(app_module.QTimer, "singleShot") as single_shot,
+    ):
         os.environ.pop("WEBJAM_SMOKE_AUTOSTART_AUDIO", None)
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
-    single_shot.assert_called_once_with(
-        0, controller.begin_startup_journey
-    )
+    single_shot.assert_called_once_with(0, controller.begin_startup_journey)
 
 
 def test_cold_launch_passes_command_line_invite_to_gate(qapp):
@@ -1506,19 +1602,18 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
     launcher.session_name = "Band Rehearsal"
     qt_app = MagicMock()
     qt_app.exec.return_value = 0
-    with patch.object(sys, "argv", ["WebJam", link]), patch.object(
-        app_module, "load_settings", side_effect=[initial, saved]
-    ), patch.object(
-        app_module, "LaunchDialog", return_value=launcher
-    ) as launcher_class, patch.object(
-        app_module.QApplication, "instance", return_value=qt_app
-    ), patch.object(
-        app_module, "load_stylesheet", return_value=""
-    ), patch.object(
-        app_module, "ConductorWindow", return_value=MagicMock()
-    ), patch.object(
-        app_module, "ApplicationController", return_value=MagicMock()
-    ), patch.object(app_module.QTimer, "singleShot"):
+    with (
+        patch.object(sys, "argv", ["WebJam", link]),
+        patch.object(app_module, "load_settings", side_effect=[initial, saved]),
+        patch.object(
+            app_module, "LaunchDialog", return_value=launcher
+        ) as launcher_class,
+        patch.object(app_module.QApplication, "instance", return_value=qt_app),
+        patch.object(app_module, "load_stylesheet", return_value=""),
+        patch.object(app_module, "ConductorWindow", return_value=MagicMock()),
+        patch.object(app_module, "ApplicationController", return_value=MagicMock()),
+        patch.object(app_module.QTimer, "singleShot"),
+    ):
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(
         initial,

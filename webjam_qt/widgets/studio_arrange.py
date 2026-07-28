@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QAbstractScrollArea, QHBoxLayout, QSizePolicy, QWidget
 
 from core.studio_project import (
+    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
     MarkerKind,
     SnapMode,
     StudioDocument,
@@ -125,6 +126,17 @@ def _nearest_step(frame: int, step: int) -> int:
     if frame >= 0:
         return ((frame + step // 2) // step) * step
     return -(((-frame + step // 2) // step) * step)
+
+
+def _musical_step_beats(pixels_per_second: float, tempo_bpm: float) -> float:
+    """Choose a power-of-two beat grid with roughly 72 px spacing."""
+
+    pixels_per_beat = max(MIN_PIXELS_PER_SECOND, pixels_per_second) * 60.0 / tempo_bpm
+    choices = (0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0)
+    return next(
+        (choice for choice in choices if choice * pixels_per_beat >= 72.0),
+        choices[-1],
+    )
 
 
 class _TrackHeaders(QWidget):
@@ -813,19 +825,75 @@ class _ArrangeScrollArea(QAbstractScrollArea):
     def _draw_time_grid(
         self, painter: QPainter, visible_start: int, visible_end: int
     ) -> None:
-        document = self._document
-        assert document is not None
-        step = _grid_step_frames(document.project_sample_rate, self._pixels_per_second)
-        first = math.floor(visible_start / step) * step
         painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
-        frame = first
-        maximum_ticks = max(4, self.viewport().width() // 24 + 4)
-        for _index in range(maximum_ticks):
-            if frame > visible_end:
-                break
+        for frame, _label in self._ruler_ticks(visible_start, visible_end):
             x = self.x_for_frame(frame)
             painter.drawLine(int(x), RULER_HEIGHT, int(x), self.viewport().height())
-            frame += step
+
+    def _ruler_ticks(
+        self,
+        visible_start: int,
+        visible_end: int,
+    ) -> tuple[tuple[int, str], ...]:
+        document = self._document
+        assert document is not None
+        maximum_ticks = max(4, self.viewport().width() // 24 + 4)
+        if self._arrange.ruler_mode == "time":
+            step = _grid_step_frames(
+                document.project_sample_rate,
+                self._pixels_per_second,
+            )
+            frame = math.floor(visible_start / step) * step
+            values: list[tuple[int, str]] = []
+            for _index in range(maximum_ticks):
+                if frame > visible_end:
+                    break
+                values.append(
+                    (
+                        frame,
+                        _format_frame_time(
+                            frame,
+                            document.project_sample_rate,
+                        ),
+                    )
+                )
+                frame += step
+            return tuple(values)
+
+        quarter_note_frames = (
+            document.project_sample_rate * 60.0 / self._arrange.ruler_tempo_bpm
+        )
+        frames_per_beat = (
+            quarter_note_frames * 4.0 / self._arrange.ruler_beat_denominator
+        )
+        step_beats = _musical_step_beats(
+            self._pixels_per_second,
+            self._arrange.ruler_tempo_bpm,
+        )
+        first_beat = (
+            math.floor((visible_start / frames_per_beat) / step_beats) * step_beats
+        )
+        values = []
+        beat_position = first_beat
+        for _index in range(maximum_ticks):
+            frame = round(beat_position * frames_per_beat)
+            if frame > visible_end:
+                break
+            if beat_position < 0:
+                label = f"−{abs(beat_position):g} beats"
+            else:
+                whole_beat = math.floor(beat_position + 1.0e-9)
+                bar = whole_beat // self._arrange.ruler_beats_per_bar + 1
+                beat = whole_beat % self._arrange.ruler_beats_per_bar + 1
+                fraction = beat_position - whole_beat
+                label = (
+                    f"{bar}.{beat}"
+                    if math.isclose(fraction, 0.0, abs_tol=1.0e-8)
+                    else f"{bar}.{beat}+{fraction:g}"
+                )
+            values.append((frame, label))
+            beat_position += step_beats
+        return tuple(values)
 
     def _draw_sections_and_cycle(
         self,
@@ -1172,12 +1240,8 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         fill.setAlpha(40)
         painter.fillRect(overlay, fill)
         painter.setPen(QPen(QColor(Color.ACCENT_PRIMARY), 2, Qt.PenStyle.DashLine))
-        painter.drawLine(
-            int(left), RULER_HEIGHT, int(left), self.viewport().height()
-        )
-        painter.drawLine(
-            int(right), RULER_HEIGHT, int(right), self.viewport().height()
-        )
+        painter.drawLine(int(left), RULER_HEIGHT, int(left), self.viewport().height())
+        painter.drawLine(int(right), RULER_HEIGHT, int(right), self.viewport().height())
 
     def _draw_crossfades(
         self,
@@ -1285,12 +1349,7 @@ class _ArrangeScrollArea(QAbstractScrollArea):
         painter.fillRect(ruler, QColor(Color.BG_INPUT))
         painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
         painter.drawLine(0, RULER_HEIGHT - 1, self.viewport().width(), RULER_HEIGHT - 1)
-        step = _grid_step_frames(document.project_sample_rate, self._pixels_per_second)
-        frame = math.floor(visible_start / step) * step
-        maximum_ticks = max(4, self.viewport().width() // 24 + 4)
-        for _index in range(maximum_ticks):
-            if frame > visible_end:
-                break
+        for frame, label in self._ruler_ticks(visible_start, visible_end):
             x = self.x_for_frame(frame)
             painter.setPen(QPen(QColor(Color.BORDER_SUBTLE), 1))
             painter.drawLine(int(x), 24, int(x), RULER_HEIGHT - 1)
@@ -1298,9 +1357,8 @@ class _ArrangeScrollArea(QAbstractScrollArea):
             painter.drawText(
                 QRectF(x + 3, 2, 68, 18),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                _format_frame_time(frame, document.project_sample_rate),
+                label,
             )
-            frame += step
 
         cycle = document.cycle_range
         if (
@@ -1758,6 +1816,10 @@ class StudioArrange(QWidget):
         ] = OrderedDict()
         self._waveform_retained_bytes = 0
         self._waveform_generation: int | None = None
+        self._ruler_mode = "time"
+        self._ruler_tempo_bpm = 120.0
+        self._ruler_beats_per_bar = 4
+        self._ruler_beat_denominator = 4
         self._shortcuts: list[QShortcut] = []
         self._shortcut_keys: set[str] = set()
 
@@ -1819,6 +1881,22 @@ class StudioArrange(QWidget):
     @property
     def horizontal_scroll_frame(self) -> int:
         return round(self._canvas._visible_start_frame())
+
+    @property
+    def ruler_mode(self) -> str:
+        return self._ruler_mode
+
+    @property
+    def ruler_tempo_bpm(self) -> float:
+        return self._ruler_tempo_bpm
+
+    @property
+    def ruler_beats_per_bar(self) -> int:
+        return self._ruler_beats_per_bar
+
+    @property
+    def ruler_beat_denominator(self) -> int:
+        return self._ruler_beat_denominator
 
     @property
     def waveform_retained_entries(self) -> int:
@@ -2053,6 +2131,47 @@ class StudioArrange(QWidget):
 
         self._canvas.set_zoom(pixels_per_second)
 
+    def set_ruler_mode(
+        self,
+        mode: str,
+        *,
+        tempo_bpm: float,
+        beats_per_bar: int,
+        beat_denominator: int = 4,
+    ) -> None:
+        """Switch between elapsed time and a project-tempo bars/beats ruler."""
+
+        if mode not in {"time", "bars"}:
+            raise ValueError("ruler mode must be time or bars.")
+        if (
+            isinstance(tempo_bpm, bool)
+            or not isinstance(tempo_bpm, (int, float))
+            or not math.isfinite(float(tempo_bpm))
+            or not 20.0 <= float(tempo_bpm) <= 400.0
+        ):
+            raise ValueError("ruler tempo must be between 20 and 400 BPM.")
+        if (
+            isinstance(beats_per_bar, bool)
+            or not isinstance(beats_per_bar, int)
+            or not 1 <= beats_per_bar <= 32
+        ):
+            raise ValueError("ruler beats_per_bar must be between 1 and 32.")
+        if (
+            isinstance(beat_denominator, bool)
+            or not isinstance(beat_denominator, int)
+            or beat_denominator not in {1, 2, 4, 8, 16, 32}
+        ):
+            raise ValueError("ruler beat_denominator must be a supported note value.")
+        self._ruler_mode = mode
+        self._ruler_tempo_bpm = float(tempo_bpm)
+        self._ruler_beats_per_bar = beats_per_bar
+        self._ruler_beat_denominator = beat_denominator
+        self._canvas.viewport().setAccessibleName(
+            "Arrange timeline canvas with "
+            + ("bars and beats ruler" if mode == "bars" else "elapsed-time ruler")
+        )
+        self._canvas.viewport().update()
+
     def zoom_in(self) -> None:
         self.set_zoom(self.pixels_per_second * 1.25)
 
@@ -2116,11 +2235,17 @@ class StudioArrange(QWidget):
         if region is None:
             return
         catalog_key = tile.key.source.catalog_key
-        if catalog_key and catalog_key != (
-            region.source_take_id,
-            region.source_track_id,
-            region.source_segment_id,
-        ):
+        expected_catalog_key = (
+            (self._document.project_id, "media", region.source_media_id)
+            if self._document is not None
+            and self._document.schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+            else (
+                region.source_take_id,
+                region.source_track_id,
+                region.source_segment_id,
+            )
+        )
+        if catalog_key and catalog_key != expected_catalog_key:
             raise ValueError("Waveform tile belongs to a different Studio source.")
         tile_end = tile.key.start_frame + tile.key.frame_count
         if (

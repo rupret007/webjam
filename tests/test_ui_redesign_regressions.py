@@ -4,6 +4,7 @@ These tests intentionally exercise rendered geometry and the public wording a
 musician sees.  Unit-only assertions did not catch the previous wide minimum,
 duplicate retry actions, double submission, or technical error leakage.
 """
+
 from __future__ import annotations
 
 import os
@@ -104,7 +105,7 @@ def _visible_focus_chain(window: QWidget, start: QWidget) -> list[QWidget]:
     return result
 
 
-def test_launch_hierarchy_is_one_primary_then_one_secondary(
+def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
     styled_qapp, tmp_path
 ):
     with patch.object(sys, "platform", "darwin"):
@@ -118,14 +119,29 @@ def test_launch_hierarchy_is_one_primary_then_one_secondary(
         assert dialog.minimumHeight() <= 600
         assert dialog._host_button.objectName() == "LaunchPrimary"
         assert dialog._join_button.objectName() == "LaunchSecondary"
+        assert dialog._studio_button.objectName() == "LaunchSecondary"
         assert dialog._host_button.isDefault()
         assert not dialog._join_button.isDefault()
-        assert dialog._host_button.geometry().top() < dialog._join_button.geometry().top()
-        assert dialog._host_button.width() == dialog._join_button.width()
+        assert not dialog._studio_button.isDefault()
+        assert (
+            dialog._host_button.geometry().top()
+            < dialog._join_button.geometry().top()
+            < dialog._studio_button.geometry().top()
+        )
+        assert (
+            dialog._host_button.width()
+            == dialog._join_button.width()
+            == dialog._studio_button.width()
+        )
         assert dialog._host_button.width() >= 360
         assert dialog._host_button.accessibleDescription()
         assert dialog._join_button.accessibleDescription()
-        for control in (dialog._host_button, dialog._join_button):
+        assert dialog._studio_button.accessibleDescription()
+        for control in (
+            dialog._host_button,
+            dialog._join_button,
+            dialog._studio_button,
+        ):
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
         _destroy(dialog)
@@ -148,6 +164,7 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
             dialog._logo,
             dialog._host_button,
             dialog._join_button,
+            dialog._studio_button,
             dialog._choice_helper,
         ):
             assert control.isVisibleTo(dialog)
@@ -165,6 +182,27 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         _destroy(dialog)
 
 
+def test_offline_reference_studio_uses_the_full_window_without_session_chrome(
+    styled_qapp,
+):
+    window = _window()
+    window.show()
+    styled_qapp.processEvents()
+    try:
+        window.show_reference_studio_only()
+        styled_qapp.processEvents()
+
+        assert window.workspace_stack.currentWidget() is window.reference_studio
+        assert not window.session_strip.isVisibleTo(window)
+        assert not window.session_hud.isVisibleTo(window)
+        assert not window.session_controls.isVisibleTo(window)
+        assert not window.side_rail.isVisibleTo(window)
+        assert "Reference Studio" in window.windowTitle()
+        assert window.reference_studio.isVisibleTo(window)
+    finally:
+        _destroy(window)
+
+
 def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
     dialog = LaunchDialog(_settings(tmp_path))
     dialog.resize(460, 600)
@@ -178,10 +216,7 @@ def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
         assert dialog._join_button_primary.height() >= 48
         assert dialog._invite_input.accessibleName() == "WebJam invite link"
         assert dialog._invite_input.accessibleDescription()
-        assert (
-            dialog._invite_input.echoMode()
-            is dialog._invite_input.EchoMode.Password
-        )
+        assert dialog._invite_input.echoMode() is dialog._invite_input.EchoMode.Password
         for control in (dialog._invite_input, dialog._join_button_primary):
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
@@ -215,9 +250,7 @@ def test_host_invite_credential_is_never_rendered_or_exposed_to_accessibility(
         assert not hasattr(hud, "_invite_url")
         # The inline field exists only for the optional Webex step and is
         # hidden for an invite-ready HUD; it never receives invite material.
-        assert all(
-            not field.isVisibleTo(hud) for field in hud.findChildren(QLineEdit)
-        )
+        assert all(not field.isVisibleTo(hud) for field in hud.findChildren(QLineEdit))
         rendered = "\n".join(
             (
                 hud._action.text(),
@@ -278,7 +311,9 @@ def test_invalid_invite_error_does_not_echo_sensitive_or_technical_text(tmp_path
     value = "https://bad.example/join?token=SUPER-SECRET&host=10.0.0.2"
     assert dialog.accept_invite(value) is False
     message = dialog._join_error.text()
-    assert message == "That invite link doesn’t look right. Copy it again from your host."
+    assert (
+        message == "That invite link doesn’t look right. Copy it again from your host."
+    )
     assert "SUPER-SECRET" not in message
     assert "10.0.0.2" not in message
     assert dialog._invite_input.text() == value  # preserve editable user input
@@ -343,7 +378,10 @@ def test_participant_grid_wraps_without_horizontal_clipping(styled_qapp, width):
     window = _window()
     window.resize(width, 600)
     window.participant_grid.set_participants(
-        [ParticipantPresentation(index, f"Musician {index}", "Bandmate") for index in range(6)]
+        [
+            ParticipantPresentation(index, f"Musician {index}", "Bandmate")
+            for index in range(6)
+        ]
     )
     window.show()
     styled_qapp.processEvents()
@@ -476,9 +514,7 @@ def test_primary_and_mixer_controls_have_names_and_desktop_targets(styled_qapp):
         _destroy(window)
 
 
-def test_microphone_permission_required_then_continues_to_system_prompt(
-    qapp, tmp_path
-):
+def test_microphone_permission_required_then_continues_to_system_prompt(qapp, tmp_path):
     window = _window()
     controller = ApplicationController(window, settings=_settings(tmp_path))
     controller.bridge.jamulus_state = "Not launched"
@@ -489,7 +525,9 @@ def test_microphone_permission_required_then_continues_to_system_prompt(
             return_value="not_determined",
         ):
             controller._on_launch_audio()
-            assert controller.window.participant_grid._empty_primary.text() == "Continue"
+            assert (
+                controller.window.participant_grid._empty_primary.text() == "Continue"
+            )
             assert (
                 controller.window.participant_grid._empty_state.property("sessionState")
                 == SessionPhase.PERMISSION_REQUIRED.value
@@ -518,15 +556,23 @@ def test_denied_microphone_routes_to_settings_then_try_again(qapp, tmp_path):
         ):
             controller._on_launch_audio()
         grid = controller.window.participant_grid
-        assert grid._empty_state.property("sessionState") == SessionPhase.PERMISSION_DENIED.value
+        assert (
+            grid._empty_state.property("sessionState")
+            == SessionPhase.PERMISSION_DENIED.value
+        )
         assert grid._empty_primary.text() == "Open System Settings"
         assert grid._empty_primary_action == "microphone_settings"
         controller.bridge.launch_jamulus.assert_not_called()
 
-        with patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True) as opened:
+        with patch(
+            "PySide6.QtGui.QDesktopServices.openUrl", return_value=True
+        ) as opened:
             grid._empty_primary.click()
         opened.assert_called_once()
-        assert grid._empty_state.property("sessionState") == SessionPhase.PERMISSION_REQUIRED.value
+        assert (
+            grid._empty_state.property("sessionState")
+            == SessionPhase.PERMISSION_REQUIRED.value
+        )
         assert grid._empty_primary.text() == "Try Again"
         assert grid._empty_primary_action == "start"
     finally:
@@ -559,14 +605,20 @@ def test_guest_leave_never_stops_the_hosts_server_or_recorder(qapp, tmp_path):
             self._target(*self._args)
 
     try:
-        with patch(
-            "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as question, patch(
-            "webjam_qt.controllers.audio_coordinator.threading.Thread",
-            _ImmediateThread,
-        ), patch.object(
-            controller._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        with (
+            patch(
+                "webjam_qt.controllers.audio_coordinator.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ) as question,
+            patch(
+                "webjam_qt.controllers.audio_coordinator.threading.Thread",
+                _ImmediateThread,
+            ),
+            patch.object(
+                controller._ui_invoker,
+                "invoke",
+                side_effect=lambda callback: callback(),
+            ),
         ):
             controller.audio.stop()
         assert question.call_args.args[1] == "Leave Jam?"
@@ -587,9 +639,7 @@ def test_guest_leave_never_stops_the_hosts_server_or_recorder(qapp, tmp_path):
         (False, "Leave jam and quit?", "band can keep playing"),
     ],
 )
-def test_live_window_close_is_role_aware(
-    hosting, expected_title, expected_body
-):
+def test_live_window_close_is_role_aware(hosting, expected_title, expected_body):
     controller = SimpleNamespace(
         recording=SimpleNamespace(
             is_recording_active=False,
@@ -625,9 +675,10 @@ def test_recording_close_confirmation_is_not_duplicated():
         window=object(),
         _is_jamulus_running=MagicMock(return_value=True),
     )
-    with patch.object(QMessageBox, "information") as information, patch.object(
-        QMessageBox, "question"
-    ) as question:
+    with (
+        patch.object(QMessageBox, "information") as information,
+        patch.object(QMessageBox, "question") as question,
+    ):
         assert ApplicationController._confirm_close(controller) is False
     information.assert_called_once()
     question.assert_not_called()
@@ -647,9 +698,10 @@ def test_track_export_in_progress_blocks_close_without_stopping_the_jam():
         ),
         _is_jamulus_running=MagicMock(return_value=True),
     )
-    with patch.object(QMessageBox, "information") as information, patch.object(
-        QMessageBox, "question"
-    ) as question:
+    with (
+        patch.object(QMessageBox, "information") as information,
+        patch.object(QMessageBox, "question") as question,
+    ):
         assert ApplicationController._confirm_close(controller) is False
     information.assert_called_once()
     question.assert_not_called()
@@ -662,9 +714,10 @@ def test_close_is_vetoed_while_end_leave_or_invite_switch_is_still_running():
         _invite_switch_in_flight=False,
         window=object(),
     )
-    with patch.object(QMessageBox, "information") as information, patch.object(
-        QMessageBox, "question"
-    ) as question:
+    with (
+        patch.object(QMessageBox, "information") as information,
+        patch.object(QMessageBox, "question") as question,
+    ):
         assert ApplicationController._confirm_close(controller) is False
     information.assert_called_once()
     assert "still running" in information.call_args.args[1].lower()
@@ -711,22 +764,26 @@ def test_unsaved_studio_edits_veto_window_close_until_save_retry(qapp):
     window.show()
     qapp.processEvents()
     try:
-        with patch.object(
-            studio,
-            "prepare_close",
-            side_effect=(False, True),
-        ) as prepare_close, patch.object(
-            QMessageBox,
-            "information",
-        ) as information:
+        with (
+            patch.object(
+                studio,
+                "prepare_close",
+                side_effect=(False, True),
+            ) as prepare_close,
+            patch.object(
+                QMessageBox,
+                "information",
+            ) as information,
+        ):
             assert window.close() is False
             assert window.isVisible()
             shutdown_requested.assert_not_called()
             information.assert_called_once()
             assert "recorded take is safe" in information.call_args.args[2].lower()
-            assert "arrange and mix edits are not saved" in information.call_args.args[
-                2
-            ].lower()
+            assert (
+                "arrange and mix edits are not saved"
+                in information.call_args.args[2].lower()
+            )
 
             assert window.close() is True
             shutdown_requested.assert_called_once_with()

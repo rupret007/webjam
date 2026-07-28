@@ -315,6 +315,24 @@ def test_failed_remote_owner_stop_retains_retryable_owner_and_mode() -> None:
     assert controller._remote_session is owner
 
 
+def test_false_remote_owner_stop_retains_retryable_owner_and_mode() -> None:
+    controller = ApplicationController.__new__(ApplicationController)
+    owner = mock.Mock()
+    owner.stop.return_value = False
+    bridge = mock.Mock()
+    bridge.hosted_server_alive.return_value = False
+    controller._remote_invite_owner = owner
+    controller._remote_session = owner
+    controller.bridge = bridge
+
+    assert not controller._clear_remote_invite_owner()
+
+    owner.stop.assert_called_once_with()
+    bridge.disable_remote_host_mode.assert_not_called()
+    assert controller._remote_invite_owner is owner
+    assert controller._remote_session is owner
+
+
 def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(
     tmp_path: Path,
 ) -> None:

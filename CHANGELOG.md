@@ -4,6 +4,79 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.21.0] — 2026-07-28 standalone Reference Studio test candidate
+
+### Project-first songwriting
+
+- Added **Reference Studio** as a standalone project workflow beside, but
+  independent from, Host/Join and session-take Studio. **Play Along / Record**
+  creates a project around a local backing track; musicians can also create an
+  empty project, open a recent project, or drag/import collected media.
+- Added portable song-project bundles with durable IDs, immutable checksummed
+  media copies, path-free manifests, explicit relink/collection truth,
+  conflict-aware atomic saves, bounded autosaves, last-known-good recovery,
+  and an atomic **Save As** transaction that clones media and arrangement
+  together under a fresh project identity. Existing v0.20.0 session data and
+  schema-2 Studio sidecars keep their prior meaning and are not silently
+  converted into standalone projects.
+- Added the established continuous trefoil—also described in the product as
+  the trinity mark—to Reference Studio home and workspace navigation without
+  creating a second logo source.
+
+### Play, record, and arrange
+
+- Added asynchronous verified-media preparation, progressive waveform tiles,
+  local project playback, bars-and-beats position, click, count-in, cycle, and
+  musical snap. Reference Studio owns this local audio path; it does not start,
+  join, configure, or feed a Jamulus session.
+- Added audio-track creation, naming, duplication, removal, input mapping and
+  arming, plus count-in, punch, cycle-pass, and latency-compensated recording.
+  Committed recordings become immutable project media, arrangement regions,
+  and take lanes. Bounded dropout and pass evidence survives save/recovery, and
+  an interrupted post-capture transaction remains an explicit recovery
+  candidate instead of being represented as a completed recording.
+- Extended non-destructive Arrange behavior to standalone sources: move, trim,
+  split, duplicate, disable, delete, fades, cycle ranges, markers, named
+  sections and whole-section moves, repeated take lanes, quick-swipe comp
+  ranges, and bounded undo/redo. The source media is never edited in place.
+
+### Mix, tempo, and delivery
+
+- Added a standalone mixer with fader, pan, mute, solo, shared-reverb sends,
+  master gain, and safety limiter. Added bounded built-in high-pass, EQ,
+  compressor, gate, and shared reverb processing, plus exact-frame volume, pan,
+  and mute automation. Playback and bounce use the same validated routing and
+  deterministic DSP graph.
+- Added cancellable backing-track tempo analysis over bounded decoded windows.
+  The result includes confidence and always enters a musician-review dialog
+  where BPM and meter can be corrected before application. Applying a result
+  changes the grid and click only; it does not time-stretch imported audio.
+- Added cancellable 24-bit WAV and FLAC bounce for a whole project, the enabled
+  cycle, or a selected track, with optional backing and processed stems.
+  Publication is atomic and each artifact reports SHA-256, peak dBFS, clipped
+  samples, and deterministic RMS dBFS. MP3 bounce is unavailable by default
+  because this candidate ships no separately self-tested, identified,
+  license-safe MP3 encoder adapter.
+
+### Candidate distribution and evidence boundary
+
+- The v0.21.0 candidate matrix covers Windows x64, Ubuntu 22.04 x64, Intel Mac,
+  and Apple-silicon Mac from one source identity. Windows remains unsigned;
+  both Mac builds remain ad-hoc signed and unnotarized. These are private-test
+  packages, not production-trusted installers.
+- Tag automation creates a draft containing exactly the Windows Setup and ZIP,
+  two Mac DMGs and two Mac ZIPs, the Linux ZIP, and one SHA-256 manifest. A
+  separate manual publisher rejects any other inventory, verifies all seven
+  package checksums, publishes a non-prerelease with GitHub's explicit
+  **Latest** setting, and verifies `/releases/latest` afterward. A CI artifact
+  or draft is not the Latest release.
+- Automated tests provide model, renderer, persistence, rollback, UI-contract,
+  and packaging evidence. Physical Reference Studio record/playback,
+  interface routing, latency calibration, dropout recovery, long-session
+  behavior, two-musician audibility, clean-download platform prompts, signing,
+  and notarization remain **NOT RUN** unless separately recorded against the
+  exact candidate hashes.
+
 ## [0.20.0] — 2026-07-27 Webex handoff and Reference Track test candidate
 
 - Restored WebJam's approved continuous trefoil identity from the earlier

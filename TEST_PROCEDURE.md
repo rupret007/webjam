@@ -1,8 +1,9 @@
-# WebJam v0.20.0 source and physical test procedure
+# WebJam v0.21.0 source and physical test procedure
 
-> The source tree reports v0.20.0. Published candidates remain immutable
-> rollback/reference evidence; they do not certify the v0.20.0 external Webex
-> handoff, Reference Track pilot, or matching iPhone setup kit.
+> The source tree reports v0.21.0. Published candidates remain immutable
+> rollback/reference evidence; they do not certify the v0.21.0 standalone
+> Reference Studio, external Webex handoff, Reference Track pilot, or matching
+> iPhone setup kit.
 
 ## Scope
 
@@ -92,6 +93,10 @@ Review at minimum:
 - Studio output appears only in Studio review.
 - Studio Arrange edits, take-lane comps, undo/redo, save/reopen, and autosave
   failure/retry never change the take manifest or source WAV bytes.
+- Standalone Reference Studio create/import/save/reopen/Save As, local
+  playback, recording publication/recovery, mixer/automation, tempo review,
+  and WAV/FLAC bounce remain isolated from the Jamulus session lifecycle and
+  never edit imported source bytes.
 - Named-section drag ripple-reorders every track as one revision/undo, preserves
   affine source mapping through seam splits, moves contained arrangement
   metadata, reloads playback, and fails atomically for unsafe seam crossings.
@@ -132,10 +137,11 @@ Review at minimum:
 4. Sign nested apps, sidecar, and outer app; verify transport, Info.plist,
    signatures, fresh extraction, and archive SHA-256.
 5. Launch the fresh app and inspect Host, Join, optional Webex, Recording
-   Setup, Studio Arrange/comp/undo/autosave/export, End/Leave, and an
-   invalid/recovery state at 760×600, 1024×768, and 1440×900. On macOS/Linux,
-   inspect the edited Studio package. On Windows, verify the separately
-   labelled aligned-originals/reference-mix boundary above.
+   Setup, Studio Arrange/comp/undo/autosave/export, standalone Reference Studio
+   project/import/playback/mix/bounce, End/Leave, and an invalid/recovery state
+   at 760×600, 1024×768, and 1440×900. On macOS/Linux, inspect the edited
+   Studio package. On Windows, verify the separately labelled
+   aligned-originals/reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 

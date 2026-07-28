@@ -358,7 +358,13 @@ class SimpleSettingsDialog(QDialog):
         try:
             save_settings(candidate)
         except Exception as exc:  # noqa: BLE001
-            LOGGER.error("Could not save musician settings: %s", exc)
+            # The exception may include the private configuration path.  Keep
+            # diagnostics useful without copying paths, URLs, or credentials
+            # into a support bundle.
+            LOGGER.error(
+                "Could not save musician settings (%s)",
+                type(exc).__name__,
+            )
             self._show_error(
                 "WebJam couldn't save these settings. Check folder access and try again."
             )

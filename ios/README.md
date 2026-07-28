@@ -41,7 +41,7 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From a matching v0.20.0 Mac candidate, open **Pocket Stage iPhone Setup** and
+2. From a matching v0.21.0 Mac candidate, open **Pocket Stage iPhone Setup** and
    double-click **Open Pocket Stage in Xcode.command**. That folder already
    contains the exact generated project compiled by CI, so release users do not
    need XcodeGen. Source developers instead install XcodeGen 2.45.4 or newer

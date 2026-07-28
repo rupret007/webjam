@@ -99,6 +99,29 @@ def test_pairing_is_blocked_during_session_teardown(controller) -> None:
     controller.audio.stopping = False
 
 
+def test_pairing_refresh_cannot_issue_an_offer_while_idle(controller) -> None:
+    controller._jamulus_connected = False
+    with controller.pocket_stage_gateway._state_lock:
+        controller.pocket_stage_gateway._running = True
+
+    with (
+        mock.patch.object(controller, "_is_jamulus_running", return_value=False),
+        mock.patch.object(
+            controller.pocket_stage_gateway,
+            "issue_pairing_offer",
+        ) as issue,
+        mock.patch.object(controller, "_stop_pocket_stage") as stop,
+        mock.patch.object(controller.window, "flash_message") as flash,
+    ):
+        controller._show_pocket_stage_offer()
+
+    issue.assert_not_called()
+    stop.assert_called_once_with(network_changed=True)
+    assert "live jam" in flash.call_args.args[0]
+    with controller.pocket_stage_gateway._state_lock:
+        controller.pocket_stage_gateway._running = False
+
+
 def test_projection_is_paired_private_and_scales_jamulus_gain(controller) -> None:
     controller._jamulus_connected = True
     controller.participants = {

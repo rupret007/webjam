@@ -45,6 +45,7 @@ from webjam_qt.widgets import (
     SideRail,
     WebexEmbed,
     RecordingStudio,
+    ReferenceStudioShell,
     SessionHud,
 )
 
@@ -55,6 +56,10 @@ class ConductorWindow(QMainWindow):
 
     DEFAULT_WIDTH = 1440
     DEFAULT_HEIGHT = 900
+    OFFLINE_INVITATION_GUIDANCE = (
+        "Invitation not used — Reference Studio stays offline. "
+        "To join the jam, close WebJam and open the invitation again."
+    )
 
     def __init__(
         self,
@@ -67,6 +72,7 @@ class ConductorWindow(QMainWindow):
     ) -> None:
         super().__init__(parent)
         from webjam_qt import __version__
+
         self.setWindowTitle(f"WebJam — Band Session (v{__version__})")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
         # The meeting surface remains usable on an 800×600 display and in a
@@ -82,6 +88,7 @@ class ConductorWindow(QMainWindow):
         # directly before accepting the native close.
         self.finalize_close: Optional[Callable[[], bool]] = None
         self.operator_mode = bool(operator_mode)
+        self._reference_studio_only = False
 
         # --- Central widgets
         self.session_strip = SessionStrip(
@@ -97,6 +104,7 @@ class ConductorWindow(QMainWindow):
         self.webex_embed = WebexEmbed()
         self.session_canvas = SessionCanvas()
         self.recording_studio = RecordingStudio()
+        self.reference_studio = ReferenceStudioShell(self.recording_studio)
         # Video, notes, Studio, and Settings are session tools.  They remain
         # available from one menu without competing with the live session.
         self.side_rail.setVisible(False)
@@ -141,7 +149,9 @@ class ConductorWindow(QMainWindow):
         self.center_splitter.addWidget(self.session_canvas)
         self.center_splitter.setStretchFactor(0, 3)
         self.center_splitter.setStretchFactor(1, 1)
-        self.center_splitter.setSizes([int(self.DEFAULT_WIDTH * 0.76), int(self.DEFAULT_WIDTH * 0.24)])
+        self.center_splitter.setSizes(
+            [int(self.DEFAULT_WIDTH * 0.76), int(self.DEFAULT_WIDTH * 0.24)]
+        )
         # Never collapse a pane to zero — a hidden stage or canvas mid-jam
         # looks like data loss and has no obvious restore affordance.
         self.center_splitter.setCollapsible(0, False)
@@ -151,7 +161,7 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack = QStackedWidget()
         self.workspace_stack.setObjectName("WorkspaceStack")
         self.workspace_stack.addWidget(self.center_splitter)
-        self.workspace_stack.addWidget(self.recording_studio)
+        self.workspace_stack.addWidget(self.reference_studio)
         self.workspace_stack.setCurrentWidget(self.center_splitter)
 
         body_container = QWidget()
@@ -198,8 +208,8 @@ class ConductorWindow(QMainWindow):
         )
         self._status_server.setVisible(False)
 
-        self._status_audio   = QLabel("Audio: —", self._status_bar)
-        self._status_video   = QLabel("Video: —", self._status_bar)
+        self._status_audio = QLabel("Audio: —", self._status_bar)
+        self._status_video = QLabel("Video: —", self._status_bar)
         self._status_latency = QLabel("Session: —", self._status_bar)
         self._status_routing = QLabel("", self._status_bar)
         self._status_audio.setVisible(False)
@@ -234,6 +244,7 @@ class ConductorWindow(QMainWindow):
         # shortcuts to literal Control (Qt.MetaModifier on macOS).  On
         # Windows/Linux, Ctrl+M means Ctrl+M as expected.
         import sys
+
         on_mac = sys.platform == "darwin"
 
         def _ctrl(key_str: str) -> QKeySequence:
@@ -249,8 +260,23 @@ class ConductorWindow(QMainWindow):
                     )
             return QKeySequence(f"Ctrl+{key_str}")
 
+        def _live_shortcut(sequence: QKeySequence) -> QShortcut:
+            """Bind a session-only shortcut below the live workspace.
+
+            Reference Studio has its own familiar DAW shortcuts (Save, Open,
+            Split, Mixer).  Parenting live-mix shortcuts to the whole window
+            made both commands eligible while Studio had focus, so Qt could
+            report an ambiguous shortcut or run the wrong session action.
+            """
+
+            shortcut = QShortcut(sequence, self.center_splitter)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            return shortcut
+
         # Cmd/Ctrl+L — focus session title
-        QShortcut(QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title())
+        self._title_shortcut = QShortcut(
+            QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title()
+        )
         # F2 — Band Check (signal consumed by controller)
         self._ready_check_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self)
         # F11 — fullscreen toggle
@@ -260,41 +286,37 @@ class ConductorWindow(QMainWindow):
         # Cmd/Ctrl+, — open settings wizard (signal consumed by controller)
         self._settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
         # Cmd/Ctrl+S — save mix; Cmd/Ctrl+O — load mix (consumed by controller)
-        self._save_mix_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
-        self._load_mix_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        self._save_mix_shortcut = _live_shortcut(QKeySequence("Ctrl+S"))
+        self._load_mix_shortcut = _live_shortcut(QKeySequence("Ctrl+O"))
         # Cmd/Ctrl+Shift+S — "Save Mix As..."; Cmd/Ctrl+Shift+O — "Load Mix..."
         # Multi-slot mix support: pick an arbitrary file path so users can
         # keep one mix per song / per band-mate setup.  Uses the macOS-safe
         # binder so Cmd+Shift+S doesn't collide with system shortcuts.
         if on_mac:
-            self._save_mix_as_shortcut = QShortcut(
+            self._save_mix_as_shortcut = _live_shortcut(
                 QKeySequence(
                     Qt.KeyboardModifier.MetaModifier.value
                     | Qt.KeyboardModifier.ShiftModifier.value
                     | Qt.Key.Key_S.value
-                ),
-                self,
+                )
             )
-            self._load_mix_from_shortcut = QShortcut(
+            self._load_mix_from_shortcut = _live_shortcut(
                 QKeySequence(
                     Qt.KeyboardModifier.MetaModifier.value
                     | Qt.KeyboardModifier.ShiftModifier.value
                     | Qt.Key.Key_O.value
-                ),
-                self,
+                )
             )
         else:
-            self._save_mix_as_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
-            self._load_mix_from_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
+            self._save_mix_as_shortcut = _live_shortcut(QKeySequence("Ctrl+Shift+S"))
+            self._load_mix_from_shortcut = _live_shortcut(QKeySequence("Ctrl+Shift+O"))
         # Cmd/Ctrl+T — insert timestamp into session canvas
-        QShortcut(
-            QKeySequence("Ctrl+T"), self,
-            lambda: self.session_canvas.insert_timestamp(),
-        )
+        self._timestamp_shortcut = _live_shortcut(QKeySequence("Ctrl+T"))
+        self._timestamp_shortcut.activated.connect(self.session_canvas.insert_timestamp)
         # Mute-all uses the macOS-safe binder so it does not collide with
         # system minimize (Cmd+M).
-        self._practice_shortcut = QShortcut(_ctrl("P"), self)
-        self._mute_all_shortcut = QShortcut(_ctrl("M"), self)
+        self._practice_shortcut = _live_shortcut(_ctrl("P"))
+        self._mute_all_shortcut = _live_shortcut(_ctrl("M"))
         # Cmd/Ctrl+Shift+D — copy diagnostics summary to clipboard
         if on_mac:
             self._diagnostics_shortcut = QShortcut(
@@ -309,21 +331,34 @@ class ConductorWindow(QMainWindow):
             self._diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         # Cmd/Ctrl+Shift+R — reset all faders to 0 dB (with confirmation)
         if on_mac:
-            self._reset_faders_shortcut = QShortcut(
+            self._reset_faders_shortcut = _live_shortcut(
                 QKeySequence(
                     Qt.KeyboardModifier.MetaModifier.value
                     | Qt.KeyboardModifier.ShiftModifier.value
                     | Qt.Key.Key_R.value
-                ),
-                self,
+                )
             )
         else:
-            self._reset_faders_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+            self._reset_faders_shortcut = _live_shortcut(QKeySequence("Ctrl+Shift+R"))
         # F1 — show help dialog
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, self.show_help)
-        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.side_rail.trigger("stage"))
-        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.side_rail.trigger("canvas"))
-        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.side_rail.trigger("takes"))
+        self._navigation_shortcuts = (
+            QShortcut(
+                QKeySequence("Ctrl+1"),
+                self,
+                lambda: self.side_rail.trigger("stage"),
+            ),
+            QShortcut(
+                QKeySequence("Ctrl+2"),
+                self,
+                lambda: self.side_rail.trigger("canvas"),
+            ),
+            QShortcut(
+                QKeySequence("Ctrl+3"),
+                self,
+                lambda: self.side_rail.trigger("takes"),
+            ),
+        )
 
     def _setup_tab_order(self) -> None:
         """Keep keyboard traversal aligned with the visible workflow."""
@@ -348,6 +383,34 @@ class ConductorWindow(QMainWindow):
         for current, following in zip(order, order[1:]):
             QWidget.setTabOrder(current, following)
 
+    def show_reference_studio_only(self) -> None:
+        """Present the offline song workspace without live-session chrome."""
+
+        from webjam_qt import __version__
+
+        self._reference_studio_only = True
+        self.setWindowTitle(f"WebJam — Reference Studio (v{__version__})")
+        self.session_strip.hide()
+        self.session_hud.hide()
+        self.session_controls.hide()
+        self.side_rail.hide()
+        self._status_bar.setVisible(
+            self._status_bar.currentMessage() == self.OFFLINE_INVITATION_GUIDANCE
+        )
+        self._title_shortcut.setEnabled(False)
+        self._ready_check_shortcut.setEnabled(False)
+        for shortcut in self._navigation_shortcuts:
+            shortcut.setEnabled(False)
+        self.workspace_stack.setCurrentWidget(self.reference_studio)
+        self.reference_studio.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def show_offline_invitation_guidance(self) -> None:
+        """Persist the safe next step when an invite arrives in offline Studio."""
+
+        self.flash_message(self.OFFLINE_INVITATION_GUIDANCE, ms=0)
+        self._status_bar.setAccessibleName("Offline invitation guidance")
+        self._status_bar.setAccessibleDescription(self.OFFLINE_INVITATION_GUIDANCE)
+
     def show_help(self) -> None:
         """Display the same short workflow the live screen presents."""
         import sys
@@ -363,22 +426,38 @@ class ConductorWindow(QMainWindow):
             navigation_shortcuts = "Ctrl+1 / Ctrl+2 / Ctrl+3"
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
-        body = (
-            f"<b>WebJam v{__version__}</b><br>"
-            "<i>Host. Share. Join. Play.</i><br><br>"
-            "<b>1.</b> Choose <b>Host a Jam</b> or <b>Join a Jam</b>.<br>"
-            "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
-            "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
-            "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
-            "<b>5.</b> Use <b>More → Studio</b> to review a take.<br>"
-            "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
-            "<b>Useful shortcuts</b><br>"
-            "F2 — Band Check<br>"
-            f"{navigation_shortcuts} — Live / Notes / Studio<br>"
-            f"{mix_shortcuts} — Save / load your monitor mix<br>"
-            f"{reset_shortcut} — Reset every fader to 0 dB<br>"
-            "F11 / Esc — Enter / leave full screen"
-        )
+        if self._reference_studio_only:
+            body = (
+                f"<b>WebJam v{__version__} — Reference Studio</b><br>"
+                "<i>Build and rehearse a song offline.</i><br><br>"
+                "<b>1.</b> Choose <b>Play Along / Record</b>, "
+                "<b>New Project</b>, or <b>Open Project</b>.<br>"
+                "<b>2.</b> Import a backing track you own or may use.<br>"
+                "<b>3.</b> Add tracks, map recording inputs, and arrange regions.<br>"
+                "<b>4.</b> Save the project, then use <b>Bounce</b> to export "
+                "your demo.<br><br>"
+                "Reference Studio audio is separate from Jamulus live audio "
+                "and settings.<br><br>"
+                "F11 / Esc — Enter / leave full screen"
+            )
+        else:
+            body = (
+                f"<b>WebJam v{__version__}</b><br>"
+                "<i>Host. Share. Join. Play.</i><br><br>"
+                "<b>1.</b> Choose <b>Host a Jam</b> or <b>Join a Jam</b>.<br>"
+                "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
+                "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
+                "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
+                "<b>5.</b> Use <b>More → Studio</b> to build a song project or "
+                "review completed session takes.<br>"
+                "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
+                "<b>Useful shortcuts</b><br>"
+                "F2 — Band Check<br>"
+                f"{navigation_shortcuts} — Live / Notes / Studio<br>"
+                f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
+                f"{reset_shortcut} — Reset every fader to 0 dB<br>"
+                "F11 / Esc — Enter / leave full screen"
+            )
         box = QMessageBox(self)
         box.setWindowTitle("WebJam Help")
         box.setTextFormat(Qt.TextFormat.RichText)
@@ -401,18 +480,15 @@ class ConductorWindow(QMainWindow):
         target = desktop_target() or "unknown target"
         if target.startswith("macos-"):
             trust_detail = (
-                "This macOS test build is ad-hoc signed and is not "
-                "Apple-notarized."
+                "This macOS test build is ad-hoc signed and is not Apple-notarized."
             )
         elif target == "windows-x64":
             trust_detail = (
-                "This Windows test build is unsigned and is for private "
-                "testing only."
+                "This Windows test build is unsigned and is for private testing only."
             )
         elif target == "linux-x64":
             trust_detail = (
-                "This Linux build is an unsigned portable private test "
-                "candidate."
+                "This Linux build is an unsigned portable private test candidate."
             )
         else:
             trust_detail = (
@@ -480,7 +556,9 @@ class ConductorWindow(QMainWindow):
         # Routing is automatic and intentionally absent from the musician UI.
         self._status_routing.setText(str(text or ""))
 
-    def flash_message(self, text: str, *, ms: int = 4000, color: str | None = None) -> None:
+    def flash_message(
+        self, text: str, *, ms: int = 4000, color: str | None = None
+    ) -> None:
         """Show a temporary status-bar message, optionally tinted.
 
         ``color`` accepts any Qt stylesheet color value.
@@ -488,7 +566,9 @@ class ConductorWindow(QMainWindow):
         tint is cleared automatically once the message times out or is
         replaced — see ``_on_status_message_changed``.
         """
-        self._status_bar.setStyleSheet(f"QStatusBar{{color: {color};}}" if color else "")
+        self._status_bar.setStyleSheet(
+            f"QStatusBar{{color: {color};}}" if color else ""
+        )
         self._status_bar.setVisible(True)
         self._status_bar.showMessage(text, ms)
 

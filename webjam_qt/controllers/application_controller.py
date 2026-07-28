@@ -107,10 +107,14 @@ class ApplicationController(QObject):
         remote_invitation: RemoteInvitation | None = None,
         *,
         operator_mode: bool | None = None,
+        offline_reference_studio: bool = False,
     ) -> None:
         super().__init__(window)
         self.window = window
         self.settings = settings or load_settings()
+        if not isinstance(offline_reference_studio, bool):
+            raise TypeError("offline_reference_studio must be true or false")
+        self._offline_reference_studio = offline_reference_studio
         self._operator_mode = bool(
             getattr(window, "operator_mode", False)
             if operator_mode is None
@@ -123,6 +127,12 @@ class ApplicationController(QObject):
         self._test_night_dialog = None
         if session_invite is not None and remote_invitation is not None:
             raise ValueError("only one invitation may be active")
+        if offline_reference_studio and (
+            session_invite is not None or remote_invitation is not None
+        ):
+            raise ValueError(
+                "offline Reference Studio cannot start with a live invitation"
+            )
         if remote_invitation is not None and not isinstance(
             remote_invitation, RemoteInvitation
         ):
@@ -340,6 +350,10 @@ class ApplicationController(QObject):
         self._pocket_stage_session_end_stop_confirmed = True
         self._invite_switch_generation = 0
         self._invite_switch_in_flight = False
+        # Deep links can arrive while the one authorized switch worker is
+        # still retiring the old jam. Keep only the newest typed invitation:
+        # cleanup remains single-flight and no serialized link is retained.
+        self._pending_invitation: BandInvite | RemoteInvitation | None = None
         # Reference Track is created lazily when a host opens its panel. The
         # operation lock serializes decoder/process work without ever blocking
         # the Qt event thread; shutdown takes the same lock before releasing
@@ -407,15 +421,11 @@ class ApplicationController(QObject):
         # so this timer cannot turn audio animation into network/UI work.
         self._pocket_projection_timer = QTimer(self)
         self._pocket_projection_timer.setInterval(100)
-        self._pocket_projection_timer.timeout.connect(
-            self._refresh_pocket_projection
-        )
+        self._pocket_projection_timer.timeout.connect(self._refresh_pocket_projection)
 
         self._reference_track_timer = QTimer(self)
         self._reference_track_timer.setInterval(250)
-        self._reference_track_timer.timeout.connect(
-            self._refresh_reference_track_ui
-        )
+        self._reference_track_timer.timeout.connect(self._refresh_reference_track_ui)
 
         self._connection_timer = QTimer(self)
         self._connection_timer.setSingleShot(True)
@@ -443,6 +453,20 @@ class ApplicationController(QObject):
             metrics=self.metrics,
         )
 
+        # Standalone Reference Studio is a separate project/audio owner.  It
+        # never receives the Jamulus controller or settings object, so its
+        # output, recorder, media workers, and project edits cannot mutate the
+        # live rehearsal route.
+        from webjam_qt.controllers.reference_studio_application import (
+            ReferenceStudioApplicationController,
+        )
+
+        self.reference_studio_projects = ReferenceStudioApplicationController(
+            self.window.reference_studio,
+            config_file=self.settings.config_file,
+            parent=self,
+        )
+
         self._wire_signals()
         self._bootstrap_ui()
         self._start_routing_scan()
@@ -457,6 +481,15 @@ class ApplicationController(QObject):
     def _prepare_studio_close(self) -> bool:
         """Synchronously preserve dirty Studio edits before any teardown."""
 
+        project_studio = getattr(self, "reference_studio_projects", None)
+        prepare_project_close = getattr(project_studio, "prepare_close", None)
+        if callable(prepare_project_close):
+            try:
+                if not bool(prepare_project_close()):
+                    return False
+            except Exception:  # noqa: BLE001 - quit must retain unsaved projects
+                LOGGER.exception("Reference Studio project close preparation failed")
+                return False
         studio = getattr(getattr(self, "window", None), "recording_studio", None)
         prepare_close = getattr(studio, "prepare_close", None)
         if not callable(prepare_close):
@@ -577,6 +610,24 @@ class ApplicationController(QObject):
     def _shutdown_once(self) -> bool:
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
+        # End/Leave and invitation switching already have a single teardown
+        # owner. Starting the application-wide teardown beside that worker
+        # could race recorder finalization, clear retained retry evidence, or
+        # stop a replacement client as it launches. Normal native close is
+        # gated by _confirm_close; this direct guard also protects
+        # aboutToQuit/finally and extension callers.
+        if bool(
+            getattr(getattr(self, "audio", None), "stopping", False)
+            or getattr(self, "_invite_switch_in_flight", False)
+        ):
+            flash_message = getattr(self.window, "flash_message", None)
+            if callable(flash_message):
+                flash_message(
+                    "Session cleanup is still running. Wait for WebJam to "
+                    "finish, then quit again.",
+                    ms=7000,
+                )
+            return False
         if getattr(self, "_shutdown_in_progress", False):
             return False
         self._shutdown_in_progress = True
@@ -596,9 +647,9 @@ class ApplicationController(QObject):
         # mutating the application lifecycle, recorder, primary musician
         # client, or hosted server. If process death cannot be proved, keep the
         # app open so the host can retry instead of hiding an owned process.
-        self._reference_track_session_generation = int(
-            getattr(self, "_reference_track_session_generation", 0)
-        ) + 1
+        self._reference_track_session_generation = (
+            int(getattr(self, "_reference_track_session_generation", 0)) + 1
+        )
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
             reference_closed = False
@@ -606,8 +657,7 @@ class ApplicationController(QObject):
                 with self._reference_track_operation_lock:
                     snapshot = reference_track.close()
                 reference_closed = (
-                    getattr(getattr(snapshot, "state", None), "value", "")
-                    == "closed"
+                    getattr(getattr(snapshot, "state", None), "value", "") == "closed"
                 )
             except Exception:  # noqa: BLE001
                 LOGGER.error("Reference Track shutdown could not be confirmed")
@@ -734,9 +784,7 @@ class ApplicationController(QObject):
         if hosted_server_alive:
             hosted_server_stopped = False
             try:
-                hosted_server_stopped = (
-                    self.bridge.stop_hosted_server() is not False
-                )
+                hosted_server_stopped = self.bridge.stop_hosted_server() is not False
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Hosted server shutdown failed")
             if not hosted_server_stopped:
@@ -773,6 +821,20 @@ class ApplicationController(QObject):
                 "Studio is still closing",
                 "WebJam could not yet confirm that Studio released its playback "
                 "and waveform workers.",
+            )
+        reference_studio_projects = getattr(
+            self,
+            "reference_studio_projects",
+            None,
+        )
+        if (
+            reference_studio_projects is not None
+            and reference_studio_projects.shutdown() is False
+        ):
+            return self._show_shutdown_cleanup_retry(
+                "Reference Studio is still closing",
+                "WebJam could not yet confirm that the project playback and "
+                "autosave workers stopped safely.",
             )
         # An unfinished Test Night record is durable. Mark it paused before
         # the final lifecycle commit so a restart never makes a physical pilot
@@ -1020,7 +1082,9 @@ class ApplicationController(QObject):
         """Map the guest transfer owner's finite facts without exposing errors."""
 
         guest = getattr(self, "guest_peer", None)
-        if guest is None or not bool(getattr(self.settings, "local_capture_enabled", False)):
+        if guest is None or not bool(
+            getattr(self.settings, "local_capture_enabled", False)
+        ):
             return GuestMediaState.NOT_EXPECTED, EvidenceState.NOT_REQUIRED
         try:
             segments = tuple(guest.pending_segments)
@@ -1039,9 +1103,7 @@ class ApplicationController(QObject):
         preservation = (
             EvidenceState.VERIFIED
             if all(
-                callable(
-                    getattr(getattr(segment, "source", None), "is_file", None)
-                )
+                callable(getattr(getattr(segment, "source", None), "is_file", None))
                 and bool(segment.source.is_file())
                 for segment in segments
             )
@@ -1592,8 +1654,7 @@ class ApplicationController(QObject):
         presentation = conductor.presentation
         guidance = getattr(self, "_last_musician_guidance", None)
         guidance_matches = bool(
-            guidance is not None
-            and guidance.generation == conductor.token.generation
+            guidance is not None and guidance.generation == conductor.token.generation
         )
         primary_enabled = bool(
             guidance.primary_enabled
@@ -1628,7 +1689,11 @@ class ApplicationController(QObject):
                         0,
                         min(
                             100,
-                            round(int(getattr(participant, "fader_level", 100)) * 100 / 127),
+                            round(
+                                int(getattr(participant, "fader_level", 100))
+                                * 100
+                                / 127
+                            ),
                         ),
                     ),
                     pan=max(0, min(100, int(getattr(participant, "pan", 50)))),
@@ -1890,13 +1955,9 @@ class ApplicationController(QObject):
                 getattr(self.settings, "local_capture_choice_made", False)
             )
             studio = getattr(self.window, "recording_studio", None)
-            export_in_progress = bool(
-                getattr(studio, "export_in_progress", False)
-            )
+            export_in_progress = bool(getattr(studio, "export_in_progress", False))
             recorder_secret_ready = bool(
-                str(
-                    getattr(self.settings, "server_rpc_secret_file", "") or ""
-                ).strip()
+                str(getattr(self.settings, "server_rpc_secret_file", "") or "").strip()
             )
             if (
                 not is_host
@@ -1952,7 +2013,10 @@ class ApplicationController(QObject):
                 # roster checks).  Surface that as a finite rejection rather
                 # than leaving a phone waiting forever.  Successful recorder
                 # transitions remain pending and resolve through snapshots.
-                if self._pocket_recording_state() is MobileRecordingState.NEEDS_ATTENTION:
+                if (
+                    self._pocket_recording_state()
+                    is MobileRecordingState.NEEDS_ATTENTION
+                ):
                     self._refresh_pocket_projection()
                     return self._pocket_rejection(
                         request,
@@ -2326,6 +2390,19 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Jamulus-native startup journey
     # ------------------------------------------------------------------
+    def begin_reference_studio_journey(self) -> None:
+        """Open the standalone song workspace without starting live audio."""
+
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+        ):
+            return
+        self._offline_reference_studio = True
+        self.window.show_reference_studio_only()
+        self._on_rail_view_changed("takes")
+
     def begin_startup_journey(self) -> None:
         """Start one non-modal host/join journey without a WebJam device gate."""
 
@@ -2333,9 +2410,7 @@ class ApplicationController(QObject):
             getattr(self, "_shutdown", False)
             or getattr(self, "_shutdown_in_progress", False)
             or getattr(self, "_shutdown_cleanup_pending", False)
-            or bool(
-            getattr(getattr(self, "audio", None), "stopping", False)
-            )
+            or bool(getattr(getattr(self, "audio", None), "stopping", False))
         ):
             return
         active = getattr(self, "_startup_attempt", None)
@@ -3142,9 +3217,7 @@ class ApplicationController(QObject):
                 input_visible=True,
                 input_placeholder="https://your-site.webex.com/meet/your-room",
                 input_value=self.window.session_hud.input_text(),
-                input_accessible_name=(
-                    "Optional Webex meeting or Personal Room link"
-                ),
+                input_accessible_name=("Optional Webex meeting or Personal Room link"),
             )
         elif phase == "invite_ready":
             if role == "host":
@@ -3221,7 +3294,9 @@ class ApplicationController(QObject):
         )
 
     @staticmethod
-    def _startup_guidance_override(attempt: dict[str, object]) -> GuidanceDisplayOverride:
+    def _startup_guidance_override(
+        attempt: dict[str, object],
+    ) -> GuidanceDisplayOverride:
         """Return fixed, path-free guidance for the active native setup step."""
 
         phase = str(attempt.get("phase", ""))
@@ -3783,7 +3858,9 @@ class ApplicationController(QObject):
         owner_stopped = True
         if owner is not None:
             try:
-                owner.stop()
+                if owner.stop() is False:
+                    cleanup_ok = False
+                    owner_stopped = False
             except Exception as exc:  # noqa: BLE001 - never log private detail
                 LOGGER.error(
                     "Remote invitation cleanup failed; exception_type=%s",
@@ -3822,7 +3899,9 @@ class ApplicationController(QObject):
         runtime_stopped = True
         if runtime is not None:
             try:
-                runtime.stop()
+                if runtime.stop() is False:
+                    cleanup_ok = False
+                    runtime_stopped = False
                 from services.remote_session_runtime import RemoteSessionErrorCode
 
                 if (
@@ -4012,6 +4091,25 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return False
+        if bool(getattr(self, "_offline_reference_studio", False)):
+            if not isinstance(invitation, (BandInvite, RemoteInvitation)):
+                raise TypeError("invitation must be a BandInvite or RemoteInvitation")
+            self.window.show_offline_invitation_guidance()
+            return False
+        if bool(getattr(self, "_invite_switch_in_flight", False)):
+            if not isinstance(invitation, (BandInvite, RemoteInvitation)):
+                raise TypeError("invitation must be a BandInvite or RemoteInvitation")
+            # The current worker remains the only teardown owner. Replacing
+            # this one-item memory slot gives OS deep-link delivery
+            # deterministic latest-wins behavior without spawning a second
+            # worker or persisting private invitation material.
+            self._pending_invitation = invitation
+            self.window.flash_message(
+                "WebJam received a newer invitation. It will use that one "
+                "after the current jam finishes closing.",
+                ms=7000,
+            )
+            return True
         if bool(
             getattr(getattr(self, "audio", None), "stopping", False)
             or getattr(
@@ -4087,9 +4185,7 @@ class ApplicationController(QObject):
         """Preserve the existing v1/v2 same-LAN join flow."""
 
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive())
-        switch_was_hosting = bool(
-            getattr(self.settings, "host_server_enabled", False)
-        )
+        switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
         if (
             busy
             and bool(
@@ -4122,6 +4218,7 @@ class ApplicationController(QObject):
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
+            self._pending_invitation = None
             # A failed switch is retried through AudioCoordinator after the
             # invitation closure has returned. Preserve the role that owns the
             # unresolved services; the replacement invite must never turn a
@@ -4141,7 +4238,7 @@ class ApplicationController(QObject):
             else "WebJam is connecting your music.",
         )
 
-        def _apply_and_launch() -> bool:
+        def _apply_and_launch(invitation: BandInvite) -> bool:
             from core.settings import load_settings, save_settings
             from webjam_qt.windows.launch_dialog import apply_join_invite
 
@@ -4186,7 +4283,7 @@ class ApplicationController(QObject):
             self._remote_invitation = None
             settings_path = self.settings.config_file
             new_settings = load_settings(settings_path)
-            apply_join_invite(new_settings, invite)
+            apply_join_invite(new_settings, invitation)
             try:
                 save_settings(new_settings)
             except Exception:  # noqa: BLE001
@@ -4204,9 +4301,9 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
-            if bool(getattr(invite, "peer_enabled", False)):
-                self._configure_guest_peer(invite)
-            self.window.session_strip.set_session_title(invite.session_name)
+            if bool(getattr(invitation, "peer_enabled", False)):
+                self._configure_guest_peer(invitation)
+            self.window.session_strip.set_session_title(invitation.session_name)
             self._save_session_title()
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory
@@ -4228,25 +4325,32 @@ class ApplicationController(QObject):
             return True
 
         if not busy:
-            if not _apply_and_launch():
+            if not _apply_and_launch(invite):
                 return False
-            self.begin_startup_journey()
+            try:
+                self.begin_startup_journey()
+            except Exception:  # noqa: BLE001 - leave invitation retryable
+                LOGGER.exception("Could not launch the incoming invitation")
+                self.audio.stopping = False
+                self.window.flash_message(
+                    "WebJam saved the invitation but could not start it. "
+                    "Choose Start Session to try again.",
+                    ms=8000,
+                )
+                return False
             return True
 
         def _show_switch_failure(*, cleanup_unresolved: bool = False) -> None:
             if switch_generation != self._invite_switch_generation:
                 return
+            self._pending_invitation = None
             self._invite_switch_in_flight = False
             self.audio.stopping = False
             self.audio.ended_by_user = False
             self.audio.cleanup_retry_required = bool(cleanup_unresolved)
             self.window.session_strip.set_tools_enabled(True)
-            self._complete_pocket_stage_session_end(
-                succeeded=not cleanup_unresolved
-            )
-            self.window.participant_grid.set_session_state(
-                SessionUiState.stop_failed()
-            )
+            self._complete_pocket_stage_session_end(succeeded=not cleanup_unresolved)
+            self.window.participant_grid.set_session_state(SessionUiState.stop_failed())
             self.window.session_hud.set_state(
                 "WebJam couldn’t open the new jam safely",
                 (
@@ -4259,11 +4363,7 @@ class ApplicationController(QObject):
                 ),
             )
             self.window.session_strip.set_audio_state(
-                (
-                    "Try End Session"
-                    if switch_was_hosting
-                    else "Try Leave Jam"
-                )
+                ("Try End Session" if switch_was_hosting else "Try Leave Jam")
                 if cleanup_unresolved
                 else "Start Session",
                 enabled=cleanup_unresolved,
@@ -4282,8 +4382,36 @@ class ApplicationController(QObject):
         def _finish_switch_apply() -> None:
             if switch_generation != self._invite_switch_generation:
                 return
+            selected = self._pending_invitation or invite
+            self._pending_invitation = None
+            if isinstance(selected, RemoteInvitation):
+                # The old jam is now fully retired. Release the switch latch
+                # before entering the normal v3 path so its own cleanup
+                # checks remain authoritative and no stale BandInvite launch
+                # can follow it.
+                self._invite_switch_in_flight = False
+                self.audio.stopping = False
+                self.audio.ended_by_user = False
+                self.audio.connected = False
+                self.recording.on_audio_session_stopped()
+                self.window.session_strip.reset_session_clock()
+                self.audio.reset_to_idle()
+                self.window.session_strip.set_tools_enabled(True)
+                self._complete_pocket_stage_session_end(succeeded=True)
+                try:
+                    accepted = self._accept_remote_invitation(selected)
+                except Exception:  # noqa: BLE001 - keep the UI recoverable
+                    LOGGER.exception(
+                        "Could not launch the replacement private invitation"
+                    )
+                    accepted = False
+                if not accepted:
+                    _show_switch_failure(
+                        cleanup_unresolved=bool(self.audio.cleanup_retry_required)
+                    )
+                return
             try:
-                applied = _apply_and_launch()
+                applied = _apply_and_launch(selected)
             except Exception:  # noqa: BLE001 - leave the UI recoverable
                 LOGGER.exception("Could not apply the replacement invitation")
                 applied = False
@@ -4294,15 +4422,17 @@ class ApplicationController(QObject):
                 # do not immediately erase that latch while rendering the
                 # enclosing invitation-switch failure.
                 _show_switch_failure(
-                    cleanup_unresolved=bool(
-                        self.audio.cleanup_retry_required
-                    )
+                    cleanup_unresolved=bool(self.audio.cleanup_retry_required)
                 )
                 return
             self._invite_switch_in_flight = False
             self.window.session_strip.set_tools_enabled(True)
             self._complete_pocket_stage_session_end(succeeded=True)
-            self.begin_startup_journey()
+            try:
+                self.begin_startup_journey()
+            except Exception:  # noqa: BLE001 - leave the UI recoverable
+                LOGGER.exception("Could not launch the replacement invitation")
+                _show_switch_failure(cleanup_unresolved=False)
 
         def _switch_worker() -> None:
             cleanup_ok = True
@@ -4319,16 +4449,10 @@ class ApplicationController(QObject):
                     raise RuntimeError(
                         "Session-dependent media cleanup was not confirmed"
                     )
-                cleanup_ok = (
-                    self._stop_pocket_stage_for_session_end() and cleanup_ok
-                )
-                cleanup_ok = (
-                    self._stop_session_peer(clear_invite=True) and cleanup_ok
-                )
+                cleanup_ok = self._stop_pocket_stage_for_session_end() and cleanup_ok
+                cleanup_ok = self._stop_session_peer(clear_invite=True) and cleanup_ok
                 if not cleanup_ok:
-                    raise RuntimeError(
-                        "Private session cleanup was not confirmed"
-                    )
+                    raise RuntimeError("Private session cleanup was not confirmed")
                 cleanup_ok = bool(self.bridge.stop_jamulus()) and cleanup_ok
                 if self.bridge.hosted_server_alive():
                     cleanup_ok = bool(self.bridge.stop_hosted_server()) and cleanup_ok
@@ -4338,9 +4462,7 @@ class ApplicationController(QObject):
                     # The replacement invitation will install a fresh route
                     # on the owner thread. Do not restore the prior settings
                     # from this worker, because reconfiguration touches Qt.
-                    cleanup_ok = self._stop_remote_transport(
-                        restore_route=False
-                    )
+                    cleanup_ok = self._stop_remote_transport(restore_route=False)
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Could not safely leave the current jam")
                 cleanup_ok = False
@@ -6613,9 +6735,7 @@ class ApplicationController(QObject):
         if not url:
             self._show_actionable_error(
                 "No Webex Link",
-                what_failed=(
-                    "No Webex Meeting or Personal Room link is configured."
-                ),
+                what_failed=("No Webex Meeting or Personal Room link is configured."),
                 likely_cause="A link hasn't been entered yet.",
                 next_action=(
                     "Go to Settings and enter your Meeting or Personal Room link."
@@ -6768,10 +6888,7 @@ class ApplicationController(QObject):
         # connection is slow or failed, but never while one End/Leave/switch
         # owner is tearing down the session.
         self.window.session_strip.set_tools_enabled(
-            not bool(
-                self.audio.stopping
-                or self._invite_switch_in_flight
-            )
+            not bool(self.audio.stopping or self._invite_switch_in_flight)
         )
         self.window.set_status_audio(audio_state)
         self.window.set_status_video(self.bridge.webex_state)
@@ -7373,9 +7490,7 @@ class ApplicationController(QObject):
             self.bridge.webex_state = WebexLaunchState.NOT_OPENED.value
             self.window.set_status_video(WebexLaunchState.NOT_OPENED.value)
             self.window.session_strip.set_video_state("Open Webex", enabled=True)
-            self.window.webex_embed.set_launch_status(
-                WebexLaunchState.NOT_OPENED.value
-            )
+            self.window.webex_embed.set_launch_status(WebexLaunchState.NOT_OPENED.value)
         self._talk_break_intended = False
         self._self_transmit_muted = False
         self.window.session_strip.set_video_configured(
@@ -7589,9 +7704,7 @@ class ApplicationController(QObject):
             # committed folder.
             if not self._configure_guest_peer(retained_invite):
                 self.audio.require_cleanup_retry(
-                    hosting=bool(
-                        getattr(old_settings, "host_server_enabled", False)
-                    ),
+                    hosting=bool(getattr(old_settings, "host_server_enabled", False)),
                     error=(
                         "The new recording folder was saved, but WebJam "
                         "couldn’t close the previous Local Originals "
@@ -7723,10 +7836,23 @@ class ApplicationController(QObject):
                     else [int(total * 0.28), int(total * 0.72)]
                 )
             elif key == "takes":
-                self.window.recording_studio.reload()
                 self.window.workspace_stack.setCurrentWidget(
-                    self.window.recording_studio
+                    self.window.reference_studio
                 )
+                project_studio = getattr(
+                    self,
+                    "reference_studio_projects",
+                    None,
+                )
+                if bool(getattr(self, "_offline_reference_studio", False)):
+                    if project_studio is not None:
+                        project_studio.activate()
+                else:
+                    # In a live jam the Studio rail still means completed
+                    # session-take review. Standalone launch owns the project
+                    # home instead; do not let that home silently replace the
+                    # familiar live review controls.
+                    self.window.reference_studio.show_take_review()
             self._update_session_hud()
 
     def _reference_track_is_host(self) -> bool:
@@ -7751,9 +7877,7 @@ class ApplicationController(QObject):
             on_snapshot=self._on_reference_track_snapshot,
         )
         self._reference_track = controller
-        controller.refresh_capability(
-            self._webex_audio_mode() == "audience_bridge"
-        )
+        controller.refresh_capability(self._webex_audio_mode() == "audience_bridge")
         return controller
 
     def _open_reference_track(self) -> None:
@@ -7768,9 +7892,7 @@ class ApplicationController(QObject):
             )
             return
         controller = self._reference_track_controller()
-        controller.refresh_capability(
-            self._webex_audio_mode() == "audience_bridge"
-        )
+        controller.refresh_capability(self._webex_audio_mode() == "audience_bridge")
         dialog = self._reference_track_dialog
         if dialog is None:
             from webjam_qt.windows.reference_track import ReferenceTrackDialog
@@ -7927,9 +8049,7 @@ class ApplicationController(QObject):
 
             return read_native_audio_device_names(plan)
         except Exception:  # noqa: BLE001 - native profile is an external boundary
-            LOGGER.warning(
-                "Reference Track could not verify the primary Jamulus route"
-            )
+            LOGGER.warning("Reference Track could not verify the primary Jamulus route")
             return "", ""
 
     def _reference_track_primary_process_id(self) -> int:
@@ -7967,9 +8087,7 @@ class ApplicationController(QObject):
             return
         from core.reference_track import ReferenceTrackLaunchContext
 
-        primary_input, primary_output = (
-            self._reference_track_primary_device_names()
-        )
+        primary_input, primary_output = self._reference_track_primary_device_names()
         primary_process_id = self._reference_track_primary_process_id()
         if primary_process_id <= 0:
             self.window.flash_message(
@@ -7986,9 +8104,7 @@ class ApplicationController(QObject):
             primary_process_id=primary_process_id,
             primary_input_device_name=primary_input,
             primary_output_device_name=primary_output,
-            audience_bridge_active=(
-                self._webex_audio_mode() == "audience_bridge"
-            ),
+            audience_bridge_active=(self._webex_audio_mode() == "audience_bridge"),
         )
         generation = self._reference_track_session_generation
 
@@ -8011,9 +8127,9 @@ class ApplicationController(QObject):
         *,
         background: bool,
     ) -> bool:
-        self._reference_track_session_generation = int(
-            getattr(self, "_reference_track_session_generation", 0)
-        ) + 1
+        self._reference_track_session_generation = (
+            int(getattr(self, "_reference_track_session_generation", 0)) + 1
+        )
         controller = getattr(self, "_reference_track", None)
         if controller is None:
             return True
@@ -8110,9 +8226,7 @@ class ApplicationController(QObject):
         # session-stop worker proved the then-current listener was off. Keep
         # the retirement latch until that late callback arrives; otherwise it
         # could publish a pairing code for the next idle/session generation.
-        self._pocket_stage_retire_after_start = bool(
-            self._pocket_stage_starting
-        )
+        self._pocket_stage_retire_after_start = bool(self._pocket_stage_starting)
         self._pocket_projection_timer.stop()
         self.window.session_strip.set_pocket_stage_state("off")
         if self._pocket_stage_dialog is not None:
@@ -8205,7 +8319,10 @@ class ApplicationController(QObject):
             return
         self._pocket_stage_starting = False
         self._pocket_stage_stop_unresolved = False
-        if self._pocket_stage_retire_after_start:
+        if (
+            self._pocket_stage_retire_after_start
+            or not self._pocket_stage_pairing_allowed()
+        ):
             self._pocket_stage_retire_after_start = False
             self._stop_pocket_stage(network_changed=True)
             return
@@ -8228,7 +8345,41 @@ class ApplicationController(QObject):
             scopes.append(PairingScope.RECORD)
         return tuple(scopes)
 
+    def _pocket_stage_pairing_allowed(self) -> bool:
+        """Return true only while one settled live jam owns phone authority."""
+
+        return bool(
+            not self._shutdown
+            and not self._shutdown_cleanup_pending
+            and not self.audio.stopping
+            and not self.audio.cleanup_retry_required
+            and not self._invite_switch_in_flight
+            and not self._pocket_stage_stopping
+            and not self._pocket_stage_stop_unresolved
+            and self._is_jamulus_running()
+            and self._jamulus_connected
+        )
+
     def _show_pocket_stage_offer(self) -> None:
+        # The dialog's Refresh button can deliver this callback after an
+        # End/Leave transition has begun. Revalidate session truth at the
+        # authority boundary instead of relying only on the menu action that
+        # originally opened the dialog.
+        if not self._pocket_stage_pairing_allowed():
+            self.window.flash_message(
+                "Connect to a live jam before creating a new Pocket Stage "
+                "pairing code.",
+                ms=6000,
+            )
+            if bool(
+                self.pocket_stage_gateway.running
+                and not self.audio.stopping
+                and not self._invite_switch_in_flight
+                and not self._pocket_stage_starting
+                and not self._pocket_stage_stopping
+            ):
+                self._stop_pocket_stage(network_changed=True)
+            return
         try:
             offer = self.pocket_stage_gateway.issue_pairing_offer(
                 scopes=self._pocket_stage_scopes(),
