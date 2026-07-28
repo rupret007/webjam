@@ -33,8 +33,14 @@ def test_latest_promotion_requires_matching_immutable_semver_tag() -> None:
 
 def test_latest_promotion_accepts_only_an_unpublished_candidate_draft() -> None:
     assert "Require one unpublished non-prerelease draft" in WORKFLOW
-    assert ".tag_name == $tag and .draft == true and .prerelease == false" in WORKFLOW
-    assert "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" in WORKFLOW
+    assert "--paginate" in WORKFLOW
+    assert "--slurp" in WORKFLOW
+    assert "repos/$GITHUB_REPOSITORY/releases?per_page=100" in WORKFLOW
+    assert "[ .[][] | select(.tag_name == $tag) ] as $matches" in WORKFLOW
+    assert "($matches | length) != 1" in WORKFLOW
+    assert "$matches[0].draft != true" in WORKFLOW
+    assert "$matches[0].prerelease != false" in WORKFLOW
+    assert "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" not in WORKFLOW
 
 
 def test_latest_promotion_verifies_exact_eight_asset_inventory_and_checksums() -> None:
