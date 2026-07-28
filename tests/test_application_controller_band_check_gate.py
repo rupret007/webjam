@@ -773,6 +773,29 @@ def test_failed_v2_peer_configuration_retains_invite_for_folder_repair(
     assert controller._local_originals_available() is False
 
 
+def test_v2_peer_replacement_retains_old_owner_when_stop_is_unconfirmed() -> None:
+    controller = _bare_controller()
+    old_peer = mock.Mock()
+    old_peer.stop.return_value = False
+    old_invite = mock.sentinel.old_invite
+    controller.guest_peer = old_peer
+    controller.host_peer = None
+    controller._guest_invite = old_invite
+    controller._guest_peer_configuration_failed = True
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.GuestPeerSession"
+    ) as guest_type:
+        configured = controller._configure_guest_peer(mock.sentinel.new_invite)
+
+    assert configured is False
+    old_peer.stop.assert_called_once_with()
+    guest_type.assert_not_called()
+    assert controller.guest_peer is old_peer
+    assert controller._guest_invite is old_invite
+    assert controller._guest_peer_configuration_failed is True
+
+
 def test_failed_inline_output_save_restores_live_setting() -> None:
     controller = _bare_controller()
     controller.settings = AppSettings(take_playback_output_device="Old Output")

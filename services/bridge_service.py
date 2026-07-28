@@ -290,6 +290,11 @@ class BridgeService:
         self.jamulus_process: Optional[subprocess.Popen] = None
         self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
         self.webex_state = WebexLaunchState.NOT_OPENED.value
+        # External Webex handoff is asynchronous. A settings change or a
+        # newer Open request invalidates every older worker so its eventual
+        # success/failure cannot overwrite the currently configured link.
+        self._webex_launch_lock = threading.Lock()
+        self._webex_launch_generation = 0
         
         self.jamulus_launch_intended = False
         # A launch is intentionally asynchronous, while Stop/Leave is allowed
@@ -1994,6 +1999,47 @@ class BridgeService:
             self.schedule_ui_callback(self.refresh_readiness)
             return stopped
 
+    def invalidate_webex_launch(self) -> None:
+        """Retire any in-flight external handoff without owning its browser."""
+
+        with self._webex_launch_lock:
+            self._webex_launch_generation += 1
+
+    def _begin_webex_launch(self) -> int:
+        with self._webex_launch_lock:
+            self._webex_launch_generation += 1
+            return self._webex_launch_generation
+
+    def _webex_launch_is_current(self, generation: int) -> bool:
+        with self._webex_launch_lock:
+            return generation == self._webex_launch_generation
+
+    def _publish_webex_state_if_current(
+        self,
+        generation: int,
+        state: WebexLaunchState,
+    ) -> bool:
+        """Atomically publish state only for the latest external handoff."""
+
+        with self._webex_launch_lock:
+            if generation != self._webex_launch_generation:
+                return False
+            self.webex_state = state.value
+            return True
+
+    def _schedule_webex_ui_if_current(
+        self,
+        generation: int,
+        callback: Callable[[], None],
+    ) -> None:
+        """Drop queued launch UI work if its URL/request was superseded."""
+
+        def _guarded() -> None:
+            if self._webex_launch_is_current(generation):
+                callback()
+
+        self.schedule_ui_callback(_guarded)
+
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
         """Open Webex externally and report only the launch result.
 
@@ -2003,18 +2049,33 @@ class BridgeService:
         """
         if self.shutdown_requested():
             return
+
+        launch_generation = self._begin_webex_launch()
+        launch_url = str(getattr(self.settings, "webex_url", "") or "").strip()
             
         if manual:
             self.metrics_service.increment("metric_webex_open_attempt")
             
-        self.webex_state = WebexLaunchState.OPENING.value
+        if not self._publish_webex_state_if_current(
+            launch_generation,
+            WebexLaunchState.OPENING,
+        ):
+            return
         self.set_status_banner("Opening Webex externally…", color="#BF5700")
-        self.schedule_ui_callback(self.refresh_readiness)
+        self._schedule_webex_ui_if_current(
+            launch_generation,
+            self.refresh_readiness,
+        )
 
         def _do_open() -> None:
             try:
                 if self.shutdown_requested():
-                    self.webex_state = WebexLaunchState.NOT_OPENED.value
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._webex_launch_is_current(launch_generation):
                     return
 
                 if not self.webex_controller.join_meeting():
@@ -2023,25 +2084,50 @@ class BridgeService:
                     )
 
                 if self.shutdown_requested():
-                    self.webex_state = WebexLaunchState.NOT_OPENED.value
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._publish_webex_state_if_current(
+                    launch_generation,
+                    WebexLaunchState.OPENED_EXTERNALLY,
+                ):
                     return
 
-                self.webex_state = WebexLaunchState.OPENED_EXTERNALLY.value
                 self.metrics_service.increment("metric_webex_open_success")
                     
-                self.schedule_ui_callback(self.refresh_readiness)
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    self.refresh_readiness,
+                )
                 if manual:
-                    self.schedule_ui_callback(
+                    self._schedule_webex_ui_if_current(
+                        launch_generation,
                         lambda: self.set_status_banner(
                             "Opened externally—finish joining in Webex."
-                        )
+                        ),
                     )
             except Exception as exc:
+                if self.shutdown_requested():
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._publish_webex_state_if_current(
+                    launch_generation,
+                    WebexLaunchState.OPEN_FAILED,
+                ):
+                    return
                 LOGGER.warning("External Webex launch failed: %s", type(exc).__name__)
-                self.webex_state = WebexLaunchState.OPEN_FAILED.value
                 self.metrics_service.increment("metric_webex_open_failed")
-                self.schedule_ui_callback(self.refresh_readiness)
-                self.schedule_ui_callback(
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    self.refresh_readiness,
+                )
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
                     lambda: self.show_actionable_error(
                         "Webex Open Failed",
                         what_failed="The configured Webex meeting could not be opened.",
@@ -2051,7 +2137,7 @@ class BridgeService:
                             "Room link, then try again."
                         ),
                         retry_callback=lambda: self.launch_webex(manual=True),
-                        copy_text=self.settings.webex_url,
+                        copy_text=launch_url,
                     )
                 )
 

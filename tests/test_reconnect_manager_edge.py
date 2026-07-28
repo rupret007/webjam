@@ -7,6 +7,7 @@ property shims.
 from __future__ import annotations
 
 import subprocess
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -352,6 +353,114 @@ class TestReconnectManagerEdge(unittest.TestCase):
         self.assertEqual(bridge.webex_state, "Open failed")
         self.assertEqual(bridge.jamulus_state, "Running")
         bridge.jamulus_controller.stop.assert_not_called()
+
+    def test_invalidated_webex_open_cannot_publish_stale_success(self):
+        bridge = _make_bridge()
+        entered = threading.Event()
+        release = threading.Event()
+        workers: list[threading.Thread] = []
+        real_thread = threading.Thread
+
+        def _join_meeting() -> bool:
+            entered.set()
+            self.assertTrue(release.wait(timeout=2.0))
+            return True
+
+        def _thread_factory(*args, **kwargs):
+            worker = real_thread(*args, **kwargs)
+            workers.append(worker)
+            return worker
+
+        bridge.webex_controller.join_meeting.side_effect = _join_meeting
+        with patch(
+            "services.bridge_service.threading.Thread",
+            side_effect=_thread_factory,
+        ):
+            bridge.launch_webex(manual=True, reconnect=False)
+            self.assertTrue(entered.wait(timeout=2.0))
+            bridge.invalidate_webex_launch()
+            bridge.webex_state = "Not opened"
+            release.set()
+            workers[0].join(timeout=2.0)
+
+        self.assertFalse(workers[0].is_alive())
+        self.assertEqual(bridge.webex_state, "Not opened")
+        self.assertNotIn(
+            "metric_webex_open_success",
+            [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
+        )
+
+    def test_invalidated_webex_open_cannot_publish_stale_failure(self):
+        bridge = _make_bridge()
+        entered = threading.Event()
+        release = threading.Event()
+        workers: list[threading.Thread] = []
+        real_thread = threading.Thread
+
+        def _join_meeting() -> bool:
+            entered.set()
+            self.assertTrue(release.wait(timeout=2.0))
+            raise RuntimeError("old handoff failed")
+
+        def _thread_factory(*args, **kwargs):
+            worker = real_thread(*args, **kwargs)
+            workers.append(worker)
+            return worker
+
+        bridge.webex_controller.join_meeting.side_effect = _join_meeting
+        with patch(
+            "services.bridge_service.threading.Thread",
+            side_effect=_thread_factory,
+        ):
+            bridge.launch_webex(manual=True, reconnect=False)
+            self.assertTrue(entered.wait(timeout=2.0))
+            bridge.invalidate_webex_launch()
+            bridge.webex_state = "Not opened"
+            release.set()
+            workers[0].join(timeout=2.0)
+
+        self.assertFalse(workers[0].is_alive())
+        self.assertEqual(bridge.webex_state, "Not opened")
+        bridge.show_actionable_error.assert_not_called()
+        self.assertNotIn(
+            "metric_webex_open_failed",
+            [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
+        )
+
+    def test_invalidated_webex_open_drops_queued_success_and_error_ui(self):
+        for opened in (True, False):
+            with self.subTest(opened=opened):
+                bridge = _make_bridge()
+                queued: list[object] = []
+                bridge.schedule_ui_callback = queued.append
+                bridge.webex_controller.join_meeting.return_value = opened
+                bridge.webex_controller.last_error = "external launch refused"
+
+                with patch(
+                    "services.bridge_service.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _ImmediateThread(
+                        *args, **kwargs
+                    ),
+                ):
+                    bridge.launch_webex(manual=True, reconnect=False)
+
+                self.assertTrue(queued)
+                bridge.invalidate_webex_launch()
+                bridge.webex_state = "Not opened"
+                for callback in queued:
+                    callback()
+
+                self.assertEqual(bridge.webex_state, "Not opened")
+                bridge.refresh_readiness.assert_not_called()
+                bridge.show_actionable_error.assert_not_called()
+                self.assertFalse(
+                    any(
+                        call.args
+                        and call.args[0]
+                        == "Opened externally—finish joining in Webex."
+                        for call in bridge.set_status_banner.call_args_list
+                    )
+                )
 
 
 class TestStopJamulus(unittest.TestCase):

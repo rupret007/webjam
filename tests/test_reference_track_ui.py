@@ -280,6 +280,87 @@ def test_committed_keyboard_edits_survive_stale_snapshot_until_acknowledged() ->
         dialog.close()
 
 
+def test_typed_edits_emit_once_and_remain_bounded_across_focus_changes() -> None:
+    dialog = ReferenceTrackDialog()
+    loops: list[tuple[float, object]] = []
+    trims: list[float] = []
+    counts: list[tuple[int, float]] = []
+    dialog.loop_requested.connect(lambda start, end: loops.append((start, end)))
+    dialog.trim_requested.connect(trims.append)
+    dialog.count_in_requested.connect(
+        lambda beats, bpm: counts.append((beats, bpm))
+    )
+    stale = _snapshot(_State.PAUSED)
+
+    def type_and_commit(control, text: str) -> None:
+        control.setFocus()
+        control.lineEdit().selectAll()
+        QTest.keyClicks(control.lineEdit(), text)
+        QTest.keyClick(control.lineEdit(), Qt.Key.Key_Return)
+        _app.processEvents()
+
+    try:
+        dialog.set_snapshot(stale)
+        dialog.show()
+        _app.processEvents()
+
+        type_and_commit(dialog._loop_start, "10.25")
+        type_and_commit(dialog._loop_end, "23.75")
+        type_and_commit(dialog._trim, "-4.5")
+        type_and_commit(dialog._count_in, "6")
+        type_and_commit(dialog._count_bpm, "126.5")
+        dialog._done.setFocus()
+        _app.processEvents()
+
+        # Enter and the subsequent focus loss both produce editingFinished in
+        # Qt. They represent one edit and must not issue duplicate commands.
+        assert loops == [(10.25, 24.0), (10.25, 23.75)]
+        assert trims == [-4.5]
+        assert counts == [(6, 112.0), (6, 126.5)]
+
+        dialog.set_snapshot(stale)
+        assert dialog._loop_start.value() == 10.25
+        assert dialog._loop_end.value() == 23.75
+        assert dialog._trim.value() == -4.5
+        assert dialog._count_in.value() == 6
+        assert dialog._count_bpm.value() == 126.5
+
+        # Mouse/stepper-style committed values use the same handlers, and Qt
+        # clamps every emitted value to the production control contract.
+        dialog._trim.setValue(-999.0)
+        dialog._trim.editingFinished.emit()
+        dialog._count_in.setValue(999)
+        dialog._count_bpm.setValue(999.0)
+        dialog._count_in.editingFinished.emit()
+        assert trims[-1] == -60.0
+        assert counts[-1] == (8, 240.0)
+    finally:
+        dialog.close()
+
+
+def test_rejected_optimistic_edit_returns_to_controller_truth() -> None:
+    dialog = ReferenceTrackDialog()
+    stale = _snapshot(_State.PAUSED)
+    try:
+        dialog.set_snapshot(stale)
+        with patch(
+            "webjam_qt.windows.reference_track.monotonic",
+            side_effect=(100.0, 100.25, 101.01),
+        ):
+            dialog._trim.setValue(-4.5)
+            dialog._trim.editingFinished.emit()
+            dialog._done.setFocus()
+
+            dialog.set_snapshot(stale)
+            assert dialog._trim.value() == -4.5
+
+            dialog.set_snapshot(stale)
+        assert dialog._pending_trim is None
+        assert dialog._trim.value() == -3.0
+    finally:
+        dialog.close()
+
+
 def test_seek_intent_is_rejected_unless_snapshot_is_paused() -> None:
     dialog = ReferenceTrackDialog()
     seeks: list[float] = []

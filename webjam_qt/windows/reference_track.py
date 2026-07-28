@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import monotonic
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -48,6 +49,11 @@ class ReferenceTrackDialog(QDialog):
     count_in_requested = Signal(int, float)
 
     _SEEK_STEPS = 10_000
+    # A fast controller edit normally acknowledges synchronously or on the
+    # next 250 ms refresh.  Retain optimistic keyboard values across a few
+    # stale snapshots, but eventually return to controller truth if an edit
+    # was rejected or the operation lock was busy.
+    _PENDING_HOLD_SECONDS = 1.0
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -61,6 +67,10 @@ class ReferenceTrackDialog(QDialog):
         self._pending_loop: tuple[bool, float, float | None] | None = None
         self._pending_trim: float | None = None
         self._pending_count_in: tuple[int, float] | None = None
+        self._pending_seek_value_deadline = 0.0
+        self._pending_loop_deadline = 0.0
+        self._pending_trim_deadline = 0.0
+        self._pending_count_in_deadline = 0.0
         self.setObjectName("ReferenceTrackDialog")
         self.setWindowTitle("Reference Track")
         self.setModal(False)
@@ -275,8 +285,24 @@ class ReferenceTrackDialog(QDialog):
         duration = float(getattr(snapshot, "duration_s", 0.0) or 0.0)
         if duration <= 0.0:
             return
-        self._pending_seek_value = int(self._seek.value())
-        position = duration * float(self._seek.value()) / self._SEEK_STEPS
+        value = int(self._seek.value())
+        snapshot_position = min(
+            duration,
+            max(
+                0.0,
+                float(getattr(snapshot, "position_s", 0.0) or 0.0),
+            ),
+        )
+        snapshot_value = round(
+            snapshot_position / duration * self._SEEK_STEPS
+        )
+        if value == self._pending_seek_value or (
+            self._pending_seek_value is None and value == snapshot_value
+        ):
+            return
+        self._pending_seek_value = value
+        self._hold_pending_edit("seek_value")
+        position = duration * float(value) / self._SEEK_STEPS
         self.seek_requested.emit(position)
 
     def _emit_keyboard_seek(self, _value: int) -> None:
@@ -291,19 +317,43 @@ class ReferenceTrackDialog(QDialog):
         if self._syncing or not self._edits_allowed():
             return
         if not self._loop.isChecked():
-            self._pending_loop = (False, 0.0, None)
-            self.loop_requested.emit(0.0, None)
+            desired = (False, 0.0, None)
+        else:
+            desired = (
+                True,
+                float(self._loop_start.value()),
+                float(self._loop_end.value()),
+            )
+        if self._loop_intents_match(desired, self._pending_loop) or (
+            self._pending_loop is None
+            and self._loop_intents_match(
+                desired,
+                self._snapshot_loop_intent(),
+            )
+        ):
             return
-        start = float(self._loop_start.value())
-        end = float(self._loop_end.value())
-        self._pending_loop = (True, start, end)
+        self._pending_loop = desired
+        self._hold_pending_edit("loop")
+        _enabled, start, end = desired
         self.loop_requested.emit(start, end)
 
     def _emit_trim(self) -> None:
         if self._syncing or not self._edits_allowed():
             return
         value = float(self._trim.value())
+        snapshot_value = float(
+            getattr(self._snapshot, "trim_db", 0.0) or 0.0
+        )
+        if (
+            self._pending_trim is not None
+            and self._matches(self._pending_trim, value, tolerance=0.05)
+        ) or (
+            self._pending_trim is None
+            and self._matches(snapshot_value, value, tolerance=0.05)
+        ):
+            return
         self._pending_trim = value
+        self._hold_pending_edit("trim")
         self.trim_requested.emit(value)
 
     def _emit_count_in(self) -> None:
@@ -311,7 +361,23 @@ class ReferenceTrackDialog(QDialog):
             return
         beats = int(self._count_in.value())
         bpm = float(self._count_bpm.value())
-        self._pending_count_in = (beats, bpm)
+        desired = (beats, bpm)
+        snapshot_value = (
+            int(getattr(self._snapshot, "count_in_beats", 0) or 0),
+            float(
+                getattr(self._snapshot, "count_in_bpm", 120.0) or 120.0
+            ),
+        )
+        if self._count_in_intents_match(
+            desired,
+            self._pending_count_in,
+        ) or (
+            self._pending_count_in is None
+            and self._count_in_intents_match(desired, snapshot_value)
+        ):
+            return
+        self._pending_count_in = desired
+        self._hold_pending_edit("count_in")
         self.count_in_requested.emit(beats, bpm)
 
     def _edits_allowed(self) -> bool:
@@ -320,6 +386,78 @@ class ReferenceTrackDialog(QDialog):
     @staticmethod
     def _matches(left: float, right: float, *, tolerance: float) -> bool:
         return abs(float(left) - float(right)) <= tolerance
+
+    @classmethod
+    def _loop_intents_match(
+        cls,
+        left: tuple[bool, float, float | None] | None,
+        right: tuple[bool, float, float | None] | None,
+    ) -> bool:
+        if left is None or right is None or left[0] != right[0]:
+            return False
+        if not left[0]:
+            return True
+        return (
+            cls._matches(left[1], right[1], tolerance=0.005)
+            and left[2] is not None
+            and right[2] is not None
+            and cls._matches(left[2], right[2], tolerance=0.005)
+        )
+
+    @classmethod
+    def _count_in_intents_match(
+        cls,
+        left: tuple[int, float] | None,
+        right: tuple[int, float] | None,
+    ) -> bool:
+        return (
+            left is not None
+            and right is not None
+            and left[0] == right[0]
+            and cls._matches(left[1], right[1], tolerance=0.05)
+        )
+
+    def _snapshot_loop_intent(
+        self,
+    ) -> tuple[bool, float, float | None]:
+        snapshot = self._snapshot
+        duration = max(
+            0.0,
+            float(getattr(snapshot, "duration_s", 0.0) or 0.0),
+        )
+        start = min(
+            duration,
+            max(
+                0.0,
+                float(getattr(snapshot, "loop_start_s", 0.0) or 0.0),
+            ),
+        )
+        end_raw = getattr(snapshot, "loop_end_s", None)
+        end = (
+            None
+            if end_raw is None
+            else min(duration, max(0.0, float(end_raw)))
+        )
+        return (end_raw is not None, start, end)
+
+    def _hold_pending_edit(self, name: str) -> None:
+        setattr(
+            self,
+            f"_pending_{name}_deadline",
+            monotonic() + self._PENDING_HOLD_SECONDS,
+        )
+
+    def _age_pending_edit(self, name: str) -> None:
+        """Clear an optimistic value after its bounded acknowledgement wait."""
+
+        pending_name = f"_pending_{name}"
+        deadline_name = f"{pending_name}_deadline"
+        if getattr(self, pending_name) is None:
+            setattr(self, deadline_name, 0.0)
+            return
+        if monotonic() >= float(getattr(self, deadline_name, 0.0)):
+            setattr(self, pending_name, None)
+            setattr(self, deadline_name, 0.0)
 
     def set_snapshot(self, snapshot: object) -> None:
         """Render one controller-owned immutable snapshot on the Qt thread."""
@@ -390,40 +528,31 @@ class ReferenceTrackDialog(QDialog):
 
         if state != "paused" or duration <= 0.0:
             self._pending_seek_value = None
+            self._pending_seek_value_deadline = 0.0
         elif (
             self._pending_seek_value is not None
             and snapshot_seek_value == self._pending_seek_value
         ):
             self._pending_seek_value = None
+            self._pending_seek_value_deadline = 0.0
+        else:
+            self._age_pending_edit("seek_value")
 
         if not self._edits_allowed():
             self._pending_loop = None
             self._pending_trim = None
             self._pending_count_in = None
+            self._pending_loop_deadline = 0.0
+            self._pending_trim_deadline = 0.0
+            self._pending_count_in_deadline = 0.0
         else:
             pending_loop = self._pending_loop
             if pending_loop is not None:
-                expected_enabled, expected_start, expected_end = pending_loop
-                actual_enabled, actual_start, actual_end = snapshot_loop
-                loop_matches = expected_enabled == actual_enabled
-                if expected_enabled:
-                    loop_matches = (
-                        loop_matches
-                        and self._matches(
-                            expected_start,
-                            actual_start,
-                            tolerance=0.005,
-                        )
-                        and actual_end is not None
-                        and expected_end is not None
-                        and self._matches(
-                            expected_end,
-                            actual_end,
-                            tolerance=0.005,
-                        )
-                    )
-                if loop_matches:
+                if self._loop_intents_match(pending_loop, snapshot_loop):
                     self._pending_loop = None
+                    self._pending_loop_deadline = 0.0
+                else:
+                    self._age_pending_edit("loop")
             if (
                 self._pending_trim is not None
                 and self._matches(
@@ -433,17 +562,18 @@ class ReferenceTrackDialog(QDialog):
                 )
             ):
                 self._pending_trim = None
+                self._pending_trim_deadline = 0.0
+            else:
+                self._age_pending_edit("trim")
             if self._pending_count_in is not None:
-                expected_beats, expected_bpm = self._pending_count_in
-                if (
-                    expected_beats == snapshot_count_in[0]
-                    and self._matches(
-                        expected_bpm,
-                        snapshot_count_in[1],
-                        tolerance=0.05,
-                    )
+                if self._count_in_intents_match(
+                    self._pending_count_in,
+                    snapshot_count_in,
                 ):
                     self._pending_count_in = None
+                    self._pending_count_in_deadline = 0.0
+                else:
+                    self._age_pending_edit("count_in")
 
         self._syncing = True
         try:

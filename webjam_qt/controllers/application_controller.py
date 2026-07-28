@@ -804,8 +804,16 @@ class ApplicationController(QObject):
         self._shutdown = True
         return True
 
-    def _configure_guest_peer(self, invite) -> None:
-        self._stop_session_peer(clear_invite=True)
+    def _configure_guest_peer(self, invite) -> bool:
+        """Install a replacement v2 transfer peer without orphaning its owner.
+
+        Construction failure remains an optional Local Originals limitation,
+        but an unconfirmed stop is an ownership failure: retain the old peer
+        and invitation so End/Leave can retry it.
+        """
+
+        if not self._stop_session_peer(clear_invite=True):
+            return False
         self._guest_invite = invite
         self._guest_peer_configuration_failed = False
         try:
@@ -842,6 +850,7 @@ class ApplicationController(QObject):
             # invalid Takes folder in Recording Setup and rebuild this peer
             # without pasting the credential again.
             self._guest_peer_configuration_failed = True
+        return True
 
     def _invalidate_band_check_evidence(self) -> tuple[bool, bool]:
         """Invalidate any report built before an in-place setup change."""
@@ -2802,6 +2811,8 @@ class ApplicationController(QObject):
             )
             self._render_startup_journey()
             return
+        if value != previous_url:
+            self.bridge.invalidate_webex_launch()
         self.webex.meeting_url = value
         self.bridge.webex_controller = self.webex
         self.window.session_strip.set_video_configured(True)
@@ -4076,6 +4087,9 @@ class ApplicationController(QObject):
         """Preserve the existing v1/v2 same-LAN join flow."""
 
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive())
+        switch_was_hosting = bool(
+            getattr(self.settings, "host_server_enabled", False)
+        )
         if (
             busy
             and bool(
@@ -4108,6 +4122,11 @@ class ApplicationController(QObject):
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
+            # A failed switch is retried through AudioCoordinator after the
+            # invitation closure has returned. Preserve the role that owns the
+            # unresolved services; the replacement invite must never turn a
+            # host cleanup retry into a guest-only Leave.
+            self.audio._stop_hosting = switch_was_hosting
             self.audio.stopping = True
             self.window.session_strip.set_tools_enabled(False)
             self.window.session_strip.set_audio_state("Switching…", enabled=False)
@@ -4126,6 +4145,26 @@ class ApplicationController(QObject):
             from core.settings import load_settings, save_settings
             from webjam_qt.windows.launch_dialog import apply_join_invite
 
+            old_settings = self.settings
+            # A previously failed/crashed v2 startup can leave its private
+            # transfer owner alive even when Jamulus itself is idle. Prove
+            # that owner stopped before revoking other routes or persisting
+            # the replacement invitation.
+            if not self._stop_session_peer(clear_invite=True):
+                self.audio.require_cleanup_retry(
+                    hosting=switch_was_hosting,
+                    error=(
+                        "WebJam couldn’t close the previous Local Originals "
+                        "connection. Try ending or leaving again, then reopen "
+                        "the invitation."
+                    ),
+                    title="WebJam couldn’t open the new jam safely",
+                    detail=(
+                        "The previous private connection is still protected. "
+                        "Finish cleanup before opening the new invitation."
+                    ),
+                )
+                return False
             # Accepting a legacy v1/v2 invitation replaces any armed v3 host,
             # even when that host never reached a live server. Revoke its
             # bearer and clear the ephemeral loopback constraint before the
@@ -4145,7 +4184,6 @@ class ApplicationController(QObject):
                 self._show_private_session_cleanup_failure()
                 return False
             self._remote_invitation = None
-            old_settings = self.settings
             settings_path = self.settings.config_file
             new_settings = load_settings(settings_path)
             apply_join_invite(new_settings, invite)
@@ -4168,8 +4206,6 @@ class ApplicationController(QObject):
             self._reconfigure_services_after_settings(old_settings)
             if bool(getattr(invite, "peer_enabled", False)):
                 self._configure_guest_peer(invite)
-            else:
-                self._stop_session_peer(clear_invite=True)
             self.window.session_strip.set_session_title(invite.session_name)
             self._save_session_title()
             self.window.recording_studio.set_takes_directory(
@@ -4225,7 +4261,7 @@ class ApplicationController(QObject):
             self.window.session_strip.set_audio_state(
                 (
                     "Try End Session"
-                    if bool(getattr(self.settings, "host_server_enabled", False))
+                    if switch_was_hosting
                     else "Try Leave Jam"
                 )
                 if cleanup_unresolved
@@ -4252,7 +4288,16 @@ class ApplicationController(QObject):
                 LOGGER.exception("Could not apply the replacement invitation")
                 applied = False
             if not applied:
-                _show_switch_failure()
+                # `_apply_and_launch()` can discover a newly/unresolved
+                # private-transfer owner after the background teardown already
+                # succeeded.  Its fail-closed path installs a cleanup retry;
+                # do not immediately erase that latch while rendering the
+                # enclosing invitation-switch failure.
+                _show_switch_failure(
+                    cleanup_unresolved=bool(
+                        self.audio.cleanup_retry_required
+                    )
+                )
                 return
             self._invite_switch_in_flight = False
             self.window.session_strip.set_tools_enabled(True)
@@ -7261,6 +7306,8 @@ class ApplicationController(QObject):
 
         # The external Webex launcher is long-lived; keep its meeting link in
         # sync with the settings object rendered by the launch card.
+        if webex_url_changed:
+            self.bridge.invalidate_webex_launch()
         self.webex.meeting_url = self.settings.webex_url
         self.bridge.webex_controller = self.webex
         if webex_url_changed:
@@ -7490,7 +7537,18 @@ class ApplicationController(QObject):
             # GuestPeerSession owns a concrete transfer queue/root. Rebuild it
             # before Start so Local Originals and Studio agree on the newly
             # committed folder.
-            self._configure_guest_peer(retained_invite)
+            if not self._configure_guest_peer(retained_invite):
+                self.audio.require_cleanup_retry(
+                    hosting=bool(
+                        getattr(old_settings, "host_server_enabled", False)
+                    ),
+                    error=(
+                        "The new recording folder was saved, but WebJam "
+                        "couldn’t close the previous Local Originals "
+                        "connection. Finish cleanup before starting again."
+                    ),
+                )
+                return
         self._reopen_invalidated_band_check(reopen_band_check, reopen_start_when_ready)
         self.window.recording_studio.set_takes_directory(self.settings.takes_directory)
         self._sync_local_originals_action()

@@ -492,10 +492,18 @@ class TestSettingsWizard(_ControllerTestBase):
 
     def test_accepted_with_changed_webex_url_warns_after_external_launch(self):
         c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/old"
+        c.webex.meeting_url = c.settings.webex_url
         c.bridge.webex_state = "Opened externally"
         fresh = AppSettings()
         fresh.webex_url = "https://example.webex.com/meet/other"
-        self._run_wizard(accepted=True, new_settings=fresh)
+        with patch.object(
+            c.bridge,
+            "invalidate_webex_launch",
+            wraps=c.bridge.invalidate_webex_launch,
+        ) as invalidate:
+            self._run_wizard(accepted=True, new_settings=fresh)
+        invalidate.assert_called_once_with()
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertTrue(
             any("meeting already open stays open" in m for m in msgs),

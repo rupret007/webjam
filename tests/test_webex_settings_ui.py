@@ -140,6 +140,59 @@ def test_opener_failure_log_never_contains_room_or_exception_text(
     assert "could not be opened" in dialog._webex_status.text()
 
 
+def test_open_failure_is_announced_and_keeps_retry_action_focused(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: False)
+    dialog._conversation_toggle.setChecked(True)
+    dialog._video.setText("team.webex.com/meet/bandroom")
+    dialog.show()
+    _app.processEvents()
+    dialog._open_webex.setFocus()
+
+    with patch(
+        "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
+    ) as announce:
+        dialog._open_webex.click()
+
+    assert "could not be opened" in dialog._webex_status.text()
+    assert (
+        dialog._webex_status.accessibleDescription()
+        == dialog._webex_status.text()
+    )
+    assert dialog._open_webex.hasFocus()
+    announce.assert_called_once()
+    dialog.close()
+
+
+def test_save_failure_is_announced_without_moving_from_retry_action(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog.show()
+    _app.processEvents()
+    save = next(
+        button
+        for button in dialog.findChildren(type(dialog._open_webex))
+        if button.text() == "Save"
+    )
+    save.setFocus()
+
+    with (
+        patch(
+            "webjam_qt.windows.simple_settings.save_settings",
+            side_effect=OSError("private path"),
+        ),
+        patch(
+            "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
+        ) as announce,
+    ):
+        save.click()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert "couldn't save" in dialog._error.text()
+    assert dialog._error.accessibleDescription() == dialog._error.text()
+    assert save.hasFocus()
+    announce.assert_called_once()
+    dialog.close()
+
+
 def test_settings_store_no_webex_identity_or_password_fields(tmp_path):
     dialog = _dialog(tmp_path, opener=lambda _url: True)
     fields = dialog.findChildren(QLineEdit)

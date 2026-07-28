@@ -24,7 +24,7 @@ from core.network_invite import (
     create_invite_link,
     parse_invite_link,
 )
-from core.settings import AppSettings, save_settings
+from core.settings import AppSettings, load_settings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import LaunchDialog
 from webjam_qt.windows.launch_dialog import apply_join_invite
@@ -1034,6 +1034,51 @@ def test_running_app_accepts_invite_and_reconfigures_join(qapp, tmp_path):
     controller.shutdown()
 
 
+def test_idle_invite_replacement_retains_unstopped_private_peer(
+    qapp,
+    tmp_path,
+):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=False,
+        jamulus_server="192.168.1.10",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Old Join Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    old_peer = MagicMock()
+    old_peer.stop.return_value = False
+    old_invite = object()
+    controller.guest_peer = old_peer
+    controller._guest_invite = old_invite
+    controller.begin_startup_journey = MagicMock()
+
+    link = create_invite_link("192.168.1.42", session_name="New Join Jam")
+    assert controller.accept_invite_url(link) is False
+
+    old_peer.stop.assert_called_once_with()
+    assert controller.guest_peer is old_peer
+    assert controller._guest_invite is old_invite
+    assert controller.settings.jamulus_server == "192.168.1.10"
+    assert load_settings(settings.config_file).jamulus_server == "192.168.1.10"
+    controller.begin_startup_journey.assert_not_called()
+    assert controller.audio.cleanup_retry_required is True
+    assert controller.audio._stop_hosting is False
+    assert window.session_strip._audio_button.text() == "Try Leave Jam"
+
+    old_peer.stop.return_value = True
+    assert controller._stop_session_peer(clear_invite=True)
+    controller.audio.cleanup_retry_required = False
+    controller.shutdown()
+
+
 def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_path):
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
@@ -1097,6 +1142,178 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     ]
     assert controller.settings.host_server_enabled is False
     controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_failed_host_invite_switch_retries_with_host_cleanup_role(
+    qapp,
+    tmp_path,
+):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Old Host Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    server = {"alive": True}
+    controller.bridge.hosted_server_alive = MagicMock(
+        side_effect=lambda: server["alive"]
+    )
+    controller.bridge.hosted_server_owned = MagicMock(return_value=True)
+    controller.recording.stop_server_recording_for_shutdown = MagicMock(
+        side_effect=[False, True]
+    )
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+
+    def _stop_server() -> bool:
+        server["alive"] = False
+        return True
+
+    controller.bridge.stop_hosted_server = MagicMock(side_effect=_stop_server)
+    controller.begin_startup_journey = MagicMock()
+    link = create_invite_link("192.168.1.42", session_name="New Join Jam")
+
+    class _ImmediateArgsThread:
+        def __init__(self, *args, target=None, **kwargs):
+            self._target = target
+            self._args = kwargs.get("args", ())
+
+        def start(self):
+            if self._target is not None:
+                self._target(*self._args)
+
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        assert controller.accept_invite_url(link) is True
+
+    assert controller.audio.cleanup_retry_required is True
+    assert controller.audio._stop_hosting is True
+    assert window.session_strip._audio_button.text() == "Try End Session"
+    controller.begin_startup_journey.assert_not_called()
+
+    with (
+        patch(
+            "webjam_qt.controllers.audio_coordinator.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateArgsThread(
+                *args, **kwargs
+            ),
+        ),
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        controller.audio.retry_stop()
+
+    assert (
+        controller.recording.stop_server_recording_for_shutdown.call_count == 2
+    )
+    controller.bridge.stop_jamulus.assert_called_once_with()
+    controller.bridge.stop_hosted_server.assert_called_once_with()
+    assert controller.audio.cleanup_retry_required is False
+    assert server["alive"] is False
+    assert controller.settings.host_server_enabled is True
+    controller.bridge.jamulus_state = "Stopped"
+    controller.shutdown()
+
+
+def test_busy_invite_apply_keeps_cleanup_retry_when_peer_reappears(
+    qapp,
+    tmp_path,
+):
+    """A second owner-check failure must not be downgraded to Start-disabled."""
+
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Old Host Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    server = {"alive": True}
+    controller.bridge.hosted_server_alive = MagicMock(
+        side_effect=lambda: server["alive"]
+    )
+    controller.bridge.hosted_server_owned = MagicMock(return_value=True)
+    controller.recording.stop_server_recording_for_shutdown = MagicMock(
+        return_value=True
+    )
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+
+    def _stop_server() -> bool:
+        server["alive"] = False
+        return True
+
+    controller.bridge.stop_hosted_server = MagicMock(side_effect=_stop_server)
+    controller._stop_session_peer = MagicMock(side_effect=[True, False])
+    controller.begin_startup_journey = MagicMock()
+    link = create_invite_link("192.168.1.42", session_name="New Join Jam")
+
+    with (
+        patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        assert controller.accept_invite_url(link) is True
+
+    assert controller._stop_session_peer.call_count == 2
+    assert controller.audio.cleanup_retry_required is True
+    assert controller.audio._stop_hosting is True
+    assert window.session_strip._audio_button.text() == "Try End Session"
+    assert window.session_strip._audio_button.isEnabled()
+    assert controller.settings.host_server_enabled is True
+    assert load_settings(settings.config_file).host_server_enabled is True
+    controller.begin_startup_journey.assert_not_called()
+
+    controller._stop_session_peer.side_effect = None
+    controller._stop_session_peer.return_value = True
+    controller.audio.cleanup_retry_required = False
+    controller.bridge.jamulus_state = "Stopped"
     controller.shutdown()
 
 
