@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -42,7 +43,10 @@ def test_open_action_normalizes_and_reports_external_handoff(tmp_path):
     dialog = _dialog(tmp_path, opener=lambda url: opened.append(url) or True)
     dialog._video.setText("team.webex.com/meet/bandroom")
 
-    dialog._open_webex.click()
+    with patch(
+        "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
+    ) as announce:
+        dialog._open_webex.click()
 
     assert opened == ["https://team.webex.com/meet/bandroom"]
     assert dialog._webex_status.text() == (
@@ -53,6 +57,7 @@ def test_open_action_normalizes_and_reports_external_handoff(tmp_path):
     assert dialog._webex_status.accessibleDescription() == (
         dialog._webex_status.text()
     )
+    announce.assert_called_once()
 
 
 def test_invalid_link_never_reaches_external_opener(tmp_path):
@@ -62,7 +67,10 @@ def test_invalid_link_never_reaches_external_opener(tmp_path):
     _app.processEvents()
     dialog._video.setText("http://example.test/private")
 
-    dialog._open_webex.click()
+    with patch(
+        "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
+    ) as announce:
+        dialog._open_webex.click()
 
     assert opened == []
     assert "Check this link before opening" in dialog._webex_status.text()
@@ -70,7 +78,46 @@ def test_invalid_link_never_reaches_external_opener(tmp_path):
         dialog._webex_status.text()
     )
     assert dialog._video.hasFocus()
+    announce.assert_called_once()
     dialog.close()
+
+
+def test_invalid_save_announces_current_error_and_focuses_webex_field(
+    tmp_path,
+):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog.show()
+    _app.processEvents()
+    dialog._conversation_toggle.setChecked(True)
+    dialog._video.setText("http://example.test/private")
+
+    with patch(
+        "webjam_qt.windows.simple_settings.QAccessible.updateAccessibility"
+    ) as announce:
+        assert dialog._save() is False
+
+    assert dialog._error.isVisibleTo(dialog)
+    assert dialog._error.accessibleDescription() == dialog._error.text()
+    assert dialog._video.hasFocus()
+    announce.assert_called_once()
+
+    dialog._video.setText("https://team.webex.com/meet/bandroom")
+    assert dialog._error.isHidden()
+    assert dialog._error.accessibleDescription() == ""
+    dialog.close()
+
+
+def test_editing_link_clears_stale_accessible_test_result(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog._video.setText("team.webex.com/meet/bandroom")
+    dialog._open_webex.click()
+    assert dialog._webex_status.accessibleDescription()
+
+    dialog._video.setText("team.webex.com/meet/new-room")
+
+    assert dialog._webex_status.isHidden()
+    assert dialog._webex_status.text() == ""
+    assert dialog._webex_status.accessibleDescription() == ""
 
 
 def test_opener_failure_log_never_contains_room_or_exception_text(

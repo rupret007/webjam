@@ -174,6 +174,9 @@ def test_windows_ci_builds_and_exercises_the_direct_setup_executable() -> None:
     assert "Test-Path $uninstallRegistry" in WORKFLOW
     assert "Uninstall left owned payload paths" in WORKFLOW
     assert "Uninstall removed an unowned file" in WORKFLOW
+    assert '"WebJam Windows Fresh With Spaces"' in WORKFLOW
+    assert '"WebJam Setup Source With Spaces"' in WORKFLOW
+    assert '"WebJam Installed With Spaces"' in WORKFLOW
 
 
 def test_signed_windows_release_covers_setup_payload_and_uninstaller() -> None:
@@ -367,6 +370,15 @@ def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> No
     assert "Verify expected release deliverables" in WORKFLOW
     assert 'test -s "out/WebJam-v${version}-${target}-setup.exe"' in WORKFLOW
     assert 'test -s "out/WebJam-v${version}-${target}.dmg"' in WORKFLOW
+    assert "Upload Windows candidate artifact" in WORKFLOW
+    assert "name: webjam-windows-x64" in WORKFLOW
+    assert (
+        "out/WebJam-v*-windows-x64-UNSIGNED-TEST-ONLY-setup.exe" in WORKFLOW
+    )
+    assert "out/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip" in WORKFLOW
+    assert "out/WebJam-v*-windows-x64-SHA256SUMS.txt" in WORKFLOW
+    assert "retention-days: 90" in WORKFLOW
+    assert "Upload non-Windows build artifact" in WORKFLOW
     assert "path: out/WebJam*${{ matrix.target }}*" in WORKFLOW
     assert "Mark unsigned platform source artifacts as test-only" in WORKFLOW
     assert "UNSIGNED-TEST-ONLY" in WORKFLOW
@@ -374,6 +386,41 @@ def test_all_direct_and_portable_assets_are_uploaded_for_the_release_job() -> No
     assert 'install -m 755 "packaging/macos/Install WebJam.command"' in WORKFLOW
     assert '"$candidate_extras/Pocket Stage iPhone Setup"' in WORKFLOW
     assert 'ditto -c -k --sequesterRsrc "$candidate_root"' in WORKFLOW
+
+
+def test_windows_actions_artifact_has_exact_verified_container_manifest() -> None:
+    build = _workflow_job("build-desktop")
+    assert "Generate and verify Windows candidate checksum manifest" in build
+    assert (
+        'checksum_file="WebJam-v${version}-windows-x64-SHA256SUMS.txt"' in build
+    )
+    assert (
+        '"WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"' in build
+    )
+    assert '"WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"' in build
+    assert 'test "${#candidate_assets[@]}" -eq "${#assets[@]}"' in build
+    assert 'sha256sum --binary -- "${assets[@]}" > "$checksum_file"' in build
+    assert "1s/^[^*]*\\*//p" in build
+    assert "2s/^[^*]*\\*//p" in build
+    assert 'sha256sum --check --strict "$checksum_file"' in build
+    assert 'test "${#uploaded_files[@]}" -eq 3' in build
+    upload = build.split("      - name: Upload Windows candidate artifact\n", 1)[
+        1
+    ].split("\n      - name:", 1)[0]
+    assert set(re.findall(r"^\s+(out/WebJam[^\n]+)$", upload, re.MULTILINE)) == {
+        "out/WebJam-v*-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "out/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+        "out/WebJam-v*-windows-x64-SHA256SUMS.txt",
+    }
+    assert "name: webjam-windows-x64" in upload
+    assert "retention-days: 90" in upload
+
+    trust = _workflow_job("windows-release-trust")
+    assert "Windows source checksum manifest must contain exactly two entries" in trust
+    assert r"(?<hash>[0-9a-f]{64}) \*(?<name>[^/\\]+)" in trust
+    assert "Unexpected or duplicate Windows source checksum entry" in trust
+    assert "Windows source checksum mismatch" in trust
+    assert "$sourceFiles.Count -ne 3" in trust
 
 
 def test_signing_rehearsals_do_not_implicitly_start_the_one_hour_soak() -> None:
@@ -418,6 +465,14 @@ def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> 
         expected_assets
     )
     assert 'checksum_file="WebJam-${GITHUB_REF_NAME}-SHA256SUMS.txt"' in release_job
+    assert (
+        'windows_checksum="WebJam-v${version}-windows-x64-SHA256SUMS.txt"'
+        in release_job
+    )
+    assert 'sha256sum --check --strict "$windows_checksum"' in release_job
+    assert "1s/^[^*]*\\*//p" in release_job
+    assert "2s/^[^*]*\\*//p" in release_job
+    assert 'rm -- "$windows_checksum"' in release_job
     assert 'sha256sum -- "${assets[@]}" > "$checksum_file"' in release_job
     assert 'test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"' in release_job
     assert 'sha256sum --check --strict "$checksum_file"' in release_job

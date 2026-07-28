@@ -93,6 +93,17 @@ class LocalApiBridge:
         with self._state_lock:
             if self._running:
                 return True
+            existing_thread = self._thread
+            if existing_thread is not None and existing_thread.is_alive():
+                _LOGGER.warning(
+                    "LocalApiBridge refuses to start while its previous "
+                    "server thread is still stopping"
+                )
+                return False
+            # A naturally exited server is no longer an owner. Clear its
+            # retained identity before constructing a replacement.
+            self._thread = None
+            self._server = None
         host = (self.host or "").strip().lower()
         if host not in {"127.0.0.1", "localhost", "::1"}:
             _LOGGER.warning(
@@ -120,14 +131,15 @@ class LocalApiBridge:
 
         try:
             config = uvicorn.Config(app=app, host=self.host, port=port, log_level="warning")
-            self._server = uvicorn.Server(config)
+            server = uvicorn.Server(config)
+            self._server = server
         except Exception as exc:
             _LOGGER.warning("LocalApiBridge server config failed: %s", exc)
             return False
 
         def run_server() -> None:
             try:
-                self._server.run()
+                server.run()
             finally:
                 with self._state_lock:
                     self._running = False
@@ -139,6 +151,7 @@ class LocalApiBridge:
             except Exception as exc:
                 _LOGGER.warning("LocalApiBridge thread start failed: %s", exc)
                 self._thread = None
+                self._server = None
                 self._running = False
                 return False
             self._running = True
@@ -183,12 +196,13 @@ class LocalApiBridge:
                 return bool(getattr(server, "should_exit", False) and not running)
             return bool(self._thread and self._thread.is_alive() and self._running)
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
+        """Request listener shutdown and retain ownership until exit is proven."""
+
         with self._state_lock:
             self._running = False
             server = self._server
             thread = self._thread
-            self._thread = None
         if server is not None:
             try:
                 server.should_exit = True
@@ -196,5 +210,16 @@ class LocalApiBridge:
                 pass
         if thread and thread.is_alive():
             thread.join(timeout=2)
-            if thread.is_alive():
-                _LOGGER.warning("LocalApiBridge server thread did not exit within 2s; may still be shutting down")
+        stopped = thread is None or not thread.is_alive()
+        if not stopped:
+            _LOGGER.warning(
+                "LocalApiBridge server thread did not exit within 2s; "
+                "ownership retained for retry"
+            )
+            return False
+        with self._state_lock:
+            if self._thread is thread:
+                self._thread = None
+            if self._server is server:
+                self._server = None
+        return True

@@ -6,6 +6,25 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ## [0.20.0] — 2026-07-27 Webex handoff and Reference Track test candidate
 
+- Restored WebJam's approved continuous trefoil identity from the earlier
+  three-loop mark. One canonical analytic curve now deterministically produces
+  the desktop SVG, Windows ICO, macOS ICNS, and Pocket Stage AppIcon/visible
+  artwork; Help and About use the same mark and byte-contract tests prevent
+  packaged assets from drifting.
+- Hardened candidate shutdown so WebJam keeps ownership visible and retryable
+  until its Reference Track, Pocket Stage, private transfer services, Jamulus
+  processes, hosted server, secure transport, and localhost companion listener
+  are confirmed stopped. Dynamic Webex and Reference Track status changes are
+  now announced to assistive technology.
+- Kept Reference Track controls reachable at the supported 760×600 floor and
+  made keyboard seek/loop/trim/count-in edits survive stale polling until the
+  controller acknowledges them. Join-save failures now stay visible and
+  retryable, Settings validation announces and focuses errors, and Notes export
+  is unavailable until there is actual note content.
+- The ordinary Windows x64 Actions artifact now contains exactly the unsigned
+  Setup executable, portable ZIP, and a verified two-entry SHA-256 manifest.
+  Windows install/launch/upgrade/uninstall validation uses paths containing
+  spaces, and the downloadable candidate artifact is retained for 90 days.
 - Added a host-controlled **Reference Track** source pilot behind **More**.
   The bounded 48-kHz engine, separate `WebJam Track` client, authenticated RPC,
   zero-fader checks, transport controls, and path-free decoding are present.

@@ -383,7 +383,9 @@ class ConductorWindow(QMainWindow):
         box.setWindowTitle("WebJam Help")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(body)
-        box.setIcon(QMessageBox.Icon.Information)
+        from webjam_qt.theme.brand import render_brand_pixmap
+
+        box.setIconPixmap(render_brand_pixmap(64))
         box.exec()
 
     def show_about(self) -> None:
@@ -397,13 +399,33 @@ class ConductorWindow(QMainWindow):
         commit = build_id()
         short_build = commit[:12] if commit else "unavailable"
         target = desktop_target() or "unknown target"
+        if target.startswith("macos-"):
+            trust_detail = (
+                "This macOS test build is ad-hoc signed and is not "
+                "Apple-notarized."
+            )
+        elif target == "windows-x64":
+            trust_detail = (
+                "This Windows test build is unsigned and is for private "
+                "testing only."
+            )
+        elif target == "linux-x64":
+            trust_detail = (
+                "This Linux build is an unsigned portable private test "
+                "candidate."
+            )
+        else:
+            trust_detail = (
+                "This build is an untrusted private test candidate; verify its "
+                "package identity before opening it."
+            )
         body = (
             f"<b>WebJam v{__version__}</b><br>"
             "Unified creative collaboration for musicians.<br><br>"
             f"<b>Build:</b> {short_build}<br>"
             f"<b>Target:</b> {target}<br>"
             "<b>Trust:</b> Private test candidate<br><br>"
-            "macOS test builds are ad-hoc signed and are not Apple-notarized."
+            f"{trust_detail}"
         )
         box = QMessageBox(self)
         box.setWindowTitle("About WebJam")
@@ -411,7 +433,9 @@ class ConductorWindow(QMainWindow):
         box.setText(body)
         if commit:
             box.setDetailedText(f"Full build ID: {commit}")
-        box.setIcon(QMessageBox.Icon.Information)
+        from webjam_qt.theme.brand import render_brand_pixmap
+
+        box.setIconPixmap(render_brand_pixmap(64))
         box.exec()
 
     def _toggle_fullscreen(self) -> None:

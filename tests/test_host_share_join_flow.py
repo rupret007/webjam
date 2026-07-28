@@ -255,6 +255,60 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert data["jamulus_port"] == 22124
 
 
+def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog.show()
+    qapp.processEvents()
+
+    with patch(
+        "webjam_qt.windows.launch_dialog.save_settings",
+        side_effect=OSError("disk full"),
+    ):
+        accepted = dialog.accept_invite(
+            create_invite_link("192.168.1.42", session_name="Drummer Test")
+        )
+    qapp.processEvents()
+
+    assert accepted is False
+    assert dialog.showing_choices is False
+    assert dialog._join_error.isVisibleTo(dialog)
+    assert "couldn’t save this choice" in dialog._join_error.text()
+    assert dialog._choice_error.text() == ""
+    assert dialog._invite_input.text() == ""
+    assert dialog._invite_input.hasFocus()
+    assert dialog._join_button_primary.text() == "Join Jam"
+    assert dialog._join_button_primary.isEnabled()
+    dialog.close()
+
+
+def test_cold_invitation_save_failure_is_visible_on_join_page(qapp, tmp_path):
+    invitation = parse_invite_link(
+        create_invite_link("192.168.1.42", session_name="Cold Join")
+    )
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+
+    with patch(
+        "webjam_qt.windows.launch_dialog.save_settings",
+        side_effect=OSError("read only"),
+    ):
+        dialog = LaunchDialog(settings, initial_invitation=invitation)
+        dialog.show()
+        qapp.processEvents()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert dialog.showing_choices is False
+    assert dialog._join_error.isVisibleTo(dialog)
+    assert "couldn’t save this choice" in dialog._join_error.text()
+    assert dialog._choice_error.text() == ""
+    assert dialog._invite_input.text() == ""
+    assert dialog._invite_input.hasFocus()
+    assert dialog._join_button_primary.text() == "Join Jam"
+    assert dialog._join_button_primary.isEnabled()
+    dialog.close()
+
+
 def test_session_hud_has_semantic_copy_and_retry_actions(qapp):
     hud = SessionHud()
     copied = MagicMock()
@@ -934,6 +988,7 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
     assert controller._jamulus_connected is True
     assert not controller._connection_timer.isActive()
     controller.bridge.jamulus_launch_intended = False
+    controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
 

@@ -131,6 +131,40 @@ def test_launch_hierarchy_is_one_primary_then_one_secondary(
         _destroy(dialog)
 
 
+def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
+    styled_qapp,
+    tmp_path,
+):
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(_settings(tmp_path))
+    dialog.show()
+    styled_qapp.processEvents()
+    try:
+        assert dialog.width() <= 760
+        assert dialog.height() <= 520
+        assert dialog.height() + 40 <= 600
+        assert dialog.minimumHeight() <= 480
+        for control in (
+            dialog._logo,
+            dialog._host_button,
+            dialog._join_button,
+            dialog._choice_helper,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog))
+
+        dialog.show_join()
+        styled_qapp.processEvents()
+        for control in (
+            dialog._invite_input,
+            dialog._join_button_primary,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog))
+    finally:
+        _destroy(dialog)
+
+
 def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
     dialog = LaunchDialog(_settings(tmp_path))
     dialog.resize(460, 600)

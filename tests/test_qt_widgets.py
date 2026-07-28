@@ -455,6 +455,31 @@ class TestParticipantGrid(unittest.TestCase):
         embed = WebexEmbed()
         self.assertLessEqual(embed.maximumHeight(), 96)
 
+    def test_webex_launch_status_updates_accessible_truth(self):
+        from unittest.mock import patch
+
+        from PySide6.QtGui import QAccessible
+
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+
+        embed = WebexEmbed()
+        with patch.object(QAccessible, "updateAccessibility") as announce:
+            embed.set_launch_status("Opened externally")
+
+        self.assertEqual(
+            embed._status_label.accessibleName(),
+            "Webex launch status",
+        )
+        self.assertEqual(
+            embed._status_label.accessibleDescription(),
+            "Opened externally—finish joining in Webex.",
+        )
+        self.assertEqual(
+            embed._fallback_btn.accessibleDescription(),
+            "Opened externally—finish joining in Webex.",
+        )
+        announce.assert_called_once()
+
     def test_set_participants_creates_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
         from webjam_qt.widgets.participant_card import ParticipantPresentation
@@ -771,6 +796,38 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Private test candidate", body)
         self.assertIn("not Apple-notarized", body)
         set_detail.assert_called_once_with(f"Full build ID: {'a' * 40}")
+
+    def test_about_trust_copy_matches_the_packaged_desktop_target(self):
+        w = self._window()
+        from unittest import mock
+
+        expected = {
+            "macos-arm64": ("ad-hoc signed", "not Apple-notarized"),
+            "macos-x64": ("ad-hoc signed", "not Apple-notarized"),
+            "windows-x64": ("Windows test build is unsigned", "private testing only"),
+            "linux-x64": ("Linux build is an unsigned portable", "test candidate"),
+            "": ("untrusted private test candidate", "verify its package identity"),
+        }
+        for target, phrases in expected.items():
+            with self.subTest(target=target or "unknown"), mock.patch(
+                "core.build_info.build_id",
+                return_value="b" * 40,
+            ), mock.patch(
+                "core.build_info.desktop_target",
+                return_value=target,
+            ), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.exec",
+                return_value=0,
+            ), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.setText",
+            ) as set_text:
+                w.show_about()
+
+            body = set_text.call_args.args[0]
+            for phrase in phrases:
+                self.assertIn(phrase, body)
+            if not target.startswith("macos-"):
+                self.assertNotIn("Apple-notarized", body)
 
     def test_fullscreen_toggle_roundtrip(self):
         w = self._window()

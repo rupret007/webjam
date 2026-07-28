@@ -259,7 +259,9 @@ def test_shutdown_stops_owned_server_then_clears_owner_and_ephemeral_mode() -> N
     controller._save_notes = mock.Mock()
     controller._save_session_title = mock.Mock()
     controller._mix_dirty = False
-    controller._stop_session_peer = lambda **_kwargs: events.append("stop-peer")
+    controller._stop_session_peer = (
+        lambda **_kwargs: events.append("stop-peer") or True
+    )
     controller._remote_session = None
     controller._remote_invitation = None
     controller.webex = mock.Mock()
@@ -272,9 +274,9 @@ def test_shutdown_stops_owned_server_then_clears_owner_and_ephemeral_mode() -> N
 
     assert events == [
         "stop-recording",
+        "stop-peer",
         "stop-client",
         "stop-server",
-        "stop-peer",
         "stop-owner",
         "disable-mode",
     ]

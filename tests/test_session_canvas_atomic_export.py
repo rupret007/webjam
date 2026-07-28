@@ -25,11 +25,27 @@ class TestSessionCanvasAtomicExport(unittest.TestCase):
     def test_export_menu_keeps_both_accessible_export_paths(self):
         canvas = SessionCanvas()
 
+        self.assertEqual(canvas._notes.accessibleName(), "Session notes")
+        self.assertIn(
+            "session record",
+            canvas._notes.accessibleDescription(),
+        )
         self.assertEqual(canvas._export_button.accessibleName(), "Export session")
         self.assertEqual(canvas._export_notes_action.text(), "Session notes…")
         self.assertEqual(canvas._export_brief_action.text(), "Session brief…")
         self.assertEqual(canvas._export_notes_action.toolTip(), "Export session notes")
         self.assertEqual(canvas._export_brief_action.toolTip(), "Export session brief")
+        self.assertFalse(canvas._export_notes_action.isEnabled())
+
+    def test_notes_export_is_enabled_only_when_notes_have_content(self):
+        canvas = SessionCanvas()
+
+        canvas.set_notes("  \n ")
+        self.assertFalse(canvas._export_notes_action.isEnabled())
+        canvas.set_notes("Verse idea")
+        self.assertTrue(canvas._export_notes_action.isEnabled())
+        canvas._notes.clear()
+        self.assertFalse(canvas._export_notes_action.isEnabled())
 
     def test_toolbar_controls_fit_supported_canvas_widths(self):
         for width in (280, 360, 900):

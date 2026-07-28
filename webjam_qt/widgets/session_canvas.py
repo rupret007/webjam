@@ -72,6 +72,7 @@ class SessionCanvas(QFrame):
         export_menu = QMenu(self._export_button)
         self._export_notes_action = export_menu.addAction("Session notes…")
         self._export_notes_action.setToolTip("Export session notes")
+        self._export_notes_action.setEnabled(False)
         self._export_notes_action.triggered.connect(self.export_notes)
         self._export_brief_action = export_menu.addAction("Session brief…")
         self._export_brief_action.setToolTip("Export session brief")
@@ -162,6 +163,10 @@ class SessionCanvas(QFrame):
 
         self._notes = QTextEdit()
         self._notes.setObjectName("CanvasNotes")
+        self._notes.setAccessibleName("Session notes")
+        self._notes.setAccessibleDescription(
+            "Editable session notes shared in this WebJam session record."
+        )
         self._notes.setPlaceholderText(
             "Capture what matters:\n"
             "  · decisions made\n"
@@ -200,6 +205,7 @@ class SessionCanvas(QFrame):
         self._notes.blockSignals(True)
         self._notes.setPlainText(text)
         self._notes.blockSignals(False)
+        self._sync_export_actions()
 
     def current_notes(self) -> str:
         return self._notes.toPlainText()
@@ -384,4 +390,10 @@ class SessionCanvas(QFrame):
             self._notes.clear()
 
     def _on_text_changed(self) -> None:
+        self._sync_export_actions()
         self.notes_changed.emit(self._notes.toPlainText())
+
+    def _sync_export_actions(self) -> None:
+        """Keep enabled export choices aligned with available content."""
+
+        self._export_notes_action.setEnabled(bool(self.current_notes().strip()))

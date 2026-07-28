@@ -166,9 +166,10 @@ class LaunchDialog(QDialog):
         self.setObjectName("LaunchDialog")
         self.setWindowTitle("WebJam")
         self.setModal(True)
-        self.setMinimumSize(460, 520)
-        # Leave room for the native title bar on the supported 760×600 floor.
-        self.resize(620, 540)
+        self.setMinimumSize(460, 480)
+        # A 520 px client area plus a conservative 40 px native-title-bar
+        # allowance remains inside the supported physical 760×600 floor.
+        self.resize(620, 520)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.XL, Space.XXL, Space.XL)
@@ -469,9 +470,24 @@ class LaunchDialog(QDialog):
             apply_join_invite(candidate, invitation)
             session_name = invitation.session_name
         if not self._persist_role_choice(candidate):
+            # _persist_role_choice() owns the same save failure for Host and
+            # Join, so it initially writes the role-choice error. A pasted or
+            # cold deep-link invitation returns to the Join page, where that
+            # label is hidden. Move the already-safe message to the visible
+            # Join error before restoring the retry action.
+            message = self._choice_error.text()
+            self._choice_error.clear()
             self._pages.setCurrentWidget(self._join_page)
             self._invite_input.clear()
             self._restore_submission()
+            self._join_error.setText(
+                message
+                or (
+                    "WebJam couldn’t save this choice. Check available disk "
+                    "space and try again."
+                )
+            )
+            self._announce_error(self._join_error, focus=self._invite_input)
             return False
         self.selected_role = "join"
         self.session_name = session_name

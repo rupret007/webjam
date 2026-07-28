@@ -76,7 +76,11 @@ location, verifies the installed version/build ID, x64 payload, transport
 manifest, and exact upstream Jamulus installer SHA-256, launches the installed
 app, checks both requested shortcuts, and uninstalls it. The gate proves owned
 files and shortcuts are removed while an unowned sentinel is preserved.
-Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload.
+Both portable and Setup paths are exercised from directories containing spaces.
+Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload and
+are retained for 90 days as `webjam-windows-x64`. That artifact contains exactly
+the Setup, portable ZIP, and a verified two-entry
+`WebJam-v<VERSION>-windows-x64-SHA256SUMS.txt` manifest.
 
 A manual `workflow_dispatch` with `windows_signing_rehearsal=true` runs a
 separate job bound to the protected

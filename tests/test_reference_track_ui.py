@@ -72,25 +72,31 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
     dialog = ReferenceTrackDialog()
     try:
         dialog.setStyleSheet(load_stylesheet())
-        dialog.resize(620, 540)
-        dialog.show()
-        _app.processEvents()
+        for width in (620, 760):
+            dialog.resize(width, 540)
+            dialog.show()
+            _app.processEvents()
 
-        assert dialog.width() <= 760
-        assert dialog.height() <= 540
-        assert dialog._scroll_area.horizontalScrollBar().maximum() == 0
-        assert dialog._scroll_area.verticalScrollBar().maximum() > 0
+            assert dialog.width() <= 760
+            assert dialog.height() <= 540
+            assert dialog._scroll_area.horizontalScrollBar().maximum() == 0
+            vertical = dialog._scroll_area.verticalScrollBar()
+            assert vertical.maximum() > 0
+            assert "Scroll vertically" in (
+                dialog._scroll_area.accessibleDescription()
+            )
 
-        dialog._scroll_area.ensureWidgetVisible(dialog._done)
-        _app.processEvents()
-        top_left = dialog._done.mapTo(
-            dialog._scroll_area.viewport(),
-            QPoint(0, 0),
-        )
-        assert top_left.y() >= 0
-        assert top_left.y() + dialog._done.height() <= (
-            dialog._scroll_area.viewport().height()
-        )
+            vertical.setValue(vertical.maximum())
+            _app.processEvents()
+            for control in (dialog._safety, dialog._done):
+                top_left = control.mapTo(
+                    dialog._scroll_area.viewport(),
+                    QPoint(0, 0),
+                )
+                assert top_left.y() >= 0
+                assert top_left.y() + control.height() <= (
+                    dialog._scroll_area.viewport().height()
+                )
     finally:
         dialog.close()
 
@@ -190,6 +196,108 @@ def test_keyboard_seek_and_in_progress_trim_survive_snapshot_refresh() -> None:
         dialog.close()
 
 
+def test_committed_keyboard_edits_survive_stale_snapshot_until_acknowledged() -> None:
+    dialog = ReferenceTrackDialog()
+    seeks: list[float] = []
+    loops: list[tuple[float, object]] = []
+    trims: list[float] = []
+    counts: list[tuple[int, float]] = []
+    dialog.seek_requested.connect(seeks.append)
+    dialog.loop_requested.connect(lambda start, end: loops.append((start, end)))
+    dialog.trim_requested.connect(trims.append)
+    dialog.count_in_requested.connect(
+        lambda beats, bpm: counts.append((beats, bpm))
+    )
+    stale = _snapshot(_State.PAUSED)
+    try:
+        dialog.set_snapshot(stale)
+        dialog.show()
+        _app.processEvents()
+
+        dialog._seek.setFocus()
+        QTest.keyClick(dialog._seek, Qt.Key.Key_Right)
+        pending_seek_value = dialog._seek.value()
+        assert seeks
+        dialog._done.setFocus()
+        dialog.set_snapshot(stale)
+        assert dialog._seek.value() == pending_seek_value
+
+        seek_ack = _snapshot(_State.PAUSED)
+        seek_ack.position_s = seeks[-1]
+        dialog.set_snapshot(seek_ack)
+        assert dialog._pending_seek_value is None
+
+        dialog._loop_start.setFocus()
+        dialog._loop_start.setValue(10.0)
+        dialog._loop_start.editingFinished.emit()
+        dialog._done.setFocus()
+        dialog.set_snapshot(stale)
+        assert loops[-1] == (10.0, 24.0)
+        assert dialog._loop_start.value() == 10.0
+
+        loop_ack = _snapshot(_State.PAUSED)
+        loop_ack.loop_start_s = 10.0
+        dialog.set_snapshot(loop_ack)
+        assert dialog._pending_loop is None
+
+        dialog._trim.setFocus()
+        dialog._trim.setValue(-4.5)
+        dialog._trim.editingFinished.emit()
+        dialog._done.setFocus()
+        dialog.set_snapshot(stale)
+        assert trims[-1] == -4.5
+        assert dialog._trim.value() == -4.5
+
+        trim_ack = _snapshot(_State.PAUSED)
+        trim_ack.trim_db = -4.5
+        dialog.set_snapshot(trim_ack)
+        assert dialog._pending_trim is None
+
+        dialog._count_in.setFocus()
+        dialog._count_in.setValue(6)
+        dialog._count_in.editingFinished.emit()
+        dialog._done.setFocus()
+        dialog.set_snapshot(stale)
+        assert counts[-1] == (6, 112.0)
+        assert dialog._count_in.value() == 6
+
+        count_ack = _snapshot(_State.PAUSED)
+        count_ack.count_in_beats = 6
+        dialog.set_snapshot(count_ack)
+        assert dialog._pending_count_in is None
+
+        later = _snapshot(_State.PAUSED)
+        later.position_s = 45.0
+        later.loop_start_s = 12.0
+        later.trim_db = -6.0
+        later.count_in_beats = 2
+        dialog.set_snapshot(later)
+        assert dialog._seek.value() == 3_750
+        assert dialog._loop_start.value() == 12.0
+        assert dialog._trim.value() == -6.0
+        assert dialog._count_in.value() == 2
+    finally:
+        dialog.close()
+
+
+def test_seek_intent_is_rejected_unless_snapshot_is_paused() -> None:
+    dialog = ReferenceTrackDialog()
+    seeks: list[float] = []
+    dialog.seek_requested.connect(seeks.append)
+    try:
+        for state in (_State.READY, _State.PLAYING, _State.FAILED):
+            dialog.set_snapshot(_snapshot(state))
+            # Exercise the semantic guard directly; programmatic enabling must
+            # not turn a stale or malicious activation into a seek.
+            dialog._seek.setEnabled(True)
+            dialog._seek.setValue(dialog._SEEK_STEPS // 2)
+            dialog._emit_seek()
+
+        assert seeks == []
+    finally:
+        dialog.close()
+
+
 def test_load_picker_accepts_only_supported_audio_and_emits_path() -> None:
     dialog = ReferenceTrackDialog()
     loaded: list[str] = []
@@ -224,5 +332,25 @@ def test_failure_snapshot_shows_safe_controller_message() -> None:
         assert "route was lost" in dialog._status.text()
         assert dialog._play.isEnabled() is False
         assert dialog._stop.isEnabled() is True
+        assert dialog._status.accessibleDescription() == dialog._status.text()
+        assert dialog._route.accessibleDescription() == dialog._route.text()
+    finally:
+        dialog.close()
+
+
+def test_unchanged_snapshot_does_not_repeat_accessibility_announcement() -> None:
+    dialog = ReferenceTrackDialog()
+    snapshot = _snapshot(_State.READY)
+    try:
+        with patch(
+            "webjam_qt.windows.reference_track.QAccessible.updateAccessibility"
+        ) as announce:
+            dialog.set_snapshot(snapshot)
+            first_count = announce.call_count
+            assert first_count >= 1
+
+            dialog.set_snapshot(snapshot)
+
+        assert announce.call_count == first_count
     finally:
         dialog.close()

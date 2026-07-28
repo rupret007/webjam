@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import struct
 import sys
 from pathlib import Path
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from core.settings import AppSettings  # noqa: E402
@@ -20,6 +24,12 @@ from webjam_qt.theme.brand import (  # noqa: E402
     BrandMark,
     make_brand_icon,
     render_brand_pixmap,
+    trinity_svg_path_data,
+)
+from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
+from webjam_qt.theme.generate_brand_icons import (  # noqa: E402
+    _svg_source,
+    generate_brand_assets,
 )
 from webjam_qt.widgets.session_strip import SessionStrip  # noqa: E402
 from webjam_qt.windows.launch_dialog import LaunchDialog  # noqa: E402
@@ -41,7 +51,7 @@ def _qapp() -> QApplication:
 
 def test_svg_is_a_portable_warm_trinity_companion():
     source = BRAND_MARK_PATH.read_text(encoding="utf-8")
-    assert len(re.findall(r"<path\b", source)) == 3
+    assert len(re.findall(r"<path\b", source)) == 1
     assert "linearGradient" in source
     assert "radialGradient" in source
     assert len(re.findall(r"<circle\b", source)) == 6
@@ -52,7 +62,19 @@ def test_svg_is_a_portable_warm_trinity_companion():
     assert "jamulus" not in source.lower()
     assert "logic" not in source.lower()
     assert "<title>WebJam</title>" in source
-    assert "Three linked loops for musicians playing together" in source
+    assert "One continuous three-loop trefoil for musicians playing together" in source
+    assert source == _svg_source()
+    assert f'd="{trinity_svg_path_data()}"' in source
+
+
+def test_canonical_curve_is_the_approved_historical_continuous_trefoil():
+    path_data = trinity_svg_path_data()
+    assert hashlib.sha256(path_data.encode("ascii")).hexdigest() == (
+        "2d10ad9120c753091289c628b6506a0d048fd28f24c757a55b3a2ba6a6c1bea5"
+    )
+    assert path_data.count("M") == 1
+    assert path_data.count("L") == 72
+    assert path_data.endswith(" Z")
 
 
 def test_mark_remains_legible_and_warm_at_small_sizes():
@@ -82,23 +104,22 @@ def test_mark_remains_legible_and_warm_at_small_sizes():
         assert saturated
         # Orange ribbons have red as their dominant channel and blue as the
         # quietest one. Neutral node centers are intentionally excluded.
-        assert all(
-            pixel.red() > pixel.green() > pixel.blue()
-            for pixel in saturated
-        )
+        assert all(pixel.red() > pixel.green() > pixel.blue() for pixel in saturated)
 
 
 def test_mark_has_three_circular_dark_centered_nodes():
     _qapp()
     size = 96
     image = render_brand_pixmap(size).toImage()
-    for x_ratio, y_ratio in ((0.50, 0.15), (0.846, 0.75), (0.154, 0.75)):
+    for x_ratio, y_ratio in ((0.5, 0.145), (0.826, 0.693), (0.174, 0.693)):
         pixel = image.pixelColor(round(size * x_ratio), round(size * y_ratio))
         assert pixel.alpha() == 255
         assert max(pixel.red(), pixel.green(), pixel.blue()) <= 16
 
 
-def test_mark_is_retina_safe_and_does_not_depend_on_the_svg_at_runtime(monkeypatch, tmp_path):
+def test_mark_is_retina_safe_and_does_not_depend_on_the_svg_at_runtime(
+    monkeypatch, tmp_path
+):
     _qapp()
     import webjam_qt.theme.brand as brand
 
@@ -143,10 +164,37 @@ def test_launch_dialog_uses_the_trinity_mark_without_an_abbreviation(tmp_path):
     assert dialog._logo.accessibleName() == "WebJam"
     assert dialog._logo.text() not in {"WJ", "WEBJAM"}
     assert all(
-        label.text() not in {"WJ", "WEBJAM"}
-        for label in dialog.findChildren(QLabel)
+        label.text() not in {"WJ", "WEBJAM"} for label in dialog.findChildren(QLabel)
     )
     dialog.close()
+
+
+def test_help_and_about_use_the_canonical_trefoil_not_a_generic_icon():
+    _qapp()
+    window = ConductorWindow(
+        mode_entries=[("music_jam", "Music Jam")],
+        initial_mode_key="music_jam",
+        initial_title="Band Rehearsal",
+    )
+    expected = render_brand_pixmap(64).toImage()
+    for show_dialog in (window.show_help, window.show_about):
+        with (
+            mock.patch(
+                "PySide6.QtWidgets.QMessageBox.exec",
+                return_value=0,
+            ),
+            mock.patch(
+                "PySide6.QtWidgets.QMessageBox.setIconPixmap",
+            ) as set_icon,
+        ):
+            show_dialog()
+        set_icon.assert_called_once()
+        supplied = set_icon.call_args.args[0]
+        assert not supplied.isNull()
+        assert supplied.size().width() == 64
+        assert supplied.size().height() == 64
+        assert supplied.toImage() == expected
+    window.close()
 
 
 def test_runtime_and_packaged_icons_share_the_brand_asset():
@@ -162,6 +210,104 @@ def test_runtime_and_packaged_icons_share_the_brand_asset():
     assert icns.read_bytes()[:4] == b"icns"
 
 
+def test_generator_is_deterministic_and_emits_pocket_stage_identity(tmp_path):
+    _qapp()
+    first_desktop = tmp_path / "first" / "desktop"
+    first_ios = tmp_path / "first" / "Assets.xcassets"
+    second_desktop = tmp_path / "second" / "desktop"
+    second_ios = tmp_path / "second" / "Assets.xcassets"
+    generate_brand_assets(
+        desktop_output_dir=first_desktop,
+        ios_asset_catalog=first_ios,
+    )
+    generate_brand_assets(
+        desktop_output_dir=second_desktop,
+        ios_asset_catalog=second_ios,
+    )
+
+    expected = (
+        Path("desktop/webjam-mark.svg"),
+        Path("desktop/webjam.ico"),
+        Path("desktop/webjam.icns"),
+        Path("Assets.xcassets/Contents.json"),
+        Path("Assets.xcassets/AppIcon.appiconset/Contents.json"),
+        Path("Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"),
+        Path("Assets.xcassets/WebJamMark.imageset/Contents.json"),
+        Path("Assets.xcassets/WebJamMark.imageset/webjam-mark.svg"),
+    )
+    for relative in expected:
+        first = tmp_path / "first" / relative
+        second = tmp_path / "second" / relative
+        assert first.is_file(), relative
+        assert first.read_bytes() == second.read_bytes(), relative
+
+    checked_in = {
+        Path("desktop/webjam-mark.svg"): ASSETS / "webjam-mark.svg",
+        Path("desktop/webjam.ico"): ASSETS / "webjam.ico",
+        Path("desktop/webjam.icns"): ASSETS / "webjam.icns",
+    }
+    ios_catalog = ROOT / "ios" / "PocketStage" / "Assets.xcassets"
+    for relative in expected:
+        if str(relative).startswith("Assets.xcassets/"):
+            checked_in[relative] = ios_catalog / relative.relative_to("Assets.xcassets")
+    assert set(checked_in) == set(expected)
+    for relative, canonical in checked_in.items():
+        assert canonical.is_file(), relative
+        assert (tmp_path / "first" / relative).read_bytes() == canonical.read_bytes(), (
+            relative
+        )
+
+    app_icon = QImage(str(first_ios / "AppIcon.appiconset" / "AppIcon-1024.png"))
+    assert not app_icon.isNull()
+    assert not app_icon.hasAlphaChannel()
+    assert app_icon.pixelColor(0, 0).alpha() == 255
+    assert (first_ios / "WebJamMark.imageset" / "webjam-mark.svg").read_text(
+        encoding="utf-8"
+    ) == _svg_source()
+
+
+def test_checked_in_pocket_stage_assets_and_consumers_use_canonical_mark():
+    ios_root = ROOT / "ios"
+    catalog = ios_root / "PocketStage" / "Assets.xcassets"
+    app_icon = catalog / "AppIcon.appiconset" / "AppIcon-1024.png"
+    mark = catalog / "WebJamMark.imageset" / "webjam-mark.svg"
+    assert app_icon.is_file()
+    assert mark.read_text(encoding="utf-8") == BRAND_MARK_PATH.read_text(
+        encoding="utf-8"
+    )
+    app_icon_manifest = json.loads(
+        (app_icon.parent / "Contents.json").read_text(encoding="utf-8")
+    )
+    assert app_icon_manifest["images"] == [
+        {
+            "filename": "AppIcon-1024.png",
+            "idiom": "universal",
+            "platform": "ios",
+            "size": "1024x1024",
+        }
+    ]
+    project = (ios_root / "project.yml").read_text(encoding="utf-8")
+    kit_builder = (
+        ROOT / "packaging" / "ios" / "prepare-pocket-stage-kit.sh"
+    ).read_text(encoding="utf-8")
+    header = (ios_root / "PocketStage" / "WebJamBrandHeader.swift").read_text(
+        encoding="utf-8"
+    )
+    pair_view = (ios_root / "PocketStage" / "PocketStageTabView.swift").read_text(
+        encoding="utf-8"
+    )
+    assert "ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon" in project
+    assert 'Image("WebJamMark")' in header
+    assert "WebJamBrandHeader()" in pair_view
+    assert '"WJ"' not in header
+    for relative in (
+        "PocketStage/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+        "PocketStage/Assets.xcassets/WebJamMark.imageset/webjam-mark.svg",
+        "PocketStage/WebJamBrandHeader.swift",
+    ):
+        assert f'"{relative}"' in kit_builder
+
+
 def test_packaging_keeps_the_vector_companion_and_platform_icons():
     spec = (ROOT / "webjam.spec").read_text(encoding="utf-8")
     brand_source = (ROOT / "webjam_qt" / "theme" / "brand.py").read_text(
@@ -172,3 +318,24 @@ def test_packaging_keeps_the_vector_companion_and_platform_icons():
     assert "QSvgRenderer" not in brand_source
     assert '"webjam.ico"' in spec
     assert '"webjam.icns"' in spec
+
+
+def test_linux_portable_zip_does_not_claim_an_unshipped_launcher():
+    readme = (ROOT / "packaging" / "linux" / "README-LINUX.txt").read_text(
+        encoding="utf-8"
+    )
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    readme_words = " ".join(readme.split())
+    assert "This is a portable ZIP, not a distro package." in readme
+    assert "does not install an application-menu entry" in readme_words
+    assert ".desktop launcher" in readme_words
+    desktop_build = workflow.split(
+        "      - name: Build desktop artifact",
+        1,
+    )[1].split(
+        "\n      - name:",
+        1,
+    )[0]
+    assert 'elif [[ "${{ matrix.target }}" == "linux-x64" ]]; then' in desktop_build
+    assert 'zip -qr "../out/WebJam-${{ matrix.target }}.zip" WebJam/' in desktop_build
+    assert ".desktop" not in desktop_build

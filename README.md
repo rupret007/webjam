@@ -189,6 +189,11 @@ for this newer source candidate. The v0.20.0 candidate workflow builds Windows
 x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac packages plus one exact
 SHA-256 manifest.
 
+Successful branch and pull-request workflows also retain the unsigned Windows
+x64 candidate on GitHub for 90 days as `webjam-windows-x64`. It contains
+exactly the Setup executable, portable ZIP, and their scoped SHA-256 manifest;
+it is engineering evidence, not a signed or published release.
+
 The source tree also contains the reviewed cross-platform packaging path for a
 direct Windows Setup executable, Intel and Apple Silicon macOS disk images,
 portable ZIP fallbacks, and an Ubuntu 22.04 x64 ZIP. Other Ubuntu versions and

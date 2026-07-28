@@ -1384,8 +1384,10 @@ jobs:
         if: matrix.target == 'windows-x64'
         shell: pwsh
         run: |
-          $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-fresh"
-          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
+          # Spaces are intentional: the portable package must work outside the
+          # runner's unusually simple default paths.
+          $freshRoot = Join-Path $env:RUNNER_TEMP "WebJam Windows Fresh With Spaces"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "WebJam Windows Home With Spaces"
           Remove-Item -Recurse -Force $freshRoot,$smokeHome -ErrorAction SilentlyContinue
           Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $freshRoot
           New-Item -ItemType Directory -Force $smokeHome | Out-Null
@@ -1458,9 +1460,11 @@ jobs:
         run: |
           $version = (python -c "from webjam_qt import __version__; print(__version__)").Trim()
           $buildId = (git rev-parse HEAD).Trim()
-          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-setup-source"
-          $installDir = Join-Path $env:RUNNER_TEMP "webjam-installed"
-          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-setup-home"
+          # Exercise both the Inno source define and the install/launch path
+          # with spaces instead of relying on the runner's simple defaults.
+          $workRoot = Join-Path $env:RUNNER_TEMP "WebJam Setup Source With Spaces"
+          $installDir = Join-Path $env:RUNNER_TEMP "WebJam Installed With Spaces"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "WebJam Setup Home With Spaces"
           Remove-Item -Recurse -Force $workRoot,$installDir,$smokeHome `
             -ErrorAction SilentlyContinue
           Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $workRoot
@@ -1772,7 +1776,58 @@ jobs:
               "out/WebJam-v${version}-${target}-ADHOC-TEST-ONLY.dmg"
           fi
 
-      - name: Upload build artifact
+      - name: Generate and verify Windows candidate checksum manifest
+        if: matrix.target == 'windows-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          cd out
+          assets=(
+            "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          shopt -s nullglob
+          candidate_assets=(WebJam*windows-x64*)
+          test "${#candidate_assets[@]}" -eq "${#assets[@]}"
+          for candidate in "${candidate_assets[@]}"; do
+            case "$candidate" in
+              "${assets[0]}"|"${assets[1]}") ;;
+              *)
+                echo "Unexpected Windows candidate file: $candidate" >&2
+                exit 1
+                ;;
+            esac
+          done
+          checksum_file="WebJam-v${version}-windows-x64-SHA256SUMS.txt"
+          # Use one explicit binary-mode format on Git Bash and GNU/Linux:
+          # "<64 lowercase hex> *<basename>". EXE/ZIP bytes must never be
+          # subject to text-mode translation.
+          sha256sum --binary -- "${assets[@]}" > "$checksum_file"
+          test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"
+          test "$(sed -n '1s/^[^*]*\*//p' "$checksum_file")" = "${assets[0]}"
+          test "$(sed -n '2s/^[^*]*\*//p' "$checksum_file")" = "${assets[1]}"
+          sha256sum --check --strict "$checksum_file"
+          uploaded_files=(WebJam*windows-x64*)
+          test "${#uploaded_files[@]}" -eq 3
+
+      - name: Upload Windows candidate artifact
+        if: matrix.target == 'windows-x64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-windows-x64
+          path: |
+            out/WebJam-v*-windows-x64-UNSIGNED-TEST-ONLY-setup.exe
+            out/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+            out/WebJam-v*-windows-x64-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload non-Windows build artifact
+        if: matrix.target != 'windows-x64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: webjam-${{ matrix.target }}
@@ -1838,12 +1893,43 @@ jobs:
             "release-source\WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip").Path
           $sourceSetup = (Resolve-Path `
             "release-source\WebJam-v$version-windows-x64-UNSIGNED-TEST-ONLY-setup.exe").Path
+          $sourceChecksum = (Resolve-Path `
+            "release-source\WebJam-v$version-windows-x64-SHA256SUMS.txt").Path
           $sourceFiles = @(Get-ChildItem "release-source" -File)
-          if ($sourceFiles.Count -ne 2) {
-            throw "Windows source artifact must contain exactly ZIP and Setup files"
+          if ($sourceFiles.Count -ne 3) {
+            throw "Windows source artifact must contain exactly ZIP, Setup, and checksum files"
           }
           foreach ($file in @($sourceZip, $sourceSetup)) {
             if ((Get-Item $file).Length -le 0) { throw "Empty source artifact: $file" }
+          }
+          $expectedContainers = @{
+            "WebJam-v$version-windows-x64-UNSIGNED-TEST-ONLY-setup.exe" = $sourceSetup
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip" = $sourceZip
+          }
+          $checksumLines = @(Get-Content -LiteralPath $sourceChecksum)
+          if ($checksumLines.Count -ne $expectedContainers.Count) {
+            throw "Windows source checksum manifest must contain exactly two entries"
+          }
+          $seenContainers = @{}
+          foreach ($line in $checksumLines) {
+            $match = [regex]::Match(
+              $line,
+              '^(?<hash>[0-9a-f]{64}) \*(?<name>[^/\\]+)$'
+            )
+            if (-not $match.Success) {
+              throw "Malformed Windows source checksum line"
+            }
+            $name = $match.Groups["name"].Value
+            if (-not $expectedContainers.ContainsKey($name) -or
+                $seenContainers.ContainsKey($name)) {
+              throw "Unexpected or duplicate Windows source checksum entry: $name"
+            }
+            $actualHash = (Get-FileHash $expectedContainers[$name] `
+              -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -cne $match.Groups["hash"].Value) {
+              throw "Windows source checksum mismatch: $name"
+            }
+            $seenContainers[$name] = $true
           }
           if ((Get-AuthenticodeSignature $sourceSetup).Status -ne "NotSigned") {
             throw "Windows source Setup must remain unsigned before protected signing"
@@ -2692,6 +2778,19 @@ jobs:
           set -euo pipefail
           cd release-assets
           version="${GITHUB_REF_NAME#v}"
+          windows_checksum="WebJam-v${version}-windows-x64-SHA256SUMS.txt"
+          windows_assets=(
+            "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          )
+          test -s "$windows_checksum"
+          test "$(wc -l < "$windows_checksum")" -eq "${#windows_assets[@]}"
+          test "$(sed -n '1s/^[^*]*\*//p' "$windows_checksum")" = \
+            "${windows_assets[0]}"
+          test "$(sed -n '2s/^[^*]*\*//p' "$windows_checksum")" = \
+            "${windows_assets[1]}"
+          sha256sum --check --strict "$windows_checksum"
+          rm -- "$windows_checksum"
           assets=(
             "WebJam-linux-x64.zip"
             "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"

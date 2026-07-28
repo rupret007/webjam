@@ -252,11 +252,13 @@ class SimpleSettingsDialog(QDialog):
 
     def _clear_error(self, *_args) -> None:
         self._error.clear()
+        self._error.setAccessibleDescription("")
         self._error.setVisible(False)
 
     def _on_webex_text_changed(self, text: str) -> None:
         self._clear_error()
         self._webex_status.clear()
+        self._webex_status.setAccessibleDescription("")
         self._webex_status.setVisible(False)
         hostname = webex_site_hostname(text)
         self._video_site.setText(f"Webex site: {hostname}" if hostname else "")

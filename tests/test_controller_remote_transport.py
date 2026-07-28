@@ -304,6 +304,7 @@ def test_replaced_remote_runtime_cannot_render_a_late_failure(qapp, tmp_path) ->
     controller._on_remote_session_snapshot(failed, source=old_runtime)
 
     controller._show_remote_session_failure.assert_not_called()
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -325,6 +326,7 @@ def test_replaced_remote_runtime_cannot_activate_a_late_guest_route(
     controller._on_remote_session_snapshot(connected, source=old_runtime)
 
     controller._activate_remote_guest_route.assert_not_called()
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -346,6 +348,7 @@ def test_active_remote_runtime_still_accepts_its_own_failure(qapp, tmp_path) -> 
         guest_enrollment=True,
         retry_safe=True,
     )
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -505,6 +508,7 @@ def test_legacy_invite_fails_closed_when_v3_cleanup_fails(tmp_path) -> None:
     controller.begin_startup_journey.assert_not_called()
     assert controller.settings.jamulus_server == "127.0.0.1"
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    runtime.stop.side_effect = None
     controller.shutdown()
 
 
@@ -652,6 +656,7 @@ def test_host_hud_hides_consumed_copy_but_keeps_reset_available(
     controller._update_session_hud()
     assert controller.window.session_strip._invite_button.isHidden()
     assert controller.window.session_strip._reset_invite_action.isVisible()
+    controller._remote_invite_owner = None
     controller.shutdown()
 
 

@@ -12,6 +12,7 @@ import logging
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -60,6 +61,8 @@ class WebexEmbed(QFrame):
         )
         self._status_label.setWordWrap(True)
         self._status_label.setObjectName("WebexStatusLabel")
+        self._status_label.setAccessibleName("Webex launch status")
+        self._status_label.setAccessibleDescription(self._status_label.text())
 
         self._fallback_btn = QPushButton("Open Webex")
         self._fallback_btn.setObjectName("GhostButton")
@@ -99,6 +102,18 @@ class WebexEmbed(QFrame):
         }
         description = descriptions.get(status, str(status))
         self._status_label.setText(description)
+        self._status_label.setAccessibleDescription(description)
+        try:
+            QAccessible.updateAccessibility(
+                QAccessibleEvent(
+                    self._status_label,
+                    QAccessible.Event.DescriptionChanged,
+                )
+            )
+        except (RuntimeError, TypeError):
+            # Some headless and teardown paths no longer have an accessibility
+            # backend. The visible and semantic text is still updated.
+            pass
         button_text = (
             "Opening…"
             if status == "Opening…"

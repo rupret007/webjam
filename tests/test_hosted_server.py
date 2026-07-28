@@ -714,6 +714,11 @@ class TestHostedControllerFlows(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # Individual examples replace these live-process probes with mocks.
+        # Restore truthful idle state before exercising the now fail-closed
+        # application shutdown contract in fixture cleanup.
+        cls.controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+        cls.controller.bridge.hosted_server_owned = MagicMock(return_value=False)
         cls.controller.shutdown()
 
     def setUp(self):
@@ -955,7 +960,9 @@ class TestHostedShutdown(unittest.TestCase):
         settings.host_server_enabled = True
         controller = ApplicationController(window, settings=settings)
         order: list[str] = []
-        controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+        controller.bridge.hosted_server_alive = MagicMock(
+            side_effect=[True, True, False],
+        )
         controller.bridge.hosted_server_owned = MagicMock(return_value=True)
         controller.recording.stop_server_recording_for_shutdown = MagicMock(
             side_effect=lambda: order.append("stop-recording") or True

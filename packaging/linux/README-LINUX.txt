@@ -5,6 +5,11 @@ This test build is certified only for 64-bit Ubuntu 22.04. Other Ubuntu
 versions and Linux distributions are not certified. Keep the entire WebJam
 folder together; the files under _internal are required at runtime.
 
+This is a portable ZIP, not a distro package. It does not install an
+application-menu entry, .desktop launcher, or system icon. Start the included
+WebJam executable from this folder; the running application uses WebJam's
+continuous trefoil identity in its own windows.
+
 Linux and Windows builds currently join a jam hosted from the macOS build.
 "Host a Jam" remains disabled on this platform; this package does not claim
 to provide the macOS-only managed band server.
