@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import webbrowser
 from enum import Enum
-from urllib.parse import urlsplit
 
 from core.logging_config import configure_logging
 from core.settings import load_settings
-from core.webex_url import is_allowed_webex_url, normalize_webex_url
+from core.webex_url import (
+    is_allowed_webex_url,
+    normalize_webex_url,
+    webex_site_hostname,
+)
 
 
 class WebexLaunchState(str, Enum):
@@ -28,10 +31,7 @@ class WebexLaunchState(str, Enum):
 
 def _meeting_hostname(url: str) -> str:
     """Return a safe logging label without meeting path/query/fragment."""
-    try:
-        return (urlsplit(normalize_webex_url(url)).hostname or "unknown").lower()
-    except Exception:  # noqa: BLE001
-        return "unknown"
+    return webex_site_hostname(url) or "unknown"
 
 
 class WebexController:

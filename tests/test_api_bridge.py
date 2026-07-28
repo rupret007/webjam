@@ -22,7 +22,49 @@ from api.local_bridge import LocalApiBridge
 class TestLocalApiBridgeLifecycle(unittest.TestCase):
     def test_stop_when_not_started_is_safe(self):
         bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
-        bridge.stop()
+        self.assertTrue(bridge.stop())
+
+    def test_stop_retains_a_listener_that_has_not_exited(self):
+        bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        server = MagicMock()
+        bridge._thread = thread
+        bridge._server = server
+        bridge._running = True
+
+        self.assertFalse(bridge.stop())
+
+        thread.join.assert_called_once_with(timeout=2)
+        self.assertTrue(server.should_exit)
+        self.assertIs(bridge._thread, thread)
+        self.assertIs(bridge._server, server)
+        self.assertFalse(bridge._running)
+
+    def test_stop_retry_clears_ownership_after_listener_exits(self):
+        bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        server = MagicMock()
+        bridge._thread = thread
+        bridge._server = server
+
+        self.assertFalse(bridge.stop())
+        thread.is_alive.return_value = False
+        self.assertTrue(bridge.stop())
+
+        self.assertIsNone(bridge._thread)
+        self.assertIsNone(bridge._server)
+
+    def test_start_refuses_to_replace_a_listener_still_stopping(self):
+        bridge = LocalApiBridge(get_participants=lambda: [], get_diagnostics=lambda: {})
+        thread = MagicMock()
+        thread.is_alive.return_value = True
+        bridge._thread = thread
+        bridge._running = False
+
+        self.assertFalse(bridge.start())
+        self.assertIs(bridge._thread, thread)
 
     @unittest.skipUnless(BRIDGE_RUNTIME_AVAILABLE, "fastapi/uvicorn not available")
     @patch.object(LocalApiBridge, "_create_app", return_value=object())

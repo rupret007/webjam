@@ -37,19 +37,9 @@ class TestPackagedDataFiles(unittest.TestCase):
         for name in ("webjam-mark.svg", "webjam.ico", "webjam.icns"):
             self.assertTrue((assets / name).is_file(), name)
 
-    def test_webex_widget_html_present_where_code_expects_it(self):
-        # webex_embed.py: Path(__file__).parent.parent / "webex_widget.html"
-        self.assertTrue((PKG / "webex_widget.html").is_file())
-
-    def test_webex_widget_cdn_version_is_pinned(self):
-        html = (PKG / "webex_widget.html").read_text(encoding="utf-8")
-        self.assertNotIn("@latest", html)
-        self.assertIn("@webex/widgets@1.28.2", html)
-
     def test_spec_bundles_the_runtime_data_files(self):
         self.assertIn("conductor.qss", SPEC)
         self.assertIn('"theme" / "assets"', SPEC)
-        self.assertIn("webex_widget.html", SPEC)
         self.assertIn("webjam-build-id.txt", SPEC)
         self.assertIn("WEBJAM_BUILD_ID", SPEC)
         self.assertIn("INTER_OFL.txt", SPEC)
@@ -78,6 +68,32 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertNotIn('sys.platform.startswith("linux")', SPEC)
         self.assertIn('"Jamulus"', SPEC)
 
+    def test_external_webex_build_excludes_retired_embedded_runtime(self):
+        self.assertFalse((PKG / "webex_widget.html").exists())
+        self.assertFalse((ROOT / "core" / "webex_guest_token.py").exists())
+        self.assertNotIn('"core.webex_guest_token"', SPEC)
+        hiddenimports = SPEC.split("hiddenimports=[", 1)[1].split(
+            "],\n    hookspath=", 1
+        )[0]
+        self.assertNotIn('"httpx"', hiddenimports)
+        excludes = SPEC.split("excludes=[", 1)[1].split(
+            "],\n    win_no_prefer_redirects=", 1
+        )[0]
+        for module in (
+            "PySide6.QtWebChannel",
+            "PySide6.QtWebEngineCore",
+            "PySide6.QtWebEngineQuick",
+            "PySide6.QtWebEngineWidgets",
+        ):
+            self.assertNotIn(f'"{module}"', hiddenimports)
+            self.assertIn(f'"{module}"', excludes)
+        for retired_runtime in ("QtWebEngine", "QtWebChannel"):
+            self.assertIn(
+                "test -z \"$(find dist/WebJam.app "
+                f"-iname '*{retired_runtime}*'",
+                CI,
+            )
+
     def test_ci_builds_stages_and_smokes_the_native_transport(self):
         self.assertIn("go test -race -count=1 ./...", CI)
         self.assertIn("go mod verify", CI)
@@ -100,6 +116,11 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("Verify tag matches packaged version", CI)
         self.assertIn("run_frozen_pocket_stage_smoke", CI)
         self.assertIn("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", POCKET_SMOKE_RUNNER)
+
+    def test_ci_pins_the_reviewed_ruff_contract(self):
+        self.assertEqual(CI.count('"ruff==0.15.22"'), 2)
+        self.assertNotIn("pip install pytest ruff ", CI)
+        self.assertNotIn("pip install ruff build", CI)
 
     def test_ci_selects_swift_testing_capable_xcode_for_pocket_stage(self):
         self.assertIn(
@@ -153,6 +174,17 @@ class TestPackagedDataFiles(unittest.TestCase):
             "websockets",
             "websockets.sync.client",
             "segno",
+        ):
+            self.assertIn(f'"{module}"', SPEC)
+
+    def test_spec_keeps_reference_track_pilot_in_frozen_app(self):
+        for module in (
+            "core.reference_track",
+            "services.reference_track_backend",
+            "webjam_qt.windows.reference_track",
+            "soundfile",
+            "sounddevice",
+            "numpy",
         ):
             self.assertIn(f'"{module}"', SPEC)
 

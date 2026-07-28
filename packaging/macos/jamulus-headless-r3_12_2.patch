@@ -1,0 +1,28 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 98e5ab0..218868c 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -45,4 +45,6 @@
+ #if defined( Q_OS_MACOS )
+ #    include "mac/activity.h"
++#    ifndef HEADLESS
+ extern void qt_set_sequence_auto_mnemonic ( bool bEnable );
++#    endif
+ #endif
+@@ -63,2 +65,2 @@ int main ( int argc, char** argv )
+-#if defined( Q_OS_MACOS )
++#if defined( Q_OS_MACOS ) && !defined( HEADLESS )
+     // Mnemonic keys are default disabled in Qt for MacOS. The following function enables them.
+diff --git a/src/sound/coreaudio-mac/sound.h b/src/sound/coreaudio-mac/sound.h
+index 924528d..96b7c95 100644
+--- a/src/sound/coreaudio-mac/sound.h
++++ b/src/sound/coreaudio-mac/sound.h
+@@ -29,5 +29,7 @@
+ #include <CoreMIDI/CoreMIDI.h>
+ #include <QMutex>
+-#include <QMessageBox>
++#ifndef HEADLESS
++#    include <QMessageBox>
++#endif
+ #include "../soundbase.h"
+ #include "../../global.h"

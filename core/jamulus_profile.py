@@ -19,6 +19,8 @@ or filesystem paths.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
@@ -31,6 +33,7 @@ import stat
 import subprocess
 import sys
 from typing import Callable, Mapping
+from xml.etree import ElementTree
 
 from core.file_io import atomic_write_text
 
@@ -509,6 +512,60 @@ class JamulusNativeProfileManager:
             raise JamulusNativeProfileError(
                 "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
             ) from exc
+
+
+def read_native_audio_device_names(
+    plan: JamulusNativeProfilePlan,
+) -> tuple[str, str]:
+    """Read the active Jamulus-owned CoreAudio selector without persisting it.
+
+    This is a narrow runtime safety boundary for Reference Track.  The values
+    are read only while the primary client is alive and are never copied into
+    WebJam settings, logs, readiness records, or support artifacts.
+    """
+
+    if not isinstance(plan, JamulusNativeProfilePlan):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        )
+    try:
+        raw = JamulusNativeProfileManager._read_profile(plan.profile_path)
+        root = ElementTree.fromstring(raw)
+        if root.tag != "client":
+            raise ValueError("unexpected profile root")
+        encoded = str(root.findtext("auddev_base64") or "").strip()
+        if not encoded or len(encoded) > 4_096:
+            raise ValueError("missing audio selector")
+        selector = base64.b64decode(
+            encoded.encode("ascii"),
+            validate=True,
+        ).decode("utf-8")
+        prefix = "in: "
+        separator = "/out: "
+        if not selector.startswith(prefix) or selector.count(separator) != 1:
+            raise ValueError("invalid audio selector")
+        input_name, output_name = selector[len(prefix) :].split(separator, 1)
+        input_name = input_name.strip()
+        output_name = output_name.strip()
+        if any(
+            not value
+            or len(value) > 512
+            or any(character in value for character in ("/", "\0", "\r", "\n"))
+            for value in (input_name, output_name)
+        ):
+            raise ValueError("invalid audio device name")
+    except (
+        JamulusNativeProfileError,
+        OSError,
+        UnicodeError,
+        ValueError,
+        binascii.Error,
+        ElementTree.ParseError,
+    ):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        ) from None
+    return input_name, output_name
 
 
 class StartupReadinessStore:

@@ -25,6 +25,8 @@ LOGGER = logging.getLogger("webjam.qt.audio_coordinator")
 class AudioCoordinator:
     """Owns Jamulus audio-session UI state and participant grid transitions."""
 
+    _NAME_SYNC_MAX_SEND_ATTEMPTS = 3
+
     def __init__(self, controller: ApplicationController) -> None:
         self._c = controller
         self.connected = False
@@ -33,6 +35,72 @@ class AudioCoordinator:
         self.connection_timed_out = False
         self.recovering = False
         self.permission_explained = False
+        self.cleanup_retry_required = False
+        self._stop_hosting = False
+        self._name_sync_target = ""
+        self._name_sync_send_attempts = 0
+        self._name_sync_sent = False
+        self._name_sync_process = self._current_jamulus_process()
+
+    def _current_jamulus_process(self):
+        """Return the owned native-client identity, if one has been launched."""
+
+        bridge = getattr(self._c, "bridge", None)
+        return getattr(bridge, "jamulus_process", None)
+
+    def _reset_musician_name_sync(self) -> None:
+        """Allow one configured-name handoff for the next client session."""
+
+        self._name_sync_target = ""
+        self._name_sync_send_attempts = 0
+        self._name_sync_sent = False
+        self._name_sync_process = self._current_jamulus_process()
+
+    def _sync_musician_name_if_ready(self) -> None:
+        """Apply the configured Jamulus name once authenticated RPC is ready.
+
+        A hosted server can prove the local audio connection before the
+        Jamulus *client* RPC socket is accepting commands.  Treating that
+        early roster as the only opportunity to call ``setName`` leaves the
+        client at Jamulus's ``No Name`` default for the whole session.
+
+        Successful handoff is deliberately session-scoped: after Jamulus
+        accepts the request, a musician can still rename themselves in its
+        native window without WebJam repeatedly overwriting that choice.
+        Failed sends are bounded so a broken socket cannot cause unbounded
+        RPC traffic on participant updates.
+        """
+
+        process = self._current_jamulus_process()
+        if process is not self._name_sync_process:
+            # A replacement Jamulus process starts with its packaged native
+            # profile and needs one fresh handoff. A roster/RPC interruption
+            # in the *same* process does not: the musician may have renamed
+            # themselves in Jamulus after WebJam's initial handoff, and an
+            # automatic reconnect must not overwrite that choice.
+            self._name_sync_target = ""
+            self._name_sync_send_attempts = 0
+            self._name_sync_sent = False
+            self._name_sync_process = process
+
+        desired = str(self._c.settings.musician_name or "").strip()
+        if not desired:
+            return
+        if desired != self._name_sync_target:
+            self._name_sync_target = desired
+            self._name_sync_send_attempts = 0
+            self._name_sync_sent = False
+        if (
+            self._name_sync_sent
+            or self._name_sync_send_attempts >= self._NAME_SYNC_MAX_SEND_ATTEMPTS
+        ):
+            return
+        rpc = getattr(self._c.jamulus, "rpc_client", None)
+        if not bool(getattr(rpc, "available", False)):
+            return
+        self._name_sync_send_attempts += 1
+        if self._c.jamulus.set_name(desired):
+            self._name_sync_sent = True
 
     def on_launch_toggle(self) -> bool:
         """Apply the live toggle and report whether a new launch was allowed.
@@ -85,6 +153,7 @@ class AudioCoordinator:
             self._c._reconnect_banner_shown = False
             self._c._rpc_hang_banner_shown = False
             self._c._reconnect_gave_up = False
+            self._reset_musician_name_sync()
             self._c.window.set_status_audio("Launching…")
             self._c.window.session_strip.set_tools_enabled(True)
             self._c.window.session_strip.set_audio_state("Launching…", enabled=False)
@@ -121,6 +190,13 @@ class AudioCoordinator:
             return True
 
     def on_practice_requested(self) -> None:
+        if self.stopping or self.cleanup_retry_required:
+            self._c.window.flash_message(
+                "Wait for the current session cleanup to finish before "
+                "starting practice.",
+                ms=5000,
+            )
+            return
         if self._c._is_jamulus_running():
             self._c.window.flash_message(
                 "End the current session first, then start a solo practice.",
@@ -128,6 +204,7 @@ class AudioCoordinator:
             )
             return
         self._c.window.set_status_audio("Starting practice…")
+        self._reset_musician_name_sync()
         self._c._transition_lifecycle(
             SessionLifecyclePhase.STARTING_HOST,
             "Starting private practice",
@@ -147,6 +224,11 @@ class AudioCoordinator:
             self.reset_to_idle()
 
     def stop(self) -> None:
+        if self.stopping:
+            return
+        if self.cleanup_retry_required:
+            self.retry_stop()
+            return
         hosting = bool(getattr(self._c.settings, "host_server_enabled", False))
         recording_active = self._c.recording.is_recording_active
         take_in_progress = bool(
@@ -186,9 +268,24 @@ class AudioCoordinator:
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+        self._begin_session_stop(hosting)
+
+    def _begin_session_stop(self, hosting: bool) -> None:
+        """Enter one serialized End/Leave attempt on the Qt owner thread."""
+
+        self._stop_hosting = bool(hosting)
+        self.cleanup_retry_required = False
         self.stopping = True
         self.ended_by_user = True
         self.recovering = False
+        self._c.window.session_strip.set_tools_enabled(False)
+        prepare_pocket_stage = getattr(
+            self._c,
+            "_prepare_pocket_stage_for_session_end",
+            None,
+        )
+        if callable(prepare_pocket_stage):
+            prepare_pocket_stage()
         self._c.window.set_status_audio("Ending…" if hosting else "Leaving…")
         self._c.window.set_status_latency("Not connected")
         self._c.window.session_strip.set_audio_state(
@@ -229,45 +326,100 @@ class AudioCoordinator:
         self._c._talk_break_intended = False
         self._c._sync_self_mute_button()
 
-    def _finish_session_stop_ui(self, error: str = "") -> None:
+    def retry_stop(self) -> None:
+        """Retry only unresolved cleanup; never reinterpret it as a new Start."""
+
+        if self.stopping or not self.cleanup_retry_required:
+            return
+        self._begin_session_stop(self._stop_hosting)
+
+    def require_cleanup_retry(
+        self,
+        *,
+        hosting: bool,
+        error: str,
+        title: str = "WebJam couldn’t finish cleanly",
+        detail: str = (
+            "The current jam is still protected. Try ending or leaving again."
+        ),
+    ) -> None:
+        """Keep an unresolved session owner reachable through one truthful retry.
+
+        Some ownership transitions fail before the ordinary End/Leave worker
+        starts (for example, replacing an idle private-transfer peer). Cache
+        the role that owns the unresolved resources rather than deriving it
+        later from settings that an invitation may be trying to replace.
+        """
+
+        self._stop_hosting = bool(hosting)
+        self.stopping = False
+        self.cleanup_retry_required = True
+        self.ended_by_user = False
+        self._c.window.session_strip.set_tools_enabled(True)
+        complete_pocket_stage = getattr(
+            self._c,
+            "_complete_pocket_stage_session_end",
+            None,
+        )
+        if callable(complete_pocket_stage):
+            complete_pocket_stage(succeeded=False)
+        self._c._transition_lifecycle(
+            SessionLifecyclePhase.FAILED_RECOVERABLE,
+            "Session cleanup needs attention",
+        )
+        self._c.window.participant_grid.set_session_state(
+            SessionUiState.stop_failed()
+        )
+        self._c.window.session_hud.set_state(title, detail)
+        self._c.window.session_strip.set_audio_state(
+            "Try End Session" if hosting else "Try Leave Jam",
+            enabled=True,
+        )
+        self._c.window.flash_message(error, ms=8000)
+
+    def _finish_session_stop_ui(
+        self,
+        error: str = "",
+        *,
+        remote_route_base_settings=None,
+    ) -> None:
         """Finalize local/UI state after recorder, client, and server stop."""
-        self._c.window.session_strip.reset_session_clock()
+        if not error and (
+            remote_route_base_settings is not None
+            and remote_route_base_settings is not self._c.settings
+        ):
+            try:
+                old_settings = self._c.settings
+                self._c._replace_settings_object(remote_route_base_settings)
+                self._c._reconfigure_services_after_settings(old_settings)
+            except Exception:  # noqa: BLE001 - keep the retry owner reachable
+                LOGGER.exception(
+                    "Could not restore settings after private transport stop"
+                )
+                self._c._remote_route_base_settings = (
+                    remote_route_base_settings
+                )
+                error = (
+                    "The previous session settings could not be restored "
+                    "cleanly."
+                )
         self._c.window.session_strip.set_tools_enabled(True)
         self.stopping = False
+        complete_pocket_stage = getattr(
+            self._c,
+            "_complete_pocket_stage_session_end",
+            None,
+        )
         if error:
-            self._c._transition_lifecycle(
-                SessionLifecyclePhase.FAILED_RECOVERABLE,
-                "Session cleanup needs attention",
+            self.require_cleanup_retry(
+                hosting=self._stop_hosting,
+                error=error,
             )
-            self.ended_by_user = False
-            self._c.window.participant_grid.set_session_state(
-                SessionUiState.stop_failed()
-            )
-            self._c.window.session_hud.set_state(
-                "WebJam couldn’t finish cleanly",
-                "The current jam is still protected. Try ending or leaving again.",
-            )
-            self._c.window.session_strip.set_audio_state(
-                "Try End Session"
-                if bool(getattr(self._c.settings, "host_server_enabled", False))
-                else "Try Leave Jam",
-                enabled=True,
-            )
-            self._c.window.flash_message(error, ms=8000)
             return
-        # A successful Leave/End is terminal for the private peer plane.
-        # Discard the typed v2 invitation as well as the listener/client so a
-        # bearer cannot survive in controller memory and quietly reopen on a
-        # later Start. The musician can paste a fresh invite for a new jam.
-        self._c._stop_session_peer(clear_invite=True)
-        # The hosted server has been confirmed stopped before this success
-        # callback. Revoke the v3 owner and clear its in-memory loopback mode
-        # now so a later legacy LAN-host session keeps its original binding.
-        self._c._clear_remote_invite_owner()
-        # Guest transports are independent from the invitation owner. Stop
-        # them only after Jamulus (and the hosted server for a host) is gone,
-        # then restore any in-memory loopback route to its saved local profile.
-        self._c._stop_remote_transport()
+        self.cleanup_retry_required = False
+        self._c.window.session_strip.reset_session_clock()
+        if callable(complete_pocket_stage):
+            complete_pocket_stage(succeeded=True)
         self._c.recording.on_audio_session_stopped()
         self._c._transition_lifecycle(
             SessionLifecyclePhase.COMPLETED,
@@ -281,6 +433,18 @@ class AudioCoordinator:
     def _stop_session_services(self, hosting: bool) -> None:
         """Stop in data-safe order without freezing the Qt event loop."""
         failures: list[str] = []
+        # The Reference Track owns a second Jamulus client. Retire it before
+        # recorder finalization and before the primary musician client/server;
+        # an uncertain backing route must never outlive the jam it was feeding.
+        if not self._c._stop_reference_track_for_session_end(background=False):
+            failures.append(
+                "The separate Reference Track client did not stop cleanly."
+            )
+            error = " ".join(failures)
+            self._c._ui_invoker.invoke(
+                lambda message=error: self._finish_session_stop_ui(message)
+            )
+            return
         if hosting:
             self._c._transition_lifecycle(
                 SessionLifecyclePhase.FINALIZING_RECORDINGS,
@@ -301,6 +465,26 @@ class AudioCoordinator:
                     lambda message=error: self._finish_session_stop_ui(message)
                 )
                 return
+        stop_pocket_stage = getattr(
+            self._c,
+            "_stop_pocket_stage_for_session_end",
+            None,
+        )
+        if callable(stop_pocket_stage) and not stop_pocket_stage():
+            failures.append("iPhone sharing did not stop cleanly.")
+        # The v2 local-original transfer owner must be proven stopped before
+        # the primary client disappears. If it refuses, retain its object and
+        # invitation so Try End/Leave can retry without orphaning a sidecar.
+        if not self._c._stop_session_peer(clear_invite=True):
+            failures.append(
+                "The private recording-transfer connection did not stop cleanly."
+            )
+        if failures:
+            error = " ".join(failures)
+            self._c._ui_invoker.invoke(
+                lambda message=error: self._finish_session_stop_ui(message)
+            )
+            return
         try:
             if not self._c.bridge.stop_jamulus():
                 failures.append("The local music connection did not stop cleanly.")
@@ -314,12 +498,48 @@ class AudioCoordinator:
             except Exception:  # noqa: BLE001
                 LOGGER.exception("Could not stop the hosted band server")
                 failures.append("The hosted jam did not stop cleanly.")
+        if failures:
+            error = " ".join(failures)
+            self._c._ui_invoker.invoke(
+                lambda message=error: self._finish_session_stop_ui(message)
+            )
+            return
+        # V3 transport/owner teardown depends on Jamulus and, for a host, the
+        # loopback-only server being gone. Check both results before publishing
+        # COMPLETED; their helpers retain failed owners for a bounded retry.
+        if not self._c._clear_remote_invite_owner():
+            failures.append(
+                "The private invitation service did not stop cleanly."
+            )
+        if failures:
+            error = " ".join(failures)
+            self._c._ui_invoker.invoke(
+                lambda message=error: self._finish_session_stop_ui(message)
+            )
+            return
+        remote_route_base_settings = getattr(
+            self._c,
+            "_remote_route_base_settings",
+            None,
+        )
+        if not self._c._stop_remote_transport(restore_route=False):
+            failures.append(
+                "The private session transport did not stop cleanly."
+            )
         error = " ".join(failures)
         self._c._ui_invoker.invoke(
-            lambda message=error: self._finish_session_stop_ui(message)
+            lambda message=error, base=remote_route_base_settings: (
+                self._finish_session_stop_ui(
+                    message,
+                    remote_route_base_settings=base if not message else None,
+                )
+            )
         )
 
     def reset_to_idle(self) -> None:
+        self.stopping = False
+        self.cleanup_retry_required = False
+        self._reset_musician_name_sync()
         self._c.session_health.reset_live_truth()
         self._c.session_lifecycle.reset(reason="Ready for a new session")
         self._c._clear_lan_invite_address()
@@ -348,6 +568,13 @@ class AudioCoordinator:
                 ),
             )
         )
+        # End/Leave changes this control to a disabled progress label before
+        # teardown. Reset it explicitly because the readiness timer is stopped
+        # during a clean session end and may not refresh the strip again.
+        self._c.window.session_strip.set_audio_state(
+            "Start Session",
+            enabled=True,
+        )
         self._c._update_session_hud()
 
     def reset_to_demo(self) -> None:
@@ -358,6 +585,11 @@ class AudioCoordinator:
         if self.stopping:
             return
         if not jamulus_participants:
+            reference_track = getattr(self._c, "_reference_track", None)
+            if reference_track is not None and bool(
+                reference_track.snapshot.active
+            ):
+                self._c._stop_reference_track_for_session_end(background=True)
             if self.connected:
                 self.connected = False
                 self.recovering = True
@@ -422,7 +654,6 @@ class AudioCoordinator:
             )
             if recovered_from_interruption:
                 self._c._resume_session_conductor_after_authoritative_reconnect()
-            self._c.jamulus.set_name(self._c.settings.musician_name)
             self._c.participants.clear()
             self._c._level_timer.start()
             self._c._restore_saved_mix()
@@ -443,6 +674,9 @@ class AudioCoordinator:
                     "Connected. Waiting for band members…",
                     ms=4000,
                 )
+
+        if local_session_proven:
+            self._sync_musician_name_if_ready()
 
         n = len(jamulus_participants)
         if not local_session_proven:

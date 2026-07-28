@@ -4,10 +4,12 @@ WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source and downloadable release: **v0.18.1 unsigned private test
-candidate**. It includes Windows, Ubuntu 22.04, Intel Mac, and Apple-silicon Mac
-packages. Windows is unsigned; Mac packages are ad-hoc signed and not notarized.
-The Mac downloads include a guided installer and a separately labeled advanced
+Current source candidate: **v0.20.0 unsigned private test candidate**. Its
+four-platform workflow covers Windows, Ubuntu 22.04, Intel Mac, and
+Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc signed
+and not notarized.
+The Mac downloads use drag-to-Applications as the primary path and include
+optional verified Terminal helpers, including a separately labeled advanced
 helper that removes quarantine from WebJam only.
 
 ## Start playing
@@ -49,4 +51,4 @@ means musicians playing together; it does not represent a Logic integration.
 Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
-external-editor import, and signed-install gates are **NOT RUN** for v0.18.1.
+external-editor import, and signed-install gates are **NOT RUN** for v0.20.0.

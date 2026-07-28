@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from core.webex_url import is_allowed_webex_url, normalize_webex_url, webex_url_error
+from core.webex_url import (
+    is_allowed_webex_url,
+    normalize_webex_url,
+    webex_site_hostname,
+    webex_url_error,
+)
 
 
 def test_normalizes_missing_scheme_to_https():
@@ -42,3 +47,37 @@ def test_rejects_userinfo_and_explicit_ports():
 
 def test_malformed_port_is_reported_instead_of_raising():
     assert webex_url_error("https://org.webex.com:notaport/meet/band")
+
+
+def test_rejects_ascii_control_characters_without_normalizing_them_away():
+    for url in (
+        "\nhttps://org.webex.com/meet/band",
+        "https://org.webex.com/meet/band\r",
+        "https://org.webex.com/meet/\tband",
+        "https://org.webex.com/meet/\x7fband",
+    ):
+        assert webex_url_error(url) == (
+            "Webex links must not include control characters"
+        )
+        assert not is_allowed_webex_url(url)
+
+
+def test_rejects_percent_encoded_hostname_labels_but_allows_encoded_path():
+    assert webex_url_error("https://%6frg.webex.com/meet/band") == (
+        "Webex link domains must not use percent encoding"
+    )
+    assert not is_allowed_webex_url("https://org%2ewebex.com/meet/band")
+    assert is_allowed_webex_url("https://org.webex.com/meet/band%20practice")
+
+
+def test_site_hostname_exposes_only_valid_origin():
+    assert (
+        webex_site_hostname(
+            "https://Team.Webex.com/meet/private-room?token=private#lobby"
+        )
+        == "team.webex.com"
+    )
+    assert webex_site_hostname("https://example.com/meet/private-room") == ""
+    assert webex_site_hostname("https://%74eam.webex.com/meet/private-room") == ""
+    assert webex_site_hostname("https://team.webex.com/meet/\nprivate-room") == ""
+    assert webex_site_hostname("not-a-link") == ""

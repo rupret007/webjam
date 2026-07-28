@@ -130,7 +130,7 @@ class TestFullSessionFlow(unittest.TestCase):
         c.shutdown()
         for name in (
             "_level_timer", "_reconnect_timer",
-            "_meter_tick_timer", "_token_refresh_timer", "_connection_timer",
+            "_meter_tick_timer", "_connection_timer",
         ):
             timer = getattr(c, name)
             self.assertFalse(timer.isActive(), f"{name} still active after shutdown")

@@ -109,6 +109,7 @@ def test_launch_hierarchy_is_one_primary_then_one_secondary(
 ):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
+    assert dialog.height() <= 540
     dialog.resize(460, 600)
     dialog.show()
     styled_qapp.processEvents()
@@ -125,6 +126,40 @@ def test_launch_hierarchy_is_one_primary_then_one_secondary(
         assert dialog._host_button.accessibleDescription()
         assert dialog._join_button.accessibleDescription()
         for control in (dialog._host_button, dialog._join_button):
+            assert dialog.rect().contains(_rect_in(control, dialog))
+    finally:
+        _destroy(dialog)
+
+
+def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
+    styled_qapp,
+    tmp_path,
+):
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(_settings(tmp_path))
+    dialog.show()
+    styled_qapp.processEvents()
+    try:
+        assert dialog.width() <= 760
+        assert dialog.height() <= 520
+        assert dialog.height() + 40 <= 600
+        assert dialog.minimumHeight() <= 480
+        for control in (
+            dialog._logo,
+            dialog._host_button,
+            dialog._join_button,
+            dialog._choice_helper,
+        ):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(_rect_in(control, dialog))
+
+        dialog.show_join()
+        styled_qapp.processEvents()
+        for control in (
+            dialog._invite_input,
+            dialog._join_button_primary,
+        ):
+            assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
         _destroy(dialog)
@@ -357,6 +392,13 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
         assert window.session_hud._action.accessibleName() == "Start Session"
     finally:
         _destroy(window)
+
+
+def test_host_start_failure_points_to_the_real_band_check_menu():
+    state = SessionUiState.host_start_failed()
+
+    assert "More → Band Check / Verify Sound" in state.message
+    assert "Troubleshooting" not in state.message
 
 
 def test_initial_focus_moves_from_title_to_visible_hud_action(qapp, tmp_path):
@@ -612,6 +654,38 @@ def test_track_export_in_progress_blocks_close_without_stopping_the_jam():
     information.assert_called_once()
     question.assert_not_called()
     controller.recording.confirm_quit.assert_not_called()
+
+
+def test_close_is_vetoed_while_end_leave_or_invite_switch_is_still_running():
+    controller = SimpleNamespace(
+        audio=SimpleNamespace(stopping=True),
+        _invite_switch_in_flight=False,
+        window=object(),
+    )
+    with patch.object(QMessageBox, "information") as information, patch.object(
+        QMessageBox, "question"
+    ) as question:
+        assert ApplicationController._confirm_close(controller) is False
+    information.assert_called_once()
+    assert "still running" in information.call_args.args[1].lower()
+    question.assert_not_called()
+
+
+def test_close_after_failed_cleanup_points_to_the_retry_action():
+    controller = SimpleNamespace(
+        audio=SimpleNamespace(
+            stopping=False,
+            cleanup_retry_required=True,
+        ),
+        _invite_switch_in_flight=False,
+        settings=SimpleNamespace(host_server_enabled=False),
+        window=object(),
+    )
+    with patch.object(QMessageBox, "information") as information:
+        assert ApplicationController._confirm_close(controller) is False
+
+    assert information.call_args.args[1] == "Finish session cleanup first"
+    assert "Try Leave Jam" in information.call_args.args[2]
 
 
 def test_unsaved_studio_edits_veto_window_close_until_save_retry(qapp):

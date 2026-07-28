@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.18.1
+# WebJam musician guide — v0.20.0
 
 ## Follow the current guide
 
@@ -55,6 +55,7 @@ invitation succeeded.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.20.0 pending the physical macOS isolation pilot |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
 | Studio | Reviews and arranges takes; playback output appears only for review |
 | Notes | Opens session notes |
@@ -117,6 +118,47 @@ Physical iPhone pairing, OS permission/firewall recovery, interruption,
 accessibility, mix correctness, recording, and rehearsal tests are **NOT RUN**
 until recorded against exact builds.
 
+## Reference Track — macOS source pilot
+
+The host can choose **More → Reference Track…** and inspect the song-transport
+panel. The engine supports local WAV, AIFF, FLAC, or packaged-decoder-supported
+MP3 plus play, pause, restart, paused seeking, loop in/out, source trim, and an
+audible count-in. Guests do not get the transport.
+
+Reference Track is not Studio playback. Once the route is certified, its design
+streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
+owned Jamulus client named `WebJam Track`, and isolates that client's returns
+on BlackHole channels 3/4. The host must then hear it only through the normal
+primary Jamulus mix, and every musician can adjust the `WebJam Track`
+participant independently.
+
+The v0.20.0 private test candidate keeps playback locked even on a Mac with
+BlackHole installed. CoreAudio has a reported device-switch failure where its
+process input query returns the output device instead, while Jamulus 3.12.2
+does not expose an independent live-device query. Physical BlackHole,
+direct-monitor, and two-endpoint evidence is also **NOT RUN**. WebJam therefore
+does not turn a saved profile, process, moving meter, or synthetic test into
+permission to route audio. There is no user or environment override.
+
+For controlled source-pilot work, the retained backend requires macOS 14.2 or
+later and one unambiguous BlackHole 16ch/64ch device at 48 kHz. It then checks
+the owned primary Jamulus PID, separate backing profile and ports, private RPC
+secret, authenticated client, connected roster, zero return faders, and route
+freshness. BlackHole 2ch and uncertain evidence are rejected. This
+constructor-only test seam is not enabled by production packages.
+
+This is **Jamulus-routed**, not latency eliminated. It gets Jamulus's usual
+buffering, jitter handling, and network delay. A server recording captures it
+as a separate participant stem. WebJam shows only the source filename; the
+folder path is never saved to settings or written to logs.
+
+Windows/Linux routing and physical two-endpoint macOS audibility are not yet
+certified. Device-switch truth, BlackHole exclusivity, independent mixes,
+no-direct-monitor proof, server-stem alignment, route removal, repeated
+teardown, and a long rehearsal remain **NOT RUN** until recorded against an
+exact controlled pilot build using the
+[physical pilot](docs/plans/webjam-reference-track-macos-pilot.md).
+
 ## Recording
 
 The host controls the shared multitrack take. At the first Record click, choose
@@ -156,7 +198,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.18.1 source tree.
+v0.20.0 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

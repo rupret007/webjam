@@ -21,7 +21,7 @@ from utils.installer_helpers import is_admin, run, find_jamulus as find_jamulus_
 # ====== CONFIG ======
 JAMULUS_SERVER = "172.24.194.9"
 JAMULUS_PORT = "22124"
-WEBEX_URL = "https://webjam-sbx.webex.com/meet/webjam01"
+WEBEX_URL = "https://example.webex.com/meet/example-room"
 
 # Installation timeouts
 VBC_MAX_WAIT_SECS = 7 * 60   # 7 minutes for VB-Cable
@@ -772,4 +772,3 @@ if __name__ == "__main__":
         traceback.print_exc()
         input("\nPress Enter to exit...")
         sys.exit(1)
-

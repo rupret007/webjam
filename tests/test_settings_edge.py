@@ -27,6 +27,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(s.webex_audio_mode, "talkback")
         self.assertFalse(s.local_capture_enabled)
         self.assertFalse(s.webex_audio_bridge_enabled)
+        self.assertFalse(hasattr(s, "webex_config_file"))
         self.assertEqual(s.take_playback_output_device, "")
 
     def test_macos_client_rpc_secret_lives_in_jamulus_sandbox(self):
@@ -99,6 +100,7 @@ class TestSettingsDefaults(unittest.TestCase):
             save_settings(AppSettings(config_file=path, webex_audio_mode="audience_bridge"))
             saved = json.loads(open(path, encoding="utf-8").read())
         self.assertNotIn("webex_audio_bridge_enabled", saved)
+        self.assertNotIn("webex_audio_mode", saved)
 
     def test_legacy_bridge_true_migrates_to_simple_topology(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as config:
@@ -137,18 +139,21 @@ class TestSettingsDefaults(unittest.TestCase):
                     "webex_guest_issuer_id": "legacy-id",
                     "webex_guest_issuer_secret": "legacy-secret",
                     "webex_display_name": "Jeff",
+                    "webex_config_file": "/legacy/private/webex-config.json",
                 }, config)
             loaded = load_settings(path)
             self.assertEqual(loaded.musician_name, "Jeff")
             self.assertFalse(hasattr(loaded, "webex_guest_issuer_id"))
             self.assertFalse(hasattr(loaded, "webex_guest_issuer_secret"))
             self.assertFalse(hasattr(loaded, "webex_display_name"))
+            self.assertFalse(hasattr(loaded, "webex_config_file"))
             save_settings(loaded)
             saved = json.loads(open(path, encoding="utf-8").read())
         self.assertEqual(saved["musician_name"], "Jeff")
         self.assertNotIn("webex_guest_issuer_id", saved)
         self.assertNotIn("webex_guest_issuer_secret", saved)
         self.assertNotIn("webex_display_name", saved)
+        self.assertNotIn("webex_config_file", saved)
 
 
 class TestSettingsMalformedJson(unittest.TestCase):

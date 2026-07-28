@@ -10,6 +10,7 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -72,6 +73,20 @@ def _wait_until(predicate, description: str, *, timeout_s: float = 5.0) -> None:
             return
         time.sleep(0.01)
     assert predicate(), f"Timed out waiting for {description}."
+
+
+class _ControllableThread:
+    """Small deterministic worker double for timeout/ownership tests."""
+
+    def __init__(self, *, alive: bool = True) -> None:
+        self.alive = alive
+        self.join_timeouts: list[float] = []
+
+    def is_alive(self) -> bool:
+        return self.alive
+
+    def join(self, timeout: float | None = None) -> None:
+        self.join_timeouts.append(float(timeout or 0.0))
 
 
 def _wav(
@@ -1446,9 +1461,9 @@ def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
     """A checksum already in flight must not publish after Leave/End.
 
     The maintenance worker is allowed a bounded join during shutdown so the
-    application stays responsive for a very large attachment.  Once that
-    bound expires, a later worker completion must remain quarantined from the
-    stopped session and from an immediately restarted host service.
+    application stays responsive for a very large attachment. Once that bound
+    expires, the old owner remains retained and a restart is refused until a
+    later stop proves the worker and peer server are gone.
     """
 
     monkeypatch.setattr(
@@ -1529,24 +1544,26 @@ def test_host_stop_suppresses_late_reconcile_after_rapid_restart(
         # after this point are stale.
         updates.clear()
 
-        host.stop()
+        assert host.stop() is False
         stopped_manifest = (first_take_dir / "webjam-take.json").read_bytes()
 
-        # Start again before allowing the old checksum to finish.  This is the
-        # critical rapid Leave/Start sequence from the desktop application.
+        # A rapid Start cannot replace or hide the retained old owner.
         host.start("127.0.0.1", **args)
-        second_credentials = host.credentials
-        assert second_credentials is not None
-        assert second_credentials.session_id != first_credentials.session_id
+        assert host.credentials is first_credentials
 
         release_checksum.set()
         old_thread.join(timeout=2.0)
         assert not old_thread.is_alive()
+        assert host.stop() is True
         assert (first_take_dir / "webjam-take.json").read_bytes() == stopped_manifest
         assert updates == []
         assert not list((first_take_dir / "transferred-isolated").glob("*.copying"))
 
-        # The new lifecycle still publishes its own current-session state.
+        # A fresh lifecycle is allowed only after the retained owner is gone.
+        host.start("127.0.0.1", **args)
+        second_credentials = host.credentials
+        assert second_credentials is not None
+        assert second_credentials.session_id != first_credentials.session_id
         second_take_id = _id()
         host.begin_take(second_take_id, started_utc="2026-07-15T00:02:00Z")
         second_take_dir = tmp_path / "second-take"
@@ -1617,6 +1634,128 @@ def test_host_take_update_callback_can_stop_reentrantly(
         assert not host.active
     finally:
         host.stop()
+
+
+def test_external_host_stop_and_reentrant_callback_stop_do_not_deadlock() -> None:
+    """A callback must not queue behind a stopper waiting on its lease."""
+
+    callback_entered = threading.Event()
+    call_stop_from_callback = threading.Event()
+    callback_stop_returned = threading.Event()
+    external_stop_returned = threading.Event()
+    results: dict[str, bool] = {}
+    host: HostPeerSession
+
+    def stop_from_callback(_take_id: str, _path: Path, _attached: bool) -> None:
+        callback_entered.set()
+        assert call_stop_from_callback.wait(2.0)
+        results["callback"] = host.stop()
+        callback_stop_returned.set()
+
+    host = HostPeerSession(on_take_updated=stop_from_callback)
+    server = MagicMock()
+    host.server = server
+    host.credentials = SessionCredentials.create()
+    generation = host._lifecycle_generation
+    stop_event = host._stop_event
+
+    def run_callback() -> None:
+        with host._callback_condition:
+            callback = host._begin_callback_lease_locked(generation, stop_event)
+        assert callback is not None
+        try:
+            callback(_id(), Path("/unused"), False)
+        finally:
+            host._end_callback_lease(generation)
+
+    worker = threading.Thread(target=run_callback, daemon=True)
+    host._thread = worker
+    worker.start()
+    assert callback_entered.wait(2.0)
+
+    def stop_externally() -> None:
+        results["external"] = host.stop()
+        external_stop_returned.set()
+
+    external = threading.Thread(target=stop_externally, daemon=True)
+    external.start()
+    # The external stopper has invalidated the lifecycle and is now waiting
+    # for the callback lease while holding the stop serialization lock.
+    assert stop_event.wait(2.0)
+    call_stop_from_callback.set()
+
+    assert callback_stop_returned.wait(2.0), (
+        "reentrant callback stop blocked behind the external stopper"
+    )
+    assert external_stop_returned.wait(2.0)
+    worker.join(timeout=2.0)
+    external.join(timeout=2.0)
+    _wait_until(
+        lambda: host._stop_retry_thread is None,
+        "deferred host stop retry cleanup",
+    )
+
+    assert results == {"callback": False, "external": True}
+    server.stop.assert_called_once_with()
+    assert host._thread is None
+    assert host.server is None
+    assert host.credentials is None
+    assert host._stop_requested_generation is None
+
+
+def test_host_stop_retains_owner_until_worker_exit_is_proven() -> None:
+    host = HostPeerSession()
+    worker = _ControllableThread()
+    server = MagicMock()
+    host._thread = worker
+    host.server = server
+    host.credentials = SessionCredentials.create()
+
+    assert host.stop() is False
+
+    assert host._thread is worker
+    assert host.server is server
+    assert host.credentials is not None
+    assert worker.join_timeouts == [3.0]
+    server.stop.assert_not_called()
+
+    worker.alive = False
+    assert host.stop() is True
+
+    server.stop.assert_called_once_with()
+    assert host._thread is None
+    assert host.server is None
+    assert host.credentials is None
+
+
+def test_guest_stop_retains_owner_and_capture_until_worker_exit_is_proven() -> None:
+    guest = object.__new__(GuestPeerSession)
+    guest._stop_event = threading.Event()
+    guest._stop_lock = threading.Lock()
+    worker = _ControllableThread()
+    guest._thread = worker
+    guest._finalize_capture = MagicMock()
+    guest._upload_pending = MagicMock()
+
+    assert guest.stop() is False
+
+    assert guest._thread is worker
+    assert worker.join_timeouts == [5.0]
+    guest._finalize_capture.assert_not_called()
+    guest._upload_pending.assert_not_called()
+
+    worker.alive = False
+    guest.start()
+    assert guest._thread is worker
+    assert guest._stop_event.is_set()
+
+    assert guest.stop() is True
+
+    assert guest._thread is None
+    guest._finalize_capture.assert_called_once_with(
+        needs_attention="Session ended before host stop was observed."
+    )
+    guest._upload_pending.assert_called_once_with()
 
 
 @pytest.mark.parametrize(

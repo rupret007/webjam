@@ -185,6 +185,15 @@ def _request_smoke_quit(window: ConductorWindow) -> None:
     window.close()
 
 
+def _show_live_invitation_error(
+    window: ConductorWindow,
+    message: object,
+) -> None:
+    """Render a late macOS invitation error without breaking Qt dispatch."""
+
+    window.flash_message(str(message), ms=5_000)
+
+
 def _bounded_smoke_exit_ms(default: int = 0) -> int:
     """Return a test-only bounded exit delay without affecting normal users."""
 
@@ -337,7 +346,7 @@ def _run_app() -> int:
 
         app.invitation_received.connect(_deliver_live_invite)
         app.invitation_error.connect(
-            lambda message: window.flash_message(str(message), 5000)
+            lambda message: _show_live_invitation_error(window, message)
         )
         late_invitation = app.take_pending_invitation()
         if late_invitation is not None:

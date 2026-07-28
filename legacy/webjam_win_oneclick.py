@@ -16,7 +16,7 @@ from utils.installer_helpers import is_admin, run, find_jamulus as find_jamulus_
 # ====== CONFIG ======
 JAMULUS_SERVER = "172.24.194.9"
 JAMULUS_PORT   = "22124"
-WEBEX_URL      = "https://webjam-sbx.webex.com/meet/webjam01"
+WEBEX_URL      = "https://example.webex.com/meet/example-room"
 
 # Polling windows
 VBC_MAX_WAIT_SECS = 60       # shorter wait; tweak if needed
@@ -256,4 +256,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

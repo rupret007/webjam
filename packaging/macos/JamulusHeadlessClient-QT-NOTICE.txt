@@ -1,0 +1,30 @@
+Qt 6.10.2 notice for JamulusHeadlessClient
+===========================================
+
+This companion dynamically links unmodified QtConcurrent, QtCore, QtNetwork,
+and QtXml frameworks from Qt 6.10.2. Qt is Copyright (C) The Qt Company Ltd.
+and other contributors.
+
+WebJam distributes these Qt libraries under the GNU Lesser General Public License version 3
+(LGPLv3). The exact, unmodified qtbase source archive used
+for these frameworks is included beside this notice as:
+
+  qtbase-everywhere-src-6.10.2.tar.xz
+
+Archive SHA-256:
+
+  aeb78d29291a2b5fd53cb55950f8f5065b4978c25fb1d77f627d695ab9adf21e
+
+The archive includes Qt's license texts in its LICENSES directory. It is also
+available from Qt's official source archive:
+
+  https://download.qt.io/official_releases/qt/6.10/6.10.2/submodules/
+  qtbase-everywhere-src-6.10.2.tar.xz
+
+The Qt frameworks are separate dynamic libraries under
+JamulusHeadlessClient.app/Contents/Frameworks. You may inspect, replace, or
+relink compatible modified Qt libraries. Because this private-test app is
+ad-hoc signed, changing a framework requires re-applying an ad-hoc signature
+to the modified companion and outer WebJam bundle before macOS will launch it.
+Nothing in WebJam's license changes Qt's LGPLv3 terms or restricts the rights
+the LGPLv3 grants you.

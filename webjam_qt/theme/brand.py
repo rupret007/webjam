@@ -1,27 +1,28 @@
-"""Native QPainter rendering for WebJam's three-loop trinity mark.
+"""Native QPainter rendering for WebJam's continuous trefoil identity.
 
-The mark deliberately belongs to WebJam alone: three warm linked loops and
-three nodes for musicians playing together.  It is drawn by Qt rather than
-scaled from a bitmap, so the small session-header mark, the launch artwork,
-and every application-icon resolution remain crisp on Retina displays.
+The mark deliberately belongs to WebJam alone: one unbroken warm ribbon forms
+three linked loops, with three nodes for musicians playing together. It is
+drawn by Qt rather than scaled from a bitmap, so the small session-header mark,
+launch artwork, and every application-icon resolution remain crisp on Retina
+displays.
 
 ``assets/webjam-mark.svg`` is a matching, portable vector companion for
-documentation and packages.  The live application does not depend on it; a
+documentation, packages, and companion-app assets. The live application does
+not depend on it; a
 damaged optional asset can never turn the in-app identity into a broken-image
 placeholder.
 """
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Final, Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
-    QBrush,
     QColor,
     QIcon,
-    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -34,7 +35,7 @@ from webjam_qt.theme.tokens import Color
 
 BRAND_NAME: Final = "WebJam"
 BRAND_DESCRIPTION: Final = (
-    "WebJam symbol: three linked loops for musicians playing together."
+    "WebJam symbol: one continuous three-loop trefoil for musicians playing together."
 )
 BRAND_MARK_PATH: Final = Path(__file__).resolve().parent / "assets" / "webjam-mark.svg"
 
@@ -44,60 +45,67 @@ BRAND_MARK_PATH: Final = Path(__file__).resolve().parent / "assets" / "webjam-ma
 _INK: Final = QColor("#0A0A0A")
 _BURNT_ORANGE: Final = QColor(Color.ACCENT_PRIMARY)
 _ORANGE: Final = QColor("#F06A00")
-_HIGHLIGHT_ORANGE: Final = QColor("#F28A00")
+_TRINITY_EXTENT: Final = 0.355
+_TRINITY_NATIVE_SAMPLES: Final = 240
 
 
-def _trinity_paths() -> tuple[QPainterPath, QPainterPath, QPainterPath]:
-    """Return the supplied trinity reference as three linked ribbon loops.
+def trinity_points(samples: int = _TRINITY_NATIVE_SAMPLES) -> tuple[QPointF, ...]:
+    """Return the canonical continuous trefoil in a 0..1 coordinate space.
 
-    The earlier mathematical trefoil was technically a three-loop knot but
-    looked busy at header size.  These three rounded loops follow the supplied
-    trinity reference literally: one loop for each musician, with the rings
-    joining them at the outer points.  The geometry stays calm at 16 px.
+    The analytic curve is the single source for the live vector mark, SVG,
+    desktop icon containers, and Pocket Stage artwork. ``samples`` only
+    controls tessellation; it never changes the trefoil's geometry.
     """
-    top = QPainterPath(QPointF(0.50, 0.15))
-    top.cubicTo(
-        QPointF(0.31, 0.36),
-        QPointF(0.31, 0.64),
-        QPointF(0.50, 0.85),
-    )
-    top.cubicTo(
-        QPointF(0.69, 0.64),
-        QPointF(0.69, 0.36),
-        QPointF(0.50, 0.15),
-    )
-
-    left = QPainterPath(QPointF(0.154, 0.75))
-    left.cubicTo(
-        QPointF(0.443, 0.803),
-        QPointF(0.661, 0.677),
-        QPointF(0.760, 0.400),
-    )
-    left.cubicTo(
-        QPointF(0.471, 0.347),
-        QPointF(0.253, 0.473),
-        QPointF(0.154, 0.750),
+    if samples < 3:
+        raise ValueError("The WebJam trefoil requires at least three samples")
+    raw_points: list[tuple[float, float]] = []
+    for index in range(samples + 1):
+        angle = (2.0 * math.pi * index) / samples
+        raw_points.append(
+            (
+                math.sin(angle) + (2.0 * math.sin(2.0 * angle)),
+                math.cos(angle) - (2.0 * math.cos(2.0 * angle)),
+            )
+        )
+    max_x = max(abs(x) for x, _ in raw_points)
+    max_y = max(abs(y) for _, y in raw_points)
+    return tuple(
+        QPointF(
+            0.5 + ((x / max_x) * _TRINITY_EXTENT),
+            0.5 + ((y / max_y) * _TRINITY_EXTENT),
+        )
+        for x, y in raw_points
     )
 
-    right = QPainterPath(QPointF(0.846, 0.75))
-    right.cubicTo(
-        QPointF(0.747, 0.473),
-        QPointF(0.529, 0.347),
-        QPointF(0.240, 0.400),
-    )
-    right.cubicTo(
-        QPointF(0.339, 0.677),
-        QPointF(0.557, 0.803),
-        QPointF(0.846, 0.750),
-    )
-    return top, left, right
+
+def trinity_svg_path_data(*, samples: int = 72, canvas_size: float = 64.0) -> str:
+    """Return deterministic SVG path data from the canonical trefoil curve."""
+
+    commands = []
+    for index, point in enumerate(trinity_points(samples)):
+        command = "M" if index == 0 else "L"
+        commands.append(
+            f"{command}{point.x() * canvas_size:.2f} {point.y() * canvas_size:.2f}"
+        )
+    return " ".join(commands) + " Z"
 
 
-_TOP_LOOP_PATH, _LEFT_LOOP_PATH, _RIGHT_LOOP_PATH = _trinity_paths()
+def _trinity_path() -> QPainterPath:
+    path = QPainterPath()
+    for index, point in enumerate(trinity_points()):
+        if index == 0:
+            path.moveTo(point)
+        else:
+            path.lineTo(point)
+    path.closeSubpath()
+    return path
+
+
+_TRINITY_PATH: Final = _trinity_path()
 _NODES: Final = (
-    QPointF(0.50, 0.15),
-    QPointF(0.846, 0.75),
-    QPointF(0.154, 0.75),
+    QPointF(0.5, 0.145),
+    QPointF(0.826, 0.693),
+    QPointF(0.174, 0.693),
 )
 
 
@@ -112,21 +120,9 @@ def _mark_color(color_name: str) -> QColor:
     base = _resolved_color(color_name)
     # Default app surfaces use the bright orange mark shown at launch while
     # explicit monochrome callers retain the requested color.
-    return QColor(_ORANGE if base.name().upper() == _BURNT_ORANGE.name().upper() else base)
-
-
-def _mark_brush(color_name: str) -> QBrush:
-    """Use the warm reference ribbon without losing monochrome callers."""
-
-    base = _resolved_color(color_name)
-    if base.name().upper() != _BURNT_ORANGE.name().upper():
-        return QBrush(_mark_color(color_name))
-    gradient = QLinearGradient(QPointF(0.15, 0.12), QPointF(0.86, 0.88))
-    gradient.setColorAt(0.0, _HIGHLIGHT_ORANGE)
-    gradient.setColorAt(0.34, _ORANGE)
-    gradient.setColorAt(0.72, QColor(Color.ACCENT_PRIMARY))
-    gradient.setColorAt(1.0, _ORANGE)
-    return QBrush(gradient)
+    return QColor(
+        _ORANGE if base.name().upper() == _BURNT_ORANGE.name().upper() else base
+    )
 
 
 def draw_brand_mark(
@@ -158,20 +154,18 @@ def draw_brand_mark(
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
     # One simple ribbon weight keeps the mark readable at both 16 px and
-    # launch scale. The three deliberate loops mirror the supplied mark
-    # without shadows, animation, or a fragile bitmap crop.
+    # launch scale. The loops naturally layer at their crossings without a
+    # dark outline or decorative glow.
     stroke = max(0.076, 1.62 / side)
 
-    mark_brush = _mark_brush(color)
-    ribbon = QPen(mark_brush, stroke)
+    mark_color = _mark_color(color)
+    ribbon = QPen(mark_color)
     ribbon.setWidthF(stroke)
     ribbon.setCapStyle(Qt.PenCapStyle.RoundCap)
     ribbon.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.setPen(ribbon)
-    painter.drawPath(_TOP_LOOP_PATH)
-    painter.drawPath(_LEFT_LOOP_PATH)
-    painter.drawPath(_RIGHT_LOOP_PATH)
+    painter.drawPath(_TRINITY_PATH)
 
     # Three circular nodes remain visible even at 16 px.  The dark center
     # keeps them legible on both the app's black tile and a light OS surface.
@@ -179,7 +173,7 @@ def draw_brand_mark(
     inner_radius = node_radius * 0.53
     for node in _NODES:
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(mark_brush)
+        painter.setBrush(mark_color)
         painter.drawEllipse(node, node_radius, node_radius)
         painter.setBrush(_INK)
         painter.drawEllipse(node, inner_radius, inner_radius)
@@ -221,7 +215,32 @@ def render_application_icon_pixmap(size: int) -> QPixmap:
     painter.setBrush(QColor(Color.BG_PANEL))
     painter.drawRoundedRect(tile, radius, radius)
     mark_inset = max(1.0, size * 0.12)
-    draw_brand_mark(painter, tile.adjusted(mark_inset, mark_inset, -mark_inset, -mark_inset))
+    draw_brand_mark(
+        painter, tile.adjusted(mark_inset, mark_inset, -mark_inset, -mark_inset)
+    )
+    painter.end()
+    return pixmap
+
+
+def render_ios_application_icon_pixmap(size: int) -> QPixmap:
+    """Render an opaque, unmasked Pocket Stage icon for Apple's asset catalog."""
+
+    if size <= 0:
+        return QPixmap()
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(Color.BG_PANEL))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    mark_inset = max(1.0, size * 0.16)
+    draw_brand_mark(
+        painter,
+        QRectF(0, 0, size, size).adjusted(
+            mark_inset,
+            mark_inset,
+            -mark_inset,
+            -mark_inset,
+        ),
+    )
     painter.end()
     return pixmap
 
@@ -280,4 +299,7 @@ __all__ = [
     "make_brand_icon",
     "render_application_icon_pixmap",
     "render_brand_pixmap",
+    "render_ios_application_icon_pixmap",
+    "trinity_points",
+    "trinity_svg_path_data",
 ]

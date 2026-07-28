@@ -445,6 +445,31 @@ def test_v2_guest_peer_starts_once_after_native_connection_proof() -> None:
     assert controller._startup_attempt["webex_decision"] == "skipped"
 
 
+def test_starting_state_cannot_fail_a_queued_native_restart() -> None:
+    """Startup polling must wait while the accepted worker is still launching."""
+
+    controller = _controller(hosting=True)
+    controller.bridge.jamulus_state = "Starting"
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "host",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "setup_finished": True,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=False)
+    controller._render_startup_journey = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+    controller._fail_startup_journey = mock.Mock()
+
+    controller._poll_startup_connection(1)
+
+    controller._fail_startup_journey.assert_not_called()
+    controller._render_startup_journey.assert_called_once_with()
+    controller._schedule_startup_poll.assert_called_once_with(1)
+    assert controller._startup_attempt["phase"] == "verifying_music"
+
+
 def test_native_sound_setup_watches_connection_without_a_completion_click() -> None:
     """Jamulus setup stays visible, but it is not a WebJam approval gate."""
 
@@ -469,6 +494,15 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
     assert call.kwargs["action_text"] == "Bring Jamulus Forward"
     assert call.kwargs["action_kind"] == "bring_jamulus"
     assert "secondary_action_text" not in call.kwargs
+
+
+def test_native_sound_setup_primary_action_brings_jamulus_forward() -> None:
+    controller = _controller(hosting=False)
+    controller._bring_jamulus_forward = mock.Mock()
+
+    controller._on_conductor_action_requested("bring_jamulus")
+
+    controller._bring_jamulus_forward.assert_called_once_with()
 
 
 def test_native_guest_peer_never_starts_for_a_cancelled_or_remote_journey() -> None:

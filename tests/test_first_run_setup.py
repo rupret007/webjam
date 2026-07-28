@@ -157,7 +157,7 @@ def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
     assert data["jamulus_port"] == 22124
     assert data["jamulus_rpc_port"] == 22222
     assert data["server_rpc_port"] == 22240
-    assert data["webex_audio_mode"] == "talkback"
+    assert "webex_audio_mode" not in data
     assert data["local_capture_enabled"] is False
     assert "JamulusServer" in data["server_rpc_secret_file"]
     assert "/bundle/Jamulus" not in data["jamulus_candidates"]

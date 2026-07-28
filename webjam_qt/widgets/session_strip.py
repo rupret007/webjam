@@ -196,6 +196,13 @@ class SessionStrip(QFrame):
         recording_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
         )
+        self._reference_track_action = QAction("Reference Track…", tools_menu)
+        self._reference_track_action.setToolTip(
+            "Route a host-controlled song into the jam as its own Jamulus participant."
+        )
+        self._reference_track_action.triggered.connect(
+            lambda: self.tool_requested.emit("reference_track")
+        )
         studio_action = QAction("Studio", tools_menu)
         studio_action.triggered.connect(lambda: self.tool_requested.emit("takes"))
         notes_action = QAction("Notes", tools_menu)
@@ -211,18 +218,25 @@ class SessionStrip(QFrame):
         diagnostics_action.triggered.connect(
             lambda: self.tool_requested.emit("diagnostics")
         )
+        help_action = QAction("Help", tools_menu)
+        help_action.triggered.connect(lambda: self.tool_requested.emit("help"))
         support_action = QAction("Support", tools_menu)
         support_action.triggered.connect(lambda: self.tool_requested.emit("support"))
+        about_action = QAction("About WebJam", tools_menu)
+        about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
         tools_menu.addAction(audio_action)
         tools_menu.addAction(conversation_action)
         tools_menu.addAction(recording_action)
+        tools_menu.addAction(self._reference_track_action)
         tools_menu.addAction(studio_action)
         tools_menu.addAction(notes_action)
         tools_menu.addAction(self._pocket_stage_action)
         tools_menu.addSeparator()
         tools_menu.addAction(diagnostics_action)
+        tools_menu.addAction(help_action)
         tools_menu.addAction(support_action)
+        tools_menu.addAction(about_action)
         self._reset_invite_action = QAction("Reset Invite", tools_menu)
         self._reset_invite_action.setToolTip(
             "Revoke the current private invitation and create a new one."
@@ -299,7 +313,16 @@ class SessionStrip(QFrame):
         # Start/retry lives in the focused stage card. The header owns only
         # the in-session End action, avoiding duplicate primary buttons.
         self._audio_button.setVisible(
-            label in {"End Session", "Leave Jam", "Ending…", "Leaving…", "Stopping…"}
+            label
+            in {
+                "End Session",
+                "Leave Jam",
+                "Ending…",
+                "Leaving…",
+                "Stopping…",
+                "Try End Session",
+                "Try Leave Jam",
+            }
         )
         self._audio_button.setAccessibleName(label)
         self._audio_button.setAccessibleDescription(
@@ -322,7 +345,10 @@ class SessionStrip(QFrame):
         self._video_action.setEnabled(enabled)
 
     def set_video_configured(self, configured: bool) -> None:
-        if not configured:
+        if configured:
+            if self._video_action.text() == "Add Webex / Conversation":
+                self._video_action.setText("Webex / Conversation")
+        else:
             self._video_action.setText("Add Webex / Conversation")
 
     def set_tools_enabled(self, enabled: bool) -> None:
@@ -416,6 +442,12 @@ class SessionStrip(QFrame):
         self._record_elapsed.setVisible(
             bool(available) and self._record_elapsed.isVisible()
         )
+
+    def set_reference_track_available(self, host: bool) -> None:
+        """Keep the backing-track surface host-only without hiding its state."""
+
+        self._reference_track_action.setVisible(bool(host))
+        self._reference_track_action.setEnabled(bool(host))
 
     def set_invite_available(self, available: bool) -> None:
         self._invite_button.setVisible(bool(available))

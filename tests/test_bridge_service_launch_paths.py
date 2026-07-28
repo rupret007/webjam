@@ -264,6 +264,24 @@ class TestLaunchCommandContract(unittest.TestCase):
             bridge.launch_jamulus(manual=True, reconnect=False)
         return captured.get("cmd", [])
 
+    def _launch_and_capture_environment(self, bridge):
+        captured = {}
+        marker = f"{bridge.settings.jamulus_server}:{bridge.settings.jamulus_port}"
+        process = MagicMock()
+        process.poll.return_value = None
+
+        def _fake_popen(cmd, **kwargs):
+            if marker in cmd:
+                captured["env"] = kwargs["env"]
+            return process
+
+        with patch(
+            "services.bridge_service.subprocess.Popen",
+            side_effect=_fake_popen,
+        ), patch("services.bridge_service.time.sleep"):
+            bridge.launch_jamulus(manual=True, reconnect=False)
+        return captured.get("env", {})
+
     def test_cmd_includes_connect_rpc_port_and_secret_file(self, _thread):
         bridge = _make_bridge()
         bridge.settings.jamulus_server = "contract-probe.example.com"
@@ -329,30 +347,66 @@ class TestLaunchCommandContract(unittest.TestCase):
         )
         bridge.show_actionable_error.assert_called_once()
 
-    def test_macos_child_does_not_inherit_test_only_offscreen_qt_platform(
+    def test_macos_child_uses_native_ui_and_suppresses_late_qt_warning(
         self, _thread
     ):
         bridge = _make_bridge()
         bridge.settings.jamulus_server = "native-ui-probe.example.com"
         bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
         bridge._is_rpc_port_in_use = MagicMock(return_value=False)
-        captured = {}
-        process = MagicMock()
-        process.poll.return_value = None
 
-        def fake_popen(cmd, **kwargs):
-            if "native-ui-probe.example.com:22124" in cmd:
-                captured["env"] = kwargs["env"]
-            return process
-
-        with patch.dict(os.environ, {"QT_QPA_PLATFORM": "offscreen"}), patch(
-            "services.bridge_service.sys.platform", "darwin"
+        with patch.dict(
+            os.environ,
+            {
+                "QT_QPA_PLATFORM": "offscreen",
+                "QT_LOGGING_RULES": (
+                    "jamulus.rpc.debug=true;default.warning=true;"
+                ),
+                "QT_FORCE_STDERR_LOGGING": "preserve-me",
+            },
         ), patch(
-            "services.bridge_service.subprocess.Popen", side_effect=fake_popen
-        ), patch("services.bridge_service.time.sleep"):
-            bridge.launch_jamulus(manual=True, reconnect=False)
+            "services.bridge_service.sys.platform", "darwin"
+        ):
+            captured = self._launch_and_capture_environment(bridge)
 
-        assert "QT_QPA_PLATFORM" not in captured["env"]
+        assert "QT_QPA_PLATFORM" not in captured
+        assert captured["QT_LOGGING_RULES"] == (
+            "jamulus.rpc.debug=true;default.warning=true;default.warning=false"
+        )
+        assert captured["QT_FORCE_STDERR_LOGGING"] == "preserve-me"
+
+    def test_macos_child_adds_qt_warning_rule_when_none_exists(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "native-log-probe.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        with patch.dict(
+            os.environ,
+            {"QT_LOGGING_RULES": ""},
+        ), patch(
+            "services.bridge_service.sys.platform", "darwin"
+        ):
+            captured = self._launch_and_capture_environment(bridge)
+
+        assert captured["QT_LOGGING_RULES"] == "default.warning=false"
+
+    def test_non_macos_child_preserves_qt_logging_rules(self, _thread):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "portable-log-probe.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        inherited = "jamulus.rpc.debug=true;default.warning=true"
+        with patch.dict(
+            os.environ,
+            {"QT_LOGGING_RULES": inherited},
+        ), patch(
+            "services.bridge_service.sys.platform", "linux"
+        ):
+            captured = self._launch_and_capture_environment(bridge)
+
+        assert captured["QT_LOGGING_RULES"] == inherited
 
     def test_secret_write_failure_fails_closed_without_launch(self, _thread):
         bridge = _make_bridge()
@@ -703,6 +757,90 @@ class TestFindJamulusFallback(unittest.TestCase):
                 "/Applications/WebJam.app/Contents/Resources/Jamulus.app"
                 "/Contents/MacOS/Jamulus",
             )
+
+
+class TestFindReferenceTrackJamulus(unittest.TestCase):
+    def _frozen_fixture(self):
+        import tempfile
+        from pathlib import Path
+
+        temporary = tempfile.TemporaryDirectory()
+        app = Path(temporary.name) / "WebJam.app"
+        executable = app / "Contents" / "MacOS" / "WebJam"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"outer")
+        resources = app / "Contents" / "Resources"
+        companion = (
+            resources
+            / "JamulusHeadlessClient.app"
+            / "Contents"
+            / "MacOS"
+            / "JamulusHeadlessClient"
+        )
+        companion.parent.mkdir(parents=True)
+        companion.write_bytes(b"true headless fixture")
+        companion.chmod(0o700)
+        digest = hashlib.sha256(companion.read_bytes()).hexdigest()
+        manifest = resources / "JamulusHeadlessClient.sha256"
+        manifest.write_text(
+            f"{digest}  "
+            "JamulusHeadlessClient.app/Contents/MacOS/"
+            "JamulusHeadlessClient\n",
+            encoding="ascii",
+        )
+        return temporary, executable, companion, manifest
+
+    def test_frozen_mac_resolves_only_checksum_verified_companion(self):
+        from services.bridge_service import (
+            _bundled_reference_track_jamulus_candidate,
+        )
+
+        temporary, executable, companion, _manifest = self._frozen_fixture()
+        try:
+            with (
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "platform", "darwin"),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertEqual(
+                    _bundled_reference_track_jamulus_candidate(),
+                    str(companion.resolve()),
+                )
+                companion.write_bytes(b"replaced")
+                companion.chmod(0o700)
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+        finally:
+            temporary.cleanup()
+
+    def test_malformed_manifest_and_source_run_have_no_fallback(self):
+        from services.bridge_service import (
+            _bundled_reference_track_jamulus_candidate,
+        )
+
+        temporary, executable, _companion, manifest = self._frozen_fixture()
+        bridge = _make_bridge()
+        try:
+            manifest.write_text(
+                "0" * 64 + "  Jamulus.app/Contents/MacOS/Jamulus\n",
+                encoding="ascii",
+            )
+            with (
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "platform", "darwin"),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+                self.assertIsNone(bridge.find_reference_track_jamulus())
+            with patch.object(sys, "frozen", False, create=True):
+                self.assertIsNone(
+                    _bundled_reference_track_jamulus_candidate()
+                )
+        finally:
+            temporary.cleanup()
 
 
 @patch("services.bridge_service.time.sleep")

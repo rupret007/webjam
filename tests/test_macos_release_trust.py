@@ -283,28 +283,27 @@ def test_release_entitlements_are_exact_and_component_specific() -> None:
         webjam = plistlib.load(stream)
     with JAMULUS_ENTITLEMENTS_PATH.open("rb") as stream:
         jamulus = plistlib.load(stream)
-    qt_webengine = {
-        "com.apple.security.cs.allow-jit": True,
-        "com.apple.security.cs.allow-unsigned-executable-memory": True,
-        "com.apple.security.cs.disable-executable-page-protection": True,
-        "com.apple.security.cs.disable-library-validation": True,
-    }
-
     assert webjam == {
-        "com.apple.security.device.camera": True,
         "com.apple.security.device.audio-input": True,
         "com.apple.security.device.microphone": True,
     }
     assert jamulus == {"com.apple.security.device.audio-input": True}
-    assert _release_entitlement_policy() == (webjam, jamulus, qt_webengine)
+    assert _release_entitlement_policy() == (webjam, jamulus)
     assert "com.apple.security.app-sandbox" not in webjam
     assert "com.apple.security.app-sandbox" not in jamulus
-    assert '"$JAMULUS_APP"|"$JAMULUS_SERVER_APP")' in TRUST
-    assert 'sign_target "$target" "$JAMULUS_ENTITLEMENTS"' in TRUST
-    assert 'sign_target "$target" "$qt_entitlements"' in TRUST
     assert (
-        '"$QT_HELPER_APP/Contents/Resources/QtWebEngineProcess.entitlements"' in TRUST
+        '"$JAMULUS_APP"|"$JAMULUS_SERVER_APP"|"$JAMULUS_HEADLESS_APP")'
+        in TRUST
     )
+    assert 'sign_target "$target" "$JAMULUS_ENTITLEMENTS"' in TRUST
+    assert 'verify_headless_manifest "$app"' in TRUST
+    assert "QtWebEngineProcess.entitlements" not in TRUST
+    assert "NSCameraUsageDescription" not in SPEC
+    excludes = SPEC.split("excludes=[", 1)[1].split(
+        "],\n    win_no_prefer_redirects=", 1
+    )[0]
+    assert '"PySide6.QtWebEngineCore"' in excludes
+    assert "# Webex is external-only." in SPEC
 
 
 def test_release_bundle_layout_dependencies_are_pinned() -> None:

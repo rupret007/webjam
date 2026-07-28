@@ -6,20 +6,29 @@ and the release checksum matches your download.
 
 Recommended installation
 ------------------------
-1. Double-click "Install WebJam.command".
-2. The helper verifies the adjacent WebJam.app and installs it in Applications.
-3. If macOS blocks the first launch, open System Settings > Privacy & Security,
+1. Drag WebJam.app onto the Applications shortcut in this window.
+2. Eject the WebJam disk image, then open WebJam from Applications.
+3. If macOS blocks that first launch, open System Settings > Privacy & Security,
    scroll to Security, click Open Anyway for WebJam, and confirm Open.
 
-If macOS blocks the helper itself, Control-click the helper, choose Open, and
-confirm that you want to open it. Managed Macs may prevent this approval.
+This app-bundle approval is Apple's supported path for an unidentified app.
+Managed Macs may prevent it. Recent macOS versions can block downloaded
+`.command` files without offering the same Open Anyway approval, so the
+installer helpers below are not the recommended double-click path.
 
-Advanced installation
----------------------
-"Install WebJam - Remove Quarantine.command" performs the same package checks,
-installs WebJam, and then removes Apple's quarantine attribute from the
-installed WebJam.app only. It does not disable Gatekeeper globally and does not
-change any other application. This is less safe than Apple's Open Anyway flow.
+Optional verified installer helpers
+-----------------------------------
+The two `.command` helpers verify the adjacent app's signature, version, build,
+architecture, executable inventory, and transport checksum before installing.
+To run one after verifying the release checksum, open Terminal, type
+`/bin/bash ` (including the trailing space), drag the chosen helper into the
+Terminal window, and press Return.
+
+"Install WebJam.command" preserves quarantine. "Install WebJam - Remove
+Quarantine.command" is the advanced path: it displays a warning and removes
+Apple's quarantine attribute from the installed WebJam.app only. It does not
+disable Gatekeeper globally or change any other application. This is less safe
+than Apple's Open Anyway flow.
 
 Neither helper uses sudo. It installs into /Applications when that folder is
 writable and otherwise falls back to your personal ~/Applications folder.

@@ -79,8 +79,8 @@ class TestStatusBannerColor(unittest.TestCase):
         self.assertEqual(self.window._status_bar.styleSheet(), "")
 
 
-class TestWebexEmbedShutdownTeardown(unittest.TestCase):
-    """Regression: shutdown() must tear down the embedded QWebEngineView."""
+class TestWebexLaunchCardShutdownCompatibility(unittest.TestCase):
+    """Regression: shutdown keeps the lightweight launch-card contract."""
 
     def test_shutdown_calls_webex_embed_shutdown(self):
         window = ConductorWindow(

@@ -91,6 +91,7 @@ struct PairView: View {
         NavigationStack {
             Form {
                 Section("Pocket Stage") {
+                    WebJamBrandHeader()
                     ConnectionStatus()
                     Text("Pair with a host-issued QR code. The code includes the session endpoint and certificate pin.")
                         .font(.footnote)

@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from types import SimpleNamespace  # noqa: E402
 from unittest import mock  # noqa: E402
 
+from PySide6.QtCore import QPoint, QRect  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QLabel,
@@ -28,6 +29,7 @@ from webjam_qt.windows.ready_check import (  # noqa: E402
     ReadyCheckDialog,
 )
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
+from webjam_qt.theme import load_stylesheet  # noqa: E402
 
 
 APP = QApplication.instance() or QApplication([])
@@ -118,6 +120,44 @@ def test_footer_keeps_audio_settings_label_compact_and_explicit() -> None:
         assert "Jamulus" in audio.accessibleDescription()
     finally:
         dialog.close()
+
+
+def test_styled_dialog_stays_compact_with_scrollable_report_and_reachable_footer() -> None:
+    steps = [
+        BandCheckStep(
+            key,
+            f"Setup proof {index + 1}",
+            BandCheckStatus.WARNING,
+            "Review this result before rehearsal; the full report remains available.",
+            required=False,
+        )
+        for index, key in enumerate(tuple(BandCheckStepKey) * 2)
+    ]
+    previous_stylesheet = APP.styleSheet()
+    APP.setStyleSheet(load_stylesheet())
+    dialog = _dialog(BandCheckSession(BandCheckMode.PRE_SESSION, steps))
+    try:
+        APP.processEvents()
+
+        assert dialog.width() <= 760
+        # Leaves room for a typical native title bar on a 600-pixel display.
+        assert dialog.height() <= 540
+        assert dialog._report.verticalScrollBar().maximum() > 0
+
+        buttons = {button.text(): button for button in dialog.findChildren(QPushButton)}
+        for label in (
+            "Audio Settings",
+            "Practice Solo",
+            "Save Support Bundle",
+            "Close",
+        ):
+            button = buttons[label]
+            bounds = QRect(button.mapTo(dialog, QPoint(0, 0)), button.size())
+            assert button.isVisibleTo(dialog)
+            assert dialog.rect().contains(bounds)
+    finally:
+        dialog.close()
+        APP.setStyleSheet(previous_stylesheet)
 
 
 def test_optional_webex_note_never_blocks_start_session() -> None:

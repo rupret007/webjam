@@ -24,17 +24,21 @@ _PINNED_WINDOWS_JAMULUS_INSTALLER = "jamulus_3.12.2_win.exe"
 _PINNED_WINDOWS_JAMULUS_SHA256 = (
     "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9"
 )
+_REFERENCE_HEADLESS_MANIFEST_NAME = "JamulusHeadlessClient.sha256"
+_REFERENCE_HEADLESS_MANIFEST_TARGET = (
+    "JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient"
+)
 _HASH_CHUNK_BYTES = 1024 * 1024
 
 
 def _bundled_jamulus_candidate() -> Optional[str]:
     """Path to the copy of Jamulus bundled inside WebJam's own app, if any.
 
-    macOS builds nest an unmodified, Apple-signed/notarized ``Jamulus.app``
-    at ``WebJam.app/Contents/Resources/Jamulus.app`` (see
-    ``.github/workflows/ci.yml``'s macOS build steps), so a fresh install
-    works with zero configuration. This returns the path to the executable
-    inside that nested bundle when present.
+    macOS builds nest the official ``Jamulus.app`` at
+    ``WebJam.app/Contents/Resources/Jamulus.app`` and prepare it as part of
+    the enclosing candidate's ad-hoc signature (see
+    ``.github/workflows/ci.yml``). This returns the executable inside that
+    nested bundle when present.
 
     Windows has no portable Jamulus binary to bundle this way — Jamulus
     only ships an installer there (see ``_bundled_jamulus_installer``) —
@@ -58,6 +62,51 @@ def _bundled_jamulus_candidate() -> Optional[str]:
     except OSError:
         return None
     return str(candidate) if candidate.is_file() else None
+
+
+def _bundled_reference_track_jamulus_candidate() -> Optional[str]:
+    """Return only the verified, true-HEADLESS Reference Track companion.
+
+    The ordinary interactive Jamulus client cannot apply hidden mixer-fader
+    RPC commands in Jamulus 3.12.2, even when launched with ``--nogui``.
+    Reference Track therefore has no configured-path or interactive-client
+    fallback. The adjacent manifest is checked again at resolution time so a
+    replaced companion cannot inherit WebJam's playback affordance.
+    """
+
+    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return None
+    try:
+        macos_dir = Path(sys.executable).resolve().parent
+        resources = macos_dir.parent / "Resources"
+        candidate = resources / _REFERENCE_HEADLESS_MANIFEST_TARGET
+        manifest = resources / _REFERENCE_HEADLESS_MANIFEST_NAME
+        if (
+            not candidate.is_file()
+            or candidate.is_symlink()
+            or not os.access(candidate, os.X_OK)
+            or not manifest.is_file()
+            or manifest.is_symlink()
+        ):
+            return None
+        line = manifest.read_text(encoding="ascii").strip()
+        pieces = line.split()
+        if (
+            len(pieces) != 2
+            or len(pieces[0]) != 64
+            or any(character not in "0123456789abcdef" for character in pieces[0])
+            or pieces[1] != _REFERENCE_HEADLESS_MANIFEST_TARGET
+        ):
+            return None
+        digest = hashlib.sha256()
+        with candidate.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(_HASH_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        if not hmac.compare_digest(digest.hexdigest(), pieces[0]):
+            return None
+    except (OSError, UnicodeError):
+        return None
+    return str(candidate)
 
 
 def _bundled_jamulus_server_candidate() -> Optional[str]:
@@ -157,6 +206,7 @@ class JamulusState(str, Enum):
     NOT_FOUND      = "Not found"
     ALREADY        = "Already running"
     PORT_IN_USE    = "Port in use"
+    STARTING       = "Starting"
     RUNNING        = "Running"
     LAUNCH_FAILED  = "Launch failed"
     STOPPED        = "Stopped"
@@ -241,6 +291,11 @@ class BridgeService:
         self.jamulus_process: Optional[subprocess.Popen] = None
         self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
         self.webex_state = WebexLaunchState.NOT_OPENED.value
+        # External Webex handoff is asynchronous. A settings change or a
+        # newer Open request invalidates every older worker so its eventual
+        # success/failure cannot overwrite the currently configured link.
+        self._webex_launch_lock = threading.Lock()
+        self._webex_launch_generation = 0
         
         self.jamulus_launch_intended = False
         # A launch is intentionally asynchronous, while Stop/Leave is allowed
@@ -410,8 +465,16 @@ class BridgeService:
         Jamulus is still running and holding the port.  Without this check,
         Popen would succeed but Jamulus would silently fail to bind RPC,
         leaving the user with a running subprocess that can't be controlled.
+
+        macOS keeps a recently closed listener's port unavailable to a strict
+        bind while its accepted connection is in ``TIME_WAIT``.  Jamulus can
+        safely replace that listener, so after a strict bind failure we use a
+        Darwin-only ``SO_REUSEADDR`` probe.  Both the loopback and wildcard
+        addresses must be bindable; a real listener or merely bound socket on
+        either address therefore remains a fail-closed conflict.
         """
         import socket
+
         port = self.settings.jamulus_rpc_port
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -420,12 +483,42 @@ class BridgeService:
             sock.bind(("127.0.0.1", port))
             return False
         except OSError:
+            if sys.platform == "darwin":
+                return not self._macos_rpc_port_is_rebindable(port)
             return True
         finally:
             try:
                 sock.close()
             except OSError:
                 pass
+
+    @staticmethod
+    def _macos_rpc_port_is_rebindable(port: int) -> bool:
+        """Return whether macOS reports only reusable stale TCP state.
+
+        This helper is called only after a strict loopback bind failed.  A
+        successful reusable bind to *both* loopback and wildcard excludes
+        active sockets bound in either form while allowing a prior Jamulus
+        listener's ``TIME_WAIT`` connection to drain in the background.
+        """
+        import socket
+
+        probes: list[socket.socket] = []
+        try:
+            for host in ("127.0.0.1", "0.0.0.0"):
+                probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                probes.append(probe)
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind((host, port))
+            return True
+        except OSError:
+            return False
+        finally:
+            for probe in probes:
+                try:
+                    probe.close()
+                except OSError:
+                    pass
 
     def find_jamulus(self):
         """Find Jamulus installation.
@@ -460,6 +553,11 @@ class BridgeService:
                 if resolved:
                     return resolved
         return None
+
+    def find_reference_track_jamulus(self) -> Optional[str]:
+        """Resolve the packaged HEADLESS companion with no GUI fallback."""
+
+        return _bundled_reference_track_jamulus_candidate()
 
     @property
     def native_profile_plan(self):
@@ -667,6 +765,26 @@ class BridgeService:
         # but Jamulus would silently fail to bind — leaving a running
         # subprocess we can't control via RPC.
         if self._is_rpc_port_in_use():
+            # A synchronous manual preflight rejection never established a
+            # Jamulus process (or, on macOS, an active native profile), so it
+            # must not leave crash-recovery intent behind.  Retire only this
+            # request generation: a newer Launch click may have superseded us
+            # while the port probe was running, and this stale result must not
+            # clear that newer request's intent or publish its own failure.
+            with self._jamulus_launch_control_lock:
+                if self._pending_jamulus_launch_cancel is not launch_cancel:
+                    return False
+                # Stop/shutdown can cancel this same request without replacing
+                # its generation token.  In that case cancellation won the
+                # race, so preserve the stopped state and do not surface a
+                # stale port-conflict error after the user has left.
+                if launch_cancel.is_set() or self.shutdown_requested():
+                    self._pending_jamulus_launch_cancel = None
+                    return False
+                launch_cancel.set()
+                self._pending_jamulus_launch_cancel = None
+                if manual:
+                    self.jamulus_launch_intended = False
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             self._set_jamulus_state(JamulusState.PORT_IN_USE)
@@ -693,6 +811,26 @@ class BridgeService:
                     "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
                 )
             return False
+
+        # A previous clean End/Leave intentionally publishes ``Stopped``.
+        # Replace that terminal value synchronously once this exact launch
+        # request has passed every preflight.  The startup journey begins
+        # polling before the asynchronous worker necessarily reaches Popen;
+        # leaving the stale value visible during that window would falsely
+        # classify a healthy immediate restart as failed even though the new
+        # client subsequently connects.
+        #
+        # Keep the generation/cancellation check under the control lock so a
+        # concurrent Stop or superseding launch wins without this older
+        # request overwriting its state.
+        with self._jamulus_launch_control_lock:
+            if (
+                self._pending_jamulus_launch_cancel is not launch_cancel
+                or launch_cancel.is_set()
+                or self.shutdown_requested()
+            ):
+                return False
+            self._set_jamulus_state(JamulusState.STARTING)
 
         banner_text = "Starting your band audio…" if not reconnect else "Reconnecting band audio…"
         if self.practice_mode:
@@ -898,6 +1036,24 @@ class BridgeService:
                         == "offscreen"
                     ):
                         child_environment.pop("QT_QPA_PLATFORM", None)
+                    if sys.platform == "darwin":
+                        # Jamulus 3.12.2's bundled Qt 6.10.2 can emit a final
+                        # default-category qWarning after AppleUnifiedLogger's
+                        # static state has already been destroyed, aborting
+                        # during an otherwise clean shutdown.  Appending the
+                        # narrow last-match rule prevents that late warning
+                        # from reaching the dead handler while preserving
+                        # inherited category rules and stronger diagnostics.
+                        logging_rules = (
+                            child_environment.get("QT_LOGGING_RULES", "")
+                            .strip()
+                            .rstrip(";")
+                        )
+                        child_environment["QT_LOGGING_RULES"] = (
+                            f"{logging_rules};default.warning=false"
+                            if logging_rules
+                            else "default.warning=false"
+                        )
                     popen_kwargs["env"] = child_environment
                     if native_profile is not None:
                         popen_kwargs["cwd"] = str(native_profile.working_directory)
@@ -1864,6 +2020,47 @@ class BridgeService:
             self.schedule_ui_callback(self.refresh_readiness)
             return stopped
 
+    def invalidate_webex_launch(self) -> None:
+        """Retire any in-flight external handoff without owning its browser."""
+
+        with self._webex_launch_lock:
+            self._webex_launch_generation += 1
+
+    def _begin_webex_launch(self) -> int:
+        with self._webex_launch_lock:
+            self._webex_launch_generation += 1
+            return self._webex_launch_generation
+
+    def _webex_launch_is_current(self, generation: int) -> bool:
+        with self._webex_launch_lock:
+            return generation == self._webex_launch_generation
+
+    def _publish_webex_state_if_current(
+        self,
+        generation: int,
+        state: WebexLaunchState,
+    ) -> bool:
+        """Atomically publish state only for the latest external handoff."""
+
+        with self._webex_launch_lock:
+            if generation != self._webex_launch_generation:
+                return False
+            self.webex_state = state.value
+            return True
+
+    def _schedule_webex_ui_if_current(
+        self,
+        generation: int,
+        callback: Callable[[], None],
+    ) -> None:
+        """Drop queued launch UI work if its URL/request was superseded."""
+
+        def _guarded() -> None:
+            if self._webex_launch_is_current(generation):
+                callback()
+
+        self.schedule_ui_callback(_guarded)
+
     def launch_webex(self, manual: bool = True, reconnect: bool = False):
         """Open Webex externally and report only the launch result.
 
@@ -1873,18 +2070,33 @@ class BridgeService:
         """
         if self.shutdown_requested():
             return
+
+        launch_generation = self._begin_webex_launch()
+        launch_url = str(getattr(self.settings, "webex_url", "") or "").strip()
             
         if manual:
             self.metrics_service.increment("metric_webex_open_attempt")
             
-        self.webex_state = WebexLaunchState.OPENING.value
+        if not self._publish_webex_state_if_current(
+            launch_generation,
+            WebexLaunchState.OPENING,
+        ):
+            return
         self.set_status_banner("Opening Webex externally…", color="#BF5700")
-        self.schedule_ui_callback(self.refresh_readiness)
+        self._schedule_webex_ui_if_current(
+            launch_generation,
+            self.refresh_readiness,
+        )
 
         def _do_open() -> None:
             try:
                 if self.shutdown_requested():
-                    self.webex_state = WebexLaunchState.NOT_OPENED.value
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._webex_launch_is_current(launch_generation):
                     return
 
                 if not self.webex_controller.join_meeting():
@@ -1893,32 +2105,60 @@ class BridgeService:
                     )
 
                 if self.shutdown_requested():
-                    self.webex_state = WebexLaunchState.NOT_OPENED.value
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._publish_webex_state_if_current(
+                    launch_generation,
+                    WebexLaunchState.OPENED_EXTERNALLY,
+                ):
                     return
 
-                self.webex_state = WebexLaunchState.OPENED_EXTERNALLY.value
                 self.metrics_service.increment("metric_webex_open_success")
                     
-                self.schedule_ui_callback(self.refresh_readiness)
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    self.refresh_readiness,
+                )
                 if manual:
-                    self.schedule_ui_callback(
+                    self._schedule_webex_ui_if_current(
+                        launch_generation,
                         lambda: self.set_status_banner(
-                            "Webex opened externally — finish joining there."
-                        )
+                            "Opened externally—finish joining in Webex."
+                        ),
                     )
             except Exception as exc:
+                if self.shutdown_requested():
+                    self._publish_webex_state_if_current(
+                        launch_generation,
+                        WebexLaunchState.NOT_OPENED,
+                    )
+                    return
+                if not self._publish_webex_state_if_current(
+                    launch_generation,
+                    WebexLaunchState.OPEN_FAILED,
+                ):
+                    return
                 LOGGER.warning("External Webex launch failed: %s", type(exc).__name__)
-                self.webex_state = WebexLaunchState.OPEN_FAILED.value
                 self.metrics_service.increment("metric_webex_open_failed")
-                self.schedule_ui_callback(self.refresh_readiness)
-                self.schedule_ui_callback(
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    self.refresh_readiness,
+                )
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
                     lambda: self.show_actionable_error(
                         "Webex Open Failed",
                         what_failed="The configured Webex meeting could not be opened.",
                         likely_cause="Default browser issue, network filtering, invalid meeting URL, or transient launch issue.",
-                        next_action="Verify URL in diagnostics/setup wizard and retry.",
+                        next_action=(
+                            "Open Settings, verify the Meeting or Personal "
+                            "Room link, then try again."
+                        ),
                         retry_callback=lambda: self.launch_webex(manual=True),
-                        copy_text=self.settings.webex_url,
+                        copy_text=launch_url,
                     )
                 )
 

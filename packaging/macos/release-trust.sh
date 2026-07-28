@@ -30,11 +30,11 @@ NOTARY_ISSUER_ID="${WEBJAM_NOTARY_ISSUER_ID:-}"
 
 JAMULUS_APP=""
 JAMULUS_SERVER_APP=""
-QT_HELPER_APP=""
+JAMULUS_HEADLESS_APP=""
 OUTER_EXECUTABLE=""
 JAMULUS_EXECUTABLE=""
 JAMULUS_SERVER_EXECUTABLE=""
-QT_HELPER_EXECUTABLE=""
+JAMULUS_HEADLESS_EXECUTABLE=""
 # Bash 3.2 (the system Bash on GitHub macOS runners) treats expansion of a
 # declared-but-empty array as unbound under `set -u`; retain an inert sentinel.
 temporary_paths=("")
@@ -98,25 +98,16 @@ PY
 }
 
 validate_source_entitlements() {
-  "$PYTHON_BIN" - \
-    "$WEBJAM_ENTITLEMENTS" "$JAMULUS_ENTITLEMENTS" "$3" <<'PY'
+  "$PYTHON_BIN" - "$@" <<'PY'
 import plistlib
 import sys
 
 expected = (
     {
-        "com.apple.security.device.camera": True,
         "com.apple.security.device.audio-input": True,
-        # Qt documents this entitlement for its WebEngine deployment helper.
         "com.apple.security.device.microphone": True,
     },
     {"com.apple.security.device.audio-input": True},
-    {
-        "com.apple.security.cs.allow-jit": True,
-        "com.apple.security.cs.allow-unsigned-executable-memory": True,
-        "com.apple.security.cs.disable-executable-page-protection": True,
-        "com.apple.security.cs.disable-library-validation": True,
-    },
 )
 paths = sys.argv[1:]
 if len(paths) != len(expected):
@@ -136,33 +127,18 @@ validate_component_policy() {
 
   JAMULUS_APP="$app/Contents/Resources/Jamulus.app"
   JAMULUS_SERVER_APP="$app/Contents/Resources/JamulusServer.app"
+  JAMULUS_HEADLESS_APP="$app/Contents/Resources/JamulusHeadlessClient.app"
   [[ -d "$JAMULUS_APP" ]] || die "bundled Jamulus.app is missing"
   [[ -d "$JAMULUS_SERVER_APP" ]] || die "bundled JamulusServer.app is missing"
-
-  QT_HELPER_APP="$("$PYTHON_BIN" - "$app" <<'PY'
-import os
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1]).resolve()
-matches = []
-for current, directories, _files in os.walk(root):
-    directories[:] = [name for name in directories if not pathlib.Path(current, name).is_symlink()]
-    path = pathlib.Path(current)
-    if path.name == "QtWebEngineProcess.app":
-        matches.append(path)
-if len(matches) != 1:
-    raise SystemExit(f"expected one QtWebEngineProcess.app; found {len(matches)}")
-candidate = matches[0]
-parts = candidate.relative_to(root).parts
-if "QtWebEngineCore.framework" not in parts or "Helpers" not in parts:
-    raise SystemExit(f"Qt WebEngine helper is in an unexpected location: {candidate}")
-print(candidate)
-PY
-)" || die "Qt WebEngine helper policy failed"
+  [[ -d "$JAMULUS_HEADLESS_APP" ]] || \
+    die "bundled JamulusHeadlessClient.app is missing"
+  [[ -s \
+    "$JAMULUS_HEADLESS_APP/Contents/Resources/THIRD_PARTY_LICENSES/JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz" \
+  ]] || die "Jamulus HEADLESS corresponding source is missing"
 
   "$PYTHON_BIN" - \
-    "$app" "$JAMULUS_APP" "$JAMULUS_SERVER_APP" "$QT_HELPER_APP" <<'PY'
+    "$app" "$JAMULUS_APP" "$JAMULUS_SERVER_APP" \
+    "$JAMULUS_HEADLESS_APP" <<'PY'
 import os
 import pathlib
 import plistlib
@@ -174,6 +150,8 @@ actual_apps = set()
 for current, directories, _files in os.walk(root):
     directories[:] = [name for name in directories if not pathlib.Path(current, name).is_symlink()]
     path = pathlib.Path(current).resolve()
+    if path.name.startswith("QtWebEngine"):
+        raise SystemExit(f"retired Qt WebEngine runtime is present: {path}")
     if path != root and path.suffix == ".app":
         actual_apps.add(path)
     for directory in directories:
@@ -186,9 +164,10 @@ if actual_apps != expected_apps:
     raise SystemExit(f"nested app policy mismatch; unexpected={unexpected}, missing={missing}")
 
 for bundle, keys in (
-    (root, ("NSMicrophoneUsageDescription", "NSCameraUsageDescription")),
+    (root, ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[2]), ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[3]), ("NSMicrophoneUsageDescription",)),
+    (pathlib.Path(sys.argv[4]), ("NSMicrophoneUsageDescription",)),
 ):
     with open(bundle / "Contents" / "Info.plist", "rb") as stream:
         info = plistlib.load(stream)
@@ -200,20 +179,17 @@ PY
   OUTER_EXECUTABLE="$app/Contents/MacOS/$(plist_executable "$app/Contents/Info.plist")"
   JAMULUS_EXECUTABLE="$JAMULUS_APP/Contents/MacOS/$(plist_executable "$JAMULUS_APP/Contents/Info.plist")"
   JAMULUS_SERVER_EXECUTABLE="$JAMULUS_SERVER_APP/Contents/MacOS/$(plist_executable "$JAMULUS_SERVER_APP/Contents/Info.plist")"
-  QT_HELPER_EXECUTABLE="$QT_HELPER_APP/Contents/MacOS/$(plist_executable "$QT_HELPER_APP/Contents/Info.plist")"
+  JAMULUS_HEADLESS_EXECUTABLE="$JAMULUS_HEADLESS_APP/Contents/MacOS/$(plist_executable "$JAMULUS_HEADLESS_APP/Contents/Info.plist")"
   local executable
   for executable in \
     "$OUTER_EXECUTABLE" \
     "$JAMULUS_EXECUTABLE" \
     "$JAMULUS_SERVER_EXECUTABLE" \
-    "$QT_HELPER_EXECUTABLE"; do
+    "$JAMULUS_HEADLESS_EXECUTABLE"; do
     [[ -x "$executable" ]] || die "bundle executable is missing: $executable"
   done
 
-  local qt_entitlements="$QT_HELPER_APP/Contents/Resources/QtWebEngineProcess.entitlements"
-  [[ -f "$qt_entitlements" ]] || die "Qt helper entitlement source is missing"
-  validate_source_entitlements "$WEBJAM_ENTITLEMENTS" "$JAMULUS_ENTITLEMENTS" \
-    "$qt_entitlements"
+  validate_source_entitlements "$WEBJAM_ENTITLEMENTS" "$JAMULUS_ENTITLEMENTS"
 }
 
 is_macho() {
@@ -262,7 +238,6 @@ PY
 
 sign_app_inside_out() {
   local app="$1"
-  local qt_entitlements="$QT_HELPER_APP/Contents/Resources/QtWebEngineProcess.entitlements"
   local target file_inventory bundle_list
 
   file_inventory="$(mktemp "$RUNNER_TEMP_DIR/webjam-file-inventory.XXXXXX")"
@@ -286,10 +261,7 @@ sign_app_inside_out() {
   # entitlements required by their independently executing main process.
   while IFS= read -r -d '' target; do
     case "$target" in
-      "$QT_HELPER_APP")
-        sign_target "$target" "$qt_entitlements"
-        ;;
-      "$JAMULUS_APP"|"$JAMULUS_SERVER_APP")
+      "$JAMULUS_APP"|"$JAMULUS_SERVER_APP"|"$JAMULUS_HEADLESS_APP")
         sign_target "$target" "$JAMULUS_ENTITLEMENTS"
         ;;
       *.app|*.xpc|*.appex)
@@ -305,8 +277,14 @@ sign_app_inside_out() {
   # outer resource, so refresh it after leaf signing and before sealing WebJam.
   local fabric="$app/Contents/MacOS/webjam-fabric"
   local fabric_manifest="$app/Contents/Resources/webjam-fabric.sha256"
+  local headless_manifest="$app/Contents/Resources/JamulusHeadlessClient.sha256"
   [[ -x "$fabric" ]] || die "signed transport executable is missing"
   "$SHASUM_BIN" -a 256 "$fabric" | awk '{print $1}' > "$fabric_manifest"
+  [[ -x "$JAMULUS_HEADLESS_EXECUTABLE" ]] || \
+    die "signed Jamulus HEADLESS executable is missing"
+  "$SHASUM_BIN" -a 256 "$JAMULUS_HEADLESS_EXECUTABLE" \
+    | awk -v name='JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient' \
+      '{print $1 "  " name}' > "$headless_manifest"
   sign_target "$app" "$WEBJAM_ENTITLEMENTS"
 }
 
@@ -389,6 +367,24 @@ verify_transport_manifest() {
   [[ "$actual" == "$expected" ]] || die "signed transport hash mismatch"
 }
 
+verify_headless_manifest() {
+  local app="$1"
+  local binary="$app/Contents/Resources/JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient"
+  local manifest="$app/Contents/Resources/JamulusHeadlessClient.sha256"
+  [[ -x "$binary" ]] || die "Jamulus HEADLESS executable is missing"
+  [[ -s "$manifest" ]] || die "Jamulus HEADLESS hash manifest is missing"
+  local line actual expected expected_name
+  line="$(tr -d '\r\n' < "$manifest")"
+  expected_name='JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient'
+  [[ "$line" =~ ^([0-9a-f]{64})[[:space:]][[:space:]](.+)$ ]] || \
+    die "Jamulus HEADLESS hash manifest is malformed"
+  expected="${BASH_REMATCH[1]}"
+  [[ "${BASH_REMATCH[2]}" == "$expected_name" ]] || \
+    die "Jamulus HEADLESS hash manifest names an unexpected file"
+  actual="$($SHASUM_BIN -a 256 "$binary" | awk '{print $1}')"
+  [[ "$actual" == "$expected" ]] || die "signed Jamulus HEADLESS hash mismatch"
+}
+
 verify_app_core() {
   local app
   app="$(cd "$1" && pwd -P)"
@@ -410,9 +406,7 @@ verify_app_core() {
   verify_entitlements_exact "$app" "$WEBJAM_ENTITLEMENTS"
   verify_entitlements_exact "$JAMULUS_APP" "$JAMULUS_ENTITLEMENTS"
   verify_entitlements_exact "$JAMULUS_SERVER_APP" "$JAMULUS_ENTITLEMENTS"
-  verify_entitlements_exact \
-    "$QT_HELPER_APP" \
-    "$QT_HELPER_APP/Contents/Resources/QtWebEngineProcess.entitlements"
+  verify_entitlements_exact "$JAMULUS_HEADLESS_APP" "$JAMULUS_ENTITLEMENTS"
 
   if [[ -n "$inventory_path" ]]; then
     : > "$inventory_path"
@@ -427,7 +421,7 @@ verify_app_core() {
       die "get-task-allow is forbidden in release code: $target"
     fi
     case "$target" in
-      "$OUTER_EXECUTABLE"|"$JAMULUS_EXECUTABLE"|"$JAMULUS_SERVER_EXECUTABLE"|"$QT_HELPER_EXECUTABLE")
+      "$OUTER_EXECUTABLE"|"$JAMULUS_EXECUTABLE"|"$JAMULUS_SERVER_EXECUTABLE"|"$JAMULUS_HEADLESS_EXECUTABLE")
         ;;
       *)
         verify_no_entitlements "$target"
@@ -447,7 +441,7 @@ verify_app_core() {
       die "get-task-allow is forbidden in release bundle: $target"
     fi
     case "$target" in
-      "$JAMULUS_APP"|"$JAMULUS_SERVER_APP"|"$QT_HELPER_APP")
+      "$JAMULUS_APP"|"$JAMULUS_SERVER_APP"|"$JAMULUS_HEADLESS_APP")
         ;;
       *)
         verify_no_entitlements "$target"
@@ -455,6 +449,7 @@ verify_app_core() {
     esac
   done < "$bundle_list"
   verify_transport_manifest "$app"
+  verify_headless_manifest "$app"
 }
 
 verify_stapled_app() {

@@ -32,13 +32,16 @@ against the exact attached hashes.
 
 Each candidate Mac DMG and ZIP contains `Install WebJam.command`,
 `Install WebJam - Remove Quarantine.command`, `READ ME FIRST.txt`, and fixed
-candidate metadata beside `WebJam.app`. The guided helper validates and installs
-the app, preserves quarantine, attempts launch, and opens the path to Apple's
-Open Anyway approval. The advanced helper performs the same validation, asks
-for explicit confirmation, and removes quarantine from the installed
-`WebJam.app` only. Neither path uses `sudo`, disables Gatekeeper, or changes
-another application. Both prefer `/Applications` and fall back to
-`~/Applications` when the system folder is not writable.
+candidate metadata beside `WebJam.app`. Dragging `WebJam.app` onto the
+Applications shortcut is the primary installation path because current macOS
+versions can block a quarantined `.command` file without offering app-bundle
+Open Anyway approval. The README documents explicit Terminal invocation for
+the optional helpers. The guided helper validates and installs the app,
+preserves quarantine, and attempts launch. The advanced helper performs the
+same validation, asks for explicit confirmation, and removes quarantine from
+the installed `WebJam.app` only. Neither helper uses `sudo`, disables
+Gatekeeper, or changes another application. Both prefer `/Applications` and
+fall back to `~/Applications` when the system folder is not writable.
 
 ## Automated build gates
 
@@ -50,7 +53,8 @@ as appropriate:
 - packaged version and exact source build ID;
 - expected native application and transport architecture;
 - transport SHA-256, embedded build ID, protocol hello, and clean shutdown;
-- required QSS, Webex HTML, Jamulus 3.12.2 payload, and license files;
+- required QSS, Jamulus 3.12.2 payload, and license files;
+- absence of the retired Qt WebEngine/Webex-widget runtime;
 - a real frozen Host/Join-dialog launch with an isolated home directory;
 - no startup exception or owned-process residue.
 
@@ -72,7 +76,11 @@ location, verifies the installed version/build ID, x64 payload, transport
 manifest, and exact upstream Jamulus installer SHA-256, launches the installed
 app, checks both requested shortcuts, and uninstalls it. The gate proves owned
 files and shortcuts are removed while an unowned sentinel is preserved.
-Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload.
+Both portable and Setup paths are exercised from directories containing spaces.
+Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload and
+are retained for 90 days as `webjam-windows-x64`. That artifact contains exactly
+the Setup, portable ZIP, and a verified two-entry
+`WebJam-v<VERSION>-windows-x64-SHA256SUMS.txt` manifest.
 
 A manual `workflow_dispatch` with `windows_signing_rehearsal=true` runs a
 separate job bound to the protected
@@ -135,11 +143,11 @@ certificate and API key beneath `RUNNER_TEMP`, imports exactly one Developer ID
 Application identity into an ephemeral keychain, verifies its Team ID, and
 preflights the notary API. `packaging/macos/release-trust.sh` then inventories
 and signs every collected Mach-O file and recognized code bundle from the
-inside out with Hardened Runtime and a secure timestamp. The Qt WebEngine
-helper receives its shipped JIT/runtime entitlement plist; the two Jamulus
-apps receive only `packaging/macos/Jamulus.entitlements`; WebJam receives
-`packaging/macos/WebJam.entitlements` and is sealed last. Production signing
-never uses `--deep`; deep verification is an additional final check.
+inside out with Hardened Runtime and a secure timestamp. The two Jamulus apps
+receive only `packaging/macos/Jamulus.entitlements`; WebJam receives
+`packaging/macos/WebJam.entitlements` and is sealed last. The component-policy
+gate rejects any retired Qt WebEngine runtime before signing. Production
+signing never uses `--deep`; deep verification is an additional final check.
 
 Each distributed outer container receives its own accepted `xcrun notarytool
 submit ... --wait --output-format json` result. CI retains and inspects both
@@ -220,6 +228,12 @@ version/build metadata produced by the same CI run. Mount/extract both targets
 and verify that inventory before publishing. The kit uses an Apple Personal
 Team for temporary owner-device installation; it is not a pre-signed iOS
 release asset and does not change the exact eight-file GitHub release inventory.
+
+The v0.20.0 source candidate adds external-only Webex handoff and the
+capability-gated macOS Reference Track pilot. Its Mac package must retain the
+Pocket Stage kit and include the Reference Track modules from the same exact
+source/build identity. Automated package checks do not replace the explicitly
+**NOT RUN** physical Reference Track audibility and isolation gates.
 
 Candidate tag CI attaches the explicitly labeled unsigned Windows Setup and
 ZIP, both explicitly labeled ad-hoc Mac DMGs and ZIPs, and the Ubuntu ZIP to a

@@ -54,11 +54,15 @@ class _ControllerTestBase(unittest.TestCase):
         c.window.set_status_audio = MagicMock()
         c.window.session_strip.set_video_state = MagicMock()
         c.window.session_strip.set_audio_state = MagicMock()
-        # Replace the embed pane with a mock — the real one may not have
-        # QtWebEngine available headless, and we only assert call routing.
+        # Replace the lightweight launch card with a mock; these tests only
+        # assert controller call routing.
         c.window.webex_embed = MagicMock()
         c.bridge.webex_state = "Not opened"
         c.bridge.jamulus_state = "Not launched"
+        c.audio.stopping = False
+        c.audio.cleanup_retry_required = False
+        c.audio.ended_by_user = False
+        c._invite_switch_in_flight = False
 
 
 class TestExternalWebexLaunch(_ControllerTestBase):
@@ -68,7 +72,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._show_actionable_error = MagicMock()
         c._on_join_video()
         c._show_actionable_error.assert_called_once()
-        self.assertEqual(c._show_actionable_error.call_args.args[0], "No Meeting URL")
+        self.assertEqual(c._show_actionable_error.call_args.args[0], "No Webex Link")
         c.bridge.launch_webex = MagicMock()
         c.bridge.launch_webex.assert_not_called()
 
@@ -123,6 +127,19 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c._on_join_video()
         c.bridge.launch_webex.assert_called_once_with(manual=True)
         c.window.webex_embed.leave_meeting.assert_not_called()
+
+
+class TestJamulusForegroundGuidance(_ControllerTestBase):
+    def test_unavailable_jamulus_never_claims_it_is_opening(self):
+        c = self.controller
+        c.bridge.bring_jamulus_forward = MagicMock(return_value=False)
+
+        c._bring_jamulus_forward()
+
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("isn’t open yet", message)
+        self.assertIn("Start or retry", message)
+        self.assertNotIn("still opening", message)
 
 
 class TestTruthfulWebexState(_ControllerTestBase):
@@ -293,6 +310,13 @@ class TestReconnectCrashBanner(_ControllerTestBase):
 
 
 class TestRailViewChanges(_ControllerTestBase):
+    def _more_action(self, label: str):
+        return next(
+            action
+            for action in self.window.session_strip._tools_button.menu().actions()
+            if action.text() == label
+        )
+
     def test_canvas_expands_notes_panel(self):
         c = self.controller
         c._on_rail_view_changed("canvas")
@@ -324,6 +348,40 @@ class TestRailViewChanges(_ControllerTestBase):
         c._open_settings_wizard.assert_called_once()
         del c.__dict__["_open_settings_wizard"]
 
+    def test_visible_more_actions_reach_their_controller_owners(self):
+        c = self.controller
+        routes = (
+            ("Audio Settings in Jamulus", "_bring_jamulus_forward"),
+            ("Recording Setup", "_open_recording_setup"),
+            ("Reference Track…", "_open_reference_track"),
+            ("Use iPhone as Pocket Stage…", "_open_pocket_stage"),
+            ("Band Check / Verify Sound\tF2", "_on_ready_check"),
+            ("Support", "_on_save_support_bundle"),
+            ("WebJam Settings", "_open_settings_wizard"),
+        )
+        for label, handler_name in routes:
+            with self.subTest(label=label), patch.object(
+                c,
+                handler_name,
+            ) as handler:
+                action = self._more_action(label)
+                host_only = label == "Reference Track…"
+                if host_only:
+                    self.assertFalse(action.isVisible())
+                    action.setVisible(True)
+                    action.setEnabled(True)
+                action.trigger()
+                handler.assert_called_once_with()
+                if host_only:
+                    action.setVisible(False)
+
+        with patch.object(c.window, "show_help") as show_help:
+            self._more_action("Help").trigger()
+            show_help.assert_called_once_with()
+        with patch.object(c.window, "show_about") as show_about:
+            self._more_action("About WebJam").trigger()
+            show_about.assert_called_once_with()
+
 
 class TestSettingsWizard(_ControllerTestBase):
     def _run_wizard(
@@ -354,6 +412,20 @@ class TestSettingsWizard(_ControllerTestBase):
         before = c.settings
         self._run_wizard(accepted=False)
         self.assertIs(c.settings, before)
+
+    def test_settings_are_blocked_during_session_cleanup(self):
+        c = self.controller
+        c.audio.stopping = True
+        with patch(
+            "webjam_qt.windows.simple_settings.SimpleSettingsDialog"
+        ) as wizard_cls:
+            c._open_settings_wizard()
+
+        wizard_cls.assert_not_called()
+        self.assertIn(
+            "session change",
+            c.window.flash_message.call_args.args[0],
+        )
 
     def test_accepted_wizard_reloads_and_pushes_settings(self):
         c = self.controller
@@ -420,12 +492,28 @@ class TestSettingsWizard(_ControllerTestBase):
 
     def test_accepted_with_changed_webex_url_warns_after_external_launch(self):
         c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/old"
+        c.webex.meeting_url = c.settings.webex_url
         c.bridge.webex_state = "Opened externally"
         fresh = AppSettings()
         fresh.webex_url = "https://example.webex.com/meet/other"
-        self._run_wizard(accepted=True, new_settings=fresh)
+        with patch.object(
+            c.bridge,
+            "invalidate_webex_launch",
+            wraps=c.bridge.invalidate_webex_launch,
+        ) as invalidate:
+            self._run_wizard(accepted=True, new_settings=fresh)
+        invalidate.assert_called_once_with()
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
-        self.assertTrue(any("Open Again" in m for m in msgs), msgs)
+        self.assertTrue(
+            any("meeting already open stays open" in m for m in msgs),
+            msgs,
+        )
+        self.assertEqual(c.bridge.webex_state, "Not opened")
+        c.window.session_strip.set_video_state.assert_called_with(
+            "Open Webex",
+            enabled=True,
+        )
 
     def test_accepted_with_changed_server_warns_when_audio_running(self):
         c = self.controller

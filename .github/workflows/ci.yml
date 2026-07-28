@@ -69,7 +69,7 @@ jobs:
           # a docs-only push cannot skip the actual product checks.
           python -m pip install --upgrade pip "setuptools>=83.0.0"
           pip install -r requirements.txt
-          pip install pytest ruff "pip-audit==2.10.1"
+          pip install pytest "ruff==0.15.22" "pip-audit==2.10.1"
 
       - name: Verify source environment and syntax
         run: |
@@ -156,11 +156,12 @@ jobs:
       - name: Run integration suite against the real binary
         run: pytest tests/test_real_jamulus_integration.py -v
 
-      - name: Run two-client JACK production-boundary harness
+      - name: Run Jamulus/JACK production-boundary companions
         run: >-
           pytest tests/test_real_jamulus_audio.py
           tests/test_real_jamulus_recording_pipeline.py
-          tests/test_dual_musician_rehearsal_lab_real_jamulus.py -v -s
+          tests/test_dual_musician_rehearsal_lab_real_jamulus.py
+          tests/test_reference_track_real_jamulus.py -v -s
 
   # ------------------------------------------------------------------
   # Native v3 transport: strict protocol, race detector, module integrity,
@@ -232,7 +233,7 @@ jobs:
       - name: Verify protocol, package, and privacy gates
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ruff build "./reference_service[test]"
+          python -m pip install "ruff==0.15.22" build "./reference_service[test]"
           ruff check reference_service
           python -m compileall -q reference_service/webjam_reference reference_service/tests
           pytest -q reference_service/tests
@@ -819,6 +820,32 @@ jobs:
           ditto "$RUNNER_TEMP/jamulus_mnt/JamulusServer.app" "$RUNNER_TEMP/JamulusServer.app"
           hdiutil detach "$RUNNER_TEMP/jamulus_mnt" -force
 
+      - name: Build verified Jamulus HEADLESS Reference Track client (macOS)
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_venv="$RUNNER_TEMP/jamulus-headless-build-tools"
+          python -m venv "$tool_venv"
+          "$tool_venv/bin/python" -m pip install --disable-pip-version-check \
+            --no-deps \
+            --require-hashes \
+            --only-binary=:all: \
+            -r packaging/macos/aqtinstall-3.3.0-lock.txt
+          "$tool_venv/bin/python" -m pip check
+          expected_machine=arm64
+          if [[ "${{ matrix.target }}" == "macos-x64" ]]; then
+            expected_machine=x86_64
+          fi
+          output="$RUNNER_TEMP/jamulus-headless-${{ matrix.target }}"
+          mkdir -p "$output"
+          WEBJAM_JAMULUS_BUILD_PYTHON="$tool_venv/bin/python" \
+            packaging/macos/build-jamulus-headless-client.sh \
+              "$expected_machine" "$output/JamulusHeadlessClient.app"
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$output/JamulusHeadlessClient.app" "$expected_machine" \
+            "$output/JamulusHeadlessClient.sha256"
+
       - name: Build desktop artifact
         shell: bash
         run: |
@@ -840,7 +867,8 @@ jobs:
               | dist/WebJam/webjam-fabric.exe \
               | grep -q '"type":"stopped"'
             test -n "$(find dist/WebJam -path '*/webjam_qt/theme/conductor.qss' -print -quit)"
-            test -n "$(find dist/WebJam -path '*/webjam_qt/webex_widget.html' -print -quit)"
+            test -z "$(find dist/WebJam -iname '*QtWebEngine*' -print -quit)"
+            test -z "$(find dist/WebJam -iname '*QtWebChannel*' -print -quit)"
             test -f dist/WebJam/_internal/Jamulus/jamulus_3.12.2_win.exe
             test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             # spec uses COLLECT → produces dist/WebJam/ directory; zip it
@@ -869,7 +897,8 @@ jobs:
             test -f dist/WebJam/Jamulus/JAMULUS_COPYING.txt
             echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  dist/WebJam/Jamulus/jamulus_3.12.2_ubuntu_amd64.deb" | sha256sum -c -
             test -f dist/WebJam/_internal/webjam_qt/theme/conductor.qss
-            test -f dist/WebJam/_internal/webjam_qt/webex_widget.html
+            test -z "$(find dist/WebJam -iname '*QtWebEngine*' -print -quit)"
+            test -z "$(find dist/WebJam -iname '*QtWebChannel*' -print -quit)"
             test "$(tr -d '\r\n' < dist/WebJam/_internal/webjam-build-id.txt)" = "$build_id"
             cp packaging/linux/README-LINUX.txt dist/WebJam/README-LINUX.txt
             cp packaging/linux/install-jamulus.sh dist/WebJam/install-jamulus.sh
@@ -991,6 +1020,12 @@ jobs:
             ditto "$RUNNER_TEMP/Jamulus.app" dist/WebJam.app/Contents/Resources/Jamulus.app
             ditto "$RUNNER_TEMP/JamulusServer.app" \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
+            ditto \
+              "$RUNNER_TEMP/jamulus-headless-${{ matrix.target }}/JamulusHeadlessClient.app" \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app
+            cp \
+              "$RUNNER_TEMP/jamulus-headless-${{ matrix.target }}/JamulusHeadlessClient.sha256" \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256
             cp licenses/JAMULUS_COPYING.txt \
               dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/JAMULUS_COPYING.txt
             codesign --force --deep --sign - \
@@ -1015,10 +1050,14 @@ jobs:
               dist/WebJam.app/Contents/Resources/Jamulus.app)"
             server_entitlements="$(codesign -d --xml --entitlements - \
               dist/WebJam.app/Contents/Resources/JamulusServer.app)"
+            headless_entitlements="$(codesign -d --xml --entitlements - \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app)"
             ! grep -q 'com.apple.security.app-sandbox' \
               <<< "$jamulus_entitlements"
             ! grep -q 'com.apple.security.app-sandbox' \
               <<< "$server_entitlements"
+            ! grep -q 'com.apple.security.app-sandbox' \
+              <<< "$headless_entitlements"
             test -x dist/WebJam.app/Contents/MacOS/WebJam
             test -x dist/WebJam.app/Contents/MacOS/webjam-fabric
             file dist/WebJam.app/Contents/MacOS/WebJam \
@@ -1030,13 +1069,28 @@ jobs:
               | dist/WebJam.app/Contents/MacOS/webjam-fabric \
               | grep -q '"type":"stopped"'
             test -f dist/WebJam.app/Contents/Resources/webjam_qt/theme/conductor.qss
-            test -f dist/WebJam.app/Contents/Resources/webjam_qt/webex_widget.html
+            test -z "$(find dist/WebJam.app -iname '*QtWebEngine*' -print -quit)"
+            test -z "$(find dist/WebJam.app -iname '*QtWebChannel*' -print -quit)"
             test -x dist/WebJam.app/Contents/Resources/Jamulus.app/Contents/MacOS/Jamulus
             test -x dist/WebJam.app/Contents/Resources/JamulusServer.app/Contents/MacOS/JamulusServer
+            test -x \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient
+            packaging/macos/verify-jamulus-headless-client.sh \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app \
+              "$expected_machine" \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256
             expected_version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
+            # This is the final nested-code boundary for the ad-hoc candidate.
+            # Refresh the companion manifest immediately before sealing the
+            # outer app, even if a preceding signer preserved its bytes.
+            shasum -a 256 \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient \
+              | awk -v name='JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient' \
+                '{print $1 "  " name}' \
+              > dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256
             # PyInstaller signs the outer bundle before the CI-only Jamulus
             # copy above. Refresh the shallow outer seal so the unsigned source
             # artifact is internally consistent before protected signing.
@@ -1046,18 +1100,27 @@ jobs:
             server_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            headless_cdhash_before="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             fabric_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
             codesign --force --sign - dist/WebJam.app
             codesign --verify --strict dist/WebJam.app
             codesign --verify --deep --strict dist/WebJam.app
+            packaging/macos/verify-jamulus-headless-client.sh \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app \
+              "$expected_machine" \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256
 
             # Prove outer signing preserved the prepared nested signatures.
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/Jamulus.app
             codesign --verify --strict \
               dist/WebJam.app/Contents/Resources/JamulusServer.app
+            codesign --verify --strict \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app
             codesign --verify --strict \
               dist/WebJam.app/Contents/MacOS/webjam-fabric
             jamulus_cdhash_after="$(codesign -dv --verbose=4 \
@@ -1066,6 +1129,9 @@ jobs:
             server_cdhash_after="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/JamulusServer.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
+            headless_cdhash_after="$(codesign -dv --verbose=4 \
+              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app 2>&1 \
+              | awk -F= '/^CDHash=/{print $2}')"
             fabric_cdhash_after="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/MacOS/webjam-fabric 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
@@ -1073,6 +1139,8 @@ jobs:
             test "$jamulus_cdhash_before" = "$jamulus_cdhash_after"
             test -n "$server_cdhash_before"
             test "$server_cdhash_before" = "$server_cdhash_after"
+            test -n "$headless_cdhash_before"
+            test "$headless_cdhash_before" = "$headless_cdhash_after"
             test -n "$fabric_cdhash_before"
             test "$fabric_cdhash_before" = "$fabric_cdhash_after"
             test "$(shasum -a 256 dist/WebJam.app/Contents/MacOS/webjam-fabric \
@@ -1141,6 +1209,10 @@ jobs:
               --manifest "$fresh_dir/WebJam.app/Contents/Resources/webjam-fabric.sha256" \
               --build-id "$build_id" \
               --machine "$expected_machine"
+            packaging/macos/verify-jamulus-headless-client.sh \
+              "$fresh_dir/WebJam.app/Contents/Resources/JamulusHeadlessClient.app" \
+              "$expected_machine" \
+              "$fresh_dir/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256"
 
             # Exercise both clickable installers against the real ad-hoc app.
             # A fake opener keeps CI non-interactive while preserving the
@@ -1267,8 +1339,10 @@ jobs:
             < "$copied_app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
           jamulus_client="$copied_app/Contents/Resources/Jamulus.app"
           jamulus_server="$copied_app/Contents/Resources/JamulusServer.app"
+          jamulus_headless="$copied_app/Contents/Resources/JamulusHeadlessClient.app"
           test -x "$jamulus_client/Contents/MacOS/Jamulus"
           test -x "$jamulus_server/Contents/MacOS/JamulusServer"
+          test -x "$jamulus_headless/Contents/MacOS/JamulusHeadlessClient"
           lipo "$jamulus_client/Contents/MacOS/Jamulus" \
             -verify_arch "$expected_machine"
           lipo "$jamulus_server/Contents/MacOS/JamulusServer" \
@@ -1277,6 +1351,9 @@ jobs:
             "$jamulus_client/Contents/Info.plist")" = 3.12.2
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
             "$jamulus_server/Contents/Info.plist")" = 3.12.2
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$jamulus_headless" "$expected_machine" \
+            "$copied_app/Contents/Resources/JamulusHeadlessClient.sha256"
           python -m tests.support.verify_packaged_transport \
             --binary "$copied_app/Contents/MacOS/webjam-fabric" \
             --manifest "$copied_app/Contents/Resources/webjam-fabric.sha256" \
@@ -1307,8 +1384,10 @@ jobs:
         if: matrix.target == 'windows-x64'
         shell: pwsh
         run: |
-          $freshRoot = Join-Path $env:RUNNER_TEMP "webjam-windows-fresh"
-          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-windows-home"
+          # Spaces are intentional: the portable package must work outside the
+          # runner's unusually simple default paths.
+          $freshRoot = Join-Path $env:RUNNER_TEMP "WebJam Windows Fresh With Spaces"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "WebJam Windows Home With Spaces"
           Remove-Item -Recurse -Force $freshRoot,$smokeHome -ErrorAction SilentlyContinue
           Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $freshRoot
           New-Item -ItemType Directory -Force $smokeHome | Out-Null
@@ -1381,9 +1460,11 @@ jobs:
         run: |
           $version = (python -c "from webjam_qt import __version__; print(__version__)").Trim()
           $buildId = (git rev-parse HEAD).Trim()
-          $workRoot = Join-Path $env:RUNNER_TEMP "webjam-setup-source"
-          $installDir = Join-Path $env:RUNNER_TEMP "webjam-installed"
-          $smokeHome = Join-Path $env:RUNNER_TEMP "webjam-setup-home"
+          # Exercise both the Inno source define and the install/launch path
+          # with spaces instead of relying on the runner's simple defaults.
+          $workRoot = Join-Path $env:RUNNER_TEMP "WebJam Setup Source With Spaces"
+          $installDir = Join-Path $env:RUNNER_TEMP "WebJam Installed With Spaces"
+          $smokeHome = Join-Path $env:RUNNER_TEMP "WebJam Setup Home With Spaces"
           Remove-Item -Recurse -Force $workRoot,$installDir,$smokeHome `
             -ErrorAction SilentlyContinue
           Expand-Archive "out\WebJam-windows-x64.zip" -DestinationPath $workRoot
@@ -1695,7 +1776,58 @@ jobs:
               "out/WebJam-v${version}-${target}-ADHOC-TEST-ONLY.dmg"
           fi
 
-      - name: Upload build artifact
+      - name: Generate and verify Windows candidate checksum manifest
+        if: matrix.target == 'windows-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'from webjam_qt import __version__; print(__version__)')"
+          cd out
+          assets=(
+            "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          shopt -s nullglob
+          candidate_assets=(WebJam*windows-x64*)
+          test "${#candidate_assets[@]}" -eq "${#assets[@]}"
+          for candidate in "${candidate_assets[@]}"; do
+            case "$candidate" in
+              "${assets[0]}"|"${assets[1]}") ;;
+              *)
+                echo "Unexpected Windows candidate file: $candidate" >&2
+                exit 1
+                ;;
+            esac
+          done
+          checksum_file="WebJam-v${version}-windows-x64-SHA256SUMS.txt"
+          # Use one explicit binary-mode format on Git Bash and GNU/Linux:
+          # "<64 lowercase hex> *<basename>". EXE/ZIP bytes must never be
+          # subject to text-mode translation.
+          sha256sum --binary -- "${assets[@]}" > "$checksum_file"
+          test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"
+          test "$(sed -n '1s/^[^*]*\*//p' "$checksum_file")" = "${assets[0]}"
+          test "$(sed -n '2s/^[^*]*\*//p' "$checksum_file")" = "${assets[1]}"
+          sha256sum --check --strict "$checksum_file"
+          uploaded_files=(WebJam*windows-x64*)
+          test "${#uploaded_files[@]}" -eq 3
+
+      - name: Upload Windows candidate artifact
+        if: matrix.target == 'windows-x64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-windows-x64
+          path: |
+            out/WebJam-v*-windows-x64-UNSIGNED-TEST-ONLY-setup.exe
+            out/WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip
+            out/WebJam-v*-windows-x64-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload non-Windows build artifact
+        if: matrix.target != 'windows-x64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: webjam-${{ matrix.target }}
@@ -1761,12 +1893,43 @@ jobs:
             "release-source\WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip").Path
           $sourceSetup = (Resolve-Path `
             "release-source\WebJam-v$version-windows-x64-UNSIGNED-TEST-ONLY-setup.exe").Path
+          $sourceChecksum = (Resolve-Path `
+            "release-source\WebJam-v$version-windows-x64-SHA256SUMS.txt").Path
           $sourceFiles = @(Get-ChildItem "release-source" -File)
-          if ($sourceFiles.Count -ne 2) {
-            throw "Windows source artifact must contain exactly ZIP and Setup files"
+          if ($sourceFiles.Count -ne 3) {
+            throw "Windows source artifact must contain exactly ZIP, Setup, and checksum files"
           }
           foreach ($file in @($sourceZip, $sourceSetup)) {
             if ((Get-Item $file).Length -le 0) { throw "Empty source artifact: $file" }
+          }
+          $expectedContainers = @{
+            "WebJam-v$version-windows-x64-UNSIGNED-TEST-ONLY-setup.exe" = $sourceSetup
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip" = $sourceZip
+          }
+          $checksumLines = @(Get-Content -LiteralPath $sourceChecksum)
+          if ($checksumLines.Count -ne $expectedContainers.Count) {
+            throw "Windows source checksum manifest must contain exactly two entries"
+          }
+          $seenContainers = @{}
+          foreach ($line in $checksumLines) {
+            $match = [regex]::Match(
+              $line,
+              '^(?<hash>[0-9a-f]{64}) \*(?<name>[^/\\]+)$'
+            )
+            if (-not $match.Success) {
+              throw "Malformed Windows source checksum line"
+            }
+            $name = $match.Groups["name"].Value
+            if (-not $expectedContainers.ContainsKey($name) -or
+                $seenContainers.ContainsKey($name)) {
+              throw "Unexpected or duplicate Windows source checksum entry: $name"
+            }
+            $actualHash = (Get-FileHash $expectedContainers[$name] `
+              -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -cne $match.Groups["hash"].Value) {
+              throw "Windows source checksum mismatch: $name"
+            }
+            $seenContainers[$name] = $true
           }
           if ((Get-AuthenticodeSignature $sourceSetup).Status -ne "NotSigned") {
             throw "Windows source Setup must remain unsigned before protected signing"
@@ -2388,6 +2551,10 @@ jobs:
           [[ "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]
           actual_digest="$(/usr/bin/shasum -a 256 "$fabric" | /usr/bin/awk '{print $1}')"
           test "$actual_digest" = "$manifest_digest"
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$app/Contents/Resources/JamulusHeadlessClient.app" \
+            "$expected_machine" \
+            "$app/Contents/Resources/JamulusHeadlessClient.sha256"
       - name: Validate protected macOS release credentials
         shell: bash
         env:
@@ -2493,6 +2660,10 @@ jobs:
             --manifest "$app/Contents/Resources/webjam-fabric.sha256" \
             --build-id "$build_id" \
             --machine "$expected_machine"
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$app/Contents/Resources/JamulusHeadlessClient.app" \
+            "$expected_machine" \
+            "$app/Contents/Resources/JamulusHeadlessClient.sha256"
           HOME="$smoke_home" \
             WEBJAM_LOG_FILE="$smoke_home/webjam.log" \
             WEBJAM_SMOKE_LAUNCH_ONLY=1 WEBJAM_SMOKE_EXIT_MS=5000 \
@@ -2607,6 +2778,19 @@ jobs:
           set -euo pipefail
           cd release-assets
           version="${GITHUB_REF_NAME#v}"
+          windows_checksum="WebJam-v${version}-windows-x64-SHA256SUMS.txt"
+          windows_assets=(
+            "WebJam-v${version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          )
+          test -s "$windows_checksum"
+          test "$(wc -l < "$windows_checksum")" -eq "${#windows_assets[@]}"
+          test "$(sed -n '1s/^[^*]*\*//p' "$windows_checksum")" = \
+            "${windows_assets[0]}"
+          test "$(sed -n '2s/^[^*]*\*//p' "$windows_checksum")" = \
+            "${windows_assets[1]}"
+          sha256sum --check --strict "$windows_checksum"
+          rm -- "$windows_checksum"
           assets=(
             "WebJam-linux-x64.zip"
             "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"

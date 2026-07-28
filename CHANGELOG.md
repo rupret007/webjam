@@ -4,6 +4,62 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.20.0] — 2026-07-27 Webex handoff and Reference Track test candidate
+
+- Restored WebJam's approved continuous trefoil identity from the earlier
+  three-loop mark. One canonical analytic curve now deterministically produces
+  the desktop SVG, Windows ICO, macOS ICNS, and Pocket Stage AppIcon/visible
+  artwork; Help and About use the same mark and byte-contract tests prevent
+  packaged assets from drifting.
+- Hardened candidate shutdown so WebJam keeps ownership visible and retryable
+  until its Reference Track, Pocket Stage, private transfer services, Jamulus
+  processes, hosted server, secure transport, and localhost companion listener
+  are confirmed stopped. Dynamic Webex and Reference Track status changes are
+  now announced to assistive technology.
+- Kept Reference Track controls reachable at the supported 760×600 floor and
+  made keyboard seek/loop/trim/count-in edits survive stale polling until the
+  controller acknowledges them. Join-save failures now stay visible and
+  retryable, Settings validation announces and focuses errors, and Notes export
+  is unavailable until there is actual note content.
+- The ordinary Windows x64 Actions artifact now contains exactly the unsigned
+  Setup executable, portable ZIP, and a verified two-entry SHA-256 manifest.
+  Windows install/launch/upgrade/uninstall validation uses paths containing
+  spaces, and the downloadable candidate artifact is retained for 90 days.
+- Added a host-controlled **Reference Track** source pilot behind **More**.
+  The bounded 48-kHz engine, separate `WebJam Track` client, authenticated RPC,
+  zero-fader checks, transport controls, and path-free decoding are present.
+  Production playback is locked before native work because CoreAudio has a
+  reported false input-device result after a device switch and Jamulus 3.12.2
+  has no independent live-device RPC. Only an explicit constructor seam can
+  exercise the backend in controlled source tests; there is no packaged
+  setting, environment, command-line, or UI bypass.
+- The retained Reference Track implementation fails closed on
+  host/session/route/RPC loss and tears down before the primary musician
+  client. It is described as Jamulus-routed, not latency eliminated. Physical
+  two-endpoint audibility, device-switch truth, BlackHole exclusivity,
+  independent mixes, direct-monitor isolation, recording-stem behavior, and
+  long-session use remain **NOT RUN**.
+- Removed the dormant embedded Webex browser and guest-token path. WebJam now
+  persists only the musician's optional Meeting or Personal Room link, opens
+  it externally after an explicit action, and reports only that handoff—not a
+  Webex join, mute, participant, camera, or microphone state.
+- Fixed the visible startup **Bring Jamulus Forward** action, late macOS
+  invitation-error delivery, and failed Notes chat sends. An unsent message is
+  restored to the composer and is never falsely added to the session record.
+- Added discoverable **Help** and **About WebJam** actions under **More**. About
+  reports the candidate version, target, trust boundary, and privacy-safe build
+  identity.
+- Resetting a private invitation now requires explicit confirmation. Webex
+  menu wording recovers after a link is configured, and unavailable Jamulus
+  guidance no longer claims the application is still opening.
+- Made drag-to-Applications plus Apple's app-bundle **Open Anyway** flow the
+  primary macOS installation guidance. Optional integrity-checking helpers are
+  documented for explicit Terminal use because current macOS versions may
+  block quarantined `.command` files from Finder.
+- Added visible-menu routing, dynamic Studio **Add Take**, failure-state,
+  accessibility, and package-instruction regression coverage. Active guides
+  now identify the v0.20.0 candidate consistently.
+
 ## [0.19.0] — 2026-07-22 Pocket Stage owner-device test candidate
 
 ### Download and startup correction

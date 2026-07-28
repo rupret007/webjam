@@ -57,6 +57,8 @@ class TestMixDirtyAutosave(unittest.TestCase):
         self.controller._on_save_mix = MagicMock()  # type: ignore[method-assign]
         # Avoid touching the real bridge / webex / persistence on shutdown
         self.controller.bridge = MagicMock()
+        self.controller.bridge.hosted_server_alive.return_value = False
+        self.controller.bridge.stop_jamulus.return_value = True
         self.controller.webex = MagicMock()
         self.controller._persistence = MagicMock()
         self.controller.shutdown()
@@ -67,6 +69,8 @@ class TestMixDirtyAutosave(unittest.TestCase):
         self.controller._jamulus_connected = True
         self.controller._on_save_mix = MagicMock()  # type: ignore[method-assign]
         self.controller.bridge = MagicMock()
+        self.controller.bridge.hosted_server_alive.return_value = False
+        self.controller.bridge.stop_jamulus.return_value = True
         self.controller.webex = MagicMock()
         self.controller._persistence = MagicMock()
         self.controller.shutdown()
@@ -79,6 +83,8 @@ class TestMixDirtyAutosave(unittest.TestCase):
         self.controller._jamulus_connected = False
         self.controller._on_save_mix = MagicMock()  # type: ignore[method-assign]
         self.controller.bridge = MagicMock()
+        self.controller.bridge.hosted_server_alive.return_value = False
+        self.controller.bridge.stop_jamulus.return_value = True
         self.controller.webex = MagicMock()
         self.controller._persistence = MagicMock()
         self.controller.shutdown()

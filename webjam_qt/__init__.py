@@ -11,4 +11,4 @@ then will be removed.
 
 __all__ = ["__version__"]
 
-__version__ = "0.19.0"
+__version__ = "0.20.0"

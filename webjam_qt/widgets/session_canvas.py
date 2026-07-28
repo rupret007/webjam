@@ -72,6 +72,7 @@ class SessionCanvas(QFrame):
         export_menu = QMenu(self._export_button)
         self._export_notes_action = export_menu.addAction("Session notes…")
         self._export_notes_action.setToolTip("Export session notes")
+        self._export_notes_action.setEnabled(False)
         self._export_notes_action.triggered.connect(self.export_notes)
         self._export_brief_action = export_menu.addAction("Session brief…")
         self._export_brief_action.setToolTip("Export session brief")
@@ -162,6 +163,10 @@ class SessionCanvas(QFrame):
 
         self._notes = QTextEdit()
         self._notes.setObjectName("CanvasNotes")
+        self._notes.setAccessibleName("Session notes")
+        self._notes.setAccessibleDescription(
+            "Editable session notes shared in this WebJam session record."
+        )
         self._notes.setPlaceholderText(
             "Capture what matters:\n"
             "  · decisions made\n"
@@ -174,6 +179,7 @@ class SessionCanvas(QFrame):
         # Chat box — send a message to the whole band (Jamulus chat).
         self._chat_input = QLineEdit()
         self._chat_input.setObjectName("CanvasChatInput")
+        self._chat_input.setAccessibleName("Band chat message")
         self._chat_input.setPlaceholderText("Message your band… (Enter to send)")
         self._chat_input.returnPressed.connect(self._on_chat_entered)
 
@@ -199,6 +205,7 @@ class SessionCanvas(QFrame):
         self._notes.blockSignals(True)
         self._notes.setPlainText(text)
         self._notes.blockSignals(False)
+        self._sync_export_actions()
 
     def current_notes(self) -> str:
         return self._notes.toPlainText()
@@ -282,6 +289,16 @@ class SessionCanvas(QFrame):
             return
         self._chat_input.clear()
         self.chat_submitted.emit(text)
+
+    def restore_unsent_chat(self, text: str) -> None:
+        """Return a failed message to the composer without overwriting typing."""
+
+        message = str(text or "").strip()
+        if not message or self._chat_input.text():
+            return
+        self._chat_input.setText(message)
+        self._chat_input.selectAll()
+        self._chat_input.setFocus()
 
     def append_line(self, text: str) -> None:
         """Append a line to the end of the notes (e.g. incoming band chat),
@@ -373,4 +390,10 @@ class SessionCanvas(QFrame):
             self._notes.clear()
 
     def _on_text_changed(self) -> None:
+        self._sync_export_actions()
         self.notes_changed.emit(self._notes.toPlainText())
+
+    def _sync_export_actions(self) -> None:
+        """Keep enabled export choices aligned with available content."""
+
+        self._export_notes_action.setEnabled(bool(self.current_notes().strip()))
