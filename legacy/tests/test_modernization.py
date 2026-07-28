@@ -263,7 +263,7 @@ class TestModernizationCore(unittest.TestCase):
         settings = AppSettings(
             jamulus_server="127.0.0.1",
             jamulus_port=1,
-            webex_url="https://webjam-sbx.webex.com/meet/webjam01",
+            webex_url="https://example.webex.com/meet/example-room",
         )
         results = SetupWizard.run_preflight_checks(
             settings=settings,
@@ -1077,4 +1077,3 @@ class TestModernizationCore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

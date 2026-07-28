@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -109,6 +110,190 @@ class TestDemoToRealTransition(unittest.TestCase):
 
         self.assertTrue(self.controller._jamulus_connected)
         self.assertIn(20, self.controller.participants)
+
+    def test_hosted_name_waits_for_rpc_then_sends_once(self):
+        """An early server-roster callback must not consume the name handoff."""
+
+        original_hosting = self.controller.settings.host_server_enabled
+        original_name = self.controller.settings.musician_name
+        try:
+            self.controller.settings.host_server_enabled = True
+            self.controller.settings.musician_name = "Jeff Story"
+            rpc = SimpleNamespace(available=False)
+            local = [
+                JamulusParticipant(
+                    channel_id=10,
+                    name="No Name",
+                    is_local=True,
+                )
+            ]
+
+            with patch.object(
+                self.controller.jamulus,
+                "rpc_client",
+                rpc,
+            ), patch.object(
+                self.controller.jamulus,
+                "set_name",
+                return_value=True,
+            ) as set_name:
+                # The hosted-server roster can arrive before authenticated
+                # client RPC. It proves audio presence, but cannot yet accept
+                # the musician profile update.
+                self.controller._apply_jamulus_participants(local)
+                set_name.assert_not_called()
+
+                # Once client RPC becomes ready, the next authoritative list
+                # gets exactly one name handoff.
+                rpc.available = True
+                self.controller._apply_jamulus_participants(local)
+                set_name.assert_called_once_with("Jeff Story")
+
+                # A follow-up roster acknowledgement and a later manual rename
+                # in native Jamulus must not produce repeated setName traffic.
+                self.controller._apply_jamulus_participants([
+                    JamulusParticipant(
+                        channel_id=10,
+                        name="Jeff Story",
+                        is_local=True,
+                    )
+                ])
+                self.controller._apply_jamulus_participants([
+                    JamulusParticipant(
+                        channel_id=10,
+                        name="Jeff — Guitar",
+                        is_local=True,
+                    )
+                ])
+                set_name.assert_called_once_with("Jeff Story")
+                self.assertEqual(
+                    self.controller.participants[10].name,
+                    "Jeff — Guitar",
+                )
+        finally:
+            self.controller.settings.host_server_enabled = original_hosting
+            self.controller.settings.musician_name = original_name
+
+    def test_name_sync_send_failures_are_bounded(self):
+        original_name = self.controller.settings.musician_name
+        try:
+            self.controller.settings.musician_name = "Jeff Story"
+            rpc = SimpleNamespace(available=True)
+            local = [
+                JamulusParticipant(
+                    channel_id=10,
+                    name="No Name",
+                    is_local=True,
+                )
+            ]
+            with patch.object(
+                self.controller.jamulus,
+                "rpc_client",
+                rpc,
+            ), patch.object(
+                self.controller.jamulus,
+                "set_name",
+                return_value=False,
+            ) as set_name:
+                for _ in range(8):
+                    self.controller._apply_jamulus_participants(local)
+                self.assertEqual(
+                    set_name.call_count,
+                    self.controller.audio._NAME_SYNC_MAX_SEND_ATTEMPTS,
+                )
+        finally:
+            self.controller.settings.musician_name = original_name
+
+    def test_native_rename_survives_same_process_reconnect(self):
+        """A roster interruption must not overwrite a later native rename."""
+
+        original_name = self.controller.settings.musician_name
+        original_process = self.controller.bridge.jamulus_process
+        try:
+            self.controller.settings.musician_name = "Jeff Story"
+            self.controller.bridge.jamulus_process = object()
+            rpc = SimpleNamespace(available=True)
+            local = [
+                JamulusParticipant(
+                    channel_id=10,
+                    name="No Name",
+                    is_local=True,
+                )
+            ]
+            with patch.object(
+                self.controller.jamulus,
+                "rpc_client",
+                rpc,
+            ), patch.object(
+                self.controller.jamulus,
+                "set_name",
+                return_value=True,
+            ) as set_name:
+                self.controller._apply_jamulus_participants(local)
+                set_name.assert_called_once_with("Jeff Story")
+
+                self.controller._apply_jamulus_participants([
+                    JamulusParticipant(
+                        channel_id=10,
+                        name="Jeff — Guitar",
+                        is_local=True,
+                    )
+                ])
+                self.controller._apply_jamulus_participants([])
+                self.controller._apply_jamulus_participants([
+                    JamulusParticipant(
+                        channel_id=10,
+                        name="Jeff — Guitar",
+                        is_local=True,
+                    )
+                ])
+
+                set_name.assert_called_once_with("Jeff Story")
+                self.assertEqual(
+                    self.controller.participants[10].name,
+                    "Jeff — Guitar",
+                )
+        finally:
+            self.controller.bridge.jamulus_process = original_process
+            self.controller.settings.musician_name = original_name
+
+    def test_replacement_process_receives_fresh_name_handoff(self):
+        """A crash replacement starts from its profile and needs the name again."""
+
+        original_name = self.controller.settings.musician_name
+        original_process = self.controller.bridge.jamulus_process
+        try:
+            self.controller.settings.musician_name = "Jeff Story"
+            self.controller.bridge.jamulus_process = object()
+            rpc = SimpleNamespace(available=True)
+            local = [
+                JamulusParticipant(
+                    channel_id=10,
+                    name="No Name",
+                    is_local=True,
+                )
+            ]
+            with patch.object(
+                self.controller.jamulus,
+                "rpc_client",
+                rpc,
+            ), patch.object(
+                self.controller.jamulus,
+                "set_name",
+                return_value=True,
+            ) as set_name:
+                self.controller._apply_jamulus_participants(local)
+                set_name.assert_called_once_with("Jeff Story")
+
+                self.controller.bridge.jamulus_process = object()
+                self.controller.audio.connected = False
+                self.controller._apply_jamulus_participants(local)
+
+                self.assertEqual(set_name.call_count, 2)
+                set_name.assert_called_with("Jeff Story")
+        finally:
+            self.controller.bridge.jamulus_process = original_process
+            self.controller.settings.musician_name = original_name
 
 
 if __name__ == "__main__":

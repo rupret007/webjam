@@ -41,6 +41,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: org.webjam.PocketStage
         PRODUCT_NAME: Pocket Stage
         CODE_SIGN_STYLE: Automatic

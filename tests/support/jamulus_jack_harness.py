@@ -1,13 +1,15 @@
 """Real Jamulus/JACK boundary harness for Linux certification.
 
 Nothing in this module replaces the production path.  A real JACK dummy
-server clocks two official Jamulus clients, and this harness connects only to
+server clocks two official Jamulus clients and, for the Reference Track
+companion, an optional third dedicated client.  This harness connects only to
 their public JACK capture/playback ports.  Fixtures therefore enter before the
 Jamulus client encoder and captures leave after its decoder.
 
 The module imports :mod:`jack` lazily so ordinary developer and macOS/Windows
 test runs remain dependency-free.  The opt-in integration job installs
-``JACK-Client`` and provides the two official Jamulus 3.12.2 binaries.
+``JACK-Client`` and provides the pinned official Jamulus 3.12.2 server/client
+binaries.
 """
 from __future__ import annotations
 
@@ -89,6 +91,51 @@ class TransportResult:
 
 
 @dataclass(frozen=True)
+class SilenceMetrics:
+    """Measured silence at one JACK decoder boundary."""
+
+    frames: int
+    channels: int
+    rms: float
+    peak: float
+
+
+@dataclass(frozen=True)
+class ReferenceFaderProof:
+    """Accepted local-mix commands for the three-client companion."""
+
+    host_track_channel: int
+    host_track_level: int
+    bandmate_track_channel: int
+    bandmate_track_level: int
+    reference_zeroed_channels: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ReferenceTrackTransportResult:
+    """Synthetic evidence from a dedicated third Jamulus participant."""
+
+    host_received: np.ndarray
+    bandmate_received: np.ndarray
+    reference_return_received: np.ndarray
+    host_metrics: SignalMetrics | None
+    bandmate_metrics: SignalMetrics | None
+    host_silence: SilenceMetrics | None
+    bandmate_silence: SilenceMetrics | None
+    reference_return_silence: SilenceMetrics
+    fader_proof: ReferenceFaderProof
+    server_clients: tuple[dict[str, Any], ...]
+    xrun_count: int
+
+
+@dataclass(frozen=True)
+class _ClientRpcEndpoint:
+    name: str
+    port: int
+    secret: str
+
+
+@dataclass(frozen=True)
 class ProcessResourceSample:
     """One Linux /proc sample used by the opt-in longevity certification."""
 
@@ -129,6 +176,12 @@ SPEC_B = SignalSpec(
     click_s=1.25,
     tone_start_s=1.75,
     tone_end_s=4.25,
+)
+SPEC_REFERENCE_TRACK = SignalSpec(
+    frequency_hz=880.0,
+    click_s=0.85,
+    tone_start_s=1.35,
+    tone_end_s=4.35,
 )
 
 
@@ -373,6 +426,33 @@ def assert_signal_metrics(
         failures.append(
             f"cross rejection only {metrics.cross_rejection_db:.2f} dB"
         )
+    if failures:
+        raise HarnessFailure("; ".join(failures))
+
+
+def analyze_silence(capture: np.ndarray) -> SilenceMetrics:
+    """Measure a frames-by-stereo capture that is expected to be silent."""
+    if capture.ndim != 2 or capture.shape[1] != 2:
+        raise HarnessFailure(
+            f"silence capture must be frames x 2 channels, got {capture.shape}"
+        )
+    return SilenceMetrics(
+        frames=len(capture),
+        channels=int(capture.shape[1]),
+        rms=_rms(capture),
+        peak=float(np.max(np.abs(capture))) if capture.size else 0.0,
+    )
+
+
+def assert_silence_metrics(metrics: SilenceMetrics) -> None:
+    """Reject a material signal while tolerating bounded codec/JACK noise."""
+    failures: list[str] = []
+    if metrics.channels != 2:
+        failures.append(f"channels={metrics.channels}, expected 2")
+    if metrics.rms > 0.003:
+        failures.append(f"silence RMS too high: {metrics.rms:.6f}")
+    if metrics.peak > 0.04:
+        failures.append(f"silence peak too high: {metrics.peak:.6f}")
     if failures:
         raise HarnessFailure("; ".join(failures))
 
@@ -743,14 +823,16 @@ class ManagedProcess:
 class _BoundaryRun:
     fixture_a: np.ndarray
     fixture_b: np.ndarray
+    fixture_reference: np.ndarray
     capture_a: np.ndarray
     capture_b: np.ndarray
+    capture_reference: np.ndarray
     cursor: int = 0
     done: threading.Event = field(default_factory=threading.Event)
 
 
 class JackBoundary:
-    """JACK source/sink ports immediately outside two Jamulus clients."""
+    """JACK ports immediately outside two musicians and an optional track."""
 
     def __init__(self, server_name: str) -> None:
         try:
@@ -786,6 +868,10 @@ class JackBoundary:
             self.client.outports.register("b_tx_left"),
             self.client.outports.register("b_tx_right"),
         )
+        self._source_reference = (
+            self.client.outports.register("reference_tx_left"),
+            self.client.outports.register("reference_tx_right"),
+        )
         self._sink_a = (
             self.client.inports.register("a_rx_left"),
             self.client.inports.register("a_rx_right"),
@@ -793,6 +879,10 @@ class JackBoundary:
         self._sink_b = (
             self.client.inports.register("b_rx_left"),
             self.client.inports.register("b_rx_right"),
+        )
+        self._sink_reference = (
+            self.client.inports.register("reference_rx_left"),
+            self.client.inports.register("reference_rx_right"),
         )
         self._run: _BoundaryRun | None = None
         self.xrun_count = 0
@@ -804,7 +894,11 @@ class JackBoundary:
 
         @self.client.set_process_callback
         def process(frames: int) -> None:
-            for port in (*self._source_a, *self._source_b):
+            for port in (
+                *self._source_a,
+                *self._source_b,
+                *self._source_reference,
+            ):
                 port.get_array().fill(0.0)
             run = self._run
             if run is None or run.cursor >= len(run.capture_a):
@@ -819,10 +913,16 @@ class JackBoundary:
                     port.get_array()[:source_count] = run.fixture_a[start:source_end]
                 for port in self._source_b:
                     port.get_array()[:source_count] = run.fixture_b[start:source_end]
+                for port in self._source_reference:
+                    port.get_array()[:source_count] = run.fixture_reference[
+                        start:source_end
+                    ]
             for channel, port in enumerate(self._sink_a):
                 run.capture_a[start:end, channel] = port.get_array()[:count]
             for channel, port in enumerate(self._sink_b):
                 run.capture_b[start:end, channel] = port.get_array()[:count]
+            for channel, port in enumerate(self._sink_reference):
+                run.capture_reference[start:end, channel] = port.get_array()[:count]
             run.cursor = end
             if end == len(run.capture_a):
                 run.done.set()
@@ -863,8 +963,14 @@ class JackBoundary:
         timeout_s: float = 2.0,
         poll_interval_s: float = 0.05,
     ) -> None:
-        sources = self._source_a if client_index == 0 else self._source_b
-        sinks = self._sink_a if client_index == 0 else self._sink_b
+        if client_index == 0:
+            sources, sinks = self._source_a, self._sink_a
+        elif client_index == 1:
+            sources, sinks = self._source_b, self._sink_b
+        elif client_index == 2:
+            sources, sinks = self._source_reference, self._sink_reference
+        else:
+            raise ValueError(f"invalid JACK client index: {client_index}")
         routes = (
             (sources[0], jamulus_ports["input left"]),
             (sources[1], jamulus_ports["input right"]),
@@ -909,16 +1015,52 @@ class JackBoundary:
         *,
         tail_s: float = CAPTURE_TAIL_S,
     ) -> tuple[np.ndarray, np.ndarray]:
-        if fixture_a.shape != fixture_b.shape:
+        silence = np.zeros_like(fixture_a)
+        capture_a, capture_b, _capture_reference = self._run_three(
+            fixture_a,
+            fixture_b,
+            silence,
+            tail_s=tail_s,
+        )
+        return capture_a, capture_b
+
+    def run_reference_track(
+        self,
+        fixture_reference: np.ndarray,
+        *,
+        tail_s: float = CAPTURE_TAIL_S,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Clock one track fixture while both musician sources stay silent."""
+        silence = np.zeros_like(fixture_reference)
+        return self._run_three(
+            silence,
+            silence.copy(),
+            fixture_reference,
+            tail_s=tail_s,
+        )
+
+    def _run_three(
+        self,
+        fixture_a: np.ndarray,
+        fixture_b: np.ndarray,
+        fixture_reference: np.ndarray,
+        *,
+        tail_s: float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        shapes = {fixture_a.shape, fixture_b.shape, fixture_reference.shape}
+        if len(shapes) != 1:
             raise HarnessFailure(
-                f"fixture shapes differ: {fixture_a.shape} vs {fixture_b.shape}"
+                "fixture shapes differ: "
+                f"{fixture_a.shape}, {fixture_b.shape}, {fixture_reference.shape}"
             )
         total_frames = len(fixture_a) + round(tail_s * SAMPLE_RATE)
         run = _BoundaryRun(
             fixture_a=fixture_a,
             fixture_b=fixture_b,
+            fixture_reference=fixture_reference,
             capture_a=np.zeros((total_frames, 2), dtype=np.float32),
             capture_b=np.zeros((total_frames, 2), dtype=np.float32),
+            capture_reference=np.zeros((total_frames, 2), dtype=np.float32),
         )
         xrun_start = self.xrun_count
         self._run = run
@@ -930,7 +1072,7 @@ class JackBoundary:
             )
         self._run = None
         self.last_run_xruns = self.xrun_count - xrun_start
-        return run.capture_a, run.capture_b
+        return run.capture_a, run.capture_b, run.capture_reference
 
     def close(self) -> None:
         self._run = None
@@ -1009,14 +1151,22 @@ def _binary_version(binary: str) -> str:
 
 
 class JamulusJackHarness:
-    """Own a dummy JACK graph, one server, and two real Jamulus clients."""
+    """Own a dummy JACK graph, server, musicians, and optional track client."""
 
     CLIENT_A_NAME = "WebJamCertA"
     CLIENT_B_NAME = "WebJamCertB"
+    REFERENCE_TRACK_NAME = "WebJam Track"
 
-    def __init__(self, server_binary: str, client_binary: str) -> None:
+    def __init__(
+        self,
+        server_binary: str,
+        client_binary: str,
+        *,
+        include_reference_track: bool = False,
+    ) -> None:
         self.server_binary = str(Path(server_binary).resolve())
         self.client_binary = str(Path(client_binary).resolve())
+        self.include_reference_track = bool(include_reference_track)
         self._temp = tempfile.TemporaryDirectory(prefix="webjam-jack-cert-")
         self.root = Path(self._temp.name)
         self.server_name = f"webjam-cert-{os.getpid()}-{time.time_ns()}"
@@ -1025,6 +1175,7 @@ class JamulusJackHarness:
         self.server_rpc: RawRpc | None = None
         self.server_process: ManagedProcess | None = None
         self.client_processes: list[ManagedProcess] = []
+        self.client_rpc_endpoints: list[_ClientRpcEndpoint] = []
         self.recordings_path = self.root / "recordings"
         self.cleanup_errors: tuple[str, ...] = ()
         self.ports = {
@@ -1035,12 +1186,21 @@ class JamulusJackHarness:
             "client_b_udp": _free_port(socket.SOCK_DGRAM),
             "client_b_rpc": _free_port(socket.SOCK_STREAM),
         }
+        if self.include_reference_track:
+            self.ports.update(
+                {
+                    "reference_udp": _free_port(socket.SOCK_DGRAM),
+                    "reference_rpc": _free_port(socket.SOCK_STREAM),
+                }
+            )
         if len(set(self.ports.values())) != len(self.ports):
             raise HarnessFailure(f"ephemeral port collision: {self.ports}")
         self._closed = False
 
     @classmethod
-    def from_environment(cls) -> JamulusJackHarness:
+    def from_environment(
+        cls, *, include_reference_track: bool = False
+    ) -> JamulusJackHarness:
         server_binary = os.environ.get("WEBJAM_JAMULUS_BINARY", "")
         client_binary = os.environ.get("WEBJAM_JAMULUS_CLIENT_BINARY", "")
         if not server_binary:
@@ -1061,7 +1221,11 @@ class JamulusJackHarness:
                 f"configured client cannot run the production path: "
                 f"{capability.detail}\n{capability.output[-2_000:]}"
             )
-        return cls(server_binary, client_binary)
+        return cls(
+            server_binary,
+            client_binary,
+            include_reference_track=include_reference_track,
+        )
 
     def _base_env(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -1086,6 +1250,29 @@ class JamulusJackHarness:
         )
         self.processes.append(process)
         return process
+
+    @property
+    def expected_client_names(self) -> tuple[str, ...]:
+        names = [self.CLIENT_A_NAME, self.CLIENT_B_NAME]
+        if self.include_reference_track:
+            names.append(self.REFERENCE_TRACK_NAME)
+        return tuple(names)
+
+    def _client_specs(self) -> tuple[tuple[str, str, str, str], ...]:
+        specs = [
+            ("client-a", self.CLIENT_A_NAME, "client_a_udp", "client_a_rpc"),
+            ("client-b", self.CLIENT_B_NAME, "client_b_udp", "client_b_rpc"),
+        ]
+        if self.include_reference_track:
+            specs.append(
+                (
+                    "reference-track",
+                    self.REFERENCE_TRACK_NAME,
+                    "reference_udp",
+                    "reference_rpc",
+                )
+            )
+        return tuple(specs)
 
     def __enter__(self) -> JamulusJackHarness:
         try:
@@ -1192,10 +1379,8 @@ class JamulusJackHarness:
         self.server_rpc = RawRpc(self.ports["server_rpc"], server_secret)
 
         client_processes: list[ManagedProcess] = []
-        for label, name, udp_key, rpc_key in (
-            ("client-a", self.CLIENT_A_NAME, "client_a_udp", "client_a_rpc"),
-            ("client-b", self.CLIENT_B_NAME, "client_b_udp", "client_b_rpc"),
-        ):
+        client_rpc_endpoints: list[_ClientRpcEndpoint] = []
+        for label, name, udp_key, rpc_key in self._client_specs():
             home = self.root / label
             home.mkdir()
             settings = home / "client.xml"
@@ -1214,7 +1399,12 @@ class JamulusJackHarness:
                 label,
                 [
                     self.client_binary,
-                    "--nogui",
+                    # Pinned GUI builds acknowledge setFaderLevel but only
+                    # apply it through CClientDlg. The three-client companion
+                    # therefore runs Qt's real mixer handlers on the isolated
+                    # offscreen platform. This is CI evidence, not a claim
+                    # that the macOS GUI binary is a safe hidden backend.
+                    *(() if self.include_reference_track else ("--nogui",)),
                     "--connect",
                     f"127.0.0.1:{self.ports['server_udp']}",
                     "--port",
@@ -1226,7 +1416,7 @@ class JamulusJackHarness:
                     "--jsonrpcsecretfile",
                     str(secret_path),
                     "--nojackconnect",
-                    "--mutemyown",
+                    *(() if self.include_reference_track else ("--mutemyown",)),
                     "--clientname",
                     name,
                 ],
@@ -1269,24 +1459,33 @@ class JamulusJackHarness:
                     raise HarnessFailure(
                         f"{label} profile name was rejected: {response}"
                     )
+            client_rpc_endpoints.append(
+                _ClientRpcEndpoint(
+                    name=name,
+                    port=self.ports[rpc_key],
+                    secret=secret,
+                )
+            )
 
         self.client_processes = client_processes
+        self.client_rpc_endpoints = client_rpc_endpoints
 
         assert self.boundary is not None
-        ports_a = self.boundary.wait_for_jamulus_ports(
-            self.CLIENT_A_NAME,
-            timeout_s=12.0,
-            process=client_processes[0],
-        )
-        ports_b = self.boundary.wait_for_jamulus_ports(
-            self.CLIENT_B_NAME,
-            timeout_s=12.0,
-            process=client_processes[1],
-        )
-        self.boundary.route_client(0, ports_a, process=client_processes[0])
-        self.boundary.route_client(1, ports_b, process=client_processes[1])
+        for index, (name, process) in enumerate(
+            zip(self.expected_client_names, client_processes, strict=True)
+        ):
+            jamulus_ports = self.boundary.wait_for_jamulus_ports(
+                name,
+                timeout_s=12.0,
+                process=process,
+            )
+            self.boundary.route_client(
+                index,
+                jamulus_ports,
+                process=process,
+            )
 
-        expected_names = {self.CLIENT_A_NAME, self.CLIENT_B_NAME}
+        expected_names = set(self.expected_client_names)
 
         def named_clients() -> tuple[dict[str, Any], ...] | None:
             current = self._connected_clients()
@@ -1298,13 +1497,13 @@ class JamulusJackHarness:
         clients = _wait_for(
             named_clients,
             timeout_s=20.0,
-            description="two named Jamulus clients",
+            description=f"{len(expected_names)} named Jamulus clients",
             processes=(server_process, *client_processes),
         )
         names = {client.get("name") for client in clients}
         if names != expected_names:
             raise HarnessFailure(f"server reported wrong client identities: {clients}")
-        # Let both client jitter buffers reach steady state before the
+        # Let every client jitter buffer reach steady state before the
         # deterministic source clock begins.
         time.sleep(1.0)
 
@@ -1323,7 +1522,11 @@ class JamulusJackHarness:
         if result is None:
             return None
         clients = result.get("clients", [])
-        if result.get("connections") != 2 or len(clients) != 2:
+        expected_count = len(self.expected_client_names)
+        if (
+            result.get("connections") != expected_count
+            or len(clients) != expected_count
+        ):
             return None
         return tuple(clients)
 
@@ -1375,6 +1578,216 @@ class JamulusJackHarness:
             client_b_received=capture_b,
             client_a_metrics=metrics_a,
             client_b_metrics=metrics_b,
+            server_clients=clients,
+            xrun_count=self.boundary.last_run_xruns,
+        )
+
+    @staticmethod
+    def _server_channel_id(row: dict[str, Any]) -> int:
+        value = row.get("id")
+        if isinstance(value, bool):
+            raise HarnessFailure(f"invalid Jamulus channel id: {value!r}")
+        try:
+            channel_id = int(value)
+        except (TypeError, ValueError) as exc:
+            raise HarnessFailure(f"invalid Jamulus channel id: {value!r}") from exc
+        if channel_id < 0:
+            raise HarnessFailure(f"invalid Jamulus channel id: {channel_id}")
+        return channel_id
+
+    @staticmethod
+    def _accepted_fader(
+        rpc: RawRpc,
+        *,
+        channel_index: int,
+        level: int,
+        owner: str,
+    ) -> None:
+        response = rpc.call(
+            "jamulusclient/setFaderLevel",
+            {"channelIndex": channel_index, "level": level},
+        )
+        if response.get("result") != "ok":
+            raise HarnessFailure(
+                f"{owner} fader index {channel_index}={level} was not accepted: "
+                f"{response}"
+            )
+
+    def _configure_listener_faders(
+        self,
+        endpoint: _ClientRpcEndpoint,
+        *,
+        track_level: int | None,
+    ) -> tuple[int | None, tuple[int, ...]]:
+        with RawRpc(endpoint.port, endpoint.secret) as rpc:
+            response = rpc.call("jamulusclient/getClientList", {})
+            result = response.get("result")
+            if not isinstance(result, dict) or not isinstance(
+                result.get("clients"), list
+            ):
+                raise HarnessFailure(
+                    f"{endpoint.name} returned an invalid client list: {response}"
+                )
+            rows = result["clients"]
+            if not rows:
+                raise HarnessFailure(f"{endpoint.name} returned an empty client list")
+
+            zeroed: list[int] = []
+            seen_server_ids: set[int] = set()
+            track_channel: int | None = None
+            for channel_index, value in enumerate(rows):
+                if not isinstance(value, dict):
+                    raise HarnessFailure(
+                        f"{endpoint.name} returned a malformed client row"
+                    )
+                server_id = self._server_channel_id(value)
+                if server_id in seen_server_ids:
+                    raise HarnessFailure(
+                        f"{endpoint.name} returned a duplicate client id"
+                    )
+                seen_server_ids.add(server_id)
+                self._accepted_fader(
+                    rpc,
+                    channel_index=channel_index,
+                    level=0,
+                    owner=endpoint.name,
+                )
+                zeroed.append(channel_index)
+                if value.get("name") == self.REFERENCE_TRACK_NAME:
+                    track_channel = channel_index
+
+            if track_level is not None:
+                if track_channel is None:
+                    raise HarnessFailure(
+                        f"{endpoint.name} cannot see {self.REFERENCE_TRACK_NAME}"
+                    )
+                self._accepted_fader(
+                    rpc,
+                    channel_index=track_channel,
+                    level=track_level,
+                    owner=endpoint.name,
+                )
+            return track_channel, tuple(sorted(set(zeroed)))
+
+    def configure_reference_track_faders(
+        self,
+        *,
+        host_level: int,
+        bandmate_level: int,
+    ) -> ReferenceFaderProof:
+        """Set independent listener levels and zero the track return."""
+        if not self.include_reference_track or len(self.client_rpc_endpoints) != 3:
+            raise HarnessFailure("Reference Track client is not running")
+        for label, level in (
+            ("host", host_level),
+            ("bandmate", bandmate_level),
+        ):
+            if isinstance(level, bool) or not 0 <= level <= 100:
+                raise ValueError(f"{label} track level must be 0..100")
+
+        def configure() -> ReferenceFaderProof:
+            host_channel, _ = self._configure_listener_faders(
+                self.client_rpc_endpoints[0],
+                track_level=host_level,
+            )
+            bandmate_channel, _ = self._configure_listener_faders(
+                self.client_rpc_endpoints[1],
+                track_level=bandmate_level,
+            )
+            _unused, reference_zeroed = self._configure_listener_faders(
+                self.client_rpc_endpoints[2],
+                track_level=None,
+            )
+            if host_channel is None or bandmate_channel is None:
+                raise HarnessFailure("Reference Track channel identity was not found")
+            return ReferenceFaderProof(
+                host_track_channel=host_channel,
+                host_track_level=host_level,
+                bandmate_track_channel=bandmate_channel,
+                bandmate_track_level=bandmate_level,
+                reference_zeroed_channels=reference_zeroed,
+            )
+
+        return _wait_for(
+            configure,
+            timeout_s=10.0,
+            description="independent Reference Track faders and zero return mix",
+            processes=tuple(self.processes),
+        )
+
+    def run_reference_track_transport(
+        self,
+        *,
+        host_level: int = 100,
+        bandmate_level: int = 100,
+        duration_s: float = FIXTURE_DURATION_S,
+        tail_s: float = CAPTURE_TAIL_S,
+    ) -> ReferenceTrackTransportResult:
+        """Route deterministic PCM through the dedicated third real client."""
+        if self.boundary is None:
+            raise HarnessFailure("harness was not started")
+        if not self.include_reference_track:
+            raise HarnessFailure("Reference Track client was not requested")
+        if duration_s < SPEC_REFERENCE_TRACK.tone_end_s:
+            raise ValueError("transport duration ends before the track fixture tone")
+        if tail_s < 1.5:
+            raise ValueError("transport tail must include at least 1.5s of silence")
+
+        proof = self.configure_reference_track_faders(
+            host_level=host_level,
+            bandmate_level=bandmate_level,
+        )
+        fixture = make_fixture(SPEC_REFERENCE_TRACK, duration_s=duration_s)
+        host_capture, bandmate_capture, reference_capture = (
+            self.boundary.run_reference_track(fixture, tail_s=tail_s)
+        )
+
+        def listener_evidence(
+            capture: np.ndarray,
+            level: int,
+        ) -> tuple[SignalMetrics | None, SilenceMetrics | None]:
+            if level == 0:
+                silence = analyze_silence(capture)
+                assert_silence_metrics(silence)
+                return None, silence
+            metrics = analyze_received(
+                capture,
+                expected=SPEC_REFERENCE_TRACK,
+                forbidden_frequency_hz=SPEC_A.frequency_hz,
+            )
+            assert_signal_metrics(
+                metrics,
+                expected=SPEC_REFERENCE_TRACK,
+                expected_frames=len(capture),
+            )
+            return metrics, None
+
+        host_metrics, host_silence = listener_evidence(
+            host_capture,
+            host_level,
+        )
+        bandmate_metrics, bandmate_silence = listener_evidence(
+            bandmate_capture,
+            bandmate_level,
+        )
+        reference_silence = analyze_silence(reference_capture)
+        assert_silence_metrics(reference_silence)
+
+        clients = self._connected_clients()
+        if clients is None:
+            raise HarnessFailure(
+                "server lost a client during Reference Track capture"
+            )
+        return ReferenceTrackTransportResult(
+            host_received=host_capture,
+            bandmate_received=bandmate_capture,
+            reference_return_received=reference_capture,
+            host_metrics=host_metrics,
+            bandmate_metrics=bandmate_metrics,
+            host_silence=host_silence,
+            bandmate_silence=bandmate_silence,
+            reference_return_silence=reference_silence,
+            fader_proof=proof,
             server_clients=clients,
             xrun_count=self.boundary.last_run_xruns,
         )
@@ -1439,7 +1852,11 @@ class JamulusJackHarness:
         timeout_s: float = 45.0,
     ) -> tuple[dict[str, Any], ...]:
         """Force a real server timeout, resume the client, and prove recovery."""
-        if self.server_process is None or len(self.client_processes) != 2:
+        expected_count = len(self.expected_client_names)
+        if (
+            self.server_process is None
+            or len(self.client_processes) != expected_count
+        ):
             raise HarnessFailure("clients are not running")
         try:
             client = self.client_processes[client_index]
@@ -1451,19 +1868,23 @@ class JamulusJackHarness:
             os.killpg(client.proc.pid, signal.SIGSTOP)
             paused = True
 
-            def one_client() -> dict[str, Any] | None:
+            def one_client_absent() -> dict[str, Any] | None:
                 roster = self._server_roster()
                 if roster is None:
                     return None
                 clients = roster.get("clients", [])
+                remaining_count = expected_count - 1
                 return (
                     roster
-                    if roster.get("connections") == 1 and len(clients) == 1
+                    if (
+                        roster.get("connections") == remaining_count
+                        and len(clients) == remaining_count
+                    )
                     else None
                 )
 
             _wait_for(
-                one_client,
+                one_client_absent,
                 timeout_s=timeout_s,
                 description=f"server to time out {client.name}",
                 processes=(self.server_process,),
@@ -1472,9 +1893,9 @@ class JamulusJackHarness:
             if paused:
                 os.killpg(client.proc.pid, signal.SIGCONT)
 
-        expected_names = {self.CLIENT_A_NAME, self.CLIENT_B_NAME}
+        expected_names = set(self.expected_client_names)
 
-        def two_named_clients() -> tuple[dict[str, Any], ...] | None:
+        def all_named_clients() -> tuple[dict[str, Any], ...] | None:
             clients = self._connected_clients()
             if clients is None:
                 return None
@@ -1485,7 +1906,7 @@ class JamulusJackHarness:
             )
 
         recovered = _wait_for(
-            two_named_clients,
+            all_named_clients,
             timeout_s=timeout_s,
             description=f"{client.name} to reconnect with its identity",
             processes=(self.server_process, client),

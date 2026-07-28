@@ -94,7 +94,10 @@ class BandCheckDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("BandCheckDialog")
         self.setWindowTitle("WebJam — Band Check")
-        self.resize(680, 650)
+        # Keep the client area short enough to leave room for the native
+        # title bar on a 600-pixel-tall display. Longer reports already scroll
+        # inside ``_report``, so they must not make the dialog taller.
+        self.resize(680, 540)
         self.setMinimumSize(560, 520)
         self.setModal(False)
         self._settings_provider = settings_provider

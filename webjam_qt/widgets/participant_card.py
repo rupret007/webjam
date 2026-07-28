@@ -2,13 +2,12 @@
 ParticipantCard — the atomic unit of the Conductor UI.
 
 One card = one person. It fuses:
-  - Webex video presence  (top tile, placeholder until Phase 3)
+  - Participant presence  (top tile)
   - Jamulus audio control (fader + meter + mute/solo)
   - Name and role
 
-In later phases the video tile will render the participant's Webex stream
-(via QWebEngineView or a WebRTC surface) and the fader will drive real
-Jamulus mix state via the UDP protocol.
+Webex opens externally and never renders participant media in WebJam. The
+fader drives Jamulus mix state through the supported control path.
 """
 
 from __future__ import annotations

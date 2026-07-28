@@ -4,10 +4,12 @@ WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source and downloadable release: **v0.18.1 unsigned private test
-candidate**. It includes Windows, Ubuntu 22.04, Intel Mac, and Apple-silicon Mac
-packages. Windows is unsigned; Mac packages are ad-hoc signed and not notarized.
-The Mac downloads include a guided installer and a separately labeled advanced
+Current source candidate: **v0.21.0 unsigned private test candidate**. Its
+four-platform workflow covers Windows, Ubuntu 22.04, Intel Mac, and
+Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc signed
+and not notarized.
+The Mac downloads use drag-to-Applications as the primary path and include
+optional verified Terminal helpers, including a separately labeled advanced
 helper that removes quarantine from WebJam only.
 
 ## Start playing
@@ -22,6 +24,13 @@ helper that removes quarantine from WebJam only.
    other.
 
 That is the whole live-music path.
+
+## Write or rehearse a song locally
+
+Choose **Reference Studio** when you want to play with a backing track, record
+ideas, rearrange named sections, mix, or bounce a WAV/FLAC demo without joining
+a live jam. Reference Studio owns a separate local project and audio path; it
+does not start, stop, configure, or feed Jamulus.
 
 ## If you need help
 
@@ -49,4 +58,5 @@ means musicians playing together; it does not represent a Logic integration.
 Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
-external-editor import, and signed-install gates are **NOT RUN** for v0.18.1.
+external-editor import, physical Reference Studio audio, and signed-install
+gates are **NOT RUN** for v0.21.0.

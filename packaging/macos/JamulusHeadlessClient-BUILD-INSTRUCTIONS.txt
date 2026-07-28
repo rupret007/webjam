@@ -1,0 +1,43 @@
+JamulusHeadlessClient 3.12.2 — Build Instructions
+================================================
+
+The accompanying corresponding-source archive is the complete Jamulus
+r3_12_2 source tree at commit
+ffca974ed4e47b8f4621f3b583c00db2f87974fa with WebJam's reviewed two-file
+HEADLESS compatibility patch already applied. No submodule is used by this
+macOS HEADLESS client build.
+
+Required build inputs:
+
+  macOS 13 or newer SDK and Apple clang
+  Qt 6.10.2 for macOS (qtbase, qttools, qttranslations)
+  aqtinstall 3.3.0 with the adjacent hash-locked, wheel-only Python lock
+
+Configure from a separate build directory with Qt 6.10.2 qmake:
+
+  /path/to/Qt/6.10.2/macos/bin/qmake /path/to/source/Jamulus.pro \
+    CONFIG+=release CONFIG-=debug_and_release \
+    CONFIG+=headless CONFIG-=serveronly \
+    TARGET=JamulusHeadlessClient \
+    QMAKE_APPLE_DEVICE_ARCHS=arm64 QT_ARCH=arm64 \
+    QMAKE_MACOSX_DEPLOYMENT_TARGET=13.0
+
+For an Intel build, replace both arm64 values with x86_64. Jamulus r3_12_2's
+qmake resource rules require this generated-translation prerequisite before
+the default target:
+
+  make -f Makefile.Release -j 1 compiler_lrelease_make_all
+  make -j 1
+
+The reviewed WebJam build script included under webjam-packaging/ performs
+the complete fetch, source-contract validation, build, framework staging,
+ad-hoc signing, provenance generation, and verification flow. It packages
+only the architecture-specific QtConcurrent, QtCore, QtNetwork, and QtXml
+frameworks. It deliberately does not package QtGui, QtWidgets, QtMultimedia,
+or plugins. It checksum-verifies and includes the exact Qt 6.10.2 qtbase
+source archive and LGPLv3 notice beside the binary.
+
+The exact Apple clang and SDK build present on a produced binary is recorded
+in its provenance file. Pinned source and dependency versions make the build
+auditable and repeatable; this is not a claim that binaries from different
+Apple toolchain or SDK builds will be bit-for-bit identical.

@@ -12,10 +12,10 @@ or replace assets on a published tag.
 
 | Target | Runner | Preferred release asset | Portable fallback | Product scope |
 | --- | --- | --- | --- | --- |
-| Windows x64 | `windows-2025` | `WebJam-v<VERSION>-windows-x64-setup.exe` | `WebJam-windows-x64.zip` | Join/client |
-| Intel macOS | `macos-15-intel` | `WebJam-v<VERSION>-macos-x64.dmg` | `WebJam-macos-x64.zip` | Host and Join |
-| Apple Silicon macOS | `macos-14` | `WebJam-v<VERSION>-macos-arm64.dmg` | `WebJam-macos-arm64.zip` | Host and Join |
-| Linux x64 | `ubuntu-22.04` | `WebJam-linux-x64.zip` | — | Join/client on Ubuntu 22.04 x64 |
+| Windows x64 | `windows-2025` | `WebJam-v<VERSION>-windows-x64-UNSIGNED-TEST-ONLY-setup.exe` | `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip` | Join and Reference Studio |
+| Intel macOS | `macos-15-intel` | `WebJam-v<VERSION>-macos-x64-ADHOC-TEST-ONLY.dmg` | `WebJam-macos-x64-ADHOC-TEST-ONLY.zip` | Host, Join, and Reference Studio |
+| Apple Silicon macOS | `macos-14` | `WebJam-v<VERSION>-macos-arm64-ADHOC-TEST-ONLY.dmg` | `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip` | Host, Join, and Reference Studio |
+| Linux x64 | `ubuntu-22.04` | `WebJam-linux-x64.zip` | — | Join and Reference Studio on Ubuntu 22.04 x64 |
 
 Windows and Linux deliberately leave **Host a Jam** disabled. A release must
 not describe them as hosting replacements for the managed macOS Jamulus server.
@@ -32,13 +32,16 @@ against the exact attached hashes.
 
 Each candidate Mac DMG and ZIP contains `Install WebJam.command`,
 `Install WebJam - Remove Quarantine.command`, `READ ME FIRST.txt`, and fixed
-candidate metadata beside `WebJam.app`. The guided helper validates and installs
-the app, preserves quarantine, attempts launch, and opens the path to Apple's
-Open Anyway approval. The advanced helper performs the same validation, asks
-for explicit confirmation, and removes quarantine from the installed
-`WebJam.app` only. Neither path uses `sudo`, disables Gatekeeper, or changes
-another application. Both prefer `/Applications` and fall back to
-`~/Applications` when the system folder is not writable.
+candidate metadata beside `WebJam.app`. Dragging `WebJam.app` onto the
+Applications shortcut is the primary installation path because current macOS
+versions can block a quarantined `.command` file without offering app-bundle
+Open Anyway approval. The README documents explicit Terminal invocation for
+the optional helpers. The guided helper validates and installs the app,
+preserves quarantine, and attempts launch. The advanced helper performs the
+same validation, asks for explicit confirmation, and removes quarantine from
+the installed `WebJam.app` only. Neither helper uses `sudo`, disables
+Gatekeeper, or changes another application. Both prefer `/Applications` and
+fall back to `~/Applications` when the system folder is not writable.
 
 ## Automated build gates
 
@@ -50,7 +53,8 @@ as appropriate:
 - packaged version and exact source build ID;
 - expected native application and transport architecture;
 - transport SHA-256, embedded build ID, protocol hello, and clean shutdown;
-- required QSS, Webex HTML, Jamulus 3.12.2 payload, and license files;
+- required QSS, Jamulus 3.12.2 payload, and license files;
+- absence of the retired Qt WebEngine/Webex-widget runtime;
 - a real frozen Host/Join-dialog launch with an isolated home directory;
 - no startup exception or owned-process residue.
 
@@ -59,6 +63,17 @@ the target-specific files under `requirements-lock/`, with every distribution
 hash required. `pip check`, the full frozen graph, and interpreter identity are
 recorded in the build log. Dependency changes require regenerating all four
 locks and rerunning the full native matrix before signing.
+
+The same job runs `python tools/runtime_dependency_policy.py --check` before
+freezing. This compares all four locks with the reviewed runtime/build/excluded
+classification, rejects unattributed lock drift and selected GPL/AGPL Python
+runtime licenses, and proves the checked-in human notice and CycloneDX SBOM are
+deterministic. After PyInstaller runs, `--verify-bundle` requires the generated
+notice/SBOM plus checksum-pinned NumPy, SoundFile, and libsndfile license
+evidence inside the actual target bundle. MP3 import remains capability-gated
+by `soundfile.check_format("MP3")`; no package may claim MP3 import merely
+because SoundFile is installed. MP3 bounce is a separate, disabled-by-default
+adapter capability, and no default encoder adapter ships in this release.
 
 Linux additionally launches the extracted app with the packaged Jamulus client
 against a private dummy JACK graph. The gate requires authenticated loopback
@@ -72,7 +87,11 @@ location, verifies the installed version/build ID, x64 payload, transport
 manifest, and exact upstream Jamulus installer SHA-256, launches the installed
 app, checks both requested shortcuts, and uninstalls it. The gate proves owned
 files and shortcuts are removed while an unowned sentinel is preserved.
-Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload.
+Both portable and Setup paths are exercised from directories containing spaces.
+Ordinary Actions downloads are renamed `UNSIGNED-TEST-ONLY` before upload and
+are retained for 90 days as `webjam-windows-x64`. That artifact contains exactly
+the Setup, portable ZIP, and a verified two-entry
+`WebJam-v<VERSION>-windows-x64-SHA256SUMS.txt` manifest.
 
 A manual `workflow_dispatch` with `windows_signing_rehearsal=true` runs a
 separate job bound to the protected
@@ -135,11 +154,11 @@ certificate and API key beneath `RUNNER_TEMP`, imports exactly one Developer ID
 Application identity into an ephemeral keychain, verifies its Team ID, and
 preflights the notary API. `packaging/macos/release-trust.sh` then inventories
 and signs every collected Mach-O file and recognized code bundle from the
-inside out with Hardened Runtime and a secure timestamp. The Qt WebEngine
-helper receives its shipped JIT/runtime entitlement plist; the two Jamulus
-apps receive only `packaging/macos/Jamulus.entitlements`; WebJam receives
-`packaging/macos/WebJam.entitlements` and is sealed last. Production signing
-never uses `--deep`; deep verification is an additional final check.
+inside out with Hardened Runtime and a secure timestamp. The two Jamulus apps
+receive only `packaging/macos/Jamulus.entitlements`; WebJam receives
+`packaging/macos/WebJam.entitlements` and is sealed last. The component-policy
+gate rejects any retired Qt WebEngine runtime before signing. Production
+signing never uses `--deep`; deep verification is an additional final check.
 
 Each distributed outer container receives its own accepted `xcrun notarytool
 submit ... --wait --output-format json` result. CI retains and inspects both
@@ -160,9 +179,10 @@ manual rehearsals do not block the private candidate lane. If no
 eligible Windows PFX already exists, remote/provider-backed signing integration
 is still required. Missing credentials, an unexpected Windows publisher,
 rejected signatures/notarization, failed stapling, or failed platform trust
-assessment all stop the protected jobs. Do not create the release tag until
-both signing rehearsals succeed, physical acceptance is recorded, and GitHub
-immutable releases are enabled for this repository.
+assessment all stop the protected jobs. For a future production-trusted
+release, do not create its release tag until both signing rehearsals succeed,
+physical acceptance is recorded, and GitHub immutable releases are enabled.
+Those gates do not block the explicitly unsigned/ad-hoc private-candidate lane.
 
 Before provisioning any private key, a repository administrator must create
 two protected GitHub Environments:
@@ -202,6 +222,13 @@ Before publishing, record the exact artifact SHA-256 and complete:
 4. Gatekeeper/SmartScreen behavior appropriate to the actual signatures; an
    ad-hoc or unsigned result may be recorded only as private-candidate evidence,
    never as a production-trusted distribution pass.
+5. Reference Studio on each target: create a project in a path containing
+   spaces, import a supported backing file, save/reopen, verify waveform and
+   local playback, edit and move a named section, exercise mixer/automation,
+   review tempo analysis, perform a WAV and FLAC bounce, cancel one bounce, and
+   verify exact checksums plus absence of partial outputs. On supported physical
+   hardware, separately record input mapping, count-in, punch/cycle recording,
+   latency compensation, dropout/recovery behavior, and audible playback.
 
 If any gate is not run, report it as **NOT RUN**. A process launch, synthetic
 JACK graph, or connected roster is not evidence that a person heard audio.
@@ -221,10 +248,58 @@ and verify that inventory before publishing. The kit uses an Apple Personal
 Team for temporary owner-device installation; it is not a pre-signed iOS
 release asset and does not change the exact eight-file GitHub release inventory.
 
+The v0.20.0 source candidate added external-only Webex handoff and the
+capability-gated macOS Reference Track pilot. Its Mac package must retain the
+Pocket Stage kit and include the Reference Track modules from the same exact
+source/build identity. Automated package checks do not replace the explicitly
+**NOT RUN** physical Reference Track audibility and isolation gates.
+
+The v0.21.0 source candidate adds standalone Reference Studio projects. It
+retains Host/Join, schema-2 session Studio, Pocket Stage, external-only Webex,
+and the locked Reference Track pilot without reinterpreting their saved state.
+Package checks must exercise a project path containing spaces, immutable
+collected media, project plus schema-3 Studio save/reopen, atomic Save As,
+recovery discovery, waveform preparation, one deterministic local render, and
+WAV/FLAC bounce rollback and checksums. They must also prove the packaged
+runtime contains the reviewed notices and SBOM required by the Reference Studio
+decoder/mixer graph. MP3 bounce is unavailable unless a separately identified
+adapter passes its runtime self-test and license policy; no default adapter
+ships in this candidate.
+
+The exact v0.21.0 draft inventory is:
+
+- `WebJam-v0.21.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.21.0-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.21.0-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.21.0-SHA256SUMS.txt`
+
+The checksum file must contain exactly seven entries, one for each package and
+not for itself. Windows is unsigned. Both Mac architectures are ad-hoc signed
+and unnotarized. Physical interface routing, Reference Studio audibility,
+latency calibration, recording/recovery, long-session hardware use,
+SmartScreen/Gatekeeper behavior, signed trust, and notarization remain
+**NOT RUN** unless evidence names the exact asset and SHA-256.
+
 Candidate tag CI attaches the explicitly labeled unsigned Windows Setup and
 ZIP, both explicitly labeled ad-hoc Mac DMGs and ZIPs, and the Ubuntu ZIP to a
 draft. It generates, verifies, and attaches
 `WebJam-v<VERSION>-SHA256SUMS.txt` for that exact seven-package set. A
-maintainer verifies the inventory and warning text, publishes it as a
-non-prerelease, and explicitly marks it Latest. Any later production-trusted
-release still requires the credentialed rehearsals and physical gates above.
+maintainer first reviews the draft warning and CI evidence, then manually runs
+**Publish Verified WebJam Release** with that exact tag. The promotion workflow
+downloads the draft, rejects any inventory other than the seven packages plus
+the checksum manifest, verifies every checksum, publishes it as a
+non-prerelease with GitHub's explicit `--latest` setting, and finally proves
+that the `/releases/latest` endpoint reports the same tag and assets. Never
+publish the draft directly from the web page, because that bypasses this final
+inventory and Latest assertion. Any later production-trusted release still
+requires the credentialed rehearsals and physical gates above.
+
+For v0.21.0, completion means the verified promotion workflow has published the
+draft as a non-prerelease with GitHub's explicit **Latest** setting and the
+public `/releases/latest` response contains the exact inventory above. A green
+four-target matrix, retained Windows Actions artifact, pushed tag, or complete
+draft does not satisfy the release request on its own.

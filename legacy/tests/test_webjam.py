@@ -675,7 +675,7 @@ class TestConfiguration(unittest.TestCase):
         config = {
             'jamulus_server': '172.24.194.9',
             'jamulus_port': '22124',
-            'webex_url': 'https://webjam-sbx.webex.com/meet/webjam01'
+            'webex_url': 'https://example.webex.com/meet/example-room'
         }
         
         self.assertIn('jamulus_server', config)
@@ -1635,4 +1635,3 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
-

@@ -277,7 +277,7 @@ def _summary(
         return f"{mode.label} has notes but no captured decision yet."
     if participant_signal.count > 1:
         return f"{participant_signal.count} people are in the room; capture the first checkpoint."
-    return f"{mode.label} is ready; start with the shared goal."
+    return "No creative notes yet; capture the shared goal when you’re ready."
 
 
 def _next_step(

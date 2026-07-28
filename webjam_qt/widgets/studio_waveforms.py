@@ -27,7 +27,13 @@ from concurrent.futures import CancelledError, Executor, Future
 from dataclasses import dataclass
 from typing import Final
 
-from core.studio_project import StudioDocument, StudioRegion
+from core.song_media_catalog import SongMediaCatalog, SongMediaCatalogError
+from core.studio_project import (
+    STUDIO_PROJECT_SCHEMA_VERSION,
+    STUDIO_SONG_PROJECT_SCHEMA_VERSION,
+    StudioDocument,
+    StudioRegion,
+)
 from core.studio_source_catalog import (
     StudioSourceCatalog,
     StudioSourceCatalogError,
@@ -222,7 +228,7 @@ class StudioWaveformCoordinator:
 
         self._lock = threading.RLock()
         self._document: StudioDocument | None = None
-        self._catalog: StudioSourceCatalog | None = None
+        self._catalog: StudioSourceCatalog | SongMediaCatalog | None = None
         self._regions: dict[str, StudioRegion] = {}
         self._source_by_region: dict[str, WaveformSource] = {}
         self._generation = 0
@@ -248,21 +254,31 @@ class StudioWaveformCoordinator:
     def activate(
         self,
         document: StudioDocument,
-        catalog: StudioSourceCatalog,
+        catalog: StudioSourceCatalog | SongMediaCatalog,
     ) -> int:
         """Bind immutable region/source facts; may inspect trusted catalog state."""
 
         if not isinstance(document, StudioDocument):
             raise StudioWaveformCoordinatorError("activate requires a StudioDocument.")
-        if type(catalog) is not StudioSourceCatalog:
-            raise StudioWaveformCoordinatorError(
-                "activate requires a trusted StudioSourceCatalog."
+        if type(catalog) is StudioSourceCatalog:
+            matches = (
+                document.schema_version == STUDIO_PROJECT_SCHEMA_VERSION
+                and document.session_id == catalog.session_id
+                and document.take_id == catalog.primary_take_id
+                and document.project_sample_rate == catalog.project_sample_rate
             )
-        if (
-            document.session_id != catalog.session_id
-            or document.take_id != catalog.primary_take_id
-            or document.project_sample_rate != catalog.project_sample_rate
-        ):
+        elif type(catalog) is SongMediaCatalog:
+            matches = (
+                document.schema_version == STUDIO_SONG_PROJECT_SCHEMA_VERSION
+                and document.project_id == catalog.project_id
+                and document.project_sample_rate
+                == catalog.project.project_sample_rate
+            )
+        else:
+            raise StudioWaveformCoordinatorError(
+                "activate requires a trusted StudioSourceCatalog or SongMediaCatalog."
+            )
+        if not matches:
             raise StudioWaveformCoordinatorError(
                 "Studio document and waveform source catalog do not match."
             )
@@ -289,7 +305,10 @@ class StudioWaveformCoordinator:
             self._source_by_region = {}
 
         try:
-            catalog.assert_current()
+            if type(catalog) is StudioSourceCatalog:
+                catalog.assert_current()
+            else:
+                catalog.assert_current()
             active_regions = tuple(
                 region
                 for region in document.regions
@@ -298,16 +317,24 @@ class StudioWaveformCoordinator:
             sources: dict[tuple[str, str, str], WaveformSource] = dict(reusable_sources)
             source_by_region: dict[str, WaveformSource] = {}
             for region in active_regions:
-                source_key = (
-                    region.source_take_id,
-                    region.source_track_id,
-                    region.source_segment_id,
-                )
+                if type(catalog) is StudioSourceCatalog:
+                    source_key = (
+                        region.source_take_id,
+                        region.source_track_id,
+                        region.source_segment_id,
+                    )
+                else:
+                    source_key = (document.project_id, "media", region.source_media_id)
                 source = sources.get(source_key)
                 if source is None:
-                    source = WaveformSource._from_catalog_entry(
-                        catalog.resolve(*source_key)
-                    )
+                    if type(catalog) is StudioSourceCatalog:
+                        source = WaveformSource._from_catalog_entry(
+                            catalog.resolve(*source_key)
+                        )
+                    else:
+                        source = WaveformSource._from_song_catalog_entry(
+                            catalog.resolve(region.source_media_id)
+                        )
                     sources[source_key] = source
                 if (
                     region.source_start_frame < 0
@@ -321,7 +348,11 @@ class StudioWaveformCoordinator:
                         "A Studio region escapes its cataloged waveform source."
                     )
                 source_by_region[region.region_id] = source
-        except (StudioSourceCatalogError, StudioWaveformError) as exc:
+        except (
+            SongMediaCatalogError,
+            StudioSourceCatalogError,
+            StudioWaveformError,
+        ) as exc:
             raise StudioWaveformCoordinatorError(str(exc)) from exc
 
         with self._lock:

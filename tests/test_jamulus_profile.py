@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 import stat
@@ -24,6 +25,7 @@ from core.jamulus_profile import (
     StartupRole,
     StartupServerPhase,
     native_profile_fingerprint,
+    read_native_audio_device_names,
 )
 
 
@@ -84,6 +86,56 @@ def test_existing_native_profile_is_never_rewritten_and_normal_profile_is_untouc
     assert plan.profile_exists is True
     assert native_profile.read_text(encoding="utf-8") == existing
     assert normal_profile.read_text(encoding="utf-8") == "normal-musician-profile"
+
+
+def test_read_native_audio_device_names_uses_current_owned_profile(
+    tmp_path: Path,
+) -> None:
+    plan = _manager(tmp_path).plan(jamulus_version=PINNED_JAMULUS_VERSION)
+    selector = base64.b64encode(
+        b"in: Built-in Microphone/out: Built-in Output"
+    ).decode("ascii")
+    plan.profile_path.write_text(
+        f"<client><auddev_base64>{selector}</auddev_base64></client>",
+        encoding="utf-8",
+    )
+
+    assert read_native_audio_device_names(plan) == (
+        "Built-in Microphone",
+        "Built-in Output",
+    )
+
+
+@pytest.mark.parametrize(
+    "profile",
+    (
+        "<client/>",
+        "<client><auddev_base64>not-base64</auddev_base64></client>",
+        (
+            "<client><auddev_base64>"
+            + base64.b64encode(b"in: BlackHole 16ch/out: ").decode("ascii")
+            + "</auddev_base64></client>"
+        ),
+        (
+            "<client><auddev_base64>"
+            + base64.b64encode(
+                b"in: device/with/slash/out: Built-in Output"
+            ).decode("ascii")
+            + "</auddev_base64></client>"
+        ),
+    ),
+)
+def test_read_native_audio_device_names_fails_closed_and_path_free(
+    tmp_path: Path,
+    profile: str,
+) -> None:
+    plan = _manager(tmp_path).plan(jamulus_version=PINNED_JAMULUS_VERSION)
+    plan.profile_path.write_text(profile, encoding="utf-8")
+
+    with pytest.raises(JamulusNativeProfileError) as caught:
+        read_native_audio_device_names(plan)
+    assert "couldn't verify the primary Jamulus audio route" in str(caught.value)
+    assert str(tmp_path) not in str(caught.value)
 
 
 def test_profile_fingerprint_is_path_free_and_changes_with_native_profile_content(

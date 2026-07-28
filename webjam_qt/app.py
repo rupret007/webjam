@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QTimer, Signal
@@ -91,6 +91,11 @@ class WebJamApplication(QApplication):
                         platform=sys.platform,
                     )
                 except InvitationIngressError as exc:
+                    # The newest file-open event wins even when malformed.
+                    # Otherwise an older queued capability could launch after
+                    # WebJam has already told the musician the newer link was
+                    # refused.
+                    self._pending_invitation = None
                     self._pending_invitation_error = str(exc)
                     self.invitation_error.emit(str(exc))
                     return True
@@ -106,6 +111,16 @@ class WebJamApplication(QApplication):
         value = self._pending_invitation
         self._pending_invitation = None
         return value
+
+    def pending_invitation(self) -> Invitation | None:
+        """Return the newest typed invite without transferring its ownership."""
+
+        return self._pending_invitation
+
+    def invitation_is_pending(self, value: Invitation) -> bool:
+        """Return whether ``value`` is still the newest unacknowledged invite."""
+
+        return self._pending_invitation is value
 
     def acknowledge_invitation(self, value: Invitation) -> None:
         """Clear a just-delivered object without dropping a newer invite."""
@@ -123,6 +138,27 @@ def _invite_from_arguments(arguments: list[str]) -> BandInvite | None:
     """Preserve endpoint-only v1 links while refusing argv bearers."""
 
     return invitation_from_arguments(arguments)
+
+
+def _deliver_current_invitation(
+    app: WebJamApplication,
+    invitation: Invitation,
+    accept: Callable[[Invitation], bool],
+) -> bool:
+    """Deliver only the newest invite and acknowledge it only after acceptance.
+
+    File-open events can race a queued handoff between the launch dialog and
+    the main window.  Keeping the application slot until the destination has
+    explicitly accepted the typed object prevents both stale replay and silent
+    loss when a destination must refuse the invitation.
+    """
+
+    if not app.invitation_is_pending(invitation):
+        return False
+    if not bool(accept(invitation)):
+        return False
+    app.acknowledge_invitation(invitation)
+    return True
 
 
 def _configure_qt_attributes() -> None:
@@ -185,6 +221,15 @@ def _request_smoke_quit(window: ConductorWindow) -> None:
     window.close()
 
 
+def _show_live_invitation_error(
+    window: ConductorWindow,
+    message: object,
+) -> None:
+    """Render a late macOS invitation error without breaking Qt dispatch."""
+
+    window.flash_message(str(message), ms=5_000)
+
+
 def _bounded_smoke_exit_ms(default: int = 0) -> int:
     """Return a test-only bounded exit delay without affecting normal users."""
 
@@ -215,8 +260,9 @@ def _run_app() -> int:
     _configure_default_font(app)
     app.setStyleSheet(load_stylesheet())
 
-    # Every ordinary launch begins with the same two choices. Existing config
-    # supplies invisible defaults; it never skips the Host/Join decision.
+    # Every ordinary launch begins with the same three musician choices.
+    # Existing config supplies invisible live-session defaults; it never skips
+    # the Host / Join / offline Reference Studio decision.
     smoke_autostart = os.environ.get("WEBJAM_SMOKE_AUTOSTART_AUDIO") == "1"
     smoke_launch_only = (
         getattr(sys, "frozen", False)
@@ -244,15 +290,19 @@ def _run_app() -> int:
         launch_invite_handler = None
         launch_error_handler = None
         if isinstance(app, WebJamApplication):
+
             def _deliver_launch_invite(invitation: Invitation) -> None:
-                app.acknowledge_invitation(invitation)
-                launch.accept_invitation(invitation)
+                _deliver_current_invitation(
+                    app,
+                    invitation,
+                    launch.accept_invitation,
+                )
 
             launch_invite_handler = _deliver_launch_invite
             launch_error_handler = launch.show_ingress_error
             app.invitation_received.connect(launch_invite_handler)
             app.invitation_error.connect(launch_error_handler)
-            late_invitation = app.take_pending_invitation()
+            late_invitation = app.pending_invitation()
             if late_invitation is not None:
                 QTimer.singleShot(
                     0,
@@ -267,12 +317,10 @@ def _run_app() -> int:
                 )
         if smoke_launch_only:
             # Native release runners need a clean, bounded way to prove the
-            # frozen GUI reaches its real Host/Join surface. Rejecting the
+            # frozen GUI reaches its real launch surface. Rejecting the
             # modal launch dialog follows the ordinary no-session exit path
             # and never starts Jamulus or mutates saved settings.
-            QTimer.singleShot(
-                _bounded_smoke_exit_ms(default=5_000), launch.reject
-            )
+            QTimer.singleShot(_bounded_smoke_exit_ms(default=5_000), launch.reject)
         result = launch.exec()
         if isinstance(app, WebJamApplication) and launch_invite_handler is not None:
             try:
@@ -296,10 +344,15 @@ def _run_app() -> int:
         save_settings(settings)
         settings = load_settings(settings.config_file)
 
+    reference_studio_launch = bool(
+        launch is not None and launch.selected_role == "studio"
+    )
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
-        initial_title="Band Rehearsal",
+        initial_title=(
+            "Reference Studio" if reference_studio_launch else "Band Rehearsal"
+        ),
         operator_mode=operator_mode,
     )
     remote_invitation = (
@@ -319,6 +372,7 @@ def _run_app() -> int:
         ),
         remote_invitation=remote_invitation,
         operator_mode=operator_mode,
+        offline_reference_studio=reference_studio_launch,
     )
     remote_invitation = None
     # Qt may terminate the native event loop without returning from exec() on
@@ -326,35 +380,43 @@ def _run_app() -> int:
     # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so
     # Jamulus and the local companion service cannot be orphaned.
     app.aboutToQuit.connect(controller.shutdown)
-    controller.start_companion_api()  # optional localhost bridge for DAWs/editors
+    if not reference_studio_launch:
+        # The localhost companion belongs to live-session integrations.
+        controller.start_companion_api()
     if launch is not None and launch.selected_role == "join":
         window.session_strip.set_session_title(launch.session_name)
         controller._save_session_title()
     if isinstance(app, WebJamApplication):
+
         def _deliver_live_invite(invitation: Invitation) -> None:
-            app.acknowledge_invitation(invitation)
-            controller.accept_invitation(invitation)
+            _deliver_current_invitation(
+                app,
+                invitation,
+                controller.accept_invitation,
+            )
 
         app.invitation_received.connect(_deliver_live_invite)
         app.invitation_error.connect(
-            lambda message: window.flash_message(str(message), 5000)
+            lambda message: _show_live_invitation_error(window, message)
         )
-        late_invitation = app.take_pending_invitation()
+        late_invitation = app.pending_invitation()
         if late_invitation is not None:
             QTimer.singleShot(
                 0,
                 lambda invitation=late_invitation: _deliver_live_invite(invitation),
             )
     window.show()
-    # The role choice is already authorization to begin. The main window owns
-    # one non-modal Jamulus-native journey; it never presents WebJam input or
-    # output choices before launching the real music engine. Frozen smoke
-    # validation still uses the direct lifecycle hook for bounded packaging.
+    # Host/Join is authorization to begin the non-modal Jamulus-native journey.
+    # Reference Studio instead opens offline and does not start Jamulus.
     QTimer.singleShot(
         0,
         controller._on_launch_audio
         if smoke_autostart
-        else controller.begin_startup_journey,
+        else (
+            controller.begin_reference_studio_journey
+            if reference_studio_launch
+            else controller.begin_startup_journey
+        ),
     )
     if smoke_autostart:
         # Frozen-build validation needs to exercise the real desktop lifecycle
@@ -364,9 +426,7 @@ def _run_app() -> int:
         # environment value can never close an interactive session.
         smoke_exit_ms = _bounded_smoke_exit_ms()
         if 1_000 <= smoke_exit_ms <= 60_000:
-            QTimer.singleShot(
-                smoke_exit_ms, lambda: _request_smoke_quit(window)
-            )
+            QTimer.singleShot(smoke_exit_ms, lambda: _request_smoke_quit(window))
 
     previous_exception_hook = sys.excepthook
     sys.excepthook = _report_unhandled_exception
@@ -382,6 +442,24 @@ def run() -> int:
     """Run WebJam with one plain-language last-resort failure screen."""
     if (
         getattr(sys, "frozen", False)
+        and os.environ.get("WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME") == "1"
+    ):
+        try:
+            from services.reference_studio_packaged_smoke import (
+                run_frozen_reference_studio_smoke,
+            )
+
+            result_path = Path(
+                os.environ.get("WEBJAM_SMOKE_REFERENCE_STUDIO_RESULT", "")
+            )
+            return run_frozen_reference_studio_smoke(result_path=result_path)
+        except Exception:  # noqa: BLE001 - bounded CI-only frozen proof
+            logging.getLogger("webjam.qt").exception(
+                "Frozen Reference Studio runtime smoke failed"
+            )
+            return 1
+    if (
+        getattr(sys, "frozen", False)
         and os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME") == "1"
     ):
         try:
@@ -389,9 +467,7 @@ def run() -> int:
                 run_frozen_pocket_stage_smoke,
             )
 
-            result_path = Path(
-                os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RESULT", "")
-            )
+            result_path = Path(os.environ.get("WEBJAM_SMOKE_POCKET_STAGE_RESULT", ""))
             return run_frozen_pocket_stage_smoke(result_path=result_path)
         except Exception:  # noqa: BLE001 - bounded CI-only frozen proof
             logging.getLogger("webjam.qt").exception(

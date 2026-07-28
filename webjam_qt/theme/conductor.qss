@@ -666,6 +666,233 @@ QPushButton#LaunchSecondary:focus {
 }
 
 /* -------------------------------------------------------------------------
+ * Reference Studio project home
+ * ---------------------------------------------------------------------- */
+#StudioProjectHome {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#StudioHomeWordmark {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_LG}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.02em;
+}
+
+#StudioHomeTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: 32px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#StudioHomeSubtitle {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_MD}px;
+}
+
+#StudioHomeActions {
+    background-color: ${COLOR_BG_PANEL};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_LG}px;
+}
+
+QPushButton#StudioHomeNew,
+QPushButton#StudioHomeOpen {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_MD}px;
+    min-height: 44px;
+    padding: 0 ${SPACE_LG}px;
+    font-size: ${FONT_SIZE_BASE}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QPushButton#StudioHomeNew:hover,
+QPushButton#StudioHomeOpen:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#StudioHomeNew:focus,
+QPushButton#StudioHomeOpen:focus {
+    border: 2px solid ${COLOR_BORDER_FOCUS};
+}
+
+#StudioHomeRecentTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.06em;
+}
+
+QListWidget#StudioHomeRecentList {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+#StudioHomeEmptyRecent {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#ReferenceStudioShell,
+#ReferenceStudioWorkspace {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#ReferenceStudioMenuBar {
+    background-color: ${COLOR_BG_PANEL};
+    color: ${COLOR_TEXT_PRIMARY};
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ReferenceStudioMenuBar::item {
+    background-color: transparent;
+    padding: ${SPACE_XS}px ${SPACE_SM}px;
+}
+
+#ReferenceStudioMenuBar::item:selected {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+#ReferenceStudioHeader,
+#ReferenceStudioTransport,
+#ReferenceStudioFooter {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+#ReferenceStudioHeader {
+    border-bottom: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ReferenceStudioTransport {
+    border-bottom: 1px solid ${COLOR_BORDER_STRONG};
+}
+
+#ReferenceStudioFooter {
+    border-top: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ReferenceStudioHomeButton {
+    background-color: transparent;
+    border: none;
+    min-width: 38px;
+    min-height: 38px;
+}
+
+#ReferenceStudioHomeButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-radius: ${RADIUS_SM}px;
+}
+
+#ReferenceStudioProjectTitle {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_MD}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+#ReferenceStudioProjectState,
+#ReferenceStudioStatus,
+#ReferenceStudioAudioTruth {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_XS}px;
+}
+
+QPushButton#ReferenceStudioHeaderButton,
+QPushButton#ReferenceStudioInspectorButton,
+QPushButton#ReferenceStudioAddTrack,
+QPushButton#ReferenceStudioReviewTakes {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    min-height: 36px;
+    padding: 0 ${SPACE_MD}px;
+}
+
+QPushButton#ReferenceStudioHeaderButton:hover,
+QPushButton#ReferenceStudioInspectorButton:hover,
+QPushButton#ReferenceStudioAddTrack:hover,
+QPushButton#ReferenceStudioReviewTakes:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+    border-color: ${COLOR_TEXT_PRIMARY};
+}
+
+QPushButton#ReferenceStudioBounce {
+    background-color: ${COLOR_ACCENT_PRIMARY};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_SM}px;
+    min-height: 36px;
+    padding: 0 ${SPACE_LG}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+}
+
+QToolButton#ReferenceStudioTransportButton {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_BORDER_STRONG};
+    border-radius: ${RADIUS_SM}px;
+    min-width: 36px;
+    min-height: 34px;
+    font-size: ${FONT_SIZE_MD}px;
+}
+
+QToolButton#ReferenceStudioTransportButton:hover {
+    background-color: ${COLOR_BG_CARD_HOVER};
+}
+
+#ReferenceStudioRecordButton {
+    color: ${COLOR_ACCENT_RECORD};
+}
+
+#ReferenceStudioRecordButton[recording="true"] {
+    background-color: ${COLOR_ACCENT_RECORD};
+    color: ${COLOR_TEXT_PRIMARY};
+}
+
+#ReferenceStudioPosition,
+#ReferenceStudioElapsed {
+    color: ${COLOR_TEXT_PRIMARY};
+    background-color: ${COLOR_BG_INPUT};
+    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border-radius: ${RADIUS_SM}px;
+    padding: ${SPACE_XS}px ${SPACE_SM}px;
+    font-family: ${FONT_FAMILY_MONO};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#ReferenceStudioTrackLibrary,
+#ReferenceStudioInspector {
+    background-color: ${COLOR_BG_PANEL};
+}
+
+#ReferenceStudioTrackLibrary {
+    border-right: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ReferenceStudioInspector {
+    border-left: 1px solid ${COLOR_BORDER_SUBTLE};
+}
+
+#ReferenceStudioEditor {
+    background-color: ${COLOR_BG_BASE};
+}
+
+#ReferenceStudioSectionTitle {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_BOLD};
+    letter-spacing: 0.08em;
+}
+
+#ReferenceStudioBackingName,
+#ReferenceStudioInspectorSummary {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+/* -------------------------------------------------------------------------
  * Band Check and settings
  * ---------------------------------------------------------------------- */
 #BandCheckDialog {

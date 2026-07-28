@@ -36,12 +36,18 @@ def settings(tmp_path):
 
 
 def make_dialog(settings, *, client="/bundle/Jamulus", server="/bundle/Server"):
-    with patch.object(sys, "platform", "darwin"), patch(
-        "services.bridge_service._bundled_jamulus_candidate", return_value=client,
-    ), patch(
-        "services.bridge_service._bundled_jamulus_server_candidate",
-        return_value=server,
-    ), patch.object(Path, "is_file", return_value=False):
+    with (
+        patch.object(sys, "platform", "darwin"),
+        patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value=client,
+        ),
+        patch(
+            "services.bridge_service._bundled_jamulus_server_candidate",
+            return_value=server,
+        ),
+        patch.object(Path, "is_file", return_value=False),
+    ):
         return FirstRunSetupDialog(settings)
 
 
@@ -99,10 +105,14 @@ def test_join_shows_single_server_address(qapp, settings):
 
 
 def test_host_is_unavailable_off_macos(qapp, settings):
-    with patch.object(sys, "platform", "win32"), patch(
-        "services.bridge_service._bundled_jamulus_candidate",
-        return_value="/bundle/Jamulus",
-    ), patch.object(Path, "is_file", return_value=False):
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/bundle/Jamulus",
+        ),
+        patch.object(Path, "is_file", return_value=False),
+    ):
         dialog = FirstRunSetupDialog(settings)
     assert not dialog._host_card.isEnabled()
     assert "macOS" in dialog._host_card.description()
@@ -122,7 +132,9 @@ def test_second_step_is_compact_and_defaults_to_talkback(qapp, settings):
     assert dialog._step == 1
     assert dialog._progress.text() == "2 of 2"
     assert dialog._primary.text() == "Finish Setup"
-    assert "JAMULUS" in dialog.findChild(type(dialog._title), "FirstRunSignalFlow").text()
+    assert (
+        "JAMULUS" in dialog.findChild(type(dialog._title), "FirstRunSignalFlow").text()
+    )
     assert not dialog._capture.isChecked()
     assert dialog._device.isHidden()
 
@@ -157,7 +169,7 @@ def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
     assert data["jamulus_port"] == 22124
     assert data["jamulus_rpc_port"] == 22222
     assert data["server_rpc_port"] == 22240
-    assert data["webex_audio_mode"] == "talkback"
+    assert "webex_audio_mode" not in data
     assert data["local_capture_enabled"] is False
     assert "JamulusServer" in data["server_rpc_secret_file"]
     assert "/bundle/Jamulus" not in data["jamulus_candidates"]
@@ -216,7 +228,7 @@ def test_geometry_has_no_clipping_at_supported_sizes(qapp, settings, size):
     dialog.close()
 
 
-def test_startup_always_asks_host_or_join_then_opens_native_journey(qapp):
+def test_startup_asks_for_a_musician_path_then_opens_native_journey(qapp):
     from webjam_qt import app as app_module
 
     initial = AppSettings(config_file="/missing/config.json")
@@ -229,21 +241,67 @@ def test_startup_always_asks_host_or_join_then_opens_native_journey(qapp):
     qt_app.exec.return_value = 0
     controller = MagicMock()
     window = MagicMock()
-    with patch.object(app_module, "load_settings", side_effect=[initial, saved]), \
-         patch.object(
-             app_module, "LaunchDialog", return_value=launcher,
-         ) as launcher_class, patch.object(
-             app_module.QApplication, "instance", return_value=qt_app,
-         ), patch.object(app_module, "load_stylesheet", return_value=""), \
-         patch.object(app_module, "ConductorWindow", return_value=window), \
-         patch.object(
-             app_module, "ApplicationController", return_value=controller,
-         ), patch.object(app_module.QTimer, "singleShot") as single_shot:
+    with (
+        patch.object(app_module, "load_settings", side_effect=[initial, saved]),
+        patch.object(
+            app_module,
+            "LaunchDialog",
+            return_value=launcher,
+        ) as launcher_class,
+        patch.object(
+            app_module.QApplication,
+            "instance",
+            return_value=qt_app,
+        ),
+        patch.object(app_module, "load_stylesheet", return_value=""),
+        patch.object(app_module, "ConductorWindow", return_value=window),
+        patch.object(
+            app_module,
+            "ApplicationController",
+            return_value=controller,
+        ),
+        patch.object(app_module.QTimer, "singleShot") as single_shot,
+    ):
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
     qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
+    single_shot.assert_called_once_with(0, controller.begin_startup_journey)
+
+
+def test_reference_studio_launch_skips_live_services_and_audio_journey(qapp):
+    from webjam_qt import app as app_module
+
+    initial = AppSettings(config_file="/missing/config.json")
+    loaded = AppSettings(config_file="/missing/config.json")
+    launcher = MagicMock()
+    launcher.exec.return_value = SimpleSettingsDialog.DialogCode.Accepted
+    launcher.selected_role = "studio"
+    launcher.session_name = "Reference Studio"
+    qt_app = MagicMock()
+    qt_app.exec.return_value = 0
+    controller = MagicMock()
+    window = MagicMock()
+    with (
+        patch.object(app_module, "load_settings", side_effect=[initial, loaded]),
+        patch.object(app_module, "LaunchDialog", return_value=launcher),
+        patch.object(app_module.QApplication, "instance", return_value=qt_app),
+        patch.object(app_module, "load_stylesheet", return_value=""),
+        patch.object(app_module, "ConductorWindow", return_value=window),
+        patch.object(
+            app_module,
+            "ApplicationController",
+            return_value=controller,
+        ),
+        patch.object(app_module.QTimer, "singleShot") as single_shot,
+    ):
+        assert app_module.run() == 0
+
+    controller.start_companion_api.assert_not_called()
+    controller.begin_startup_journey.assert_not_called()
+    controller._on_launch_audio.assert_not_called()
     single_shot.assert_called_once_with(
-        0, controller.begin_startup_journey
+        0,
+        controller.begin_reference_studio_journey,
     )
 
 
@@ -255,19 +313,27 @@ def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):
     qt_app.exec.return_value = 0
     controller = MagicMock()
     window = MagicMock()
-    with patch.dict(os.environ, {
-             "WEBJAM_SMOKE_AUTOSTART_AUDIO": "1",
-             "WEBJAM_SMOKE_EXIT_MS": "15000",
-         }), \
-         patch.object(app_module, "load_settings", return_value=settings), \
-         patch.object(Path, "exists", return_value=True), \
-         patch.object(app_module, "LaunchDialog") as launcher_class, \
-         patch.object(app_module.QApplication, "instance", return_value=qt_app), \
-         patch.object(app_module, "load_stylesheet", return_value=""), \
-         patch.object(app_module, "ConductorWindow", return_value=window), \
-         patch.object(
-             app_module, "ApplicationController", return_value=controller,
-         ), patch.object(app_module.QTimer, "singleShot") as single_shot:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "WEBJAM_SMOKE_AUTOSTART_AUDIO": "1",
+                "WEBJAM_SMOKE_EXIT_MS": "15000",
+            },
+        ),
+        patch.object(app_module, "load_settings", return_value=settings),
+        patch.object(Path, "exists", return_value=True),
+        patch.object(app_module, "LaunchDialog") as launcher_class,
+        patch.object(app_module.QApplication, "instance", return_value=qt_app),
+        patch.object(app_module, "load_stylesheet", return_value=""),
+        patch.object(app_module, "ConductorWindow", return_value=window),
+        patch.object(
+            app_module,
+            "ApplicationController",
+            return_value=controller,
+        ),
+        patch.object(app_module.QTimer, "singleShot") as single_shot,
+    ):
         assert app_module.run() == 0
     launcher_class.assert_not_called()
     qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
@@ -287,18 +353,35 @@ def test_frozen_launch_only_smoke_closes_real_role_dialog_cleanly(qapp):
     launcher = MagicMock()
     dialog_code = app_module.LaunchDialog.DialogCode
     launcher.exec.return_value = dialog_code.Rejected
-    with patch.dict(os.environ, {
-             "WEBJAM_SMOKE_LAUNCH_ONLY": "1",
-             "WEBJAM_SMOKE_EXIT_MS": "4000",
-         }), patch.object(
-             app_module.sys, "frozen", True, create=True,
-         ), patch.object(
-             app_module, "load_settings", return_value=settings,
-         ), patch.object(
-             app_module, "LaunchDialog", return_value=launcher,
-         ) as launcher_class, patch.object(
-             app_module.QTimer, "singleShot",
-         ) as single_shot:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "WEBJAM_SMOKE_LAUNCH_ONLY": "1",
+                "WEBJAM_SMOKE_EXIT_MS": "4000",
+            },
+        ),
+        patch.object(
+            app_module.sys,
+            "frozen",
+            True,
+            create=True,
+        ),
+        patch.object(
+            app_module,
+            "load_settings",
+            return_value=settings,
+        ),
+        patch.object(
+            app_module,
+            "LaunchDialog",
+            return_value=launcher,
+        ) as launcher_class,
+        patch.object(
+            app_module.QTimer,
+            "singleShot",
+        ) as single_shot,
+    ):
         launcher_class.DialogCode = dialog_code
         assert app_module.run() == 0
 
@@ -321,6 +404,35 @@ def test_frozen_pocket_stage_runtime_smoke_bypasses_interactive_qt(qapp, tmp_pat
         ),
         patch(
             "services.pocket_stage_packaged_smoke.run_frozen_pocket_stage_smoke",
+            return_value=0,
+        ) as smoke,
+        patch.object(app_module, "_run_app") as interactive,
+    ):
+        assert app_module.run() == 0
+
+    smoke.assert_called_once_with(result_path=tmp_path / "result.txt")
+    interactive.assert_not_called()
+
+
+def test_frozen_reference_studio_runtime_smoke_bypasses_interactive_qt(
+    qapp,
+    tmp_path,
+):
+    from webjam_qt import app as app_module
+
+    with (
+        patch.object(app_module.sys, "frozen", True, create=True),
+        patch.dict(
+            os.environ,
+            {
+                "WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME": "1",
+                "WEBJAM_SMOKE_REFERENCE_STUDIO_RESULT": str(tmp_path / "result.txt"),
+            },
+            clear=False,
+        ),
+        patch(
+            "services.reference_studio_packaged_smoke."
+            "run_frozen_reference_studio_smoke",
             return_value=0,
         ) as smoke,
         patch.object(app_module, "_run_app") as interactive,

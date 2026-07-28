@@ -18,11 +18,13 @@ let package = Package(
             dependencies: ["PocketStageProtocol"],
             path: "PocketStage",
             exclude: [
+                "Assets.xcassets",
                 "Info.plist",
                 "Info.plist.template",
                 "PairingQRScanner.swift",
                 "PocketStageApp.swift",
-                "PocketStageTabView.swift"
+                "PocketStageTabView.swift",
+                "WebJamBrandHeader.swift"
             ],
             sources: ["StageSocket.swift", "StageConnectionModel.swift"]
         ),

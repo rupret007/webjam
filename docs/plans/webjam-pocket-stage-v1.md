@@ -45,7 +45,7 @@ changed from the phone.
 ## Owner-device setup boundary
 
 There is no packaged iOS app or App Store/TestFlight build. On the development
-Mac, either use the setup kit carried by the matching v0.19.0 Mac candidate or
+Mac, either use the setup kit carried by the matching current Mac candidate or
 generate it from source:
 
 1. Install Xcode and add the owner's Apple ID in **Xcode → Settings → Accounts**.

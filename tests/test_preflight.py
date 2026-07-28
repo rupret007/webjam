@@ -295,6 +295,19 @@ class TestReadyCheck(unittest.TestCase):
         self.assertFalse(item.required)
         self.assertIn("https", item.detail.lower())
 
+    def test_webex_control_character_fails_instead_of_being_trimmed(self):
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                webex_url="\nhttps://org.webex.com/meet/band",
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+                rep = preflight.run_ready_check(s)
+
+        item = next(i for i in rep.items if i.name == "Webex companion")
+        self.assertFalse(item.ok)
+        self.assertIn("control characters", item.detail)
+
     def test_non_webex_url_fails(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(
@@ -308,6 +321,29 @@ class TestReadyCheck(unittest.TestCase):
         self.assertFalse(item.ok)
         self.assertFalse(item.required)
         self.assertIn("webex.com", item.detail)
+
+    def test_webex_success_exposes_hostname_but_not_private_destination(self):
+        private_path = "private-room"
+        private_query = "meeting-secret"
+        with tempfile.NamedTemporaryFile() as jam:
+            s = _settings(
+                jamulus_candidates=[jam.name],
+                webex_url=(
+                    f"https://team.webex.com/meet/{private_path}"
+                    f"?token={private_query}#lobby"
+                ),
+            )
+            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio):
+                rep = preflight.run_ready_check(s)
+
+        item = next(i for i in rep.items if i.name == "Webex companion")
+        self.assertTrue(item.ok)
+        self.assertFalse(item.required)
+        self.assertEqual(
+            item.detail, "team.webex.com configured — opens externally"
+        )
+        self.assertNotIn(private_path, rep.to_text())
+        self.assertNotIn(private_query, rep.to_text())
 
     def test_to_text_marks_failures(self):
         s = _settings(jamulus_candidates=[], webex_url="")

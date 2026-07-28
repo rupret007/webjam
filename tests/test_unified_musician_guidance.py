@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -12,12 +13,16 @@ from PySide6.QtWidgets import QApplication
 
 from core.musician_guidance import GuidanceState, StudioGuidanceFacts
 from core.session_conductor import (
+    CleanupState,
     EvidenceState,
     ExportState,
     GuestMediaState,
+    MusicPathState,
+    ProcessState,
     SessionConductorPhase,
     SessionPrimaryAction,
 )
+from core.session_lifecycle import SessionLifecyclePhase
 from core.settings import AppSettings
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet
@@ -192,6 +197,210 @@ def test_native_setup_and_exceptional_recovery_share_the_same_copy(tmp_path):
         assert window.participant_grid._empty_title.text() == guidance.title
         assert window.session_canvas._guidance_status.text() == guidance.title
     finally:
+        controller._startup_attempt = None
+        _close(controller, window, old_home)
+
+
+def test_new_guest_startup_cannot_terminalize_on_previous_stopped_state(tmp_path):
+    """The generation-bound attempt outranks the prior session's clean Stop."""
+
+    controller, window, old_home = _controller(
+        tmp_path,
+        host_server_enabled=False,
+        jamulus_server="192.168.1.42",
+    )
+    try:
+        controller.bridge.jamulus_state = "Stopped"
+        controller.bridge.jamulus_launch_intended = False
+        controller._conductor_setup_requested = True
+        token = controller._start_session_conductor_attempt("guest")
+        controller._startup_attempt = {
+            "generation": 2,
+            "role": "guest",
+            "phase": "launching_client",
+            "conductor_token": token,
+            "cancel_event": threading.Event(),
+        }
+
+        controller._render_startup_journey()
+
+        snapshot = controller.session_conductor.snapshot
+        assert snapshot.token == token
+        assert snapshot.facts.music_path is MusicPathState.STARTING
+        assert snapshot.presentation.phase is SessionConductorPhase.JOINING
+        assert snapshot.presentation.phase is not SessionConductorPhase.FAILED
+
+        controller.audio.connected = True
+        controller.bridge.jamulus_state = "Running"
+        controller._render_startup_journey()
+
+        authenticated = controller.session_conductor.snapshot
+        assert authenticated.token == token
+        assert authenticated.facts.music_path is MusicPathState.AUTHENTICATED
+        assert authenticated.presentation.phase is not SessionConductorPhase.FAILED
+    finally:
+        controller.audio.connected = False
+        controller._startup_attempt = None
+        _close(controller, window, old_home)
+
+
+def test_new_host_startup_marks_prelaunch_server_and_music_as_starting(tmp_path):
+    """The first host render is truthful before its server worker is queued."""
+
+    controller, window, old_home = _controller(
+        tmp_path,
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    try:
+        controller.bridge.jamulus_state = "Stopped"
+        controller.bridge.jamulus_launch_intended = False
+        controller.bridge.hosted_server_alive = mock.Mock(return_value=False)
+        controller._conductor_setup_requested = True
+        token = controller._start_session_conductor_attempt("host")
+        controller._startup_attempt = {
+            "generation": 2,
+            "role": "host",
+            "phase": "starting_server",
+            "conductor_token": token,
+            "cancel_event": threading.Event(),
+        }
+
+        controller._render_startup_journey()
+
+        snapshot = controller.session_conductor.snapshot
+        assert snapshot.token == token
+        assert snapshot.facts.music_path is MusicPathState.STARTING
+        assert snapshot.facts.host_server_process is ProcessState.STARTING
+        assert snapshot.presentation.phase is SessionConductorPhase.STARTING_HOST
+        assert snapshot.presentation.phase is not SessionConductorPhase.FAILED
+
+        controller.bridge.hosted_server_alive.return_value = True
+        controller.audio.connected = True
+        controller.bridge.jamulus_state = "Running"
+        controller._render_startup_journey()
+
+        authenticated = controller.session_conductor.snapshot
+        assert authenticated.token == token
+        assert authenticated.facts.music_path is MusicPathState.AUTHENTICATED
+        assert authenticated.facts.host_server_process is ProcessState.RUNNING
+        assert authenticated.presentation.phase is not SessionConductorPhase.FAILED
+    finally:
+        controller.audio.connected = False
+        controller.bridge.hosted_server_alive.return_value = False
+        controller._startup_attempt = None
+        _close(controller, window, old_home)
+
+
+def test_failed_native_attempt_still_exposes_terminal_stopped_state(tmp_path):
+    """Only active startup phases may mask the bridge's terminal evidence."""
+
+    controller, window, old_home = _controller(
+        tmp_path,
+        host_server_enabled=False,
+        jamulus_server="192.168.1.42",
+    )
+    try:
+        controller.bridge.jamulus_state = "Stopped"
+        controller.bridge.jamulus_launch_intended = False
+        controller._conductor_setup_requested = True
+        token = controller._start_session_conductor_attempt("guest")
+        controller._startup_attempt = {
+            "generation": 2,
+            "role": "guest",
+            "phase": "failed",
+            "conductor_token": token,
+            "cancel_event": threading.Event(),
+        }
+        controller._transition_lifecycle(
+            SessionLifecyclePhase.FAILED_RECOVERABLE,
+            "Native startup failed",
+        )
+
+        controller._render_startup_journey()
+
+        snapshot = controller.session_conductor.snapshot
+        assert snapshot.facts.music_path is MusicPathState.FAILED
+        assert snapshot.presentation.phase is SessionConductorPhase.FAILED
+        assert snapshot.presentation.retry_safe is True
+    finally:
+        controller._startup_attempt = None
+        _close(controller, window, old_home)
+
+
+def test_stale_or_cancelled_startup_cannot_mask_terminal_bridge_truth(tmp_path):
+    controller, window, old_home = _controller(
+        tmp_path,
+        host_server_enabled=False,
+        jamulus_server="192.168.1.42",
+    )
+    try:
+        controller.bridge.jamulus_state = "Stopped"
+        controller.bridge.jamulus_launch_intended = False
+        controller._conductor_setup_requested = True
+        stale_token = controller._start_session_conductor_attempt("guest")
+        controller.session_conductor.reset_to_idle("guest")
+        controller._start_session_conductor_attempt("guest")
+        controller._startup_attempt = {
+            "generation": 2,
+            "role": "guest",
+            "phase": "launching_client",
+            "conductor_token": stale_token,
+            "cancel_event": threading.Event(),
+        }
+        assert (
+            controller._session_conductor_facts().music_path
+            is MusicPathState.FAILED
+        )
+
+        current_token = controller.session_conductor.token
+        cancelled = threading.Event()
+        cancelled.set()
+        controller._startup_attempt = {
+            "generation": 3,
+            "role": "guest",
+            "phase": "native_sound_setup",
+            "conductor_token": current_token,
+            "cancel_event": cancelled,
+        }
+        assert (
+            controller._session_conductor_facts().music_path
+            is MusicPathState.FAILED
+        )
+    finally:
+        controller._startup_attempt = None
+        _close(controller, window, old_home)
+
+
+def test_cancelling_startup_with_cleanup_underway_remains_ending(tmp_path):
+    controller, window, old_home = _controller(
+        tmp_path,
+        host_server_enabled=False,
+        jamulus_server="192.168.1.42",
+    )
+    try:
+        controller.bridge.jamulus_state = "Stopped"
+        controller.bridge.jamulus_launch_intended = False
+        controller._conductor_setup_requested = True
+        token = controller._start_session_conductor_attempt("guest")
+        cancelled = threading.Event()
+        cancelled.set()
+        controller._startup_attempt = {
+            "generation": 2,
+            "role": "guest",
+            "phase": "cancelling",
+            "conductor_token": token,
+            "cancel_event": cancelled,
+        }
+        controller.audio.stopping = True
+
+        controller._render_startup_journey()
+
+        snapshot = controller.session_conductor.snapshot
+        assert snapshot.facts.cleanup is CleanupState.ENDING
+        assert snapshot.presentation.phase is SessionConductorPhase.ENDING
+    finally:
+        controller.audio.stopping = False
         controller._startup_attempt = None
         _close(controller, window, old_home)
 

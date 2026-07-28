@@ -238,6 +238,61 @@ class TestSessionStrip(unittest.TestCase):
         s._video_button.click()
         self.assertEqual(len(results), 1)
 
+    def test_webex_menu_label_recovers_after_link_is_configured(self):
+        s = self._strip()
+        s.set_video_configured(False)
+        self.assertEqual(s._video_action.text(), "Add Webex / Conversation")
+        s.set_video_configured(True)
+        self.assertEqual(s._video_action.text(), "Webex / Conversation")
+
+    def test_every_more_menu_action_emits_its_semantic_request(self):
+        s = self._strip()
+        tools: list[str] = []
+        video: list[bool] = []
+        s.tool_requested.connect(tools.append)
+        s.join_video_requested.connect(lambda: video.append(True))
+        expected_tools = {
+            "Audio Settings in Jamulus": "audio_settings",
+            "Recording Setup": "recording_setup",
+            "Reference Track…": "reference_track",
+            "Studio": "takes",
+            "Notes": "canvas",
+            "Use iPhone as Pocket Stage…": "pocket_stage",
+            "Band Check / Verify Sound\tF2": "diagnostics",
+            "Help": "help",
+            "Support": "support",
+            "About WebJam": "about",
+            "WebJam Settings": "settings",
+        }
+        actions = {
+            action.text(): action
+            for action in s._tools_button.menu().actions()
+            if not action.isSeparator()
+        }
+
+        self.assertTrue(expected_tools.keys() <= actions.keys())
+        for label, request in expected_tools.items():
+            with self.subTest(label=label):
+                tools.clear()
+                actions[label].trigger()
+                self.assertEqual(tools, [request])
+
+        actions["Webex / Conversation"].trigger()
+        self.assertEqual(video, [True])
+
+    def test_band_check_menu_actions_emit_once(self):
+        s = self._strip()
+        ready: list[bool] = []
+        practice: list[bool] = []
+        s.ready_check_requested.connect(lambda: ready.append(True))
+        s.practice_requested.connect(lambda: practice.append(True))
+
+        s._ready_action.trigger()
+        s._practice_action.trigger()
+
+        self.assertEqual(ready, [True])
+        self.assertEqual(practice, [True])
+
     def test_mode_changed_signal_emits_on_picker_change(self):
         s = self._strip()
         results = []
@@ -298,6 +353,14 @@ class TestSessionStrip(unittest.TestCase):
             ) + 40,
         )
         s.close()
+
+    def test_cleanup_retry_action_is_visible_and_named(self):
+        s = self._strip()
+        s.set_audio_state("Try Leave Jam", enabled=True)
+
+        self.assertFalse(s._audio_button.isHidden())
+        self.assertTrue(s._audio_button.isEnabled())
+        self.assertEqual(s._audio_button.accessibleName(), "Try Leave Jam")
 
     def test_recording_validation_and_attention_states_are_explicit(self):
         s = self._strip()
@@ -391,6 +454,31 @@ class TestParticipantGrid(unittest.TestCase):
         from webjam_qt.widgets.webex_embed import WebexEmbed
         embed = WebexEmbed()
         self.assertLessEqual(embed.maximumHeight(), 96)
+
+    def test_webex_launch_status_updates_accessible_truth(self):
+        from unittest.mock import patch
+
+        from PySide6.QtGui import QAccessible
+
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+
+        embed = WebexEmbed()
+        with patch.object(QAccessible, "updateAccessibility") as announce:
+            embed.set_launch_status("Opened externally")
+
+        self.assertEqual(
+            embed._status_label.accessibleName(),
+            "Webex launch status",
+        )
+        self.assertEqual(
+            embed._status_label.accessibleDescription(),
+            "Opened externally—finish joining in Webex.",
+        )
+        self.assertEqual(
+            embed._fallback_btn.accessibleDescription(),
+            "Opened externally—finish joining in Webex.",
+        )
+        announce.assert_called_once()
 
     def test_set_participants_creates_cards(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -644,6 +732,108 @@ class TestConductorWindow(unittest.TestCase):
         w = self._window()
         w.flash_message("Test message", ms=100)
 
+    def test_help_copy_names_the_discoverable_studio_menu_item(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("More → Studio", body)
+        self.assertIn("build a song project", body)
+        self.assertIn("review completed session takes", body)
+        self.assertNotIn("Multitrack Studio", body)
+
+    def test_help_copy_uses_real_macos_shortcut_modifiers(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "sys.platform",
+            "darwin",
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("⌘1 / ⌘2 / ⌘3 — Live / Notes / Studio", body)
+        self.assertIn(
+            "⌘S / ⌘O — Save / load your monitor mix while Live is open",
+            body,
+        )
+        self.assertIn("Control+Shift+R — Reset every fader", body)
+        self.assertNotIn("Ctrl+1", body)
+
+    def test_about_copy_reports_version_build_target_and_trust(self):
+        w = self._window()
+        from unittest import mock
+
+        with mock.patch(
+            "core.build_info.build_id",
+            return_value="a" * 40,
+        ), mock.patch(
+            "core.build_info.desktop_target",
+            return_value="macos-arm64",
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text, mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setDetailedText",
+        ) as set_detail:
+            w.show_about()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("WebJam v0.21.0", body)
+        self.assertIn("aaaaaaaaaaaa", body)
+        self.assertIn("macos-arm64", body)
+        self.assertIn("Private test candidate", body)
+        self.assertIn("not Apple-notarized", body)
+        set_detail.assert_called_once_with(f"Full build ID: {'a' * 40}")
+
+    def test_about_trust_copy_matches_the_packaged_desktop_target(self):
+        w = self._window()
+        from unittest import mock
+
+        expected = {
+            "macos-arm64": ("ad-hoc signed", "not Apple-notarized"),
+            "macos-x64": ("ad-hoc signed", "not Apple-notarized"),
+            "windows-x64": ("Windows test build is unsigned", "private testing only"),
+            "linux-x64": ("Linux build is an unsigned portable", "test candidate"),
+            "": ("untrusted private test candidate", "verify its package identity"),
+        }
+        for target, phrases in expected.items():
+            with self.subTest(target=target or "unknown"), mock.patch(
+                "core.build_info.build_id",
+                return_value="b" * 40,
+            ), mock.patch(
+                "core.build_info.desktop_target",
+                return_value=target,
+            ), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.exec",
+                return_value=0,
+            ), mock.patch(
+                "PySide6.QtWidgets.QMessageBox.setText",
+            ) as set_text:
+                w.show_about()
+
+            body = set_text.call_args.args[0]
+            for phrase in phrases:
+                self.assertIn(phrase, body)
+            if not target.startswith("macos-"):
+                self.assertNotIn("Apple-notarized", body)
+
     def test_fullscreen_toggle_roundtrip(self):
         w = self._window()
         # just ensure the methods exist and don't raise
@@ -653,6 +843,63 @@ class TestConductorWindow(unittest.TestCase):
     def test_settings_shortcut_exists(self):
         w = self._window()
         self.assertIsNotNone(w._settings_shortcut)
+
+    def test_live_session_shortcuts_cannot_compete_with_studio_commands(self):
+        from PySide6.QtCore import Qt
+
+        w = self._window()
+        for shortcut in (
+            w._save_mix_shortcut,
+            w._load_mix_shortcut,
+            w._save_mix_as_shortcut,
+            w._load_mix_from_shortcut,
+            w._timestamp_shortcut,
+            w._practice_shortcut,
+            w._mute_all_shortcut,
+            w._reset_faders_shortcut,
+        ):
+            self.assertIs(shortcut.parent(), w.center_splitter)
+            self.assertEqual(
+                shortcut.context(),
+                Qt.ShortcutContext.WidgetWithChildrenShortcut,
+            )
+
+    def test_offline_reference_studio_disables_hidden_live_navigation(self):
+        w = self._window()
+        w.show_reference_studio_only()
+        self.assertTrue(w._reference_studio_only)
+        self.assertFalse(w.session_strip.isVisible())
+        self.assertFalse(w.session_hud.isVisible())
+        self.assertFalse(w.session_controls.isVisible())
+        self.assertFalse(w.side_rail.isVisible())
+        self.assertFalse(w._title_shortcut.isEnabled())
+        self.assertFalse(w._ready_check_shortcut.isEnabled())
+        self.assertTrue(
+            all(not shortcut.isEnabled() for shortcut in w._navigation_shortcuts)
+        )
+        self.assertIs(
+            w.workspace_stack.currentWidget(),
+            w.reference_studio,
+        )
+
+    def test_offline_reference_studio_help_does_not_describe_live_setup(self):
+        w = self._window()
+        from unittest import mock
+
+        w.show_reference_studio_only()
+        with mock.patch(
+            "PySide6.QtWidgets.QMessageBox.exec",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QMessageBox.setText",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        self.assertIn("Build and rehearse a song offline", body)
+        self.assertIn("Import a backing track", body)
+        self.assertIn("separate from Jamulus", body)
+        self.assertNotIn("Copy Invite", body)
 
     def test_close_event_respects_confirm_close_veto(self):
         w = self._window()
@@ -673,6 +920,19 @@ class TestConductorWindow(unittest.TestCase):
         w.show()
         self.assertTrue(w.close())
         self.assertEqual(emitted, [True])
+
+    def test_close_event_respects_late_teardown_veto(self):
+        w = self._window()
+        emitted = []
+        w.close_requested.connect(lambda: emitted.append(True))
+        w.confirm_close = lambda: True
+        w.finalize_close = lambda: False
+        w.show()
+        self.assertFalse(w.close())
+        self.assertEqual(emitted, [])
+        self.assertTrue(w.isVisible())
+        w.finalize_close = None
+        w.close()
 
     def test_center_splitter_panes_are_not_collapsible(self):
         w = self._window()

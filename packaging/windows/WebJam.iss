@@ -56,7 +56,7 @@ AppPublisherURL=https://github.com/rupret007/webjam
 AppSupportURL=https://github.com/rupret007/webjam/issues
 AppUpdatesURL=https://github.com/rupret007/webjam/releases
 AppReadmeFile={app}\README-WINDOWS.txt
-AppCopyright=Copyright (c) 2024 WebJam Contributors
+AppCopyright=Copyright (c) 2024-2026 WebJam Contributors
 DefaultDirName={localappdata}\Programs\{#WebJamAppName}
 DefaultGroupName={#WebJamAppName}
 UninstallDisplayName={#WebJamAppName} {#WebJamAppVersion}
@@ -109,6 +109,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#WebJamSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; DestName: "THIRD_PARTY_NOTICES.md"; Flags: ignoreversion
+Source: "..\..\THIRD_PARTY_NOTICES_RUNTIME.md"; DestDir: "{app}"; DestName: "THIRD_PARTY_NOTICES_RUNTIME.md"; Flags: ignoreversion
+Source: "..\WebJam-runtime-sbom.cdx.json"; DestDir: "{app}"; DestName: "WebJam-runtime-sbom.cdx.json"; Flags: ignoreversion
 Source: "README-WINDOWS.txt"; DestDir: "{app}"; DestName: "README-WINDOWS.txt"; Flags: ignoreversion
 
 [InstallDelete]
@@ -121,6 +123,8 @@ Type: files; Name: "{app}\webjam-fabric.exe"; Check: IsVerifiedExistingWebJamIns
 Type: files; Name: "{app}\webjam-fabric.sha256"; Check: IsVerifiedExistingWebJamInstall
 Type: files; Name: "{app}\LICENSE.txt"; Check: IsVerifiedExistingWebJamInstall
 Type: files; Name: "{app}\THIRD_PARTY_NOTICES.md"; Check: IsVerifiedExistingWebJamInstall
+Type: files; Name: "{app}\THIRD_PARTY_NOTICES_RUNTIME.md"; Check: IsVerifiedExistingWebJamInstall
+Type: files; Name: "{app}\WebJam-runtime-sbom.cdx.json"; Check: IsVerifiedExistingWebJamInstall
 Type: files; Name: "{app}\README-WINDOWS.txt"; Check: IsVerifiedExistingWebJamInstall
 
 [Icons]

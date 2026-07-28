@@ -1,0 +1,149 @@
+name: Publish Verified WebJam Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing draft candidate tag to verify and publish (for example v0.21.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-webjam-release
+  cancel-in-progress: false
+
+jobs:
+  publish-latest:
+    name: Verify draft and publish as Latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: release-latest
+    steps:
+      - name: Checkout release-control source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate and fetch immutable release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Release tag must use the exact vMAJOR.MINOR.PATCH form." >&2
+            exit 1
+          }
+          git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
+          git rev-parse --verify "${tag}^{commit}" >/dev/null
+          version_source="$(git show "${tag}:webjam_qt/__init__.py")"
+          packaged_version="$(sed -n \
+            's/^__version__ = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' \
+            <<<"$version_source")"
+          [[ "$tag" == "v${packaged_version}" ]] || {
+            echo "Tag $tag does not match packaged version ${packaged_version:-missing}." >&2
+            exit 1
+          }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$packaged_version" >> "$GITHUB_OUTPUT"
+
+      - name: Require one unpublished non-prerelease draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/release-before.json"
+          jq -e \
+            --arg tag "$TAG" \
+            '.tag_name == $tag and .draft == true and .prerelease == false' \
+            "$RUNNER_TEMP/release-before.json" >/dev/null
+
+      - name: Download and verify exact release inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets
+          cd release-assets
+          expected=(
+            "WebJam-linux-x64.zip"
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip"
+            "WebJam-v${VERSION}-macos-arm64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${VERSION}-macos-x64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${VERSION}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+            "WebJam-v${VERSION}-SHA256SUMS.txt"
+          )
+          mapfile -t actual < <(find . -maxdepth 1 -type f -size +0c \
+            -printf '%f\n' | LC_ALL=C sort)
+          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${wanted[@]}") \
+            <(printf '%s\n' "${actual[@]}")
+          checksum_file="WebJam-v${VERSION}-SHA256SUMS.txt"
+          [[ "$(wc -l < "$checksum_file")" -eq 7 ]]
+          mapfile -t checksummed < <(
+            sed -n 's/^[0-9a-f]\{64\}  //p' "$checksum_file" | LC_ALL=C sort
+          )
+          mapfile -t packages < <(
+            printf '%s\n' "${expected[@]:0:7}" | LC_ALL=C sort
+          )
+          diff -u \
+            <(printf '%s\n' "${packages[@]}") \
+            <(printf '%s\n' "${checksummed[@]}")
+          sha256sum --check --strict "$checksum_file"
+
+      - name: Publish verified release and explicitly mark Latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft=false \
+            --prerelease=false \
+            --latest
+
+      - name: Verify GitHub reports the release as Latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/latest" \
+            > "$RUNNER_TEMP/release-latest.json"
+          jq -e \
+            --arg tag "$TAG" \
+            '.tag_name == $tag and .draft == false and .prerelease == false' \
+            "$RUNNER_TEMP/release-latest.json" >/dev/null
+          before_assets="$(jq -r '.assets[].name' \
+            "$RUNNER_TEMP/release-before.json" | LC_ALL=C sort)"
+          latest_assets="$(jq -r '.assets[].name' \
+            "$RUNNER_TEMP/release-latest.json" | LC_ALL=C sort)"
+          diff -u \
+            <(printf '%s\n' "$before_assets") \
+            <(printf '%s\n' "$latest_assets")

@@ -48,6 +48,24 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     `JamulusServer.app` from the same release is prepared the same way and
     nested beside the client so a designated host needs no separate install.
     WebJam launches each as an independent process.
+    Reference Track additionally uses `JamulusHeadlessClient.app`, a separate
+    client-capable build from the same exact Jamulus commit
+    (`ffca974ed4e47b8f4621f3b583c00db2f87974fa`). It is compiled with
+    `CONFIG+=headless` and explicitly without `serveronly`, using Qt 6.10.2
+    downloaded by the wheel-only, SHA-256-locked aqtinstall 3.3.0 build
+    environment. It includes
+    only QtCore, QtNetwork, QtXml, and QtConcurrent—not QtGui, QtWidgets, or
+    QtMultimedia. The complete patched corresponding-source archive accompanies
+    the binary inside the companion app; it includes the two-file compatibility
+    patch, pinned dependency lock, build instructions, build/verifier scripts,
+    and signing configuration. The four dynamically linked Qt frameworks are
+    distributed under LGPLv3 with a dedicated notice and the exact unmodified
+    Qt 6.10.2 qtbase source archive in the companion. Provenance, license text,
+    both source archives, and the final executable checksum ship with the
+    candidate and are verified before packaging.
+    This companion does not replace the ordinary musician-facing `Jamulus.app`.
+    Pinned inputs make the build auditable and repeatable, but WebJam does not
+    claim bit-for-bit identity across different Apple clang or SDK builds.
     The resulting nested apps, and the private WebJam artifact that contains
     them, are ad-hoc signed and are **not notarized**; do not describe the
     prepared copies as upstream-notarized nested apps.
@@ -110,6 +128,33 @@ them in `THIRD_PARTY_LICENSES`; this does not claim that an already-published
 artifact contains them. Any future promoted package must inventory its exact
 dependency graph and verify the staged license files during package inspection.
 
+## Complete frozen Python runtime and audio-codec inventory
+
+The exact four-target Python release locks are classified by the reviewed
+policy in
+[`packaging/runtime-dependency-policy.json`](packaging/runtime-dependency-policy.json).
+Its deterministic checker fails closed if a locked distribution is
+unattributed, if a reviewed entry becomes stale, or if a selected frozen
+runtime license is GPL or AGPL. LGPL remains permitted and attributed. This
+Python-runtime rule does not reclassify the separately executed Jamulus
+distribution above or PyInstaller's freeze-time bootloader exception.
+
+The generated human-readable inventory is
+[`THIRD_PARTY_NOTICES_RUNTIME.md`](THIRD_PARTY_NOTICES_RUNTIME.md), with a
+matching CycloneDX 1.5 artifact at
+[`packaging/WebJam-runtime-sbom.cdx.json`](packaging/WebJam-runtime-sbom.cdx.json). Both
+files, the reviewed policy, SoundFile's exact BSD notice, SoundFile's wheel
+codec notes, NumPy's wheel license inventory, and libsndfile's wheel-provided
+LGPL text are verified in every native package.
+
+Reference Studio does not add FFmpeg or a separate MP3 executable. MP3 import
+remains a packaged-codec capability: WebJam must probe
+`soundfile.check_format("MP3")` and hide or refuse MP3 operations when that
+probe fails. Reference Studio MP3 bounce remains disabled by default and must
+not be enabled by the import probe alone; no default encoder adapter is
+bundled. SoundFile's libsndfile wheel payload and its libmpg123/libmp3lame
+terms are recorded in the generated runtime notice.
+
 ## WebJam fabric transport
 
 WebJam bundles `webjam-fabric`, its statically compiled native transport
@@ -138,5 +183,5 @@ installer.
 ## Webex
 
 WebJam opens Cisco Webex externally for native speech/video. Webex itself is
-not bundled. The deprecated Guest Issuer flow is not used or configured by
-the current application; legacy source remains only for compatibility review.
+not bundled. WebJam also does not bundle the retired Webex web widget,
+Qt WebEngine meeting runtime, or deprecated Guest Issuer token exchange.

@@ -29,8 +29,6 @@ from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 _NEW_KEYS = (
     "metric_jamulus_hang_detected",
-    "metric_webex_token_refresh_attempt",
-    "metric_webex_token_refresh_success",
     "metric_audio_device_blackhole_found",
     "metric_audio_device_missing",
     "metric_mix_corruption_recovered",

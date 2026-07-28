@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from core.network_invite import create_invite_link
 from core.remote_invitation import issue_remote_invitation
@@ -106,6 +106,141 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     controller._stop_remote_transport()
     assert controller.settings.jamulus_port == 22124
     assert not controller.bridge.remote_guest_mode_enabled
+    controller.shutdown()
+
+
+def test_false_transport_stop_retains_runtime_and_route_for_retry(
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    runtime = mock.MagicMock()
+    runtime.stop.return_value = False
+    runtime.snapshot.error_code = None
+    base_settings = controller.settings
+    controller._remote_session = runtime
+    controller._remote_route_base_settings = base_settings
+    controller._remote_route_generation = 7
+    controller.bridge.disable_remote_guest_mode = mock.MagicMock()
+
+    assert controller._stop_remote_transport() is False
+
+    runtime.stop.assert_called_once_with()
+    assert controller._remote_session is runtime
+    assert controller._remote_route_base_settings is base_settings
+    assert controller._remote_route_generation == 7
+    controller.bridge.disable_remote_guest_mode.assert_not_called()
+
+    runtime.stop.return_value = None
+    controller.shutdown()
+
+
+def test_successful_leave_restores_remote_base_after_worker_cleanup(
+    qapp,
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    base_settings = controller.settings
+    routed_settings = AppSettings(
+        config_file=base_settings.config_file,
+        host_server_enabled=False,
+        jamulus_server="127.0.0.1",
+        jamulus_port=43123,
+    )
+    controller.settings = routed_settings
+    controller._remote_route_base_settings = base_settings
+    runtime = mock.MagicMock()
+    runtime.snapshot.error_code = None
+    controller._remote_session = runtime
+
+    with (
+        mock.patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller,
+            "_stop_session_peer",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "stop_jamulus",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "hosted_server_alive",
+            return_value=False,
+        ),
+        mock.patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+        mock.patch.object(
+            controller,
+            "_reconfigure_services_after_settings",
+            wraps=controller._reconfigure_services_after_settings,
+        ) as reconfigure,
+    ):
+        controller.audio._stop_session_services(False)
+
+    runtime.stop.assert_called_once_with()
+    assert controller._remote_session is None
+    assert controller._remote_route_base_settings is None
+    assert controller.settings is base_settings
+    reconfigure.assert_called_once_with(routed_settings)
+    controller.shutdown()
+
+
+def test_leave_failure_keeps_unstopped_remote_transport_retryable(
+    tmp_path,
+) -> None:
+    controller = _controller(tmp_path)
+    runtime = mock.MagicMock()
+    runtime.stop.return_value = False
+    runtime.snapshot.error_code = None
+    controller._remote_session = runtime
+    controller.audio.stopping = True
+
+    with (
+        mock.patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller,
+            "_stop_session_peer",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "stop_jamulus",
+            return_value=True,
+        ),
+        mock.patch.object(
+            controller.bridge,
+            "hosted_server_alive",
+            return_value=False,
+        ),
+        mock.patch.object(
+            controller._ui_invoker,
+            "invoke",
+            side_effect=lambda callback: callback(),
+        ),
+    ):
+        controller.audio._stop_session_services(False)
+
+    assert controller._remote_session is runtime
+    assert controller.audio.stopping is False
+    assert controller.audio.cleanup_retry_required is True
+    assert controller.window.session_strip._audio_button.text() == "Try Leave Jam"
+    assert controller.window.session_strip._audio_button.isEnabled()
+
+    runtime.stop.return_value = None
+    controller.audio.cleanup_retry_required = False
     controller.shutdown()
 
 
@@ -244,6 +379,7 @@ def test_replaced_remote_runtime_cannot_render_a_late_failure(qapp, tmp_path) ->
     controller._on_remote_session_snapshot(failed, source=old_runtime)
 
     controller._show_remote_session_failure.assert_not_called()
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -265,6 +401,7 @@ def test_replaced_remote_runtime_cannot_activate_a_late_guest_route(
     controller._on_remote_session_snapshot(connected, source=old_runtime)
 
     controller._activate_remote_guest_route.assert_not_called()
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -286,6 +423,7 @@ def test_active_remote_runtime_still_accepts_its_own_failure(qapp, tmp_path) -> 
         guest_enrollment=True,
         retry_safe=True,
     )
+    controller._remote_session = None
     controller.shutdown()
 
 
@@ -368,8 +506,10 @@ def test_v3_guest_fails_closed_when_v2_peer_cleanup_fails(tmp_path) -> None:
     old_peer.stop.assert_called_once_with()
     controller._begin_remote_join.assert_not_called()
     assert controller._remote_invitation is None
-    assert controller._guest_invite is None
+    assert controller.guest_peer is old_peer
+    assert controller._guest_invite is mock.sentinel.v2_invitation
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    old_peer.stop.side_effect = None
     controller.shutdown()
 
 
@@ -392,9 +532,12 @@ def test_v3_replacement_fails_closed_when_prior_v3_cleanup_fails(
     prior.stop.assert_called_once_with()
     controller._begin_remote_join.assert_not_called()
     assert controller._remote_invitation is None
-    assert controller._remote_session is None
-    assert controller._remote_invite_owner is None
+    assert controller._remote_session is prior
+    assert controller._remote_invite_owner is (
+        prior if prior_kind == "owner" else None
+    )
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    prior.stop.side_effect = None
     controller.shutdown()
 
 
@@ -440,6 +583,7 @@ def test_legacy_invite_fails_closed_when_v3_cleanup_fails(tmp_path) -> None:
     controller.begin_startup_journey.assert_not_called()
     assert controller.settings.jamulus_server == "127.0.0.1"
     assert "Close WebJam" in controller.window.flash_message.call_args.args[0]
+    runtime.stop.side_effect = None
     controller.shutdown()
 
 
@@ -587,4 +731,26 @@ def test_host_hud_hides_consumed_copy_but_keeps_reset_available(
     controller._update_session_hud()
     assert controller.window.session_strip._invite_button.isHidden()
     assert controller.window.session_strip._reset_invite_action.isVisible()
+    controller._remote_invite_owner = None
+    controller.shutdown()
+
+
+def test_visible_reset_invite_requires_explicit_confirmation(tmp_path) -> None:
+    controller = _controller(tmp_path, hosting=True)
+    controller._remote_invite_owner = mock.MagicMock()
+    controller._reset_remote_invite = mock.MagicMock()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ):
+        controller.window.session_strip._reset_invite_action.trigger()
+    controller._reset_remote_invite.assert_not_called()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        controller.window.session_strip._reset_invite_action.trigger()
+    controller._reset_remote_invite.assert_called_once_with()
     controller.shutdown()

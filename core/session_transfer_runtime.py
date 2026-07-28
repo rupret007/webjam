@@ -298,6 +298,10 @@ class HostPeerSession:
         self._lock = threading.RLock()
         self._callback_condition = threading.Condition(self._lock)
         self._callback_leases: dict[tuple[int, int], int] = {}
+        self._stop_lock = threading.Lock()
+        self._stop_retry_thread: threading.Thread | None = None
+        self._stop_retry_generation: int | None = None
+        self._stop_requested_generation: int | None = None
         # A maintenance pass may be in a long checksum/copy when the user
         # leaves.  Give each start its own identity so that old work cannot
         # publish a manifest or UI update after a stop (or a rapid restart).
@@ -323,8 +327,13 @@ class HostPeerSession:
         installation_path: str | Path,
         display_name: str,
     ) -> None:
-        if self.active:
-            return
+        with self._lock:
+            if (
+                self.active
+                or self._thread is not None
+                or self._stop_requested_generation is not None
+            ):
+                return
         if not is_private_lan_host(bind_host):
             raise SessionTransferError(
                 "The recording service needs this Mac's private Wi-Fi address."
@@ -384,27 +393,60 @@ class HostPeerSession:
             thread = self._thread
         thread.start()
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
+        """Stop only after both worker and peer server are proven gone."""
+
         with self._callback_condition:
+            if self._caller_holds_callback_lease_locked():
+                # Never queue behind an external stopper while it is waiting
+                # for this callback lease. Request the same stop idempotently,
+                # then let the callback unwind so either that stopper or the
+                # bounded deferred retry can prove cleanup.
+                generation = self._request_stop_locked()
+                self._ensure_stop_retry_locked(generation)
+                return False
+        with self._stop_lock:
+            return self._stop_once()
+
+    def _stop_once(self, *, expected_generation: int | None = None) -> bool:
+        with self._callback_condition:
+            if (
+                expected_generation is not None
+                and self._stop_requested_generation != expected_generation
+            ):
+                # The requested owner was already cleared. A newer lifecycle,
+                # if any, belongs to its own explicit stop request.
+                return True
             # Invalidate first.  A maintenance pass holds the same lock while
             # it publishes a manifest. A callback lease lets the callback run
             # outside that lock without allowing it to begin after stop.
-            generation = self._lifecycle_generation
-            self._lifecycle_generation += 1
-            stop_event = self._stop_event
-            wake_event = self._maintenance_wake
+            generation = self._request_stop_locked()
             thread = self._thread
             server = self.server
-            stop_event.set()
-            wake_event.set()
             self._wait_for_callback_leases_locked(generation)
-        if thread is not None and thread is not threading.current_thread():
+        if thread is threading.current_thread():
+            # A documented advisory callback may stop reentrantly from the
+            # maintenance worker. It cannot join itself, so retain every owner
+            # and hand cleanup to one bounded retry thread after the callback
+            # returns.
+            with self._callback_condition:
+                self._ensure_stop_retry_locked(generation)
+            return False
+        if thread is not None and thread.is_alive():
             thread.join(timeout=3.0)
+        if thread is not None and thread.is_alive():
+            return False
         if server is not None:
-            server.stop()
-        with self._lock:
+            try:
+                server_stopped = server.stop()
+            except Exception:  # noqa: BLE001 - retain owner for explicit retry
+                LOGGER.exception("Host peer server stop could not be confirmed")
+                return False
+            if server_stopped is False:
+                return False
+        with self._callback_condition:
             # Do not let a late stop of an old lifecycle erase a new one.
-            if self.server is server:
+            if self.server is server and self._thread is thread:
                 self._thread = None
                 self.server = None
                 self.registry = None
@@ -416,6 +458,64 @@ class HostPeerSession:
                 self._registered_takes.clear()
                 self._expected_by_take.clear()
                 self._take_reconcile_locks.clear()
+                if self._stop_requested_generation == generation:
+                    self._stop_requested_generation = None
+        return True
+
+    def _caller_holds_callback_lease_locked(self) -> bool:
+        """Return whether this thread must unwind before stop can finish."""
+
+        caller = threading.get_ident()
+        return any(
+            thread_id == caller and count > 0
+            for (_generation, thread_id), count in self._callback_leases.items()
+        )
+
+    def _request_stop_locked(self) -> int:
+        """Invalidate the owned lifecycle once and wake its worker."""
+
+        generation = self._stop_requested_generation
+        if generation is None:
+            generation = self._lifecycle_generation
+            self._stop_requested_generation = generation
+            self._lifecycle_generation += 1
+        self._stop_event.set()
+        self._maintenance_wake.set()
+        return generation
+
+    def _ensure_stop_retry_locked(self, generation: int) -> None:
+        """Start at most one bounded deferred attempt for this lifecycle."""
+
+        retry = self._stop_retry_thread
+        if (
+            retry is not None
+            and retry.is_alive()
+            and self._stop_retry_generation == generation
+        ):
+            return
+        retry = threading.Thread(
+            target=self._retry_stop_after_worker,
+            args=(generation,),
+            name="webjam-host-transfer-stop-retry",
+            daemon=True,
+        )
+        self._stop_retry_thread = retry
+        self._stop_retry_generation = generation
+        retry.start()
+
+    def _retry_stop_after_worker(self, generation: int) -> None:
+        """Finish a reentrant stop after its maintenance callback unwinds."""
+
+        try:
+            with self._stop_lock:
+                self._stop_once(expected_generation=generation)
+        except Exception:  # noqa: BLE001 - explicit callers can still retry
+            LOGGER.exception("Deferred host peer stop could not be confirmed")
+        finally:
+            with self._lock:
+                if self._stop_retry_thread is threading.current_thread():
+                    self._stop_retry_thread = None
+                    self._stop_retry_generation = None
 
     def invite_link(self, *, host: str, jamulus_port: int, session_name: str) -> str:
         if not self.active or self.credentials is None:
@@ -1294,6 +1394,7 @@ class GuestPeerSession:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
+        self._stop_lock = threading.Lock()
         self.queue_path = (
             self.takes_root
             / "WebJam Local Originals"
@@ -1336,7 +1437,10 @@ class GuestPeerSession:
         return self.queue_path.parent
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
+        # A retained dead worker can mean a prior bounded stop timed out and
+        # still owes capture finalization/upload. Only stop() may clear that
+        # owner; never replace it with a new transfer lifecycle.
+        if self._thread is not None:
             return
         self._stop_event.clear()
         self._thread = threading.Thread(
@@ -1346,20 +1450,28 @@ class GuestPeerSession:
         )
         self._thread.start()
 
-    def stop(self) -> None:
-        self._stop_event.set()
-        thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=5.0)
-        self._thread = None
-        # A quit/network leave never deletes or aborts an active original.
-        self._finalize_capture(
-            needs_attention="Session ended before host stop was observed."
-        )
-        try:
-            self._upload_pending()
-        except SessionTransferError:
-            pass
+    def stop(self) -> bool:
+        """Stop only after the transfer worker is proven gone."""
+
+        with self._stop_lock:
+            self._stop_event.set()
+            thread = self._thread
+            if thread is threading.current_thread():
+                return False
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=5.0)
+            if thread is not None and thread.is_alive():
+                return False
+            self._thread = None
+            # A quit/network leave never deletes or aborts an active original.
+            self._finalize_capture(
+                needs_attention="Session ended before host stop was observed."
+            )
+            try:
+                self._upload_pending()
+            except SessionTransferError:
+                pass
+            return True
 
     def observe_presence(self, channel_id: int, display_name: str) -> None:
         desired = (

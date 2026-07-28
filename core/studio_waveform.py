@@ -34,6 +34,11 @@ from typing import Final
 
 import numpy as np
 
+from core.song_media_catalog import (
+    SongCatalogSource,
+    SongMediaCatalog,
+    SongMediaCatalogError,
+)
 from core.studio_source_catalog import (
     StudioCatalogSource,
     StudioSourceCatalog,
@@ -487,6 +492,58 @@ class WaveformSource:
             gaps=gaps,
             catalog_key=catalog_source.key,
             trusted_root=catalog_source.take_root,
+        )
+
+    @classmethod
+    def from_song_catalog_source(
+        cls,
+        catalog: SongMediaCatalog,
+        media_id: str,
+    ) -> "WaveformSource":
+        """Bind one waveform source to a sealed standalone project catalog."""
+
+        if type(catalog) is not SongMediaCatalog:
+            raise StudioWaveformError(
+                "Song waveform sources require a trusted SongMediaCatalog."
+            )
+        try:
+            catalog.assert_current()
+            catalog_source = catalog.resolve(media_id)
+        except SongMediaCatalogError as exc:
+            raise StudioWaveformError(str(exc)) from exc
+        return cls._from_song_catalog_entry(catalog_source)
+
+    @classmethod
+    def _from_song_catalog_entry(
+        cls,
+        catalog_source: SongCatalogSource,
+    ) -> "WaveformSource":
+        """Build from one entry after its song catalog was checked once."""
+
+        if type(catalog_source) is not SongCatalogSource:
+            raise StudioWaveformError(
+                "Song waveform entry must come from a trusted project catalog."
+            )
+        media = catalog_source.media
+        try:
+            path = catalog_source.path
+        except SongMediaCatalogError as exc:
+            raise StudioWaveformError(str(exc)) from exc
+        return cls(
+            source_id=media.media_id,
+            path=path,
+            frame_count=media.frame_count,
+            sample_rate=media.sample_rate,
+            channels=media.channels,
+            # SongMedia schema 1 records the container (WAV/AIFF/FLAC), not
+            # libsndfile's sample subtype. Leave subtype validation unset
+            # while checksum, size, rate, channels, and frames remain exact.
+            sample_format="",
+            size_bytes=media.size_bytes,
+            sha256=media.sha256,
+            gaps=(),
+            catalog_key=(catalog_source.project_id, "media", media.media_id),
+            trusted_root=catalog_source.bundle_root,
         )
 
 

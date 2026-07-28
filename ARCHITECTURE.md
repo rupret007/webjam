@@ -1,4 +1,4 @@
-# WebJam architecture — v0.18.1
+# WebJam architecture — v0.21.0
 
 ## Product boundary
 
@@ -7,7 +7,8 @@ The boundary is deliberate:
 
 | Layer | Responsibility |
 | --- | --- |
-| `webjam_qt` | Host/Join launch, Session HUD, invitations, recording/Studio UI, recovery messages |
+| `webjam_qt` | Host/Join launch, Session HUD, invitations, recording/session-Studio UI, standalone Reference Studio, recovery messages |
+| `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, external Webex launch |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
 | `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
@@ -15,6 +16,11 @@ The boundary is deliberate:
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
 | Webex | Conversation/video meeting state and device controls |
+
+Standalone Reference Studio has its own project and local-audio lifecycle. It
+does not start, join, stop, configure, or feed Jamulus. Its persistence,
+migration, rendering, recording, and trust boundaries are defined in
+[ADR 0006](docs/adr/0006-standalone-reference-studio-projects.md).
 
 ## Unified musician guidance
 

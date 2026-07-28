@@ -188,54 +188,12 @@ class TestMacShortcutBindings(unittest.TestCase):
 
 
 # ----------------------------------------------------------------------
-# Webex placeholder auto-restore on real load failure
+# External Webex launch-card truth
 # ----------------------------------------------------------------------
-class TestWebexLoadFailureRestore(unittest.TestCase):
+class TestExternalWebexLaunchCard(unittest.TestCase):
     def _make_embed(self):
         from webjam_qt.widgets.webex_embed import WebexEmbed
         return WebexEmbed()
-
-    def test_real_load_failure_emits_error(self):
-        embed = self._make_embed()
-        embed._view = mock.MagicMock()
-        embed._view.url.return_value.toString.return_value = (
-            "https://example.webex.com/meet/bad"
-        )
-        states = []
-        embed.meeting_state_changed.connect(states.append)
-        embed._on_view_load_finished(False)
-        self.assertIn("error", states)
-
-    def test_load_failure_log_redacts_meeting_destination(self):
-        embed = self._make_embed()
-        embed._view = mock.MagicMock()
-        embed._view.url.return_value.toString.return_value = (
-            "https://example.webex.com/meet/private-room?token=secret#lobby"
-        )
-        with self.assertLogs("webjam.qt.webex_embed", level="WARNING") as logs:
-            embed._on_view_load_finished(False)
-        output = "\n".join(logs.output)
-        self.assertIn("https://example.webex.com/[redacted]", output)
-        self.assertNotIn("private-room", output)
-        self.assertNotIn("secret", output)
-
-    def test_blank_and_data_urls_do_not_emit_error(self):
-        embed = self._make_embed()
-        for url in ("", "about:blank", "data:text/html,foo"):
-            embed._view = mock.MagicMock()
-            embed._view.url.return_value.toString.return_value = url
-            states = []
-            embed.meeting_state_changed.connect(states.append)
-            embed._on_view_load_finished(False)
-            self.assertNotIn("error", states, f"{url!r} should be ignored")
-
-    def test_successful_load_emits_nothing(self):
-        embed = self._make_embed()
-        embed._view = mock.MagicMock()
-        states = []
-        embed.meeting_state_changed.connect(states.append)
-        embed._on_view_load_finished(True)
-        self.assertEqual(states, [])
 
     def test_external_card_title_matches_audio_role(self):
         embed = self._make_embed()

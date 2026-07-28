@@ -7,6 +7,7 @@ actionable error instead of spawning Jamulus when the port is taken.
 from __future__ import annotations
 
 import socket
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -55,11 +56,112 @@ def _free_port() -> int:
     return port
 
 
+def _leave_loopback_port_in_time_wait() -> int:
+    """Close the accepted side first so its local port enters TIME_WAIT."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    listener.listen(1)
+
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect(("127.0.0.1", port))
+    accepted, _ = listener.accept()
+    accepted.shutdown(socket.SHUT_WR)
+    assert client.recv(1) == b""
+
+    client.close()
+    accepted.close()
+    listener.close()
+    return port
+
+
 class TestRpcPortDetection(unittest.TestCase):
     def test_returns_false_when_port_is_free(self):
         port = _free_port()
         bridge = _make_bridge(rpc_port=port)
         self.assertFalse(bridge._is_rpc_port_in_use())
+
+    def test_returns_true_when_wildcard_listener_owns_port(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("0.0.0.0", 0))
+        port = sock.getsockname()[1]
+        sock.listen(1)
+        try:
+            bridge = _make_bridge(rpc_port=port)
+            self.assertTrue(bridge._is_rpc_port_in_use())
+        finally:
+            sock.close()
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS TCP semantics")
+    def test_returns_false_when_only_time_wait_blocks_strict_bind(self):
+        port = _leave_loopback_port_in_time_wait()
+
+        strict = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            with self.assertRaises(OSError):
+                strict.bind(("127.0.0.1", port))
+        finally:
+            strict.close()
+
+        bridge = _make_bridge(rpc_port=port)
+        self.assertFalse(bridge._is_rpc_port_in_use())
+
+    def test_non_macos_keeps_strict_fail_closed_behavior(self):
+        bridge = _make_bridge()
+        with patch("services.bridge_service.sys.platform", "win32"), patch.object(
+            bridge,
+            "_macos_rpc_port_is_rebindable",
+        ) as fallback:
+            with patch("socket.socket") as socket_cls:
+                socket_cls.return_value.bind.side_effect = OSError("occupied")
+                self.assertTrue(bridge._is_rpc_port_in_use())
+        fallback.assert_not_called()
+
+    def test_macos_fails_closed_when_reuse_probe_is_not_conclusive(self):
+        bridge = _make_bridge()
+        with patch("services.bridge_service.sys.platform", "darwin"), patch.object(
+            bridge,
+            "_macos_rpc_port_is_rebindable",
+            return_value=False,
+        ) as fallback:
+            with patch("socket.socket") as socket_cls:
+                socket_cls.return_value.bind.side_effect = OSError("occupied")
+                self.assertTrue(bridge._is_rpc_port_in_use())
+        fallback.assert_called_once_with(22222)
+
+    def test_macos_reuse_probe_requires_loopback_and_wildcard_binds(self):
+        bridge = _make_bridge()
+        loopback_probe = MagicMock()
+        wildcard_probe = MagicMock()
+        with patch(
+            "socket.socket",
+            side_effect=(loopback_probe, wildcard_probe),
+        ):
+            self.assertTrue(bridge._macos_rpc_port_is_rebindable(22222))
+
+        loopback_probe.bind.assert_called_once_with(("127.0.0.1", 22222))
+        wildcard_probe.bind.assert_called_once_with(("0.0.0.0", 22222))
+        for probe in (loopback_probe, wildcard_probe):
+            probe.setsockopt.assert_called_once_with(
+                socket.SOL_SOCKET,
+                socket.SO_REUSEADDR,
+                1,
+            )
+            probe.close.assert_called_once_with()
+
+    def test_macos_reuse_probe_fails_closed_if_either_bind_fails(self):
+        bridge = _make_bridge()
+        loopback_probe = MagicMock()
+        wildcard_probe = MagicMock()
+        wildcard_probe.bind.side_effect = OSError("occupied")
+        with patch(
+            "socket.socket",
+            side_effect=(loopback_probe, wildcard_probe),
+        ):
+            self.assertFalse(bridge._macos_rpc_port_is_rebindable(22222))
+
+        loopback_probe.close.assert_called_once_with()
+        wildcard_probe.close.assert_called_once_with()
 
     def test_returns_true_when_port_is_bound(self):
         # Bind a socket on a real ephemeral port and verify detection.

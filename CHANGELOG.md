@@ -4,6 +4,135 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.21.0] — 2026-07-28 standalone Reference Studio test candidate
+
+### Project-first songwriting
+
+- Added **Reference Studio** as a standalone project workflow beside, but
+  independent from, Host/Join and session-take Studio. **Play Along / Record**
+  creates a project around a local backing track; musicians can also create an
+  empty project, open a recent project, or drag/import collected media.
+- Added portable song-project bundles with durable IDs, immutable checksummed
+  media copies, path-free manifests, explicit relink/collection truth,
+  conflict-aware atomic saves, bounded autosaves, last-known-good recovery,
+  and an atomic **Save As** transaction that clones media and arrangement
+  together under a fresh project identity. Existing v0.20.0 session data and
+  schema-2 Studio sidecars keep their prior meaning and are not silently
+  converted into standalone projects.
+- Added the established continuous trefoil—also described in the product as
+  the trinity mark—to Reference Studio home and workspace navigation without
+  creating a second logo source.
+
+### Play, record, and arrange
+
+- Added asynchronous verified-media preparation, progressive waveform tiles,
+  local project playback, bars-and-beats position, click, count-in, cycle, and
+  musical snap. Reference Studio owns this local audio path; it does not start,
+  join, configure, or feed a Jamulus session.
+- Added audio-track creation, naming, duplication, removal, input mapping and
+  arming, plus count-in, punch, cycle-pass, and latency-compensated recording.
+  Committed recordings become immutable project media, arrangement regions,
+  and take lanes. Bounded dropout and pass evidence survives save/recovery, and
+  an interrupted post-capture transaction remains an explicit recovery
+  candidate instead of being represented as a completed recording.
+- Extended non-destructive Arrange behavior to standalone sources: move, trim,
+  split, duplicate, disable, delete, fades, cycle ranges, markers, named
+  sections and whole-section moves, repeated take lanes, quick-swipe comp
+  ranges, and bounded undo/redo. The source media is never edited in place.
+
+### Mix, tempo, and delivery
+
+- Added a standalone mixer with fader, pan, mute, solo, shared-reverb sends,
+  master gain, and safety limiter. Added bounded built-in high-pass, EQ,
+  compressor, gate, and shared reverb processing, plus exact-frame volume, pan,
+  and mute automation. Playback and bounce use the same validated routing and
+  deterministic DSP graph.
+- Added cancellable backing-track tempo analysis over bounded decoded windows.
+  The result includes confidence and always enters a musician-review dialog
+  where BPM and meter can be corrected before application. Applying a result
+  changes the grid and click only; it does not time-stretch imported audio.
+- Added cancellable 24-bit WAV and FLAC bounce for a whole project, the enabled
+  cycle, or a selected track, with optional backing and processed stems.
+  Publication is atomic and each artifact reports SHA-256, peak dBFS, clipped
+  samples, and deterministic RMS dBFS. MP3 bounce is unavailable by default
+  because this candidate ships no separately self-tested, identified,
+  license-safe MP3 encoder adapter.
+
+### Candidate distribution and evidence boundary
+
+- The v0.21.0 candidate matrix covers Windows x64, Ubuntu 22.04 x64, Intel Mac,
+  and Apple-silicon Mac from one source identity. Windows remains unsigned;
+  both Mac builds remain ad-hoc signed and unnotarized. These are private-test
+  packages, not production-trusted installers.
+- Tag automation creates a draft containing exactly the Windows Setup and ZIP,
+  two Mac DMGs and two Mac ZIPs, the Linux ZIP, and one SHA-256 manifest. A
+  separate manual publisher rejects any other inventory, verifies all seven
+  package checksums, publishes a non-prerelease with GitHub's explicit
+  **Latest** setting, and verifies `/releases/latest` afterward. A CI artifact
+  or draft is not the Latest release.
+- Automated tests provide model, renderer, persistence, rollback, UI-contract,
+  and packaging evidence. Physical Reference Studio record/playback,
+  interface routing, latency calibration, dropout recovery, long-session
+  behavior, two-musician audibility, clean-download platform prompts, signing,
+  and notarization remain **NOT RUN** unless separately recorded against the
+  exact candidate hashes.
+
+## [0.20.0] — 2026-07-27 Webex handoff and Reference Track test candidate
+
+- Restored WebJam's approved continuous trefoil identity from the earlier
+  three-loop mark. One canonical analytic curve now deterministically produces
+  the desktop SVG, Windows ICO, macOS ICNS, and Pocket Stage AppIcon/visible
+  artwork; Help and About use the same mark and byte-contract tests prevent
+  packaged assets from drifting.
+- Hardened candidate shutdown so WebJam keeps ownership visible and retryable
+  until its Reference Track, Pocket Stage, private transfer services, Jamulus
+  processes, hosted server, secure transport, and localhost companion listener
+  are confirmed stopped. Dynamic Webex and Reference Track status changes are
+  now announced to assistive technology.
+- Kept Reference Track controls reachable at the supported 760×600 floor and
+  made keyboard seek/loop/trim/count-in edits survive stale polling until the
+  controller acknowledges them. Join-save failures now stay visible and
+  retryable, Settings validation announces and focuses errors, and Notes export
+  is unavailable until there is actual note content.
+- The ordinary Windows x64 Actions artifact now contains exactly the unsigned
+  Setup executable, portable ZIP, and a verified two-entry SHA-256 manifest.
+  Windows install/launch/upgrade/uninstall validation uses paths containing
+  spaces, and the downloadable candidate artifact is retained for 90 days.
+- Added a host-controlled **Reference Track** source pilot behind **More**.
+  The bounded 48-kHz engine, separate `WebJam Track` client, authenticated RPC,
+  zero-fader checks, transport controls, and path-free decoding are present.
+  Production playback is locked before native work because CoreAudio has a
+  reported false input-device result after a device switch and Jamulus 3.12.2
+  has no independent live-device RPC. Only an explicit constructor seam can
+  exercise the backend in controlled source tests; there is no packaged
+  setting, environment, command-line, or UI bypass.
+- The retained Reference Track implementation fails closed on
+  host/session/route/RPC loss and tears down before the primary musician
+  client. It is described as Jamulus-routed, not latency eliminated. Physical
+  two-endpoint audibility, device-switch truth, BlackHole exclusivity,
+  independent mixes, direct-monitor isolation, recording-stem behavior, and
+  long-session use remain **NOT RUN**.
+- Removed the dormant embedded Webex browser and guest-token path. WebJam now
+  persists only the musician's optional Meeting or Personal Room link, opens
+  it externally after an explicit action, and reports only that handoff—not a
+  Webex join, mute, participant, camera, or microphone state.
+- Fixed the visible startup **Bring Jamulus Forward** action, late macOS
+  invitation-error delivery, and failed Notes chat sends. An unsent message is
+  restored to the composer and is never falsely added to the session record.
+- Added discoverable **Help** and **About WebJam** actions under **More**. About
+  reports the candidate version, target, trust boundary, and privacy-safe build
+  identity.
+- Resetting a private invitation now requires explicit confirmation. Webex
+  menu wording recovers after a link is configured, and unavailable Jamulus
+  guidance no longer claims the application is still opening.
+- Made drag-to-Applications plus Apple's app-bundle **Open Anyway** flow the
+  primary macOS installation guidance. Optional integrity-checking helpers are
+  documented for explicit Terminal use because current macOS versions may
+  block quarantined `.command` files from Finder.
+- Added visible-menu routing, dynamic Studio **Add Take**, failure-state,
+  accessibility, and package-instruction regression coverage. Active guides
+  now identify the v0.20.0 candidate consistently.
+
 ## [0.19.0] — 2026-07-22 Pocket Stage owner-device test candidate
 
 ### Download and startup correction

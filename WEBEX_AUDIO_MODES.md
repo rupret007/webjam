@@ -1,12 +1,18 @@
-# Webex companion guidance — v0.18.0
+# Webex companion guidance — v0.21.0
 
 Webex is optional for talking or video. Jamulus carries the music.
 
-Use **More → Webex / Conversation** only if the band wants it. WebJam accepts
-a valid HTTPS Webex link only when the musician explicitly asks, saves it only
-on that action, and opens it externally only on a user action. It never claims
-to have joined, muted, selected a microphone, or verified the Webex participant
-list.
+Use **More → Webex / Conversation** only if the band wants it. In **Settings →
+Conversation**, each musician can enter their own **Meeting or Personal Room
+link**. WebJam displays the Webex site hostname and offers **Open in Webex** to
+test the draft link. It saves only the link and opens it externally only after
+an explicit user action.
+
+Webex handles sign-in, participant identity, camera, microphone, speakers, and
+meeting controls. A WebJam musician name does not change the user's Webex
+identity. “Opened externally—finish joining in Webex” reports only a successful
+handoff to the operating system; WebJam never claims to have joined, muted, or
+verified the Webex participant list.
 
 ## Safe rehearsal habit
 
@@ -17,7 +23,15 @@ list.
    prerequisite.
 
 Legacy audience-bridge preferences remain loadable for compatibility, but the
-v0.17 musician flow does not route system audio automatically or configure
-Webex devices. WebJam Settings stores only an optional conversation link and
-the chosen conversation behavior; live device choices stay with their native
-apps.
+musician flow does not route system audio automatically or configure Webex
+devices. WebJam Settings persists only the optional conversation link for
+Webex; live behavior and device choices stay with their native apps.
+
+WebJam does not bundle a Webex web widget, Chromium/WebEngine meeting runtime,
+Guest Issuer token exchange, OAuth token, username, or password. A future
+account connection is documented separately in
+`docs/adr/0004-webex-external-launch-and-future-oauth.md`.
+
+Use `docs/plans/webjam-webex-sandbox-demo-gate.md` to record a real packaged,
+two-endpoint rehearsal. Its checks remain **NOT RUN** until completed against
+an exact package after all previously disclosed test passwords are rotated.

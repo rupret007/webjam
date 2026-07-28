@@ -368,7 +368,7 @@ def test_v2_guest_peer_waits_for_post_gate_audio_start(tmp_path) -> None:
         controller.shutdown()
 
 
-def test_successful_leave_forgets_the_private_guest_invite() -> None:
+def test_successful_leave_finishes_ui_after_worker_owned_private_cleanup() -> None:
     controller = _bare_controller()
     controller.window = SimpleNamespace(
         session_strip=SimpleNamespace(
@@ -387,7 +387,10 @@ def test_successful_leave_forgets_the_private_guest_invite() -> None:
 
     controller.audio._finish_session_stop_ui()
 
-    controller._stop_session_peer.assert_called_once_with(clear_invite=True)
+    # Private owners are stopped and checked in the worker before the primary
+    # music client. The UI completion callback must not run that teardown a
+    # second time or discard its result.
+    controller._stop_session_peer.assert_not_called()
     controller.audio.reset_to_idle.assert_called_once_with()
 
 
@@ -768,6 +771,29 @@ def test_failed_v2_peer_configuration_retains_invite_for_folder_repair(
     assert controller._guest_invite is invite
     assert controller._guest_peer_configuration_failed is True
     assert controller._local_originals_available() is False
+
+
+def test_v2_peer_replacement_retains_old_owner_when_stop_is_unconfirmed() -> None:
+    controller = _bare_controller()
+    old_peer = mock.Mock()
+    old_peer.stop.return_value = False
+    old_invite = mock.sentinel.old_invite
+    controller.guest_peer = old_peer
+    controller.host_peer = None
+    controller._guest_invite = old_invite
+    controller._guest_peer_configuration_failed = True
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.GuestPeerSession"
+    ) as guest_type:
+        configured = controller._configure_guest_peer(mock.sentinel.new_invite)
+
+    assert configured is False
+    old_peer.stop.assert_called_once_with()
+    guest_type.assert_not_called()
+    assert controller.guest_peer is old_peer
+    assert controller._guest_invite is old_invite
+    assert controller._guest_peer_configuration_failed is True
 
 
 def test_failed_inline_output_save_restores_live_setting() -> None:
