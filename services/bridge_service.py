@@ -459,8 +459,16 @@ class BridgeService:
         Jamulus is still running and holding the port.  Without this check,
         Popen would succeed but Jamulus would silently fail to bind RPC,
         leaving the user with a running subprocess that can't be controlled.
+
+        macOS keeps a recently closed listener's port unavailable to a strict
+        bind while its accepted connection is in ``TIME_WAIT``.  Jamulus can
+        safely replace that listener, so after a strict bind failure we use a
+        Darwin-only ``SO_REUSEADDR`` probe.  Both the loopback and wildcard
+        addresses must be bindable; a real listener or merely bound socket on
+        either address therefore remains a fail-closed conflict.
         """
         import socket
+
         port = self.settings.jamulus_rpc_port
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -469,12 +477,42 @@ class BridgeService:
             sock.bind(("127.0.0.1", port))
             return False
         except OSError:
+            if sys.platform == "darwin":
+                return not self._macos_rpc_port_is_rebindable(port)
             return True
         finally:
             try:
                 sock.close()
             except OSError:
                 pass
+
+    @staticmethod
+    def _macos_rpc_port_is_rebindable(port: int) -> bool:
+        """Return whether macOS reports only reusable stale TCP state.
+
+        This helper is called only after a strict loopback bind failed.  A
+        successful reusable bind to *both* loopback and wildcard excludes
+        active sockets bound in either form while allowing a prior Jamulus
+        listener's ``TIME_WAIT`` connection to drain in the background.
+        """
+        import socket
+
+        probes: list[socket.socket] = []
+        try:
+            for host in ("127.0.0.1", "0.0.0.0"):
+                probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                probes.append(probe)
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind((host, port))
+            return True
+        except OSError:
+            return False
+        finally:
+            for probe in probes:
+                try:
+                    probe.close()
+                except OSError:
+                    pass
 
     def find_jamulus(self):
         """Find Jamulus installation.
@@ -721,6 +759,26 @@ class BridgeService:
         # but Jamulus would silently fail to bind — leaving a running
         # subprocess we can't control via RPC.
         if self._is_rpc_port_in_use():
+            # A synchronous manual preflight rejection never established a
+            # Jamulus process (or, on macOS, an active native profile), so it
+            # must not leave crash-recovery intent behind.  Retire only this
+            # request generation: a newer Launch click may have superseded us
+            # while the port probe was running, and this stale result must not
+            # clear that newer request's intent or publish its own failure.
+            with self._jamulus_launch_control_lock:
+                if self._pending_jamulus_launch_cancel is not launch_cancel:
+                    return False
+                # Stop/shutdown can cancel this same request without replacing
+                # its generation token.  In that case cancellation won the
+                # race, so preserve the stopped state and do not surface a
+                # stale port-conflict error after the user has left.
+                if launch_cancel.is_set() or self.shutdown_requested():
+                    self._pending_jamulus_launch_cancel = None
+                    return False
+                launch_cancel.set()
+                self._pending_jamulus_launch_cancel = None
+                if manual:
+                    self.jamulus_launch_intended = False
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             self._set_jamulus_state(JamulusState.PORT_IN_USE)
