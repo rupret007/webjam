@@ -858,7 +858,8 @@ jobs:
             dependency_bundle_root=dist/WebJam.app
           fi
           python tools/runtime_dependency_policy.py \
-            --verify-bundle "$dependency_bundle_root"
+            --verify-bundle "$dependency_bundle_root" \
+            --target "${{ matrix.target }}"
           build_id="$(git rev-parse HEAD)"
 
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then

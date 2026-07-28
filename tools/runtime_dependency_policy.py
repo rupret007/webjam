@@ -287,6 +287,7 @@ def validate_policy(
             raise PolicyError("packaged license evidence entries must be objects")
         suffix = item.get("path_suffix")
         digest = item.get("sha256")
+        digests_by_target = item.get("sha256_by_target")
         if (
             not isinstance(suffix, str)
             or not suffix
@@ -294,8 +295,32 @@ def validate_policy(
             or ".." in Path(suffix).parts
         ):
             raise PolicyError("packaged license evidence suffix is unsafe")
-        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-            raise PolicyError("packaged license evidence requires lowercase SHA-256")
+        if (digest is None) == (digests_by_target is None):
+            raise PolicyError(
+                "packaged license evidence requires exactly one SHA-256 policy"
+            )
+        if digest is not None:
+            if (
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                raise PolicyError(
+                    "packaged license evidence requires lowercase SHA-256"
+                )
+            continue
+        if (
+            not isinstance(digests_by_target, dict)
+            or set(digests_by_target) != set(targets)
+            or any(
+                not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{64}", value) is None
+                for value in digests_by_target.values()
+            )
+        ):
+            raise PolicyError(
+                "target-bound license evidence must cover every target with "
+                "lowercase SHA-256"
+            )
 
     return RuntimeInventory(policy=policy, packages=packages)
 
@@ -513,11 +538,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_bundle(bundle_root: Path, inventory: RuntimeInventory) -> None:
+def verify_bundle(
+    bundle_root: Path,
+    inventory: RuntimeInventory,
+    *,
+    target: str | None = None,
+) -> None:
     """Verify generated artifacts and reviewed license evidence in a package."""
 
     if not bundle_root.is_dir():
         raise PolicyError("packaged bundle root is missing")
+    if target is not None and target not in inventory.policy["targets"]:
+        raise PolicyError(f"unknown packaged bundle target: {target}")
 
     generated = {
         "THIRD_PARTY_NOTICES_RUNTIME.md": render_notice(inventory).encode("utf-8"),
@@ -543,7 +575,16 @@ def verify_bundle(bundle_root: Path, inventory: RuntimeInventory) -> None:
             raise PolicyError(
                 "packaged license evidence is missing: " + str(item["component"])
             )
-        bad = [path for path in matches if _sha256(path) != item["sha256"]]
+        if "sha256_by_target" in item:
+            if target is None:
+                raise PolicyError(
+                    "packaged bundle target is required for target-bound "
+                    f"license evidence: {item['component']}"
+                )
+            expected = item["sha256_by_target"][target]
+        else:
+            expected = item["sha256"]
+        bad = [path for path in matches if _sha256(path) != expected]
         if bad:
             raise PolicyError(
                 "packaged license evidence checksum failed: "
@@ -553,10 +594,10 @@ def verify_bundle(bundle_root: Path, inventory: RuntimeInventory) -> None:
 
 def _check_output(path: Path, expected: str) -> None:
     try:
-        actual = path.read_text(encoding="utf-8")
+        actual = path.read_bytes()
     except OSError as exc:
         raise PolicyError(f"generated dependency artifact is missing: {path.name}") from exc
-    if actual != expected:
+    if actual != expected.encode("utf-8"):
         raise PolicyError(
             f"{path.name} is stale; run tools/runtime_dependency_policy.py --write"
         )
@@ -571,6 +612,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--verify-bundle", type=Path)
+    parser.add_argument("--target")
     args = parser.parse_args(argv)
 
     try:
@@ -578,13 +620,15 @@ def main(argv: list[str] | None = None) -> int:
         notice = render_notice(inventory)
         sbom = render_sbom(inventory)
         if args.write:
-            args.notice.write_text(notice, encoding="utf-8")
-            args.sbom.write_text(sbom, encoding="utf-8")
+            args.notice.write_bytes(notice.encode("utf-8"))
+            args.sbom.write_bytes(sbom.encode("utf-8"))
         if args.check or not args.write:
             _check_output(args.notice, notice)
             _check_output(args.sbom, sbom)
         if args.verify_bundle is not None:
-            verify_bundle(args.verify_bundle, inventory)
+            verify_bundle(args.verify_bundle, inventory, target=args.target)
+        elif args.target is not None:
+            raise PolicyError("--target requires --verify-bundle")
     except PolicyError as exc:
         print(f"runtime dependency policy failed: {exc}", file=sys.stderr)
         return 1

@@ -289,7 +289,12 @@
     {
       "component": "NumPy 2.4.6 and bundled sources",
       "path_suffix": "numpy-2.4.6.dist-info/licenses/LICENSE.txt",
-      "sha256": "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf"
+      "sha256_by_target": {
+        "linux-x64": "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488",
+        "macos-arm64": "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf",
+        "macos-x64": "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf",
+        "windows-x64": "a804dff0ead9fadc5293456410bcbfc32bf024be9c4513459663fb7b442d2341"
+      }
     },
     {
       "component": "libsndfile LGPL-2.1",

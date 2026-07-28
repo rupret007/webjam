@@ -1,0 +1,7 @@
+# These reviewed release-policy artifacts are compared byte-for-byte inside
+# frozen bundles. Keep their checkout representation canonical on Windows.
+THIRD_PARTY_NOTICES_RUNTIME.md text eol=lf
+packaging/WebJam-runtime-sbom.cdx.json text eol=lf
+packaging/runtime-dependency-policy.json text eol=lf
+licenses/SOUNDFILE_LICENSE.txt text eol=lf
+licenses/SOUNDFILE_WHEEL_LICENSE_NOTES.md text eol=lf

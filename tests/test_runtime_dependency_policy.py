@@ -19,12 +19,14 @@ from tools.runtime_dependency_policy import (
     RuntimeInventory,
     render_notice,
     render_sbom,
+    main as policy_main,
     validate_policy,
     verify_bundle,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ATTRIBUTES = (ROOT / ".gitattributes").read_text(encoding="utf-8")
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
 CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 WINDOWS_INSTALLER = (
@@ -95,6 +97,47 @@ def test_unreviewed_locked_distribution_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(PolicyError, match="lack reviewed policy"):
         validate_policy(lock_root=lock_root)
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        {},
+        {"sha256": "0" * 64, "sha256_by_target": {}},
+        {"sha256_by_target": {"linux-x64": "0" * 64}},
+        {
+            "sha256_by_target": {
+                "linux-x64": "0" * 64,
+                "macos-arm64": "0" * 64,
+                "macos-x64": "0" * 64,
+                "windows-x64": "0" * 64,
+                "freebsd-x64": "0" * 64,
+            }
+        },
+        {
+            "sha256_by_target": {
+                "linux-x64": "not-a-digest",
+                "macos-arm64": "0" * 64,
+                "macos-x64": "0" * 64,
+                "windows-x64": "0" * 64,
+            }
+        },
+    ],
+)
+def test_packaged_license_hash_policy_fails_closed(
+    tmp_path: Path,
+    replacement: dict[str, object],
+) -> None:
+    policy = json.loads(DEFAULT_POLICY.read_text(encoding="utf-8"))
+    evidence = policy["packaged_license_evidence"][0]
+    evidence.pop("sha256", None)
+    evidence.pop("sha256_by_target", None)
+    evidence.update(replacement)
+    policy_path = tmp_path / "policy.json"
+    _write_policy(policy_path, policy)
+
+    with pytest.raises(PolicyError, match="SHA-256|target-bound"):
+        validate_policy(policy_path=policy_path)
 
 
 @pytest.mark.parametrize("license_expression", ["GPL-3.0-only", "AGPL-3.0-only"])
@@ -200,6 +243,107 @@ def test_bundle_verifier_checks_generated_files_and_license_hashes(
         verify_bundle(tmp_path, test_inventory)
 
 
+def test_bundle_verifier_binds_reviewed_license_evidence_to_platform(
+    tmp_path: Path,
+) -> None:
+    inventory = validate_policy()
+    policy = deepcopy(inventory.policy)
+    evidence_by_target = {
+        target: f"reviewed {target} wheel license evidence\n".encode()
+        for target in inventory.policy["targets"]
+    }
+    policy["packaged_license_evidence"] = [
+        {
+            "component": "test platform evidence",
+            "path_suffix": "THIRD_PARTY_LICENSES/TEST_LICENSE.txt",
+            "sha256_by_target": {
+                target: hashlib.sha256(evidence).hexdigest()
+                for target, evidence in evidence_by_target.items()
+            },
+        }
+    ]
+    test_inventory = RuntimeInventory(policy=policy, packages=inventory.packages)
+    licenses = tmp_path / "THIRD_PARTY_LICENSES"
+    licenses.mkdir()
+    (licenses / "THIRD_PARTY_NOTICES_RUNTIME.md").write_text(
+        render_notice(test_inventory),
+        encoding="utf-8",
+    )
+    (licenses / "WebJam-runtime-sbom.cdx.json").write_text(
+        render_sbom(test_inventory),
+        encoding="utf-8",
+    )
+    evidence = licenses / "TEST_LICENSE.txt"
+
+    for target, reviewed in evidence_by_target.items():
+        evidence.write_bytes(reviewed)
+        verify_bundle(tmp_path, test_inventory, target=target)
+    evidence.write_bytes(evidence_by_target["windows-x64"])
+    with pytest.raises(PolicyError, match="checksum failed"):
+        verify_bundle(tmp_path, test_inventory, target="linux-x64")
+    with pytest.raises(PolicyError, match="target is required"):
+        verify_bundle(tmp_path, test_inventory)
+    with pytest.raises(PolicyError, match="unknown packaged bundle target"):
+        verify_bundle(tmp_path, test_inventory, target="freebsd-x64")
+    evidence.write_bytes(b"unreviewed wheel license evidence\n")
+    with pytest.raises(PolicyError, match="checksum failed"):
+        verify_bundle(tmp_path, test_inventory, target="windows-x64")
+
+
+@pytest.mark.parametrize("artifact", ["notice", "sbom"])
+def test_generated_artifact_check_rejects_crlf_bytes(
+    tmp_path: Path,
+    artifact: str,
+) -> None:
+    inventory = validate_policy()
+    notice = tmp_path / "THIRD_PARTY_NOTICES_RUNTIME.md"
+    sbom = tmp_path / "WebJam-runtime-sbom.cdx.json"
+    rendered = {
+        "notice": render_notice(inventory).encode("utf-8"),
+        "sbom": render_sbom(inventory).encode("utf-8"),
+    }
+    notice.write_bytes(rendered["notice"])
+    sbom.write_bytes(rendered["sbom"])
+    selected = notice if artifact == "notice" else sbom
+    selected.write_bytes(selected.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert (
+        policy_main(
+            [
+                "--notice",
+                str(notice),
+                "--sbom",
+                str(sbom),
+                "--check",
+            ]
+        )
+        == 1
+    )
+
+
+def test_numpy_license_evidence_maps_exact_reviewed_wheel_variants() -> None:
+    inventory = validate_policy()
+    numpy_evidence = next(
+        item
+        for item in inventory.policy["packaged_license_evidence"]
+        if item["component"] == "NumPy 2.4.6 and bundled sources"
+    )
+    assert numpy_evidence["sha256_by_target"] == {
+        "linux-x64": (
+            "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488"
+        ),
+        "macos-arm64": (
+            "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf"
+        ),
+        "macos-x64": (
+            "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf"
+        ),
+        "windows-x64": (
+            "a804dff0ead9fadc5293456410bcbfc32bf024be9c4513459663fb7b442d2341"
+        ),
+    }
+
+
 def test_pyinstaller_and_native_ci_package_generated_policy_artifacts() -> None:
     for name in (
         "THIRD_PARTY_NOTICES_RUNTIME.md",
@@ -212,5 +356,14 @@ def test_pyinstaller_and_native_ci_package_generated_policy_artifacts() -> None:
     assert "tools/runtime_dependency_policy.py --check" in CI
     assert "tools/runtime_dependency_policy.py" in CI
     assert '--verify-bundle "$dependency_bundle_root"' in CI
+    assert '--target "${{ matrix.target }}"' in CI
     assert 'Source: "..\\..\\THIRD_PARTY_NOTICES_RUNTIME.md"' in WINDOWS_INSTALLER
     assert 'DestName: "WebJam-runtime-sbom.cdx.json"' in WINDOWS_INSTALLER
+    for path in (
+        "THIRD_PARTY_NOTICES_RUNTIME.md",
+        "packaging/WebJam-runtime-sbom.cdx.json",
+        "packaging/runtime-dependency-policy.json",
+        "licenses/SOUNDFILE_LICENSE.txt",
+        "licenses/SOUNDFILE_WHEEL_LICENSE_NOTES.md",
+    ):
+        assert f"{path} text eol=lf" in ATTRIBUTES
