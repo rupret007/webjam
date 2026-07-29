@@ -84,7 +84,8 @@ def default_musician_name(settings: AppSettings) -> str:
             import pwd
 
             full_name = pwd.getpwuid(os.getuid()).pw_gecos.split(",", 1)[0].strip()
-            first_name = full_name.split(maxsplit=1)[0]
+            name_parts = full_name.split(maxsplit=1)
+            first_name = name_parts[0] if name_parts else ""
             # An unsaved OS account name is only a suggestion. Prefer the
             # short first-name form so a new musician starts with a one-line
             # Jamulus tile, while any explicitly saved name above is preserved
@@ -96,7 +97,9 @@ def default_musician_name(settings: AppSettings) -> str:
         except (ImportError, KeyError, OSError):
             pass
     account = getpass.getuser().replace("_", " ").replace(".", " ").strip()
-    for candidate in (account.split(maxsplit=1)[0].title(), account.title()):
+    account_parts = account.split(maxsplit=1)
+    short_account = account_parts[0].title() if account_parts else ""
+    for candidate in (short_account, account.title()):
         accepted = _accepted(candidate)
         if accepted:
             return accepted

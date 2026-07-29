@@ -100,6 +100,21 @@ def test_unsaved_os_full_name_prefers_a_one_line_first_name(tmp_path):
         assert default_musician_name(settings) == "Jeff"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX account full-name lookup")
+def test_empty_os_full_name_falls_back_to_account_name(tmp_path):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    account = SimpleNamespace(pw_gecos="")
+    with (
+        patch("pwd.getpwuid", return_value=account),
+        patch("webjam_qt.windows.launch_dialog.os.getuid", return_value=501),
+        patch(
+            "webjam_qt.windows.launch_dialog.getpass.getuser",
+            return_value="runner",
+        ),
+    ):
+        assert default_musician_name(settings) == "Runner"
+
+
 def test_saved_musician_name_is_never_reinterpreted_as_an_unsaved_default(
     tmp_path,
 ):
