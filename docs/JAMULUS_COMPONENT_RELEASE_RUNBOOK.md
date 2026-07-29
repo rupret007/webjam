@@ -1,139 +1,224 @@
-# Jamulus component catalog release runbook — WebJam v0.22.0
+# Jamulus component catalog release runbook — WebJam v0.22.1
 
-This runbook publishes or renews the small signed catalog that tells WebJam
-which exact Jamulus client/server packages are approved. It does not publish
-WebJam, redistribute Jamulus packages, approve HEADLESS, or make a desktop
-release Latest.
+This runbook renews the small signed catalog that tells WebJam which exact
+Jamulus client/server packages are approved. It does not publish WebJam,
+redistribute Jamulus packages, approve HEADLESS, or make a desktop release
+Latest.
 
-The first live catalog is a required v0.22.0 release gate. Create the desktop
-draft and verify its eight-file inventory first, then publish and validate this
-separate component prerelease, exercise an exact draft package against it, and
-only then promote the desktop draft to GitHub Latest. If any catalog or updater
-check fails, leave the desktop release as an unpublished draft.
+The first public catalog was sequence 1 for exact WebJam 0.22.0. Its stable
+lightweight channel tag, `jamulus-components-v1`, is permanently anchored at
+commit `bf64c1165486a654d923c4e3cb6ede69e6458320`. Never move or replace that
+tag. v0.22.1 authorization comes from a signature-valid, unexpired sequence 2
+catalog whose payload targets exact WebJam 0.22.1.
 
 ## Trust boundary
 
 - The repository and desktop package contain only the Ed25519 public key.
-- The matching private key stays in an owner-private file on a trusted release
-  workstation. Never copy it into the repository, an artifact, a command-line
-  value, an environment variable, a log, chat, issue, or GitHub Actions secret.
-- The catalog selects only official Jamulus 3.12.3 client/server entries already
-  present in `core/jamulus_compatibility.py`. It excludes HEADLESS.
-- Every catalog targets exact WebJam `0.22.0`, expires within 31 days, and uses
-  a sequence higher than the prior published catalog.
-- `jamulus-components-v1` is a separate prerelease and is explicitly not
-  GitHub Latest. Its only asset is
-  `WebJam-Jamulus-components-v1.json`.
-- The component release must be live, publicly downloadable, signature-valid,
-  unexpired, and verified from an exact v0.22.0 draft package before the
-  desktop release can be promoted to Latest.
+- The matching private key stays in an owner-private regular non-symlink file
+  with mode `0600` on a trusted release workstation. Never put it in the
+  repository, an artifact, command-line value, environment variable, log,
+  support bundle, chat, issue, or GitHub Actions secret.
+- The catalog selects only official Jamulus 3.12.3 client/server entries from
+  `core/jamulus_compatibility.py`. It contains exactly eight entries and no
+  HEADLESS role.
+- Every catalog targets one exact WebJam version, expires within 31 days, and
+  uses a sequence exactly one greater than the current public catalog.
+- `jamulus-components-v1` remains a public non-Latest prerelease with exactly
+  one asset: `WebJam-Jamulus-components-v1.json`.
+- The desktop draft remains unpublished if catalog generation, public
+  redownload, frozen-runtime verification, or UI verification fails.
 
 ## Preflight
 
-1. Work from the exact clean `v0.22.0` tag after tag CI has completed the full
-   four-target matrix and created the unpublished desktop draft. Verify that
-   draft contains exactly seven packages plus
-   `WebJam-v0.22.0-SHA256SUMS.txt`, and verify all seven checksums. Do not run
+1. Work from the exact clean annotated `v0.22.1` tag after tag CI finishes the
+   four-target matrix and creates the unpublished desktop draft. Verify that
+   the draft contains exactly seven packages plus
+   `WebJam-v0.22.1-SHA256SUMS.txt`, and verify all seven checksums. Do not run
    **Publish Verified WebJam Release** yet.
-2. Confirm the private key is a regular non-symlink file with mode `0600`.
-3. For a renewal, download the current public catalog, verify it, and record its
-   signed sequence and expiry:
+2. Reverify immutable identities:
 
    ```bash
-   mkdir -p /tmp/webjam-component-renewal
+   test "$(git rev-parse v0.22.0)" = \
+     663075ec53aab36cc9de5d1b84aaec0b3733290b
+   test "$(git cat-file -t v0.22.0)" = tag
+   test "$(git rev-parse 'v0.22.0^{commit}')" = \
+     bf64c1165486a654d923c4e3cb6ede69e6458320
+   test "$(git rev-parse 'jamulus-components-v1^{commit}')" = \
+     bf64c1165486a654d923c4e3cb6ede69e6458320
+   test "$(git cat-file -t jamulus-components-v1)" = commit
+   ```
+
+3. Download the current public catalog into a new directory. For a first
+   sequence-2 attempt, verify sequence 1 against its exact original WebJam
+   identity:
+
+   ```bash
+   mkdir -p /tmp/webjam-component-sequence-1
    gh release download jamulus-components-v1 \
      --repo rupret007/webjam \
      --pattern WebJam-Jamulus-components-v1.json \
-     --dir /tmp/webjam-component-renewal
+     --dir /tmp/webjam-component-sequence-1
    .venv/bin/python -m tools.verify_jamulus_component_catalog \
-     /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json
+     --webjam-version 0.22.0 \
+     --minimum-sequence 1 \
+     /tmp/webjam-component-sequence-1/WebJam-Jamulus-components-v1.json
    ```
 
-   For the first publication, the component release and asset do not exist yet;
-   do not weaken the verification command to hide any other download error.
-   Use prior sequence `0`. For every renewal, choose exactly the prior sequence
-   plus one. Do not reuse a sequence with different content.
+   Record its public SHA-256, sequence, signer fingerprint, and expiry. Reject
+   any sequence other than 1 for the first transition. If a prior attempt
+   already published sequence 2 but desktop promotion did not finish, do not
+   regenerate, replace, or advance it. Redownload the exact previously
+   recorded sequence-2 bytes, require their SHA-256 to match, verify signature,
+   exact WebJam 0.22.1, sequence 2, eight-entry inventory, and future expiry,
+   then resume the frozen-package and desktop-promotion gates. Any different
+   sequence-2 bytes are equivocation and must stop the release.
 
-4. Re-run the updater, packaging, license, and real-Jamulus compatibility gates.
+4. Confirm the private key remains a regular non-symlink `0600` file and its
+   public key matches embedded key ID `webjam-component-2026-07`. Do not print
+   or copy the private key.
+5. Re-run updater, packaging, license, and real-Jamulus 3.12.2/3.12.3 gates.
    Do not renew approval merely because an upstream asset is still named
    “latest.”
 
-## Create and verify
+## Create and verify sequence 2
 
-Use an absolute output path and the private-key path; neither is printed:
+Use an absolute output path. The release tool reads the private key from its
+file and does not print it:
 
 ```bash
-rm -f /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json
+mkdir -p /tmp/webjam-component-sequence-2
 .venv/bin/python -m tools.create_jamulus_component_catalog \
-  --sequence NEW_SEQUENCE \
+  --sequence 2 \
   --validity-days 30 \
-  --private-key "$HOME/.config/webjam-release/component-catalog-ed25519-private.pem" \
-  --output /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json
+  --private-key \
+    "$HOME/.config/webjam-release/component-catalog-ed25519-private.pem" \
+  --output \
+    /tmp/webjam-component-sequence-2/WebJam-Jamulus-components-v1.json
 .venv/bin/python -m tools.verify_jamulus_component_catalog \
-  --minimum-sequence NEW_SEQUENCE \
-  /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json
+  --webjam-version 0.22.1 \
+  --minimum-sequence 2 \
+  /tmp/webjam-component-sequence-2/WebJam-Jamulus-components-v1.json
 shasum -a 256 \
-  /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json
+  /tmp/webjam-component-sequence-2/WebJam-Jamulus-components-v1.json
 ```
 
-Inspect the public JSON. It must contain one canonical signed envelope, eight
-official entries (client and server for Windows x64, Linux x64, macOS arm64,
-and macOS x64), no HEADLESS entry, no private path, and no secret.
+Inspect the public JSON. It must be one canonical signed envelope targeting
+exact WebJam 0.22.1, sequence 2, with no more than 30 days of validity, eight
+official Jamulus 3.12.3 entries (client/server for Windows x64, Linux x64,
+macOS arm64, and macOS x64), no HEADLESS entry, private path, URL credential,
+or secret.
 
-## Publish without changing Latest
+## Publish without moving the channel tag or Latest
 
-For the first publication, create a lightweight component tag at the exact
-v0.22.0 commit and a prerelease that is explicitly not Latest:
-
-```bash
-git tag jamulus-components-v1 v0.22.0
-git push origin refs/tags/jamulus-components-v1
-gh release create jamulus-components-v1 \
-  /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json \
-  --repo rupret007/webjam \
-  --verify-tag \
-  --prerelease \
-  --latest=false \
-  --title "WebJam Jamulus component catalog v1" \
-  --notes "Signed, expiring Jamulus compatibility catalog for WebJam v0.22.0. This is not a desktop release."
-```
-
-For renewal, the release must remain mutable. Upload the higher-sequence
-catalog with clobber only after all verification passes:
+Upload only the verified higher-sequence asset:
 
 ```bash
 gh release upload jamulus-components-v1 \
-  /tmp/webjam-component-renewal/WebJam-Jamulus-components-v1.json \
+  /tmp/webjam-component-sequence-2/WebJam-Jamulus-components-v1.json \
   --repo rupret007/webjam \
   --clobber
+gh release edit jamulus-components-v1 \
+  --repo rupret007/webjam \
+  --prerelease \
+  --latest=false \
+  --title "WebJam Jamulus component catalog v1" \
+  --notes \
+    "Signed, expiring Jamulus compatibility catalog sequence 2 for exact WebJam v0.22.1. This is not a desktop release."
 ```
 
-Never move the tag. The signed sequence, expiry, and signature—not tag movement
-or asset naming—provide the client trust decision.
+Do not run `git tag -f`, `git push --force`, `gh release delete --cleanup-tag`,
+or any command that changes `jamulus-components-v1`. The signed sequence,
+expiry, exact WebJam identity, and Ed25519 signature—not tag movement—are the
+client trust decision.
 
 ## Public verification before desktop promotion
 
-1. Download the asset into a new empty directory and verify it again.
-2. Confirm its sole release asset is
-   `WebJam-Jamulus-components-v1.json`, and independently verify the signature,
-   exact WebJam `0.22.0` identity, eight client/server target entries, sequence,
-   and unexpired timestamp with the verifier from the `v0.22.0` tag.
-3. Confirm the component release is `prerelease=true`, `draft=false`, and not
-   the value returned by `/releases/latest`.
-4. Launch a clean package from the exact verified v0.22.0 desktop draft and use
-   **More → Jamulus Updates → Check now**. Confirm the catalog reports the
-   verified sequence, expiry, and fingerprint and Jamulus 3.12.3 becomes
-   Available or Ready. Exercise the platform's explicit approval path without
-   interrupting an active Jamulus lifecycle.
-5. Confirm offline, expired, and tampered fixtures retain the current managed
-   version or embedded 3.12.2 fallback.
-6. Run **Publish Verified WebJam Release** for `v0.22.0` only after steps 1–5
-   pass. Confirm `/releases/latest` reports the v0.22.0 desktop release with its
-   exact eight assets while `jamulus-components-v1` remains a non-Latest
-   prerelease.
-7. Delete only the temporary public catalog directory. Retain no extra copy of
-   the private key.
+1. Download the public asset into a different new directory. Verify its
+   GitHub digest and local SHA-256 match the pre-upload file exactly. Keep the
+   verifier snapshot and derive the three independent frozen-smoke inputs from
+   those public bytes:
+
+   ```bash
+   public_directory="$(
+     mktemp -d "${TMPDIR:-/tmp}/webjam-component-public.XXXXXX"
+   )"
+   gh release download jamulus-components-v1 \
+     --repo rupret007/webjam \
+     --pattern WebJam-Jamulus-components-v1.json \
+     --dir "$public_directory"
+   public_catalog=\
+   "$public_directory/WebJam-Jamulus-components-v1.json"
+   catalog_snapshot="$public_directory/verified-catalog.json"
+   .venv/bin/python -m tools.verify_jamulus_component_catalog \
+     --webjam-version 0.22.1 \
+     --minimum-sequence 2 \
+     "$public_catalog" > "$catalog_snapshot"
+   catalog_envelope_sha256="$(
+     shasum -a 256 "$public_catalog" | awk '{print $1}'
+   )"
+   github_envelope_sha256="$(
+     gh api \
+       repos/rupret007/webjam/releases/tags/jamulus-components-v1 \
+       --jq '.assets[] | select(.name == "WebJam-Jamulus-components-v1.json") | .digest'
+   )"
+   test "$github_envelope_sha256" = \
+     "sha256:$catalog_envelope_sha256"
+   catalog_payload_sha256="$(
+     .venv/bin/python -c \
+       'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["payload_sha256"])' \
+       "$catalog_snapshot"
+   )"
+   signer_fingerprint_sha256="$(
+     .venv/bin/python -c \
+       'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["signer_fingerprint_sha256"])' \
+       "$catalog_snapshot"
+   )"
+   ```
+
+   Record all three lowercase 64-character SHA-256 values in the private
+   release evidence. Do not source them from the frozen desktop result.
+2. Inspect the saved verifier snapshot. Confirm exact sequence 2, exact WebJam
+   0.22.1, eight client/server entries, no HEADLESS, and a future expiry.
+3. Confirm the component release has `prerelease=true`, `draft=false`, exactly
+   one asset, and is not returned by `/releases/latest`. Reverify that its tag
+   still resolves to the immutable anchor commit.
+4. Extract an exact verified v0.22.1 Mac draft package and run:
+
+   ```bash
+   .venv/bin/python tests/support/run_frozen_component_catalog_smoke.py \
+     --binary /path/to/WebJam.app/Contents/MacOS/WebJam \
+     --expected-version 0.22.1 \
+     --expected-sequence 2 \
+     --expected-target macos-arm64 \
+     --expected-jamulus-version 3.12.3 \
+     --expected-catalog-envelope-sha256 "$catalog_envelope_sha256" \
+     --expected-catalog-payload-sha256 "$catalog_payload_sha256" \
+     --expected-signer-fingerprint-sha256 "$signer_fingerprint_sha256"
+   ```
+
+   The fixed-URL probe must report packaged Certifi trust ready, CA
+   environment overrides ignored, the explicit redirect allowlist, catalog
+   sequence 2, exact eight-entry inventory, Jamulus 3.12.3, and the exact
+   independently recorded envelope, payload, and signer digests. Use
+   `macos-x64` for the Intel package. It accepts no URL, key, or CA-path input.
+5. Launch that same package normally. Open
+   **More → Jamulus Updates → Check now** and confirm the UI reports Jamulus
+   3.12.3 Available or Ready plus the verified sequence, expiry, and signer
+   fingerprint. Exercise the platform's explicit approval path only while the
+   Jamulus client, server, Reference Track, recording, practice, reconnect, and
+   launch lifecycles are idle.
+6. Confirm offline, expired, tampered, and missing-trust fixtures keep the
+   current managed version or embedded Jamulus 3.12.2 fallback. Export a
+   Support Bundle and verify it contains only bounded reason/trust facts—no
+   URL, local path, username, token, credential, or raw exception.
+7. Run **Publish Verified WebJam Release** for `v0.22.1` only after steps 1–6
+   pass. Confirm `/releases/latest` reports v0.22.1 with its exact eight assets
+   while `jamulus-components-v1` remains a non-Latest prerelease.
+8. After v0.22.1 is publicly verified, delete only the obsolete unpublished
+   v0.22.0 draft by release ID. Do not delete or move its annotated tag.
+   Reverify `v0.22.0^{commit}` still equals the anchor commit.
 
 An expired catalog is fail-closed, not an emergency that justifies bypassing
 the process. WebJam continues with the last verified managed version or its
-embedded 3.12.2 fallback until a correctly signed higher sequence is available.
+embedded Jamulus 3.12.2 fallback until a correctly signed higher sequence is
+available.

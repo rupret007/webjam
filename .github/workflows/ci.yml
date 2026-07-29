@@ -394,7 +394,8 @@ jobs:
           assert all(entry.component_id == "jamulus" for entry in approved)
           assert all(entry.variant == "official" for entry in approved)
           assert all(entry.activation_mode is ActivationMode.PLATFORM_APPROVAL for entry in approved)
-          assert all(entry.supports_webjam("0.22.0") for entry in approved)
+          from webjam_qt import __version__
+          assert all(entry.supports_webjam(__version__) for entry in approved)
 
           target = (
               ComponentTarget.WINDOWS_X64

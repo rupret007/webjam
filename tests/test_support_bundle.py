@@ -310,6 +310,51 @@ class TestSupportArtifact(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, encoded)
 
+    def test_catalog_fetch_diagnostics_use_exact_finite_allowlists(self):
+        accepted = build_support_bundle(
+            SupportFacts(
+                jamulus_update={
+                    "catalog_fetch_status": "failed",
+                    "catalog_fetch_reason_code": (
+                        "catalog-secure-connection-failed"
+                    ),
+                    "tls_trust_source": "packaged-certifi",
+                    "tls_trust_status": "ready",
+                    "tls_environment_ca_overrides": "ignored",
+                    "catalog_redirect_policy": "explicit-allowlist",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report["jamulus_update"]
+        self.assertEqual(
+            accepted,
+            {
+                "catalog_fetch_status": "failed",
+                "catalog_fetch_reason_code": (
+                    "catalog-secure-connection-failed"
+                ),
+                "tls_trust_source": "packaged-certifi",
+                "tls_trust_status": "ready",
+                "tls_environment_ca_overrides": "ignored",
+                "catalog_redirect_policy": "explicit-allowlist",
+            },
+        )
+
+        rejected_report = build_support_bundle(
+            SupportFacts(
+                jamulus_update={
+                    "catalog_fetch_status": "private-state",
+                    "catalog_fetch_reason_code": "private-api-token-123",
+                    "tls_trust_source": "/Users/private/cacert.pem",
+                    "tls_trust_status": "private",
+                    "tls_environment_ca_overrides": "private",
+                    "catalog_redirect_policy": "private",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report
+        self.assertNotIn("jamulus_update", rejected_report)
+
     def test_allowlist_excludes_devices_environment_personal_files_and_content(self):
         artifact = _artifact()
         report = artifact.structured_report

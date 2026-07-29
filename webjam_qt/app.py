@@ -445,6 +445,26 @@ def run() -> int:
     """Run WebJam with one plain-language last-resort failure screen."""
     if (
         getattr(sys, "frozen", False)
+        and os.environ.get("WEBJAM_SMOKE_COMPONENT_CATALOG_RUNTIME") == "1"
+    ):
+        try:
+            from services.jamulus_component_packaged_smoke import (
+                run_frozen_component_catalog_smoke,
+            )
+
+            result_path = Path(
+                os.environ.get("WEBJAM_SMOKE_COMPONENT_CATALOG_RESULT", "")
+            )
+            return run_frozen_component_catalog_smoke(result_path=result_path)
+        except Exception as exc:  # noqa: BLE001 - release-only frozen proof
+            logging.getLogger("webjam.qt").error(
+                "Frozen Jamulus component catalog smoke failed; "
+                "exception_type=%s",
+                type(exc).__name__,
+            )
+            return 1
+    if (
+        getattr(sys, "frozen", False)
         and os.environ.get("WEBJAM_SMOKE_REFERENCE_STUDIO_RUNTIME") == "1"
     ):
         try:

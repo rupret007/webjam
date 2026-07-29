@@ -304,16 +304,16 @@ public `/releases/latest` response contains the exact inventory above. A green
 four-target matrix, retained Windows Actions artifact, pushed tag, or complete
 draft does not satisfy the release request on its own.
 
-### v0.22.0 signed-component candidate
+### v0.22.0 blocked signed-component candidate evidence
 
-The v0.22.0 source candidate adds an independently updatable Jamulus boundary,
+The immutable v0.22.0 source candidate added an independently updatable Jamulus boundary,
 exact Jamulus-name validation/preview, native Webex detection with explicit
 official Cisco installer handoff, and path-free updater/Webex support evidence.
 It preserves the v0.21.0 Reference Studio, Pocket Stage kit, embedded Jamulus
 3.12.2 fallback, and locked Reference Track behavior. Never move or replace the
 v0.21.0 tag or assets.
 
-The exact v0.22.0 draft inventory is:
+The unpublished v0.22.0 draft inventory was:
 
 - `WebJam-v0.22.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
@@ -324,14 +324,17 @@ The exact v0.22.0 draft inventory is:
 - `WebJam-linux-x64.zip`
 - `WebJam-v0.22.0-SHA256SUMS.txt`
 
-The checksum file contains exactly seven entries and never lists itself. The
+Its checksum file contained exactly seven entries and did not list itself. The
 separate signed component catalog, Jamulus installers/DMG/packages, signing
-key, public-key source, HEADLESS evidence, or source archives must not be
-attached to this desktop release. Candidate tag CI drafts the release; the
-**Publish Verified WebJam Release** workflow must independently download it,
-reject any other inventory, verify all seven checksums, publish it as a
-non-prerelease with explicit `--latest`, and prove both `/releases/latest` and
-the public asset list identify `v0.22.0`.
+key, public-key source, HEADLESS evidence, and source archives were excluded.
+Tag CI created the draft, but the required exact-package check then proved that
+the frozen updater could not establish catalog TLS trust. The promotion
+workflow was therefore never authorized to publish it. The inventory and
+promotion rules above are retained only as historical evidence of the blocked
+gate, not as instructions to complete a v0.22.0 release. Keep the annotated tag
+and tagged bytes permanently. Retain the unpublished draft untouched until
+v0.22.1 is publicly verified, then delete only that obsolete draft by release
+ID. Never publish, move, or rebuild v0.22.0.
 
 The catalog is operated in a separate non-Latest release named
 `jamulus-components-v1`. Generate its payload from the checked-in compatibility
@@ -343,19 +346,69 @@ Latest desktop release. An expired catalog is a normal fail-closed condition:
 clients keep the verified managed/current component or embedded 3.12.2
 fallback and report that update checking is unavailable.
 
-Before publication, prove the updater rejects invalid signatures, expiry,
-replay, rollback, same-sequence equivocation, bad hosts/redirects, wrong target,
-architecture, publisher, filename, size/hash, partial downloads, unexpected
-inventory, traversal/symlinks, lock contention, corrupt pointers, and busy
-activation. On macOS prove the DMG is not mounted until the exact license is
-shown and explicitly accepted; after acceptance verify the untouched upstream
-signature/notarization and quarantine. On Windows record the upstream
-installer's known unsigned state and explicit UAC handoff. On Linux prove no
-hidden `sudo` or shell path.
+The blocked v0.22.0 gate would also have required proof that the updater
+rejected invalid signatures, expiry, replay, rollback, same-sequence
+equivocation, bad hosts/redirects, wrong target, architecture, publisher,
+filename, size/hash, partial downloads, unexpected inventory,
+traversal/symlinks, lock contention, corrupt pointers, and busy activation.
+Those requirements carry forward to v0.22.1; they do not authorize publication
+of v0.22.0. Platform approval evidence must likewise stay attached to the exact
+candidate under test.
 
-For v0.22.0, completion still requires the exact four-target desktop matrix,
-draft-first publication, checksum verification, and GitHub **Latest** result.
+v0.22.0 is permanently blocked from publication. Its green build matrix does
+not supersede the failed exact-package updater gate.
 Automated source and package evidence does not convert physical audio, Webex
 joining, hardware recovery, long-session, Windows publisher trust, WebJam
 Developer ID/notarization, or managed-device policy into PASS; record those as
 **NOT RUN** unless performed against the exact published assets.
+
+### v0.22.1 frozen-updater reliability candidate
+
+v0.22.1 retains the reviewed v0.22.0 product behavior and fixes the frozen
+runtime's TLS trust selection. The updater explicitly loads the packaged,
+release-locked Certifi CA bytes, requires hostname verification and TLS 1.2 or
+newer, and ignores CA environment overrides. Its fixed-URL frozen smoke must
+verify the live signed catalog from an exact package before promotion.
+
+The exact v0.22.1 draft inventory is:
+
+- `WebJam-v0.22.1-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.1-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.1-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.1-SHA256SUMS.txt`
+
+After tag CI creates the draft, independently download all eight assets, prove
+the manifest lists exactly the other seven files, and verify every checksum.
+Then renew `jamulus-components-v1` to signed sequence 2 targeting exact WebJam
+0.22.1 without moving its stable tag. Run the fixed frozen probe from the exact
+Mac package. Set the three digest variables from the independently downloaded
+and verified public catalog exactly as described in
+`docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md`; do not copy values from the
+desktop package:
+
+```bash
+.venv/bin/python tests/support/run_frozen_component_catalog_smoke.py \
+  --binary /path/to/WebJam.app/Contents/MacOS/WebJam \
+  --expected-version 0.22.1 \
+  --expected-sequence 2 \
+  --expected-target macos-arm64 \
+  --expected-jamulus-version 3.12.3 \
+  --expected-catalog-envelope-sha256 "$catalog_envelope_sha256" \
+  --expected-catalog-payload-sha256 "$catalog_payload_sha256" \
+  --expected-signer-fingerprint-sha256 "$signer_fingerprint_sha256"
+```
+
+The probe must report packaged Certifi trust ready, environment CA overrides
+ignored, the explicit redirect allowlist, catalog sequence 2, approved Jamulus
+3.12.3, and exact agreement with the independently recorded envelope, payload,
+and signer digests. Use `macos-x64` for the Intel package. The promotion
+workflow also safely extracts and runs this proof from the exact Linux ZIP
+before it can publish. Open **More → Jamulus Updates → Check now** and confirm
+the same Available or Ready result in the real Mac UI. Only then run
+**Publish Verified WebJam Release** for v0.22.1 and independently prove that
+GitHub `/releases/latest` and the public asset bytes match the verified draft.
+Never publish the draft directly from the web page.

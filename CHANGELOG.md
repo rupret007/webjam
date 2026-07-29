@@ -4,6 +4,44 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.22.1] — 2026-07-28 frozen updater reliability candidate
+
+### Packaged Jamulus update checks
+
+- Fixed a package-only TLS trust defect found while exercising the exact
+  v0.22.0 Mac draft. Source Python could reach the signed component catalog,
+  but frozen Python looked for an OpenSSL CA file that was not present even
+  though the release already contained Certifi's reviewed CA bundle.
+- The updater now constructs its HTTPS context from the release-locked,
+  packaged Certifi certificate bytes, requires hostname verification,
+  `CERT_REQUIRED`, and TLS 1.2 or newer, and does not honor
+  `SSL_CERT_FILE`/`SSL_CERT_DIR` as alternate updater trust roots. The signed
+  Ed25519 catalog, exact host/redirect allowlist, size limits, and component
+  hash checks remain unchanged.
+- Added distinct, path-free recovery and Support Bundle facts for offline
+  access, trusted-connection failure, unusable service response, and missing
+  packaged trust data. Musicians continue on the embedded Jamulus 3.12.2
+  fallback without a crash or partial update.
+- Added a fixed-URL frozen-runtime release probe that fetches and verifies the
+  live catalog with the packaged public key and exact WebJam version while
+  deliberately poisoning both CA environment variables. It accepts no
+  arbitrary URL, key, or trust path.
+
+### Release integrity
+
+- Removed the last hardcoded candidate version from the macOS managed-Jamulus
+  resolver; it now receives the running WebJam version from the update service.
+- Corrected Latest-promotion policy so the stable
+  `jamulus-components-v1` channel tag remains immutably anchored at the original
+  v0.22.0 component-channel commit. A higher signed catalog sequence—not tag
+  movement—authorizes v0.22.1.
+- The v0.22.0 annotated tag and tagged bytes remain immutable failure
+  evidence. Its unpublished draft is retained untouched until v0.22.1 is
+  publicly verified, then only that obsolete draft is deleted by release ID.
+  v0.22.1 is the first candidate eligible for publication after its exact
+  four-platform packages, renewed sequence-2 catalog, frozen updater check, and
+  GitHub Latest promotion all pass.
+
 ## [0.22.0] — 2026-07-28 secure component and integration test candidate
 
 ### Jamulus updates without rebuilding WebJam

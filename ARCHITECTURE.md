@@ -1,4 +1,4 @@
-# WebJam architecture — v0.22.0
+# WebJam architecture — v0.22.1
 
 ## Product boundary
 
@@ -33,7 +33,7 @@ inputs, so availability alone is never approval:
 
 ```text
 separate component release
-  -> bounded HTTPS origin/redirect policy
+  -> release-locked Certifi TLS trust + bounded HTTPS origin/redirect policy
   -> canonical Ed25519 catalog signature
   -> expiry + monotonic sequence/rollback protection
   -> exact WebJam/target/architecture/role/capability policy
@@ -48,6 +48,14 @@ repository or package. The desktop embeds only a public key. The signed payload
 must target the exact WebJam version and expires within 31 days. Repeated
 sequences are accepted only for byte-identical signed payloads; older sequences
 and same-sequence changes fail closed.
+
+Frozen Python does not use an ambient OpenSSL CA location for this boundary.
+`UrllibHttpsTransport` constructs a hostname-checking, `CERT_REQUIRED`,
+TLS-1.2-or-newer context from the Certifi bytes shipped in the exact WebJam
+package. `SSL_CERT_FILE` and `SSL_CERT_DIR` are not alternate updater trust
+inputs. Transport diagnostics expose only finite trust source/status,
+redirect-policy, and failure-category values—never a CA path, URL, proxy,
+credential, or raw exception.
 
 Download and activation are separate. Downloading may occur during a session,
 but install, activation, or rollback requires proof that no musician client,

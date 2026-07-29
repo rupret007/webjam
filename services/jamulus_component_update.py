@@ -25,6 +25,8 @@ from core.component_catalog import (
 from core.component_download import (
     ComponentDownloadCancelled,
     ComponentDownloadError,
+    ComponentSecureConnectionError,
+    ComponentTlsTrustError,
     DownloadCancellation,
     DownloadProgress,
     SecureComponentDownloader,
@@ -164,6 +166,29 @@ class SignedCatalogFetcher:
             timeout=30.0, user_agent="WebJam Jamulus component catalog"
         )
         self.host_policy = host_policy
+
+    def security_diagnostics(self) -> dict[str, str]:
+        """Return finite, path-free transport trust facts."""
+
+        diagnostics = getattr(self.transport, "security_diagnostics", None)
+        if not callable(diagnostics):
+            return {"trust_source": "injected", "trust_status": "unknown"}
+        try:
+            value = diagnostics()
+        except Exception:  # noqa: BLE001 - diagnostics stays best-effort
+            return {"trust_source": "unavailable", "trust_status": "unknown"}
+        if not isinstance(value, dict):
+            return {"trust_source": "unavailable", "trust_status": "unknown"}
+        return {
+            key: str(value[key])
+            for key in (
+                "trust_source",
+                "trust_status",
+                "environment_ca_overrides",
+                "redirect_policy",
+            )
+            if isinstance(value.get(key), str)
+        }
 
     def fetch(
         self,
@@ -324,6 +349,8 @@ class JamulusComponentUpdateService:
         self._server_candidate: JamulusCompatibility | None = None
         self._previous_version = ""
         self._rollback_available = False
+        self._last_catalog_fetch_status = "not-checked"
+        self._last_catalog_fetch_reason = ""
         initial_active_version = (
             self._safe_active_version()
             if active_version_provider is not None
@@ -568,9 +595,17 @@ class JamulusComponentUpdateService:
         with self._state_lock:
             catalog = self._catalog
             presentation = self._presentation
+            fetch_status = self._last_catalog_fetch_status
+            fetch_reason = self._last_catalog_fetch_reason
             operation = bool(
                 self._operation_thread is not None and self._operation_thread.is_alive()
             )
+        transport = {
+            "last_check": fetch_status,
+            **_safe_transport_diagnostics(self.catalog_fetcher),
+        }
+        if fetch_reason:
+            transport["reason_code"] = fetch_reason
         return {
             "update": presentation.to_public_dict(),
             "catalog": (
@@ -584,6 +619,7 @@ class JamulusComponentUpdateService:
             "embedded_fallback_version": EMBEDDED_FALLBACK_VERSION,
             "automatic_download": self.automatic_download,
             "operation_in_progress": operation,
+            "catalog_transport": transport,
         }
 
     def _check_worker(
@@ -601,21 +637,31 @@ class JamulusComponentUpdateService:
             )
         except ComponentDownloadCancelled:
             raise
-        except (CatalogFetchError, ComponentDownloadError, OSError):
+        except (CatalogFetchError, ComponentDownloadError, OSError) as exc:
             network_failed = True
+            failure_reason = _catalog_fetch_reason(exc)
+            with self._state_lock:
+                self._last_catalog_fetch_status = "failed"
+                self._last_catalog_fetch_reason = failure_reason
             envelope = self._read_cached_catalog()
+        else:
+            with self._state_lock:
+                self._last_catalog_fetch_status = "online"
+                self._last_catalog_fetch_reason = ""
         if envelope is None:
             self._clear_actionable_catalog()
+            reason_code = (
+                self._last_catalog_fetch_reason
+                if network_failed
+                else "catalog-offline"
+            )
             self._publish(
                 JamulusUpdateSnapshot(
                     state=JamulusUpdateState.FALLBACK,
                     active_version=self._safe_active_version(),
                     target=self.target.value,
-                    reason_code="catalog-offline",
-                    message=(
-                        "Jamulus update checking is offline. WebJam will keep "
-                        "using its known-good Jamulus copy."
-                    ),
+                    reason_code=reason_code,
+                    message=_catalog_fetch_message(reason_code),
                     checked_at_utc=_utc_now(),
                 )
             )
@@ -1330,7 +1376,11 @@ class JamulusComponentUpdateService:
     ) -> MacOSJamulusComponentStore:
         if self._platform_store_factory is not None:
             return self._platform_store_factory(registry, self.root)
-        return MacOSJamulusComponentStore(registry, root=self.root)
+        return MacOSJamulusComponentStore(
+            registry,
+            webjam_version=self.webjam_version,
+            root=self.root,
+        )
 
     def _make_installed_store(
         self,
@@ -1465,6 +1515,18 @@ def _detail_for_reason(reason_code: str) -> str:
             "Nothing was changed. You can continue with the embedded fallback "
             "and check again when online."
         ),
+        "catalog-secure-connection-failed": (
+            "Check your internet connection, VPN or firewall, and system date "
+            "and time. If this continues, save a Support Bundle for diagnosis."
+        ),
+        "catalog-trust-unavailable": (
+            "Restart WebJam. If this continues, reinstall the current WebJam "
+            "package and save a Support Bundle for diagnosis."
+        ),
+        "catalog-service-unavailable": (
+            "The update service returned an unusable response. Nothing changed; "
+            "try Check now later."
+        ),
         "license-approval-required": (
             "WebJam never accepts the Jamulus disk-image license silently."
         ),
@@ -1514,6 +1576,61 @@ def _detail_for_reason(reason_code: str) -> str:
             "session, then try again."
         ),
     }.get(str(reason_code), "")
+
+
+def _catalog_fetch_reason(exc: Exception) -> str:
+    if isinstance(exc, ComponentTlsTrustError):
+        return "catalog-trust-unavailable"
+    if isinstance(exc, ComponentSecureConnectionError):
+        return "catalog-secure-connection-failed"
+    if isinstance(exc, (CatalogFetchError, ComponentDownloadError)):
+        return "catalog-service-unavailable"
+    return "catalog-offline"
+
+
+def _safe_transport_diagnostics(fetcher: object) -> dict[str, str]:
+    diagnostics = getattr(fetcher, "security_diagnostics", None)
+    if not callable(diagnostics):
+        return {"trust_source": "injected", "trust_status": "unknown"}
+    try:
+        value = diagnostics()
+    except Exception:  # noqa: BLE001 - support facts remain optional
+        return {"trust_source": "unavailable", "trust_status": "unknown"}
+    if not isinstance(value, dict):
+        return {"trust_source": "unavailable", "trust_status": "unknown"}
+    return {
+        key: str(value[key])
+        for key in (
+            "trust_source",
+            "trust_status",
+            "environment_ca_overrides",
+            "redirect_policy",
+        )
+        if isinstance(value.get(key), str)
+    }
+
+
+def _catalog_fetch_message(reason_code: str) -> str:
+    return {
+        "catalog-trust-unavailable": (
+            "WebJam's secure Jamulus update checker is unavailable. WebJam "
+            "kept the current known-good Jamulus copy."
+        ),
+        "catalog-secure-connection-failed": (
+            "WebJam could not establish a trusted connection to check for "
+            "Jamulus updates. The current known-good copy is unchanged."
+        ),
+        "catalog-service-unavailable": (
+            "The Jamulus update service returned an unusable response. WebJam "
+            "kept the current known-good Jamulus copy."
+        ),
+    }.get(
+        str(reason_code),
+        (
+            "Jamulus update checking is offline. WebJam will keep using its "
+            "known-good Jamulus copy."
+        ),
+    )
 
 
 def _safe_reason_code(exc: Exception) -> str:

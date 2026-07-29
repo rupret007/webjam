@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.22.0
+# WebJam musician guide — v0.22.1
 
 ## Follow the current guide
 
@@ -59,7 +59,7 @@ invitation succeeded.
 | Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.22.0 pending the physical macOS isolation pilot |
+| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.22.1 pending the physical macOS isolation pilot |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
 | Studio | Reviews and arranges takes; playback output appears only for review |
 | Notes | Opens session notes |
@@ -87,6 +87,13 @@ managed update fails at launch or verification, use **Use previous version**
 or continue with the embedded fallback. Windows and Linux use their normal
 system installer recovery and retain the embedded fallback; WebJam does not
 claim to roll back an OS-owned installation.
+
+If a check cannot run, the dialog distinguishes ordinary offline access, a
+trusted-connection problem, an unusable update-service response, and missing
+packaged trust data. Follow its recovery text. If the problem repeats, choose
+**More → Support** and save a Support Bundle; it includes the safe failure
+category and TLS trust state without including your URL, local paths,
+credentials, or the raw network error.
 
 On a Mac, choose **Review license and install**, read the exact Jamulus terms,
 then explicitly Agree or Not now. WebJam verifies the official Jamulus
@@ -172,7 +179,7 @@ on BlackHole channels 3/4. The host must then hear it only through the normal
 primary Jamulus mix, and every musician can adjust the `WebJam Track`
 participant independently.
 
-The v0.22.0 private test candidate keeps playback locked even on a Mac with
+The v0.22.1 private test candidate keeps playback locked even on a Mac with
 BlackHole installed. CoreAudio has a reported device-switch failure where its
 process input query returns the output device instead, while Jamulus 3.12.2
 does not expose an independent live-device query. Physical BlackHole,
@@ -238,7 +245,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.22.0 source tree.
+v0.22.1 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

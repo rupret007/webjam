@@ -4,31 +4,56 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing draft candidate tag to verify and publish (for example v0.22.0)"
+        description: "Exact existing draft candidate tag to publish (v0.22.1 only)"
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-webjam-release
   cancel-in-progress: false
 
+env:
+  EXPECTED_PROMOTION_TAG: v0.22.1
+  V0220_TAG_OBJECT: 663075ec53aab36cc9de5d1b84aaec0b3733290b
+  V0220_TAG_COMMIT: bf64c1165486a654d923c4e3cb6ede69e6458320
+  COMPONENT_CHANNEL_ANCHOR: bf64c1165486a654d923c4e3cb6ede69e6458320
+
 jobs:
-  publish-latest:
-    name: Verify draft and publish as Latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: release-latest
+  frozen-package-smoke:
+    name: Prove exact frozen package without release-write authority
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      tag_object: ${{ steps.release.outputs.tag_object }}
+      tag_commit: ${{ steps.release.outputs.tag_commit }}
+      master_commit: ${{ steps.release.outputs.master_commit }}
+      release_id: ${{ steps.draft.outputs.release_id }}
+      linux_asset_id: ${{ steps.draft.outputs.linux_asset_id }}
+      linux_asset_digest: ${{ steps.draft.outputs.linux_asset_digest }}
+      linux_package_sha256: ${{ steps.linux.outputs.linux_package_sha256 }}
+      component_tag_object: ${{ steps.component.outputs.tag_object }}
+      component_tag_commit: ${{ steps.component.outputs.tag_commit }}
+      component_release_id: ${{ steps.component.outputs.release_id }}
+      component_asset_id: ${{ steps.component.outputs.asset_id }}
+      component_asset_digest: ${{ steps.component.outputs.asset_digest }}
+      catalog_envelope_sha256: ${{ steps.component.outputs.catalog_envelope_sha256 }}
+      catalog_payload_sha256: ${{ steps.component.outputs.catalog_payload_sha256 }}
+      signer_fingerprint_sha256: ${{ steps.component.outputs.signer_fingerprint_sha256 }}
     steps:
-      - name: Checkout release-control source
+      - name: Checkout release-control source without persisted credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate and fetch immutable release tag
+      - name: Validate exact immutable v0.22.1 release tag
         id: release
         shell: bash
         env:
@@ -36,12 +61,21 @@ jobs:
         run: |
           set -euo pipefail
           tag="$REQUESTED_TAG"
-          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "Release tag must use the exact vMAJOR.MINOR.PATCH form." >&2
+          if [[ "$tag" != "$EXPECTED_PROMOTION_TAG" ]]; then
+            echo "This one-off promotion workflow accepts only v0.22.1." >&2
             exit 1
-          }
+          fi
           git fetch --no-tags origin \
             "+refs/heads/master:refs/remotes/origin/master"
+          historical_ref="refs/webjam-historical-tags/v0.22.0"
+          git fetch --no-tags origin \
+            "refs/tags/v0.22.0:${historical_ref}"
+          [[ "$(git cat-file -t "$historical_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$historical_ref")" == "$V0220_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${historical_ref}^{commit}")" == \
+            "$V0220_TAG_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin refs/tags/v0.22.0 \
+            | awk 'NR == 1 {print $1}')" == "$V0220_TAG_OBJECT" ]]
           tag_ref="refs/webjam-release-tags/${tag}"
           git fetch --no-tags origin "refs/tags/${tag}:${tag_ref}"
           if [[ "$(git cat-file -t "$tag_ref")" != "tag" ]]; then
@@ -71,13 +105,15 @@ jobs:
             echo "Tag $tag does not match packaged version ${packaged_version:-missing}." >&2
             exit 1
           }
+          [[ "$packaged_version" == "0.22.1" ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$packaged_version" >> "$GITHUB_OUTPUT"
           echo "tag_object=$tag_object" >> "$GITHUB_OUTPUT"
           echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
           echo "master_commit=$master_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Require one unpublished non-prerelease draft
+      - name: Bind one unpublished draft and its Linux asset
+        id: draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,7 +142,31 @@ jobs:
                 end
             ' \
             "$RUNNER_TEMP/release-pages.json" \
-            > "$RUNNER_TEMP/release-before.json"
+            > "$RUNNER_TEMP/release-smoke.json"
+          jq -e \
+            '
+              [ .assets[] | select(.name == "WebJam-linux-x64.zip") ]
+              | if length != 1 then
+                  error("expected exactly one Linux package asset")
+                else
+                  .[0]
+                end
+            ' \
+            "$RUNNER_TEMP/release-smoke.json" \
+            > "$RUNNER_TEMP/linux-asset-smoke.json"
+          release_id="$(jq -r '.id' "$RUNNER_TEMP/release-smoke.json")"
+          linux_asset_id="$(jq -r '.id' "$RUNNER_TEMP/linux-asset-smoke.json")"
+          linux_asset_digest="$(jq -r '.digest' \
+            "$RUNNER_TEMP/linux-asset-smoke.json")"
+          linux_asset_size="$(jq -r '.size' \
+            "$RUNNER_TEMP/linux-asset-smoke.json")"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$linux_asset_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$linux_asset_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$linux_asset_size" =~ ^[1-9][0-9]*$ ]]
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "linux_asset_id=$linux_asset_id" >> "$GITHUB_OUTPUT"
+          echo "linux_asset_digest=$linux_asset_digest" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python for signed component-catalog verification
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -116,6 +176,7 @@ jobs:
       - name: Install hash-locked component-catalog verifier dependencies
         shell: bash
         run: |
+          set -euo pipefail
           python -m pip install \
             --disable-pip-version-check \
             --require-hashes \
@@ -125,7 +186,7 @@ jobs:
             requirements-lock/component-catalog-verifier-linux-x64.txt
           python -m pip check
 
-      - name: Require live signed Jamulus catalog before desktop promotion
+      - name: Verify and bind the live signed Jamulus catalog
         id: component
         shell: bash
         env:
@@ -140,25 +201,25 @@ jobs:
           git fetch --no-tags origin \
             "refs/tags/${component_tag}:${component_tag_ref}"
           component_tag_type="$(git cat-file -t "$component_tag_ref")"
-          if [[ "$component_tag_type" != "commit" && \
-                "$component_tag_type" != "tag" ]]; then
-            echo "Component release tag has an unsupported object type." >&2
+          if [[ "$component_tag_type" != "commit" ]]; then
+            echo "Component channel tag must remain the reviewed lightweight tag." >&2
             exit 1
           fi
           component_tag_object="$(git rev-parse "$component_tag_ref")"
           component_tag_commit="$(git rev-parse "${component_tag_ref}^{commit}")"
-          if [[ "$component_tag_commit" != "$EXPECTED_DESKTOP_COMMIT" ]]; then
-            echo "Component tag does not resolve to the desktop release commit." >&2
+          if [[ "$component_tag_object" != "$COMPONENT_CHANNEL_ANCHOR" || \
+                "$component_tag_commit" != "$COMPONENT_CHANNEL_ANCHOR" ]]; then
+            echo "Component channel tag moved from its immutable v0.22.0 anchor." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor \
+            "$component_tag_commit" "$EXPECTED_DESKTOP_COMMIT"; then
+            echo "Desktop release does not descend from the component channel anchor." >&2
             exit 1
           fi
           remote_component_tag_object="$(git ls-remote --refs origin \
             "refs/tags/$component_tag" | awk 'NR == 1 {print $1}')"
-          if [[ "$remote_component_tag_object" != "$component_tag_object" ]]; then
-            echo "Remote component tag identity changed during verification." >&2
-            exit 1
-          fi
-          echo "tag_object=$component_tag_object" >> "$GITHUB_OUTPUT"
-          echo "tag_commit=$component_tag_commit" >> "$GITHUB_OUTPUT"
+          [[ "$remote_component_tag_object" == "$component_tag_object" ]]
           jq -e \
             --arg tag "$component_tag" \
             --arg asset "$component_asset" \
@@ -179,39 +240,251 @@ jobs:
                 end
             ' \
             "$RUNNER_TEMP/release-pages.json" \
-            > "$RUNNER_TEMP/component-release-before.json"
+            > "$RUNNER_TEMP/component-release-smoke.json"
           latest_tag="$(gh api \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "repos/$GITHUB_REPOSITORY/releases/latest" \
             --jq '.tag_name')"
           [[ "$latest_tag" != "$component_tag" ]]
-          mkdir "$RUNNER_TEMP/component-catalog-before"
-          gh release download "$component_tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "$component_asset" \
-            --dir "$RUNNER_TEMP/component-catalog-before"
-          catalog="$RUNNER_TEMP/component-catalog-before/$component_asset"
-          [[ -s "$catalog" ]]
+          component_release_id="$(jq -r '.id' \
+            "$RUNNER_TEMP/component-release-smoke.json")"
+          component_asset_id="$(jq -r '.assets[0].id' \
+            "$RUNNER_TEMP/component-release-smoke.json")"
+          component_asset_digest="$(jq -r '.assets[0].digest' \
+            "$RUNNER_TEMP/component-release-smoke.json")"
+          [[ "$component_release_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$component_asset_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$component_asset_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir "$RUNNER_TEMP/component-catalog-smoke"
+          catalog="$RUNNER_TEMP/component-catalog-smoke/$component_asset"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$component_asset_id" \
+            > "$catalog"
+          [[ -s "$catalog" && ! -L "$catalog" ]]
+          catalog_envelope_sha256="$(sha256sum -- "$catalog" | awk '{print $1}')"
+          [[ "sha256:$catalog_envelope_sha256" == "$component_asset_digest" ]]
           python -m tools.verify_jamulus_component_catalog \
             --webjam-version "$VERSION" \
+            --minimum-sequence 2 \
             "$catalog" \
-            > "$RUNNER_TEMP/component-catalog-verification-before.json"
-          sha256sum -- "$catalog" \
-            > "$RUNNER_TEMP/component-catalog-before.sha256"
+            > "$RUNNER_TEMP/component-catalog-verification-smoke.json"
+          jq -e \
+            --arg version "$VERSION" \
+            '
+              .sequence == 2
+              and .webjam_version == $version
+              and .component_count == 8
+            ' \
+            "$RUNNER_TEMP/component-catalog-verification-smoke.json" \
+            >/dev/null
+          catalog_payload_sha256="$(jq -r '.payload_sha256' \
+            "$RUNNER_TEMP/component-catalog-verification-smoke.json")"
+          signer_fingerprint_sha256="$(jq -r '.signer_fingerprint_sha256' \
+            "$RUNNER_TEMP/component-catalog-verification-smoke.json")"
+          [[ "$catalog_payload_sha256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$signer_fingerprint_sha256" =~ ^[0-9a-f]{64}$ ]]
+          echo "tag_object=$component_tag_object" >> "$GITHUB_OUTPUT"
+          echo "tag_commit=$component_tag_commit" >> "$GITHUB_OUTPUT"
+          echo "release_id=$component_release_id" >> "$GITHUB_OUTPUT"
+          echo "asset_id=$component_asset_id" >> "$GITHUB_OUTPUT"
+          echo "asset_digest=$component_asset_digest" >> "$GITHUB_OUTPUT"
+          echo "catalog_envelope_sha256=$catalog_envelope_sha256" >> "$GITHUB_OUTPUT"
+          echo "catalog_payload_sha256=$catalog_payload_sha256" >> "$GITHUB_OUTPUT"
+          echo "signer_fingerprint_sha256=$signer_fingerprint_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Download and verify exact release inventory
+      - name: Download and bind only the exact Linux package
+        id: linux
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
+          LINUX_ASSET_ID: ${{ steps.draft.outputs.linux_asset_id }}
+          EXPECTED_LINUX_DIGEST: ${{ steps.draft.outputs.linux_asset_digest }}
         run: |
           set -euo pipefail
-          mkdir release-assets
-          gh release download "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir release-assets
-          cd release-assets
+          mkdir "$RUNNER_TEMP/frozen-package"
+          archive="$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$LINUX_ASSET_ID" \
+            > "$archive"
+          [[ -s "$archive" && ! -L "$archive" ]]
+          linux_package_sha256="$(sha256sum -- "$archive" | awk '{print $1}')"
+          [[ "sha256:$linux_package_sha256" == "$EXPECTED_LINUX_DIGEST" ]]
+          echo "linux_package_sha256=$linux_package_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Install exact frozen-package smoke runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends \
+            libasound2 libbrotli1 libcups2 libdbus-1-3 libegl1 \
+            libfontconfig1 libfreetype6 libgbm1 libgl1 libglib2.0-0 \
+            libgtk-3-0 libnspr4 libnss3 libportaudio2 libpulse0 libtiff5 \
+            libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+            libxkbcommon-x11-0 libxkbfile1 libxrandr2 libxtst6 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+
+      - name: Require live catalog proof from exact frozen Linux package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          CATALOG_ENVELOPE_SHA256: ${{ steps.component.outputs.catalog_envelope_sha256 }}
+          CATALOG_PAYLOAD_SHA256: ${{ steps.component.outputs.catalog_payload_sha256 }}
+          SIGNER_FINGERPRINT_SHA256: ${{ steps.component.outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          python tests/support/run_frozen_component_catalog_smoke.py \
+            --archive "$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip" \
+            --expected-version "$VERSION" \
+            --expected-sequence 2 \
+            --expected-target linux-x64 \
+            --expected-jamulus-version 3.12.3 \
+            --expected-catalog-envelope-sha256 "$CATALOG_ENVELOPE_SHA256" \
+            --expected-catalog-payload-sha256 "$CATALOG_PAYLOAD_SHA256" \
+            --expected-signer-fingerprint-sha256 "$SIGNER_FINGERPRINT_SHA256"
+
+  publish-latest:
+    name: Revalidate proof and publish as Latest
+    needs: frozen-package-smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    environment:
+      name: release-latest
+    steps:
+      - name: Checkout release-control source without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Revalidate exact source identities from the read-only proof
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+          TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.tag_object }}
+          EXPECTED_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
+          EXPECTED_MASTER_COMMIT: ${{ needs['frozen-package-smoke'].outputs.master_commit }}
+          EXPECTED_COMPONENT_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.component_tag_object }}
+          EXPECTED_COMPONENT_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.component_tag_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_TAG" == "$EXPECTED_PROMOTION_TAG" ]]
+          [[ "$TAG" == "$EXPECTED_PROMOTION_TAG" ]]
+          [[ "$VERSION" == "0.22.1" ]]
+          [[ "$TAG" == "v${VERSION}" ]]
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          historical_ref="refs/webjam-historical-tags/v0.22.0"
+          git fetch --no-tags origin \
+            "refs/tags/v0.22.0:${historical_ref}"
+          tag_ref="refs/webjam-release-tags/${TAG}"
+          git fetch --no-tags origin "refs/tags/${TAG}:${tag_ref}"
+          component_ref="refs/webjam-component-tags/jamulus-components-v1"
+          git fetch --no-tags origin \
+            "refs/tags/jamulus-components-v1:${component_ref}"
+          [[ "$(git cat-file -t "$tag_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$tag_ref")" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${tag_ref}^{commit}")" == \
+            "$EXPECTED_TAG_COMMIT" ]]
+          [[ "$(git rev-parse refs/remotes/origin/master)" == \
+            "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin "refs/tags/$TAG" \
+            | awk 'NR == 1 {print $1}')" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$(git ls-remote --refs origin refs/heads/master \
+            | awk 'NR == 1 {print $1}')" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$(git cat-file -t "$historical_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$historical_ref")" == "$V0220_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${historical_ref}^{commit}")" == \
+            "$V0220_TAG_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin refs/tags/v0.22.0 \
+            | awk 'NR == 1 {print $1}')" == "$V0220_TAG_OBJECT" ]]
+          [[ "$(git cat-file -t "$component_ref")" == "commit" ]]
+          [[ "$(git rev-parse "$component_ref")" == \
+            "$EXPECTED_COMPONENT_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${component_ref}^{commit}")" == \
+            "$EXPECTED_COMPONENT_TAG_COMMIT" ]]
+          [[ "$EXPECTED_COMPONENT_TAG_OBJECT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$EXPECTED_COMPONENT_TAG_COMMIT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$(git ls-remote --refs origin \
+            refs/tags/jamulus-components-v1 | awk 'NR == 1 {print $1}')" == \
+            "$EXPECTED_COMPONENT_TAG_OBJECT" ]]
+          git merge-base --is-ancestor \
+            "$EXPECTED_COMPONENT_TAG_COMMIT" "$EXPECTED_TAG_COMMIT"
+          git checkout --detach "$EXPECTED_TAG_COMMIT"
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_TAG_COMMIT" ]]
+          version_source="$(git show \
+            "${EXPECTED_TAG_COMMIT}:webjam_qt/__init__.py")"
+          packaged_version="$(sed -n \
+            's/^__version__ = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' \
+            <<<"$version_source")"
+          [[ "$packaged_version" == "$VERSION" ]]
+
+      - name: Set up Python for signed component-catalog verification
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install hash-locked component-catalog verifier dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            --requirement \
+            requirements-lock/component-catalog-verifier-linux-x64.txt
+          python -m pip check
+
+      - name: Download and verify exact draft inventory and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
+          EXPECTED_LINUX_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.linux_asset_id }}
+          EXPECTED_LINUX_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.linux_asset_digest }}
+          EXPECTED_LINUX_PACKAGE_SHA256: ${{ needs['frozen-package-smoke'].outputs.linux_package_sha256 }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/release-pages-before.json"
+          jq -e \
+            --arg tag "$TAG" \
+            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            '
+              [ .[][] | select(.tag_name == $tag) ] as $matches
+              | if ($matches | length) != 1 then
+                  error("expected exactly one release for " + $tag)
+                elif (
+                  $matches[0].id != $release_id
+                  or $matches[0].draft != true
+                  or $matches[0].prerelease != false
+                ) then
+                  error("release differs from the read-only verified draft")
+                else
+                  $matches[0]
+                end
+            ' \
+            "$RUNNER_TEMP/release-pages-before.json" \
+            > "$RUNNER_TEMP/release-before.json"
           expected=(
             "WebJam-linux-x64.zip"
             "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"
@@ -222,15 +495,52 @@ jobs:
             "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
             "WebJam-v${VERSION}-SHA256SUMS.txt"
           )
+          mapfile -t remote < <(jq -r '.assets[].name' \
+            "$RUNNER_TEMP/release-before.json" | LC_ALL=C sort)
+          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${wanted[@]}") \
+            <(printf '%s\n' "${remote[@]}")
+          jq -e \
+            '
+              (.assets | length) == 8
+              and all(
+                .assets[];
+                (.size > 0)
+                and (.digest | type == "string")
+                and (.digest | test("^sha256:[0-9a-f]{64}$"))
+              )
+            ' \
+            "$RUNNER_TEMP/release-before.json" >/dev/null
+          linux_asset_id="$(jq -r \
+            '[.assets[] | select(.name == "WebJam-linux-x64.zip")] | .[0].id' \
+            "$RUNNER_TEMP/release-before.json")"
+          linux_asset_digest="$(jq -r \
+            '[.assets[] | select(.name == "WebJam-linux-x64.zip")] | .[0].digest' \
+            "$RUNNER_TEMP/release-before.json")"
+          [[ "$linux_asset_id" == "$EXPECTED_LINUX_ASSET_ID" ]]
+          [[ "$linux_asset_digest" == "$EXPECTED_LINUX_ASSET_DIGEST" ]]
+          mkdir release-assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets
+          cd release-assets
           mapfile -t actual < <(find . -maxdepth 1 -type f \
             -printf '%f\n' | LC_ALL=C sort)
-          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)
           diff -u \
             <(printf '%s\n' "${wanted[@]}") \
             <(printf '%s\n' "${actual[@]}")
           for asset in "${expected[@]}"; do
-            [[ -s "$asset" ]]
+            [[ -s "$asset" && ! -L "$asset" ]]
+            local_sha="$(sha256sum -- "$asset" | awk '{print $1}')"
+            remote_digest="$(jq -r --arg name "$asset" \
+              '[.assets[] | select(.name == $name)] | .[0].digest' \
+              "$RUNNER_TEMP/release-before.json")"
+            [[ "sha256:$local_sha" == "$remote_digest" ]]
           done
+          linux_package_sha256="$(sha256sum -- \
+            "WebJam-linux-x64.zip" | awk '{print $1}')"
+          [[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]
           checksum_file="WebJam-v${VERSION}-SHA256SUMS.txt"
           [[ "$(wc -l < "$checksum_file")" -eq 7 ]]
           mapfile -t checksummed < <(
@@ -246,41 +556,123 @@ jobs:
           sha256sum -- "${expected[@]}" \
             > "$RUNNER_TEMP/release-assets-before.sha256"
 
-      - name: Revalidate identities and publish exact draft as Latest
+      - name: Reverify exact live component catalog from the read-only proof
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
-          EXPECTED_TAG_OBJECT: ${{ steps.release.outputs.tag_object }}
-          EXPECTED_TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
-          EXPECTED_MASTER_COMMIT: ${{ steps.release.outputs.master_commit }}
-          EXPECTED_COMPONENT_TAG_OBJECT: ${{ steps.component.outputs.tag_object }}
-          EXPECTED_COMPONENT_TAG_COMMIT: ${{ steps.component.outputs.tag_commit }}
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_COMPONENT_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.component_release_id }}
+          EXPECTED_COMPONENT_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.component_asset_id }}
+          EXPECTED_COMPONENT_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.component_asset_digest }}
+          EXPECTED_CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
+          EXPECTED_CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
+          EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
+        run: |
+          set -euo pipefail
+          component_tag="jamulus-components-v1"
+          component_asset="WebJam-Jamulus-components-v1.json"
+          jq -e \
+            --arg tag "$component_tag" \
+            --arg asset "$component_asset" \
+            --argjson release_id "$EXPECTED_COMPONENT_RELEASE_ID" \
+            --argjson asset_id "$EXPECTED_COMPONENT_ASSET_ID" \
+            --arg digest "$EXPECTED_COMPONENT_ASSET_DIGEST" \
+            '
+              [ .[][] | select(.tag_name == $tag) ] as $matches
+              | if ($matches | length) != 1 then
+                  error("component release identity changed")
+                elif (
+                  $matches[0].id != $release_id
+                  or $matches[0].draft != false
+                  or $matches[0].prerelease != true
+                  or ($matches[0].assets | length) != 1
+                  or $matches[0].assets[0].name != $asset
+                  or $matches[0].assets[0].id != $asset_id
+                  or $matches[0].assets[0].digest != $digest
+                  or $matches[0].assets[0].size <= 0
+                ) then
+                  error("component release differs from the read-only proof")
+                else
+                  $matches[0]
+                end
+            ' \
+            "$RUNNER_TEMP/release-pages-before.json" \
+            > "$RUNNER_TEMP/component-release-before.json"
+          mkdir "$RUNNER_TEMP/component-catalog-before"
+          catalog="$RUNNER_TEMP/component-catalog-before/$component_asset"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$EXPECTED_COMPONENT_ASSET_ID" \
+            > "$catalog"
+          [[ -s "$catalog" && ! -L "$catalog" ]]
+          catalog_envelope_sha256="$(sha256sum -- "$catalog" | awk '{print $1}')"
+          [[ "$catalog_envelope_sha256" == \
+            "$EXPECTED_CATALOG_ENVELOPE_SHA256" ]]
+          [[ "sha256:$catalog_envelope_sha256" == \
+            "$EXPECTED_COMPONENT_ASSET_DIGEST" ]]
+          python -m tools.verify_jamulus_component_catalog \
+            --webjam-version "$VERSION" \
+            --minimum-sequence 2 \
+            "$catalog" \
+            > "$RUNNER_TEMP/component-catalog-verification-before.json"
+          jq -e \
+            --arg version "$VERSION" \
+            --arg payload "$EXPECTED_CATALOG_PAYLOAD_SHA256" \
+            --arg signer "$EXPECTED_SIGNER_FINGERPRINT_SHA256" \
+            '
+              .sequence == 2
+              and .webjam_version == $version
+              and .component_count == 8
+              and .payload_sha256 == $payload
+              and .signer_fingerprint_sha256 == $signer
+            ' \
+            "$RUNNER_TEMP/component-catalog-verification-before.json" \
+            >/dev/null
+
+      - name: Revalidate all bound identities and publish exact draft as Latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
+          EXPECTED_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.tag_object }}
+          EXPECTED_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
+          EXPECTED_MASTER_COMMIT: ${{ needs['frozen-package-smoke'].outputs.master_commit }}
+          EXPECTED_COMPONENT_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.component_tag_object }}
+          EXPECTED_COMPONENT_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.component_tag_commit }}
+          EXPECTED_COMPONENT_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.component_release_id }}
+          EXPECTED_COMPONENT_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.component_asset_id }}
+          EXPECTED_COMPONENT_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.component_asset_digest }}
+          EXPECTED_CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
+          EXPECTED_CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
+          EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
         run: |
           set -euo pipefail
           remote_tag_object="$(git ls-remote --refs origin \
             "refs/tags/$TAG" | awk 'NR == 1 {print $1}')"
           remote_master_commit="$(git ls-remote --refs origin \
             refs/heads/master | awk 'NR == 1 {print $1}')"
-          [[ "$remote_tag_object" == "$EXPECTED_TAG_OBJECT" ]]
-          [[ "$remote_master_commit" == "$EXPECTED_MASTER_COMMIT" ]]
-          [[ "$(git rev-parse \
-            "refs/webjam-release-tags/${TAG}^{commit}")" == \
-            "$EXPECTED_TAG_COMMIT" ]]
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_TAG_COMMIT" ]]
-          [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
           remote_component_tag_object="$(git ls-remote --refs origin \
             refs/tags/jamulus-components-v1 | awk 'NR == 1 {print $1}')"
+          [[ "$remote_tag_object" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$remote_master_commit" == "$EXPECTED_MASTER_COMMIT" ]]
           [[ "$remote_component_tag_object" == \
             "$EXPECTED_COMPONENT_TAG_OBJECT" ]]
-          [[ "$(git rev-parse \
-            refs/webjam-component-tags/jamulus-components-v1)" == \
-            "$EXPECTED_COMPONENT_TAG_OBJECT" ]]
-          [[ "$(git rev-parse \
-            "refs/webjam-component-tags/jamulus-components-v1^{commit}")" == \
-            "$EXPECTED_COMPONENT_TAG_COMMIT" ]]
-          [[ "$EXPECTED_COMPONENT_TAG_COMMIT" == "$EXPECTED_TAG_COMMIT" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_TAG_COMMIT" ]]
+          [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$EXPECTED_COMPONENT_TAG_OBJECT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          [[ "$EXPECTED_COMPONENT_TAG_COMMIT" == "$COMPONENT_CHANNEL_ANCHOR" ]]
+          git merge-base --is-ancestor \
+            "$EXPECTED_COMPONENT_TAG_COMMIT" "$EXPECTED_TAG_COMMIT"
+          historical_ref="refs/webjam-historical-tags/v0.22.0"
+          [[ "$(git cat-file -t "$historical_ref")" == "tag" ]]
+          [[ "$(git rev-parse "$historical_ref")" == "$V0220_TAG_OBJECT" ]]
+          [[ "$(git rev-parse "${historical_ref}^{commit}")" == \
+            "$V0220_TAG_COMMIT" ]]
+          [[ "$(git ls-remote --refs origin refs/tags/v0.22.0 \
+            | awk 'NR == 1 {print $1}')" == "$V0220_TAG_OBJECT" ]]
 
           gh api \
             --paginate \
@@ -290,12 +682,13 @@ jobs:
             > "$RUNNER_TEMP/release-pages-immediately-before.json"
           jq -e \
             --arg tag "$TAG" \
+            --argjson release_id "$EXPECTED_RELEASE_ID" \
             '
               [ .[][] | select(.tag_name == $tag) ] as $matches
               | if ($matches | length) != 1 then
                   error("desktop draft identity changed")
                 elif (
-                  $matches[0].id != (input.id)
+                  $matches[0].id != $release_id
                   or $matches[0].draft != true
                   or $matches[0].prerelease != false
                 ) then
@@ -305,7 +698,6 @@ jobs:
                 end
             ' \
             "$RUNNER_TEMP/release-pages-immediately-before.json" \
-            "$RUNNER_TEMP/release-before.json" \
             > "$RUNNER_TEMP/release-immediately-before.json"
           diff -u \
             <(jq -S \
@@ -319,14 +711,20 @@ jobs:
           component_asset="WebJam-Jamulus-components-v1.json"
           jq -e \
             --arg tag "$component_tag" \
+            --argjson release_id "$EXPECTED_COMPONENT_RELEASE_ID" \
+            --argjson asset_id "$EXPECTED_COMPONENT_ASSET_ID" \
+            --arg digest "$EXPECTED_COMPONENT_ASSET_DIGEST" \
             '
               [ .[][] | select(.tag_name == $tag) ] as $matches
               | if ($matches | length) != 1 then
                   error("component release identity changed")
                 elif (
-                  $matches[0].id != (input.id)
+                  $matches[0].id != $release_id
                   or $matches[0].draft != false
                   or $matches[0].prerelease != true
+                  or ($matches[0].assets | length) != 1
+                  or $matches[0].assets[0].id != $asset_id
+                  or $matches[0].assets[0].digest != $digest
                 ) then
                   error("component release is no longer the verified prerelease")
                 else
@@ -334,7 +732,6 @@ jobs:
                 end
             ' \
             "$RUNNER_TEMP/release-pages-immediately-before.json" \
-            "$RUNNER_TEMP/component-release-before.json" \
             > "$RUNNER_TEMP/component-release-immediately-before.json"
           diff -u \
             <(jq -S \
@@ -345,24 +742,39 @@ jobs:
               "$RUNNER_TEMP/component-release-immediately-before.json")
           rm -rf "$RUNNER_TEMP/component-catalog-immediately-before"
           mkdir "$RUNNER_TEMP/component-catalog-immediately-before"
-          gh release download "$component_tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "$component_asset" \
-            --dir "$RUNNER_TEMP/component-catalog-immediately-before"
           catalog="$RUNNER_TEMP/component-catalog-immediately-before/$component_asset"
-          [[ -s "$catalog" ]]
-          (
-            cd "$RUNNER_TEMP/component-catalog-immediately-before"
-            sed "s#  .*#  $component_asset#" \
-              "$RUNNER_TEMP/component-catalog-before.sha256" \
-              | sha256sum --check --strict -
-          )
+          gh api \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$EXPECTED_COMPONENT_ASSET_ID" \
+            > "$catalog"
+          [[ -s "$catalog" && ! -L "$catalog" ]]
+          catalog_envelope_sha256="$(sha256sum -- "$catalog" | awk '{print $1}')"
+          [[ "$catalog_envelope_sha256" == \
+            "$EXPECTED_CATALOG_ENVELOPE_SHA256" ]]
+          [[ "sha256:$catalog_envelope_sha256" == \
+            "$EXPECTED_COMPONENT_ASSET_DIGEST" ]]
           python -m tools.verify_jamulus_component_catalog \
             --webjam-version "$VERSION" \
+            --minimum-sequence 2 \
             "$catalog" \
             > "$RUNNER_TEMP/component-catalog-verification-immediately-before.json"
+          jq -e \
+            --arg version "$VERSION" \
+            --arg payload "$EXPECTED_CATALOG_PAYLOAD_SHA256" \
+            --arg signer "$EXPECTED_SIGNER_FINGERPRINT_SHA256" \
+            '
+              .sequence == 2
+              and .webjam_version == $version
+              and .component_count == 8
+              and .payload_sha256 == $payload
+              and .signer_fingerprint_sha256 == $signer
+            ' \
+            "$RUNNER_TEMP/component-catalog-verification-immediately-before.json" \
+            >/dev/null
 
           release_id="$(jq -r '.id' "$RUNNER_TEMP/release-before.json")"
+          [[ "$release_id" == "$EXPECTED_RELEASE_ID" ]]
           gh api \
             --method PATCH \
             -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -376,8 +788,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
+          VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
         run: |
           set -euo pipefail
           gh api \
@@ -386,10 +799,14 @@ jobs:
             > "$RUNNER_TEMP/release-latest.json"
           jq -e \
             --arg tag "$TAG" \
-            '.tag_name == $tag and .draft == false and .prerelease == false' \
+            --argjson release_id "$EXPECTED_RELEASE_ID" \
+            '
+              .id == $release_id
+              and .tag_name == $tag
+              and .draft == false
+              and .prerelease == false
+            ' \
             "$RUNNER_TEMP/release-latest.json" >/dev/null
-          [[ "$(jq -r '.id' "$RUNNER_TEMP/release-latest.json")" == \
-            "$(jq -r '.id' "$RUNNER_TEMP/release-before.json")" ]]
           diff -u \
             <(jq -S \
               '{id,tag_name,assets:([.assets[]|{id,name,size,digest}]|sort_by(.name))}' \
@@ -420,7 +837,12 @@ jobs:
             <(printf '%s\n' "${wanted[@]}") \
             <(printf '%s\n' "${actual[@]}")
           for asset in "${expected[@]}"; do
-            [[ -s "$asset" ]]
+            [[ -s "$asset" && ! -L "$asset" ]]
+            local_sha="$(sha256sum -- "$asset" | awk '{print $1}')"
+            remote_digest="$(jq -r --arg name "$asset" \
+              '[.assets[] | select(.name == $name)] | .[0].digest' \
+              "$RUNNER_TEMP/release-latest.json")"
+            [[ "sha256:$local_sha" == "$remote_digest" ]]
           done
           sha256sum --check --strict \
             "$RUNNER_TEMP/release-assets-before.sha256"

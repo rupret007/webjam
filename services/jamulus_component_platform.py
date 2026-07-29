@@ -372,6 +372,7 @@ class MacOSJamulusComponentStore:
         self,
         registry: JamulusCompatibilityRegistry | None = None,
         *,
+        webjam_version: str,
         root: str | Path | None = None,
         verifier: MacOSBundleVerifier | None = None,
         command_runner: CommandRunner = _run_command,
@@ -379,6 +380,11 @@ class MacOSJamulusComponentStore:
     ) -> None:
         if sys.platform != "darwin":
             raise JamulusPlatformError("the managed macOS Jamulus store requires macOS")
+        if not isinstance(webjam_version, str) or not _VERSION_RE.fullmatch(
+            webjam_version
+        ):
+            raise ValueError("webjam_version must be a semantic version")
+        self.webjam_version = webjam_version
         self.registry = registry or official_jamulus_compatibility_registry()
         base = Path(root) if root is not None else default_component_store_root()
         self.root = base / "platform" / "macos"
@@ -537,7 +543,7 @@ class MacOSJamulusComponentStore:
         for entry in registry.compatible(
             role=role,
             target=target,
-            webjam_version="0.22.0",
+            webjam_version=self.webjam_version,
             required_capabilities=(
                 {"audio-client"} if role is JamulusRole.CLIENT else {"audio-server"}
             ),

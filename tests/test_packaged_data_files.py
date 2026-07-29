@@ -5,6 +5,7 @@ These files are loaded at runtime via package-relative paths, so they MUST be
 webjam.spec so PyInstaller bundles them into the frozen app.  A build can pass
 CI yet crash for users if either drifts — these tests catch that.
 """
+
 from __future__ import annotations
 
 import re
@@ -23,11 +24,15 @@ POCKET_SMOKE_RUNNER = (
 REFERENCE_STUDIO_SMOKE_RUNNER = (
     ROOT / "tests" / "support" / "run_frozen_reference_studio_smoke.py"
 ).read_text(encoding="utf-8")
+COMPONENT_CATALOG_SMOKE_RUNNER = (
+    ROOT / "tests" / "support" / "run_frozen_component_catalog_smoke.py"
+).read_text(encoding="utf-8")
 
 
 class TestPackagedDataFiles(unittest.TestCase):
     def test_stylesheet_loads_and_is_nonempty(self):
         from webjam_qt.theme import load_stylesheet
+
         css = load_stylesheet()
         self.assertIsInstance(css, str)
         self.assertGreater(len(css.strip()), 0)
@@ -97,8 +102,7 @@ class TestPackagedDataFiles(unittest.TestCase):
             self.assertIn(f'"{module}"', excludes)
         for retired_runtime in ("QtWebEngine", "QtWebChannel"):
             self.assertIn(
-                "test -z \"$(find dist/WebJam.app "
-                f"-iname '*{retired_runtime}*'",
+                f"test -z \"$(find dist/WebJam.app -iname '*{retired_runtime}*'",
                 CI,
             )
 
@@ -181,7 +185,7 @@ class TestPackagedDataFiles(unittest.TestCase):
     def test_microphone_permission_copy_explains_the_bandmate_benefit(self):
         self.assertIn("NSMicrophoneUsageDescription", SPEC)
         self.assertIn("bandmates can hear you", SPEC)
-        self.assertNotIn("optional local recording.\"", SPEC)
+        self.assertNotIn('optional local recording."', SPEC)
 
     def test_macos_bundle_declares_pocket_stage_local_network_purpose(self):
         self.assertIn("NSLocalNetworkUsageDescription", SPEC)
@@ -206,6 +210,39 @@ class TestPackagedDataFiles(unittest.TestCase):
             "segno",
         ):
             self.assertIn(f'"{module}"', SPEC)
+
+    def test_spec_keeps_component_updater_ca_bundle_in_frozen_app(self):
+        self.assertIn('"certifi"', SPEC)
+        self.assertIn('"services.jamulus_component_packaged_smoke"', SPEC)
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        self.assertRegex(requirements, r"(?m)^certifi[=>]")
+        self.assertIn(
+            "WEBJAM_SMOKE_COMPONENT_CATALOG_RUNTIME",
+            COMPONENT_CATALOG_SMOKE_RUNNER,
+        )
+        self.assertIn('environment["SSL_CERT_FILE"]', COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn('environment["SSL_CERT_DIR"]', COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertNotIn("--catalog-url", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn("--expected-target", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn("--expected-jamulus-version", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn(
+            "--expected-catalog-envelope-sha256",
+            COMPONENT_CATALOG_SMOKE_RUNNER,
+        )
+        self.assertIn(
+            "--expected-catalog-payload-sha256",
+            COMPONENT_CATALOG_SMOKE_RUNNER,
+        )
+        self.assertIn(
+            "--expected-signer-fingerprint-sha256",
+            COMPONENT_CATALOG_SMOKE_RUNNER,
+        )
+        self.assertIn("EXPECTED_COMPONENT_COUNT = 8", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn('"QT_QPA_PLATFORM": "offscreen"', COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn("stdout=subprocess.DEVNULL", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertIn("stderr=subprocess.DEVNULL", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertNotIn("completed.stderr", COMPONENT_CATALOG_SMOKE_RUNNER)
+        self.assertNotIn("completed.stdout", COMPONENT_CATALOG_SMOKE_RUNNER)
 
     def test_spec_keeps_reference_track_pilot_in_frozen_app(self):
         for module in (
