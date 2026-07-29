@@ -170,6 +170,7 @@ jobs:
       - name: Install test deps
         run: >-
           pip install "pytest==8.3.5" "numpy==1.26.4"
+          "certifi==2026.6.17"
           "JACK-Client==0.5.5" "soundfile==0.12.1"
 
       - name: Run integration suite against the real binary
@@ -580,7 +581,7 @@ jobs:
 
       - name: Run two real sidecars through the reference service
         run: |
-          python -m pip install "pytest==8.3.5"
+          python -m pip install "pytest==8.3.5" "certifi==2026.6.17"
           build_id="$(git rev-parse HEAD)"
           (cd transport && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -trimpath -ldflags="-s -w -X main.buildID=$build_id" \
@@ -784,6 +785,7 @@ jobs:
       - name: Install pinned certification dependencies
         run: >-
           pip install "pytest==8.3.5" "numpy==1.26.4"
+          "certifi==2026.6.17"
           "JACK-Client==0.5.5" "soundfile==0.12.1"
 
       - name: Run one-hour two-client transport and recovery certification
