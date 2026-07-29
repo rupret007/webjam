@@ -173,6 +173,18 @@ def test_draft_release_notes_explain_the_jamulus_update_boundary() -> None:
     assert "interrupt" in normalized
 
 
+def test_linux_ci_isolates_native_qt_state_without_retrying_tests() -> None:
+    test_step = CI_WORKFLOW.split("      - name: Run test suite\n", 1)[1].split(
+        "\n  # ------------------------------------------------------------------", 1
+    )[0]
+    assert "git ls-files 'tests/test_*.py'" in test_step
+    assert 'for test_file in "${test_files[@]}"' in test_step
+    assert 'python -m pytest "$test_file" -v' in test_step
+    assert "pytest tests/ -v" not in test_step
+    assert "--reruns" not in test_step
+    assert "pytest-rerunfailures" not in test_step
+
+
 def test_reference_studio_late_import_graph_is_explicitly_frozen() -> None:
     modules = (
         "core.song_project",
