@@ -91,6 +91,38 @@ _EXPORT_COUNT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
 _GUIDANCE_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 )
+_COMPONENT_VERSION_RE = re.compile(r"^[0-9]{1,5}(?:\.[0-9]{1,5}){2,3}$")
+_REASON_CODE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_JAMULUS_UPDATE_STATES = frozenset(
+    {
+        "idle",
+        "checking",
+        "up-to-date",
+        "available",
+        "downloading",
+        "ready",
+        "deferred",
+        "fallback",
+        "failed",
+        "cancelled",
+        "not-checked",
+        "unavailable",
+    }
+)
+_COMPONENT_TARGETS = frozenset(
+    {"windows-x64", "linux-x64", "macos-arm64", "macos-x64"}
+)
+_WEBEX_APP_STATES = frozenset(
+    {
+        "installed",
+        "not-installed",
+        "invalid",
+        "unsupported",
+        "not-checked",
+        "unavailable",
+    }
+)
 
 _LOG_ARCHIVE_NAMES = {
     "webjam": "logs/webjam.log",
@@ -111,6 +143,8 @@ class SupportFacts:
     architecture: str = ""
     jamulus_version: str = ""
     jamulus_state: str = ""
+    jamulus_update: Mapping[str, Any] = field(default_factory=dict)
+    webex_app: Mapping[str, Any] = field(default_factory=dict)
     session_transitions: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     musician_guidance: Mapping[str, Any] = field(default_factory=dict)
     engine_capabilities: Mapping[str, Any] = field(default_factory=dict)
@@ -254,6 +288,8 @@ def build_support_bundle(
                 "architecture": _safe_text(facts.architecture),
             },
             "jamulus": {"state": _safe_text(facts.jamulus_state)},
+            "jamulus_update": _sanitize_jamulus_update(facts.jamulus_update),
+            "webex_app": _sanitize_webex_app(facts.webex_app),
             "session": {
                 "guidance": _sanitize_guidance(facts.musician_guidance),
                 "transitions": _sanitize_records(
@@ -327,6 +363,90 @@ def _recorder_report(facts: SupportFacts) -> dict[str, Any]:
     if facts.dropped_blocks is not None:
         report["dropped_blocks"] = _safe_nonnegative_int(facts.dropped_blocks)
     return report
+
+
+def _sanitize_jamulus_update(value: Mapping[str, Any] | Any) -> dict[str, Any]:
+    """Accept only finite updater state and cryptographic trust facts."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    state = value.get("state")
+    if isinstance(state, str) and state in _JAMULUS_UPDATE_STATES:
+        result["state"] = state
+    for key in (
+        "active_version",
+        "available_version",
+        "previous_version",
+        "fallback_version",
+    ):
+        item = value.get(key)
+        if isinstance(item, str) and _COMPONENT_VERSION_RE.fullmatch(item):
+            result[key] = item
+    target = value.get("target")
+    if isinstance(target, str) and target in _COMPONENT_TARGETS:
+        result["target"] = target
+    progress = value.get("progress_percent")
+    if (
+        isinstance(progress, int)
+        and not isinstance(progress, bool)
+        and 0 <= progress <= 100
+    ):
+        result["progress_percent"] = progress
+    reason = value.get("reason_code")
+    if isinstance(reason, str) and _REASON_CODE_RE.fullmatch(reason):
+        result["reason_code"] = reason
+    restart_when_idle = value.get("restart_when_idle")
+    if isinstance(restart_when_idle, bool):
+        result["restart_when_idle"] = restart_when_idle
+    checked_at = value.get("checked_at_utc")
+    if isinstance(checked_at, str) and _GUIDANCE_TIMESTAMP_RE.fullmatch(
+        checked_at
+    ):
+        result["checked_at_utc"] = checked_at
+    catalog_verified = value.get("catalog_verified")
+    if isinstance(catalog_verified, bool):
+        result["catalog_verified"] = catalog_verified
+    sequence = value.get("catalog_sequence")
+    if (
+        isinstance(sequence, int)
+        and not isinstance(sequence, bool)
+        and 0 <= sequence <= 2**63 - 1
+    ):
+        result["catalog_sequence"] = sequence
+    expires_at = value.get("catalog_expires_at_utc")
+    if isinstance(expires_at, str) and _GUIDANCE_TIMESTAMP_RE.fullmatch(
+        expires_at
+    ):
+        result["catalog_expires_at_utc"] = expires_at
+    fingerprint = value.get("signer_fingerprint_sha256")
+    if isinstance(fingerprint, str) and _SHA256_RE.fullmatch(fingerprint):
+        result["signer_fingerprint_sha256"] = fingerprint
+    return result
+
+
+def _sanitize_webex_app(value: Mapping[str, Any] | Any) -> dict[str, Any]:
+    """Accept only native-app presence and publisher-verification facts."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    state = value.get("state")
+    if isinstance(state, str) and state in _WEBEX_APP_STATES:
+        result["state"] = state
+    installed = value.get("installed")
+    if isinstance(installed, bool):
+        result["installed"] = installed
+    version = value.get("version")
+    if isinstance(version, str) and _COMPONENT_VERSION_RE.fullmatch(version):
+        result["version"] = version
+    publisher_verified = value.get("publisher_verified")
+    if isinstance(publisher_verified, bool):
+        result["publisher_verified"] = publisher_verified
+    reason = value.get("reason_code")
+    if isinstance(reason, str) and _REASON_CODE_RE.fullmatch(reason):
+        result["reason_code"] = reason
+    return result
 
 
 def _sanitize_guidance(value: Mapping[str, Any] | Any) -> dict[str, Any]:

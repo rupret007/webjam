@@ -5,3 +5,6 @@ packaging/WebJam-runtime-sbom.cdx.json text eol=lf
 packaging/runtime-dependency-policy.json text eol=lf
 licenses/SOUNDFILE_LICENSE.txt text eol=lf
 licenses/SOUNDFILE_WHEEL_LICENSE_NOTES.md text eol=lf
+licenses/JAMULUS_COPYING-r3_12_3.txt text eol=lf
+packaging/Jamulus-component-sbom.cdx.json text eol=lf
+packaging/macos/jamulus-headless-component-evidence.schema.json text eol=lf

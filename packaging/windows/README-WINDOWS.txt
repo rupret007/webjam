@@ -17,11 +17,24 @@ is not supported by this Windows release. Standalone Reference Studio remains
 available for local songwriting, recording, arranging, mixing, and WAV/FLAC
 bounce without joining Jamulus.
 
-Jamulus is required for live music. If Jamulus is not already installed,
-WebJam offers the exact bundled Jamulus 3.12.2 installer from the Host/Join
-screen. Jamulus is a separate application and its installer can request
-administrator approval. On a managed work PC, your organization's application
-policy may require IT approval even though WebJam installs per user.
+Jamulus is required for live music. WebJam automatically checks its signed,
+version-specific component catalog; it never follows an upstream "latest"
+download. When an approved Jamulus update is available, WebJam can download
+and verify it in the background, but Windows installation still requires your
+explicit approval and may display UAC or SmartScreen. WebJam verifies the
+installed version after setup. It never hides elevation or installs while a
+jam, recording, Reference Track, reconnect, or Jamulus launch is active.
+
+If an update is unavailable or you are offline, WebJam offers the exact
+bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is
+a separate application. On a managed work PC, your organization's application
+policy may require IT approval even though WebJam itself installs per user.
+
+Webex is optional and is not bundled. In WebJam, choose More > Webex /
+Conversation. If the native Webex app is missing, Get Webex opens Cisco's
+official Windows x64 installer after you confirm. Cisco owns that download,
+license, installation, sign-in, and updates. Jamulus remains the music path;
+keep Webex muted while playing to avoid delayed duplicate audio.
 
 This candidate has no trusted WebJam publisher signature. A future signed
 release must show the expected publisher, but even a valid signature would not

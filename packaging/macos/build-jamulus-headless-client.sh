@@ -4,8 +4,6 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly VERSION="3.12.2"
-readonly SOURCE_COMMIT="ffca974ed4e47b8f4621f3b583c00db2f87974fa"
 readonly SOURCE_REPOSITORY="https://github.com/jamulussoftware/jamulus.git"
 readonly QT_VERSION="6.10.2"
 readonly QT_SOURCE_ARCHIVE_NAME="qtbase-everywhere-src-6.10.2.tar.xz"
@@ -15,12 +13,8 @@ readonly AQTINSTALL_VERSION="3.3.0"
 readonly DEPLOYMENT_TARGET="13.0"
 readonly APP_NAME="JamulusHeadlessClient.app"
 readonly EXECUTABLE_NAME="JamulusHeadlessClient"
-readonly PATCH="$SCRIPT_DIR/jamulus-headless-r3_12_2.patch"
-readonly SOURCE_OFFER="$SCRIPT_DIR/JamulusHeadlessClient-SOURCE-OFFER.txt"
-readonly BUILD_INSTRUCTIONS="$SCRIPT_DIR/JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt"
 readonly AQT_LOCK="$SCRIPT_DIR/aqtinstall-3.3.0-lock.txt"
 readonly QT_NOTICE="$SCRIPT_DIR/JamulusHeadlessClient-QT-NOTICE.txt"
-readonly LICENSE="$SCRIPT_DIR/../../licenses/JAMULUS_COPYING.txt"
 readonly ENTITLEMENTS="$SCRIPT_DIR/Jamulus.entitlements"
 readonly VERIFY="$SCRIPT_DIR/verify-jamulus-headless-client.sh"
 
@@ -30,13 +24,46 @@ die() {
 }
 
 usage() {
-  printf 'Usage: %s <arm64|x86_64> <output/JamulusHeadlessClient.app>\n' "$0" >&2
+  printf '%s\n' \
+    "Usage: $0 <arm64|x86_64> <output/JamulusHeadlessClient.app> [r3_12_2|r3_12_3]" \
+    >&2
   exit 64
 }
 
-[[ $# -eq 2 ]] || usage
+[[ $# -eq 2 || $# -eq 3 ]] || usage
 architecture=$1
 output_app=$2
+profile=${3:-r3_12_2}
+
+case "$profile" in
+  r3_12_2)
+    VERSION="3.12.2"
+    SOURCE_TAG="r3_12_2"
+    SOURCE_COMMIT="ffca974ed4e47b8f4621f3b583c00db2f87974fa"
+    PATCH_NAME="jamulus-headless-r3_12_2.patch"
+    SOURCE_OFFER_NAME="JamulusHeadlessClient-SOURCE-OFFER.txt"
+    BUILD_INSTRUCTIONS_NAME="JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt"
+    LICENSE_NAME="JAMULUS_COPYING.txt"
+    ;;
+  r3_12_3)
+    VERSION="3.12.3"
+    SOURCE_TAG="r3_12_3"
+    SOURCE_COMMIT="74dc422116983a2173eb917cb4d6a403886b31e5"
+    PATCH_NAME="jamulus-headless-r3_12_3.patch"
+    SOURCE_OFFER_NAME="JamulusHeadlessClient-r3_12_3-SOURCE-OFFER.txt"
+    BUILD_INSTRUCTIONS_NAME="JamulusHeadlessClient-r3_12_3-BUILD-INSTRUCTIONS.txt"
+    LICENSE_NAME="JAMULUS_COPYING-r3_12_3.txt"
+    ;;
+  *)
+    usage
+    ;;
+esac
+readonly profile VERSION SOURCE_TAG SOURCE_COMMIT PATCH_NAME
+readonly SOURCE_OFFER_NAME BUILD_INSTRUCTIONS_NAME LICENSE_NAME
+readonly PATCH="$SCRIPT_DIR/$PATCH_NAME"
+readonly SOURCE_OFFER="$SCRIPT_DIR/$SOURCE_OFFER_NAME"
+readonly BUILD_INSTRUCTIONS="$SCRIPT_DIR/$BUILD_INSTRUCTIONS_NAME"
+readonly LICENSE="$SCRIPT_DIR/../../licenses/$LICENSE_NAME"
 
 [[ "$architecture" == "arm64" || "$architecture" == "x86_64" ]] || usage
 [[ "$(uname -s)" == Darwin ]] || die "this build requires macOS"
@@ -95,7 +122,7 @@ git -C "$source_dir" checkout -q --detach "$SOURCE_COMMIT"
 grep -Fxq "VERSION = $VERSION" "$source_dir/Jamulus.pro" || \
   die "pinned source does not declare Jamulus $VERSION"
 cmp -s "$source_dir/COPYING" "$LICENSE" || \
-  die "reviewed GPL text does not match pinned upstream source"
+  die "reviewed license text does not match pinned upstream source"
 
 git -C "$source_dir" apply --check "$PATCH"
 git -C "$source_dir" apply "$PATCH"
@@ -143,13 +170,13 @@ if missing:
     raise SystemExit("pinned source contract failed: " + ", ".join(missing))
 PY
 
-# GPLv2 corresponding source accompanies the binary rather than relying on a
-# future external download. Archive the exact patched tree plus every reviewed
+# Corresponding source accompanies the binary rather than relying on a future
+# external download. Archive the exact patched tree plus every reviewed
 # script/configuration file used to control this specialized build.
 source_packaging="$source_dir/webjam-packaging"
 mkdir -p "$source_packaging"
 install -m 644 "$PATCH" \
-  "$source_packaging/jamulus-headless-r3_12_2.patch"
+  "$source_packaging/$PATCH_NAME"
 install -m 644 "$SOURCE_OFFER" \
   "$source_packaging/JamulusHeadlessClient-SOURCE-OFFER.txt"
 install -m 644 "$BUILD_INSTRUCTIONS" \
@@ -252,7 +279,7 @@ export ZERO_AR_DATE=1
   "QMAKE_APPLE_DEVICE_ARCHS=$architecture" \
   "QT_ARCH=$architecture" \
   "QMAKE_MACOSX_DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET"
-# Jamulus r3_12_2's generated resource rule depends on the translated QM files,
+# Jamulus's generated resource rule depends on the translated QM files,
 # but qmake does not make the default target depend on their aggregate target.
 # Build that deterministic prerequisite explicitly before compiling.
 make -C "$build_dir" -f Makefile.Release -j 1 compiler_lrelease_make_all
@@ -305,7 +332,7 @@ done
 license_dir="$stage_app/Contents/Resources/THIRD_PARTY_LICENSES"
 mkdir -p "$license_dir"
 install -m 644 "$LICENSE" "$license_dir/JAMULUS_COPYING.txt"
-install -m 644 "$PATCH" "$license_dir/jamulus-headless-r3_12_2.patch"
+install -m 644 "$PATCH" "$license_dir/$PATCH_NAME"
 install -m 644 "$SOURCE_OFFER" \
   "$license_dir/JamulusHeadlessClient-SOURCE-OFFER.txt"
 install -m 644 "$BUILD_INSTRUCTIONS" \
@@ -317,6 +344,7 @@ install -m 644 "$QT_NOTICE" \
 install -m 644 "$qt_source_archive" \
   "$license_dir/$QT_SOURCE_ARCHIVE_NAME"
 patch_sha="$(shasum -a 256 "$PATCH" | awk '{print $1}')"
+license_sha="$(shasum -a 256 "$LICENSE" | awk '{print $1}')"
 apple_clang_version="$(xcrun clang --version | sed -n '1p')"
 macos_sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
 [[ -n "$apple_clang_version" && -n "$macos_sdk_version" ]] || \
@@ -326,13 +354,15 @@ macos_sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
     'format=1' \
     'component=JamulusHeadlessClient' \
     "version=$VERSION" \
+    "profile=$profile" \
     "source_repository=$SOURCE_REPOSITORY" \
     "source_commit=$SOURCE_COMMIT" \
-    'source_tag=r3_12_2' \
+    "source_tag=$SOURCE_TAG" \
     "source_tree=$source_tree" \
     "source_archive_commit=$source_archive_commit" \
     "corresponding_source_sha256=$corresponding_source_sha" \
     "patch_sha256=$patch_sha" \
+    "license_sha256=$license_sha" \
     "qt_version=$QT_VERSION" \
     "qt_source_archive_sha256=$actual_qt_source_sha" \
     "aqtinstall_version=$AQTINSTALL_VERSION" \
@@ -354,4 +384,4 @@ sha="$(shasum -a 256 "$binary" | awk '{print $1}')"
 printf '%s  %s\n' "$sha" \
   "$APP_NAME/Contents/MacOS/$EXECUTABLE_NAME" > "$manifest"
 
-"$VERIFY" "$output_app" "$architecture" "$manifest"
+"$VERIFY" "$output_app" "$architecture" "$manifest" "$profile"

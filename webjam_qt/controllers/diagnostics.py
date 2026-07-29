@@ -7,6 +7,7 @@ preview, structured JSON, and ZIP export all come from one cached artifact.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict
 import json
 import logging
@@ -49,6 +50,8 @@ class DiagnosticsExporter:
         musician_guidance: Any = None,
         recording_coordinator: Any = None,
         metrics_service: Any = None,
+        jamulus_update: Any = None,
+        webex_app: Any = None,
     ) -> None:
         self.settings = settings
         self.bridge = bridge
@@ -61,6 +64,8 @@ class DiagnosticsExporter:
         self.musician_guidance = musician_guidance
         self.recording = recording_coordinator
         self.metrics = metrics_service
+        self.jamulus_update = jamulus_update
+        self.webex_app = webex_app
         self._artifact_cache: SupportBundleArtifact | None = None
 
     def build_summary(self) -> str:
@@ -162,6 +167,8 @@ class DiagnosticsExporter:
             jamulus_state=str(
                 _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
             ),
+            jamulus_update=_public_mapping(self.jamulus_update),
+            webex_app=_public_mapping(self.webex_app),
             musician_guidance=self._musician_guidance(),
             session_transitions=self._session_transitions(),
             engine_capabilities=engine_capabilities,
@@ -391,6 +398,14 @@ def _plain_value(value: Any) -> str | int | float | bool | None:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return None
+
+
+def _public_mapping(value: Any) -> dict[str, Any]:
+    """Copy only a mapping; the core support schema applies its own allowlist."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item for key, item in value.items()}
 
 
 def _metric_count(values: dict[str, Any], name: str) -> int:

@@ -13,6 +13,8 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests.support.component_store import isolated_component_store_root
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
@@ -36,6 +38,7 @@ def _make_bridge(server="jam.example.com"):
     settings.jamulus_port = 22124
     settings.jamulus_rpc_port = 22222
     settings.jamulus_candidates = []
+    settings.musician_name = "Practice"
     repository = MagicMock()
     repository.get_setting.return_value = "1"
     bridge = BridgeService(
@@ -52,6 +55,7 @@ def _make_bridge(server="jam.example.com"):
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda f: f(),
         },
+        component_store_root=isolated_component_store_root(),
     )
     bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
     bridge._is_rpc_port_in_use = MagicMock(return_value=False)

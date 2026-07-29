@@ -17,6 +17,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.settings import AppSettings
+from core.jamulus_name import JAMULUS_NAME_HELP
 from webjam_qt.windows.first_run_setup import FirstRunSetupDialog
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog
 
@@ -69,6 +70,28 @@ def test_requires_explicit_role_and_name(qapp, settings):
     assert not dialog._primary.isEnabled()
     dialog._name.setText("Jeff — Guitar")
     assert dialog._primary.isEnabled()
+
+
+def test_name_entry_enforces_jamulus_limit_and_previews_native_wrap(
+    qapp, settings
+):
+    dialog = make_dialog(settings)
+    dialog._host_card.click()
+
+    dialog._name.setText("123456789")
+    assert dialog._primary.isEnabled()
+    assert "12345678 / 9" in dialog._name_preview.text()
+    assert JAMULUS_NAME_HELP in dialog._name.accessibleDescription()
+    assert "Mixer preview" in dialog._name_preview.accessibleDescription()
+
+    dialog._name.setText("12345678901234567")
+    assert not dialog._primary.isEnabled()
+    assert not dialog._name_error.isHidden()
+    assert "too long" in dialog._name_error.text()
+
+    dialog._name.setText("Cafe\u0301Band")
+    assert dialog._primary.isEnabled()
+    assert "Cafe\u0301Band" in dialog._name_preview.text()
 
 
 def test_role_cards_are_keyboard_accessible(qapp, settings):

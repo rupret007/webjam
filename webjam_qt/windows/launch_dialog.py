@@ -31,6 +31,11 @@ from PySide6.QtWidgets import (
 )
 
 from core.jamulus_endpoint import DEFAULT_JAMULUS_PORT
+from core.jamulus_name import (
+    DEFAULT_JAMULUS_NAME,
+    JamulusNameError,
+    validate_jamulus_name,
+)
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
 from core.settings import (
@@ -48,7 +53,7 @@ from webjam_qt.invitation_ingress import (
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
-from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic
+from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
@@ -56,20 +61,46 @@ LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
 def default_musician_name(settings: AppSettings) -> str:
     """Return a useful identity without turning launch into a form."""
+
+    def _accepted(value: object) -> str:
+        try:
+            return validate_jamulus_name(value).value
+        except JamulusNameError:
+            return ""
+
     configured = str(settings.musician_name or "").strip()
-    if configured and configured != "WebJam Musician":
-        return configured
+    try:
+        configured_is_saved = Path(settings.config_file).expanduser().is_file()
+    except OSError:
+        configured_is_saved = False
+    if configured and (
+        configured != DEFAULT_JAMULUS_NAME or configured_is_saved
+    ):
+        accepted = _accepted(configured)
+        if accepted:
+            return accepted
     if os.name == "posix":
         try:
             import pwd
 
             full_name = pwd.getpwuid(os.getuid()).pw_gecos.split(",", 1)[0].strip()
-            if full_name:
-                return full_name[:60]
+            first_name = full_name.split(maxsplit=1)[0]
+            # An unsaved OS account name is only a suggestion. Prefer the
+            # short first-name form so a new musician starts with a one-line
+            # Jamulus tile, while any explicitly saved name above is preserved
+            # exactly even when Jamulus truthfully wraps it to a second line.
+            for candidate in (first_name, full_name):
+                accepted = _accepted(candidate)
+                if accepted:
+                    return accepted
         except (ImportError, KeyError, OSError):
             pass
     account = getpass.getuser().replace("_", " ").replace(".", " ").strip()
-    return account.title()[:60] if account else "Musician"
+    for candidate in (account.split(maxsplit=1)[0].title(), account.title()):
+        accepted = _accepted(candidate)
+        if accepted:
+            return accepted
+    return "Musician"
 
 
 def _installed_jamulus(settings: AppSettings) -> bool:
@@ -192,6 +223,33 @@ class LaunchDialog(QDialog):
         brand_row.addStretch(1)
         root.addLayout(brand_row)
 
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(Space.SM)
+        name_label = QLabel("Your Jamulus name")
+        name_label.setObjectName("LaunchNameLabel")
+        self._name_input = QLineEdit(default_musician_name(settings))
+        self._name_input.setObjectName("LaunchNameInput")
+        self._name_input.setPlaceholderText("Short stage name")
+        self._name_input.setAccessibleName("Your Jamulus musician name")
+        name_label.setBuddy(self._name_input)
+        name_row.addWidget(name_label)
+        name_row.addWidget(self._name_input, 1)
+        root.addLayout(name_row)
+        self._name_preview = JamulusNamePreview(
+            self._name_input,
+            compact=True,
+        )
+        self._name_preview.setObjectName("LaunchNamePreview")
+        root.addWidget(self._name_preview)
+        self._name_error = QLabel("")
+        self._name_error.setObjectName("LaunchError")
+        self._name_error.setAccessibleName("Musician name error")
+        self._name_error.setWordWrap(True)
+        self._name_error.setVisible(False)
+        root.addWidget(self._name_error)
+        self._name_input.textChanged.connect(self._clear_name_error)
+
         self._pages = QStackedWidget()
         self._choice_page = self._build_choice_page()
         self._join_page = self._build_join_page()
@@ -223,10 +281,10 @@ class LaunchDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(Space.MD)
-
-        graphic = JamSignalGraphic()
-        layout.addWidget(graphic)
+        # The top-row trinity mark already carries the identity. Keep the
+        # choice page compact enough for the editable Jamulus-name preview and
+        # the optional Windows installer without squeezing role buttons.
+        layout.setSpacing(Space.XS)
 
         title = QLabel("Make music.")
         title.setObjectName("LaunchTitle")
@@ -416,10 +474,14 @@ class LaunchDialog(QDialog):
         return True
 
     def _host(self) -> None:
+        musician_name = self._validated_musician_name()
+        if musician_name is None:
+            return
         if not self._begin_submission(self._host_button, "Starting…"):
             return
         candidate = deepcopy(self._settings)
         apply_host_defaults(candidate)
+        candidate.musician_name = musician_name
         if not self._persist_role_choice(candidate):
             self._restore_submission()
             return
@@ -477,6 +539,11 @@ class LaunchDialog(QDialog):
 
         if not isinstance(invitation, (BandInvite, RemoteInvitation)):
             raise TypeError("invitation must be typed")
+        musician_name = self._validated_musician_name()
+        if musician_name is None:
+            if submission_started:
+                self._restore_submission()
+            return False
         if not submission_started and not self._begin_submission(
             self._join_button_primary, "Joining…"
         ):
@@ -489,6 +556,7 @@ class LaunchDialog(QDialog):
         else:
             apply_join_invite(candidate, invitation)
             session_name = invitation.session_name
+        candidate.musician_name = musician_name
         if not self._persist_role_choice(candidate):
             # _persist_role_choice() owns the same save failure for Host and
             # Join, so it initially writes the role-choice error. A pasted or
@@ -549,6 +617,7 @@ class LaunchDialog(QDialog):
         self._join_button.setEnabled(False)
         self._studio_button.setEnabled(False)
         self._join_button_primary.setEnabled(False)
+        self._name_input.setEnabled(False)
         button.setText(label)
         button.setAccessibleName(label)
         return True
@@ -564,10 +633,25 @@ class LaunchDialog(QDialog):
         self._studio_button.setText("Play Along / Record")
         self._studio_button.setAccessibleName("Play Along / Record")
         self._studio_button.setEnabled(True)
+        self._name_input.setEnabled(True)
         if hasattr(self, "_join_button_primary"):
             self._join_button_primary.setText("Join Jam")
             self._join_button_primary.setAccessibleName("Join Jam")
             self._join_button_primary.setEnabled(True)
+
+    def _validated_musician_name(self) -> str | None:
+        try:
+            return validate_jamulus_name(self._name_input.text()).value
+        except JamulusNameError as exc:
+            self._name_error.setText(str(exc))
+            self._name_error.setVisible(True)
+            self._announce_error(self._name_error, focus=self._name_input)
+            return None
+
+    def _clear_name_error(self, *_args: object) -> None:
+        self._name_error.clear()
+        self._name_error.setAccessibleDescription("")
+        self._name_error.setVisible(False)
 
     @staticmethod
     def _announce_error(label: QLabel, *, focus: Optional[QWidget] = None) -> None:

@@ -45,7 +45,7 @@ def test_current_candidate_identity_cannot_be_confused_with_latest_old_release()
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.21.0"
+    assert version == "0.22.0"
     assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
@@ -74,6 +74,8 @@ def test_macos_readme_uses_the_working_app_bundle_approval_path() -> None:
     assert "Recent macOS versions can block downloaded" in MACOS_README
     assert "Control-click the helper" not in MACOS_README
     assert "/bin/bash " in MACOS_README
+    assert "More > Webex / Conversation" in MACOS_README
+    assert "Webex is not bundled with WebJam" in MACOS_README
 
 
 def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
@@ -501,17 +503,19 @@ def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> 
     )
 
 
-def test_release_existence_probe_fails_closed_except_for_an_actual_404() -> None:
+def test_release_refuses_every_existing_draft_or_published_match() -> None:
     release_job = WORKFLOW.split("  release:\n", 1)[1]
     probe = release_job.split(
-        "      - name: Refuse mutation of an already-published release\n", 1
+        "      - name: Refuse any existing draft or published release\n", 1
     )[1].split("\n      - name:", 1)[0]
-    assert "gh api --include" in probe
-    assert "probe_exit=$?" in probe
-    assert 'http_status="$(sed -n' in probe
-    assert 'elif [[ "$http_status" != "404" ]]' in probe
-    assert "Could not prove whether release" in probe
-    assert "2>/dev/null || true" not in probe
+    assert "gh api" in probe
+    assert "--paginate" in probe
+    assert "--slurp" in probe
+    assert "repos/$GITHUB_REPOSITORY/releases?per_page=100" in probe
+    assert "[ .[][] | select(.tag_name == $tag) ] | length == 0" in probe
+    assert "draft or published release already uses" in probe
+    assert "releases/tags/$GITHUB_REF_NAME" not in probe
+    assert "|| true" not in probe
 
 
 def test_linux_release_claims_only_the_certified_ubuntu_target() -> None:

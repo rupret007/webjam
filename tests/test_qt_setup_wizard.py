@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from core.jamulus_name import JAMULUS_NAME_HELP
 from core.settings import AppSettings
 
 
@@ -165,6 +166,35 @@ class TestJamulusPage(unittest.TestCase):
             self.assertFalse(page.validatePage())
             self.assertFalse(page._page_error.isHidden())
             self.assertIn("musician name", page._page_error.text())
+
+    def test_musician_name_enforces_utf16_limit_and_shows_8_plus_8_preview(
+        self,
+    ):
+        from webjam_qt.windows.setup_wizard import _JamulusPage
+
+        with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
+            page = _JamulusPage(AppSettings(
+                jamulus_server="192.168.1.10",
+                jamulus_candidates=[jam.name],
+                musician_name="123456789",
+            ))
+            self.assertTrue(page.validatePage())
+            self.assertIn(
+                "12345678 / 9",
+                page._musician_name_preview.text(),
+            )
+            self.assertIn(
+                JAMULUS_NAME_HELP,
+                page._musician_name.accessibleDescription(),
+            )
+
+            page._musician_name.setText("12345678901234567")
+            self.assertFalse(page.validatePage())
+            self.assertIn("too long", page._page_error.text())
+
+            page._musician_name.setText("Jeff\nStory")
+            self.assertFalse(page.validatePage())
+            self.assertIn("control characters", page._page_error.text())
 
     def test_generic_default_requires_a_real_participant_name(self):
         from webjam_qt.windows.setup_wizard import _JamulusPage

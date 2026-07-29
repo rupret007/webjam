@@ -31,6 +31,11 @@ from core.jamulus_endpoint import (
     JamulusEndpointError,
     parse_jamulus_endpoint,
 )
+from core.jamulus_name import (
+    DEFAULT_JAMULUS_NAME,
+    JamulusNameError,
+    validate_jamulus_name,
+)
 from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
@@ -42,6 +47,7 @@ from core.webex_url import (
     webex_url_error,
 )
 from webjam_qt.theme import Space
+from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.first_run")
 
@@ -239,13 +245,24 @@ class FirstRunSetupDialog(QDialog):
         name_label.setObjectName("FirstRunFieldLabel")
         self._name = QLineEdit()
         configured_name = (self._settings.musician_name or "").strip()
-        if configured_name != "WebJam Musician":
-            self._name.setText(configured_name)
+        if configured_name != DEFAULT_JAMULUS_NAME:
+            try:
+                self._name.setText(
+                    validate_jamulus_name(configured_name).value
+                )
+            except JamulusNameError:
+                pass
         self._name.setPlaceholderText("Jeff — Guitar")
         self._name.setAccessibleName("Your musician name")
         self._name.textChanged.connect(self._refresh_navigation)
         layout.addWidget(name_label)
         layout.addWidget(self._name)
+        self._name_preview = JamulusNamePreview(self._name)
+        layout.addWidget(self._name_preview)
+        self._name_error = _body("", name="FirstRunError")
+        self._name_error.setAccessibleName("Musician name error")
+        self._name_error.setVisible(False)
+        layout.addWidget(self._name_error)
 
         self._server_label = QLabel("Band server address")
         self._server_label.setObjectName("FirstRunFieldLabel")
@@ -436,7 +453,16 @@ class FirstRunSetupDialog(QDialog):
 
     def _role_page_valid(self, *, show_error: bool = False) -> bool:
         role = self._selected_role()
-        if role is None or not self._name.text().strip() or not self._client_path:
+        try:
+            validate_jamulus_name(self._name.text())
+        except JamulusNameError as exc:
+            show_name_error = bool(self._name.text()) or show_error
+            self._name_error.setText(str(exc) if show_name_error else "")
+            self._name_error.setVisible(show_name_error)
+            return False
+        self._name_error.clear()
+        self._name_error.setVisible(False)
+        if role is None or not self._client_path:
             return False
         if role == "host":
             return bool(self._hosting_supported and self._server_path)
@@ -528,7 +554,7 @@ class FirstRunSetupDialog(QDialog):
             host, port = endpoint.host, endpoint.port
         return FirstRunSetupResult(
             role=role or "join",
-            musician_name=self._name.text().strip(),
+            musician_name=validate_jamulus_name(self._name.text()).value,
             jamulus_host=host,
             jamulus_port=port,
             webex_url=normalize_webex_url(self._webex_url.text()),
@@ -537,13 +563,21 @@ class FirstRunSetupDialog(QDialog):
         )
 
     def _save(self, result: FirstRunSetupResult) -> bool:
+        try:
+            musician_name = validate_jamulus_name(result.musician_name).value
+        except JamulusNameError as exc:
+            self._name_error.setText(str(exc))
+            self._name_error.setVisible(True)
+            self._show_step(0)
+            self._name.setFocus()
+            return False
         cfg = asdict(self._settings)
         cfg.update({
             "jamulus_server": result.jamulus_host,
             "jamulus_port": result.jamulus_port,
             "jamulus_rpc_port": 22222,
             "server_rpc_port": 22240,
-            "musician_name": result.musician_name,
+            "musician_name": musician_name,
             "host_server_enabled": result.role == "host",
             "webex_url": result.webex_url,
             "local_capture_enabled": result.local_capture_enabled,

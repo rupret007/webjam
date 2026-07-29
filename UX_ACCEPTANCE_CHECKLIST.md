@@ -1,4 +1,4 @@
-# WebJam v0.21.0 UX acceptance checklist
+# WebJam v0.22.0 UX acceptance checklist
 
 ## Unified guidance
 
@@ -120,7 +120,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.21.0 remains a private test candidate until real-output guidance
+- [ ] v0.22.0 remains a private test candidate until real-output guidance
       review, Arrange/comp playback, physical Reference Studio playback and
       recording, external-editor import, signed clean installation, and
       platform trust gates have evidence; all currently remain **NOT RUN**.

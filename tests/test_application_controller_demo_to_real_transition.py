@@ -204,6 +204,37 @@ class TestDemoToRealTransition(unittest.TestCase):
         finally:
             self.controller.settings.musician_name = original_name
 
+    def test_invalid_legacy_name_never_enters_rpc_retry_loop(self):
+        original_name = self.controller.settings.musician_name
+        try:
+            self.controller.settings.musician_name = "12345678901234567"
+            rpc = SimpleNamespace(available=True)
+            local = [
+                JamulusParticipant(
+                    channel_id=10,
+                    name="No Name",
+                    is_local=True,
+                )
+            ]
+            with patch.object(
+                self.controller.jamulus,
+                "rpc_client",
+                rpc,
+            ), patch.object(
+                self.controller.jamulus,
+                "set_name",
+                return_value=True,
+            ) as set_name:
+                for _ in range(8):
+                    self.controller._apply_jamulus_participants(local)
+                set_name.assert_not_called()
+                self.assertEqual(
+                    self.controller.audio._name_sync_send_attempts,
+                    0,
+                )
+        finally:
+            self.controller.settings.musician_name = original_name
+
     def test_native_rename_survives_same_process_reconnect(self):
         """A roster interruption must not overwrite a later native rename."""
 

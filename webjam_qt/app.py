@@ -406,6 +406,9 @@ def _run_app() -> int:
                 lambda invitation=late_invitation: _deliver_live_invite(invitation),
             )
     window.show()
+    controller.start_desktop_integrations(
+        enable_update_check=not smoke_autostart,
+    )
     # Host/Join is authorization to begin the non-modal Jamulus-native journey.
     # Reference Studio instead opens offline and does not start Jamulus.
     QTimer.singleShot(

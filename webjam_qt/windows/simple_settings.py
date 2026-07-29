@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.settings import AppSettings, save_settings
 from core.webex_url import (
     normalize_webex_url,
@@ -35,6 +36,7 @@ from core.webex_url import (
     webex_url_error,
 )
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 from webjam_qt.windows.launch_dialog import default_musician_name
 
 
@@ -45,6 +47,7 @@ class SimpleSettingsDialog(QDialog):
     """Edit non-audio WebJam preferences without duplicating Jamulus."""
 
     audio_settings_requested = Signal()
+    install_webex_requested = Signal()
 
     def __init__(
         self,
@@ -78,6 +81,10 @@ class SimpleSettingsDialog(QDialog):
         self._settings_scroll = QScrollArea()
         self._settings_scroll.setObjectName("SimpleSettingsScroll")
         self._settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # The scroll viewport is structural, not an action. Leaving it in the
+        # focus chain made Settings open on an unnamed blank target before the
+        # musician could reach the name field.
+        self._settings_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._settings_scroll.setWidgetResizable(True)
         self._settings_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -106,6 +113,8 @@ class SimpleSettingsDialog(QDialog):
         self._name.setAccessibleName("Your musician name")
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
+        self._name_preview = JamulusNamePreview(self._name)
+        identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 
         music = self._section("Live music")
@@ -168,6 +177,14 @@ class SimpleSettingsDialog(QDialog):
             "Opens the entered link externally. Sign-in and joining remain in Webex."
         )
         self._open_webex.clicked.connect(self._open_webex_test)
+        self._get_webex = QPushButton("Get Webex from Cisco")
+        self._get_webex.setObjectName("QuietButton")
+        self._get_webex.setAccessibleName("Get Webex from Cisco")
+        self._get_webex.setAccessibleDescription(
+            "Open Cisco's official Webex installer download. WebJam does not "
+            "bundle, silently install, or accept terms for Webex."
+        )
+        self._get_webex.clicked.connect(self.install_webex_requested.emit)
         self._webex_status = QLabel("")
         self._webex_status.setObjectName("SimpleSettingsHint")
         self._webex_status.setAccessibleName("Webex link test result")
@@ -178,9 +195,13 @@ class SimpleSettingsDialog(QDialog):
         conversation_body.addWidget(video_label)
         conversation_body.addWidget(self._video)
         conversation_body.addWidget(self._video_site)
-        conversation_body.addWidget(
-            self._open_webex, alignment=Qt.AlignmentFlag.AlignLeft
-        )
+        webex_actions = QHBoxLayout()
+        webex_actions.setContentsMargins(0, 0, 0, 0)
+        webex_actions.setSpacing(Space.SM)
+        webex_actions.addWidget(self._open_webex)
+        webex_actions.addWidget(self._get_webex)
+        webex_actions.addStretch(1)
+        conversation_body.addLayout(webex_actions)
         conversation_body.addWidget(self._webex_status)
         conversation.layout().addWidget(self._conversation_body)
         root.addWidget(conversation)
@@ -333,7 +354,11 @@ class SimpleSettingsDialog(QDialog):
             self.accept()
 
     def _save(self) -> bool:
-        name = self._name.text().strip() or default_musician_name(self._settings)
+        try:
+            name = validate_jamulus_name(self._name.text()).value
+        except JamulusNameError as exc:
+            self._show_error(str(exc), focus=self._name)
+            return False
         video = normalize_webex_url(self._video.text())
         if video:
             error = webex_url_error(video)

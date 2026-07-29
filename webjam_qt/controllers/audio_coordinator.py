@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QMessageBox
 
+from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.session_state import SessionUiState
 from core.session_lifecycle import SessionLifecyclePhase
@@ -83,8 +84,11 @@ class AudioCoordinator:
             self._name_sync_sent = False
             self._name_sync_process = process
 
-        desired = str(self._c.settings.musician_name or "").strip()
-        if not desired:
+        try:
+            desired = validate_jamulus_name(
+                self._c.settings.musician_name
+            ).value
+        except JamulusNameError:
             return
         if desired != self._name_sync_target:
             self._name_sync_target = desired

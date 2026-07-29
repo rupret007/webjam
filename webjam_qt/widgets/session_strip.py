@@ -190,6 +190,14 @@ class SessionStrip(QFrame):
         audio_action.triggered.connect(
             lambda: self.tool_requested.emit("audio_settings")
         )
+        jamulus_updates_action = QAction("Jamulus Updates…", tools_menu)
+        jamulus_updates_action.setToolTip(
+            "Check for a WebJam-approved Jamulus component without interrupting "
+            "the current session."
+        )
+        jamulus_updates_action.triggered.connect(
+            lambda: self.tool_requested.emit("jamulus_updates")
+        )
         conversation_action = QAction("Webex / Conversation", tools_menu)
         conversation_action.triggered.connect(self.join_video_requested.emit)
         recording_action = QAction("Recording Setup", tools_menu)
@@ -226,6 +234,7 @@ class SessionStrip(QFrame):
         about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
         tools_menu.addAction(audio_action)
+        tools_menu.addAction(jamulus_updates_action)
         tools_menu.addAction(conversation_action)
         tools_menu.addAction(recording_action)
         tools_menu.addAction(self._reference_track_action)

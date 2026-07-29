@@ -1,0 +1,267 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "bom-ref": "pkg:github/rupret007/webjam@0.22.0",
+      "group": "rupret007",
+      "name": "WebJam",
+      "purl": "pkg:github/rupret007/webjam@0.22.0",
+      "type": "application",
+      "version": "0.22.0"
+    },
+    "properties": [
+      {
+        "name": "webjam:scope",
+        "value": "separately-executed-jamulus-components"
+      },
+      {
+        "name": "webjam:catalog-policy",
+        "value": "exact-compatibility-registry-plus-signed-catalog"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "jamulus:r3_12_2:windows-x64:installer",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.2_win.exe",
+      "version": "3.12.2",
+      "type": "application",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4e7cef6a70fe4525f0e7ea1f1c3301d7298047d9456283b7e12035f3ab5ba7b9"
+        }
+      ],
+      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_win.exe"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "windows-x64"},
+        {"name": "webjam:artifact-size", "value": "84381073"},
+        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus:r3_12_2:linux-x64:package",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.2_ubuntu_amd64.deb",
+      "version": "3.12.2",
+      "type": "application",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9"
+        }
+      ],
+      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "linux-x64"},
+        {"name": "webjam:artifact-size", "value": "1505188"},
+        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus:r3_12_2:macos-universal:disk-image",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.2_mac.dmg",
+      "version": "3.12.2",
+      "type": "application",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "adf185aaf78e27d9f603daa6895e7698b4bdffee18fe29ad789cd7c1021d6bd0"
+        }
+      ],
+      "licenses": [{"expression": "GPL-2.0-or-later"}],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_mac.dmg"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
+        {"name": "webjam:artifact-size", "value": "88808313"},
+        {"name": "webjam:status", "value": "embedded-offline-fallback"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus-headless:r3_12_2:macos:embedded",
+      "group": "webjam",
+      "name": "JamulusHeadlessClient",
+      "version": "3.12.2",
+      "type": "application",
+      "scope": "required",
+      "licenses": [
+        {"expression": "GPL-2.0-or-later"},
+        {"expression": "LGPL-3.0-only"}
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
+        {"name": "webjam:source-commit", "value": "ffca974ed4e47b8f4621f3b583c00db2f87974fa"},
+        {"name": "webjam:status", "value": "embedded-offline-fallback"},
+        {"name": "webjam:artifact-hash", "value": "recorded-per-build-in-provenance"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus:r3_12_3:windows-x64:installer",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.3_win.exe",
+      "version": "3.12.3",
+      "type": "application",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "008918b1564b2a46f1a371d7e3df661a0d710689383dab5c61b80be3c4aaf5a1"
+        }
+      ],
+      "licenses": [
+        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_win.exe"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "windows-x64"},
+        {"name": "webjam:artifact-size", "value": "84406464"},
+        {"name": "webjam:installed-runtime-path", "value": "Jamulus.exe"},
+        {"name": "webjam:installed-runtime-size", "value": "3111424"},
+        {"name": "webjam:installed-runtime-sha256", "value": "25c3dacaece705a233d9d2a1b7ddb00bb5dfcd10fb3af7ed98f024c56b473295"},
+        {"name": "webjam:installed-runtime-architecture", "value": "pe32+-x86-64"},
+        {"name": "webjam:publisher-trust", "value": "upstream-unsigned-exact-hash-user-approval-required"},
+        {"name": "webjam:status", "value": "approved-platform-update"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus:r3_12_3:linux-x64:package",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.3_ubuntu_amd64.deb",
+      "version": "3.12.3",
+      "type": "application",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "100af7bcf6edb5729df03ac38bbbdbb4f02014d50b32e0a0e11e55bffba783d3"
+        }
+      ],
+      "licenses": [
+        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_ubuntu_amd64.deb"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "linux-x64"},
+        {"name": "webjam:artifact-size", "value": "1505696"},
+        {"name": "webjam:installed-runtime-path", "value": "usr/bin/jamulus"},
+        {"name": "webjam:installed-runtime-size", "value": "3430688"},
+        {"name": "webjam:installed-runtime-sha256", "value": "f576bb7139b4f48ae8331cff46641dc5a0350e6afbd11cd93411fbf36834c983"},
+        {"name": "webjam:installed-runtime-architecture", "value": "elf64-x86-64"},
+        {"name": "webjam:status", "value": "approved-platform-update"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus-headless:r3_12_3:linux-x64:package",
+      "group": "jamulussoftware",
+      "name": "jamulus-headless_3.12.3_ubuntu_amd64.deb",
+      "version": "3.12.3",
+      "type": "application",
+      "scope": "excluded",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "995e06c9e53c36f8ea41853b26200ec101ed7170d97112312d6c45b4fb7e237f"
+        }
+      ],
+      "licenses": [
+        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus-headless_3.12.3_ubuntu_amd64.deb"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "linux-x64"},
+        {"name": "webjam:artifact-size", "value": "1249168"},
+        {"name": "webjam:status", "value": "integration-and-server-compatibility"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus:r3_12_3:macos-universal:disk-image",
+      "group": "jamulussoftware",
+      "name": "jamulus_3.12.3_mac.dmg",
+      "version": "3.12.3",
+      "type": "application",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9502b78c3b13d1e58a6ae417ecb1b5c6ebdf9a3c18e7ec4e23e23230890900cb"
+        }
+      ],
+      "licenses": [
+        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"}
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_mac.dmg"
+        }
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
+        {"name": "webjam:artifact-size", "value": "88923220"},
+        {"name": "webjam:publisher-team-id", "value": "V9ZZ6B9WH8"},
+        {"name": "webjam:license-acceptance", "value": "explicit-before-mount-or-staging"},
+        {"name": "webjam:bundle-symlinks", "value": "allowed-only-under-verified-upstream-signature"},
+        {"name": "webjam:status", "value": "approved-managed-update-input"}
+      ]
+    },
+    {
+      "bom-ref": "jamulus-headless:r3_12_3:macos:unapproved-evidence",
+      "group": "webjam",
+      "name": "JamulusHeadlessClient",
+      "version": "3.12.3",
+      "type": "application",
+      "scope": "excluded",
+      "licenses": [
+        {"expression": "AGPL-3.0-or-later AND GPL-3.0-or-later"},
+        {"expression": "LGPL-3.0-only"}
+      ],
+      "properties": [
+        {"name": "webjam:target", "value": "macos-arm64,macos-x64"},
+        {"name": "webjam:source-commit", "value": "74dc422116983a2173eb917cb4d6a403886b31e5"},
+        {"name": "webjam:status", "value": "not-approved"},
+        {"name": "webjam:artifact-hash", "value": "injected-only-from-ci-build-evidence"},
+        {"name": "webjam:catalog-signing", "value": "forbidden-while-legal-gate-is-open"},
+        {"name": "webjam:legal-gate", "value": "pending-qualified-agpl-13-review-or-protocol-visible-source-offer"}
+      ]
+    }
+  ]
+}

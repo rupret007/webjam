@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from core.audio_engine import RealAudioEngine
+from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_protocol import JamulusProtocolAdapter
 from core.jamulus_rpc_client import JamulusRpcClient
 from core.logging_config import configure_logging
@@ -472,10 +473,14 @@ class JamulusController:
     def set_name(self, name: str) -> bool:
         """Push the local musician's display name to Jamulus so the band sees a
         real name instead of a blank. No-op/False if RPC isn't available."""
-        if not name or not self.rpc_client.available:
+        if not self.rpc_client.available:
             return False
         try:
-            return bool(self.rpc_client.set_name(name))
+            validated = validate_jamulus_name(name)
+        except JamulusNameError:
+            return False
+        try:
+            return bool(self.rpc_client.set_name(validated.value))
         except Exception:
             return False
 

@@ -71,6 +71,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.settings.webex_url = ""
         c._show_actionable_error = MagicMock()
         c._on_join_video()
+        c.window.webex_embed.setVisible.assert_called_once_with(True)
         c._show_actionable_error.assert_called_once()
         self.assertEqual(c._show_actionable_error.call_args.args[0], "No Webex Link")
         c.bridge.launch_webex = MagicMock()
@@ -81,6 +82,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.settings.webex_url = "https://example.webex.com/meet/band"
         c.bridge.launch_webex = MagicMock()
         c._on_join_video()
+        c.window.webex_embed.setVisible.assert_called_once_with(True)
         self.assertEqual(c.webex.meeting_url, "https://example.webex.com/meet/band")
         c.bridge.launch_webex.assert_called_once_with(manual=True)
         c.window.session_strip.set_video_state.assert_called_with(
@@ -96,6 +98,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
 
         c._on_join_video()
 
+        c.window.webex_embed.setVisible.assert_called_once_with(True)
         c._show_actionable_error.assert_called_once()
         self.assertEqual(
             c._show_actionable_error.call_args.args[0],

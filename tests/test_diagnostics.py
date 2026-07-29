@@ -190,6 +190,42 @@ class TestDiagnosticsExporter(unittest.TestCase):
         }
         assert "private-value" not in str(transitions)
 
+    def test_structured_report_accepts_only_component_public_mappings(self):
+        exporter = _make_exporter()
+        exporter.jamulus_update = {
+            "state": "available",
+            "active_version": "3.12.2",
+            "available_version": "3.12.3",
+            "fallback_version": "3.12.2",
+            "target": "windows-x64",
+            "progress_percent": 25,
+            "reason_code": "catalog-offline",
+            "catalog_verified": False,
+            "catalog_sequence": 0,
+            "private_path": "/Users/alice/private",
+        }
+        exporter.webex_app = {
+            "state": "not-installed",
+            "installed": False,
+            "publisher_verified": False,
+            "reason_code": "publisher-check-deferred",
+            "meeting_url": "https://private.webex.com/meet/secret",
+        }
+
+        report = exporter.artifact().structured_report
+
+        self.assertEqual(report["jamulus_update"]["state"], "available")
+        self.assertEqual(
+            report["jamulus_update"]["fallback_version"],
+            "3.12.2",
+        )
+        self.assertEqual(report["jamulus_update"]["catalog_sequence"], 0)
+        self.assertFalse(report["jamulus_update"]["catalog_verified"])
+        self.assertEqual(report["webex_app"]["state"], "not-installed")
+        self.assertFalse(report["webex_app"]["installed"])
+        self.assertNotIn("private", json.dumps(report).lower())
+        self.assertNotIn("meeting_url", json.dumps(report))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -303,3 +303,59 @@ draft as a non-prerelease with GitHub's explicit **Latest** setting and the
 public `/releases/latest` response contains the exact inventory above. A green
 four-target matrix, retained Windows Actions artifact, pushed tag, or complete
 draft does not satisfy the release request on its own.
+
+### v0.22.0 signed-component candidate
+
+The v0.22.0 source candidate adds an independently updatable Jamulus boundary,
+exact Jamulus-name validation/preview, native Webex detection with explicit
+official Cisco installer handoff, and path-free updater/Webex support evidence.
+It preserves the v0.21.0 Reference Studio, Pocket Stage kit, embedded Jamulus
+3.12.2 fallback, and locked Reference Track behavior. Never move or replace the
+v0.21.0 tag or assets.
+
+The exact v0.22.0 draft inventory is:
+
+- `WebJam-v0.22.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.0-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.0-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.0-SHA256SUMS.txt`
+
+The checksum file contains exactly seven entries and never lists itself. The
+separate signed component catalog, Jamulus installers/DMG/packages, signing
+key, public-key source, HEADLESS evidence, or source archives must not be
+attached to this desktop release. Candidate tag CI drafts the release; the
+**Publish Verified WebJam Release** workflow must independently download it,
+reject any other inventory, verify all seven checksums, publish it as a
+non-prerelease with explicit `--latest`, and prove both `/releases/latest` and
+the public asset list identify `v0.22.0`.
+
+The catalog is operated in a separate non-Latest release named
+`jamulus-components-v1`. Generate its payload from the checked-in compatibility
+registry, use the offline Ed25519 private key only through the release tool,
+increase the prior accepted sequence, limit validity to at most 31 days, sign
+canonical JSON, and verify it with the packaged public key before upload. The
+catalog release must remain a prerelease so it cannot become the repository's
+Latest desktop release. An expired catalog is a normal fail-closed condition:
+clients keep the verified managed/current component or embedded 3.12.2
+fallback and report that update checking is unavailable.
+
+Before publication, prove the updater rejects invalid signatures, expiry,
+replay, rollback, same-sequence equivocation, bad hosts/redirects, wrong target,
+architecture, publisher, filename, size/hash, partial downloads, unexpected
+inventory, traversal/symlinks, lock contention, corrupt pointers, and busy
+activation. On macOS prove the DMG is not mounted until the exact license is
+shown and explicitly accepted; after acceptance verify the untouched upstream
+signature/notarization and quarantine. On Windows record the upstream
+installer's known unsigned state and explicit UAC handoff. On Linux prove no
+hidden `sudo` or shell path.
+
+For v0.22.0, completion still requires the exact four-target desktop matrix,
+draft-first publication, checksum verification, and GitHub **Latest** result.
+Automated source and package evidence does not convert physical audio, Webex
+joining, hardware recovery, long-session, Windows publisher trust, WebJam
+Developer ID/notarization, or managed-device policy into PASS; record those as
+**NOT RUN** unless performed against the exact published assets.

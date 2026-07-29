@@ -41,6 +41,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.jamulus_name import (
+    DEFAULT_JAMULUS_NAME,
+    JamulusNameError,
+    validate_jamulus_name,
+)
 from core.settings import AppSettings, load_settings
 from core.webex_url import (
     normalize_webex_url,
@@ -48,6 +53,7 @@ from core.webex_url import (
     webex_url_error,
 )
 from webjam_qt.theme.tokens import Color, Font, Space
+from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.setup_wizard")
 
@@ -188,14 +194,21 @@ class _JamulusPage(QWizardPage):
 
         layout.addWidget(_section_label("Your musician name"))
         configured_name = getattr(settings, "musician_name", "") or ""
-        if configured_name == "WebJam Musician":
+        if configured_name == DEFAULT_JAMULUS_NAME:
             configured_name = ""
+        elif configured_name:
+            try:
+                configured_name = validate_jamulus_name(configured_name).value
+            except JamulusNameError:
+                configured_name = ""
         self._musician_name = QLineEdit(configured_name)
         self._musician_name.setPlaceholderText("e.g. Jeff — Guitar")
         self._musician_name.setAccessibleName(
             "Your musician name shown to Jamulus participants"
         )
         layout.addWidget(self._musician_name)
+        self._musician_name_preview = JamulusNamePreview(self._musician_name)
+        layout.addWidget(self._musician_name_preview)
 
         host_section = _section_label("Band server")
         layout.addWidget(host_section)
@@ -457,10 +470,10 @@ class _JamulusPage(QWizardPage):
             )
             self._host.setFocus()
             return False
-        if not self._musician_name.text().strip():
-            self._show_page_error(
-                "Enter your musician name — it's shown to the other players."
-            )
+        try:
+            validate_jamulus_name(self._musician_name.text())
+        except JamulusNameError as exc:
+            self._show_page_error(str(exc))
             self._musician_name.setFocus()
             return False
         if not self._resolved_jamulus_path():
@@ -874,12 +887,28 @@ class SetupWizard(QWizard):
     # Persistence
     # ------------------------------------------------------------------
     def _save_settings(self) -> None:
+        candidate_name = self._jamulus.musician_name
+        if (
+            not candidate_name
+            and self._settings.musician_name == DEFAULT_JAMULUS_NAME
+        ):
+            # ``_save_settings`` is also exercised directly by migration and
+            # smoke callers. The interactive Finish path cannot reach here
+            # with a blank field because ``validatePage`` rejects it.
+            candidate_name = DEFAULT_JAMULUS_NAME
+        try:
+            musician_name = validate_jamulus_name(
+                candidate_name
+            ).value
+        except JamulusNameError:
+            LOGGER.error("Refusing to save an invalid Jamulus musician name")
+            return
         cfg = asdict(self._settings)
 
         cfg["jamulus_server"]             = self._jamulus.host
         cfg["jamulus_port"]               = self._jamulus.port
         cfg["jamulus_rpc_port"]           = self._jamulus.rpc_port
-        cfg["musician_name"]              = self._jamulus.musician_name
+        cfg["musician_name"]              = musician_name
         cfg["host_server_enabled"]        = self._jamulus.host_server_enabled
         cfg["webex_url"]                  = self._webex.webex_url
         cfg["audio_input_device_index"]   = self._routing.device_index

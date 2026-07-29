@@ -9,8 +9,10 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit  # noqa: E402
 
+from core.jamulus_name import JAMULUS_NAME_HELP  # noqa: E402
 from core.settings import AppSettings, load_settings  # noqa: E402
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog  # noqa: E402
 
@@ -36,6 +38,33 @@ def test_settings_names_meeting_or_personal_room_and_derives_site(tmp_path):
     assert dialog._video_site.text() == "Webex site: team.webex.com"
     assert "private-room" not in dialog._video_site.text()
     assert "private" not in dialog._video_site.text()
+
+
+def test_settings_opens_on_named_identity_field_not_structural_scroll_area(
+    tmp_path,
+):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog.show()
+    _app.processEvents()
+    try:
+        assert dialog._settings_scroll.focusPolicy() == Qt.FocusPolicy.NoFocus
+        assert dialog._name.hasFocus()
+        assert dialog._name.accessibleName() == "Your musician name"
+    finally:
+        dialog.close()
+
+
+def test_settings_offers_explicit_official_webex_installer_handoff(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    requested: list[bool] = []
+    dialog.install_webex_requested.connect(lambda: requested.append(True))
+    dialog._conversation_toggle.setChecked(True)
+
+    dialog._get_webex.click()
+
+    assert requested == [True]
+    assert dialog._get_webex.text() == "Get Webex from Cisco"
+    assert "does not" in dialog._get_webex.accessibleDescription()
 
 
 def test_open_action_normalizes_and_reports_external_handoff(tmp_path):
@@ -213,6 +242,29 @@ def test_settings_store_no_webex_identity_or_password_fields(tmp_path):
     copy = " ".join(label.text() for label in dialog.findChildren(QLabel))
     assert "Webex handles sign-in" in copy
     assert "does not change your Webex identity" in copy
+
+
+def test_settings_name_preview_and_validation_share_jamulus_contract(
+    tmp_path,
+):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    dialog.show()
+    _app.processEvents()
+
+    dialog._name.setText("123456789")
+    assert "12345678 / 9" in dialog._name_preview.text()
+    assert JAMULUS_NAME_HELP in dialog._name.accessibleDescription()
+
+    with patch(
+        "webjam_qt.windows.simple_settings.save_settings"
+    ) as save:
+        dialog._name.setText("12345678901234567")
+        assert dialog._save() is False
+
+    save.assert_not_called()
+    assert "too long" in dialog._error.text()
+    assert dialog._name.hasFocus()
+    dialog.close()
 
 
 def test_save_persists_only_normalized_link_for_webex(tmp_path):

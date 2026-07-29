@@ -15,6 +15,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests.support.component_store import isolated_component_store_root
+
 
 class _ImmediateThread:
     """threading.Thread stand-in that runs its target synchronously."""
@@ -37,7 +39,7 @@ def _make_settings() -> MagicMock:
     s.jamulus_rpc_port = 22222
     s.jamulus_candidates = []
     s.webex_url = "https://example.webex.com/m/x"
-    s.musician_name = "Private Musician Name"
+    s.musician_name = "Private Musician"
     s.host_server_enabled = False
     return s
 
@@ -62,6 +64,7 @@ def _make_bridge():
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda f: f(),
         },
+        component_store_root=isolated_component_store_root(),
     )
     return bridge
 
@@ -314,7 +317,7 @@ class TestLaunchCommandContract(unittest.TestCase):
         cmd = self._launch_and_capture_cmd(bridge)
 
         self.assertNotIn("--clientname", cmd)
-        self.assertNotIn("Private Musician Name", cmd)
+        self.assertNotIn("Private Musician", cmd)
 
     def test_legacy_guest_keeps_existing_clientname_contract(self, _thread):
         bridge = _make_bridge()
@@ -326,8 +329,23 @@ class TestLaunchCommandContract(unittest.TestCase):
 
         self.assertEqual(
             cmd[cmd.index("--clientname") + 1],
-            "Private Musician Name",
+            "Private Musician",
         )
+
+    def test_invalid_musician_name_never_reaches_process_arguments(
+        self, _thread
+    ):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "legacy.example.com"
+        bridge.settings.musician_name = "12345678901234567"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+        with patch("services.bridge_service.subprocess.Popen") as popen:
+            bridge.launch_jamulus(manual=True)
+
+        popen.assert_not_called()
+        self.assertEqual(bridge.jamulus_state, "Launch failed")
 
     def test_immediate_client_exit_is_not_reported_as_running(self, _thread):
         bridge = _make_bridge()
@@ -716,8 +734,16 @@ class TestFindJamulusFallback(unittest.TestCase):
         from pathlib import Path
         bridge = _make_bridge()
         with tempfile.NamedTemporaryFile(suffix="-jamulus") as fake_binary:
+            Path(fake_binary.name).chmod(0o700)
             bridge.settings.jamulus_candidates = [fake_binary.name]
-            self.assertEqual(bridge.find_jamulus(), fake_binary.name)
+            with patch(
+                "services.bridge_service.default_jamulus_version_probe",
+                return_value="3.12.2",
+            ):
+                self.assertEqual(
+                    bridge.find_jamulus(),
+                    str(Path(fake_binary.name).resolve()),
+                )
             assert Path(fake_binary.name).exists()
 
     def test_falls_back_to_default_candidates(self):
@@ -725,11 +751,20 @@ class TestFindJamulusFallback(unittest.TestCase):
         bridge = _make_bridge()
         bridge.settings.jamulus_candidates = ["/nonexistent/custom/jamulus"]
         with tempfile.NamedTemporaryFile(suffix="-jamulus") as fake_binary:
+            from pathlib import Path
+
+            Path(fake_binary.name).chmod(0o700)
             default_settings = MagicMock()
             default_settings.jamulus_candidates = [fake_binary.name]
             with patch("core.settings.AppSettings",
-                       return_value=default_settings):
-                self.assertEqual(bridge.find_jamulus(), fake_binary.name)
+                       return_value=default_settings), patch(
+                "services.bridge_service.default_jamulus_version_probe",
+                return_value="3.12.2",
+            ):
+                self.assertEqual(
+                    bridge.find_jamulus(),
+                    str(Path(fake_binary.name).resolve()),
+                )
 
     def test_returns_none_when_nothing_exists(self):
         bridge = _make_bridge()

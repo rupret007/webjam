@@ -21,20 +21,41 @@ every platform.
 
 ## Jamulus
 
-WebJam bundles the official [Jamulus](https://jamulus.io)
-client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftware/jamulus)
-— to remove the "go install Jamulus yourself" step for most users.
+WebJam bundles an offline fallback from the official
+[Jamulus](https://jamulus.io) client — source at
+[jamulussoftware/jamulus](https://github.com/jamulussoftware/jamulus) — and
+can install a newer, explicitly approved component in its per-user component
+store after verifying a signed catalog and the exact downloaded bytes.
 
-- **Version bundled:** `3.12.2` (tag [`r3_12_2`](https://github.com/jamulussoftware/jamulus/releases/tag/r3_12_2))
-- **License:** GNU General Public License v2 (core), with Jamulus's own
-  new contributions moving toward AGPL v3.0. Bundled components (OPUS,
-  STK) carry their own permissive licenses. The full license text as
-  shipped by the Jamulus project is included verbatim at
+- **Immutable offline fallback:** `3.12.2` (tag
+  [`r3_12_2`](https://github.com/jamulussoftware/jamulus/releases/tag/r3_12_2)).
+  WebJam v0.22 retains this reviewed client, server, and HEADLESS Reference
+  Track build inside its desktop packages. It is not modified by the updater.
+- **Fallback license:** the exact GNU General Public License v2 text shipped by
+  Jamulus 3.12.2 is included verbatim at
   [`licenses/JAMULUS_COPYING.txt`](licenses/JAMULUS_COPYING.txt) and is
   also placed alongside the bundled copy in every WebJam build (macOS:
   `WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES/`; Windows:
   `_internal/Jamulus/` next to the bundled installer; Linux: the visible
   archive-root `Jamulus/` directory next to the bundled `.deb`).
+- **Approved client/server update input:** official Jamulus `3.12.3` (tag
+  [`r3_12_3`](https://github.com/jamulussoftware/jamulus/releases/tag/r3_12_3),
+  source commit `74dc422116983a2173eb917cb4d6a403886b31e5`). Upstream now
+  states that Jamulus is distributed under AGPL 3.0 or later, with code
+  contributed before 3.12.1dev licensed under GPL 3.0 or later. The exact
+  3.12.3 upstream COPYING text is preserved at
+  [`licenses/JAMULUS_COPYING-r3_12_3.txt`](licenses/JAMULUS_COPYING-r3_12_3.txt).
+  Official packages also carry their platform-specific third-party inventory.
+  WebJam downloads only immutable assets whose size, SHA-256, target,
+  architecture, publisher policy, runtime inventory, and legal inventory match
+  both its compatibility registry and a valid signed component catalog.
+- **Managed HEADLESS status:** **NOT APPROVED**. WebJam has a separate,
+  evidence-only r3_12_3 HEADLESS patch/build profile with complete
+  corresponding source and exact AGPL/GPL text. It cannot be added to an
+  activating catalog until qualified review resolves the AGPL section 13
+  network-source-offer question or approves a protocol-visible offer design.
+  A CI-produced checksum is evidence, not approval. Reference Track therefore
+  continues to use the embedded, reviewed 3.12.2 HEADLESS fallback.
 - **How it's bundled, per platform:**
   - **macOS:** `Jamulus.app` from Jamulus's official release `.dmg` is
     nested inside `WebJam.app/Contents/Resources/Jamulus.app`. WebJam's build
@@ -69,6 +90,15 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     The resulting nested apps, and the private WebJam artifact that contains
     them, are ad-hoc signed and are **not notarized**; do not describe the
     prepared copies as upstream-notarized nested apps.
+    The official DMG presents a Jamulus software-license agreement. An
+    automatic component check may download the exact DMG, but the updater must
+    not mount, extract, or stage it until the user explicitly accepts that
+    agreement. Downloading is never treated as acceptance. Only after that
+    explicit Agree action may the bounded installer pass the corresponding
+    response to `hdiutil` for that one verified image. The signed upstream app
+    bundles contain expected Qt framework symlinks. Those are accepted only as
+    members of the exact, deeply verified upstream signature—not as a general
+    permission to extract arbitrary symlinks.
   - **Windows:** Jamulus only publishes an NSIS *installer* executable
     (no portable binary), so Windows packaging carries the unmodified installer
     as a distribution dependency. On a clean Windows system, the Host/Join
@@ -81,21 +111,29 @@ client — source at [jamulussoftware/jamulus](https://github.com/jamulussoftwar
     join-only build certified only for Ubuntu 22.04 x64; other Ubuntu versions
     and Linux distributions are not certified. The helper installs Jamulus as
     `/usr/bin/jamulus`, which WebJam discovers without a custom path.
-- **Why this doesn't require relicensing WebJam:** Redistributing a
-  third-party binary that is invoked as a separate process
-  (never statically or dynamically linked into WebJam's own executable)
-  is "mere aggregation" under GPL §2 — it does not bring WebJam's own
-  code under the GPL. WebJam communicates with the Jamulus process
-  exclusively via `subprocess.Popen` plus its public JSON-RPC/UDP
-  protocols, the same way it would talk to a separately-installed copy.
+- **Separate-process boundary:** WebJam never statically or dynamically links
+  Jamulus into WebJam's executable. It launches Jamulus as an independent
+  process and communicates through its public JSON-RPC/UDP protocols, as it
+  would with a separately installed copy. The applicable upstream license
+  texts, exact upstream repository/tag/commit identities, and source-location
+  directions are provided with their respective components. Complete patched
+  corresponding source is bundled only where this notice says so explicitly.
+  Ordinary upstream client/server packages do not claim that complete source
+  archives are inside the desktop package. This notice does not make a legal
+  determination beyond that audited product boundary.
 - **Escape hatch:** source runs can use an installed/custom Jamulus path.
-  Frozen macOS builds deliberately prefer their prepared, pinned bundled copy
-  so an incompatible installed version cannot silently replace it.
-- **Staying current:** because the bundled copy's version is pinned to
-  WebJam's own release cadence, a security or bug fix released upstream
-  by the Jamulus project won't reach bundled-copy users until the next
-  WebJam release. The manual-path override above remains available if
-  you need a newer (or different) Jamulus version sooner.
+  Frozen builds resolve a fully verified managed component first, then the
+  embedded 3.12.2 fallback, then a compatible explicit/system copy. They never
+  follow an upstream "latest" pointer or silently activate an unapproved
+  version.
+- **Staying current safely:** automatic checks may download an approved
+  component asynchronously, but activation waits for an idle lifecycle
+  boundary. The managed macOS store retains a verified prior version for
+  rollback. Windows and Linux installations remain operating-system-owned and
+  use the embedded fallback rather than claiming app-managed rollback.
+  Platform installers continue to require explicit user approval. The updater
+  never mutates `WebJam.app`, invokes hidden elevation, or weakens
+  operating-system trust policy.
 
 ## Pocket Stage Python runtime dependency inventory
 

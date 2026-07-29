@@ -20,6 +20,11 @@ on:
         required: false
         type: boolean
         default: false
+      build_unapproved_jamulus_3123_headless_evidence:
+        description: Build quarantined 3.12.3 HEADLESS evidence without approving activation
+        required: false
+        type: boolean
+        default: false
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -116,10 +121,22 @@ jobs:
   # real client codecs in addition to the server/RPC production path.
   # ------------------------------------------------------------------
   integration-jamulus:
-    name: Integration (real Jamulus)
+    name: Integration (real Jamulus ${{ matrix.jamulus_version }})
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - jamulus_version: "3.12.2"
+            release_tag: r3_12_2
+            headless_sha256: aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab
+            client_sha256: 029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9
+          - jamulus_version: "3.12.3"
+            release_tag: r3_12_3
+            headless_sha256: 995e06c9e53c36f8ea41853b26200ec101ed7170d97112312d6c45b4fb7e237f
+            client_sha256: 100af7bcf6edb5729df03ac38bbbdbb4f02014d50b32e0a0e11e55bffba783d3
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -132,11 +149,11 @@ jobs:
       - name: Install real Jamulus (pinned official release)
         run: |
           curl -fsSL -o jamulus-headless.deb \
-            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus-headless_3.12.2_ubuntu_amd64.deb
-          echo "aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab  jamulus-headless.deb" | sha256sum -c -
+            "https://github.com/jamulussoftware/jamulus/releases/download/${{ matrix.release_tag }}/jamulus-headless_${{ matrix.jamulus_version }}_ubuntu_amd64.deb"
+          echo "${{ matrix.headless_sha256 }}  jamulus-headless.deb" | sha256sum -c -
           curl -fsSL -o jamulus-client.deb \
-            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
-          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus-client.deb" | sha256sum -c -
+            "https://github.com/jamulussoftware/jamulus/releases/download/${{ matrix.release_tag }}/jamulus_${{ matrix.jamulus_version }}_ubuntu_amd64.deb"
+          echo "${{ matrix.client_sha256 }}  jamulus-client.deb" | sha256sum -c -
           sudo apt-get update -q
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
             --no-install-recommends \
@@ -147,6 +164,7 @@ jobs:
           sudo systemctl disable jamulus-headless 2>/dev/null || true
           echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
           echo "WEBJAM_JAMULUS_CLIENT_BINARY=$(command -v jamulus)" >> "$GITHUB_ENV"
+          echo "WEBJAM_JAMULUS_EXPECTED_VERSION=${{ matrix.jamulus_version }}" >> "$GITHUB_ENV"
           echo "WEBJAM_RUN_JACK_AUDIO_INTEGRATION=1" >> "$GITHUB_ENV"
 
       - name: Install test deps
@@ -163,6 +181,364 @@ jobs:
           tests/test_real_jamulus_recording_pipeline.py
           tests/test_dual_musician_rehearsal_lab_real_jamulus.py
           tests/test_reference_track_real_jamulus.py -v -s
+
+  # ------------------------------------------------------------------
+  # Immutable official 3.12.3 platform-update inputs.
+  #
+  # Linux bytes are exercised by integration-jamulus above. Windows verifies
+  # the known unsigned Authenticode state without launching the installer.
+  # macOS verifies the exact DMG container without mounting it; SLA acceptance
+  # and signed app inspection remain an explicit user action in the updater.
+  # ------------------------------------------------------------------
+  jamulus-platform-update-inputs:
+    name: Jamulus 3.12.3 update input (${{ matrix.target }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: windows-x64
+          - os: macos-14
+            target: macos-universal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Verify Windows installer bytes, trust state, and x64 payload without launch
+        if: matrix.target == 'windows-x64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $asset = Join-Path $env:RUNNER_TEMP "jamulus_3.12.3_win.exe"
+          Invoke-WebRequest `
+            -Uri "https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_win.exe" `
+            -OutFile $asset
+          if ((Get-Item -LiteralPath $asset).Length -ne 84406464) {
+            throw "Jamulus Windows installer size changed"
+          }
+          $digest = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne "008918b1564b2a46f1a371d7e3df661a0d710689383dab5c61b80be3c4aaf5a1") {
+            throw "Jamulus Windows installer digest changed"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $asset
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+            throw "Jamulus Windows installer trust state changed: $($signature.Status)"
+          }
+          if ($null -ne $signature.SignerCertificate) {
+            throw "unsigned Jamulus installer unexpectedly reported a signer"
+          }
+
+          # The NSIS container carries x64 and x86 sections with duplicate
+          # paths. Extract into a new raw tree, but never trust which duplicate
+          # 7-Zip leaves at the canonical name. The signed-catalog contract
+          # selects every x64 loadable by exact size, SHA-256, and PE machine.
+          $manifestPath = Join-Path `
+            $env:RUNNER_TEMP "jamulus-windows-x64-runtime-contract.json"
+          python -m tools.jamulus_windows_runtime_contract export `
+            --output $manifestPath
+          if ($LASTEXITCODE -ne 0) {
+            throw "Jamulus Windows runtime contract export failed"
+          }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw |
+            ConvertFrom-Json
+          if (
+            $manifest.schema -ne 1 -or
+            $manifest.installer_sha256 -ne $digest -or
+            $manifest.loadable_count -ne 27 -or
+            @($manifest.files).Count -ne 27
+          ) {
+            throw "Jamulus Windows runtime contract identity changed"
+          }
+
+          $extract = Join-Path $env:RUNNER_TEMP "jamulus-runtime-raw"
+          $isolated = Join-Path $env:RUNNER_TEMP "jamulus-runtime-x64"
+          if ((Test-Path -LiteralPath $extract) -or
+              (Test-Path -LiteralPath $isolated)) {
+            throw "Jamulus Windows runtime extraction roots are not fresh"
+          }
+          New-Item -ItemType Directory -Path $extract,$isolated | Out-Null
+          & 7z x -y -aou "-o$extract" $asset | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Jamulus Windows installer inventory extraction failed"
+          }
+
+          function Get-PeMachine([string] $Path) {
+            $stream = [System.IO.File]::OpenRead($Path)
+            try {
+              $reader = [System.IO.BinaryReader]::new($stream)
+              if ($reader.ReadUInt16() -ne 0x5a4d) {
+                throw "Jamulus Windows runtime DOS signature changed"
+              }
+              $stream.Position = 0x3c
+              $peOffset = $reader.ReadInt32()
+              if ($peOffset -lt 0x40 -or $peOffset -gt ($stream.Length - 6)) {
+                throw "Jamulus Windows runtime PE offset changed"
+              }
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "Jamulus Windows runtime PE signature changed"
+              }
+              return $reader.ReadUInt16()
+            } finally {
+              $stream.Dispose()
+            }
+          }
+
+          foreach ($identity in $manifest.files) {
+            $relative = [string]$identity.relative_path
+            $canonical = Join-Path $extract ($relative -replace "/", "\")
+            $parent = Split-Path -Parent $canonical
+            $baseName = [IO.Path]::GetFileNameWithoutExtension($canonical)
+            $extension = [IO.Path]::GetExtension($canonical)
+            $candidatePattern = "^{0}(?:_[0-9]+)?{1}$" -f `
+              [Regex]::Escape($baseName), [Regex]::Escape($extension)
+            $candidates = @(
+              Get-ChildItem -LiteralPath $parent -File |
+                Where-Object { $_.Name -match $candidatePattern }
+            )
+            $matches = @(
+              $candidates | Where-Object {
+                $_.Length -eq [int64]$identity.size -and
+                (Get-FileHash -LiteralPath $_.FullName `
+                  -Algorithm SHA256).Hash.ToLowerInvariant() -eq
+                  [string]$identity.sha256 -and
+                (Get-PeMachine $_.FullName) -eq 0x8664
+              }
+            )
+            if ($matches.Count -ne 1) {
+              throw "Jamulus x64 identity selection was not unique: $relative"
+            }
+            $destination = Join-Path $isolated ($relative -replace "/", "\")
+            New-Item -ItemType Directory -Force `
+              -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $matches[0].FullName `
+              -Destination $destination
+          }
+
+          $jamulusCandidates = @(
+            Get-ChildItem -LiteralPath $extract -File |
+              Where-Object { $_.Name -match '^Jamulus(?:_[0-9]+)?\.exe$' }
+          )
+          if ($jamulusCandidates.Count -ne 2) {
+            throw "Jamulus NSIS architecture branches are ambiguous"
+          }
+          $machines = @(
+            $jamulusCandidates |
+              ForEach-Object { Get-PeMachine $_.FullName } |
+              Sort-Object
+          )
+          if (
+            $machines.Count -ne 2 -or
+            $machines[0] -ne 0x014c -or
+            $machines[1] -ne 0x8664
+          ) {
+            throw "Jamulus NSIS architecture branches changed"
+          }
+
+          python -m tools.jamulus_windows_runtime_contract verify $isolated
+          if ($LASTEXITCODE -ne 0) {
+            throw "Jamulus Windows x64 loadable-code verification failed"
+          }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY `
+            -Value "Verified the exact unsigned upstream installer and all 27 selected x64 loadable-code files without launch; user approval remains required."
+
+      - name: Verify macOS disk-image bytes without SLA acceptance or mount
+        if: matrix.target == 'macos-universal'
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="$RUNNER_TEMP/jamulus_3.12.3_mac.dmg"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 \
+            --output "$asset" \
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_mac.dmg
+          test "$(stat -f '%z' "$asset")" = 88923220
+          echo "9502b78c3b13d1e58a6ae417ecb1b5c6ebdf9a3c18e7ec4e23e23230890900cb  $asset" \
+            | shasum -a 256 -c -
+          hdiutil verify "$asset"
+
+      - name: Prove downloaded identity matches the static compatibility policy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from core.jamulus_compatibility import (
+              ActivationMode,
+              ComponentTarget,
+              JamulusRole,
+              official_jamulus_compatibility_registry,
+          )
+
+          registry = official_jamulus_compatibility_registry()
+          approved = tuple(
+              entry
+              for entry in registry.entries
+              if entry.version == "3.12.3"
+              and entry.role in {JamulusRole.CLIENT, JamulusRole.SERVER}
+          )
+          expected_slots = {
+              (role, target)
+              for role in (JamulusRole.CLIENT, JamulusRole.SERVER)
+              for target in ComponentTarget
+          }
+          assert len(approved) == len(expected_slots) == 8
+          assert {(entry.role, entry.target) for entry in approved} == expected_slots
+          assert all(entry.component_id == "jamulus" for entry in approved)
+          assert all(entry.variant == "official" for entry in approved)
+          assert all(entry.activation_mode is ActivationMode.PLATFORM_APPROVAL for entry in approved)
+          assert all(entry.supports_webjam("0.22.0") for entry in approved)
+
+          target = (
+              ComponentTarget.WINDOWS_X64
+              if "${{ matrix.target }}" == "windows-x64"
+              else ComponentTarget.MACOS_ARM64
+          )
+          expected = {
+              ComponentTarget.WINDOWS_X64: (
+                  "jamulus_3.12.3_win.exe",
+                  84_406_464,
+                  "008918b1564b2a46f1a371d7e3df661a0d710689383dab5c61b80be3c4aaf5a1",
+              ),
+              ComponentTarget.MACOS_ARM64: (
+                  "jamulus_3.12.3_mac.dmg",
+                  88_923_220,
+                  "9502b78c3b13d1e58a6ae417ecb1b5c6ebdf9a3c18e7ec4e23e23230890900cb",
+              ),
+          }[target]
+          entry = registry.exact(
+              component_id="jamulus",
+              role=JamulusRole.CLIENT,
+              target=target,
+              version="3.12.3",
+          )
+          assert (
+              entry.artifact.filename,
+              entry.artifact.size,
+              entry.artifact.sha256,
+          ) == expected
+          assert entry.activation_mode is ActivationMode.PLATFORM_APPROVAL
+          PY
+
+  # ------------------------------------------------------------------
+  # Evidence-only Jamulus 3.12.3 HEADLESS build.
+  #
+  # This is intentionally manual, isolated from desktop packaging, and unable
+  # to publish or sign a component catalog. It proves the reviewed source
+  # profile and injects the CI-produced archive digest into a quarantined
+  # evidence manifest. Activation remains fail-closed until the explicit AGPL
+  # network-source-offer review gate is resolved.
+  # ------------------------------------------------------------------
+  jamulus-3123-headless-evidence:
+    name: Jamulus 3.12.3 HEADLESS evidence (${{ matrix.target }})
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.build_unapproved_jamulus_3123_headless_evidence
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macos-arm64
+            architecture: arm64
+          - os: macos-15-intel
+            target: macos-x64
+            architecture: x86_64
+    steps:
+      - name: Checkout selected evidence source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11.9"
+
+      - name: Install exact HEADLESS build tooling
+        run: |
+          tool_venv="$RUNNER_TEMP/jamulus-headless-build-tools"
+          python -m venv "$tool_venv"
+          "$tool_venv/bin/python" -m pip install --disable-pip-version-check \
+            --no-deps \
+            --require-hashes \
+            --only-binary=:all: \
+            -r packaging/macos/aqtinstall-3.3.0-lock.txt
+          "$tool_venv/bin/python" -m pip check
+          echo "WEBJAM_JAMULUS_BUILD_PYTHON=$tool_venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Build and verify quarantined r3_12_3 companion
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/jamulus-headless-r3_12_3-${{ matrix.target }}"
+          mkdir -p "$output"
+          WEBJAM_JAMULUS_BUILD_PYTHON="$WEBJAM_JAMULUS_BUILD_PYTHON" \
+            packaging/macos/build-jamulus-headless-client.sh \
+              "${{ matrix.architecture }}" \
+              "$output/JamulusHeadlessClient.app" \
+              r3_12_3
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$output/JamulusHeadlessClient.app" \
+            "${{ matrix.architecture }}" \
+            "$output/JamulusHeadlessClient.sha256" \
+            r3_12_3
+
+      - name: Inject exact CI archive digest into unapproved evidence
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/jamulus-headless-r3_12_3-${{ matrix.target }}"
+          fresh="$RUNNER_TEMP/jamulus-headless-r3_12_3-fresh-${{ matrix.target }}"
+          mkdir -p out "$fresh"
+          archive="out/JamulusHeadlessClient-r3_12_3-${{ matrix.target }}-UNAPPROVED-EVIDENCE.zip"
+          evidence="out/JamulusHeadlessClient-r3_12_3-${{ matrix.target }}-UNAPPROVED-EVIDENCE.json"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$output/JamulusHeadlessClient.app" "$archive"
+          ditto -x -k "$archive" "$fresh"
+          packaging/macos/verify-jamulus-headless-client.sh \
+            "$fresh/JamulusHeadlessClient.app" \
+            "${{ matrix.architecture }}" \
+            "$output/JamulusHeadlessClient.sha256" \
+            r3_12_3
+          python packaging/macos/create-jamulus-headless-component-evidence.py \
+            --archive "$archive" \
+            --app "$fresh/JamulusHeadlessClient.app" \
+            --manifest "$output/JamulusHeadlessClient.sha256" \
+            --target "${{ matrix.target }}" \
+            --output "$evidence"
+          python - "$evidence" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          evidence = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert evidence["activation_approved"] is False
+          assert evidence["catalog_injection_required"] is True
+          assert evidence["catalog_signing_automatic"] is False
+          assert evidence["desktop_release_inventory"] is False
+          assert evidence["archive_sha256"]
+          assert evidence["runtime_inventory_sha256"]
+          PY
+          install -m 644 \
+            packaging/macos/jamulus-headless-component-evidence.schema.json \
+            out/jamulus-headless-component-evidence.schema.json
+
+      - name: Upload quarantined HEADLESS evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jamulus-headless-r3_12_3-${{ matrix.target }}-unapproved-evidence
+          path: |
+            out/JamulusHeadlessClient-r3_12_3-${{ matrix.target }}-UNAPPROVED-EVIDENCE.zip
+            out/JamulusHeadlessClient-r3_12_3-${{ matrix.target }}-UNAPPROVED-EVIDENCE.json
+            out/jamulus-headless-component-evidence.schema.json
+          if-no-files-found: error
+          retention-days: 30
 
   # ------------------------------------------------------------------
   # Native v3 transport: strict protocol, race detector, module integrity,
@@ -389,11 +765,11 @@ jobs:
       - name: Install checksum-pinned real Jamulus and JACK
         run: |
           curl -fsSL -o jamulus-headless.deb \
-            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus-headless_3.12.2_ubuntu_amd64.deb
-          echo "aee63a55d0637d38718f4940b77733b1fb37446f7f7a0493fb2d46e096addbab  jamulus-headless.deb" | sha256sum -c -
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus-headless_3.12.3_ubuntu_amd64.deb
+          echo "995e06c9e53c36f8ea41853b26200ec101ed7170d97112312d6c45b4fb7e237f  jamulus-headless.deb" | sha256sum -c -
           curl -fsSL -o jamulus-client.deb \
-            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_ubuntu_amd64.deb
-          echo "029f8858f21a5fb36da5144046473575caa2a26f2c7d8db162953b89d8c8ccc9  jamulus-client.deb" | sha256sum -c -
+            https://github.com/jamulussoftware/jamulus/releases/download/r3_12_3/jamulus_3.12.3_ubuntu_amd64.deb
+          echo "100af7bcf6edb5729df03ac38bbbdbb4f02014d50b32e0a0e11e55bffba783d3  jamulus-client.deb" | sha256sum -c -
           sudo apt-get update -q
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
             --no-install-recommends \
@@ -402,6 +778,7 @@ jobs:
           sudo systemctl disable jamulus-headless 2>/dev/null || true
           echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
           echo "WEBJAM_JAMULUS_CLIENT_BINARY=$(command -v jamulus)" >> "$GITHUB_ENV"
+          echo "WEBJAM_JAMULUS_EXPECTED_VERSION=3.12.3" >> "$GITHUB_ENV"
 
       - name: Install pinned certification dependencies
         run: >-
@@ -439,7 +816,7 @@ jobs:
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
-    needs: [test, integration-jamulus, transport, reference-service, pocket-stage-ios]
+    needs: [test, integration-jamulus, jamulus-platform-update-inputs, transport, reference-service, pocket-stage-ios]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -775,10 +1152,10 @@ jobs:
           fi
 
       # Bundling Jamulus removes the "leave WebJam, go find jamulus.io,
-      # download, come back" detour for most users. Both platforms bundle
-      # the same pinned version already used by integration-jamulus above,
-      # from the pinned upstream release, per THIRD_PARTY_NOTICES.md. macOS
-      # replaces only their code signatures after staging (see below).
+      # download, come back" detour for most users. Every desktop retains the
+      # audited 3.12.2 offline fallback while integration-jamulus certifies
+      # both that fallback and the approved 3.12.3 platform-update input.
+      # macOS replaces only the fallback's code signatures after staging.
       - name: Stage bundled Jamulus installer (Windows)
         if: matrix.target == 'windows-x64'
         shell: bash
@@ -2743,40 +3120,67 @@ jobs:
     steps:
       - name: Checkout release source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
-      - name: Verify tag matches packaged version
+      - name: Verify annotated tag is the exact origin master source
+        id: release_source
+        shell: bash
         run: |
+          set -euo pipefail
           expected="v$(python3 -c 'from webjam_qt import __version__; print(__version__)')"
           if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
             echo "Tag $GITHUB_REF_NAME does not match package version $expected." >&2
             exit 1
           fi
+          git fetch --no-tags origin \
+            "+refs/heads/master:refs/remotes/origin/master"
+          isolated_tag="refs/webjam-release-tags/$GITHUB_REF_NAME"
+          git fetch --no-tags origin \
+            "refs/tags/$GITHUB_REF_NAME:$isolated_tag"
+          if [[ "$(git cat-file -t "$isolated_tag")" != "tag" ]]; then
+            echo "Release tag $GITHUB_REF_NAME must be annotated." >&2
+            exit 1
+          fi
+          tag_object="$(git rev-parse "$isolated_tag")"
+          tag_commit="$(git rev-parse "${isolated_tag}^{commit}")"
+          master_commit="$(git rev-parse refs/remotes/origin/master)"
+          if [[ "$tag_commit" != "$master_commit" ]]; then
+            echo "Release tag $GITHUB_REF_NAME is not the exact origin/master commit." >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$tag_commit" ]]; then
+            echo "Checked-out release source differs from the annotated tag commit." >&2
+            exit 1
+          fi
+          remote_tag_object="$(git ls-remote --refs origin \
+            "refs/tags/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          if [[ "$remote_tag_object" != "$tag_object" ]]; then
+            echo "Remote release tag identity changed during verification." >&2
+            exit 1
+          fi
+          echo "tag_object=$tag_object" >> "$GITHUB_OUTPUT"
+          echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+          echo "master_commit=$master_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Refuse mutation of an already-published release
+      - name: Refuse any existing draft or published release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          set +e
-          response="$(gh api --include \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq '.draft' 2>&1)"
-          probe_exit=$?
-          set -e
-          http_status="$(sed -n \
-            's/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' \
-            <<<"$response" | tail -1)"
-          if [[ "$probe_exit" -eq 0 ]]; then
-            draft="$(grep -E '^(true|false)\r?$' <<<"$response" \
-              | tail -1 | tr -d '\r')"
-            if [[ "$draft" != "true" ]]; then
-              echo "Release $GITHUB_REF_NAME is already published; refusing to attach unreviewed assets." >&2
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/all-releases-before-draft.json"
+          jq -e \
+            --arg tag "$GITHUB_REF_NAME" \
+            '[ .[][] | select(.tag_name == $tag) ] | length == 0' \
+            "$RUNNER_TEMP/all-releases-before-draft.json" >/dev/null || {
+              echo "A draft or published release already uses $GITHUB_REF_NAME; refusing mutation." >&2
               exit 1
-            fi
-          elif [[ "$http_status" != "404" ]]; then
-            echo "Could not prove whether release $GITHUB_REF_NAME already exists; refusing mutation." >&2
-            exit 1
-          fi
+            }
 
       - name: Download windows-x64 artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -2841,6 +3245,39 @@ jobs:
           test "$(wc -l < "$checksum_file")" -eq "${#assets[@]}"
           sha256sum --check --strict "$checksum_file"
 
+      - name: Revalidate tag and release absence before draft creation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_TAG_OBJECT: ${{ steps.release_source.outputs.tag_object }}
+          EXPECTED_TAG_COMMIT: ${{ steps.release_source.outputs.tag_commit }}
+          EXPECTED_MASTER_COMMIT: ${{ steps.release_source.outputs.master_commit }}
+        run: |
+          set -euo pipefail
+          remote_tag_object="$(git ls-remote --refs origin \
+            "refs/tags/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          remote_master_commit="$(git ls-remote --refs origin \
+            refs/heads/master | awk 'NR == 1 {print $1}')"
+          [[ "$remote_tag_object" == "$EXPECTED_TAG_OBJECT" ]]
+          [[ "$remote_master_commit" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$(git rev-parse \
+            "refs/webjam-release-tags/${GITHUB_REF_NAME}^{commit}")" == \
+            "$EXPECTED_TAG_COMMIT" ]]
+          [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/all-releases-immediately-before-draft.json"
+          jq -e \
+            --arg tag "$GITHUB_REF_NAME" \
+            '[ .[][] | select(.tag_name == $tag) ] | length == 0' \
+            "$RUNNER_TEMP/all-releases-immediately-before-draft.json" >/dev/null || {
+              echo "A release appeared for $GITHUB_REF_NAME; refusing mutation." >&2
+              exit 1
+            }
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -2862,6 +3299,9 @@ jobs:
             advanced helper that removes quarantine from the installed WebJam app only.
             They also include a self-contained **Pocket Stage iPhone Setup** Xcode project;
             an Apple ID with a free Personal Team is sufficient for owner-device testing.
+            Jamulus 3.12.3 updates are authorized by a separate signed, expiring component
+            catalog. The embedded Jamulus 3.12.2 remains the offline fallback; platform
+            approval is explicit, and updates never interrupt an active Jamulus lifecycle.
             Verify the attached SHA-256 manifest before installing.
           fail_on_unmatched_files: true
           files: |

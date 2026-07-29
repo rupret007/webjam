@@ -8,6 +8,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
+from tests.support.component_store import isolated_component_store_root
+
 
 def _make_settings() -> MagicMock:
     s = MagicMock()
@@ -42,6 +44,7 @@ def _make_bridge():
         repository=repository,
         settings=_make_settings(),
         ui_callbacks=ui_callbacks,
+        component_store_root=isolated_component_store_root(),
     )
     return bridge
 

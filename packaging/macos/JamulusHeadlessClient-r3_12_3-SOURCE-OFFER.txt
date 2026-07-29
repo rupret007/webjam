@@ -1,0 +1,50 @@
+JamulusHeadlessClient 3.12.3 — Corresponding Source and Review Gate
+==================================================================
+
+WebJam's proposed managed Reference Track companion is a separate,
+true-HEADLESS build of Jamulus 3.12.3. Upstream states that Jamulus 3.12.3 is
+distributed under the GNU Affero General Public License, version 3 or (at your
+option) any later version. Its COPYING file also states that code contributed
+before 3.12.1dev is licensed under GNU GPL version 3 or later. The exact
+upstream COPYING file accompanies the binary as JAMULUS_COPYING.txt.
+
+WebJam modifies the r3_12_3 source on 2026-07-28 with a reviewed two-file
+HEADLESS build-compatibility patch. The binary is accompanied in the same app
+bundle by:
+
+  JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz
+
+That archive contains the complete Jamulus source tree at commit
+74dc422116983a2173eb917cb4d6a403886b31e5 (release tag r3_12_3), with the
+two-file WebJam HEADLESS compatibility patch already applied. It also contains
+the reviewed patch, pinned dependency lock, build instructions, build script,
+verifier, entitlements, and this notice under webjam-packaging/. These are the
+materials used to control compilation and installation of the companion.
+The patch is named jamulus-headless-r3_12_3.patch.
+
+The unmodified upstream source remains available at:
+
+  Repository: https://github.com/jamulussoftware/jamulus.git
+  Commit: 74dc422116983a2173eb917cb4d6a403886b31e5
+  Web archive:
+    https://github.com/jamulussoftware/jamulus/archive/74dc422116983a2173eb917cb4d6a403886b31e5.tar.gz
+
+The build uses Qt 6.10.2 and aqtinstall 3.3.0 and passes
+CONFIG+=headless, CONFIG-=serveronly. It does not replace or modify the
+ordinary Jamulus.app used by the musician. The included source archive—not
+continued availability of an external URL—is the corresponding-source
+distribution for this binary.
+
+The four separately linked Qt 6.10.2 frameworks are distributed under
+LGPLv3. Their exact unmodified qtbase source archive and a dedicated Qt notice
+are also included beside the Jamulus source archive:
+
+  JamulusHeadlessClient-QT-NOTICE.txt
+  qtbase-everywhere-src-6.10.2.tar.xz
+
+ACTIVATION IS NOT APPROVED. Before a signed WebJam component catalog may
+activate this managed 3.12.3 HEADLESS build, qualified review must resolve how
+AGPL section 13 applies to its network use or approve a protocol-visible source
+offer design. CI evidence and a generated digest do not satisfy or waive that
+gate. WebJam v0.22 continues to use its embedded, reviewed 3.12.2 HEADLESS
+fallback for Reference Track.

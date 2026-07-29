@@ -1,4 +1,4 @@
-# WebJam architecture — v0.21.0
+# WebJam architecture — v0.22.0
 
 ## Product boundary
 
@@ -9,8 +9,11 @@ The boundary is deliberate:
 | --- | --- |
 | `webjam_qt` | Host/Join launch, Session HUD, invitations, recording/session-Studio UI, standalone Reference Studio, recovery messages |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
-| `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, external Webex launch |
+| `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
+| `core/jamulus_compatibility.py`, `core/component_*` | Exact approved Jamulus identities, signed-catalog verification, bounded downloads, per-user component storage, atomic pointers, and rollback |
+| `services/jamulus_component_update.py`, `services/jamulus_component_platform.py` | Async update orchestration, idle proof, explicit OS approval, macOS upstream trust verification, and path-free presentation/diagnostics |
+| `services/webex_app.py` | Native Webex detection and explicit official Cisco installer-browser handoff; no credentials, redistribution, or silent installation |
 | `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
 | `services/pocket_stage_gateway.py` / `services/pocket_stage_tls.py` | Explicit private-Wi-Fi WSS listener and ephemeral pinned TLS identity, separate from the Local API |
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
@@ -21,6 +24,73 @@ Standalone Reference Studio has its own project and local-audio lifecycle. It
 does not start, join, stop, configure, or feed Jamulus. Its persistence,
 migration, rendering, recording, and trust boundaries are defined in
 [ADR 0006](docs/adr/0006-standalone-reference-studio-projects.md).
+
+## Jamulus component trust and lifecycle
+
+The desktop package always contains its reviewed Jamulus 3.12.2 fallback.
+Independently updated Jamulus client/server packages are executable supply-chain
+inputs, so availability alone is never approval:
+
+```text
+separate component release
+  -> bounded HTTPS origin/redirect policy
+  -> canonical Ed25519 catalog signature
+  -> expiry + monotonic sequence/rollback protection
+  -> exact WebJam/target/architecture/role/capability policy
+  -> streaming size/SHA-256 verification into private cache
+  -> explicit platform approval and installed-result verification
+  -> atomic current/previous pointer
+  -> BridgeService resolution at the next idle launch
+```
+
+The catalog private key is release-operator material and is never stored in the
+repository or package. The desktop embeds only a public key. The signed payload
+must target the exact WebJam version and expires within 31 days. Repeated
+sequences are accepted only for byte-identical signed payloads; older sequences
+and same-sequence changes fail closed.
+
+Download and activation are separate. Downloading may occur during a session,
+but install, activation, or rollback requires proof that no musician client,
+host/practice server, Reference Track, recording, reconnect, or launch owns the
+Jamulus boundary. A cross-process lock closes the second-instance race. Each
+use revalidates the managed result; failure falls back to embedded 3.12.2
+without modifying `WebJam.app` or killing a process.
+
+macOS keeps the unmodified upstream client/server pair in the per-user store.
+The official DMG is not mounted until the user reviews the exact packaged
+license and explicitly agrees. Deep signature, Team `V9ZZ6B9WH8`, bundle IDs,
+version, architecture, notarization, inventory, internal signed symlinks, and
+quarantine are verified. Windows and Linux retain OS-owned installation:
+WebJam rehashes the approved upstream package immediately before explicit
+handoff, never invokes a shell or hidden elevation, and uses the installed copy
+only after runtime compatibility proof. The Windows upstream installer is
+truthfully treated as unsigned.
+
+The custom HEADLESS Reference Track client is a separate role and cannot be
+substituted by a GUI client/server catalog entry. Its 3.12.3 build remains
+evidence-only pending qualified review; production continues to use the
+embedded reviewed 3.12.2 HEADLESS companion.
+
+Jamulus participant identity is a separate exact contract:
+`core/jamulus_name.py` accepts visible text up to 16 UTF-16 units, rejects
+controls/newlines/overlength input, preserves valid Unicode, and exposes the
+8+8 mixer-layout preview. Every editor, migration, profile, launch argument,
+and RPC path passes through that same validator.
+
+## Webex boundary
+
+WebJam persists only a Meeting or Personal Room link and reports external
+handoff—not meeting membership. Webex owns authentication, participant
+identity, camera, microphone, speakers, mute, and meeting state. Native app
+detection is diagnostic convenience; an explicit install action opens only an
+approved Cisco HTTPS URL and does not download or execute a package itself.
+
+A future Webex Embedded App is described in
+[ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a
+separate hosted and authorized product surface, not a hidden desktop webview.
+It may expose focused status and approved controls through a secure
+synchronization boundary, while the desktop remains the authoritative
+audio/session engine.
 
 ## Unified musician guidance
 

@@ -245,11 +245,27 @@ class TestJamulusRpcTcp(unittest.TestCase):
         try:
             h.client.start()
             self.assertTrue(_wait(lambda: h.client.available))
-            h.client.set_name("Bassist Bob")
+            exact_name = "Cafe\u0301 🎸"
+            h.client.set_name(exact_name)
             self.assertTrue(_wait(
                 lambda: h.server.requests_for("jamulusclient/setName")))
             req = h.server.requests_for("jamulusclient/setName")[-1]
-            self.assertEqual(req["params"], {"name": "Bassist Bob"})
+            self.assertEqual(req["params"], {"name": exact_name})
+        finally:
+            h.close()
+
+    def test_set_name_rejects_invalid_value_before_rpc(self):
+        h = _ClientHarness()
+        try:
+            h.client.start()
+            self.assertTrue(_wait(lambda: h.client.available))
+            self.assertFalse(h.client.set_name("12345678901234567"))
+            self.assertFalse(h.client.set_name("Jeff\nStory"))
+            time.sleep(0.05)
+            self.assertEqual(
+                h.server.requests_for("jamulusclient/setName"),
+                [],
+            )
         finally:
             h.close()
 

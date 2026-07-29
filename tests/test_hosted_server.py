@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from tests.support.component_store import isolated_component_store_root
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
@@ -45,6 +47,7 @@ def _make_bridge(tmp: str):
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda f: f(),
         },
+        component_store_root=isolated_component_store_root(),
     )
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
