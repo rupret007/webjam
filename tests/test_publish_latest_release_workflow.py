@@ -132,6 +132,7 @@ def test_read_only_job_executes_only_digest_bound_tag_build_package() -> None:
         '"repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"'
         in SMOKE_JOB
     )
+    assert '-H "Accept: application/vnd.github+json"' in SMOKE_JOB
     assert (
         '[[ "sha256:$artifact_sha256" == "$EXPECTED_ARTIFACT_DIGEST" ]]'
         in SMOKE_JOB

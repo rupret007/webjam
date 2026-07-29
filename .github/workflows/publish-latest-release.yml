@@ -321,7 +321,7 @@ jobs:
           artifact_archive="$RUNNER_TEMP/frozen-package/tag-linux-artifact.zip"
           archive="$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip"
           gh api \
-            -H "Accept: application/octet-stream" \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
             > "$artifact_archive"
