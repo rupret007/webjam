@@ -176,6 +176,44 @@ def test_prepare_accepts_only_the_bundled_jamulus_version(tmp_path: Path) -> Non
         manager.prepare(None, "/Applications/Jamulus.app/Contents/MacOS/Jamulus")
 
 
+def test_prepare_accepts_exact_registry_selected_update_version(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(
+        tmp_path,
+        version_probe=lambda _binary: "3.12.3",
+    )
+
+    plan = manager.prepare(
+        None,
+        "/managed/Jamulus.app/Contents/MacOS/Jamulus",
+        approved_versions={"3.12.2", "3.12.3"},
+        expected_version="3.12.3",
+    )
+
+    assert plan.jamulus_version == "3.12.3"
+
+
+def test_prepare_rejects_approved_but_different_selected_version(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(
+        tmp_path,
+        version_probe=lambda _binary: "3.12.2",
+    )
+
+    with pytest.raises(
+        JamulusNativeProfileError,
+        match="couldn't verify the approved Jamulus",
+    ):
+        manager.prepare(
+            None,
+            "/managed/Jamulus.app/Contents/MacOS/Jamulus",
+            approved_versions={"3.12.2", "3.12.3"},
+            expected_version="3.12.3",
+        )
+
+
 def test_symlinked_profile_directory_is_rejected(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     unsafe = manager.profile_directory()

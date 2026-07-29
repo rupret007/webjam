@@ -51,9 +51,14 @@ class TestPackagedDataFiles(unittest.TestCase):
             "CRYPTOGRAPHY_LICENSE.txt",
             "WEBSOCKETS_LICENSE.txt",
             "SEGNO_LICENSE.txt",
+            "JAMULUS_COPYING-r3_12_3.txt",
         ):
             self.assertIn(name, SPEC)
             self.assertTrue((ROOT / "licenses" / name).is_file())
+        self.assertIn("Jamulus-component-sbom.cdx.json", SPEC)
+        self.assertTrue(
+            (ROOT / "packaging" / "Jamulus-component-sbom.cdx.json").is_file()
+        )
         self.assertIn('"transport" / "NOTICE.md"', SPEC)
         self.assertIn('"transport" / "DEPENDENCIES.md"', SPEC)
         self.assertIn('"transport" / "licenses"', SPEC)
@@ -109,14 +114,31 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION=1", CI)
         self.assertIn("tests/test_native_sidecar_integration.py", CI)
         self.assertIn("target: linux-x64", CI)
+        # v0.22 retains 3.12.2 in every desktop artifact as the immutable,
+        # offline fallback while real integration certifies both approved
+        # compatibility versions.
         self.assertIn("jamulus_3.12.2_ubuntu_amd64.deb", CI)
+        self.assertIn('jamulus_version: "3.12.2"', CI)
+        self.assertIn('jamulus_version: "3.12.3"', CI)
+        self.assertIn(
+            "100af7bcf6edb5729df03ac38bbbdbb4f02014d50b32e0a0e11e55bffba783d3",
+            CI,
+        )
         self.assertIn("dist/WebJam/Jamulus/JAMULUS_COPYING.txt", CI)
         self.assertIn("--machine x86_64", CI)
         self.assertIn("WEBJAM_SMOKE_LAUNCH_ONLY=1", CI)
         self.assertIn("WEBJAM_SMOKE_AUTOSTART_AUDIO=1", CI)
         self.assertIn("accepted valid authentication secret", CI)
         self.assertIn("webjam-linux-x64", CI)
-        self.assertIn("Verify tag matches packaged version", CI)
+        self.assertIn(
+            "Verify annotated tag is the exact origin master source",
+            CI,
+        )
+        self.assertIn('git cat-file -t "$isolated_tag"', CI)
+        self.assertIn('!= "tag"', CI)
+        self.assertIn("refs/remotes/origin/master", CI)
+        self.assertIn('if [[ "$tag_commit" != "$master_commit" ]]', CI)
+        self.assertIn("Remote release tag identity changed", CI)
         self.assertIn("run_frozen_pocket_stage_smoke", CI)
         self.assertIn("WEBJAM_SMOKE_POCKET_STAGE_RUNTIME", POCKET_SMOKE_RUNNER)
         self.assertEqual(CI.count("run_frozen_reference_studio_smoke"), 3)

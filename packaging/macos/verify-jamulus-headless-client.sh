@@ -4,8 +4,6 @@
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly EXPECTED_VERSION="3.12.2"
-readonly EXPECTED_COMMIT="ffca974ed4e47b8f4621f3b583c00db2f87974fa"
 readonly EXPECTED_QT_VERSION="6.10.2"
 readonly EXPECTED_QT_SOURCE_SHA256="aeb78d29291a2b5fd53cb55950f8f5065b4978c25fb1d77f627d695ab9adf21e"
 readonly EXPECTED_AQT_VERSION="3.3.0"
@@ -19,15 +17,47 @@ die() {
 }
 
 usage() {
-  printf 'Usage: %s <JamulusHeadlessClient.app> <arm64|x86_64> <sha256-manifest>\n' \
-    "$0" >&2
+  printf '%s\n' \
+    "Usage: $0 <JamulusHeadlessClient.app> <arm64|x86_64> <sha256-manifest> [r3_12_2|r3_12_3]" \
+    >&2
   exit 64
 }
 
-[[ $# -eq 3 ]] || usage
+[[ $# -eq 3 || $# -eq 4 ]] || usage
 app=$1
 expected_arch=$2
 manifest=$3
+profile=${4:-r3_12_2}
+
+case "$profile" in
+  r3_12_2)
+    EXPECTED_VERSION="3.12.2"
+    EXPECTED_TAG="r3_12_2"
+    EXPECTED_COMMIT="ffca974ed4e47b8f4621f3b583c00db2f87974fa"
+    PATCH_NAME="jamulus-headless-r3_12_2.patch"
+    SOURCE_OFFER_NAME="JamulusHeadlessClient-SOURCE-OFFER.txt"
+    BUILD_INSTRUCTIONS_NAME="JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt"
+    LICENSE_NAME="JAMULUS_COPYING.txt"
+    ;;
+  r3_12_3)
+    EXPECTED_VERSION="3.12.3"
+    EXPECTED_TAG="r3_12_3"
+    EXPECTED_COMMIT="74dc422116983a2173eb917cb4d6a403886b31e5"
+    PATCH_NAME="jamulus-headless-r3_12_3.patch"
+    SOURCE_OFFER_NAME="JamulusHeadlessClient-r3_12_3-SOURCE-OFFER.txt"
+    BUILD_INSTRUCTIONS_NAME="JamulusHeadlessClient-r3_12_3-BUILD-INSTRUCTIONS.txt"
+    LICENSE_NAME="JAMULUS_COPYING-r3_12_3.txt"
+    ;;
+  *)
+    usage
+    ;;
+esac
+readonly profile EXPECTED_VERSION EXPECTED_TAG EXPECTED_COMMIT PATCH_NAME
+readonly SOURCE_OFFER_NAME BUILD_INSTRUCTIONS_NAME LICENSE_NAME
+readonly REVIEWED_PATCH="$SCRIPT_DIR/$PATCH_NAME"
+readonly REVIEWED_SOURCE_OFFER="$SCRIPT_DIR/$SOURCE_OFFER_NAME"
+readonly REVIEWED_BUILD_INSTRUCTIONS="$SCRIPT_DIR/$BUILD_INSTRUCTIONS_NAME"
+readonly REVIEWED_LICENSE="$SCRIPT_DIR/../../licenses/$LICENSE_NAME"
 
 [[ "$expected_arch" == "arm64" || "$expected_arch" == "x86_64" ]] || usage
 [[ -d "$app" && ! -L "$app" ]] || die "app bundle is missing or unsafe"
@@ -49,7 +79,7 @@ build_instructions="$license_dir/JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt"
 corresponding_source="$license_dir/JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz"
 qt_notice="$license_dir/JamulusHeadlessClient-QT-NOTICE.txt"
 qt_source="$license_dir/qtbase-everywhere-src-$EXPECTED_QT_VERSION.tar.xz"
-packaged_patch="$license_dir/jamulus-headless-r3_12_2.patch"
+packaged_patch="$license_dir/$PATCH_NAME"
 packaged_license="$license_dir/JAMULUS_COPYING.txt"
 
 [[ -f "$info" && ! -L "$info" ]] || die "Info.plist is missing or unsafe"
@@ -166,8 +196,12 @@ provenance_value() {
   die "unexpected provenance component"
 [[ "$(provenance_value version)" == "$EXPECTED_VERSION" ]] || \
   die "provenance version mismatch"
+[[ "$(provenance_value profile)" == "$profile" ]] || \
+  die "provenance profile mismatch"
 [[ "$(provenance_value source_commit)" == "$EXPECTED_COMMIT" ]] || \
   die "provenance source commit mismatch"
+[[ "$(provenance_value source_tag)" == "$EXPECTED_TAG" ]] || \
+  die "provenance source tag mismatch"
 [[ "$(provenance_value source_tree)" =~ ^[0-9a-f]{40}$ ]] || \
   die "provenance source tree is malformed"
 [[ "$(provenance_value source_archive_commit)" =~ ^[0-9a-f]{40}$ ]] || \
@@ -197,21 +231,24 @@ provenance_value() {
 
 actual_patch_sha="$(shasum -a 256 "$packaged_patch" | awk '{print $1}')"
 expected_patch_sha="$(shasum -a 256 \
-  "$SCRIPT_DIR/jamulus-headless-r3_12_2.patch" | awk '{print $1}')"
+  "$REVIEWED_PATCH" | awk '{print $1}')"
 [[ "$actual_patch_sha" == "$expected_patch_sha" ]] || \
   die "packaged source patch differs from the reviewed patch"
 [[ "$(provenance_value patch_sha256)" == "$actual_patch_sha" ]] || \
   die "provenance patch checksum mismatch"
-cmp -s "$source_offer" "$SCRIPT_DIR/JamulusHeadlessClient-SOURCE-OFFER.txt" || \
+cmp -s "$source_offer" "$REVIEWED_SOURCE_OFFER" || \
   die "packaged source offer differs from the reviewed source offer"
 cmp -s \
   "$build_instructions" \
-  "$SCRIPT_DIR/JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt" || \
+  "$REVIEWED_BUILD_INSTRUCTIONS" || \
   die "packaged build instructions differ from the reviewed instructions"
 cmp -s "$qt_notice" "$SCRIPT_DIR/JamulusHeadlessClient-QT-NOTICE.txt" || \
   die "packaged Qt notice differs from the reviewed notice"
-cmp -s "$packaged_license" "$SCRIPT_DIR/../../licenses/JAMULUS_COPYING.txt" || \
-  die "packaged GPL text differs from the reviewed license"
+cmp -s "$packaged_license" "$REVIEWED_LICENSE" || \
+  die "packaged license text differs from the reviewed license"
+license_sha="$(shasum -a 256 "$packaged_license" | awk '{print $1}')"
+[[ "$(provenance_value license_sha256)" == "$license_sha" ]] || \
+  die "provenance license checksum mismatch"
 
 source_sha="$(shasum -a 256 "$corresponding_source" | awk '{print $1}')"
 [[ "$(provenance_value corresponding_source_sha256)" == "$source_sha" ]] || \
@@ -264,7 +301,7 @@ for required_source in \
   webjam-packaging/Jamulus.entitlements \
   webjam-packaging/aqtinstall-3.3.0-lock.txt \
   webjam-packaging/build-jamulus-headless-client.sh \
-  webjam-packaging/jamulus-headless-r3_12_2.patch \
+  "webjam-packaging/$PATCH_NAME" \
   webjam-packaging/verify-jamulus-headless-client.sh; do
   grep -Fxq "$source_root/$required_source" <<< "$source_listing" || \
     die "corresponding source is missing $required_source"
@@ -274,21 +311,20 @@ while IFS='|' read -r archived reviewed; do
     "$source_root/webjam-packaging/$archived" \
     | cmp -s - "$SCRIPT_DIR/$reviewed" || \
     die "corresponding source contains an unreviewed $archived"
-done <<'REVIEWED_INPUTS'
-JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt|JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt
-JamulusHeadlessClient-QT-NOTICE.txt|JamulusHeadlessClient-QT-NOTICE.txt
-JamulusHeadlessClient-SOURCE-OFFER.txt|JamulusHeadlessClient-SOURCE-OFFER.txt
-Jamulus.entitlements|Jamulus.entitlements
-aqtinstall-3.3.0-lock.txt|aqtinstall-3.3.0-lock.txt
-build-jamulus-headless-client.sh|build-jamulus-headless-client.sh
-jamulus-headless-r3_12_2.patch|jamulus-headless-r3_12_2.patch
-verify-jamulus-headless-client.sh|verify-jamulus-headless-client.sh
-REVIEWED_INPUTS
+done < <(printf '%s\n' \
+  "JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt|$BUILD_INSTRUCTIONS_NAME" \
+  "JamulusHeadlessClient-QT-NOTICE.txt|JamulusHeadlessClient-QT-NOTICE.txt" \
+  "JamulusHeadlessClient-SOURCE-OFFER.txt|$SOURCE_OFFER_NAME" \
+  "Jamulus.entitlements|Jamulus.entitlements" \
+  "aqtinstall-3.3.0-lock.txt|aqtinstall-3.3.0-lock.txt" \
+  "build-jamulus-headless-client.sh|build-jamulus-headless-client.sh" \
+  "$PATCH_NAME|$PATCH_NAME" \
+  "verify-jamulus-headless-client.sh|verify-jamulus-headless-client.sh")
 tar -xOzf "$corresponding_source" "$source_root/COPYING" \
   | cmp -s - "$packaged_license" || \
-  die "corresponding source contains an unexpected GPL text"
+  die "corresponding source contains an unexpected license text"
 tar -xOzf "$corresponding_source" \
-  "$source_root/webjam-packaging/jamulus-headless-r3_12_2.patch" \
+  "$source_root/webjam-packaging/$PATCH_NAME" \
   | cmp -s - "$packaged_patch" || \
   die "corresponding source contains an unexpected WebJam patch"
 main_source="$(tar -xOzf \

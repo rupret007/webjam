@@ -24,10 +24,14 @@ from core.network_invite import (
     create_invite_link,
     parse_invite_link,
 )
+from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.settings import AppSettings, load_settings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
-from webjam_qt.windows.launch_dialog import LaunchDialog
-from webjam_qt.windows.launch_dialog import apply_join_invite
+from webjam_qt.windows.launch_dialog import (
+    LaunchDialog,
+    apply_join_invite,
+    default_musician_name,
+)
 
 
 @pytest.fixture(scope="module")
@@ -83,6 +87,63 @@ def test_launch_shows_live_and_offline_music_paths(qapp, tmp_path):
     assert dialog.showing_choices
     assert not dialog._invite_input.isVisibleTo(dialog)
     dialog.close()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX account full-name lookup")
+def test_unsaved_os_full_name_prefers_a_one_line_first_name(tmp_path):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    account = SimpleNamespace(pw_gecos="Jeff Story,Room 1,555-0100")
+    with (
+        patch("pwd.getpwuid", return_value=account),
+        patch("webjam_qt.windows.launch_dialog.os.getuid", return_value=501),
+    ):
+        assert default_musician_name(settings) == "Jeff"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX account full-name lookup")
+def test_empty_os_full_name_falls_back_to_account_name(tmp_path):
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    account = SimpleNamespace(pw_gecos="")
+    with (
+        patch("pwd.getpwuid", return_value=account),
+        patch("webjam_qt.windows.launch_dialog.os.getuid", return_value=501),
+        patch(
+            "webjam_qt.windows.launch_dialog.getpass.getuser",
+            return_value="runner",
+        ),
+    ):
+        assert default_musician_name(settings) == "Runner"
+
+
+def test_saved_musician_name_is_never_reinterpreted_as_an_unsaved_default(
+    tmp_path,
+):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        musician_name=DEFAULT_JAMULUS_NAME,
+    )
+    save_settings(settings)
+
+    assert default_musician_name(settings) == DEFAULT_JAMULUS_NAME
+
+
+def test_launch_exposes_exact_jamulus_wrap_preview_without_changing_saved_name(
+    qapp,
+    tmp_path,
+):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        musician_name="Jeff Story",
+    )
+    dialog = LaunchDialog(settings)
+    dialog.show()
+    qapp.processEvents()
+    try:
+        assert dialog._name_input.text() == "Jeff Story"
+        assert "Jeff Sto / ry" in dialog._name_preview.text()
+        assert "two lines" in dialog._name_preview.text()
+    finally:
+        dialog.close()
 
 
 def test_reference_studio_choice_does_not_rewrite_live_settings(qapp, tmp_path):
@@ -235,7 +296,33 @@ def test_host_choice_is_a_single_decision_without_a_modal_chain(qapp, tmp_path):
     saved = json.loads(Path(settings.config_file).read_text(encoding="utf-8"))
     assert dialog.selected_role == "host"
     assert saved["host_server_enabled"] is True
-    assert dialog.findChildren(QLineEdit) == [dialog._invite_input]
+    assert dialog.findChildren(QLineEdit) == [
+        dialog._name_input,
+        dialog._invite_input,
+    ]
+
+
+def test_invalid_launch_name_blocks_host_and_focuses_the_editable_preview(
+    qapp,
+    tmp_path,
+):
+    config = tmp_path / "settings.json"
+    settings = AppSettings(config_file=str(config))
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+    dialog.show()
+    qapp.processEvents()
+    dialog._name_input.setText("12345678901234567")
+
+    dialog._host_button.click()
+    qapp.processEvents()
+
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert not config.exists()
+    assert dialog._name_error.isVisibleTo(dialog)
+    assert "too long" in dialog._name_error.text()
+    assert dialog._name_input.hasFocus()
+    dialog.close()
 
 
 def test_host_launch_preserves_explicit_recording_setup(qapp, tmp_path):
@@ -277,7 +364,8 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     visible_fields = [
         field for field in dialog.findChildren(QLineEdit) if field.isVisibleTo(dialog)
     ]
-    assert visible_fields == [dialog._invite_input]
+    assert visible_fields == [dialog._name_input, dialog._invite_input]
+    dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
         create_invite_link("192.168.1.42", session_name="Drummer Test")
     )
@@ -288,6 +376,7 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert data["host_server_enabled"] is False
     assert data["jamulus_server"] == "192.168.1.42"
     assert data["jamulus_port"] == 22124
+    assert data["musician_name"] == "Drummer"
 
 
 def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):

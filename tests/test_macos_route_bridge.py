@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from core.jamulus_profile import JamulusNativeProfileError
 from core.settings import AppSettings
 from services.bridge_service import BridgeService
+from tests.support.component_store import isolated_component_store_root
 
 
 class _ImmediateThread:
@@ -29,7 +30,7 @@ def _bridge() -> BridgeService:
         repository=MagicMock(get_setting=MagicMock(return_value="1")),
         settings=AppSettings(
             jamulus_server="band.example.test",
-            musician_name="Private Musician Name",
+            musician_name="Private Musician",
         ),
         ui_callbacks={
             "set_status_banner": MagicMock(),
@@ -39,6 +40,7 @@ def _bridge() -> BridgeService:
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda callback: callback(),
         },
+        component_store_root=isolated_component_store_root(),
     )
     bridge.find_jamulus = MagicMock(return_value="/Applications/Jamulus")
     bridge._is_rpc_port_in_use = MagicMock(return_value=False)

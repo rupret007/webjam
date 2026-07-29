@@ -1,7 +1,6 @@
 """Regression tests for the deep-dive audit remediation plan."""
 from __future__ import annotations
 
-import os
 import socket
 import stat
 import tempfile
@@ -13,6 +12,7 @@ from core.jamulus_protocol import (
     _map_level_list_to_channels,
     _parse_level_list,
 )
+from tests.support.component_store import isolated_component_store_root
 
 
 class TestUdpLevelChannelMapping(unittest.TestCase):
@@ -52,6 +52,7 @@ class TestBridgeReconnectPortGuard(unittest.TestCase):
                     "shutdown_requested": lambda: False,
                     "schedule_ui_callback": lambda f: f(),
                 },
+                component_store_root=isolated_component_store_root(),
             )
             bridge.jamulus_launch_intended = True
             with patch.object(bridge, "find_jamulus", return_value="/bin/echo"), \
@@ -76,6 +77,7 @@ class TestEffectiveServerHostPort(unittest.TestCase):
         bridge = BridgeService(
             MagicMock(), MagicMock(), MagicMock(), MagicMock(), settings,
             ui_callbacks={"schedule_ui_callback": lambda f: f()},
+            component_store_root=isolated_component_store_root(),
         )
         self.assertEqual(bridge.effective_server(), "jam.example.com:22124")
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -12,32 +13,47 @@ ROOT = Path(__file__).resolve().parents[1]
 MACOS = ROOT / "packaging" / "macos"
 BUILD_PATH = MACOS / "build-jamulus-headless-client.sh"
 VERIFY_PATH = MACOS / "verify-jamulus-headless-client.sh"
-PATCH_PATH = MACOS / "jamulus-headless-r3_12_2.patch"
+PATCH_3122_PATH = MACOS / "jamulus-headless-r3_12_2.patch"
+PATCH_3123_PATH = MACOS / "jamulus-headless-r3_12_3.patch"
 OFFER_PATH = MACOS / "JamulusHeadlessClient-SOURCE-OFFER.txt"
+OFFER_3123_PATH = MACOS / "JamulusHeadlessClient-r3_12_3-SOURCE-OFFER.txt"
 INSTRUCTIONS_PATH = MACOS / "JamulusHeadlessClient-BUILD-INSTRUCTIONS.txt"
+INSTRUCTIONS_3123_PATH = (
+    MACOS / "JamulusHeadlessClient-r3_12_3-BUILD-INSTRUCTIONS.txt"
+)
 QT_NOTICE_PATH = MACOS / "JamulusHeadlessClient-QT-NOTICE.txt"
 LOCK_PATH = MACOS / "aqtinstall-3.3.0-lock.txt"
 TRUST_PATH = MACOS / "release-trust.sh"
+EVIDENCE_PATH = MACOS / "create-jamulus-headless-component-evidence.py"
+EVIDENCE_SCHEMA_PATH = MACOS / "jamulus-headless-component-evidence.schema.json"
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
 BUILD = BUILD_PATH.read_text(encoding="utf-8")
 VERIFY = VERIFY_PATH.read_text(encoding="utf-8")
-PATCH = PATCH_PATH.read_text(encoding="utf-8")
+PATCH_3122 = PATCH_3122_PATH.read_text(encoding="utf-8")
+PATCH_3123 = PATCH_3123_PATH.read_text(encoding="utf-8")
 OFFER = OFFER_PATH.read_text(encoding="utf-8")
+OFFER_3123 = OFFER_3123_PATH.read_text(encoding="utf-8")
 INSTRUCTIONS = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+INSTRUCTIONS_3123 = INSTRUCTIONS_3123_PATH.read_text(encoding="utf-8")
 QT_NOTICE = QT_NOTICE_PATH.read_text(encoding="utf-8")
 LOCK = LOCK_PATH.read_text(encoding="utf-8")
 TRUST = TRUST_PATH.read_text(encoding="utf-8")
 CI = CI_PATH.read_text(encoding="utf-8")
 
-COMMIT = "ffca974ed4e47b8f4621f3b583c00db2f87974fa"
+COMMIT_3122 = "ffca974ed4e47b8f4621f3b583c00db2f87974fa"
+COMMIT_3123 = "74dc422116983a2173eb917cb4d6a403886b31e5"
 
 
 def test_build_inputs_and_tools_are_exactly_pinned() -> None:
     for source in (BUILD, VERIFY):
         assert 'VERSION="3.12.2"' in source or 'EXPECTED_VERSION="3.12.2"' in source
-        assert COMMIT in source
+        assert 'VERSION="3.12.3"' in source or 'EXPECTED_VERSION="3.12.3"' in source
+        assert COMMIT_3122 in source
+        assert COMMIT_3123 in source
         assert 'QT_VERSION="6.10.2"' in source
+        assert "r3_12_2" in source
+        assert "r3_12_3" in source
     assert 'AQTINSTALL_VERSION="3.3.0"' in BUILD
     assert 'EXPECTED_AQT_VERSION="3.3.0"' in VERIFY
     assert "aqtinstall==3.3.0 \\\n" in LOCK
@@ -55,18 +71,19 @@ def test_build_inputs_and_tools_are_exactly_pinned() -> None:
 
 
 def test_reviewed_patch_is_minimal_and_headless_only() -> None:
-    changed = re.findall(r"(?m)^diff --git a/(\S+) b/(\S+)$", PATCH)
-    assert changed == [
-        ("src/main.cpp", "src/main.cpp"),
-        (
-            "src/sound/coreaudio-mac/sound.h",
-            "src/sound/coreaudio-mac/sound.h",
-        ),
-    ]
-    assert "defined( Q_OS_MACOS ) && !defined( HEADLESS )" in PATCH
-    assert "#ifndef HEADLESS\n+#    include <QMessageBox>\n+#endif" in PATCH
-    assert "qt_set_sequence_auto_mnemonic" in PATCH
-    assert "SERVER_ONLY" not in PATCH
+    for patch in (PATCH_3122, PATCH_3123):
+        changed = re.findall(r"(?m)^diff --git a/(\S+) b/(\S+)$", patch)
+        assert changed == [
+            ("src/main.cpp", "src/main.cpp"),
+            (
+                "src/sound/coreaudio-mac/sound.h",
+                "src/sound/coreaudio-mac/sound.h",
+            ),
+        ]
+        assert "defined( Q_OS_MACOS ) && !defined( HEADLESS )" in patch
+        assert "#ifndef HEADLESS\n+#    include <QMessageBox>\n+#endif" in patch
+        assert "qt_set_sequence_auto_mnemonic" in patch
+        assert "SERVER_ONLY" not in patch
 
 
 def test_build_is_client_capable_and_never_server_only() -> None:
@@ -113,14 +130,14 @@ def test_bundle_identity_signature_checksum_and_source_material_fail_closed() ->
     assert "provenance macOS SDK version is malformed" in VERIFY
     assert "provenance macOS SDK version does not match the executable" in VERIFY
     assert "packaged source patch differs from the reviewed patch" in VERIFY
-    assert "packaged GPL text differs from the reviewed license" in VERIFY
+    assert "packaged license text differs from the reviewed license" in VERIFY
     assert "App Sandbox is forbidden" in VERIFY
 
 
 def test_complete_patched_corresponding_source_accompanies_the_binary() -> None:
     assert "GNU General Public License" in OFFER
     assert "https://github.com/jamulussoftware/jamulus.git" in OFFER
-    assert COMMIT in OFFER
+    assert COMMIT_3122 in OFFER
     assert "JamulusHeadlessClient-CORRESPONDING-SOURCE.tar.gz" in OFFER
     assert "included source archive" in OFFER
     assert "git -C \"$source_dir\" archive" in BUILD
@@ -141,6 +158,45 @@ def test_complete_patched_corresponding_source_accompanies_the_binary() -> None:
     assert "aqtinstall 3.3.0" in OFFER
     assert "CONFIG+=headless, CONFIG-=serveronly" in OFFER
     assert "not a claim that binaries" in INSTRUCTIONS
+
+
+def test_3123_profile_is_evidence_only_with_exact_agpl_source_material() -> None:
+    license_path = ROOT / "licenses" / "JAMULUS_COPYING-r3_12_3.txt"
+    license_text = license_path.read_text(encoding="utf-8")
+    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in license_text
+    assert "GNU GENERAL PUBLIC LICENSE" in license_text
+    assert "AGPL 3.0 or any later version" in license_text
+    assert COMMIT_3123 in OFFER_3123
+    assert "jamulus-headless-r3_12_3.patch" in OFFER_3123
+    assert "ACTIVATION IS NOT APPROVED" in OFFER_3123
+    assert "AGPL section 13" in OFFER_3123
+    assert "r3_12_3" in INSTRUCTIONS_3123
+    assert "evidence only" in INSTRUCTIONS_3123
+    assert "must not be staged into a WebJam desktop" in INSTRUCTIONS_3123
+    assert 'LICENSE_NAME="JAMULUS_COPYING-r3_12_3.txt"' in BUILD
+    assert '"$VERIFY" "$output_app" "$architecture" "$manifest" "$profile"' in BUILD
+    assert 'profile=${4:-r3_12_2}' in VERIFY
+
+
+def test_3123_headless_workflow_is_manual_quarantined_and_not_a_release_input() -> None:
+    assert "build_unapproved_jamulus_3123_headless_evidence:" in CI
+    assert "jamulus-3123-headless-evidence:" in CI
+    assert "inputs.build_unapproved_jamulus_3123_headless_evidence" in CI
+    assert "UNAPPROVED-EVIDENCE.zip" in CI
+    assert "UNAPPROVED-EVIDENCE.json" in CI
+    assert "--output \"$evidence\"" in CI
+    assert 'r3_12_3\n' in CI
+    assert 'evidence["activation_approved"] is False' in CI
+    assert 'evidence["catalog_signing_automatic"] is False' in CI
+    assert "jamulus-headless-r3_12_3-${{ matrix.target }}-unapproved-evidence" in CI
+    release_upload = CI.split("Upload non-Windows build artifact", 1)[1].split(
+        "# ------------------------------------------------------------------", 1
+    )[0]
+    assert "JamulusHeadlessClient-r3_12_3" not in release_upload
+    assert EVIDENCE_PATH.is_file()
+    schema = EVIDENCE_SCHEMA_PATH.read_text(encoding="utf-8")
+    assert '"activation_approved": {"const": false}' in schema
+    assert '"desktop_release_inventory": {"const": false}' in schema
 
 
 def test_qt_lgpl_notice_and_exact_source_accompany_the_frameworks() -> None:
@@ -211,3 +267,10 @@ def test_shell_helpers_are_executable_and_parse() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
+    compile_result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(EVIDENCE_PATH)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert compile_result.returncode == 0, compile_result.stderr

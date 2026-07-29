@@ -8,8 +8,7 @@ Jamulus client encoder and captures leave after its decoder.
 
 The module imports :mod:`jack` lazily so ordinary developer and macOS/Windows
 test runs remain dependency-free.  The opt-in integration job installs
-``JACK-Client`` and provides the pinned official Jamulus 3.12.2 server/client
-binaries.
+``JACK-Client`` and provides pinned official Jamulus server/client binaries.
 """
 from __future__ import annotations
 
@@ -35,6 +34,9 @@ SAMPLE_RATE = 48_000
 JACK_BLOCK_SIZE = 128
 FIXTURE_DURATION_S = 7.0
 CAPTURE_TAIL_S = 2.0
+EXPECTED_VERSION_ENV = "WEBJAM_JAMULUS_EXPECTED_VERSION"
+DEFAULT_EXPECTED_VERSION = "3.12.2"
+ALLOWED_EXPECTED_VERSIONS = ("3.12.2", "3.12.3")
 
 
 class HarnessUnavailable(RuntimeError):
@@ -43,6 +45,23 @@ class HarnessUnavailable(RuntimeError):
 
 class HarnessFailure(AssertionError):
     """Raised when the prepared real-audio path fails certification."""
+
+
+def _validate_expected_version(value: str) -> str:
+    if value not in ALLOWED_EXPECTED_VERSIONS:
+        allowed = ", ".join(ALLOWED_EXPECTED_VERSIONS)
+        raise HarnessUnavailable(
+            f"{EXPECTED_VERSION_ENV} must be one of: {allowed}; got {value!r}"
+        )
+    return value
+
+
+def expected_jamulus_version_from_environment() -> str:
+    """Return the exact Jamulus version selected for this certification run."""
+
+    return _validate_expected_version(
+        os.environ.get(EXPECTED_VERSION_ENV, DEFAULT_EXPECTED_VERSION)
+    )
 
 
 @dataclass(frozen=True)
@@ -1163,10 +1182,16 @@ class JamulusJackHarness:
         client_binary: str,
         *,
         include_reference_track: bool = False,
+        expected_version: str | None = None,
     ) -> None:
         self.server_binary = str(Path(server_binary).resolve())
         self.client_binary = str(Path(client_binary).resolve())
         self.include_reference_track = bool(include_reference_track)
+        self.expected_version = _validate_expected_version(
+            expected_jamulus_version_from_environment()
+            if expected_version is None
+            else expected_version
+        )
         self._temp = tempfile.TemporaryDirectory(prefix="webjam-jack-cert-")
         self.root = Path(self._temp.name)
         self.server_name = f"webjam-cert-{os.getpid()}-{time.time_ns()}"
@@ -1201,6 +1226,7 @@ class JamulusJackHarness:
     def from_environment(
         cls, *, include_reference_track: bool = False
     ) -> JamulusJackHarness:
+        expected_version = expected_jamulus_version_from_environment()
         server_binary = os.environ.get("WEBJAM_JAMULUS_BINARY", "")
         client_binary = os.environ.get("WEBJAM_JAMULUS_CLIENT_BINARY", "")
         if not server_binary:
@@ -1210,7 +1236,7 @@ class JamulusJackHarness:
             if not capability.supported:
                 raise HarnessUnavailable(
                     f"{capability.detail}. Install the checksum-pinned official "
-                    "jamulus_3.12.2_ubuntu_amd64.deb and set "
+                    f"jamulus_{expected_version}_ubuntu_amd64.deb and set "
                     "WEBJAM_JAMULUS_CLIENT_BINARY; probe output:\n"
                     f"{capability.output[-2_000:]}"
                 )
@@ -1225,6 +1251,7 @@ class JamulusJackHarness:
             server_binary,
             client_binary,
             include_reference_track=include_reference_track,
+            expected_version=expected_version,
         )
 
     def _base_env(self) -> dict[str, str]:
@@ -1290,9 +1317,10 @@ class JamulusJackHarness:
             if not Path(binary).is_file():
                 raise HarnessUnavailable(f"{label} binary does not exist: {binary}")
             version = _binary_version(binary)
-            if "Version 3.12.2" not in version:
+            if f"Version {self.expected_version}" not in version:
                 raise HarnessUnavailable(
-                    f"{label} binary is not pinned Jamulus 3.12.2: {version.strip()}"
+                    f"{label} binary is not pinned Jamulus "
+                    f"{self.expected_version}: {version.strip()}"
                 )
 
         jackd = shutil.which("jackd")

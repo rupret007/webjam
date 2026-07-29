@@ -75,10 +75,10 @@ class ConductorWindow(QMainWindow):
 
         self.setWindowTitle(f"WebJam — Band Session (v{__version__})")
         self.resize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
-        # The meeting surface remains usable on an 800×600 display and in a
-        # narrow side-by-side desktop window. Child layouts own adaptation;
-        # the shell must not impose a wide-screen gate.
-        self.setMinimumSize(760, 600)
+        # Reserve 40 px around the client area for native title-bar/frame
+        # chrome so the complete meeting surface fits a physical 760×600
+        # display. Child layouts own adaptation below the generous default.
+        self.setMinimumSize(720, 560)
         # Controller-injected veto (e.g. "a recording is running — quit?").
         self.confirm_close: Optional[Callable[[], bool]] = None
         # A second synchronous gate owns teardown that can still fail after

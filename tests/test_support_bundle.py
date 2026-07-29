@@ -223,6 +223,93 @@ class TestRecursiveRedaction(unittest.TestCase):
 
 
 class TestSupportArtifact(unittest.TestCase):
+    def test_component_sections_keep_only_bounded_path_free_trust_facts(self):
+        artifact = build_support_bundle(
+            SupportFacts(
+                jamulus_update={
+                    "state": "ready",
+                    "active_version": "3.12.2",
+                    "available_version": "3.12.3",
+                    "previous_version": "3.12.2",
+                    "fallback_version": "3.12.2",
+                    "target": "macos-arm64",
+                    "progress_percent": 100,
+                    "reason_code": "license-approval-required",
+                    "restart_when_idle": True,
+                    "checked_at_utc": "2026-07-28T12:34:56Z",
+                    "catalog_verified": True,
+                    "catalog_sequence": 7,
+                    "catalog_expires_at_utc": "2026-08-15T12:34:56Z",
+                    "signer_fingerprint_sha256": "a" * 64,
+                    "catalog_url": (
+                        "https://host.invalid/private/catalog?token=secret"
+                    ),
+                    "artifact_path": "/Users/alice/private/Jamulus.dmg",
+                    "message": "failure in /Users/alice/private",
+                    "raw_exception": "token=secret",
+                },
+                webex_app={
+                    "state": "installed",
+                    "installed": True,
+                    "version": "46.7.0.35472",
+                    "publisher_verified": True,
+                    "reason_code": "publisher-check-deferred",
+                    "path": "/Applications/Webex.app",
+                    "meeting_url": (
+                        "https://example.webex.com/meet/private-room"
+                    ),
+                    "username": "alice@example.com",
+                },
+            ),
+            created_at=CREATED_AT,
+        )
+
+        report = artifact.structured_report
+        self.assertEqual(report["schema_version"], 1)
+        self.assertEqual(
+            report["jamulus_update"],
+            {
+                "active_version": "3.12.2",
+                "available_version": "3.12.3",
+                "catalog_expires_at_utc": "2026-08-15T12:34:56Z",
+                "catalog_sequence": 7,
+                "catalog_verified": True,
+                "checked_at_utc": "2026-07-28T12:34:56Z",
+                "fallback_version": "3.12.2",
+                "previous_version": "3.12.2",
+                "progress_percent": 100,
+                "reason_code": "license-approval-required",
+                "restart_when_idle": True,
+                "signer_fingerprint_sha256": "a" * 64,
+                "state": "ready",
+                "target": "macos-arm64",
+            },
+        )
+        self.assertEqual(
+            report["webex_app"],
+            {
+                "installed": True,
+                "publisher_verified": True,
+                "reason_code": "publisher-check-deferred",
+                "state": "installed",
+                "version": "46.7.0.35472",
+            },
+        )
+        encoded = json.dumps(report)
+        for forbidden in (
+            "catalog_url",
+            "artifact_path",
+            "raw_exception",
+            "/Users/alice",
+            "token=secret",
+            "meeting_url",
+            "private-room",
+            "username",
+            "alice@example.com",
+            "/Applications/Webex.app",
+        ):
+            self.assertNotIn(forbidden, encoded)
+
     def test_allowlist_excludes_devices_environment_personal_files_and_content(self):
         artifact = _artifact()
         report = artifact.structured_report

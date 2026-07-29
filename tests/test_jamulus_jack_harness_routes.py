@@ -5,8 +5,11 @@ from dataclasses import dataclass
 import pytest
 
 from tests.support.jamulus_jack_harness import (
+    EXPECTED_VERSION_ENV,
+    HarnessUnavailable,
     HarnessFailure,
     JackBoundary,
+    expected_jamulus_version_from_environment,
 )
 
 
@@ -62,6 +65,35 @@ def _jamulus_ports() -> dict[str, _Port]:
         "output left": _Port("jamulus-output-left"),
         "output right": _Port("jamulus-output-right"),
     }
+
+
+def test_expected_jamulus_version_defaults_to_3_12_2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(EXPECTED_VERSION_ENV, raising=False)
+
+    assert expected_jamulus_version_from_environment() == "3.12.2"
+
+
+@pytest.mark.parametrize("version", ("3.12.2", "3.12.3"))
+def test_expected_jamulus_version_accepts_supported_canonical_values(
+    monkeypatch: pytest.MonkeyPatch,
+    version: str,
+) -> None:
+    monkeypatch.setenv(EXPECTED_VERSION_ENV, version)
+
+    assert expected_jamulus_version_from_environment() == version
+
+
+@pytest.mark.parametrize("version", ("", "3.12.3 ", "3.13.0"))
+def test_expected_jamulus_version_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+    version: str,
+) -> None:
+    monkeypatch.setenv(EXPECTED_VERSION_ENV, version)
+
+    with pytest.raises(HarnessUnavailable, match=EXPECTED_VERSION_ENV):
+        expected_jamulus_version_from_environment()
 
 
 def test_route_client_waits_for_jack_graph_convergence() -> None:

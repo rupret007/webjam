@@ -11,6 +11,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests.support.component_store import isolated_component_store_root
+
 
 def _make_settings(jamulus_rpc_port: int = 22222) -> MagicMock:
     s = MagicMock()
@@ -44,6 +46,7 @@ def _make_bridge(rpc_port: int = 22222):
         repository=repository,
         settings=settings,
         ui_callbacks=ui_callbacks,
+        component_store_root=isolated_component_store_root(),
     )
 
 

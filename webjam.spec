@@ -183,7 +183,15 @@ a = Analysis(
             "THIRD_PARTY_LICENSES",
         ),
         (
+            str(ROOT / "packaging" / "Jamulus-component-sbom.cdx.json"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
             str(ROOT / "packaging" / "runtime-dependency-policy.json"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(ROOT / "licenses" / "JAMULUS_COPYING-r3_12_3.txt"),
             "THIRD_PARTY_LICENSES",
         ),
         (

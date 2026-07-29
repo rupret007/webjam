@@ -46,6 +46,7 @@ def make_bridge(tmp_path: Path) -> tuple[BridgeService, SimpleNamespace]:
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda callback: callback(),
         },
+        component_store_root=tmp_path / "components",
     )
     bridge.find_jamulus_server_with_source = mock.Mock(
         return_value=(BINARY, "installed")

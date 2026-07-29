@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from services.bridge_service import BridgeService
+from tests.support.component_store import isolated_component_store_root
 
 
 def _bridge() -> BridgeService:
@@ -31,6 +32,7 @@ def _bridge() -> BridgeService:
             "shutdown_requested": lambda: False,
             "schedule_ui_callback": lambda callback: callback(),
         },
+        component_store_root=isolated_component_store_root(),
     )
     bridge.find_jamulus = MagicMock(return_value="/Applications/Jamulus")
     return bridge

@@ -1,7 +1,7 @@
-# WebJam v0.21.0 source and physical test procedure
+# WebJam v0.22.0 source and physical test procedure
 
-> The source tree reports v0.21.0. Published candidates remain immutable
-> rollback/reference evidence; they do not certify the v0.21.0 standalone
+> The source tree reports v0.22.0. Published candidates remain immutable
+> rollback/reference evidence; they do not certify the v0.22.0 standalone
 > Reference Studio, external Webex handoff, Reference Track pilot, or matching
 > iPhone setup kit.
 
@@ -89,6 +89,29 @@ Review at minimum:
 - Restart recovery handles stalled but alive Jamulus processes by force-restarting
   the process after repeated heartbeat timeout, then continuing regular auto-reconnect.
 - Webex is optional and a failure does not stop music.
+- Native Webex detection reports only bounded installation/version/publisher
+  state; explicit installation opens an approved Cisco HTTPS URL and never
+  stores credentials, downloads/executes a package silently, or changes
+  Jamulus audio.
+- The Jamulus updater verifies the catalog signature, exact WebJam version,
+  expiry, monotonic sequence, target/architecture/roles/capabilities, HTTPS
+  origin/redirects, artifact size/hash, and platform publisher/inventory.
+- Interrupted/offline/tampered downloads, replay/rollback/equivocation,
+  traversal/symlinks, corrupt pointers, concurrent instances, and failed
+  activation preserve the current/previous or embedded Jamulus fallback.
+- Download may occur while live, but install/activation/rollback refuses every
+  client/server/Reference Track/recording/practice/reconnect/launch busy state.
+- Windows discloses and proves the known unsigned upstream installer before
+  explicit handoff; Linux uses no shell or hidden `sudo`; macOS mounts no DMG
+  until the exact license receives explicit acceptance, then verifies upstream
+  Developer ID/notarization and preserves quarantine.
+- The one Jamulus-name validator covers settings, onboarding, configuration and
+  environment recovery, profile, launch, RPC, and legacy paths at 8/9/16/17
+  UTF-16-unit and Unicode boundaries; the accessible 8+8 preview matches the
+  native mixer behavior.
+- Diagnostics and the saved Support Bundle include bounded updater/catalog/
+  fallback and Webex-app facts without paths, URLs, meeting links, names,
+  tokens, credentials, or raw exceptions.
 - First Record offers shared-only versus Local Originals.
 - Studio output appears only in Studio review.
 - Studio Arrange edits, take-lane comps, undo/redo, save/reopen, and autosave
@@ -132,16 +155,19 @@ Review at minimum:
 
 1. Commit the source implementation and record its SHA.
 2. Build with PyInstaller from `webjam.spec`.
-3. Stage checksum-verified Jamulus 3.12.2 and JamulusServer 3.12.2 exactly as
-   `.github/workflows/ci.yml` does.
+3. Stage checksum-verified Jamulus 3.12.2 and JamulusServer 3.12.2 as the
+   immutable offline fallback exactly as `.github/workflows/ci.yml` does.
+   Separately verify the approved Jamulus 3.12.3 updater inputs without adding
+   them to the desktop release inventory or accepting the macOS DMG SLA in CI.
 4. Sign nested apps, sidecar, and outer app; verify transport, Info.plist,
    signatures, fresh extraction, and archive SHA-256.
-5. Launch the fresh app and inspect Host, Join, optional Webex, Recording
-   Setup, Studio Arrange/comp/undo/autosave/export, standalone Reference Studio
-   project/import/playback/mix/bounce, End/Leave, and an invalid/recovery state
-   at 760×600, 1024×768, and 1440×900. On macOS/Linux, inspect the edited
-   Studio package. On Windows, verify the separately labelled
-   aligned-originals/reference-mix boundary above.
+5. Launch the fresh app and inspect Host, Join, Jamulus Updates, optional Webex
+   installed/missing behavior, Recording Setup, Studio Arrange/comp/undo/
+   autosave/export, standalone Reference Studio project/import/playback/mix/
+   bounce, Support diagnostics, End/Leave, and invalid/recovery states at
+   760×600, 1024×768, and 1440×900. On macOS/Linux, inspect the edited Studio
+   package. On Windows, verify the separately labelled aligned-originals/
+   reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 

@@ -33,6 +33,7 @@ class WebexEmbed(QFrame):
     """External launch card retaining the former widget's caller interface."""
 
     meeting_state_changed = Signal(str)
+    install_webex_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -47,6 +48,14 @@ class WebexEmbed(QFrame):
         self._title_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+
+        self._app_status_label = QLabel()
+        self._app_status_label.setObjectName("WebexAppStatusLabel")
+        self._app_status_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._app_status_label.setAccessibleName("Webex app status")
+        self._app_status_label.setVisible(False)
 
         self._mode_label = QLabel()
         self._mode_label.setAlignment(
@@ -71,25 +80,142 @@ class WebexEmbed(QFrame):
             "Open the configured meeting in the native Webex app or browser."
         )
 
+        self._install_btn = QPushButton("Get Webex")
+        self._install_btn.setObjectName("GhostButton")
+        self._install_btn.setAccessibleName("Get Webex")
+        self._install_btn.setAccessibleDescription(
+            "Open Cisco's official Webex download. WebJam will not install "
+            "software or accept terms automatically."
+        )
+        self._install_btn.setVisible(False)
+        self._install_btn.clicked.connect(self.install_webex_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(Space.SM)
+        header.addWidget(self._title_label, stretch=1)
+        header.addWidget(self._app_status_label)
+
         text_column = QVBoxLayout()
         text_column.setSpacing(0)
-        text_column.addWidget(self._title_label)
+        text_column.addLayout(header)
         text_column.addWidget(self._mode_label)
         text_column.addWidget(self._status_label)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(Space.SM)
+        actions.addWidget(self._install_btn)
+        actions.addWidget(self._fallback_btn)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
         layout.setSpacing(Space.LG)
         layout.addLayout(text_column, stretch=1)
-        layout.addWidget(
-            self._fallback_btn, alignment=Qt.AlignmentFlag.AlignVCenter
+        layout.addLayout(
+            actions,
         )
+        actions.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self._render_audio_guidance()
 
     def fallback_button(self) -> QPushButton:
         """Return the external Webex launch button."""
 
         return self._fallback_btn
+
+    def install_button(self) -> QPushButton:
+        """Return the normally hidden official-installer action."""
+
+        return self._install_btn
+
+    def set_app_status(
+        self,
+        status: object,
+        *,
+        version: str = "",
+        publisher_verified: bool = False,
+    ) -> None:
+        """Show native-app availability without changing meeting-launch truth."""
+
+        value = str(getattr(status, "value", status) or "").strip().lower()
+        clean_version = str(version or "").strip()
+        if (
+            len(clean_version) > 32
+            or any(ord(character) < 32 for character in clean_version)
+        ):
+            clean_version = ""
+        installed_status = (
+            (
+                "Webex app verified"
+                + (f" • {clean_version}" if clean_version else ""),
+                (
+                    "Cisco Webex is installed and its publisher is verified. "
+                    "Opening a meeting still happens externally."
+                ),
+            )
+            if publisher_verified
+            else (
+                "Webex app found"
+                + (f" • {clean_version}" if clean_version else ""),
+                (
+                    "The Webex app was found, but publisher verification is "
+                    "not available on this platform. Opening a meeting still "
+                    "happens externally."
+                ),
+            )
+        )
+        descriptions = {
+            "installed": (
+                installed_status[0],
+                False,
+                "Get Webex",
+                installed_status[1],
+            ),
+            "not-installed": (
+                "Webex app not installed",
+                True,
+                "Get Webex",
+                (
+                    "Open Cisco's official Webex download. WebJam will not "
+                    "install software or accept terms automatically."
+                ),
+            ),
+            "invalid": (
+                "Webex app needs attention",
+                True,
+                "Get Webex",
+                (
+                    "Open Cisco's official Webex download to repair or replace "
+                    "the unverified installation."
+                ),
+            ),
+            "unsupported": (
+                "Webex app check unavailable",
+                False,
+                "Get Webex",
+                (
+                    "Native Webex app detection is unavailable on this "
+                    "platform. The configured meeting can still open in a "
+                    "supported browser."
+                ),
+            ),
+        }
+        try:
+            text, show_install, button_text, accessible_description = descriptions[
+                value
+            ]
+        except KeyError as exc:
+            raise ValueError("unsupported Webex app status") from exc
+        self._app_status_label.setText(text)
+        self._app_status_label.setAccessibleDescription(accessible_description)
+        self._app_status_label.setToolTip(accessible_description)
+        self._app_status_label.setVisible(True)
+        self._install_btn.setText(button_text)
+        self._install_btn.setAccessibleName(button_text)
+        self._install_btn.setAccessibleDescription(accessible_description)
+        self._install_btn.setToolTip(accessible_description)
+        self._install_btn.setVisible(show_install)
+        self._announce_description_change(self._app_status_label)
 
     def set_launch_status(self, status: str) -> None:
         """Show external-launch truth without implying meeting membership."""
@@ -103,17 +229,7 @@ class WebexEmbed(QFrame):
         description = descriptions.get(status, str(status))
         self._status_label.setText(description)
         self._status_label.setAccessibleDescription(description)
-        try:
-            QAccessible.updateAccessibility(
-                QAccessibleEvent(
-                    self._status_label,
-                    QAccessible.Event.DescriptionChanged,
-                )
-            )
-        except (RuntimeError, TypeError):
-            # Some headless and teardown paths no longer have an accessibility
-            # backend. The visible and semantic text is still updated.
-            pass
+        self._announce_description_change(self._status_label)
         button_text = (
             "Opening…"
             if status == "Opening…"
@@ -175,3 +291,17 @@ class WebexEmbed(QFrame):
         }
         self._title_label.setText(titles[self._audio_mode])
         self._mode_label.setText(guidance[self._audio_mode])
+
+    @staticmethod
+    def _announce_description_change(label: QLabel) -> None:
+        try:
+            QAccessible.updateAccessibility(
+                QAccessibleEvent(
+                    label,
+                    QAccessible.Event.DescriptionChanged,
+                )
+            )
+        except (RuntimeError, TypeError):
+            # Some headless and teardown paths no longer have an accessibility
+            # backend. The visible and semantic text is still updated.
+            pass

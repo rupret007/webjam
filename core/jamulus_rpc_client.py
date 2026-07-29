@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.settings import jamulus_client_rpc_secret_path
 
 _logger = logging.getLogger("webjam.jamulus_rpc")
@@ -240,9 +241,14 @@ class JamulusRpcClient:
 
     def set_name(self, name: str) -> bool:
         """Set the local musician's display name (jamulusclient/setName)."""
-        if not name:
+        try:
+            validated = validate_jamulus_name(name)
+        except JamulusNameError:
             return False
-        return self._send("jamulusclient/setName", {"name": str(name)}) is not None
+        return self._send(
+            "jamulusclient/setName",
+            {"name": validated.value},
+        ) is not None
 
     def get_channel_clients(self) -> Optional[List[ChannelInfo]]:
         """Return the last-known participant list, or None if not yet received."""

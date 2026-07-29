@@ -253,6 +253,7 @@ class TestSessionStrip(unittest.TestCase):
         s.join_video_requested.connect(lambda: video.append(True))
         expected_tools = {
             "Audio Settings in Jamulus": "audio_settings",
+            "Jamulus Updates…": "jamulus_updates",
             "Recording Setup": "recording_setup",
             "Reference Track…": "reference_track",
             "Studio": "takes",
@@ -651,11 +652,11 @@ class TestConductorWindow(unittest.TestCase):
 
     def test_supported_narrow_minimum_size(self):
         w = self._window()
-        # The live surface must remain usable beside another app on an
-        # 800x600 display.  A wide minimum silently reintroduces the old
-        # desktop-only clipping bug even if the default size stays generous.
-        self.assertLessEqual(w.minimumWidth(), 760)
-        self.assertLessEqual(w.minimumHeight(), 600)
+        # Leave room for native frame/title-bar chrome inside a physical
+        # 760x600 display. A client-area minimum equal to the entire screen
+        # silently clips the bottom meeting controls.
+        self.assertLessEqual(w.minimumWidth(), 720)
+        self.assertLessEqual(w.minimumHeight(), 560)
 
     def test_hidden_session_tools_are_not_in_initial_focus_chain(self):
         from PySide6.QtCore import Qt
@@ -795,7 +796,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.21.0", body)
+        self.assertIn("WebJam v0.22.0", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)

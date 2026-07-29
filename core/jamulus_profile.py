@@ -32,7 +32,7 @@ import secrets
 import stat
 import subprocess
 import sys
-from typing import Callable, Mapping
+from typing import Callable, Iterable, Mapping
 from xml.etree import ElementTree
 
 from core.file_io import atomic_write_text
@@ -445,19 +445,57 @@ class JamulusNativeProfileManager:
         self,
         _settings: object | None,
         jamulus_binary: str | Path,
+        *,
+        approved_versions: Iterable[str] | None = None,
+        expected_version: str | None = None,
     ) -> JamulusNativeProfilePlan:
         """Compatibility-shaped helper for the existing process supervisor.
 
         ``_settings`` is intentionally ignored.  Retaining it makes the
         transition from the old route manager mechanical while proving this
         implementation no longer reads WebJam's device/channel/buffer fields.
+
+        The default remains the immutable 3.12.2 embedded boundary. Runtime
+        component selection may supply the exact versions approved by
+        WebJam's compatibility registry plus the version selected for this
+        launch. The executable is probed again here, immediately before its
+        native profile is used, so a changed component fails closed.
         """
 
+        if approved_versions is None:
+            allowed = frozenset({PINNED_JAMULUS_VERSION})
+        else:
+            try:
+                allowed = frozenset(
+                    _normalize_version(item) for item in approved_versions
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("approved_versions contains an invalid version") from exc
+            if not allowed:
+                raise ValueError("approved_versions cannot be empty")
+        expected = (
+            None
+            if expected_version is None
+            else _normalize_version(expected_version)
+        )
+        if expected is not None and expected not in allowed:
+            raise ValueError("expected_version must be approved")
         version = self._version_probe(str(jamulus_binary or ""))
-        if version != PINNED_JAMULUS_VERSION:
+        if version not in allowed or (
+            expected is not None and version != expected
+        ):
+            if (
+                allowed == {PINNED_JAMULUS_VERSION}
+                and expected is None
+            ):
+                raise JamulusNativeProfileError(
+                    "WebJam needs its included Jamulus 3.12.2 music component. "
+                    "Reinstall WebJam, then try again."
+                )
             raise JamulusNativeProfileError(
-                "WebJam needs its included Jamulus 3.12.2 music component. "
-                "Reinstall WebJam, then try again."
+                "WebJam couldn't verify the approved Jamulus music component. "
+                "Finish any pending Jamulus update or reinstall WebJam, then "
+                "try again."
             )
         return self.plan(jamulus_version=version)
 

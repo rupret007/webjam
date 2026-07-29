@@ -25,6 +25,8 @@ import tempfile
 from typing import Mapping
 from xml.etree import ElementTree
 
+from core.jamulus_name import validate_jamulus_name
+
 
 class AudioRoutePlatform(str, Enum):
     """The audio boundary controlled by the pinned Jamulus build."""
@@ -367,9 +369,10 @@ class Jamulus3122AudioRouteAdapter:
         """Render only settings proven against pinned 3.12.2 source."""
 
         self.validate(profile)
-        name = str(musician_name or "WebJam Musician").strip()
-        if not name or len(name) > 256:
-            raise ValueError("musician_name must contain 1..256 characters")
+        name = validate_jamulus_name(
+            musician_name,
+            version=profile.jamulus_version,
+        ).value
 
         root = ElementTree.Element("client")
 

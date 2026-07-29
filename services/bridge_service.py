@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import os
+import stat
 import subprocess
 import sys
 import threading
@@ -12,11 +13,35 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from webex_integration import WebexLaunchState
+from core.component_lock import (
+    ComponentLockError,
+    ComponentLockTimeout,
+    InterProcessComponentLock,
+    RUNTIME_ACTIVE_LOCK_NAME,
+)
+from core.component_store import default_component_store_root
+from core.jamulus_compatibility import (
+    ActivationMode,
+    ArtifactKind,
+    ComponentTarget,
+    JamulusCompatibility,
+    JamulusCompatibilityRegistry,
+    JamulusRole,
+    SourceProvenance,
+    official_jamulus_compatibility_registry,
+)
+from core.jamulus_component_resolver import ValidatedExternalComponent
+from core.jamulus_name import validate_jamulus_name
 from core.jamulus_profile import (
     JamulusNativeProfileError,
     JamulusNativeProfileManager,
+    default_jamulus_version_probe,
 )
 from core.settings import AppSettings
+from services.jamulus_component_platform import (
+    JamulusPlatformError,
+    platform_component_target,
+)
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
@@ -29,6 +54,84 @@ _REFERENCE_HEADLESS_MANIFEST_TARGET = (
     "JamulusHeadlessClient.app/Contents/MacOS/JamulusHeadlessClient"
 )
 _HASH_CHUNK_BYTES = 1024 * 1024
+_EMBEDDED_JAMULUS_VERSION = "3.12.2"
+_CATALOG_RUNTIME_ENVIRONMENT_DENYLIST = frozenset(
+    {
+        "DYLD_FALLBACK_FRAMEWORK_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "DYLD_IMAGE_SUFFIX",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_ROOT_PATH",
+        "GCONV_PATH",
+        "LD_AUDIT",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "QML2_IMPORT_PATH",
+        "QML_IMPORT_PATH",
+        "QT_OPENGL_DLL",
+        "QT_PLUGIN_PATH",
+        "QT_QPA_GENERIC_PLUGINS",
+        "QT_QPA_PLATFORM",
+        "QT_QPA_PLATFORM_PLUGIN_PATH",
+        "QT_STYLE_OVERRIDE",
+        "QTWEBENGINEPROCESS_PATH",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedJamulusRuntime:
+    """One role-specific, registry-approved Jamulus executable selection."""
+
+    executable_path: Path
+    role: JamulusRole
+    version: str
+    source: str
+    catalog_entry: JamulusCompatibility | None = None
+
+    def public_details(self) -> dict[str, str]:
+        """Return support-safe component identity without a private path."""
+
+        return {
+            "role": self.role.value,
+            "version": self.version,
+            "source": self.source,
+        }
+
+
+def _jamulus_child_environment(
+    *,
+    catalog_verified: bool,
+) -> dict[str, str]:
+    """Build a native child environment without catalog-runtime injection."""
+
+    child_environment = os.environ.copy()
+    if catalog_verified:
+        for key in _CATALOG_RUNTIME_ENVIRONMENT_DENYLIST:
+            child_environment.pop(key, None)
+    elif (
+        sys.platform == "darwin"
+        and child_environment.get("QT_QPA_PLATFORM", "").strip().lower()
+        == "offscreen"
+    ):
+        # Qt's offscreen platform is useful for WebJam's widget tests, but
+        # Jamulus.app ships only the Cocoa plugin.
+        child_environment.pop("QT_QPA_PLATFORM", None)
+    if sys.platform == "darwin":
+        # Jamulus 3.12.2's bundled Qt can emit a late default-category warning
+        # after its logger has been destroyed. Preserve inherited diagnostics,
+        # then narrowly suppress that one terminal warning.
+        logging_rules = (
+            child_environment.get("QT_LOGGING_RULES", "").strip().rstrip(";")
+        )
+        child_environment["QT_LOGGING_RULES"] = (
+            f"{logging_rules};default.warning=false"
+            if logging_rules
+            else "default.warning=false"
+        )
+    return child_environment
 
 
 def _bundled_jamulus_candidate() -> Optional[str]:
@@ -266,6 +369,7 @@ class BridgeService:
         repository,
         settings,
         ui_callbacks: dict,
+        component_store_root: str | Path | None = None,
     ):
         self.jamulus_controller = jamulus_controller
         self.webex_controller = webex_controller
@@ -315,6 +419,50 @@ class BridgeService:
         # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
         # cannot race the old process's port release.
         self._jamulus_lifecycle_lock = threading.Lock()
+        component_root = (
+            Path(component_store_root)
+            if component_store_root is not None
+            else default_component_store_root()
+        )
+        self._runtime_component_lock_path = (
+            component_root / RUNTIME_ACTIVE_LOCK_NAME
+        )
+        self._runtime_component_lease_guard = threading.RLock()
+        self._runtime_component_lease: InterProcessComponentLock | None = None
+        self._runtime_component_lease_claims: set[str] = set()
+        # Managed component providers are supplied by the updater only while
+        # every Jamulus role is idle. Each provider performs its platform
+        # signature/content validation again whenever it is called; Bridge
+        # then independently probes the runtime version and checks the central
+        # compatibility registry before selecting it.
+        self._managed_jamulus_client_provider: (
+            Callable[[], str | Path | None] | None
+        ) = None
+        self._managed_jamulus_server_provider: (
+            Callable[[], str | Path | None] | None
+        ) = None
+        self._verified_jamulus_client_provider: (
+            Callable[[], ValidatedExternalComponent | None] | None
+        ) = None
+        self._verified_jamulus_server_provider: (
+            Callable[[], ValidatedExternalComponent | None] | None
+        ) = None
+        self._jamulus_compatibility_registry: JamulusCompatibilityRegistry = (
+            official_jamulus_compatibility_registry()
+        )
+        try:
+            self._jamulus_component_target: ComponentTarget | None = (
+                platform_component_target()
+            )
+        except JamulusPlatformError:
+            self._jamulus_component_target = None
+        self._last_resolved_client_component: ResolvedJamulusRuntime | None = None
+        self._last_resolved_server_component: ResolvedJamulusRuntime | None = None
+        # A session keeps the exact client it started with through a hung
+        # restart or reconnect. A newly activated component is considered only
+        # after Stop Audio clears this pin.
+        self._active_client_component: ResolvedJamulusRuntime | None = None
+        self._active_server_component: ResolvedJamulusRuntime | None = None
         # The dedicated profile belongs to Jamulus, not WebJam's CoreAudio
         # layer.  We only provide the supported filename-only --inifile launch
         # contract; Jamulus writes its own device/channel/buffer choices.
@@ -361,6 +509,64 @@ class BridgeService:
         # applied only through authenticated loopback RPC, never exposed in
         # process arguments. This is independent from saved settings.
         self._remote_guest_mode = False
+
+    def __del__(self) -> None:
+        """Best-effort descriptor cleanup for an entirely idle Bridge.
+
+        Normal application shutdown releases role claims only after confirmed
+        process cleanup.  A finalizer must never make component replacement
+        possible underneath an owned process or reconnect lifecycle, so every
+        ambiguous condition below fails closed and leaves the operating system
+        to close the descriptor when the WebJam process exits.
+        """
+
+        lease = getattr(self, "_runtime_component_lease", None)
+        if lease is None or self._runtime_component_lifecycle_is_active():
+            return
+        self._runtime_component_lease = None
+        try:
+            lease.__exit__(None, None, None)
+        except Exception:
+            pass
+
+    def _runtime_component_lifecycle_is_active(self) -> bool:
+        """Return ``True`` unless every lease-owning lifecycle is idle.
+
+        This helper is intentionally conservative because it is also the
+        safety boundary for finalizer cleanup.  Poll failures and partially
+        initialized state are considered active.
+        """
+
+        for attribute in (
+            "jamulus_process",
+            "practice_server_process",
+            "hosted_server_process",
+        ):
+            process = getattr(self, attribute, None)
+            if process is None:
+                continue
+            try:
+                if process.poll() is None:
+                    return True
+            except Exception:
+                return True
+        for attribute in (
+            "jamulus_launch_intended",
+            "jamulus_reconnect_inflight",
+            "_hosted_restart_inflight",
+            "_hosted_server_adopted",
+            "practice_mode",
+        ):
+            try:
+                if getattr(self, attribute, False) is True:
+                    return True
+            except Exception:
+                return True
+        if getattr(self, "_pending_jamulus_launch_cancel", None) is not None:
+            return True
+        if getattr(self, "_active_client_component", None) is not None:
+            return True
+        return getattr(self, "_active_server_component", None) is not None
 
     def _set_jamulus_state(self, state: "JamulusState | str") -> None:
         """Atomically update `jamulus_state` under `_reconnect_lock`.
@@ -520,38 +726,520 @@ class BridgeService:
                 except OSError:
                     pass
 
-    def find_jamulus(self):
-        """Find Jamulus installation.
+    def _acquire_runtime_component_lease(
+        self,
+        claim: str,
+    ) -> tuple[bool, str]:
+        """Claim the shared updater/runtime lock without blocking the UI."""
 
-        Frozen macOS builds prefer their known-good bundled client. Source
-        runs check user-configured candidates, then AppSettings defaults.
+        if claim not in {"client", "practice", "server"}:
+            raise ValueError("runtime component lease claim is invalid")
+        with self._runtime_component_lease_guard:
+            if claim in self._runtime_component_lease_claims:
+                return True, "already held"
+            lease = self._runtime_component_lease
+            if lease is None:
+                lease = InterProcessComponentLock(
+                    self._runtime_component_lock_path,
+                    timeout=0.0,
+                )
+                try:
+                    lease.__enter__()
+                except ComponentLockTimeout:
+                    return False, (
+                        "Another WebJam window or a Jamulus update is using "
+                        "the audio components. Finish it, then try again."
+                    )
+                except ComponentLockError:
+                    return False, (
+                        "WebJam could not reserve its audio components safely. "
+                        "Close other WebJam windows, then try again."
+                    )
+                self._runtime_component_lease = lease
+            self._runtime_component_lease_claims.add(claim)
+            return True, "reserved"
+
+    def _release_runtime_component_lease(self, claim: str) -> None:
+        """Release one role and unlock only after every owned role is clean."""
+
+        if claim not in {"client", "practice", "server"}:
+            raise ValueError("runtime component lease claim is invalid")
+        with self._runtime_component_lease_guard:
+            self._runtime_component_lease_claims.discard(claim)
+            if self._runtime_component_lease_claims:
+                return
+            lease = self._runtime_component_lease
+            self._runtime_component_lease = None
+            if lease is None:
+                return
+            try:
+                lease.__exit__(None, None, None)
+            except OSError:
+                LOGGER.warning(
+                    "The Jamulus runtime lease could not be released cleanly."
+                )
+
+    def _release_unestablished_client_lease(self) -> None:
+        process_alive = (
+            self.jamulus_process is not None
+            and self.jamulus_process.poll() is None
+        )
+        if not process_alive and self._active_client_component is None:
+            self._release_runtime_component_lease("client")
+
+    def _release_unestablished_server_lease(self) -> None:
+        if not self.hosted_server_owned() and self._active_server_component is None:
+            self._release_runtime_component_lease("server")
+
+    def _retire_jamulus_launch_request(
+        self,
+        launch_cancel: threading.Event,
+    ) -> None:
+        """Clear one completed preflight/worker without touching a newer one."""
+
+        with self._jamulus_launch_control_lock:
+            if self._pending_jamulus_launch_cancel is launch_cancel:
+                self._pending_jamulus_launch_cancel = None
+
+    @property
+    def runtime_component_lease_active(self) -> bool:
+        """Whether this process currently excludes component replacement."""
+
+        with self._runtime_component_lease_guard:
+            return self._runtime_component_lease is not None
+
+    def set_managed_jamulus_paths(
+        self,
+        client_provider: Callable[[], str | Path | None] | None,
+        server_provider: Callable[[], str | Path | None] | None,
+    ) -> None:
+        """Attach legacy role-specific managed-path providers.
+
+        This compatibility API retains the baked-registry version boundary.
+        New updater integrations should use
+        :meth:`set_managed_jamulus_components`, which carries the signed
+        catalog identity and all verification facts with the executable.
         """
-        from core.settings import AppSettings
-        checked: set[str] = set()
 
-        def _resolve(path: str) -> Optional[str]:
+        if client_provider is not None and not callable(client_provider):
+            raise TypeError("client_provider must be callable or None")
+        if server_provider is not None and not callable(server_provider):
+            raise TypeError("server_provider must be callable or None")
+        with self._jamulus_lifecycle_lock:
+            with self._hosted_lifecycle_lock:
+                if (
+                    self._runtime_component_lifecycle_is_active()
+                    or self.runtime_component_lease_active
+                ):
+                    raise RuntimeError(
+                        "managed Jamulus providers can change only while audio "
+                        "is stopped"
+                    )
+                self._managed_jamulus_client_provider = client_provider
+                self._managed_jamulus_server_provider = server_provider
+                self._last_resolved_client_component = None
+                self._last_resolved_server_component = None
+
+    def set_managed_jamulus_components(
+        self,
+        client_provider: (
+            Callable[[], ValidatedExternalComponent | None] | None
+        ),
+        server_provider: (
+            Callable[[], ValidatedExternalComponent | None] | None
+        ),
+    ) -> None:
+        """Attach signed-catalog-backed, fully verified component providers.
+
+        The provider is invoked on every resolution/revalidation. Bridge does
+        not require the entry to exist in its baked fallback registry; it
+        independently checks the supplied immutable identity's role, target,
+        WebJam range, capabilities, executable, and live-reported version.
+        """
+
+        if client_provider is not None and not callable(client_provider):
+            raise TypeError("client_provider must be callable or None")
+        if server_provider is not None and not callable(server_provider):
+            raise TypeError("server_provider must be callable or None")
+        with self._jamulus_lifecycle_lock:
+            with self._hosted_lifecycle_lock:
+                if (
+                    self._runtime_component_lifecycle_is_active()
+                    or self.runtime_component_lease_active
+                ):
+                    raise RuntimeError(
+                        "managed Jamulus providers can change only while audio "
+                        "is stopped"
+                    )
+                self._verified_jamulus_client_provider = client_provider
+                self._verified_jamulus_server_provider = server_provider
+                self._last_resolved_client_component = None
+                self._last_resolved_server_component = None
+
+    def _runtime_webjam_version(self) -> str:
+        try:
+            from webjam_qt import __version__
+
+            return str(__version__)
+        except Exception:  # noqa: BLE001 - compatibility must fail closed
+            return "unverified"
+
+    @staticmethod
+    def _required_component_capabilities(role: JamulusRole) -> frozenset[str]:
+        if role is JamulusRole.CLIENT:
+            return frozenset(
+                {
+                    "audio-client",
+                    "json-rpc-client",
+                    "native-gui",
+                    "webjam-route-profile",
+                }
+            )
+        if role is JamulusRole.SERVER:
+            return frozenset(
+                {"audio-server", "json-rpc-server", "recording"}
+            )
+        return frozenset()
+
+    def _approved_runtime_versions(self, role: JamulusRole) -> frozenset[str]:
+        target = self._jamulus_component_target
+        if target is None:
+            return frozenset()
+        try:
+            entries = self._jamulus_compatibility_registry.compatible(
+                role=role,
+                target=target,
+                webjam_version=self._runtime_webjam_version(),
+                required_capabilities=self._required_component_capabilities(role),
+            )
+        except Exception:  # noqa: BLE001 - registry failures reject the component
+            return frozenset()
+        return frozenset(
+            entry.version
+            for entry in entries
+            if entry.component_id == "jamulus" and entry.variant == "official"
+        )
+
+    def _approved_versions_for_resolved_component(
+        self,
+        component: ResolvedJamulusRuntime,
+    ) -> frozenset[str]:
+        """Include one reverified signed-catalog version in launch policy."""
+
+        versions = set(self._approved_runtime_versions(component.role))
+        if component.catalog_entry is not None:
+            versions.add(component.version)
+        return frozenset(versions)
+
+    def _runtime_component(
+        self,
+        path: str | Path,
+        *,
+        role: JamulusRole,
+        source: str,
+        managed: bool = False,
+    ) -> ResolvedJamulusRuntime | None:
+        """Validate one candidate against filesystem and registry truth."""
+
+        try:
             candidate = Path(path).expanduser()
-            if candidate.is_file():
-                return str(candidate)
+            if not candidate.is_file():
+                return None
+            if managed and candidate.is_symlink():
+                return None
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_file():
+                return None
+            if sys.platform != "win32" and not os.access(resolved, os.X_OK):
+                return None
+        except (OSError, RuntimeError, TypeError, ValueError):
             return None
+        version = default_jamulus_version_probe(str(resolved))
+        if version not in self._approved_runtime_versions(role):
+            return None
+        return ResolvedJamulusRuntime(
+            executable_path=resolved,
+            role=role,
+            version=version,
+            source=source,
+        )
+
+    def _embedded_runtime_component(
+        self,
+        path: str | Path,
+        *,
+        role: JamulusRole,
+    ) -> ResolvedJamulusRuntime | None:
+        """Apply registry policy after a bundled-path helper verified presence."""
+
+        if _EMBEDDED_JAMULUS_VERSION not in self._approved_runtime_versions(role):
+            return None
+        try:
+            candidate = Path(path).expanduser()
+        except (TypeError, ValueError):
+            return None
+        return ResolvedJamulusRuntime(
+            executable_path=candidate,
+            role=role,
+            version=_EMBEDDED_JAMULUS_VERSION,
+            source="bundled",
+        )
+
+    def _managed_runtime_component(
+        self,
+        *,
+        role: JamulusRole,
+    ) -> ResolvedJamulusRuntime | None:
+        verified_provider = (
+            self._verified_jamulus_client_provider
+            if role is JamulusRole.CLIENT
+            else self._verified_jamulus_server_provider
+        )
+        if verified_provider is not None:
+            return self._verified_managed_runtime_component(
+                role=role,
+                provider=verified_provider,
+            )
+        provider = (
+            self._managed_jamulus_client_provider
+            if role is JamulusRole.CLIENT
+            else self._managed_jamulus_server_provider
+        )
+        if provider is None:
+            return None
+        try:
+            path = provider()
+        except Exception:  # noqa: BLE001 - external store validation fails closed
+            return None
+        if path is None:
+            return None
+        return self._runtime_component(
+            path,
+            role=role,
+            source="managed",
+            managed=True,
+        )
+
+    def _verified_managed_runtime_component(
+        self,
+        *,
+        role: JamulusRole,
+        provider: Callable[[], ValidatedExternalComponent | None],
+    ) -> ResolvedJamulusRuntime | None:
+        """Validate a signed-catalog identity without consulting baked pins."""
+
+        try:
+            validated = provider()
+        except Exception:  # noqa: BLE001 - provider failures fall back safely
+            return None
+        if (
+            not isinstance(validated, ValidatedExternalComponent)
+            or not self._validated_component_trust_is_approved(validated)
+        ):
+            return None
+        entry = validated.entry
+        target = self._jamulus_component_target
+        if (
+            target is None
+            or entry.component_id != "jamulus"
+            or entry.role is not role
+            or entry.target is not target
+            or entry.variant != "official"
+            or entry.activation_mode
+            not in {
+                ActivationMode.MANAGED,
+                ActivationMode.PLATFORM_APPROVAL,
+            }
+            or not entry.capabilities.includes(
+                self._required_component_capabilities(role)
+            )
+        ):
+            return None
+        try:
+            if not entry.supports_webjam(self._runtime_webjam_version()):
+                return None
+            candidate = Path(validated.executable_path).expanduser()
+            before = candidate.lstat()
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+                return None
+            if os.name == "posix" and not before.st_mode & 0o111:
+                return None
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_file():
+                return None
+            after = resolved.stat()
+            before_identity = (
+                before.st_dev,
+                before.st_ino,
+                before.st_mode,
+                before.st_size,
+                before.st_mtime_ns,
+            )
+            after_identity = (
+                after.st_dev,
+                after.st_ino,
+                after.st_mode,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+            if before_identity != after_identity:
+                return None
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return None
+        return ResolvedJamulusRuntime(
+            executable_path=resolved,
+            role=role,
+            version=entry.version,
+            source="managed",
+            catalog_entry=entry,
+        )
+
+    @staticmethod
+    def _validated_component_trust_is_approved(
+        validated: ValidatedExternalComponent,
+    ) -> bool:
+        """Apply truthful publisher/package policy to exact runtime proof."""
+
+        if not (
+            validated.content_verified
+            and validated.version_verified
+            and validated.architecture_verified
+        ):
+            return False
+        if validated.publisher_verified:
+            return True
+        entry = validated.entry
+        if (
+            entry.source.provenance is not SourceProvenance.OFFICIAL_RELEASE
+            or entry.activation_mode is not ActivationMode.PLATFORM_APPROVAL
+        ):
+            return False
+        if entry.target is ComponentTarget.WINDOWS_X64:
+            return (
+                validated.trust_policy_verified
+                and entry.publisher
+                == "Unsigned upstream installer; exact WebJam-approved SHA-256"
+                and entry.artifact.kind is ArtifactKind.INSTALLER
+            )
+        if entry.target is ComponentTarget.LINUX_X64:
+            return (
+                validated.trust_policy_verified
+                and entry.publisher == "Debian package jamulus"
+                and entry.artifact.kind is ArtifactKind.PACKAGE
+            )
+        return False
+
+    def _revalidate_runtime_component(
+        self,
+        component: ResolvedJamulusRuntime,
+    ) -> ResolvedJamulusRuntime | None:
+        if component.source == "managed":
+            current = self._managed_runtime_component(role=component.role)
+        elif component.source == "bundled":
+            bundled = (
+                _bundled_jamulus_candidate()
+                if component.role is JamulusRole.CLIENT
+                else _bundled_jamulus_server_candidate()
+            )
+            if bundled is None:
+                return None
+            current = self._embedded_runtime_component(
+                bundled,
+                role=component.role,
+            )
+            if (
+                current is not None
+                and default_jamulus_version_probe(
+                    str(current.executable_path)
+                )
+                != current.version
+            ):
+                return None
+        else:
+            current = self._runtime_component(
+                component.executable_path,
+                role=component.role,
+                source=component.source,
+            )
+        if (
+            current is None
+            or current.executable_path != component.executable_path
+            or current.version != component.version
+            or current.catalog_entry != component.catalog_entry
+        ):
+            return None
+        return current
+
+    @property
+    def active_jamulus_component(self) -> dict[str, str] | None:
+        """Privacy-safe identity of the session-pinned client component."""
+
+        component = self._active_client_component
+        return None if component is None else component.public_details()
+
+    @property
+    def resolved_jamulus_server_component(self) -> dict[str, str] | None:
+        component = self._last_resolved_server_component
+        return None if component is None else component.public_details()
+
+    def find_jamulus(self) -> Optional[str]:
+        """Resolve client as managed, embedded, explicit, then system.
+
+        Every non-embedded candidate must report a role-compatible version
+        present in the central registry. A reconnect or forced recovery keeps
+        the component pinned by the original session and fails closed if that
+        exact selection no longer revalidates.
+        """
+
+        self._last_resolved_client_component = None
+        active = self._active_client_component
+        process_alive = (
+            self.jamulus_process is not None
+            and self.jamulus_process.poll() is None
+        )
+        if active is not None and (process_alive or self.jamulus_launch_intended):
+            current = self._revalidate_runtime_component(active)
+            if current is None:
+                return None
+            self._last_resolved_client_component = current
+            return str(current.executable_path)
+
+        managed = self._managed_runtime_component(role=JamulusRole.CLIENT)
+        if managed is not None:
+            self._last_resolved_client_component = managed
+            return str(managed.executable_path)
 
         bundled = _bundled_jamulus_candidate()
         if bundled:
-            return bundled
+            component = self._embedded_runtime_component(
+                bundled,
+                role=JamulusRole.CLIENT,
+            )
+            if component is not None:
+                self._last_resolved_client_component = component
+                return str(component.executable_path)
 
-        for path in self.settings.jamulus_candidates:
-            if path not in checked:
+        checked: set[str] = set()
+        from core.settings import AppSettings as DefaultAppSettings
+
+        groups = (
+            ("explicit", self.settings.jamulus_candidates),
+            ("system", DefaultAppSettings().jamulus_candidates),
+        )
+        for source, paths in groups:
+            for raw_path in paths:
+                path = str(raw_path)
+                if path in checked:
+                    continue
                 checked.add(path)
-                resolved = _resolve(path)
-                if resolved:
-                    return resolved
-        # Fallback: check any default candidate not already tried
-        for path in AppSettings().jamulus_candidates:
-            if path not in checked:
-                checked.add(path)
-                resolved = _resolve(path)
-                if resolved:
-                    return resolved
+                component = self._runtime_component(
+                    path,
+                    role=JamulusRole.CLIENT,
+                    source=source,
+                )
+                if component is not None:
+                    self._last_resolved_client_component = component
+                    return str(component.executable_path)
         return None
 
     def find_reference_track_jamulus(self) -> Optional[str]:
@@ -668,6 +1356,7 @@ class BridgeService:
         # fresh install can practice before the band server even exists.
         server_host = str(self.settings.jamulus_server or "").strip()
         if not server_host and not self.practice_mode:
+            self._retire_jamulus_launch_request(launch_cancel)
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             # Don't keep auto-reconnecting into a missing config.
@@ -691,14 +1380,50 @@ class BridgeService:
             )
             return False
 
+        lease_acquired, lease_detail = self._acquire_runtime_component_lease(
+            "client"
+        )
+        if not lease_acquired:
+            with self._jamulus_launch_control_lock:
+                if self._pending_jamulus_launch_cancel is launch_cancel:
+                    launch_cancel.set()
+                    self._pending_jamulus_launch_cancel = None
+            self.jamulus_launch_intended = False
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            self._set_jamulus_state(JamulusState.NOT_RUNNING)
+            self.schedule_ui_callback(self.refresh_readiness)
+            self.metrics_service.increment(
+                "metric_jamulus_reconnect_failed"
+                if reconnect
+                else "metric_jamulus_launch_failed"
+            )
+            if not reconnect:
+                self.show_actionable_error(
+                    "Band audio is busy",
+                    what_failed=lease_detail,
+                    likely_cause=(
+                        "Another WebJam window may be playing, or a verified "
+                        "Jamulus update may still be installing."
+                    ),
+                    next_action=(
+                        "Finish or close the other operation, then press Start "
+                        "Audio again."
+                    ),
+                    retry_callback=None,
+                )
+            return False
+
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
+            self._retire_jamulus_launch_request(launch_cancel)
             if reconnect:
                 self.jamulus_reconnect_inflight = False
                 self.metrics_service.increment("metric_jamulus_reconnect_failed")
                 self._set_jamulus_state(JamulusState.NOT_RUNNING)
                 self.schedule_ui_callback(self.refresh_readiness)
                 LOGGER.warning("Jamulus reconnect skipped: executable not found.")
+                self._release_unestablished_client_lease()
                 return False
 
             # Audit-found bug: previously this manual-launch failure path didn't
@@ -717,7 +1442,16 @@ class BridgeService:
                 next_action="Reinstall the latest WebJam build, then try again.",
                 retry_callback=None,
             )
+            self._release_unestablished_client_lease()
             return False
+        resolved_client_component = self._last_resolved_client_component
+        if (
+            resolved_client_component is not None
+            and str(resolved_client_component.executable_path) != jamulus_path
+        ):
+            # A custom/test resolver may replace find_jamulus(). Never attach
+            # stale registry identity to a different executable path.
+            resolved_client_component = None
 
         if (
             self.jamulus_process is not None
@@ -757,6 +1491,7 @@ class BridgeService:
                     self.schedule_ui_callback(
                         lambda: self.set_status_banner("Jamulus is already running.")
                     )
+                self._retire_jamulus_launch_request(launch_cancel)
                 return True
 
         # Detect port conflict before launching Jamulus.  If the JSON-RPC port
@@ -780,6 +1515,7 @@ class BridgeService:
                 # stale port-conflict error after the user has left.
                 if launch_cancel.is_set() or self.shutdown_requested():
                     self._pending_jamulus_launch_cancel = None
+                    self._release_unestablished_client_lease()
                     return False
                 launch_cancel.set()
                 self._pending_jamulus_launch_cancel = None
@@ -810,6 +1546,7 @@ class BridgeService:
                 LOGGER.warning(
                     "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
                 )
+            self._release_unestablished_client_lease()
             return False
 
         # A previous clean End/Leave intentionally publishes ``Stopped``.
@@ -824,11 +1561,11 @@ class BridgeService:
         # concurrent Stop or superseding launch wins without this older
         # request overwriting its state.
         with self._jamulus_launch_control_lock:
-            if (
-                self._pending_jamulus_launch_cancel is not launch_cancel
-                or launch_cancel.is_set()
-                or self.shutdown_requested()
-            ):
+            if self._pending_jamulus_launch_cancel is not launch_cancel:
+                return False
+            if launch_cancel.is_set() or self.shutdown_requested():
+                self._pending_jamulus_launch_cancel = None
+                self._release_unestablished_client_lease()
                 return False
             self._set_jamulus_state(JamulusState.STARTING)
 
@@ -858,6 +1595,8 @@ class BridgeService:
                         self._set_live_audio_route_owned(False)
                         with self._reconnect_lock:
                             self.jamulus_reconnect_inflight = False
+                        if self.shutdown_requested():
+                            self._release_unestablished_client_lease()
                         return True
 
                     # A second click/deep-link can queue another launch while
@@ -897,6 +1636,19 @@ class BridgeService:
                     if cancelled():
                         return
 
+                    verified_client_component = resolved_client_component
+                    if verified_client_component is not None:
+                        current_component = self._revalidate_runtime_component(
+                            verified_client_component
+                        )
+                        if current_component is None:
+                            raise JamulusNativeProfileError(
+                                "WebJam couldn't reverify the approved Jamulus "
+                                "music component. Stop audio, finish any pending "
+                                "update, then try again."
+                            )
+                        verified_client_component = current_component
+
                     native_profile = None
                     if self._native_profile_manager is not None:
                         if reconnect:
@@ -906,12 +1658,50 @@ class BridgeService:
                                     "WebJam couldn't restore its Jamulus profile. "
                                     "Start the jam again."
                                 )
+                            if (
+                                verified_client_component is not None
+                                and native_profile.jamulus_version
+                                != verified_client_component.version
+                            ):
+                                raise JamulusNativeProfileError(
+                                    "A Jamulus update became active during the "
+                                    "session. Stop audio, then start the jam "
+                                    "again to use it safely."
+                                )
                             self._native_profile_manager.validate_active(native_profile)
                         else:
-                            native_profile = self._native_profile_manager.prepare(
-                                self.settings,
-                                jamulus_path,
-                            )
+                            if verified_client_component is None:
+                                native_profile = self._native_profile_manager.prepare(
+                                    self.settings,
+                                    jamulus_path,
+                                )
+                            elif (
+                                verified_client_component.catalog_entry
+                                is not None
+                            ):
+                                # The platform provider just revalidated the
+                                # exact signed-catalog runtime tree. Do not
+                                # execute it a second time with ``--version``;
+                                # on unsigned platforms that would load DLLs or
+                                # plugins before the hardened launch boundary.
+                                native_profile = self._native_profile_manager.plan(
+                                    jamulus_version=(
+                                        verified_client_component.version
+                                    )
+                                )
+                            else:
+                                native_profile = self._native_profile_manager.prepare(
+                                    self.settings,
+                                    jamulus_path,
+                                    approved_versions=(
+                                        self._approved_versions_for_resolved_component(
+                                            verified_client_component
+                                        )
+                                    ),
+                                    expected_version=(
+                                        verified_client_component.version
+                                    ),
+                                )
                             self._active_native_profile = native_profile
                     # A live Jamulus client owns the hardware route on every
                     # supported platform. WebJam's optional PortAudio meter
@@ -946,6 +1736,7 @@ class BridgeService:
                                 )
                             )
                             self.schedule_ui_callback(self.refresh_readiness)
+                            self._release_unestablished_client_lease()
                             return
 
                     # Cancellation may have arrived while profile/server
@@ -977,17 +1768,18 @@ class BridgeService:
                     remote_identity = bool(
                         self._remote_host_mode or self._remote_guest_mode
                     )
-                    identity_args = [] if remote_identity else [
-                        "--clientname",
-                        str(
-                            getattr(
-                                self.settings,
-                                "musician_name",
-                                "WebJam Musician",
-                            )
-                            or "WebJam Musician"
-                        ),
-                    ]
+                    identity_args = []
+                    if not remote_identity:
+                        identity_args = [
+                            "--clientname",
+                            validate_jamulus_name(
+                                getattr(
+                                    self.settings,
+                                    "musician_name",
+                                    "WebJam Musician",
+                                )
+                            ).value,
+                        ]
                     cmd = [
                         jamulus_path,
                         # Show Jamulus normally: it is the authoritative native
@@ -1024,37 +1816,22 @@ class BridgeService:
                         "stdout": stdout_dest,
                         "stderr": subprocess.STDOUT if log_file else subprocess.DEVNULL,
                     }
-                    # Qt's offscreen platform is useful for WebJam's automated
-                    # widget tests, but the official macOS Jamulus.app ships
-                    # only the Cocoa platform plugin. Never leak that
-                    # test-only parent setting into the native musician app.
-                    # Normal interactive launches leave the environment alone.
-                    child_environment = os.environ.copy()
-                    if (
-                        sys.platform == "darwin"
-                        and child_environment.get("QT_QPA_PLATFORM", "").strip().lower()
-                        == "offscreen"
-                    ):
-                        child_environment.pop("QT_QPA_PLATFORM", None)
-                    if sys.platform == "darwin":
-                        # Jamulus 3.12.2's bundled Qt 6.10.2 can emit a final
-                        # default-category qWarning after AppleUnifiedLogger's
-                        # static state has already been destroyed, aborting
-                        # during an otherwise clean shutdown.  Appending the
-                        # narrow last-match rule prevents that late warning
-                        # from reaching the dead handler while preserving
-                        # inherited category rules and stronger diagnostics.
-                        logging_rules = (
-                            child_environment.get("QT_LOGGING_RULES", "")
-                            .strip()
-                            .rstrip(";")
+                    child_environment = _jamulus_child_environment(
+                        catalog_verified=(
+                            verified_client_component is not None
+                            and verified_client_component.catalog_entry
+                            is not None
                         )
-                        child_environment["QT_LOGGING_RULES"] = (
-                            f"{logging_rules};default.warning=false"
-                            if logging_rules
-                            else "default.warning=false"
-                        )
+                    )
                     popen_kwargs["env"] = child_environment
+                    if (
+                        verified_client_component is not None
+                        and verified_client_component.catalog_entry is not None
+                        and native_profile is None
+                    ):
+                        popen_kwargs["cwd"] = str(
+                            verified_client_component.executable_path.parent
+                        )
                     if native_profile is not None:
                         popen_kwargs["cwd"] = str(native_profile.working_directory)
                     if sys.platform == "win32":
@@ -1093,6 +1870,8 @@ class BridgeService:
                         self.jamulus_process = proc
                         self.jamulus_state = JamulusState.RUNNING.value
                         self.jamulus_reconnect_inflight = False
+                    if verified_client_component is not None:
+                        self._active_client_component = verified_client_component
                     self.jamulus_reconnect_attempts = 0
                     self.jamulus_next_reconnect_at = 0.0
 
@@ -1157,6 +1936,7 @@ class BridgeService:
                             ),
                         )
                     )
+                    self._release_unestablished_client_lease()
                 except Exception as exc:
                     was_practice = self.practice_mode
                     LOGGER.exception("Failed to launch Jamulus: %s", exc)
@@ -1175,6 +1955,7 @@ class BridgeService:
                     if reconnect:
                         self.metrics_service.increment("metric_jamulus_reconnect_failed")
                         self.schedule_ui_callback(self.refresh_readiness)
+                        self._release_unestablished_client_lease()
                         return
 
                     self.metrics_service.increment("metric_jamulus_launch_failed")
@@ -1205,6 +1986,9 @@ class BridgeService:
                             ),
                         )
                     )
+                    self._release_unestablished_client_lease()
+                finally:
+                    self._retire_jamulus_launch_request(launch_cancel)
 
         threading.Thread(target=_do_launch, daemon=True).start()
         return True
@@ -1252,6 +2036,26 @@ class BridgeService:
             )
             return False
 
+        lease_acquired, lease_detail = self._acquire_runtime_component_lease(
+            "practice"
+        )
+        if not lease_acquired:
+            self.metrics_service.increment("metric_practice_launch_failed")
+            self.show_actionable_error(
+                "Practice audio is busy",
+                what_failed=lease_detail,
+                likely_cause=(
+                    "Another WebJam window may be playing, or a verified "
+                    "Jamulus update may still be installing."
+                ),
+                next_action=(
+                    "Finish or close the other operation, then start Practice "
+                    "Solo again."
+                ),
+                retry_callback=None,
+            )
+            return False
+
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
             self.metrics_service.increment("metric_practice_launch_failed")
@@ -1266,6 +2070,7 @@ class BridgeService:
                 ),
                 retry_callback=None,
             )
+            self._release_runtime_component_lease("practice")
             return False
 
         # Spawn the private local server (headless).  Its output goes to a
@@ -1281,11 +2086,22 @@ class BridgeService:
             self._practice_log_file = practice_log
         except OSError:
             pass
+        practice_component = self._last_resolved_client_component
+        practice_catalog_verified = (
+            practice_component is not None
+            and practice_component.catalog_entry is not None
+            and str(practice_component.executable_path) == jamulus_path
+        )
         popen_kwargs: dict = {
             "stdout": stdout_dest,
             "stderr": subprocess.STDOUT if stdout_dest is not subprocess.DEVNULL
                       else subprocess.DEVNULL,
+            "env": _jamulus_child_environment(
+                catalog_verified=practice_catalog_verified
+            ),
         }
+        if practice_catalog_verified and practice_component is not None:
+            popen_kwargs["cwd"] = str(practice_component.executable_path.parent)
         import sys
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1301,6 +2117,7 @@ class BridgeService:
                 next_action="Check the Jamulus path in Settings, then retry.",
                 retry_callback=None,
             )
+            self._release_runtime_component_lease("practice")
             return False
 
         self.practice_mode = True
@@ -1341,6 +2158,7 @@ class BridgeService:
         if stopped:
             self.practice_server_process = None
             self._close_practice_log_file()
+            self._release_runtime_component_lease("practice")
         return stopped
 
     def _end_practice_if_server_died(self) -> bool:
@@ -1374,16 +2192,44 @@ class BridgeService:
     JAMULUS_SERVER_BINARY = (
         "/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
-    HOSTED_SERVER_VERSION = "3.12.2"
 
     def find_jamulus_server_with_source(self) -> tuple[Optional[str], str]:
-        """Locate the installed or bundled dedicated server and its source."""
+        """Resolve server as managed, embedded, then installed system app."""
+
+        self._last_resolved_server_component = None
+        active = self._active_server_component
+        if active is not None and (
+            self.hosted_server_owned() or self.jamulus_launch_intended
+        ):
+            current = self._revalidate_runtime_component(active)
+            if current is None:
+                return None, "pinned-invalid"
+            self._last_resolved_server_component = current
+            return str(current.executable_path), current.source
+
+        managed = self._managed_runtime_component(role=JamulusRole.SERVER)
+        if managed is not None:
+            self._last_resolved_server_component = managed
+            return str(managed.executable_path), "managed"
+
         bundled = _bundled_jamulus_server_candidate()
         if bundled:
-            return bundled, "bundled"
+            component = self._embedded_runtime_component(
+                bundled,
+                role=JamulusRole.SERVER,
+            )
+            if component is not None:
+                self._last_resolved_server_component = component
+                return str(component.executable_path), "bundled"
         candidate = Path(self.JAMULUS_SERVER_BINARY)
-        if candidate.is_file():
-            return str(candidate), "installed"
+        component = self._runtime_component(
+            candidate,
+            role=JamulusRole.SERVER,
+            source="installed",
+        )
+        if component is not None:
+            self._last_resolved_server_component = component
+            return str(component.executable_path), "installed"
         return None, "missing"
 
     def find_jamulus_server(self) -> Optional[str]:
@@ -1501,8 +2347,12 @@ class BridgeService:
             ports_released: bool | None = None
             lifecycle_ok = False
             lifecycle_detail = ""
+            verified_server_version = ""
+            approved_versions = sorted(
+                self._approved_runtime_versions(JamulusRole.SERVER)
+            )
             technical: list[str] = [
-                f"required_version={self.HOSTED_SERVER_VERSION}",
+                f"approved_versions={','.join(approved_versions) or 'none'}",
                 f"udp_port={int(self.settings.jamulus_port)}",
                 f"rpc_port={int(self.settings.server_rpc_port)}",
             ]
@@ -1513,6 +2363,12 @@ class BridgeService:
                 adopted_by_check = (
                     not was_adopted and self.hosted_server_adopted()
                 )
+                component = (
+                    self._active_server_component
+                    or self._last_resolved_server_component
+                )
+                if component is not None:
+                    verified_server_version = component.version
                 technical.append(f"production_launcher={detail}")
                 if not ok:
                     lifecycle_detail = detail
@@ -1572,6 +2428,8 @@ class BridgeService:
                 technical.extend(
                     (
                         "server_source=production JamulusServer.app",
+                        "server_version="
+                        f"{verified_server_version or 'unverified'}",
                         f"version_verified={lifecycle_ok}",
                         f"owned_stop_confirmed={owned_stop_confirmed}",
                         f"ports_released={ports_released}",
@@ -1590,11 +2448,14 @@ class BridgeService:
                         "released. Close WebJam before retrying."
                     )
                 elif lifecycle_ok:
+                    version_label = (
+                        verified_server_version or "an approved version"
+                    )
                     lifecycle_detail = (
-                        "WebJam started JamulusServer 3.12.2 on the intended "
-                        "audio and control ports, authenticated its recorder, "
-                        "then stopped it cleanly and confirmed both ports were "
-                        "released."
+                        f"WebJam started JamulusServer {version_label} on the "
+                        "intended audio and control ports, authenticated its "
+                        "recorder, then stopped it cleanly and confirmed both "
+                        "ports were released."
                     )
 
             external = was_adopted or adopted_by_check
@@ -1633,10 +2494,10 @@ class BridgeService:
     ) -> tuple[bool, str]:
         """Start (or adopt) the band server on this Mac. Returns (ok, detail).
 
-        Mirrors server/start_macos_pilot.sh: exact 3.12.2 version gate,
+        Mirrors server/start_macos_pilot.sh: central-registry version gate,
         port preflight, 0600 secret, recordings in the server app's sandbox
-        container, and a caffeinate power assertion for the server's
-        lifetime so the host Mac cannot sleep mid-session.
+        container, and a caffeinate power assertion for the server's lifetime
+        so the host Mac cannot sleep mid-session.
         """
         def cancelled() -> bool:
             if cancel_requested is None:
@@ -1703,29 +2564,65 @@ class BridgeService:
                 )
                 return True, "authenticated external server adopted"
 
+            lease_acquired, lease_detail = (
+                self._acquire_runtime_component_lease("server")
+            )
+            if not lease_acquired:
+                return False, lease_detail
+
             binary, server_source = self.find_jamulus_server_with_source()
             if not binary:
+                approved = sorted(
+                    self._approved_runtime_versions(JamulusRole.SERVER)
+                )
+                version_label = " or ".join(approved) or "an approved version"
+                self._release_unestablished_server_lease()
                 return False, (
-                    "JamulusServer.app 3.12.2 is not available. Downloadable "
-                    "macOS builds include it; source builds can use the "
-                    "official app in /Applications. Reinstall WebJam or "
-                    "install the server, then press Start Audio again."
+                    f"JamulusServer.app {version_label} is not available. "
+                    "Downloadable macOS builds include a known-good fallback; "
+                    "source builds can use the official app in /Applications. "
+                    "Reinstall WebJam or install the server, then press Start "
+                    "Audio again."
                 )
-            try:
-                probe = subprocess.run(
-                    [binary, "--version"], capture_output=True, text=True,
-                    timeout=10,
+            server_component = self._last_resolved_server_component
+            if (
+                server_component is not None
+                and str(server_component.executable_path) != binary
+            ):
+                server_component = None
+            if server_component is not None:
+                server_component = self._revalidate_runtime_component(
+                    server_component
                 )
-                version_text = (probe.stdout or "") + (probe.stderr or "")
-            except Exception as exc:  # noqa: BLE001
-                return False, f"Could not read the server version: {exc}"
-            if f"Version {self.HOSTED_SERVER_VERSION}" not in version_text:
+                version = (
+                    "unverified"
+                    if server_component is None
+                    else server_component.version
+                )
+            else:
+                version = default_jamulus_version_probe(binary)
+            approved = (
+                self._approved_versions_for_resolved_component(server_component)
+                if server_component is not None
+                else self._approved_runtime_versions(JamulusRole.SERVER)
+            )
+            if version not in approved:
+                version_label = " or ".join(sorted(approved)) or "an approved version"
+                self._release_unestablished_server_lease()
                 return False, (
-                    "The pilot requires JamulusServer.app "
-                    f"{self.HOSTED_SERVER_VERSION} exactly; the installed "
-                    "copy reports a different version."
+                    "WebJam requires an approved JamulusServer.app "
+                    f"({version_label}); this copy could not be verified."
                 )
+            if server_component is None:
+                server_component = ResolvedJamulusRuntime(
+                    executable_path=Path(binary),
+                    role=JamulusRole.SERVER,
+                    version=version,
+                    source=server_source,
+                )
+            self._last_resolved_server_component = server_component
             if not self._port_free(udp_port, udp=True):
+                self._release_unestablished_server_lease()
                 return False, (
                     f"UDP port {udp_port} is already in use by another "
                     "application. Quit it, then press Start Audio again."
@@ -1757,6 +2654,7 @@ class BridgeService:
                 # to this account even when it already existed.
                 secret_path.chmod(0o600)
             except OSError as exc:
+                self._release_unestablished_server_lease()
                 return False, (
                     f"Could not prepare the server secret/recordings: {exc}"
                 )
@@ -1788,18 +2686,35 @@ class BridgeService:
             except OSError:
                 pass
             if cancelled():
+                self._release_unestablished_server_lease()
                 return False, "Startup was cancelled."
             try:
+                child_environment = _jamulus_child_environment(
+                    catalog_verified=(
+                        server_component.catalog_entry is not None
+                    )
+                )
+                server_popen_kwargs: dict[str, object] = {
+                    "stdout": stdout_dest,
+                    "stderr": (
+                        subprocess.STDOUT
+                        if stdout_dest is not subprocess.DEVNULL
+                        else subprocess.DEVNULL
+                    ),
+                    "env": child_environment,
+                }
+                if server_component.catalog_entry is not None:
+                    server_popen_kwargs["cwd"] = str(
+                        server_component.executable_path.parent
+                    )
                 self.hosted_server_process = subprocess.Popen(
                     cmd,
-                    stdout=stdout_dest,
-                    stderr=subprocess.STDOUT
-                    if stdout_dest is not subprocess.DEVNULL
-                    else subprocess.DEVNULL,
+                    **server_popen_kwargs,
                 )
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception("Hosted band server failed to start")
                 self._close_hosted_log_file()
+                self._release_unestablished_server_lease()
                 return False, f"The band server could not start: {exc}"
 
             self._hosted_server_adopted = False
@@ -1827,6 +2742,10 @@ class BridgeService:
                     if cancelled():
                         self.stop_hosted_server()
                         return False, "Startup was cancelled."
+                    if self._last_resolved_server_component is not None:
+                        self._active_server_component = (
+                            self._last_resolved_server_component
+                        )
                     LOGGER.info(
                         "Hosted band server (%s) ready on UDP %s / RPC %s",
                         server_source, udp_port, rpc_port,
@@ -1884,6 +2803,10 @@ class BridgeService:
                     stopped = False
             if stopped:
                 self.hosted_server_process = None
+                if not self._hosted_restart_inflight:
+                    self._active_server_component = None
+                    self._last_resolved_server_component = None
+                    self._release_runtime_component_lease("server")
             caff = self._hosted_caffeinate_process
             if stopped:
                 self._hosted_caffeinate_process = None
@@ -1947,7 +2870,12 @@ class BridgeService:
                         )
                     )
             finally:
-                self._hosted_restart_inflight = False
+                with self._hosted_lifecycle_lock:
+                    self._hosted_restart_inflight = False
+                    if not self.hosted_server_alive():
+                        self._active_server_component = None
+                        self._last_resolved_server_component = None
+                        self._release_runtime_component_lease("server")
 
         threading.Thread(
             target=_restart, daemon=True, name="hosted-server-restart",
@@ -2010,7 +2938,10 @@ class BridgeService:
             stopped = monitoring_stopped and process_stopped and practice_stopped
             if stopped:
                 self._active_native_profile = None
+                self._active_client_component = None
+                self._last_resolved_client_component = None
                 self._set_live_audio_route_owned(False)
+                self._release_runtime_component_lease("client")
             with self._reconnect_lock:
                 self.jamulus_state = (
                     JamulusState.STOPPED.value if stopped else "Stop failed"

@@ -11,6 +11,8 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests.support.component_store import isolated_component_store_root
+
 
 def _make_settings(
     jamulus_server: str = "jam.example.com",
@@ -25,6 +27,8 @@ def _make_settings(
     s.jamulus_rpc_port = jamulus_rpc_port
     s.jamulus_candidates = list(jamulus_candidates)
     s.webex_url = webex_url
+    s.musician_name = "Test Musician"
+    s.host_server_enabled = False
     return s
 
 
@@ -54,6 +58,7 @@ def _make_bridge(
         repository=repository,
         settings=settings,
         ui_callbacks=ui_callbacks,
+        component_store_root=isolated_component_store_root(),
     )
     for attr, val in overrides.items():
         setattr(bridge, attr, val)
@@ -243,14 +248,13 @@ class TestReconnectManagerEdge(unittest.TestCase):
         popen_mock.return_value = fake_proc
         bridge = _make_bridge()
         bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
+        bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_attempts = 1
         bridge.jamulus_next_reconnect_at = 5.0
         bridge.jamulus_reconnect_inflight = True
 
-        # find_jamulus() resolves candidates via Path.is_file(), not exists().
-        with patch("pathlib.Path.is_file", return_value=True):
-            bridge.launch_jamulus(manual=True, reconnect=False)
+        bridge.launch_jamulus(manual=True, reconnect=False)
 
         self.assertEqual(bridge.jamulus_state, "Running")
         bridge.metrics_service.increment.assert_any_call("metric_jamulus_launch_success")
@@ -273,6 +277,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge = _make_bridge()
         bridge.shutdown_requested = lambda: shutdown_flag["value"]
         bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
+        bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_inflight = True
 
@@ -282,9 +287,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         popen_mock.side_effect = _popen_and_flag
 
-        # find_jamulus() resolves candidates via Path.is_file(), not exists().
-        with patch("pathlib.Path.is_file", return_value=True):
-            bridge.launch_jamulus(manual=True, reconnect=False)
+        bridge.launch_jamulus(manual=True, reconnect=False)
 
         fake_proc.terminate.assert_called_once()
         self.assertIsNone(bridge.jamulus_process)

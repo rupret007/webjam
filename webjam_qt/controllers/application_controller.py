@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QObject, Qt, QTimer
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
 from core.network_invite import BandInvite
@@ -362,6 +362,19 @@ class ApplicationController(QObject):
         self._reference_track_dialog = None
         self._reference_track_operation_lock = threading.RLock()
         self._reference_track_session_generation = 0
+        # Desktop integration checks begin only after the main window is
+        # visible (see start_desktop_integrations). Keeping both services lazy
+        # avoids network/subprocess work in constructor-only tests and lets the
+        # updater remain an optional recovery surface when its catalog is
+        # offline.
+        self._desktop_integrations_started = False
+        self._jamulus_update_service = None
+        self._jamulus_update_dialog = None
+        self._managed_jamulus_providers_registered = False
+        self._webex_app_info = None
+        self._webex_detection_generation = 0
+        self._webex_detection_thread: threading.Thread | None = None
+        self._register_managed_jamulus_providers()
         from services.pocket_stage_gateway import PocketStageGateway
 
         self.pocket_stage_gateway = PocketStageGateway(
@@ -638,6 +651,29 @@ class ApplicationController(QObject):
         # Everything after this line can be irreversible, so a later failure
         # leaves the monotonic cleanup latch set until a successful retry.
         self._shutdown_cleanup_pending = True
+        # Stop updater network/download/install work before touching any
+        # Jamulus owner. A component worker may be hashing large bytes or
+        # waiting for platform approval; cancellation is bounded and failure
+        # keeps the window open so no install can race runtime teardown.
+        jamulus_update_service = getattr(
+            self,
+            "_jamulus_update_service",
+            None,
+        )
+        if jamulus_update_service is not None:
+            try:
+                updater_stopped = bool(
+                    jamulus_update_service.close(timeout=3.0)
+                )
+            except Exception:  # noqa: BLE001 - updater cleanup fails closed
+                LOGGER.exception("Jamulus updater shutdown failed")
+                updater_stopped = False
+            if not updater_stopped:
+                return self._show_shutdown_cleanup_retry(
+                    "Jamulus update is still stopping",
+                    "WebJam could not yet confirm that its component update "
+                    "worker stopped.",
+                )
         if not self._quiesce_startup_for_shutdown():
             return self._show_shutdown_cleanup_retry(
                 "Session startup is still stopping",
@@ -853,6 +889,13 @@ class ApplicationController(QObject):
         if reference_track_timer is not None:
             reference_track_timer.stop()
         self._connection_timer.stop()
+        jamulus_update_dialog = getattr(self, "_jamulus_update_dialog", None)
+        if jamulus_update_dialog is not None:
+            jamulus_update_dialog.close()
+        # A late native-app detection result must not update a closing card.
+        self._webex_detection_generation = (
+            int(getattr(self, "_webex_detection_generation", 0)) + 1
+        )
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
@@ -1357,6 +1400,494 @@ class ApplicationController(QObject):
             )
         return started
 
+    # ------------------------------------------------------------------
+    # Desktop-managed third-party integrations
+    # ------------------------------------------------------------------
+    def start_desktop_integrations(
+        self,
+        *,
+        enable_update_check: bool = True,
+    ) -> None:
+        """Begin optional checks after the main window has become visible.
+
+        Construction remains side-effect free for updater/network purposes.
+        Native Webex detection and the signed Jamulus catalog check both run
+        away from the Qt thread, and this method is idempotent because native
+        application bootstraps may deliver more than one show/activation event.
+        """
+
+        if self._desktop_integrations_started or self._shutdown:
+            return
+        self._desktop_integrations_started = True
+        # Resolve any previously verified managed Jamulus receipt before the
+        # musician can start the first session. Construction is local-only;
+        # the network check remains delayed until the shell is usable.
+        try:
+            self._ensure_jamulus_update_service()
+        except Exception as exc:  # noqa: BLE001 - embedded fallback stays usable
+            LOGGER.warning(
+                "Jamulus managed runtime could not initialize; "
+                "exception_type=%s",
+                type(exc).__name__,
+            )
+        QTimer.singleShot(0, self._start_webex_app_detection)
+        if enable_update_check:
+            # Let the musician see and use the shell before an optional
+            # catalog/download worker begins. The smoke lifecycle deliberately
+            # disables this check so an offline CI runner cannot hold Quit.
+            QTimer.singleShot(1_500, self._start_automatic_jamulus_update_check)
+
+    def _ensure_jamulus_update_service(self):
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is not None:
+            return service
+        from services.jamulus_component_update import (
+            JamulusComponentUpdateService,
+        )
+        from webjam_qt import __version__
+
+        service = JamulusComponentUpdateService(
+            webjam_version=__version__,
+            busy_check=self._jamulus_component_busy_status,
+            on_snapshot=self._on_jamulus_update_snapshot,
+        )
+        self._jamulus_update_service = service
+        self._register_managed_jamulus_providers()
+        return service
+
+    def _register_managed_jamulus_providers(self) -> None:
+        if bool(
+            getattr(self, "_managed_jamulus_providers_registered", False)
+        ):
+            return
+        bridge = getattr(self, "bridge", None)
+        set_managed_components = getattr(
+            bridge,
+            "set_managed_jamulus_components",
+            None,
+        )
+        if callable(set_managed_components):
+            set_managed_components(
+                self._managed_jamulus_client_component,
+                self._managed_jamulus_server_component,
+            )
+            self._managed_jamulus_providers_registered = True
+            return
+        set_managed_paths = getattr(
+            bridge,
+            "set_managed_jamulus_paths",
+            None,
+        )
+        if callable(set_managed_paths):
+            set_managed_paths(
+                self._managed_jamulus_client_path,
+                self._managed_jamulus_server_path,
+            )
+            self._managed_jamulus_providers_registered = True
+
+    def _managed_jamulus_client_component(self):
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is None:
+            return None
+        return service.managed_client_component()
+
+    def _managed_jamulus_server_component(self):
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is None:
+            return None
+        return service.managed_server_component()
+
+    def _managed_jamulus_client_path(self) -> Path | None:
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is None:
+            return None
+        return service.managed_client_path()
+
+    def _managed_jamulus_server_path(self) -> Path | None:
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is None:
+            return None
+        return service.managed_server_path()
+
+    def _start_automatic_jamulus_update_check(self) -> None:
+        if self._shutdown or self._shutdown_cleanup_pending:
+            return
+        try:
+            self._ensure_jamulus_update_service().start_automatic_check()
+        except Exception as exc:  # noqa: BLE001 - optional check stays non-fatal
+            LOGGER.warning(
+                "Jamulus automatic update check could not start; "
+                "exception_type=%s",
+                type(exc).__name__,
+            )
+
+    def _jamulus_component_client_active(self) -> bool:
+        audio = getattr(self, "audio", None)
+        if bool(getattr(audio, "connected", False)):
+            return True
+        bridge = getattr(self, "bridge", None)
+        if str(getattr(bridge, "jamulus_state", "")) in {
+            "Running",
+            "Already running",
+        }:
+            return True
+        process = getattr(bridge, "jamulus_process", None)
+        if process is None:
+            return False
+        poll = getattr(process, "poll", None)
+        if not callable(poll):
+            # An unknown process-shaped owner cannot prove that updates are
+            # safe. Treat it as active instead of guessing.
+            return True
+        return poll() is None
+
+    def _jamulus_component_busy_status(self):
+        """Return the most actionable reason a component change must wait."""
+
+        from core.component_store import (
+            ComponentBusyReason,
+            ComponentBusyStatus,
+        )
+
+        recording = getattr(self, "recording", None)
+        if bool(
+            getattr(recording, "is_recording_active", False)
+            or getattr(recording, "take_in_progress", False)
+        ):
+            return ComponentBusyStatus(ComponentBusyReason.RECORDING_ACTIVE)
+
+        reference_track = getattr(self, "_reference_track", None)
+        if reference_track is not None:
+            snapshot = reference_track.snapshot
+            if bool(getattr(snapshot, "active", False)):
+                return ComponentBusyStatus(
+                    ComponentBusyReason.REFERENCE_TRACK_ACTIVE
+                )
+
+        bridge = getattr(self, "bridge", None)
+        if bool(getattr(bridge, "practice_mode", False)):
+            return ComponentBusyStatus(ComponentBusyReason.PRACTICE_ACTIVE)
+        if bool(getattr(bridge, "jamulus_reconnect_inflight", False)):
+            return ComponentBusyStatus(ComponentBusyReason.RECONNECT_PENDING)
+
+        client_active = self._jamulus_component_client_active()
+        if bool(
+            getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_invite_switch_in_flight", False)
+            or getattr(self, "_startup_attempt", None) is not None
+            or (
+                bool(getattr(bridge, "jamulus_launch_intended", False))
+                and not client_active
+            )
+        ):
+            return ComponentBusyStatus(ComponentBusyReason.LAUNCH_IN_PROGRESS)
+        if client_active:
+            return ComponentBusyStatus(ComponentBusyReason.CLIENT_ACTIVE)
+
+        hosted_server_alive = getattr(bridge, "hosted_server_alive", None)
+        if callable(hosted_server_alive) and bool(hosted_server_alive()):
+            return ComponentBusyStatus(ComponentBusyReason.SERVER_ACTIVE)
+        return None
+
+    def _on_jamulus_update_snapshot(self, snapshot) -> None:
+        """Marshal the updater's worker callback onto the Qt thread."""
+
+        self._ui_invoker.invoke(
+            lambda value=snapshot: self._render_jamulus_update_snapshot(value)
+        )
+
+    def _render_jamulus_update_snapshot(self, snapshot) -> None:
+        if self._shutdown:
+            return
+        dialog = getattr(self, "_jamulus_update_dialog", None)
+        if dialog is not None:
+            dialog.set_snapshot(snapshot)
+        state = str(
+            getattr(getattr(snapshot, "state", ""), "value", "")
+            or getattr(snapshot, "state", "")
+        ).strip()
+        previous = str(getattr(self, "_last_jamulus_update_state", "") or "")
+        self._last_jamulus_update_state = state
+        if state == "ready" and previous != state:
+            flash_message = getattr(self.window, "flash_message", None)
+            if callable(flash_message):
+                flash_message(
+                    "A verified Jamulus update is ready. Open More → "
+                    "Jamulus Updates when the jam is finished.",
+                    ms=8000,
+                )
+
+    def _open_jamulus_updates(self) -> None:
+        if self._shutdown_cleanup_blocks_action():
+            return
+        try:
+            service = self._ensure_jamulus_update_service()
+        except Exception as exc:  # noqa: BLE001 - show bounded recovery copy
+            LOGGER.warning(
+                "Jamulus Updates could not initialize; exception_type=%s",
+                type(exc).__name__,
+            )
+            QMessageBox.warning(
+                self.window,
+                "Jamulus Updates unavailable",
+                "WebJam couldn't open its verified update service. Your current "
+                "known-good Jamulus copy is unchanged. Save a Support Bundle if "
+                "this repeats.",
+            )
+            return
+
+        dialog = getattr(self, "_jamulus_update_dialog", None)
+        if dialog is None:
+            from webjam_qt.windows.jamulus_update import JamulusUpdateDialog
+
+            dialog = JamulusUpdateDialog(parent=self.window)
+            dialog.check_requested.connect(self._check_jamulus_updates)
+            dialog.download_requested.connect(self._download_jamulus_update)
+            dialog.activate_requested.connect(self._activate_jamulus_update)
+            dialog.approve_requested.connect(self._approve_jamulus_update)
+            dialog.rollback_requested.connect(self._rollback_jamulus_update)
+            dialog.cancel_requested.connect(self._cancel_jamulus_update)
+            self._jamulus_update_dialog = dialog
+        dialog.set_snapshot(service.snapshot)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _check_jamulus_updates(self) -> None:
+        if not self._shutdown_cleanup_blocks_action():
+            self._ensure_jamulus_update_service().check_now()
+
+    def _download_jamulus_update(self) -> None:
+        if not self._shutdown_cleanup_blocks_action():
+            self._ensure_jamulus_update_service().download_available()
+
+    def _activate_jamulus_update(self) -> None:
+        if not self._shutdown_cleanup_blocks_action():
+            self._ensure_jamulus_update_service().activate_when_idle()
+
+    def _cancel_jamulus_update(self) -> None:
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is not None:
+            service.cancel()
+
+    def _approve_jamulus_update(self) -> None:
+        if self._shutdown_cleanup_blocks_action():
+            return
+        service = self._ensure_jamulus_update_service()
+        target = str(getattr(getattr(service, "target", ""), "value", "") or "")
+        if target in {"macos-arm64", "macos-x64"}:
+            try:
+                license_text = service.license_text()
+            except Exception as exc:  # noqa: BLE001 - never expose local detail
+                LOGGER.warning(
+                    "Jamulus license could not be loaded; exception_type=%s",
+                    type(exc).__name__,
+                )
+                QMessageBox.warning(
+                    self.window,
+                    "Jamulus license unavailable",
+                    "WebJam will not install the update without showing you the "
+                    "exact Jamulus license. Your current version is unchanged.",
+                )
+                return
+            from webjam_qt.windows.jamulus_update import JamulusLicenseDialog
+
+            license_dialog = JamulusLicenseDialog(
+                license_text,
+                parent=self.window,
+            )
+            if license_dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            service.approve_ready(license_accepted=True)
+            return
+        service.approve_ready(license_accepted=False)
+
+    def _rollback_jamulus_update(self) -> None:
+        if self._shutdown_cleanup_blocks_action():
+            return
+        reply = QMessageBox.question(
+            self.window,
+            "Use the previous Jamulus version?",
+            "WebJam will verify and restore the previous managed Jamulus copy. "
+            "This cannot run during a live session.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._ensure_jamulus_update_service().rollback()
+
+    def _start_webex_app_detection(self) -> bool:
+        if self._shutdown:
+            return False
+        worker = getattr(self, "_webex_detection_thread", None)
+        if worker is not None and worker.is_alive():
+            return False
+        self._webex_detection_generation += 1
+        generation = self._webex_detection_generation
+
+        def detect() -> None:
+            from services.webex_app import (
+                WebexAppInfo,
+                WebexAppState,
+                detect_webex_app,
+            )
+
+            try:
+                info = detect_webex_app()
+            except Exception as exc:  # noqa: BLE001 - optional integration
+                LOGGER.warning(
+                    "Webex app detection failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                info = WebexAppInfo(
+                    state=WebexAppState.UNSUPPORTED,
+                    reason_code="detection-failed",
+                )
+            self._ui_invoker.invoke(
+                lambda value=info, token=generation: self._apply_webex_app_info(
+                    value,
+                    token,
+                )
+            )
+
+        worker = threading.Thread(
+            target=detect,
+            daemon=True,
+            name="webex-app-detection",
+        )
+        self._webex_detection_thread = worker
+        worker.start()
+        return True
+
+    def _apply_webex_app_info(self, info, generation: int) -> None:
+        if (
+            self._shutdown
+            or generation != self._webex_detection_generation
+        ):
+            return
+        self._webex_app_info = info
+        self.window.webex_embed.set_app_status(
+            info.state,
+            version=info.version,
+            publisher_verified=info.publisher_verified,
+        )
+
+    def _on_install_webex_requested(self, *, parent=None) -> None:
+        if self._shutdown_cleanup_blocks_action():
+            return
+        dialog_parent = parent or self.window
+        reply = QMessageBox.question(
+            dialog_parent,
+            "Get the Cisco Webex app?",
+            "WebJam will open Cisco's official download for this computer. "
+            "Cisco owns the download, license, installation, sign-in, and "
+            "updates; WebJam will not install it silently. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from services.webex_app import open_official_webex_installer
+
+            opened = open_official_webex_installer()
+        except Exception as exc:  # noqa: BLE001 - browser handoff is optional
+            LOGGER.warning(
+                "Official Webex installer handoff failed; exception_type=%s",
+                type(exc).__name__,
+            )
+            opened = False
+        if not opened:
+            QMessageBox.warning(
+                dialog_parent,
+                "Cisco download not opened",
+                "WebJam couldn't open Cisco's official Webex download. Check "
+                "your browser settings and try again.",
+            )
+            return
+        self.window.flash_message(
+            "Cisco's official Webex download opened. Finish installation and "
+            "sign-in there; Webex manages its own updates.",
+            ms=8000,
+        )
+
+    def _jamulus_update_public_diagnostics(self) -> dict[str, object]:
+        service = getattr(self, "_jamulus_update_service", None)
+        if service is None:
+            return {"state": "not-checked"}
+        diagnostics = getattr(service, "diagnostics", None)
+        if not callable(diagnostics):
+            return {"state": "unavailable"}
+        try:
+            value = diagnostics()
+        except Exception:  # noqa: BLE001 - support evidence remains optional
+            return {"state": "unavailable"}
+        if not isinstance(value, dict):
+            return {"state": "unavailable"}
+        update = value.get("update")
+        update = update if isinstance(update, dict) else value
+        result = {
+            key: update[key]
+            for key in (
+                "state",
+                "active_version",
+                "available_version",
+                "previous_version",
+                "target",
+                "progress_percent",
+                "reason_code",
+                "restart_when_idle",
+                "checked_at_utc",
+            )
+            if key in update
+        }
+        fallback = value.get(
+            "embedded_fallback_version",
+            update.get("fallback_version"),
+        )
+        if fallback is not None:
+            result["fallback_version"] = fallback
+        catalog = value.get("catalog")
+        if isinstance(catalog, dict):
+            result["catalog_verified"] = catalog.get("status") == "verified"
+            for source, destination in (
+                ("sequence", "catalog_sequence"),
+                ("expires_at", "catalog_expires_at_utc"),
+                (
+                    "signer_fingerprint_sha256",
+                    "signer_fingerprint_sha256",
+                ),
+            ):
+                if source in catalog:
+                    result[destination] = catalog[source]
+        else:
+            for key in (
+                "catalog_verified",
+                "catalog_sequence",
+                "catalog_expires_at_utc",
+                "signer_fingerprint_sha256",
+            ):
+                if key in value:
+                    result[key] = value[key]
+        return result
+
+    def _webex_app_public_diagnostics(self) -> dict[str, object]:
+        info = getattr(self, "_webex_app_info", None)
+        if info is None:
+            return {"state": "not-checked"}
+        public = getattr(info, "to_public_dict", None)
+        if not callable(public):
+            return {"state": "unavailable"}
+        try:
+            value = public()
+        except Exception:  # noqa: BLE001 - support evidence remains optional
+            return {"state": "unavailable"}
+        if not isinstance(value, dict):
+            return {"state": "unavailable"}
+        result = dict(value)
+        result["installed"] = result.get("state") == "installed"
+        return result
+
     @property
     def _jamulus_connected(self) -> bool:
         return self.audio.connected
@@ -1587,6 +2118,8 @@ class ApplicationController(QObject):
             "musician_guidance": (
                 guidance.to_public_dict() if guidance is not None else {}
             ),
+            "jamulus_updater": self._jamulus_update_public_diagnostics(),
+            "webex_app": self._webex_app_public_diagnostics(),
         }
 
     # ------------------------------------------------------------------
@@ -2070,6 +2603,9 @@ class ApplicationController(QObject):
         )
         # Both launch affordances share URL validation and truthful state.
         self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
+        self.window.webex_embed.install_webex_requested.connect(
+            self._on_install_webex_requested
+        )
         self.window.confirm_close = self._confirm_close
         self.window.finalize_close = self.shutdown
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
@@ -6731,6 +7267,11 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return
+        # Conversation is progressively disclosed under More. Reveal its
+        # truthful external-launch card before validation so a missing or
+        # invalid link still leaves the native-app status and official
+        # Get Webex recovery action available in the main window.
+        self.window.webex_embed.setVisible(True)
         url = normalize_webex_url(self.settings.webex_url)
         if not url:
             self._show_actionable_error(
@@ -7344,6 +7885,8 @@ class ApplicationController(QObject):
             musician_guidance=getattr(self, "_last_musician_guidance", None),
             recording_coordinator=self.recording,
             metrics_service=self.metrics,
+            jamulus_update=self._jamulus_update_public_diagnostics(),
+            webex_app=self._webex_app_public_diagnostics(),
         )
 
     def _on_save_support_bundle(self) -> None:
@@ -7587,6 +8130,9 @@ class ApplicationController(QObject):
             settings_provider=lambda: self.settings,
         )
         wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
+        wizard.install_webex_requested.connect(
+            lambda: self._on_install_webex_requested(parent=wizard)
+        )
         if wizard.exec() == SimpleSettingsDialog.DialogCode.Accepted:
             from core.settings import load_settings
 
@@ -7785,6 +8331,8 @@ class ApplicationController(QObject):
 
         if key == "reference_track":
             self._open_reference_track()
+        elif key == "jamulus_updates":
+            self._open_jamulus_updates()
         elif key == "pocket_stage":
             self._open_pocket_stage()
         elif key == "diagnostics":

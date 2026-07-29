@@ -162,6 +162,8 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         assert dialog.minimumHeight() <= 480
         for control in (
             dialog._logo,
+            dialog._name_input,
+            dialog._name_preview,
             dialog._host_button,
             dialog._join_button,
             dialog._studio_button,
@@ -178,6 +180,40 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         ):
             assert control.isVisibleTo(dialog)
             assert dialog.rect().contains(_rect_in(control, dialog))
+    finally:
+        _destroy(dialog)
+
+
+def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
+    styled_qapp,
+    tmp_path,
+):
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch(
+            "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+            return_value="C:/WebJam/Jamulus-installer.exe",
+        ),
+    ):
+        dialog = LaunchDialog(_settings(tmp_path))
+    dialog.show()
+    styled_qapp.processEvents()
+    try:
+        controls = (
+            dialog._name_input,
+            dialog._name_preview,
+            dialog._host_button,
+            dialog._join_button,
+            dialog._studio_button,
+            dialog._install_jamulus_button,
+            dialog._choice_helper,
+        )
+        rects = [_rect_in(control, dialog) for control in controls]
+        for control, rect in zip(controls, rects):
+            assert control.isVisibleTo(dialog)
+            assert dialog.rect().contains(rect)
+        for upper, lower in zip(rects, rects[1:]):
+            assert upper.bottom() < lower.top()
     finally:
         _destroy(dialog)
 
@@ -203,13 +239,17 @@ def test_offline_reference_studio_uses_the_full_window_without_session_chrome(
         _destroy(window)
 
 
-def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
+def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
+    styled_qapp,
+    tmp_path,
+):
     dialog = LaunchDialog(_settings(tmp_path))
     dialog.resize(460, 600)
     dialog.show_join()
     dialog.show()
     styled_qapp.processEvents()
     try:
+        assert dialog._name_input.isVisibleTo(dialog)
         assert dialog._invite_input.isVisibleTo(dialog)
         assert dialog._join_button_primary.isVisibleTo(dialog)
         assert dialog._invite_input.height() >= 44
@@ -217,7 +257,11 @@ def test_join_remains_one_field_and_one_primary_at_460px(styled_qapp, tmp_path):
         assert dialog._invite_input.accessibleName() == "WebJam invite link"
         assert dialog._invite_input.accessibleDescription()
         assert dialog._invite_input.echoMode() is dialog._invite_input.EchoMode.Password
-        for control in (dialog._invite_input, dialog._join_button_primary):
+        for control in (
+            dialog._name_input,
+            dialog._invite_input,
+            dialog._join_button_primary,
+        ):
             assert dialog.rect().contains(_rect_in(control, dialog))
     finally:
         _destroy(dialog)
@@ -340,18 +384,21 @@ def test_launch_graphic_is_static_scalable_and_accessible(styled_qapp):
     _destroy(graphic)
 
 
-@pytest.mark.parametrize("width", [760, 800])
-def test_main_meeting_controls_fit_without_overlap(styled_qapp, width):
+@pytest.mark.parametrize(
+    ("width", "height"),
+    [(720, 560), (760, 600), (800, 600)],
+)
+def test_main_meeting_controls_fit_without_overlap(styled_qapp, width, height):
     window = _window()
-    window.resize(width, 600)
+    window.resize(width, height)
     window.session_strip.set_invite_available(True)
     window.session_strip.set_recording_available(True)
     window.session_strip.set_audio_state("End Session")
     window.show()
     styled_qapp.processEvents()
     try:
-        assert window.minimumWidth() <= 760
-        assert window.minimumHeight() <= 600
+        assert window.minimumWidth() <= 720
+        assert window.minimumHeight() <= 560
         controls = [
             window.session_strip._invite_button,
             window.session_strip._record_button,

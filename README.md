@@ -1,4 +1,4 @@
-# WebJam v0.21.0 unsigned private test candidate
+# WebJam v0.22.0 unsigned private test candidate
 
 WebJam has two deliberately separate musician workflows:
 
@@ -32,6 +32,54 @@ trust.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
+
+## Jamulus updates without rebuilding WebJam
+
+WebJam v0.22.0 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+Reference Track companion as an offline fallback. In the background it checks
+a separately published, Ed25519-signed component catalog for Jamulus versions
+that have passed WebJam's exact routing, RPC, recording, and packaging
+contracts. It never follows an upstream “latest” link blindly.
+
+An approved update can download without interrupting rehearsal, but it cannot
+install, activate, or roll back while a client, server, Reference Track,
+recording, practice session, reconnect, or launch is active. **More → Jamulus
+Updates** shows the active, available, previous, deferred, fallback, or failed
+state and provides Check, Download, Later, explicit install approval, and
+recovery controls. On macOS, the verified current and previous managed copies
+remain available for rollback. Windows and Linux keep installation OS-owned
+and retain the embedded 3.12.2 fallback; they do not claim an app-managed
+previous-version rollback.
+
+On macOS, WebJam shows the exact packaged Jamulus license before accepting the
+official disk image's agreement, then preserves and verifies the upstream
+Developer ID signature, notarization, architecture, version, inventory, and
+quarantine. On Windows the upstream Jamulus installer is unsigned, so WebJam
+verifies its catalog-approved size and SHA-256 immediately before the user
+chooses to open it. Linux opens the approved package through the desktop
+package handler. WebJam never uses hidden elevation, `sudo`, a command shell,
+Gatekeeper bypasses, or an update that mutates `WebJam.app`.
+
+Jamulus itself displays musician labels on two lines after eight grapheme
+clusters and accepts at most 16 UTF-16 units. WebJam now enforces that one
+contract at every entry point and previews the actual 8+8 layout instead of
+allowing Jamulus to silently shorten an identity.
+
+## Optional Webex app
+
+WebJam still stores only a musician's Meeting or Personal Room link and opens
+the meeting externally; Webex owns sign-in, camera, microphone, speakers,
+participants, and meeting state. WebJam now detects the native Webex app and,
+when it is missing or invalid, offers the architecture-correct official Cisco
+installer in the browser after explicit confirmation. WebJam does not bundle,
+silently install, authenticate, or update Cisco's proprietary application.
+
+This release also records the design for a future focused Webex Embedded App
+companion. That hosted surface could show WebJam status and approved controls
+inside a Webex meeting or space, while the trusted desktop remains the audio
+engine. It is not represented as implemented: it requires HTTPS hosting,
+OAuth, organization approval, and a separately secured desktop/cloud
+synchronization channel.
 
 ## Reference Studio
 
@@ -93,7 +141,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.21.0 candidate retains the narrow Pocket Stage v1 vertical slice
+The v0.22.0 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
 **More -> Use iPhone** after both devices are on the same private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
@@ -140,7 +188,7 @@ decoder-supported MP3 through a separately owned `WebJam Track` Jamulus client,
 so the song becomes one participant with an independent level and recording
 stem.
 
-Playback remains deliberately **locked in the v0.21.0 private test candidate**.
+Playback remains deliberately **locked in the v0.22.0 private test candidate**.
 Apple's CoreAudio process-device property has a reported case where its input
 result becomes the process's output device after an input switch. Jamulus
 3.12.2 has no independent live-device RPC, and its saved profile is not
@@ -228,14 +276,16 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and candidate state
 
-The source tree reports **v0.21.0** and adds standalone Reference Studio while
-retaining Pocket Stage, external Webex handoff, the capability-gated macOS
-Reference Track pilot, session Studio, and the reviewed unsigned-candidate
-packaging described above. Published tags and assets remain immutable
-historical evidence; in particular, v0.20.0 history must not be moved or
-silently replaced by this candidate.
+The source tree reports **v0.22.0** and adds the signed Jamulus component
+updater, exact Jamulus-name preview/validation, native Webex detection and
+official installer handoff, and expanded privacy-safe diagnostics. It retains
+standalone Reference Studio, Pocket Stage, the capability-gated macOS Reference
+Track pilot, session Studio, and the reviewed unsigned-candidate packaging
+described above. Published tags and assets remain immutable historical
+evidence. In particular, v0.20.0 history must not be moved. The
+v0.21.0 history must not be moved or silently replaced by this candidate.
 
-The v0.21.0 candidate workflow builds four targets from one source identity:
+The v0.22.0 candidate workflow builds four targets from one source identity:
 Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. Its draft
 GitHub release must contain exactly seven packages—the Windows Setup and ZIP,
 two Mac DMGs and two Mac ZIPs, and the Linux ZIP—plus one exact SHA-256
@@ -243,6 +293,13 @@ manifest. After the draft inventory and every checksum pass, the separate
 publisher must publish it as a non-prerelease and explicitly mark it
 GitHub **Latest**. A successful Actions build or draft release alone is not a
 published Latest release.
+
+The Jamulus catalog is intentionally **not** one of those desktop assets. It is
+published under a separate non-Latest component release, signed by an offline
+release key, expires within 31 days, and carries a monotonically increasing
+sequence. The desktop updater embeds only the matching public key and rejects
+expired, replayed, downgraded, equivocated, wrong-target, wrong-architecture,
+wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
 
 Successful branch and pull-request workflows also retain the unsigned Windows
 x64 candidate on GitHub for 90 days as `webjam-windows-x64`. It contains
@@ -291,7 +348,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.21.0,
+integrity—not a substitute for musicians hearing one another. For v0.22.0,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -302,7 +359,7 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.21.0 candidate notes and changelog](CHANGELOG.md)
+- [v0.22.0 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)
@@ -317,5 +374,6 @@ promote a package or claim audibility.
 - [Webex sandbox demo gate](docs/plans/webjam-webex-sandbox-demo-gate.md)
 - [Dual-musician rehearsal lab](DUAL_MUSICIAN_REHEARSAL_LAB.md)
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
+- [Jamulus component catalog release runbook](docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md)
 - [Test procedure](TEST_PROCEDURE.md)
 - [Architecture](ARCHITECTURE.md)

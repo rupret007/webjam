@@ -4,6 +4,80 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.22.0] — 2026-07-28 secure component and integration test candidate
+
+### Jamulus updates without rebuilding WebJam
+
+- Added one immutable `JamulusCompatibility` registry for approved client,
+  server, and HEADLESS roles. It records exact upstream tag/commit, target,
+  architecture, size, SHA-256, runtime/RPC capabilities, WebJam range,
+  activation policy, publisher evidence, licenses, notices, and source offer.
+  The desktop retains Jamulus 3.12.2 as its offline and rollback fallback.
+- Added an Ed25519-signed Jamulus component catalog with an embedded public key,
+  exact WebJam version, 31-day maximum validity, monotonically increasing
+  sequence, rollback/equivocation protection, canonical JSON, bounded parsing,
+  and exact HTTPS source/redirect host policy. WebJam never follows an upstream
+  `latest` pointer.
+- Added a private per-user component store with bounded asynchronous checks and
+  downloads, cancellation, single-flight and cross-process locks, exact-byte
+  revalidation, atomic current/previous state, verified rollback, corrupt-state
+  recovery, and the resolution order managed → embedded fallback →
+  explicit/system copy.
+- Added **More → Jamulus Updates** with truthful checking, available,
+  downloading, ready, deferred, installed, fallback, cancelled, and failed
+  states. Updates never interrupt the musician client, hosted/practice server,
+  Reference Track, recording, reconnect, or launch lifecycle.
+- On macOS the updater requires explicit review/acceptance of the exact packaged
+  Jamulus license before mounting the DMG, preserves quarantine, and verifies
+  the untouched upstream Developer ID Team `V9ZZ6B9WH8`, bundle identities,
+  version, architecture, notarization, symlinks, and exact volume inventory.
+  On Windows it discloses that the official Jamulus installer is unsigned and
+  rehashes it immediately before explicit OS handoff. Linux opens the approved
+  package through the desktop handler. No path uses hidden elevation, `sudo`, a
+  shell, Gatekeeper weakening, or mutation of `WebJam.app`.
+- Approved official Jamulus 3.12.3 client/server inputs are exercised beside
+  3.12.2 in real-Jamulus CI. The custom 3.12.3 HEADLESS build remains
+  evidence-only and fail-closed pending qualified AGPL section 13 review;
+  Reference Track continues to use its reviewed embedded 3.12.2 companion.
+
+### Identity, Webex, and supportability
+
+- Added one Jamulus musician-name validator across onboarding, settings,
+  environment/config recovery, native profiles, launch, RPC, and legacy paths.
+  It rejects controls, newlines, and values over 16 UTF-16 units rather than
+  allowing silent Jamulus truncation, preserves accepted Unicode, and provides
+  an accessible 8+8 mixer-label preview.
+- Added native Webex app detection. On macOS WebJam verifies Cisco bundle
+  identity, Developer ID Team `DE8Y96K9QP`, deep signature, and notarization.
+  When Webex is absent or invalid, an explicit action opens Cisco's
+  architecture-correct official installer URL. WebJam does not redistribute,
+  silently install, authenticate, or update the proprietary Webex app.
+- Kept meeting launch truthful and external: WebJam stores only the user's
+  Meeting or Personal Room link, while Webex owns sign-in and meeting state.
+  Added an ADR for a future focused Webex Embedded App companion whose hosted,
+  authorized surface would synchronize with—not replace—the trusted desktop
+  audio engine.
+- Expanded bounded diagnostics and Support Bundle evidence with path-free
+  Jamulus updater/catalog/fallback state and Webex installation/publisher
+  state. Raw paths, meeting links, user names, credentials, tokens, downloaded
+  URLs, and exception text remain excluded.
+
+### Packaging and release evidence
+
+- Preserved the exact four-platform unsigned/ad-hoc desktop candidate matrix:
+  Windows x64 Setup and ZIP, Ubuntu 22.04 x64 ZIP, and DMG/ZIP packages for
+  Intel and Apple-silicon Macs, plus one exact checksum manifest.
+- Added the exact Jamulus 3.12.3 mixed AGPL-3.0-or-later/GPL-3.0-or-later
+  COPYING text, component SBOM, source-offer/build evidence, Windows unsigned
+  trust assertion, and macOS no-mount/no-SLA-acceptance input verification.
+- The expiring signed Jamulus catalog is published separately from the desktop
+  release and therefore cannot change the desktop release's exact
+  seven-package-plus-manifest inventory or GitHub Latest semantics.
+- Windows signing, macOS WebJam notarization, physical two-musician audibility,
+  hardware disconnect/reconnect, sleep/wake, long-session, Reference Track
+  isolation, and real Webex/Jamulus simultaneous-audio gates remain **NOT RUN**
+  unless evidence names the exact candidate asset and checksum.
+
 ## [0.21.0] — 2026-07-28 standalone Reference Studio test candidate
 
 ### Project-first songwriting

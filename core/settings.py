@@ -7,6 +7,11 @@ import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
+from core.jamulus_name import (
+    recover_jamulus_name,
+    validate_jamulus_name,
+)
+
 _logger = logging.getLogger(__name__)
 
 WEBEX_AUDIO_MODES = ("talkback", "video_only", "audience_bridge")
@@ -304,6 +309,17 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         }
         settings = AppSettings(**{**asdict(settings), **derived})
 
+    recovered_name = recover_jamulus_name(settings.musician_name)
+    if recovered_name != settings.musician_name:
+        # The value itself is private and may contain hostile terminal/control
+        # text. Report only that the bounded legacy recovery happened.
+        _logger.warning(
+            "Invalid saved or environment musician name; using the safe default"
+        )
+        settings = AppSettings(
+            **{**asdict(settings), "musician_name": recovered_name}
+        )
+
     return settings
 
 
@@ -377,5 +393,11 @@ def save_settings(settings: AppSettings) -> None:
 
     path = Path(settings.config_file).expanduser()
     payload = asdict(settings)
+    # New writes fail visibly instead of persisting a name that Jamulus will
+    # wrap, truncate, or reject differently at a later boundary.  Legacy
+    # invalid values are recovered by ``load_settings`` above.
+    payload["musician_name"] = validate_jamulus_name(
+        settings.musician_name
+    ).value
     payload.pop("webex_audio_mode", None)
     atomic_write_text(path, json.dumps(payload, indent=2), mode=0o600)

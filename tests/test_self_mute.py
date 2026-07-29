@@ -47,6 +47,12 @@ class TestControllerSetName(unittest.TestCase):
         self.assertFalse(c2.set_name(""))
         c2.rpc_client.set_name.assert_not_called()
 
+    def test_rejects_overlength_and_control_characters_before_rpc(self):
+        c = self._controller(available=True)
+        self.assertFalse(c.set_name("12345678901234567"))
+        self.assertFalse(c.set_name("Jeff\nStory"))
+        c.rpc_client.set_name.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
