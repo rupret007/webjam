@@ -406,9 +406,15 @@ The probe must report packaged Certifi trust ready, environment CA overrides
 ignored, the explicit redirect allowlist, catalog sequence 2, approved Jamulus
 3.12.3, and exact agreement with the independently recorded envelope, payload,
 and signer digests. Use `macos-x64` for the Intel package. The promotion
-workflow also safely extracts and runs this proof from the exact Linux ZIP
-before it can publish. Open **More → Jamulus Updates → Check now** and confirm
-the same Available or Ready result in the real Mac UI. Only then run
+workflow's read-only job cannot inspect an unpublished GitHub draft. It instead
+binds the exact successful `v0.22.1` tag-CI run and its Linux artifact by run
+ID, workflow ID, tag, commit, artifact ID, outer-artifact digest, package size,
+and inner-package digest. It safely extracts and runs that exact Linux ZIP.
+Only afterward does the separate write-authorized job locate the draft and
+require its Linux asset to have the same proven package digest before checking
+the complete inventory and publishing. Open **More → Jamulus Updates → Check
+now** and confirm the same Available or Ready result in the real Mac UI. Only
+then run
 **Publish Verified WebJam Release** for v0.22.1 and independently prove that
 GitHub `/releases/latest` and the public asset bytes match the verified draft.
 Never publish the draft directly from the web page.

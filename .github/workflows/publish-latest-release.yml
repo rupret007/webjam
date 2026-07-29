@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: publish-webjam-release
@@ -20,6 +21,12 @@ env:
   V0220_TAG_OBJECT: 663075ec53aab36cc9de5d1b84aaec0b3733290b
   V0220_TAG_COMMIT: bf64c1165486a654d923c4e3cb6ede69e6458320
   COMPONENT_CHANNEL_ANCHOR: bf64c1165486a654d923c4e3cb6ede69e6458320
+  EXPECTED_TAG_CI_RUN_ID: 30423344767
+  EXPECTED_TAG_CI_WORKFLOW_ID: 235479110
+  EXPECTED_LINUX_ARTIFACT_ID: 8712817155
+  EXPECTED_LINUX_ARTIFACT_DIGEST: sha256:2f11e188931aaeec45348737c1d37bd396992ba69854b92fc39a860c5e2d5ebf
+  EXPECTED_LINUX_PACKAGE_SHA256: 8cdfbeaee7fec89b0db71a0fb3b73c2449f66fbb934c35d8cebd67785b25a57f
+  EXPECTED_LINUX_PACKAGE_SIZE: 167559457
 
 jobs:
   frozen-package-smoke:
@@ -28,15 +35,16 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
       tag_object: ${{ steps.release.outputs.tag_object }}
       tag_commit: ${{ steps.release.outputs.tag_commit }}
       master_commit: ${{ steps.release.outputs.master_commit }}
-      release_id: ${{ steps.draft.outputs.release_id }}
-      linux_asset_id: ${{ steps.draft.outputs.linux_asset_id }}
-      linux_asset_digest: ${{ steps.draft.outputs.linux_asset_digest }}
+      tag_ci_run_id: ${{ steps.tag_build.outputs.run_id }}
+      linux_artifact_id: ${{ steps.tag_build.outputs.artifact_id }}
+      linux_artifact_digest: ${{ steps.tag_build.outputs.artifact_digest }}
       linux_package_sha256: ${{ steps.linux.outputs.linux_package_sha256 }}
       component_tag_object: ${{ steps.component.outputs.tag_object }}
       component_tag_commit: ${{ steps.component.outputs.tag_commit }}
@@ -112,61 +120,61 @@ jobs:
           echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
           echo "master_commit=$master_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Bind one unpublished draft and its Linux asset
-        id: draft
+      - name: Bind the exact successful tag build and Linux artifact
+        id: tag_build
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+          TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
         run: |
           set -euo pipefail
           gh api \
-            --paginate \
-            --slurp \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            > "$RUNNER_TEMP/release-pages.json"
+            "repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_TAG_CI_RUN_ID" \
+            > "$RUNNER_TEMP/tag-ci-run.json"
           jq -e \
             --arg tag "$TAG" \
+            --arg commit "$TAG_COMMIT" \
+            --argjson run_id "$EXPECTED_TAG_CI_RUN_ID" \
+            --argjson workflow_id "$EXPECTED_TAG_CI_WORKFLOW_ID" \
             '
-              [ .[][] | select(.tag_name == $tag) ] as $matches
-              | if ($matches | length) != 1 then
-                  error("expected exactly one release for " + $tag)
-                elif (
-                  $matches[0].draft != true
-                  or $matches[0].prerelease != false
-                ) then
-                  error("release is not an unpublished non-prerelease draft")
-                else
-                  $matches[0]
-                end
+              .id == $run_id
+              and .workflow_id == $workflow_id
+              and .path == ".github/workflows/ci.yml"
+              and .event == "push"
+              and .head_branch == $tag
+              and .head_sha == $commit
+              and .status == "completed"
+              and .conclusion == "success"
+              and .run_attempt == 1
             ' \
-            "$RUNNER_TEMP/release-pages.json" \
-            > "$RUNNER_TEMP/release-smoke.json"
+            "$RUNNER_TEMP/tag-ci-run.json" >/dev/null
+          gh api \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_LINUX_ARTIFACT_ID" \
+            > "$RUNNER_TEMP/linux-artifact.json"
           jq -e \
+            --arg tag "$TAG" \
+            --arg commit "$TAG_COMMIT" \
+            --arg digest "$EXPECTED_LINUX_ARTIFACT_DIGEST" \
+            --argjson run_id "$EXPECTED_TAG_CI_RUN_ID" \
+            --argjson artifact_id "$EXPECTED_LINUX_ARTIFACT_ID" \
             '
-              [ .assets[] | select(.name == "WebJam-linux-x64.zip") ]
-              | if length != 1 then
-                  error("expected exactly one Linux package asset")
-                else
-                  .[0]
-                end
+              .id == $artifact_id
+              and .name == "webjam-linux-x64"
+              and .expired == false
+              and .size_in_bytes > 0
+              and .digest == $digest
+              and .workflow_run.id == $run_id
+              and .workflow_run.head_branch == $tag
+              and .workflow_run.head_sha == $commit
             ' \
-            "$RUNNER_TEMP/release-smoke.json" \
-            > "$RUNNER_TEMP/linux-asset-smoke.json"
-          release_id="$(jq -r '.id' "$RUNNER_TEMP/release-smoke.json")"
-          linux_asset_id="$(jq -r '.id' "$RUNNER_TEMP/linux-asset-smoke.json")"
-          linux_asset_digest="$(jq -r '.digest' \
-            "$RUNNER_TEMP/linux-asset-smoke.json")"
-          linux_asset_size="$(jq -r '.size' \
-            "$RUNNER_TEMP/linux-asset-smoke.json")"
-          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
-          [[ "$linux_asset_id" =~ ^[1-9][0-9]*$ ]]
-          [[ "$linux_asset_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [[ "$linux_asset_size" =~ ^[1-9][0-9]*$ ]]
-          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
-          echo "linux_asset_id=$linux_asset_id" >> "$GITHUB_OUTPUT"
-          echo "linux_asset_digest=$linux_asset_digest" >> "$GITHUB_OUTPUT"
+            "$RUNNER_TEMP/linux-artifact.json" >/dev/null
+          echo "run_id=$EXPECTED_TAG_CI_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_id=$EXPECTED_LINUX_ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_digest=$EXPECTED_LINUX_ARTIFACT_DIGEST" \
+            >> "$GITHUB_OUTPUT"
 
       - name: Set up Python for signed component-catalog verification
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -197,6 +205,12 @@ jobs:
           set -euo pipefail
           component_tag="jamulus-components-v1"
           component_asset="WebJam-Jamulus-components-v1.json"
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/public-release-pages.json"
           component_tag_ref="refs/webjam-component-tags/$component_tag"
           git fetch --no-tags origin \
             "refs/tags/${component_tag}:${component_tag_ref}"
@@ -239,7 +253,7 @@ jobs:
                   $matches[0]
                 end
             ' \
-            "$RUNNER_TEMP/release-pages.json" \
+            "$RUNNER_TEMP/public-release-pages.json" \
             > "$RUNNER_TEMP/component-release-smoke.json"
           latest_tag="$(gh api \
             -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -294,25 +308,61 @@ jobs:
           echo "catalog_payload_sha256=$catalog_payload_sha256" >> "$GITHUB_OUTPUT"
           echo "signer_fingerprint_sha256=$signer_fingerprint_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Download and bind only the exact Linux package
+      - name: Download and bind only the exact tag-build Linux package
         id: linux
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          LINUX_ASSET_ID: ${{ steps.draft.outputs.linux_asset_id }}
-          EXPECTED_LINUX_DIGEST: ${{ steps.draft.outputs.linux_asset_digest }}
+          ARTIFACT_ID: ${{ steps.tag_build.outputs.artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ steps.tag_build.outputs.artifact_digest }}
         run: |
           set -euo pipefail
           mkdir "$RUNNER_TEMP/frozen-package"
+          artifact_archive="$RUNNER_TEMP/frozen-package/tag-linux-artifact.zip"
           archive="$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip"
           gh api \
-            -H "Accept: application/octet-stream" \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/releases/assets/$LINUX_ASSET_ID" \
-            > "$archive"
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            > "$artifact_archive"
+          [[ -s "$artifact_archive" && ! -L "$artifact_archive" ]]
+          artifact_sha256="$(sha256sum -- "$artifact_archive" | awk '{print $1}')"
+          [[ "sha256:$artifact_sha256" == "$EXPECTED_ARTIFACT_DIGEST" ]]
+          python - "$artifact_archive" "$archive" <<'PY'
+          from __future__ import annotations
+
+          import pathlib
+          import stat
+          import sys
+          import zipfile
+
+          source = pathlib.Path(sys.argv[1])
+          target = pathlib.Path(sys.argv[2])
+          expected_name = "WebJam-linux-x64.zip"
+          expected_size = 167_559_457
+          with zipfile.ZipFile(source) as artifact:
+              members = artifact.infolist()
+              if len(members) != 1 or members[0].filename != expected_name:
+                  raise SystemExit("tag-build artifact inventory is not exact")
+              member = members[0]
+              mode = member.external_attr >> 16
+              if (
+                  member.is_dir()
+                  or stat.S_ISLNK(mode)
+                  or member.file_size != expected_size
+                  or member.compress_size <= 0
+              ):
+                  raise SystemExit("tag-build Linux package metadata is invalid")
+              with artifact.open(member, "r") as reader, target.open("xb") as writer:
+                  while chunk := reader.read(1024 * 1024):
+                      writer.write(chunk)
+          if target.stat().st_size != expected_size:
+              raise SystemExit("tag-build Linux package extraction was incomplete")
+          PY
           [[ -s "$archive" && ! -L "$archive" ]]
+          [[ "$(stat -c '%s' "$archive")" == "$EXPECTED_LINUX_PACKAGE_SIZE" ]]
           linux_package_sha256="$(sha256sum -- "$archive" | awk '{print $1}')"
-          [[ "sha256:$linux_package_sha256" == "$EXPECTED_LINUX_DIGEST" ]]
+          [[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]
           echo "linux_package_sha256=$linux_package_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Install exact frozen-package smoke runtime
@@ -449,14 +499,12 @@ jobs:
           python -m pip check
 
       - name: Download and verify exact draft inventory and checksums
+        id: draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
           VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
-          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
-          EXPECTED_LINUX_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.linux_asset_id }}
-          EXPECTED_LINUX_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.linux_asset_digest }}
           EXPECTED_LINUX_PACKAGE_SHA256: ${{ needs['frozen-package-smoke'].outputs.linux_package_sha256 }}
         run: |
           set -euo pipefail
@@ -468,17 +516,15 @@ jobs:
             > "$RUNNER_TEMP/release-pages-before.json"
           jq -e \
             --arg tag "$TAG" \
-            --argjson release_id "$EXPECTED_RELEASE_ID" \
             '
               [ .[][] | select(.tag_name == $tag) ] as $matches
               | if ($matches | length) != 1 then
                   error("expected exactly one release for " + $tag)
                 elif (
-                  $matches[0].id != $release_id
-                  or $matches[0].draft != true
+                  $matches[0].draft != true
                   or $matches[0].prerelease != false
                 ) then
-                  error("release differs from the read-only verified draft")
+                  error("release is not an unpublished non-prerelease draft")
                 else
                   $matches[0]
                 end
@@ -518,8 +564,12 @@ jobs:
           linux_asset_digest="$(jq -r \
             '[.assets[] | select(.name == "WebJam-linux-x64.zip")] | .[0].digest' \
             "$RUNNER_TEMP/release-before.json")"
-          [[ "$linux_asset_id" == "$EXPECTED_LINUX_ASSET_ID" ]]
-          [[ "$linux_asset_digest" == "$EXPECTED_LINUX_ASSET_DIGEST" ]]
+          [[ "$linux_asset_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$linux_asset_digest" == \
+            "sha256:$EXPECTED_LINUX_PACKAGE_SHA256" ]]
+          release_id="$(jq -r '.id' "$RUNNER_TEMP/release-before.json")"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
           mkdir release-assets
           gh release download "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
@@ -636,7 +686,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
           VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
-          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
+          EXPECTED_RELEASE_ID: ${{ steps.draft.outputs.release_id }}
           EXPECTED_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.tag_object }}
           EXPECTED_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
           EXPECTED_MASTER_COMMIT: ${{ needs['frozen-package-smoke'].outputs.master_commit }}
@@ -790,7 +840,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
           VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
-          EXPECTED_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.release_id }}
+          EXPECTED_RELEASE_ID: ${{ steps.draft.outputs.release_id }}
         run: |
           set -euo pipefail
           gh api \
