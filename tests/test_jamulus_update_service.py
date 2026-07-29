@@ -18,6 +18,9 @@ import services.jamulus_component_update as update_module
 from core.component_catalog import VerifiedComponentCatalog
 from core.component_download import (
     ComponentDownloadCancelled,
+    ComponentDownloadError,
+    ComponentSecureConnectionError,
+    ComponentTlsTrustError,
     DownloadProgress,
     OpenedDownload,
     VerifiedDownload,
@@ -39,6 +42,10 @@ from core.jamulus_compatibility import (
     WebJamVersionRange,
 )
 from core.jamulus_update_state import JamulusUpdateState
+from core.jamulus_component_resolver import (
+    ComponentOrigin,
+    ExternalComponentCandidate,
+)
 from services.jamulus_component_platform import (
     JamulusLicenseApprovalRequired,
     JamulusPlatformError,
@@ -717,6 +724,55 @@ def test_network_failure_uses_verified_cache_but_programming_error_does_not(
     assert "secret" not in broken.snapshot.message
 
 
+@pytest.mark.parametrize(
+    ("failure", "reason_code", "message_fragment"),
+    [
+        (
+            ComponentTlsTrustError("/Users/private/cacert.pem"),
+            "catalog-trust-unavailable",
+            "secure Jamulus update checker",
+        ),
+        (
+            ComponentSecureConnectionError("token=private"),
+            "catalog-secure-connection-failed",
+            "trusted connection",
+        ),
+        (
+            CatalogFetchError("private response body"),
+            "catalog-service-unavailable",
+            "unusable response",
+        ),
+        (
+            ComponentDownloadError("rejected redirect with private URL"),
+            "catalog-service-unavailable",
+            "unusable response",
+        ),
+    ],
+)
+def test_catalog_connection_failures_are_specific_bounded_and_diagnostic(
+    tmp_path,
+    failure,
+    reason_code,
+    message_fragment,
+):
+    service, _ = _service(
+        tmp_path,
+        fetcher=_Fetcher(failure),
+    )
+
+    assert service.check_now()
+    _wait(service)
+
+    assert service.snapshot.state is JamulusUpdateState.FALLBACK
+    assert service.snapshot.reason_code == reason_code
+    assert message_fragment in service.snapshot.message
+    assert "private" not in service.snapshot.message.lower()
+    diagnostics = service.diagnostics()
+    assert diagnostics["catalog_transport"]["last_check"] == "failed"
+    assert diagnostics["catalog_transport"]["reason_code"] == reason_code
+    assert "private" not in json.dumps(diagnostics).lower()
+
+
 class _Body(io.BytesIO):
     def __init__(self, data: bytes, content_length: int) -> None:
         super().__init__(data)
@@ -864,6 +920,50 @@ class _FakeMacCommands:
         raise AssertionError(f"unexpected command: {args}")
 
 
+def test_macos_external_validation_uses_runtime_webjam_version(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    client, server = _pair(
+        target=ComponentTarget.MACOS_ARM64,
+        version="3.12.3",
+    )
+    registry = JamulusCompatibilityRegistry((client, server))
+    calls: list[str] = []
+
+    class RecordingRegistry:
+        def compatible(self, **kwargs):
+            calls.append(kwargs["webjam_version"])
+            return registry.compatible(**kwargs)
+
+    executable = (
+        tmp_path / "Jamulus.app" / "Contents" / "MacOS" / "Jamulus"
+    )
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"official binary")
+    store = MacOSJamulusComponentStore(
+        registry,
+        webjam_version="0.22.1",
+        root=tmp_path / "store",
+        verifier=_AcceptingMacVerifier(),
+    )
+
+    result = store.external_validator(
+        ExternalComponentCandidate(
+            path=executable,
+            origin=ComponentOrigin.MANAGED,
+        ),
+        RecordingRegistry(),
+        JamulusRole.CLIENT,
+        ComponentTarget.MACOS_ARM64,
+    )
+
+    assert result is not None
+    assert result.entry == client
+    assert calls == ["0.22.1"]
+
+
 def test_macos_license_refusal_mounts_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     commands = []
@@ -873,6 +973,7 @@ def test_macos_license_refusal_mounts_nothing(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(arguments, 0, b"", b"")
 
     store = MacOSJamulusComponentStore(
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=_NoopMacVerifier(),
         command_runner=runner,
@@ -911,6 +1012,7 @@ def test_macos_store_installs_atomically_keeps_previous_and_rolls_back(
     verifier = _AcceptingMacVerifier()
     store = MacOSJamulusComponentStore(
         JamulusCompatibilityRegistry((old_client, old_server, new_client, new_server)),
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=verifier,
         command_runner=commands,
@@ -973,6 +1075,7 @@ def test_macos_failed_copy_preserves_last_known_good(tmp_path, monkeypatch):
     commands = _FakeMacCommands()
     store = MacOSJamulusComponentStore(
         JamulusCompatibilityRegistry((old_client, old_server, new_client, new_server)),
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=_AcceptingMacVerifier(),
         command_runner=commands,
@@ -1023,6 +1126,7 @@ def test_macos_current_lookup_does_not_mutate_or_auto_rollback(
         JamulusCompatibilityRegistry(
             (old_client, old_server, new_client, new_server)
         ),
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=_AcceptingMacVerifier(),
         command_runner=_FakeMacCommands(),
@@ -1071,6 +1175,7 @@ def test_macos_point_of_use_authorization_precedes_pointer_write(
     commands = _FakeMacCommands()
     store = MacOSJamulusComponentStore(
         JamulusCompatibilityRegistry((client, server)),
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=_AcceptingMacVerifier(),
         command_runner=commands,
@@ -1117,6 +1222,7 @@ def test_macos_point_of_use_authorization_precedes_pointer_write(
 def test_corrupt_macos_pointer_is_bounded_platform_error(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     store = MacOSJamulusComponentStore(
+        webjam_version="0.22.0",
         root=tmp_path,
         verifier=_NoopMacVerifier(),
     )

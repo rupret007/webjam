@@ -1869,6 +1869,22 @@ class ApplicationController(QObject):
             ):
                 if key in value:
                     result[key] = value[key]
+        transport = value.get("catalog_transport")
+        if isinstance(transport, dict):
+            for source, destination in (
+                ("last_check", "catalog_fetch_status"),
+                ("reason_code", "catalog_fetch_reason_code"),
+                ("trust_source", "tls_trust_source"),
+                ("trust_status", "tls_trust_status"),
+                (
+                    "environment_ca_overrides",
+                    "tls_environment_ca_overrides",
+                ),
+                ("redirect_policy", "catalog_redirect_policy"),
+            ):
+                item = transport.get(source)
+                if isinstance(item, str):
+                    result[destination] = item
         return result
 
     def _webex_app_public_diagnostics(self) -> dict[str, object]:

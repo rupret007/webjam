@@ -28,37 +28,57 @@ SBOM = json.loads(
         encoding="utf-8"
     )
 )
+COMPONENT_SBOM = json.loads(
+    (ROOT / "packaging" / "Jamulus-component-sbom.cdx.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
-def test_v022_is_the_single_packaged_candidate_identity() -> None:
+def test_v0221_is_the_single_packaged_candidate_identity() -> None:
     match = re.search(
         r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
         VERSION_SOURCE,
         re.MULTILINE,
     )
     assert match is not None
-    assert match.group(1) == "0.22.0"
-    assert application_version() == "0.22.0"
-    assert README.startswith("# WebJam v0.22.0 unsigned private test candidate")
+    assert match.group(1) == "0.22.1"
+    assert application_version() == "0.22.1"
+    assert README.startswith("# WebJam v0.22.1 unsigned private test candidate")
+    assert "## [0.22.1]" in CHANGELOG
     assert "## [0.22.0]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in README
     assert "v0.21.0 history must not be moved" in README
+    assert "v0.22.0 annotated tag and tagged bytes remain immutable" in README
+    assert "only that obsolete draft is deleted by release ID" in README
 
 
 def test_runtime_sbom_names_the_exact_desktop_version() -> None:
     component = SBOM["metadata"]["component"]
     assert component == {
-        "bom-ref": "pkg:generic/webjam@0.22.0",
+        "bom-ref": "pkg:generic/webjam@0.22.1",
         "name": "WebJam",
-        "purl": "pkg:generic/webjam@0.22.0",
+        "purl": "pkg:generic/webjam@0.22.1",
         "type": "application",
-        "version": "0.22.0",
+        "version": "0.22.1",
     }
 
 
-def test_signed_catalog_has_every_v022_client_server_target_once() -> None:
+def test_component_sbom_names_the_exact_desktop_version() -> None:
+    component = COMPONENT_SBOM["metadata"]["component"]
+    assert component == {
+        "bom-ref": "pkg:github/rupret007/webjam@0.22.1",
+        "group": "rupret007",
+        "name": "WebJam",
+        "purl": "pkg:github/rupret007/webjam@0.22.1",
+        "type": "application",
+        "version": "0.22.1",
+    }
+
+
+def test_signed_catalog_has_every_v0221_client_server_target_once() -> None:
     payload = build_payload(
-        sequence=1,
+        sequence=2,
         issued_at=datetime(2026, 7, 28, tzinfo=timezone.utc),
         validity_days=30,
     )
@@ -78,19 +98,19 @@ def test_signed_catalog_has_every_v022_client_server_target_once() -> None:
     assert all(component["variant"] == "official" for component in components)
 
 
-def test_current_candidate_guides_report_v022_consistently() -> None:
+def test_current_candidate_guides_report_v0221_consistently() -> None:
     expected = {
-        "ARCHITECTURE.md": "# WebJam architecture — v0.22.0",
-        "CLOSED_PILOT_PLAYBOOK.md": "current v0.22.0 private test candidate",
-        "DEVELOPMENT.md": "# Developing WebJam v0.22.0",
-        "FIRST_JAM.md": "# First Jam — WebJam v0.22.0",
-        "README_SIMPLE.md": "Current source candidate: **v0.22.0",
-        "TEST_PROCEDURE.md": "# WebJam v0.22.0 source and physical test procedure",
-        "USER_GUIDE.md": "# WebJam musician guide — v0.22.0",
-        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.22.0 UX acceptance checklist",
-        "WEBEX_AUDIO_MODES.md": "# Webex companion guidance — v0.22.0",
-        "ios/README.md": "matching v0.22.0 Mac candidate",
-        "requirements-lock/README.md": "The v0.22.0 candidate locks",
+        "ARCHITECTURE.md": "# WebJam architecture — v0.22.1",
+        "CLOSED_PILOT_PLAYBOOK.md": "current v0.22.1 private test candidate",
+        "DEVELOPMENT.md": "# Developing WebJam v0.22.1",
+        "FIRST_JAM.md": "# First Jam — WebJam v0.22.1",
+        "README_SIMPLE.md": "Current source candidate: **v0.22.1",
+        "TEST_PROCEDURE.md": "# WebJam v0.22.1 source and physical test procedure",
+        "USER_GUIDE.md": "# WebJam musician guide — v0.22.1",
+        "UX_ACCEPTANCE_CHECKLIST.md": "# WebJam v0.22.1 UX acceptance checklist",
+        "WEBEX_AUDIO_MODES.md": "# Webex companion guidance — v0.22.1",
+        "ios/README.md": "matching v0.22.1 Mac candidate",
+        "requirements-lock/README.md": "The v0.22.1 candidate locks",
     }
     for relative_path, marker in expected.items():
         assert marker in (ROOT / relative_path).read_text(encoding="utf-8")
@@ -109,30 +129,32 @@ def test_candidate_package_copy_is_explicit_about_platform_trust() -> None:
     assert "unsigned private test candidate" in windows_readme
     assert "ad-hoc signed and is NOT notarized" in macos_readme
     inventory = runbook.split(
-        "The exact v0.22.0 draft inventory is:\n", 1
+        "The exact v0.22.1 draft inventory is:\n", 1
     )[1].split("\nThe checksum file", 1)[0]
     assert re.findall(r"(?m)^- `([^`]+)`$", inventory) == [
-        "WebJam-v0.22.0-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+        "WebJam-v0.22.1-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
         "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
-        "WebJam-v0.22.0-macos-arm64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-v0.22.1-macos-arm64-ADHOC-TEST-ONLY.dmg",
         "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
-        "WebJam-v0.22.0-macos-x64-ADHOC-TEST-ONLY.dmg",
+        "WebJam-v0.22.1-macos-x64-ADHOC-TEST-ONLY.dmg",
         "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
         "WebJam-linux-x64.zip",
-        "WebJam-v0.22.0-SHA256SUMS.txt",
+        "WebJam-v0.22.1-SHA256SUMS.txt",
     ]
     assert "explicit **Latest** setting" in runbook
 
 
 def test_component_catalog_is_live_and_verified_before_latest_promotion() -> None:
     normalized = " ".join(COMPONENT_RUNBOOK.split())
-    assert "Create the desktop draft" in normalized
+    assert "creates the unpublished desktop draft" in normalized
     assert "Do not run **Publish Verified WebJam Release** yet." in normalized
     assert "Public verification before desktop promotion" in COMPONENT_RUNBOOK
-    assert "exact verified v0.22.0 desktop draft" in normalized
-    assert "only after steps 1–5 pass" in normalized
+    assert "exact verified v0.22.1 Mac draft package" in normalized
+    assert "only after steps 1–6 pass" in normalized
     assert "jamulus-components-v1" in COMPONENT_RUNBOOK
-    assert "remains a non-Latest prerelease" in normalized
+    assert "remains a public non-Latest prerelease" in normalized
+    assert "sequence 2" in normalized
+    assert "Never move or replace that tag" in normalized
 
 
 def test_draft_release_notes_explain_the_jamulus_update_boundary() -> None:
@@ -149,6 +171,18 @@ def test_draft_release_notes_explain_the_jamulus_update_boundary() -> None:
     assert "approval" in normalized
     assert "active" in normalized
     assert "interrupt" in normalized
+
+
+def test_linux_ci_isolates_native_qt_state_without_retrying_tests() -> None:
+    test_step = CI_WORKFLOW.split("      - name: Run test suite\n", 1)[1].split(
+        "\n  # ------------------------------------------------------------------", 1
+    )[0]
+    assert "git ls-files 'tests/test_*.py'" in test_step
+    assert 'for test_file in "${test_files[@]}"' in test_step
+    assert 'python -m pytest "$test_file" -v' in test_step
+    assert "pytest tests/ -v" not in test_step
+    assert "--reruns" not in test_step
+    assert "pytest-rerunfailures" not in test_step
 
 
 def test_reference_studio_late_import_graph_is_explicitly_frozen() -> None:

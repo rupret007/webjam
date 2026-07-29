@@ -7,6 +7,7 @@ import hashlib
 from http.client import HTTPMessage
 import os
 from pathlib import Path
+import ssl
 import stat
 import tempfile
 import threading
@@ -32,6 +33,14 @@ class ComponentDownloadCancelled(ComponentDownloadError):
 
 class ComponentDownloadIntegrityError(ComponentDownloadError):
     pass
+
+
+class ComponentTlsTrustError(ComponentDownloadError):
+    """The packaged public-CA trust data could not create a safe TLS context."""
+
+
+class ComponentSecureConnectionError(ComponentDownloadError):
+    """A bounded network/TLS failure with no URL, path, or raw exception text."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +110,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class UrllibHttpsTransport:
-    """System-trust HTTPS transport with explicitly inspected redirects."""
+    """Pinned-CA HTTPS transport with explicitly inspected redirects.
+
+    Frozen Python runtimes do not consistently discover an operating-system CA
+    bundle.  Certifi is a locked WebJam runtime dependency, so construct the
+    TLS context from its packaged certificate bytes instead of consulting
+    ``SSL_CERT_FILE``/``SSL_CERT_DIR`` or silently depending on the launch
+    environment.
+    """
 
     _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 
@@ -110,7 +126,71 @@ class UrllibHttpsTransport:
             raise ValueError("download timeout must be between 0 and 300 seconds")
         self.timeout = float(timeout)
         self.user_agent = str(user_agent).strip() or "WebJam"
-        self._opener = urllib.request.build_opener(_NoRedirect())
+        self._opener: urllib.request.OpenerDirector | None = None
+        self._opener_lock = threading.Lock()
+        self._trust_status = "not-checked"
+
+    def security_diagnostics(self) -> dict[str, str]:
+        """Return path-free facts suitable for a support bundle."""
+
+        with self._opener_lock:
+            status = self._trust_status
+        return {
+            "trust_source": "packaged-certifi",
+            "trust_status": status,
+            "environment_ca_overrides": "ignored",
+            "redirect_policy": "explicit-allowlist",
+        }
+
+    def _secure_opener(self) -> urllib.request.OpenerDirector:
+        with self._opener_lock:
+            if self._opener is not None:
+                return self._opener
+            try:
+                # Keep hashing, package inspection, and other offline helpers
+                # importable in minimal release jobs. Certifi is a direct,
+                # frozen dependency, but only the HTTPS boundary needs it.
+                import certifi
+
+                ca_data = certifi.contents()
+                if not isinstance(ca_data, str):
+                    raise TypeError("certificate bundle did not return text")
+                ca_size = len(ca_data.encode("ascii", errors="strict"))
+                begin_count = ca_data.count("-----BEGIN CERTIFICATE-----")
+                end_count = ca_data.count("-----END CERTIFICATE-----")
+                if (
+                    not 32 * 1024 <= ca_size <= 2 * 1024 * 1024
+                    or begin_count < 1
+                    or begin_count != end_count
+                ):
+                    raise ValueError("certificate bundle failed validation")
+                context = ssl.create_default_context(cadata=ca_data)
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
+                if (
+                    context.verify_mode != ssl.CERT_REQUIRED
+                    or not context.check_hostname
+                    or context.minimum_version < ssl.TLSVersion.TLSv1_2
+                ):
+                    raise ValueError("TLS context is not fail-closed")
+                opener = urllib.request.build_opener(
+                    _NoRedirect(),
+                    urllib.request.HTTPSHandler(context=context),
+                )
+            except (
+                ImportError,
+                OSError,
+                UnicodeError,
+                TypeError,
+                ValueError,
+                ssl.SSLError,
+            ) as exc:
+                self._trust_status = "unavailable"
+                raise ComponentTlsTrustError(
+                    "WebJam's packaged TLS trust data is unavailable"
+                ) from exc
+            self._opener = opener
+            self._trust_status = "ready"
+            return opener
 
     def open(
         self,
@@ -121,6 +201,7 @@ class UrllibHttpsTransport:
     ) -> OpenedDownload:
         current = policy.validate_source(url)
         redirects = 0
+        opener = self._secure_opener()
         while True:
             cancellation.raise_if_cancelled()
             request = urllib.request.Request(
@@ -133,7 +214,7 @@ class UrllibHttpsTransport:
                 },
             )
             try:
-                response = self._opener.open(request, timeout=self.timeout)
+                response = opener.open(request, timeout=self.timeout)
             except urllib.error.HTTPError as exc:
                 if exc.code not in self._REDIRECT_CODES:
                     exc.close()
@@ -155,7 +236,7 @@ class UrllibHttpsTransport:
                 redirects += 1
                 continue
             except (OSError, urllib.error.URLError) as exc:
-                raise ComponentDownloadError(
+                raise ComponentSecureConnectionError(
                     "component download could not connect securely"
                 ) from exc
             try:
@@ -403,6 +484,8 @@ __all__ = [
     "ComponentDownloadCancelled",
     "ComponentDownloadError",
     "ComponentDownloadIntegrityError",
+    "ComponentSecureConnectionError",
+    "ComponentTlsTrustError",
     "DownloadCancellation",
     "DownloadProgress",
     "DownloadTransport",

@@ -4,7 +4,7 @@ WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source candidate: **v0.22.0 unsigned private test candidate**. Its
+Current source candidate: **v0.22.1 unsigned private test candidate**. Its
 four-platform workflow covers Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc signed
 and not notarized.
@@ -77,4 +77,4 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.22.0.
+gates are **NOT RUN** for v0.22.1.

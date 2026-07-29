@@ -1,4 +1,4 @@
-# Webex companion guidance — v0.22.0
+# Webex companion guidance — v0.22.1
 
 Webex is optional for talking or video. Jamulus carries the music.
 

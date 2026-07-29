@@ -111,7 +111,22 @@ jobs:
       # (skips all tests) — no --ignore needed for it.
       - name: Run test suite
         run: |
-          pytest tests/ -v
+          # PySide owns native process state. Running thousands of Qt tests in
+          # one interpreter can retain hidden top-level widgets and eventually
+          # crash inside Qt instead of reporting a test failure. Keep every
+          # assertion, in deterministic order and without retries, while
+          # giving each test module a clean native lifetime.
+          mapfile -t test_files < <(git ls-files 'tests/test_*.py')
+          ((${#test_files[@]} > 0))
+          for test_file in "${test_files[@]}"; do
+            echo "::group::pytest ${test_file}"
+            status=0
+            python -m pytest "$test_file" -v || status=$?
+            echo "::endgroup::"
+            if ((status != 0)); then
+              exit "$status"
+            fi
+          done
 
   # ------------------------------------------------------------------
   # Job 1b: Integration against a REAL Jamulus binary.
@@ -394,7 +409,8 @@ jobs:
           assert all(entry.component_id == "jamulus" for entry in approved)
           assert all(entry.variant == "official" for entry in approved)
           assert all(entry.activation_mode is ActivationMode.PLATFORM_APPROVAL for entry in approved)
-          assert all(entry.supports_webjam("0.22.0") for entry in approved)
+          from webjam_qt import __version__
+          assert all(entry.supports_webjam(__version__) for entry in approved)
 
           target = (
               ComponentTarget.WINDOWS_X64

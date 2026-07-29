@@ -30,12 +30,23 @@ def _bad_audio():
     return SimpleNamespace(ok=False, device_name="", install_hint="Install BlackHole")
 
 
+def _without_bundled_jamulus():
+    """Resolve the lazy bridge import before a test changes sys.platform."""
+    return mock.patch(
+        "services.bridge_service._bundled_jamulus_candidate",
+        return_value=None,
+    )
+
+
 class TestReadyCheck(unittest.TestCase):
     def test_all_good(self):
         with tempfile.NamedTemporaryFile(suffix="Jamulus") as jam:
             s = _settings(jamulus_candidates=[jam.name])
-            with mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio), \
-                    mock.patch("core.preflight.sys.platform", "darwin"):
+            with (
+                _without_bundled_jamulus(),
+                mock.patch("core.audio_routing.scan_loopback_devices", _ok_audio),
+                mock.patch("core.preflight.sys.platform", "darwin"),
+            ):
                 rep = preflight.run_ready_check(s)
         self.assertTrue(rep.automated_ok, rep.to_text())
         self.assertTrue(rep.all_ok)
@@ -191,12 +202,20 @@ class TestReadyCheck(unittest.TestCase):
         expected = {"talkback": 6, "video_only": 1, "audience_bridge": 5}
         with tempfile.NamedTemporaryFile() as jam:
             for mode, count in expected.items():
-                with self.subTest(mode=mode), mock.patch(
-                    "core.audio_routing.scan_loopback_devices", _ok_audio
-                ), mock.patch("core.preflight.sys.platform", "darwin"):
-                    rep = preflight.run_ready_check(_settings(
-                        jamulus_candidates=[jam.name], webex_audio_mode=mode
-                    ))
+                with (
+                    self.subTest(mode=mode),
+                    _without_bundled_jamulus(),
+                    mock.patch(
+                        "core.audio_routing.scan_loopback_devices", _ok_audio
+                    ),
+                    mock.patch("core.preflight.sys.platform", "darwin"),
+                ):
+                    rep = preflight.run_ready_check(
+                        _settings(
+                            jamulus_candidates=[jam.name],
+                            webex_audio_mode=mode,
+                        )
+                    )
                 manual = [i for i in rep.items if i.manual_verification]
                 self.assertEqual(len(manual), count)
                 self.assertTrue(all(not i.required and not i.ok for i in manual))
@@ -208,12 +227,17 @@ class TestReadyCheck(unittest.TestCase):
                     self.assertIn("end the WebJam session", copy)
 
     def test_non_macos_talkback_omits_macos_mic_mode(self):
-        with tempfile.NamedTemporaryFile() as jam, mock.patch(
-            "core.preflight.sys.platform", "win32"
+        with (
+            tempfile.NamedTemporaryFile() as jam,
+            _without_bundled_jamulus(),
+            mock.patch("core.preflight.sys.platform", "win32"),
         ):
-            rep = preflight.run_ready_check(_settings(
-                jamulus_candidates=[jam.name], webex_audio_mode="talkback"
-            ))
+            rep = preflight.run_ready_check(
+                _settings(
+                    jamulus_candidates=[jam.name],
+                    webex_audio_mode="talkback",
+                )
+            )
         manual_names = {
             item.name for item in rep.items if item.manual_verification
         }

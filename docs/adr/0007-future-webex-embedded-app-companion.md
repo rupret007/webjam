@@ -44,11 +44,21 @@ minimize to the notification area, but it must remain independently visible
 and recoverable for audio setup, permissions, diagnostics, and failure
 recovery.
 
-All browser-to-service traffic uses HTTPS or WSS. Account authorization uses
-the documented Webex OAuth flow with minimum scopes, explicit consent, expiry,
-revocation, and role checks. No client secret is shipped to browser code.
-Durable tokens remain in a trusted service or OS credential store, never local
-storage, URLs, invitations, notes, logs, or support bundles.
+All browser-to-service traffic uses HTTPS or WSS. For the sandbox proof, use
+the Embedded Apps Framework context plus WebJam's own short-lived pairing
+grant; do not add Webex OAuth merely to identify the current embedded-app
+context. In Framework 2.x, read the user state and its JWT from
+`app.application.states.user`; the 1.x `context.getUser()` method is removed.
+Verify that context JWT server-side with a strict Webex issuer allowlist,
+expected app audience, expiry/issued-at checks, meeting/organization binding,
+and a bounded cache of Cisco verification keys. That JWT establishes context
+integrity but is not a Webex REST API access token.
+
+Add the documented Webex OAuth flow only when a concrete feature requires a
+Webex REST API. Then use minimum scopes, explicit consent, expiry, revocation,
+and role checks. No client secret is shipped to browser code. Durable tokens
+remain in a trusted service or OS credential store, never local storage, URLs,
+invitations, notes, logs, or support bundles.
 
 Desktop synchronization needs authenticated, short-lived session grants,
 origin binding, replay protection, revisioned/idempotent commands, bounded
@@ -92,7 +102,15 @@ content-retention design, secure-sync protocol tests, two-participant physical
 validation, and proof that disconnecting the companion cannot interrupt
 Jamulus, recording, or the desktop session.
 
-The v0.22 desktop release implements only native-app detection, official Cisco
-installer handoff, validated external meeting launch, and privacy-safe
+The v0.22.1 desktop candidate implements only native-app detection, official
+Cisco installer handoff, validated external meeting launch, and privacy-safe
 diagnostics. None of the hosted, OAuth, relay, embedded, or minimize-to-agent
 phases above are represented as shipped.
+
+## Cisco references
+
+- [Embedded Apps overview](https://developer.webex.com/create/docs/embedded-apps)
+- [Embedded Apps developer guide](https://developer.webex.com/create/docs/embedded-apps-guide)
+- [Embedded Apps Framework 2.x migration](https://eaf-sdk.webex.com/index.html#Get-user-API)
+- [Framework 2.x user state](https://eaf-sdk.webex.com/interfaces/IWebexAppsUserState.html)
+- [Webex App installation and automatic upgrades](https://help.webex.com/en-us/article/nw5p67g/Webex-App-%7C-Installation-and-Automatic-Upgrade)

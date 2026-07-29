@@ -113,6 +113,21 @@ _JAMULUS_UPDATE_STATES = frozenset(
 _COMPONENT_TARGETS = frozenset(
     {"windows-x64", "linux-x64", "macos-arm64", "macos-x64"}
 )
+_CATALOG_FETCH_STATES = frozenset({"not-checked", "online", "failed"})
+_CATALOG_FETCH_REASON_CODES = frozenset(
+    {
+        "catalog-offline",
+        "catalog-secure-connection-failed",
+        "catalog-service-unavailable",
+        "catalog-trust-unavailable",
+    }
+)
+_TLS_TRUST_SOURCES = frozenset(
+    {"packaged-certifi", "injected", "unavailable"}
+)
+_TLS_TRUST_STATES = frozenset({"not-checked", "ready", "unavailable", "unknown"})
+_TLS_ENVIRONMENT_OVERRIDE_STATES = frozenset({"ignored", "unknown"})
+_CATALOG_REDIRECT_POLICIES = frozenset({"explicit-allowlist", "unknown"})
 _WEBEX_APP_STATES = frozenset(
     {
         "installed",
@@ -422,6 +437,22 @@ def _sanitize_jamulus_update(value: Mapping[str, Any] | Any) -> dict[str, Any]:
     fingerprint = value.get("signer_fingerprint_sha256")
     if isinstance(fingerprint, str) and _SHA256_RE.fullmatch(fingerprint):
         result["signer_fingerprint_sha256"] = fingerprint
+    for key, allowed in (
+        ("catalog_fetch_status", _CATALOG_FETCH_STATES),
+        ("tls_trust_source", _TLS_TRUST_SOURCES),
+        ("tls_trust_status", _TLS_TRUST_STATES),
+        (
+            "tls_environment_ca_overrides",
+            _TLS_ENVIRONMENT_OVERRIDE_STATES,
+        ),
+        ("catalog_redirect_policy", _CATALOG_REDIRECT_POLICIES),
+    ):
+        item = value.get(key)
+        if isinstance(item, str) and item in allowed:
+            result[key] = item
+    fetch_reason = value.get("catalog_fetch_reason_code")
+    if isinstance(fetch_reason, str) and fetch_reason in _CATALOG_FETCH_REASON_CODES:
+        result["catalog_fetch_reason_code"] = fetch_reason
     return result
 
 

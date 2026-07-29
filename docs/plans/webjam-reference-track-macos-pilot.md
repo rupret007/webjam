@@ -4,7 +4,7 @@ This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
-The v0.22.0 production factory intentionally keeps playback locked. Run this
+The v0.22.1 production factory intentionally keeps playback locked. Run this
 procedure only from a separately identified, instrumented source-pilot build
 whose internal test wiring explicitly constructs
 `MacOSBlackHoleReferenceBackend(physical_route_certified=True)`. Record that

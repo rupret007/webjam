@@ -360,6 +360,14 @@ def test_controller_passes_component_trust_facts_to_saved_support_bundle(
                 "catalog_url": "https://private.invalid/catalog",
             },
             "embedded_fallback_version": "3.12.2",
+            "catalog_transport": {
+                "last_check": "online",
+                "trust_source": "packaged-certifi",
+                "trust_status": "ready",
+                "environment_ca_overrides": "ignored",
+                "redirect_policy": "explicit-allowlist",
+                "private_path": "/Users/private/cacert.pem",
+            },
         }
     )
     controller._webex_app_info = WebexAppInfo(
@@ -374,6 +382,14 @@ def test_controller_passes_component_trust_facts_to_saved_support_bundle(
     assert report["jamulus_update"]["active_version"] == "3.12.3"
     assert report["jamulus_update"]["catalog_sequence"] == 9
     assert report["jamulus_update"]["fallback_version"] == "3.12.2"
+    assert report["jamulus_update"]["catalog_fetch_status"] == "online"
+    assert report["jamulus_update"]["tls_trust_source"] == "packaged-certifi"
+    assert report["jamulus_update"]["tls_trust_status"] == "ready"
+    assert report["jamulus_update"]["tls_environment_ca_overrides"] == "ignored"
+    assert (
+        report["jamulus_update"]["catalog_redirect_policy"]
+        == "explicit-allowlist"
+    )
     assert report["webex_app"] == {
         "installed": True,
         "publisher_verified": True,

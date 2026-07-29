@@ -6,7 +6,12 @@ import io
 import json
 import os
 from pathlib import Path
+import ssl
+import subprocess
+import sys
+import urllib.request
 
+import certifi
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import pytest
@@ -27,9 +32,11 @@ from core.component_download import (
     ComponentDownloadCancelled,
     ComponentDownloadError,
     ComponentDownloadIntegrityError,
+    ComponentTlsTrustError,
     DownloadCancellation,
     OpenedDownload,
     SecureComponentDownloader,
+    UrllibHttpsTransport,
     verify_downloaded_file,
 )
 from core.component_hosts import (
@@ -597,6 +604,88 @@ def test_host_policy_allows_only_approved_https_redirects():
         JAMULUS_RELEASE_HOST_POLICY.validate_redirect(
             source, "https://evil.example/file"
         )
+
+
+def test_https_transport_uses_packaged_ca_bytes_and_ignores_environment(
+    monkeypatch,
+):
+    calls: list[dict[str, object]] = []
+    real_create_default_context = ssl.create_default_context
+
+    def create_default_context(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return real_create_default_context(*args, **kwargs)
+
+    monkeypatch.setenv("SSL_CERT_FILE", "/untrusted/private-ca.pem")
+    monkeypatch.setenv("SSL_CERT_DIR", "/untrusted/private-ca-directory")
+    monkeypatch.setattr(ssl, "create_default_context", create_default_context)
+
+    transport = UrllibHttpsTransport()
+    opener = transport._secure_opener()
+
+    assert len(calls) == 1
+    assert calls[0] == {"cadata": certifi.contents()}
+    handler = next(
+        item
+        for item in opener.handlers
+        if isinstance(item, urllib.request.HTTPSHandler)
+    )
+    context = handler._context
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
+    assert transport.security_diagnostics() == {
+        "trust_source": "packaged-certifi",
+        "trust_status": "ready",
+        "environment_ca_overrides": "ignored",
+        "redirect_policy": "explicit-allowlist",
+    }
+
+
+def test_offline_component_helpers_import_without_site_packages():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "from core.component_download import verify_downloaded_file",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "PYTHONNOUSERSITE": "1"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "",
+        "not a public CA bundle",
+        OSError("/Users/private/missing-ca.pem"),
+    ],
+)
+def test_https_transport_rejects_missing_or_invalid_ca_without_path_text(
+    monkeypatch,
+    failure,
+):
+    def contents():
+        if isinstance(failure, Exception):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(certifi, "contents", contents)
+    transport = UrllibHttpsTransport()
+
+    with pytest.raises(ComponentTlsTrustError) as raised:
+        transport._secure_opener()
+
+    assert "/Users/private" not in str(raised.value)
+    assert transport.security_diagnostics()["trust_status"] == "unavailable"
 
 
 def test_downloader_streams_exact_bytes_atomically(tmp_path):

@@ -1,4 +1,4 @@
-# WebJam v0.22.0 unsigned private test candidate
+# WebJam v0.22.1 unsigned private test candidate
 
 WebJam has two deliberately separate musician workflows:
 
@@ -35,11 +35,16 @@ Check gate in Host/Join.
 
 ## Jamulus updates without rebuilding WebJam
 
-WebJam v0.22.0 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+WebJam v0.22.1 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
 Reference Track companion as an offline fallback. In the background it checks
 a separately published, Ed25519-signed component catalog for Jamulus versions
 that have passed WebJam's exact routing, RPC, recording, and packaging
 contracts. It never follows an upstream “latest” link blindly.
+
+The packaged updater uses WebJam's release-locked Certifi CA set with hostname
+verification and TLS 1.2 or newer; launch-environment CA overrides cannot
+replace that trust root. A package-only release probe verifies this exact
+boundary against the live signed catalog before GitHub Latest promotion.
 
 An approved update can download without interrupting rehearsal, but it cannot
 install, activate, or roll back while a client, server, Reference Track,
@@ -141,7 +146,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.22.0 candidate retains the narrow Pocket Stage v1 vertical slice
+The v0.22.1 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
 **More -> Use iPhone** after both devices are on the same private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
@@ -188,7 +193,7 @@ decoder-supported MP3 through a separately owned `WebJam Track` Jamulus client,
 so the song becomes one participant with an independent level and recording
 stem.
 
-Playback remains deliberately **locked in the v0.22.0 private test candidate**.
+Playback remains deliberately **locked in the v0.22.1 private test candidate**.
 Apple's CoreAudio process-device property has a reported case where its input
 result becomes the process's output device after an input switch. Jamulus
 3.12.2 has no independent live-device RPC, and its saved profile is not
@@ -276,7 +281,7 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and candidate state
 
-The source tree reports **v0.22.0** and adds the signed Jamulus component
+The source tree reports **v0.22.1** and adds the signed Jamulus component
 updater, exact Jamulus-name preview/validation, native Webex detection and
 official installer handoff, and expanded privacy-safe diagnostics. It retains
 standalone Reference Studio, Pocket Stage, the capability-gated macOS Reference
@@ -284,8 +289,12 @@ Track pilot, session Studio, and the reviewed unsigned-candidate packaging
 described above. Published tags and assets remain immutable historical
 evidence. In particular, v0.20.0 history must not be moved. The
 v0.21.0 history must not be moved or silently replaced by this candidate.
+The v0.22.0 annotated tag and tagged bytes remain immutable. Its unpublished,
+package-failed draft stays untouched until v0.22.1 is publicly verified, then
+only that obsolete draft is deleted by release ID. v0.22.1 supersedes the
+candidate instead of rebuilding or moving v0.22.0.
 
-The v0.22.0 candidate workflow builds four targets from one source identity:
+The v0.22.1 candidate workflow builds four targets from one source identity:
 Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. Its draft
 GitHub release must contain exactly seven packages—the Windows Setup and ZIP,
 two Mac DMGs and two Mac ZIPs, and the Linux ZIP—plus one exact SHA-256
@@ -300,6 +309,9 @@ release key, expires within 31 days, and carries a monotonically increasing
 sequence. The desktop updater embeds only the matching public key and rejects
 expired, replayed, downgraded, equivocated, wrong-target, wrong-architecture,
 wrong-size, wrong-hash, wrong-publisher, or unexpected-inventory content.
+Support Bundles record only the finite catalog connection category and packaged
+TLS trust state, which helps distinguish ordinary offline access from a broken
+package without copying URLs, paths, credentials, or raw exceptions.
 
 Successful branch and pull-request workflows also retain the unsigned Windows
 x64 candidate on GitHub for 90 days as `webjam-windows-x64`. It contains
@@ -348,7 +360,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.22.0,
+integrity—not a substitute for musicians hearing one another. For v0.22.1,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -359,7 +371,7 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.22.0 candidate notes and changelog](CHANGELOG.md)
+- [v0.22.1 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

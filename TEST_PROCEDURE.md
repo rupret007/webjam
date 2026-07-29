@@ -1,7 +1,7 @@
-# WebJam v0.22.0 source and physical test procedure
+# WebJam v0.22.1 source and physical test procedure
 
-> The source tree reports v0.22.0. Published candidates remain immutable
-> rollback/reference evidence; they do not certify the v0.22.0 standalone
+> The source tree reports v0.22.1. Published candidates remain immutable
+> rollback/reference evidence; they do not certify the v0.22.1 standalone
 > Reference Studio, external Webex handoff, Reference Track pilot, or matching
 > iPhone setup kit.
 
