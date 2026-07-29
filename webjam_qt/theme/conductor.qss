@@ -310,6 +310,11 @@ QPushButton#QuietButton:focus {
     border-radius: ${RADIUS_LG}px;
 }
 
+#StageEmptyState QPushButton {
+    min-height: 28px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
+}
+
 #StageEmptyState[sessionState="connecting"],
 #StageEmptyState[sessionState="reconnecting"],
 #StageEmptyState[sessionState="practice"],
@@ -550,6 +555,11 @@ QLineEdit#CanvasChatInput {
     background-color: ${COLOR_BG_PANEL};
     border: 1px solid ${COLOR_BORDER_STRONG};
     border-radius: ${RADIUS_MD}px;
+}
+
+#WebexEmbed QPushButton {
+    min-height: 24px;
+    padding: ${SPACE_XS}px ${SPACE_MD}px;
 }
 
 #WebexPlaceholder {

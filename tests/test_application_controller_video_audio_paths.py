@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,16 @@ _app = QApplication.instance() or QApplication([])
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
+
+
+def _wait_until(predicate, timeout: float = 3.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return bool(predicate())
 
 
 def _make_controller():
@@ -63,9 +74,41 @@ class _ControllerTestBase(unittest.TestCase):
         c.audio.cleanup_retry_required = False
         c.audio.ended_by_user = False
         c._invite_switch_in_flight = False
+        c._webex_app_info = None
+        c._webex_activation_inflight = False
+        c.window.session_strip.set_tools_enabled(True)
 
 
 class TestExternalWebexLaunch(_ControllerTestBase):
+    def test_main_webex_navigation_never_hands_off_the_meeting_url(self):
+        c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/band"
+        c.bridge.launch_webex = MagicMock()
+
+        c.window.session_strip._video_button.click()
+
+        c.bridge.launch_webex.assert_not_called()
+        c.window.webex_embed.setVisible.assert_called_once_with(True)
+        c.window.webex_embed.focus_primary_action.assert_called_once_with()
+        self.assertEqual(c._last_content_key, "stage")
+
+    def test_more_conversation_uses_the_same_side_effect_free_route(self):
+        c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/band"
+        c.bridge.launch_webex = MagicMock()
+        c.window.session_strip.set_video_configured(True)
+        action = next(
+            action
+            for action in c.window.session_strip._tools_button.menu().actions()
+            if action.text() == "Webex / Conversation"
+        )
+
+        action.trigger()
+
+        c.bridge.launch_webex.assert_not_called()
+        c.window.webex_embed.setVisible.assert_called_once_with(True)
+        c.window.webex_embed.focus_primary_action.assert_called_once_with()
+
     def test_join_without_url_shows_actionable_error(self):
         c = self.controller
         c.settings.webex_url = ""
@@ -80,7 +123,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
     def test_valid_url_opens_externally(self):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/band"
-        c.bridge.launch_webex = MagicMock()
+        c.bridge.launch_webex = MagicMock(return_value=True)
         c._on_join_video()
         c.window.webex_embed.setVisible.assert_called_once_with(True)
         self.assertEqual(c.webex.meeting_url, "https://example.webex.com/meet/band")
@@ -90,6 +133,28 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         )
         c.window.webex_embed.set_launch_status.assert_called_with("Opening…")
         c.window.webex_embed.load_meeting.assert_not_called()
+
+    def test_rejected_single_flight_launch_never_leaves_opening_ui(self):
+        c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/new-room"
+        c.bridge.webex_state = "Not opened"
+        c.bridge.launch_webex = MagicMock(return_value=False)
+
+        c._on_join_video()
+
+        c.bridge.launch_webex.assert_called_once_with(manual=True)
+        c.window.set_status_video.assert_called_with("Not opened")
+        c.window.session_strip.set_video_state.assert_called_with(
+            "Open Webex",
+            enabled=True,
+        )
+        c.window.webex_embed.set_launch_status.assert_called_with(
+            "Not opened"
+        )
+        self.assertIn(
+            "previous Webex open request",
+            c.window.flash_message.call_args.args[0],
+        )
 
     def test_join_invalid_webex_url_shows_actionable_error(self):
         c = self.controller
@@ -126,10 +191,163 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c = self.controller
         c.settings.webex_url = "https://example.webex.com/meet/band"
         c.bridge.webex_state = "Opened externally"
-        c.bridge.launch_webex = MagicMock()
+        c.bridge.launch_webex = MagicMock(return_value=True)
         c._on_join_video()
         c.bridge.launch_webex.assert_called_once_with(manual=True)
         c.window.webex_embed.leave_meeting.assert_not_called()
+
+    def test_join_open_is_single_flight_while_handoff_is_in_progress(self):
+        c = self.controller
+        c.settings.webex_url = "https://example.webex.com/meet/band"
+        c.bridge.webex_state = "Opening…"
+        c.bridge.launch_webex = MagicMock()
+
+        c._on_join_video()
+
+        c.bridge.launch_webex.assert_not_called()
+        self.assertIn(
+            "already opening",
+            c.window.flash_message.call_args.args[0],
+        )
+
+
+class TestNativeWebexControls(_ControllerTestBase):
+    def test_bring_forward_activates_only_the_detected_app(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            version="46.7.0",
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        c._webex_app_info = info
+        c.bridge.launch_webex = MagicMock()
+        with patch(
+            "services.webex_app.bring_webex_forward",
+            return_value=True,
+        ) as activate:
+            c._bring_webex_forward()
+            self.assertTrue(
+                _wait_until(
+                    lambda: activate.called
+                    and not c._webex_activation_inflight
+                )
+            )
+
+        activate.assert_called_once_with(info)
+        c.bridge.launch_webex.assert_not_called()
+        self.assertIn(
+            "asked Webex to come forward",
+            c.window.flash_message.call_args.args[0],
+        )
+        self.assertIn(
+            "Switch to Webex if needed",
+            c.window.flash_message.call_args.args[0],
+        )
+
+    def test_mute_action_never_changes_webex_or_jamulus_audio_blindly(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            version="46.7.0",
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        c.bridge.launch_webex = MagicMock()
+        c.jamulus.set_mute = MagicMock()
+        c.jamulus.set_self_muted = MagicMock()
+        with patch(
+            "services.webex_app.bring_webex_forward",
+            return_value=True,
+        ) as activate:
+            c._focus_webex_mute()
+            self.assertTrue(
+                _wait_until(
+                    lambda: activate.called
+                    and not c._webex_activation_inflight
+                )
+            )
+
+        c.bridge.launch_webex.assert_not_called()
+        c.jamulus.set_mute.assert_not_called()
+        c.jamulus.set_self_muted.assert_not_called()
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("asked Webex to come forward", message)
+        self.assertIn("use its Mute control", message)
+        self.assertIn("did not change", message)
+
+    def test_unavailable_app_does_not_launch_a_meeting_as_fallback(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.NOT_INSTALLED,
+        )
+        c.bridge.launch_webex = MagicMock()
+
+        c._bring_webex_forward()
+
+        c.bridge.launch_webex.assert_not_called()
+        self.assertIn(
+            "not available",
+            c.window.flash_message.call_args.args[0],
+        )
+
+    def test_failed_revalidation_rescans_without_opening_a_meeting(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        c.bridge.launch_webex = MagicMock()
+        with patch(
+            "services.webex_app.bring_webex_forward",
+            return_value=False,
+        ) as activate, patch.object(
+            c,
+            "_start_webex_app_detection",
+            return_value=True,
+        ) as rescan:
+            c._bring_webex_forward()
+            self.assertTrue(
+                _wait_until(
+                    lambda: activate.called
+                    and not c._webex_activation_inflight
+                )
+            )
+
+        rescan.assert_called_once_with()
+        c.bridge.launch_webex.assert_not_called()
+        self.assertIn(
+            "couldn't reverify",
+            c.window.flash_message.call_args.args[0],
+        )
+
+    def test_native_activation_is_single_flight(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        c._webex_activation_inflight = True
+        with patch("services.webex_app.bring_webex_forward") as activate:
+            c._bring_webex_forward()
+
+        activate.assert_not_called()
+        self.assertIn(
+            "still verifying",
+            c.window.flash_message.call_args.args[0],
+        )
 
 
 class TestJamulusForegroundGuidance(_ControllerTestBase):
@@ -334,6 +552,21 @@ class TestRailViewChanges(_ControllerTestBase):
         sizes = c.window.center_splitter.sizes()
         self.assertGreater(sizes[0], sizes[1])
 
+    def test_direct_studio_button_opens_live_take_review(self):
+        c = self.controller
+        with patch.object(
+            c.window.reference_studio,
+            "show_take_review",
+        ) as show_take_review:
+            c.window.session_strip._studio_button.click()
+
+        self.assertEqual(c._last_content_key, "takes")
+        self.assertIs(
+            c.window.workspace_stack.currentWidget(),
+            c.window.reference_studio,
+        )
+        show_take_review.assert_called_once_with()
+
     def test_dead_placeholder_views_are_not_in_navigation(self):
         keys = {
             button.property("railKey")
@@ -504,6 +737,7 @@ class TestSettingsWizard(_ControllerTestBase):
         c.settings.webex_url = "https://example.webex.com/meet/old"
         c.webex.meeting_url = c.settings.webex_url
         c.bridge.webex_state = "Opened externally"
+        c.bridge.launch_webex = MagicMock()
         fresh = AppSettings()
         fresh.webex_url = "https://example.webex.com/meet/other"
         with patch.object(
@@ -523,6 +757,7 @@ class TestSettingsWizard(_ControllerTestBase):
             "Open Webex",
             enabled=True,
         )
+        c.bridge.launch_webex.assert_not_called()
 
     def test_accepted_with_changed_server_warns_when_audio_running(self):
         c = self.controller

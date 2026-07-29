@@ -52,6 +52,7 @@ class DiagnosticsExporter:
         metrics_service: Any = None,
         jamulus_update: Any = None,
         webex_app: Any = None,
+        reference_track: Any = None,
     ) -> None:
         self.settings = settings
         self.bridge = bridge
@@ -66,6 +67,7 @@ class DiagnosticsExporter:
         self.metrics = metrics_service
         self.jamulus_update = jamulus_update
         self.webex_app = webex_app
+        self.reference_track = reference_track
         self._artifact_cache: SupportBundleArtifact | None = None
 
     def build_summary(self) -> str:
@@ -169,6 +171,7 @@ class DiagnosticsExporter:
             ),
             jamulus_update=_public_mapping(self.jamulus_update),
             webex_app=_public_mapping(self.webex_app),
+            reference_track=_public_mapping(self.reference_track),
             musician_guidance=self._musician_guidance(),
             session_transitions=self._session_transitions(),
             engine_capabilities=engine_capabilities,

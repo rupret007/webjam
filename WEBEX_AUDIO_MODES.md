@@ -1,12 +1,21 @@
-# Webex companion guidance — v0.22.1
+# Webex companion guidance — v0.22.2
 
 Webex is optional for talking or video. Jamulus carries the music.
 
-Use **More → Webex / Conversation** only if the band wants it. In **Settings →
+Use the direct **Webex** action only if the band wants it. It reveals the
+Conversation panel without opening or rejoining a meeting. In **Settings →
 Conversation**, each musician can enter their own **Meeting or Personal Room
 link**. WebJam displays the Webex site hostname and offers **Open in Webex** to
 test the draft link. It saves only the link and opens it externally only after
 an explicit user action.
+
+In Conversation, **Bring Forward** requests activation only after WebJam proves
+the installed app's publisher and never opens the saved link. If publisher
+proof is unavailable, **Join / Open** still performs the one explicit
+meeting-link handoff. **Change Link** returns to Settings. **Mute in Webex**
+requests that the verified native app come forward for its own Mute control.
+WebJam cannot verify or change mute in an externally owned meeting, so it never
+sends a blind shortcut or reports Webex—or Jamulus—as muted.
 
 Webex handles sign-in, participant identity, camera, microphone, speakers, and
 meeting controls. A WebJam musician name does not change the user's Webex

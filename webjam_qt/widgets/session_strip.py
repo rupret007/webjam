@@ -7,7 +7,7 @@ Shows, left to right:
   - Live session timer
   - Record indicator
   - Mode picker
-  - Primary actions (Start Audio, Open Webex)
+  - Primary actions (Start Audio, Webex, Studio)
 
 Emits semantic signals; ApplicationController wires them to services.
 """
@@ -68,6 +68,7 @@ class SessionStrip(QFrame):
         self._mode_entries = list(mode_entries)
         self.operator_mode = bool(operator_mode)
         self._elapsed_seconds = 0
+        self._tools_enabled = True
         # --- Widgets
         self._logo = BrandMark(28)
         self._logo.setObjectName("SessionStripLogo")
@@ -156,15 +157,49 @@ class SessionStrip(QFrame):
         # should not look like a checklist musicians must operate.
         self._test_button.setVisible(False)
 
-        self._video_button = QPushButton("Open Webex")
-        self._video_button.setObjectName("PrimaryButton")
-        self._video_button.setAccessibleName("Open Webex")
+        self._video_button = QPushButton("Webex")
+        self._video_button.setObjectName("GhostButton")
+        self._video_button.setAccessibleName("Show Webex conversation controls")
         self._video_button.setToolTip(
-            "Open the band's meeting in the native Webex app or browser.\n"
-            "WebJam cannot inspect or control the external meeting."
+            "Show WebJam's Webex conversation controls.\n"
+            "This does not open or rejoin the meeting."
         )
-        self._video_button.clicked.connect(self.join_video_requested.emit)
-        self._video_button.setVisible(False)
+        self._video_button.setAccessibleDescription(
+            "Show WebJam's Conversation panel without opening the meeting link."
+        )
+        self._video_button.clicked.connect(
+            lambda: self.tool_requested.emit("conversation")
+        )
+
+        self._studio_button = QPushButton("Studio")
+        self._studio_button.setObjectName("GhostButton")
+        self._studio_button.setAccessibleName("Open Studio")
+        self._studio_button.setAccessibleDescription(
+            "Open completed take review during a live jam or the song project "
+            "workspace when WebJam was opened in Reference Studio."
+        )
+        self._studio_button.setToolTip(
+            "Open Studio to review completed takes and work on the song."
+        )
+        self._studio_button.clicked.connect(
+            lambda: self.tool_requested.emit("takes")
+        )
+
+        self._reference_track_button = QPushButton("Reference Track")
+        self._reference_track_button.setObjectName("GhostButton")
+        self._reference_track_button.setAccessibleName("Open Reference Track")
+        self._reference_track_button.setAccessibleDescription(
+            "Open the host-controlled song player. Loading and inspecting a "
+            "song does not start playback."
+        )
+        self._reference_track_button.setToolTip(
+            "Open Reference Track to load and inspect a song.\n"
+            "Playback remains locked until its isolated Jamulus route is proven."
+        )
+        self._reference_track_button.clicked.connect(
+            lambda: self.tool_requested.emit("reference_track")
+        )
+        self._reference_track_button.setVisible(False)
 
         self._invite_button = QPushButton("Copy Invite")
         self._invite_button.setObjectName("GhostButton")
@@ -199,7 +234,12 @@ class SessionStrip(QFrame):
             lambda: self.tool_requested.emit("jamulus_updates")
         )
         conversation_action = QAction("Webex / Conversation", tools_menu)
-        conversation_action.triggered.connect(self.join_video_requested.emit)
+        conversation_action.setToolTip(
+            "Show Conversation controls without opening the meeting."
+        )
+        conversation_action.triggered.connect(
+            lambda: self.tool_requested.emit("conversation")
+        )
         recording_action = QAction("Recording Setup", tools_menu)
         recording_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
@@ -258,8 +298,9 @@ class SessionStrip(QFrame):
         settings_action = QAction("WebJam Settings", tools_menu)
         settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
         tools_menu.addAction(settings_action)
-        # Backward-compatible reference used by set_video_state().  The
-        # conversation action lives under More and is intentionally optional.
+        # Backward-compatible reference used by set_video_state(). Both this
+        # menu item and the direct Webex button navigate through the same
+        # side-effect-free Conversation route.
         self._video_action = conversation_action
         self._test_night_action: QAction | None = None
         if self.operator_mode:
@@ -293,6 +334,8 @@ class SessionStrip(QFrame):
         layout.addWidget(self._audio_button)
         layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
+        layout.addWidget(self._reference_track_button)
+        layout.addWidget(self._studio_button)
         layout.addWidget(self._tools_button)
 
         # --- Timer
@@ -339,29 +382,47 @@ class SessionStrip(QFrame):
         )
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
-        self._video_button.setText(label)
-        self._video_button.setEnabled(enabled)
-        self._video_button.setAccessibleName(label)
+        """Retain external-launch status without changing navigation semantics.
+
+        The direct button always means "show Conversation". Launch progress is
+        rendered by :class:`WebexEmbed`; disabling this navigation button
+        while a handoff is in progress would make that truthful status harder
+        to reach.
+        """
+
+        self._video_button.setProperty("webexLaunchAction", label)
+        self._video_button.setEnabled(self._tools_enabled)
         self._video_button.setAccessibleDescription(
-            f"Webex video action. Current action: {label}."
+            "Show WebJam's Conversation panel without opening the meeting "
+            f"link. External handoff status: {label}."
         )
-        menu_label = (
-            "Webex / Conversation"
-            if label in {"Open Webex", "Open Again"}
-            else label
-        )
-        self._video_action.setText(menu_label)
-        self._video_action.setEnabled(enabled)
+        self._video_action.setEnabled(self._tools_enabled)
 
     def set_video_configured(self, configured: bool) -> None:
-        if configured:
-            if self._video_action.text() == "Add Webex / Conversation":
-                self._video_action.setText("Webex / Conversation")
-        else:
-            self._video_action.setText("Add Webex / Conversation")
+        self._video_action.setText(
+            "Webex / Conversation"
+            if configured
+            else "Add Webex / Conversation"
+        )
+        self._video_button.setToolTip(
+            (
+                "Show WebJam's Webex conversation controls.\n"
+                "This does not open or rejoin the meeting."
+            )
+            if configured
+            else (
+                "Show Conversation controls and add a Webex Meeting or "
+                "Personal Room link."
+            )
+        )
 
     def set_tools_enabled(self, enabled: bool) -> None:
-        self._tools_button.setEnabled(bool(enabled))
+        self._tools_enabled = bool(enabled)
+        self._tools_button.setEnabled(self._tools_enabled)
+        self._video_button.setEnabled(self._tools_enabled)
+        self._reference_track_button.setEnabled(self._tools_enabled)
+        self._studio_button.setEnabled(self._tools_enabled)
+        self._video_action.setEnabled(self._tools_enabled)
 
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
         """Render the recorder state machine without relying on transient banners.
@@ -457,6 +518,8 @@ class SessionStrip(QFrame):
 
         self._reference_track_action.setVisible(bool(host))
         self._reference_track_action.setEnabled(bool(host))
+        self._reference_track_button.setVisible(bool(host))
+        self._reference_track_button.setEnabled(bool(host) and self._tools_enabled)
 
     def set_invite_available(self, available: bool) -> None:
         self._invite_button.setVisible(bool(available))

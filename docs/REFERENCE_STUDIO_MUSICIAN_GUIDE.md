@@ -5,7 +5,7 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-This guide describes the v0.22.1 private test candidate. Windows packages are
+This guide describes the v0.22.2 private test candidate. Windows packages are
 unsigned. Mac packages are ad-hoc signed and unnotarized. Automated checks do
 not prove that a particular interface, driver, speaker, or headphone path is
 audible; the physical hardware gates remain **NOT RUN** until recorded against
@@ -148,7 +148,7 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 is intentionally absent from the v0.22.1 candidate. It appears only if a
+MP3 bounce is intentionally absent from the v0.22.2 candidate. It appears only if a
 separate encoder adapter has passed the product's identity, output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 
@@ -167,18 +167,18 @@ and teardown. The standalone workflow makes no such claim.
 
 ## Candidate download checklist
 
-The v0.22.1 GitHub release is valid only when it is a published,
+The v0.22.2 GitHub release is valid only when it is a published,
 non-prerelease release marked **Latest** and contains exactly these seven
 packages plus the checksum manifest:
 
-- `WebJam-v0.22.1-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-v0.22.2-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
-- `WebJam-v0.22.1-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-v0.22.2-macos-arm64-ADHOC-TEST-ONLY.dmg`
 - `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
-- `WebJam-v0.22.1-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-v0.22.2-macos-x64-ADHOC-TEST-ONLY.dmg`
 - `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
 - `WebJam-linux-x64.zip`
-- `WebJam-v0.22.1-SHA256SUMS.txt`
+- `WebJam-v0.22.2-SHA256SUMS.txt`
 
 The manifest contains checksums for the seven packages, not for itself. An
 Actions artifact or GitHub draft is engineering evidence, not the Latest

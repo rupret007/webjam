@@ -272,6 +272,21 @@ class ParticipantGrid(QScrollArea):
 
     def _center_empty_state(self) -> None:
         """Keep the hero card optically centered over the stage viewport."""
+        viewport_height = self.viewport().height()
+        compact_height = viewport_height < 300
+        layout = self._empty_state.layout()
+        if layout is not None:
+            margin = Space.MD if compact_height else Space.XXL
+            spacing = Space.SM if compact_height else Space.MD
+            layout.setContentsMargins(margin, margin, margin, margin)
+            layout.setSpacing(spacing)
+        # The conversation card reduces the stage height on compact screens.
+        # Hide the secondary lobby hint there so the primary session action
+        # remains fully contained above Conversation instead of drawing
+        # behind it. Restore the hint automatically when space returns.
+        self._empty_hint.setVisible(
+            bool(self._empty_hint.text()) and not compact_height
+        )
         # A comfortably readable hero on desktop that shrinks with the actual
         # viewport instead of imposing a fixed app-wide minimum width.
         responsive_target = max(360, int(self.viewport().width() * 0.56))
@@ -280,9 +295,16 @@ class ParticipantGrid(QScrollArea):
             min(responsive_target, self._empty_state.maximumWidth()),
         )
         width = min(width, max(320, self.viewport().width() - 2 * Space.LG))
-        layout = self._empty_state.layout()
         height = layout.heightForWidth(width) if layout is not None else -1
         height = max(height, self._empty_state.minimumSizeHint().height())
+        # Qt's production stylesheet adds button padding after the layout's
+        # height-for-width calculation. Reserve one small vertical gutter so
+        # the final action row remains inside the framed card.
+        height += Space.SM
+        height = min(
+            height,
+            max(1, viewport_height - 2 * Space.LG),
+        )
         x = max(Space.LG, (self.viewport().width() - width) // 2)
         # Slightly above true center reads better in a tall stage.
         y = max(Space.LG, int((self.viewport().height() - height) * 0.42))

@@ -1,4 +1,4 @@
-# WebJam architecture — v0.22.1
+# WebJam architecture — v0.22.2
 
 ## Product boundary
 
@@ -92,6 +92,20 @@ handoff—not meeting membership. Webex owns authentication, participant
 identity, camera, microphone, speakers, mute, and meeting state. Native app
 detection is diagnostic convenience; an explicit install action opens only an
 approved Cisco HTTPS URL and does not download or execute a package itself.
+
+The direct Live **Webex** action is navigation only. It reveals the
+Conversation panel without opening the link. **Bring Forward** activates the
+verified native app, **Join / Open** performs the one explicit URL handoff, and
+**Mute in Webex** can only focus Webex for its own Mute control because this
+external-app integration cannot verify mute state. None of those actions alter
+Jamulus. The direct **Studio** action reuses the existing session/offline Studio
+route rather than creating another editor lifecycle.
+
+Reference Track also separates source and route authority. A host can load,
+decode, and inspect a bounded source while route capability is unavailable.
+Only Play requires fresh isolation evidence. The support projection exports
+allowlisted source format/rate/channel/duration and finite route state, never a
+source name or path.
 
 A future Webex Embedded App is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a

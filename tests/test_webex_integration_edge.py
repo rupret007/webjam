@@ -32,6 +32,23 @@ class TestExternalWebexLauncher(unittest.TestCase):
             controller.launch_state, WebexLaunchState.OPENED_EXTERNALLY
         )
 
+    def test_explicit_launch_uses_immutable_argument_not_mutable_setting(self):
+        controller = WebexController(
+            "https://old.webex.com/meet/original"
+        )
+        requested = "https://new.webex.com/meet/authorized"
+        with patch(
+            "webex_integration.webbrowser.open",
+            return_value=True,
+        ) as opener:
+            self.assertTrue(controller.join_meeting_url(requested))
+
+        opener.assert_called_once_with(requested)
+        self.assertEqual(
+            controller.meeting_url,
+            "https://old.webex.com/meet/original",
+        )
+
     def test_factory_preserves_external_only_contract(self):
         controller = create_webex_controller("https://example.webex.com/meet/test")
         self.assertEqual(controller.launch_state, WebexLaunchState.NOT_OPENED)

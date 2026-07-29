@@ -1,4 +1,4 @@
-# First Jam — WebJam v0.22.1
+# First Jam — WebJam v0.22.2
 
 ## Host
 
@@ -12,11 +12,15 @@
 5. When **Copy Invite** appears, send the complete link to a bandmate.
 6. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-7. Add Webex only if your band wants it: **More → Webex / Conversation**.
-   Jamulus remains the music path.
+7. Add Webex only if your band wants it: choose **Webex** on the main session
+   rail, then use **Join / Open**. Merely showing Conversation does not open or
+   rejoin a meeting. Jamulus remains the music path.
 8. Follow the single next action in the Session HUD. Open **Notes** when you
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
+9. Use the direct **Studio** action to review a take. Hosts can use **Reference Track** to
+   load and inspect a Reference Track; playback stays locked until its separate
+   Jamulus route is proven.
 
 ## Join
 
@@ -30,6 +34,8 @@
 
 - Do not select Jamulus music devices in WebJam; Jamulus owns them.
 - Do not expect Webex to carry the music; it is optional conversation/video.
+- **Bring Forward** does not join again. **Mute in Webex** brings Webex forward
+  to its own Mute control; WebJam does not claim to change or verify Webex mute.
 - Do not configure Local Originals before joining. The host’s first **Record**
   click is when that choice matters.
 - Do not use a moving meter as proof that the returned mix sounds right. The

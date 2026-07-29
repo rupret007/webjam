@@ -36,11 +36,15 @@ writable and otherwise falls back to your personal ~/Applications folder.
 Optional Webex conversation
 ---------------------------
 Webex is not bundled with WebJam. After WebJam opens, choose
-More > Webex / Conversation. If the native Webex app is missing, Get Webex
-opens Cisco's official installer for this Mac after you confirm. Cisco owns
-that download, license, installation, sign-in, and its automatic updates.
-Jamulus remains the
-music path; keep Webex muted while playing to avoid delayed duplicate audio.
+Webex on the main session rail to show Conversation controls. This does not
+open or rejoin a meeting. Bring Forward activates the verified native app, and
+only Join / Open hands off the saved link. Mute in Webex brings the app forward
+so you can use Webex's own Mute control; WebJam cannot verify or change
+external Webex mute. If the native Webex app is missing, Get Webex opens
+Cisco's official installer for this Mac after you confirm. Cisco owns that
+download, license, installation, sign-in, and its automatic updates. Jamulus
+remains the music path; keep Webex muted while playing to avoid delayed
+duplicate audio.
 
 iPhone Pocket Stage setup
 -------------------------

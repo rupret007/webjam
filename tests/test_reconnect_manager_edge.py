@@ -301,7 +301,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
            side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw))
     def test_launch_webex_sets_opened_state_after_success(self, _thread_mock):
         bridge = _make_bridge()
-        bridge.webex_controller.join_meeting.return_value = True
+        bridge.webex_controller.join_meeting_url.return_value = True
         bridge.launch_webex(manual=True, reconnect=False)
 
         self.assertEqual(bridge.webex_state, "Opened externally")
@@ -324,15 +324,15 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.shutdown_requested = lambda: shutdown_flag["value"]
         bridge.webex_state = "Not opened"
 
-        def _join_and_shutdown():
+        def _join_and_shutdown(_url):
             shutdown_flag["value"] = True
             return True
 
-        bridge.webex_controller.join_meeting.side_effect = _join_and_shutdown
+        bridge.webex_controller.join_meeting_url.side_effect = _join_and_shutdown
 
         bridge.launch_webex(manual=True, reconnect=False)
 
-        bridge.webex_controller.join_meeting.assert_called()
+        bridge.webex_controller.join_meeting_url.assert_called()
         self.assertEqual(bridge.webex_state, "Not opened")
         self.assertNotIn(
             "metric_webex_open_success",
@@ -348,7 +348,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
     ):
         bridge = _make_bridge()
         bridge.jamulus_state = "Running"
-        bridge.webex_controller.join_meeting.return_value = False
+        bridge.webex_controller.join_meeting_url.return_value = False
         bridge.webex_controller.last_error = "RuntimeError"
 
         bridge.launch_webex(manual=True, reconnect=False)
@@ -364,7 +364,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         workers: list[threading.Thread] = []
         real_thread = threading.Thread
 
-        def _join_meeting() -> bool:
+        def _join_meeting(_url) -> bool:
             entered.set()
             self.assertTrue(release.wait(timeout=2.0))
             return True
@@ -374,7 +374,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
             workers.append(worker)
             return worker
 
-        bridge.webex_controller.join_meeting.side_effect = _join_meeting
+        bridge.webex_controller.join_meeting_url.side_effect = _join_meeting
         with patch(
             "services.bridge_service.threading.Thread",
             side_effect=_thread_factory,
@@ -393,6 +393,104 @@ class TestReconnectManagerEdge(unittest.TestCase):
             [call.args[0] for call in bridge.metrics_service.increment.call_args_list],
         )
 
+    def test_concurrent_webex_open_requests_are_single_flight(self):
+        bridge = _make_bridge()
+        entered = threading.Event()
+        release = threading.Event()
+        workers: list[threading.Thread] = []
+        real_thread = threading.Thread
+
+        def _join_meeting(_url) -> bool:
+            entered.set()
+            self.assertTrue(release.wait(timeout=2.0))
+            return True
+
+        def _thread_factory(*args, **kwargs):
+            worker = real_thread(*args, **kwargs)
+            workers.append(worker)
+            return worker
+
+        bridge.webex_controller.join_meeting_url.side_effect = _join_meeting
+        with patch(
+            "services.bridge_service.threading.Thread",
+            side_effect=_thread_factory,
+        ):
+            self.assertTrue(bridge.launch_webex(manual=True))
+            self.assertTrue(entered.wait(timeout=2.0))
+            self.assertFalse(bridge.launch_webex(manual=True))
+            release.set()
+            workers[0].join(timeout=2.0)
+
+        self.assertEqual(len(workers), 1)
+        self.assertEqual(
+            bridge.webex_controller.join_meeting_url.call_count,
+            1,
+        )
+        self.assertFalse(bridge._webex_launch_inflight)
+
+    @patch(
+        "services.bridge_service.threading.Thread",
+        side_effect=lambda *a, **kw: _ImmediateThread(*a, **kw),
+    )
+    def test_invalidation_immediately_after_begin_never_leaks_inflight(
+        self,
+        _thread_mock,
+    ):
+        bridge = _make_bridge()
+        original_begin = bridge._begin_webex_launch
+
+        def _begin_and_invalidate():
+            generation = original_begin()
+            bridge.invalidate_webex_launch()
+            bridge.webex_state = "Not opened"
+            return generation
+
+        bridge._begin_webex_launch = _begin_and_invalidate
+        bridge.launch_webex(manual=True)
+
+        self.assertFalse(bridge._webex_launch_inflight)
+        self.assertEqual(bridge.webex_state, "Not opened")
+        bridge.webex_controller.join_meeting_url.assert_not_called()
+
+    def test_webex_worker_uses_captured_url_when_settings_change(self):
+        bridge = _make_bridge()
+        old_url = "https://old.webex.com/meet/original"
+        new_url = "https://new.webex.com/meet/replacement"
+        bridge.settings.webex_url = old_url
+        entered = threading.Event()
+        release = threading.Event()
+        received: list[str] = []
+        workers: list[threading.Thread] = []
+        real_thread = threading.Thread
+
+        def _join_meeting(url: str) -> bool:
+            received.append(url)
+            entered.set()
+            self.assertTrue(release.wait(timeout=2.0))
+            return True
+
+        def _thread_factory(*args, **kwargs):
+            worker = real_thread(*args, **kwargs)
+            workers.append(worker)
+            return worker
+
+        bridge.webex_controller.join_meeting_url.side_effect = _join_meeting
+        with patch(
+            "services.bridge_service.threading.Thread",
+            side_effect=_thread_factory,
+        ):
+            bridge.launch_webex(manual=True)
+            self.assertTrue(entered.wait(timeout=2.0))
+            bridge.settings.webex_url = new_url
+            bridge.invalidate_webex_launch()
+            bridge.webex_state = "Not opened"
+            release.set()
+            workers[0].join(timeout=2.0)
+
+        self.assertEqual(received, [old_url])
+        self.assertEqual(bridge.webex_state, "Not opened")
+        bridge.webex_controller.join_meeting.assert_not_called()
+
     def test_invalidated_webex_open_cannot_publish_stale_failure(self):
         bridge = _make_bridge()
         entered = threading.Event()
@@ -400,7 +498,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         workers: list[threading.Thread] = []
         real_thread = threading.Thread
 
-        def _join_meeting() -> bool:
+        def _join_meeting(_url) -> bool:
             entered.set()
             self.assertTrue(release.wait(timeout=2.0))
             raise RuntimeError("old handoff failed")
@@ -410,7 +508,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
             workers.append(worker)
             return worker
 
-        bridge.webex_controller.join_meeting.side_effect = _join_meeting
+        bridge.webex_controller.join_meeting_url.side_effect = _join_meeting
         with patch(
             "services.bridge_service.threading.Thread",
             side_effect=_thread_factory,
@@ -436,7 +534,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
                 bridge = _make_bridge()
                 queued: list[object] = []
                 bridge.schedule_ui_callback = queued.append
-                bridge.webex_controller.join_meeting.return_value = opened
+                bridge.webex_controller.join_meeting_url.return_value = opened
                 bridge.webex_controller.last_error = "external launch refused"
 
                 with patch(

@@ -260,6 +260,23 @@ class TestSupportArtifact(unittest.TestCase):
                     ),
                     "username": "alice@example.com",
                 },
+                reference_track={
+                    "playback_state": "ready",
+                    "source_state": "loaded",
+                    "source_format": "FLAC",
+                    "source_sample_rate_hz": 96_000,
+                    "source_channels": 2,
+                    "source_duration_s": 321.125,
+                    "route_available": False,
+                    "route_platform": "macos",
+                    "route_backend": "blackhole",
+                    "route_reason": "physical_certification_required",
+                    "route_active": False,
+                    "cleanup_pending": True,
+                    "source_name": "Private Demo Song.flac",
+                    "source_path": "/Users/alice/private/Private Demo Song.flac",
+                    "detail": "token=secret",
+                },
             ),
             created_at=CREATED_AT,
         )
@@ -295,6 +312,23 @@ class TestSupportArtifact(unittest.TestCase):
                 "version": "46.7.0.35472",
             },
         )
+        self.assertEqual(
+            report["reference_track"],
+            {
+                "playback_state": "ready",
+                "cleanup_pending": True,
+                "route_active": False,
+                "route_available": False,
+                "route_backend": "blackhole",
+                "route_platform": "macos",
+                "route_reason": "physical_certification_required",
+                "source_channels": 2,
+                "source_duration_s": 321.125,
+                "source_format": "FLAC",
+                "source_sample_rate_hz": 96_000,
+                "source_state": "loaded",
+            },
+        )
         encoded = json.dumps(report)
         for forbidden in (
             "catalog_url",
@@ -307,6 +341,9 @@ class TestSupportArtifact(unittest.TestCase):
             "username",
             "alice@example.com",
             "/Applications/Webex.app",
+            "source_name",
+            "source_path",
+            "Private Demo Song",
         ):
             self.assertNotIn(forbidden, encoded)
 

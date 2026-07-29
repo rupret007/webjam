@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest  # noqa: E402
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -19,7 +20,9 @@ _app = QApplication.instance() or QApplication([])
 
 class _State(str, Enum):
     UNAVAILABLE = "unavailable"
+    IDLE = "idle"
     READY = "ready"
+    ROUTING = "routing"
     PLAYING = "playing"
     PAUSED = "paused"
     FAILED = "failed"
@@ -31,6 +34,7 @@ def _snapshot(
     available: bool = True,
     error: str = "",
 ) -> SimpleNamespace:
+    loaded = state not in {_State.UNAVAILABLE, _State.IDLE}
     return SimpleNamespace(
         state=state,
         capability=SimpleNamespace(
@@ -42,14 +46,17 @@ def _snapshot(
             ),
             route_name="BlackHole 16ch" if available else "",
         ),
-        source_name="Rehearsal Reference.flac" if state is not _State.UNAVAILABLE else "",
-        duration_s=120.0 if state is not _State.UNAVAILABLE else 0.0,
-        position_s=30.0 if state is not _State.UNAVAILABLE else 0.0,
+        source_name="Rehearsal Reference.flac" if loaded else "",
+        duration_s=120.0 if loaded else 0.0,
+        position_s=30.0 if loaded else 0.0,
         loop_start_s=8.0,
         loop_end_s=24.0,
         trim_db=-3.0,
         count_in_beats=4,
         count_in_bpm=112.0,
+        source_format="FLAC" if loaded else "",
+        source_samplerate=44_100 if loaded else 0,
+        source_channels=2 if loaded else 0,
         route_detail="Isolated backing route verified." if available else "",
         error=error,
         warning="",
@@ -113,17 +120,152 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
         dialog.close()
 
 
-def test_unavailable_snapshot_is_truthful_and_fail_closed() -> None:
+def test_unavailable_route_allows_loading_but_keeps_playback_fail_closed() -> None:
     dialog = ReferenceTrackDialog()
     try:
-        dialog.set_snapshot(_snapshot(_State.UNAVAILABLE, available=False))
+        dialog.set_snapshot(_snapshot(_State.IDLE, available=False))
 
-        assert "unavailable" in dialog._status.text().lower()
+        assert "load a song" in dialog._status.text().lower()
         assert "BlackHole" in dialog._route.text()
-        assert dialog._load.isEnabled() is False
+        assert "Playback route locked" in dialog._route.text()
+        assert "Load and inspect" in dialog._route_guidance.text()
+        assert dialog._load.isEnabled() is True
+        assert dialog._recheck_route.isEnabled() is True
         assert dialog._play.isEnabled() is False
         assert dialog._pause.isEnabled() is False
         assert dialog._stop.isEnabled() is False
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize(
+    "source_name",
+    (
+        ("Very Long Rehearsal Name " * 10)[:250] + ".wav",
+        ("秘密のリハーサル曲🎸" * 20)[:250] + ".flac",
+        "A" * 250 + ".wav",
+    ),
+)
+def test_long_source_names_never_push_dialog_actions_offscreen(
+    source_name: str,
+) -> None:
+    dialog = ReferenceTrackDialog()
+    snapshot = _snapshot(_State.READY)
+    snapshot.source_name = source_name
+    try:
+        dialog.set_snapshot(snapshot)
+        for width, height in ((500, 500), (760, 540)):
+            dialog.resize(width, height)
+            dialog.show()
+            _app.processEvents()
+
+            viewport = dialog._scroll_area.viewport()
+            assert dialog._scroll_area.horizontalScrollBar().maximum() == 0
+            for control in (
+                dialog._recheck_route,
+                dialog._load,
+                dialog._done,
+            ):
+                left = control.mapTo(viewport, control.rect().topLeft()).x()
+                right = control.mapTo(
+                    viewport,
+                    control.rect().bottomRight(),
+                ).x()
+                assert left >= 0
+                assert right < viewport.width()
+            assert dialog._source.toolTip() == source_name
+            assert dialog._source.accessibleDescription() == source_name
+    finally:
+        dialog.close()
+
+
+def test_unbroken_route_and_error_text_never_create_horizontal_scroll() -> None:
+    dialog = ReferenceTrackDialog()
+    snapshot = _snapshot(_State.FAILED)
+    snapshot.route_detail = "R" * 1024
+    snapshot.error = "E" * 1024
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.set_snapshot(snapshot)
+        dialog.resize(500, 500)
+        dialog.show()
+        _app.processEvents()
+
+        viewport = dialog._scroll_area.viewport()
+        assert dialog._scroll_area.horizontalScrollBar().maximum() == 0
+        for control in (
+            dialog._recheck_route,
+            dialog._load,
+            dialog._done,
+        ):
+            left = control.mapTo(viewport, control.rect().topLeft()).x()
+            right = control.mapTo(
+                viewport,
+                control.rect().bottomRight(),
+            ).x()
+            assert left >= 0
+            assert right < viewport.width()
+    finally:
+        dialog.close()
+
+
+def test_route_checking_is_visible_single_flight_state() -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.set_snapshot(_snapshot(_State.IDLE, available=False))
+        dialog.set_route_checking(True)
+        assert dialog._recheck_route.text() == "Checking…"
+        assert dialog._recheck_route.isEnabled() is False
+        assert "Checking" in dialog._recheck_route.accessibleName()
+
+        dialog.set_route_checking(False)
+        assert dialog._recheck_route.text() == "Recheck Route"
+        assert dialog._recheck_route.isEnabled() is True
+    finally:
+        dialog.close()
+
+
+def test_transport_focus_follows_start_pause_and_resume_state() -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.show()
+        dialog.set_snapshot(_snapshot(_State.READY))
+        dialog._play.setFocus()
+        _app.processEvents()
+
+        dialog.set_snapshot(_snapshot(_State.ROUTING))
+        _app.processEvents()
+        assert QApplication.focusWidget() is dialog._stop
+
+        dialog.set_snapshot(_snapshot(_State.PLAYING))
+        _app.processEvents()
+        assert QApplication.focusWidget() is dialog._pause
+
+        dialog.set_snapshot(_snapshot(_State.PAUSED))
+        _app.processEvents()
+        assert QApplication.focusWidget() is dialog._play
+    finally:
+        dialog.close()
+
+
+def test_cleanup_pending_never_claims_route_ready() -> None:
+    dialog = ReferenceTrackDialog()
+    snapshot = _snapshot(
+        _State.FAILED,
+        available=True,
+        error="WebJam could not confirm the participant stopped.",
+    )
+    snapshot.cleanup_pending = True
+    try:
+        dialog.set_snapshot(snapshot)
+        assert "still needs to finish stopping" in dialog._status.text()
+        assert dialog._route.text().startswith(
+            "Playback locked—finish stopping."
+        )
+        assert "Playback route ready" not in dialog._route.text()
+        assert dialog._play.isEnabled() is False
+        assert dialog._recheck_route.isEnabled() is False
+        assert dialog._stop.isEnabled() is True
     finally:
         dialog.close()
 
@@ -137,8 +279,10 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
     try:
         dialog.set_snapshot(_snapshot(_State.READY))
         assert dialog._source.text() == "Rehearsal Reference.flac"
+        assert dialog._source_details.text() == "FLAC · 44.1 kHz · stereo · 2:00"
         assert dialog._time.text() == "0:30 / 2:00"
         assert dialog._play.isEnabled() is True
+        assert dialog._restart.isEnabled() is False
         assert dialog._pause.isEnabled() is False
         assert dialog._seek.isEnabled() is False
         dialog._play.click()
@@ -405,9 +549,38 @@ def test_load_picker_accepts_only_supported_audio_and_emits_path() -> None:
 
         assert loaded == ["/private/music/Reference Song.mp3"]
         file_filter = picker.call_args.args[3]
-        for extension in ("*.wav", "*.aiff", "*.flac", "*.mp3"):
+        for extension in ("*.wav", "*.wave", "*.aiff", "*.flac"):
             assert extension in file_filter
+        from core.reference_track import reference_track_file_filter
+
+        assert file_filter == reference_track_file_filter()
         assert "/private/music" not in dialog._source.text()
+    finally:
+        dialog.close()
+
+
+def test_loaded_source_remains_editable_when_route_is_unavailable() -> None:
+    dialog = ReferenceTrackDialog()
+    rechecks: list[bool] = []
+    dialog.recheck_route_requested.connect(lambda: rechecks.append(True))
+    try:
+        snapshot = _snapshot(_State.READY, available=False)
+        snapshot.source_name = "Loaded Song.WAVE"
+        snapshot.source_format = "WAV"
+        snapshot.source_samplerate = 48_000
+        snapshot.source_channels = 1
+        snapshot.route_detail = ""
+        dialog.set_snapshot(snapshot)
+
+        assert "loaded and ready to inspect" in dialog._status.text().lower()
+        assert dialog._source.text() == "Loaded Song.WAVE"
+        assert dialog._source_details.text() == "WAV · 48 kHz · mono · 2:00"
+        assert dialog._load.isEnabled() is True
+        assert dialog._trim.isEnabled() is True
+        assert dialog._loop.isEnabled() is True
+        assert dialog._play.isEnabled() is False
+        dialog._recheck_route.click()
+        assert rechecks == [True]
     finally:
         dialog.close()
 

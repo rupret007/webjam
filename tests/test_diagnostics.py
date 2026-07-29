@@ -190,6 +190,47 @@ class TestDiagnosticsExporter(unittest.TestCase):
         }
         assert "private-value" not in str(transitions)
 
+    def test_reference_track_diagnostics_exclude_source_identity(self):
+        exporter = _make_exporter()
+        exporter.reference_track = {
+            "playback_state": "ready",
+            "source_state": "loaded",
+            "source_format": "WAV",
+            "source_sample_rate_hz": 48_000,
+            "source_channels": 2,
+            "source_duration_s": 12.5,
+            "route_available": False,
+            "route_platform": "macos",
+            "route_backend": "blackhole",
+            "route_reason": "physical_certification_required",
+            "route_active": False,
+            "cleanup_pending": True,
+            "source_name": "Private Rehearsal.wav",
+            "source_path": "/Users/private/Private Rehearsal.wav",
+        }
+
+        report = exporter.artifact().structured_report
+        self.assertEqual(
+            report["reference_track"],
+            {
+                "playback_state": "ready",
+                "cleanup_pending": True,
+                "route_active": False,
+                "route_available": False,
+                "route_backend": "blackhole",
+                "route_platform": "macos",
+                "route_reason": "physical_certification_required",
+                "source_channels": 2,
+                "source_duration_s": 12.5,
+                "source_format": "WAV",
+                "source_sample_rate_hz": 48_000,
+                "source_state": "loaded",
+            },
+        )
+        encoded = json.dumps(report)
+        self.assertNotIn("Private Rehearsal", encoded)
+        self.assertNotIn("/Users/private", encoded)
+
     def test_structured_report_accepts_only_component_public_mappings(self):
         exporter = _make_exporter()
         exporter.jamulus_update = {

@@ -324,7 +324,11 @@ def test_malformed_or_oversized_child_output_fails_closed(
     process = TransportProcess(
         _sidecar(tmp_path, behavior=behavior),
         expected_build="test-build",
-        start_timeout=0.5,
+        # The full GUI/native suite can briefly delay scheduling the reader
+        # thread on shared CI runners. Keep the assertion specific to the
+        # malformed protocol output rather than racing a synthetic 0.5 s
+        # startup budget.
+        start_timeout=2.0,
         stop_timeout=0.5,
     )
     with pytest.raises(TransportProtocolError):

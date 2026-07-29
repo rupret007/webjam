@@ -231,12 +231,44 @@ class TestSessionStrip(unittest.TestCase):
         s._audio_button.click()
         self.assertEqual(len(results), 1)
 
-    def test_join_video_signal_emits(self):
+    def test_main_webex_button_navigates_without_requesting_a_meeting_launch(self):
         s = self._strip()
-        results = []
-        s.join_video_requested.connect(lambda: results.append(1))
+        tools = []
+        launches = []
+        s.tool_requested.connect(tools.append)
+        s.join_video_requested.connect(lambda: launches.append(1))
         s._video_button.click()
-        self.assertEqual(len(results), 1)
+        self.assertEqual(tools, ["conversation"])
+        self.assertEqual(launches, [])
+        self.assertEqual(s._video_button.text(), "Webex")
+
+    def test_main_studio_button_uses_the_canonical_workspace_route(self):
+        s = self._strip()
+        tools = []
+        s.tool_requested.connect(tools.append)
+
+        s._studio_button.click()
+
+        self.assertEqual(tools, ["takes"])
+        self.assertEqual(s._studio_button.accessibleName(), "Open Studio")
+
+    def test_main_reference_track_button_is_host_only_and_uses_canonical_route(self):
+        s = self._strip()
+        tools = []
+        s.tool_requested.connect(tools.append)
+
+        self.assertTrue(s._reference_track_button.isHidden())
+        s.set_reference_track_available(True)
+        self.assertFalse(s._reference_track_button.isHidden())
+        s._reference_track_button.click()
+
+        self.assertEqual(tools, ["reference_track"])
+        self.assertEqual(
+            s._reference_track_button.accessibleName(),
+            "Open Reference Track",
+        )
+        s.set_reference_track_available(False)
+        self.assertTrue(s._reference_track_button.isHidden())
 
     def test_webex_menu_label_recovers_after_link_is_configured(self):
         s = self._strip()
@@ -244,6 +276,19 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(s._video_action.text(), "Add Webex / Conversation")
         s.set_video_configured(True)
         self.assertEqual(s._video_action.text(), "Webex / Conversation")
+
+    def test_external_handoff_progress_never_disables_conversation_navigation(self):
+        s = self._strip()
+
+        s.set_video_state("Opening…", enabled=False)
+
+        self.assertTrue(s._video_button.isEnabled())
+        self.assertTrue(s._video_action.isEnabled())
+        self.assertEqual(s._video_button.text(), "Webex")
+        self.assertEqual(
+            s._video_button.property("webexLaunchAction"),
+            "Opening…",
+        )
 
     def test_every_more_menu_action_emits_its_semantic_request(self):
         s = self._strip()
@@ -254,6 +299,7 @@ class TestSessionStrip(unittest.TestCase):
         expected_tools = {
             "Audio Settings in Jamulus": "audio_settings",
             "Jamulus Updates…": "jamulus_updates",
+            "Webex / Conversation": "conversation",
             "Recording Setup": "recording_setup",
             "Reference Track…": "reference_track",
             "Studio": "takes",
@@ -278,8 +324,7 @@ class TestSessionStrip(unittest.TestCase):
                 actions[label].trigger()
                 self.assertEqual(tools, [request])
 
-        actions["Webex / Conversation"].trigger()
-        self.assertEqual(video, [True])
+        self.assertEqual(video, [])
 
     def test_band_check_menu_actions_emit_once(self):
         s = self._strip()
@@ -321,7 +366,7 @@ class TestSessionStrip(unittest.TestCase):
         controls = [
             s._logo, s._title_input, s._record_elapsed, s._timer_label,
             s._mode_picker, s._record_button, s._test_button,
-            s._audio_button, s._video_button,
+            s._audio_button, s._video_button, s._reference_track_button,
         ]
         visible = [control for control in controls if control.isVisible()]
         self.assertLess(max(control.geometry().right() for control in visible), 1100)
@@ -454,7 +499,9 @@ class TestParticipantGrid(unittest.TestCase):
     def test_webex_bar_stays_slim(self):
         from webjam_qt.widgets.webex_embed import WebexEmbed
         embed = WebexEmbed()
-        self.assertLessEqual(embed.maximumHeight(), 96)
+        # Two compact action rows keep distinct focus/open/mute/settings
+        # semantics visible without becoming a second workspace.
+        self.assertLessEqual(embed.maximumHeight(), 152)
 
     def test_webex_launch_status_updates_accessible_truth(self):
         from unittest.mock import patch
@@ -679,6 +726,10 @@ class TestConductorWindow(unittest.TestCase):
 
         self.assertIn(w.session_strip._title_input, focusable)
         self.assertIn(w.session_strip._tools_button, focusable)
+        self.assertIn(w.session_strip._video_button, focusable)
+        self.assertIn(w.session_strip._studio_button, focusable)
+        if w.session_strip._reference_track_button.isVisibleTo(w):
+            self.assertIn(w.session_strip._reference_track_button, focusable)
         self.assertIn(w.participant_grid._empty_primary, focusable)
         self.assertNotIn(w.webex_embed.fallback_button(), focusable)
         self.assertNotIn(w.session_canvas._toolbar_buttons[0], focusable)
@@ -703,7 +754,266 @@ class TestConductorWindow(unittest.TestCase):
             self.assertEqual(
                 w.session_strip._audio_button.property("destructive"), "true"
             )
+            self.assertTrue(w.session_strip._video_button.isVisibleTo(w))
+            self.assertTrue(w.session_strip._studio_button.isVisibleTo(w))
             self.assertEqual(w.session_strip._tools_button.text(), "More ▾")
+        finally:
+            w.close()
+
+    def test_conversation_actions_fit_supported_compact_window(self):
+        from services.webex_app import WebexAppState
+
+        w = self._window()
+        w.resize(720, 560)
+        w.webex_embed.set_meeting_configured(True)
+        w.webex_embed.set_app_status(
+            WebexAppState.INSTALLED,
+            version="46.7.0",
+            publisher_verified=True,
+        )
+        w.webex_embed.show()
+        w.show()
+        _qapp().processEvents()
+        try:
+            actions = (
+                w.webex_embed.bring_forward_button(),
+                w.webex_embed.mute_button(),
+                w.webex_embed.fallback_button(),
+                w.webex_embed.change_link_button(),
+            )
+            for action in actions:
+                with self.subTest(action=action.text()):
+                    self.assertTrue(action.isVisibleTo(w))
+                    self.assertGreaterEqual(action.geometry().left(), 0)
+                    self.assertLess(
+                        action.geometry().right(),
+                        w.webex_embed.width(),
+                    )
+                    self.assertLess(
+                        action.geometry().bottom(),
+                        w.webex_embed.height(),
+                    )
+            for index, first in enumerate(actions):
+                for second in actions[index + 1 :]:
+                    self.assertFalse(
+                        first.geometry().intersects(second.geometry())
+                    )
+            empty = w.participant_grid._empty_state
+            self.assertLess(
+                empty.geometry().bottom(),
+                w.participant_grid.viewport().height(),
+            )
+            self.assertFalse(w.participant_grid._empty_hint.isVisibleTo(w))
+            self.assertLess(
+                empty.mapTo(w, empty.rect().bottomLeft()).y(),
+                w.webex_embed.mapTo(w, w.webex_embed.rect().topLeft()).y(),
+            )
+
+            w.webex_embed.set_app_status(WebexAppState.NOT_INSTALLED)
+            _qapp().processEvents()
+            recovery_actions = (
+                w.webex_embed.install_button(),
+                w.webex_embed.recheck_button(),
+            )
+            for action in recovery_actions:
+                with self.subTest(recovery=action.text()):
+                    self.assertTrue(action.isVisibleTo(w))
+                    self.assertGreaterEqual(action.geometry().left(), 0)
+                    self.assertLess(
+                        action.geometry().right(),
+                        w.webex_embed.width(),
+                    )
+                    self.assertLess(
+                        action.geometry().bottom(),
+                        w.webex_embed.height(),
+                    )
+            self.assertFalse(
+                recovery_actions[0].geometry().intersects(
+                    recovery_actions[1].geometry()
+                )
+            )
+            self.assertLess(
+                w.participant_grid._empty_state.geometry().bottom(),
+                w.participant_grid.viewport().height(),
+            )
+        finally:
+            w.close()
+
+    def test_production_styled_conversation_and_lobby_fit_supported_sizes(self):
+        from services.webex_app import WebexAppState
+        from webjam_qt.session_state import SessionUiState
+        from webjam_qt.theme import load_stylesheet
+
+        webex_states = (
+            (WebexAppState.INSTALLED, "", True),
+            (WebexAppState.NOT_INSTALLED, "", False),
+            (WebexAppState.INVALID, "", False),
+            (WebexAppState.UNSUPPORTED, "detection-failed", False),
+        )
+        lobby_states = (
+            SessionUiState.idle(),
+            SessionUiState.reconnect_failed(),
+            SessionUiState.permission_denied(),
+            SessionUiState.stop_failed(),
+        )
+        for width, height in ((720, 560), (760, 600)):
+            for webex_state, reason, verified in webex_states:
+                with self.subTest(
+                    size=(width, height),
+                    webex=webex_state.value,
+                ):
+                    w = self._window()
+                    w.setStyleSheet(load_stylesheet())
+                    w.resize(width, height)
+                    w.webex_embed.set_meeting_configured(True)
+                    w.webex_embed.set_app_status(
+                        webex_state,
+                        publisher_verified=verified,
+                        reason_code=reason,
+                    )
+                    w.webex_embed.show()
+                    w.show()
+                    _qapp().processEvents()
+                    try:
+                        visible_actions = [
+                            action
+                            for action in (
+                                w.webex_embed.bring_forward_button(),
+                                w.webex_embed.mute_button(),
+                                w.webex_embed.fallback_button(),
+                                w.webex_embed.change_link_button(),
+                                w.webex_embed.install_button(),
+                                w.webex_embed.recheck_button(),
+                            )
+                            if action.isVisibleTo(w)
+                        ]
+                        for action in visible_actions:
+                            self.assertGreaterEqual(action.geometry().left(), 0)
+                            self.assertLess(
+                                action.geometry().right(),
+                                w.webex_embed.width(),
+                            )
+                            self.assertLess(
+                                action.geometry().bottom(),
+                                w.webex_embed.height(),
+                            )
+                        for index, first in enumerate(visible_actions):
+                            for second in visible_actions[index + 1 :]:
+                                self.assertFalse(
+                                    first.geometry().intersects(
+                                        second.geometry()
+                                    )
+                                )
+
+                        for lobby_state in lobby_states:
+                            w.participant_grid.set_session_state(lobby_state)
+                            _qapp().processEvents()
+                            frame = w.participant_grid._empty_state
+                            self.assertLess(
+                                frame.geometry().bottom(),
+                                w.participant_grid.viewport().height(),
+                            )
+                            for action in (
+                                w.participant_grid._empty_primary,
+                                w.participant_grid._empty_practice,
+                                w.participant_grid._empty_ready,
+                            ):
+                                if action.isVisibleTo(w):
+                                    self.assertLess(
+                                        action.geometry().bottom(),
+                                        frame.height(),
+                                    )
+                    finally:
+                        w.close()
+
+    def test_conversation_focus_chain_matches_visual_action_order(self):
+        from PySide6.QtCore import Qt
+
+        from services.webex_app import WebexAppState
+
+        w = self._window()
+        w.webex_embed.set_meeting_configured(True)
+        w.webex_embed.set_app_status(
+            WebexAppState.INSTALLED,
+            publisher_verified=True,
+        )
+        w.session_strip.set_invite_available(True)
+        w.session_strip.set_recording_available(True)
+        w.session_strip.set_audio_state("End Session")
+        w.webex_embed.show()
+        w.show()
+        w._setup_tab_order()
+        _qapp().processEvents()
+        try:
+            expected = [
+                w.webex_embed.bring_forward_button(),
+                w.webex_embed.mute_button(),
+                w.webex_embed.fallback_button(),
+                w.webex_embed.change_link_button(),
+                w.session_strip._invite_button,
+                w.session_strip._record_button,
+                w.session_strip._video_button,
+                w.session_strip._studio_button,
+                w.session_strip._tools_button,
+                w.session_strip._audio_button,
+            ]
+            current = expected[0]
+            actual = [current]
+            for _ in range(50):
+                current = current.nextInFocusChain()
+                if (
+                    current.focusPolicy() != Qt.FocusPolicy.NoFocus
+                    and current.isVisibleTo(w)
+                    and current.isEnabled()
+                ):
+                    actual.append(current)
+                    if len(actual) == len(expected):
+                        break
+            self.assertEqual(actual, expected)
+        finally:
+            w.close()
+
+    def test_narrow_live_controls_fit_with_all_safety_states_visible(self):
+        w = self._window()
+        strip = w.session_strip
+        strip.set_invite_available(True)
+        strip.set_recording_available(True)
+        strip.set_reference_track_available(True)
+        strip.set_recording_phase("stop_failed")
+        strip.set_audio_state("Try End Session")
+        w.resize(720, 560)
+        w.show()
+        _qapp().processEvents()
+        try:
+            self.assertTrue(strip._reference_track_button.isVisibleTo(w))
+            self.assertGreaterEqual(
+                strip._reference_track_button.geometry().left(),
+                0,
+            )
+            self.assertLess(
+                strip._reference_track_button.geometry().right(),
+                strip.width(),
+            )
+            controls = (
+                strip._invite_button,
+                strip._record_elapsed,
+                strip._record_button,
+                strip._video_button,
+                strip._studio_button,
+                strip._tools_button,
+                strip._audio_button,
+            )
+            visible = [control for control in controls if control.isVisibleTo(w)]
+            self.assertEqual(visible, list(controls))
+            for control in visible:
+                with self.subTest(control=control.text()):
+                    self.assertGreaterEqual(control.geometry().left(), 0)
+                    self.assertLess(
+                        control.geometry().right(),
+                        w.session_controls.width(),
+                    )
+            for first, second in zip(visible, visible[1:]):
+                self.assertLess(first.geometry().right(), second.geometry().left())
         finally:
             w.close()
 
@@ -746,9 +1056,13 @@ class TestConductorWindow(unittest.TestCase):
             w.show_help()
 
         body = set_text.call_args.args[0]
-        self.assertIn("More → Studio", body)
+        self.assertIn("Choose <b>Studio</b>", body)
         self.assertIn("build a song project", body)
         self.assertIn("review completed session takes", body)
+        self.assertIn("Choose <b>Webex</b> to show Conversation", body)
+        self.assertIn("Only <b>Join / Open</b> opens", body)
+        self.assertIn("<b>Reference Track</b> to load", body)
+        self.assertIn("Play stays locked until", body)
         self.assertNotIn("Multitrack Studio", body)
 
     def test_help_copy_uses_real_macos_shortcut_modifiers(self):
@@ -796,7 +1110,7 @@ class TestConductorWindow(unittest.TestCase):
             w.show_about()
 
         body = set_text.call_args.args[0]
-        self.assertIn("WebJam v0.22.1", body)
+        self.assertIn("WebJam v0.22.2", body)
         self.assertIn("aaaaaaaaaaaa", body)
         self.assertIn("macos-arm64", body)
         self.assertIn("Private test candidate", body)

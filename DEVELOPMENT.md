@@ -1,4 +1,4 @@
-# Developing WebJam v0.22.1
+# Developing WebJam v0.22.2
 
 ## Local setup
 
@@ -15,7 +15,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.1.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.2.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -148,10 +148,10 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.22.1`. Published v0.20.0 and v0.21.0 desktop assets
+The source tree reports `0.22.2`. Published v0.20.0, v0.21.0, and v0.22.1 desktop assets
 remain immutable historical evidence and must never be overwritten or served
 under a moved tag. v0.21.0 is the prior rollback/reference candidate;
-v0.22.1 becomes current only after its verified GitHub Latest promotion:
+v0.22.2 becomes current only after its verified GitHub Latest promotion:
 
 - GitHub release: [`v0.21.0`](https://github.com/rupret007/webjam/releases/tag/v0.21.0),
   clearly labeled as an unsigned/unnotarized private test candidate.

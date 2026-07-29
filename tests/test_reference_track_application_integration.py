@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from core.reference_track import (  # noqa: E402
@@ -60,9 +61,20 @@ class _FakeReferenceTrack:
         self.play_entered = threading.Event()
         self.release_play = threading.Event()
         self.block_play = False
+        self.block_refresh = False
+        self.refresh_entered = threading.Event()
+        self.release_refresh = threading.Event()
+        self.cancelled_starts = 0
 
     def refresh_capability(self, audience_bridge_active=False):
         self.refreshes.append(bool(audience_bridge_active))
+        self.refresh_entered.set()
+        if self.block_refresh:
+            assert self.release_refresh.wait(timeout=3.0)
+        return self.snapshot
+
+    def cancel_pending_start(self):
+        self.cancelled_starts += 1
         return self.snapshot
 
     def load(self, path):
@@ -98,6 +110,24 @@ class _FakeReferenceTrack:
     def refresh_health(self):
         return self.snapshot
 
+    def public_diagnostics(self):
+        return {
+            "playback_state": self.snapshot.state.value,
+            "source_state": "loaded",
+            "source_format": "WAV",
+            "source_sample_rate_hz": 48_000,
+            "source_channels": 2,
+            "source_duration_s": 60.0,
+            "route_available": True,
+            "route_platform": "macos",
+            "route_backend": "blackhole",
+            "route_reason": "ready",
+            "route_active": self.snapshot.active,
+            "cleanup_pending": bool(
+                getattr(self.snapshot, "cleanup_pending", False)
+            ),
+        }
+
     def close(self):
         self.closed += 1
         self.snapshot = _snapshot(ReferenceTrackState.CLOSED)
@@ -120,6 +150,8 @@ def test_reference_track_menu_is_host_only() -> None:
     try:
         assert guest.window.session_strip._reference_track_action.isVisible() is False
         assert host.window.session_strip._reference_track_action.isVisible() is True
+        assert guest.window.session_strip._reference_track_button.isHidden() is True
+        assert host.window.session_strip._reference_track_button.isHidden() is False
 
         guest.window.flash_message = MagicMock()
         guest._on_rail_view_changed("reference_track")
@@ -141,7 +173,80 @@ def test_host_panel_renders_controller_snapshot_without_starting_audio() -> None
         assert dialog is not None
         assert dialog._source.text() == "Reference.wav"
         assert fake.contexts == []
-        assert fake.refreshes == [False]
+        assert _wait_until(lambda: fake.refreshes == [False])
+        assert _wait_until(lambda: dialog._recheck_route.isEnabled())
+
+        dialog._recheck_route.click()
+        assert _wait_until(lambda: fake.refreshes == [False, False])
+    finally:
+        controller.shutdown()
+
+
+def test_repeated_route_checks_coalesce_to_first_and_newest_request() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    fake.block_refresh = True
+    controller._reference_track = fake
+    try:
+        controller._open_reference_track()
+        assert fake.refresh_entered.wait(timeout=3.0)
+        dialog = controller._reference_track_dialog
+        assert dialog is not None
+        assert dialog._recheck_route.isEnabled() is False
+
+        for index in range(20):
+            controller._request_reference_track_route_check(
+                audience_bridge_active=bool(index % 2),
+            )
+        fake.release_refresh.set()
+
+        assert _wait_until(lambda: len(fake.refreshes) == 2)
+        assert fake.refreshes == [False, True]
+        assert _wait_until(lambda: dialog._recheck_route.isEnabled())
+        assert controller._reference_track_operation_inflight is False
+    finally:
+        fake.release_refresh.set()
+        controller.shutdown()
+
+
+def test_song_selected_during_route_probe_loads_once_after_probe() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    fake.block_refresh = True
+    controller._reference_track = fake
+    private_path = "/Users/private/Rehearsal Song.wav"
+    try:
+        controller._open_reference_track()
+        assert fake.refresh_entered.wait(timeout=3.0)
+
+        controller._load_reference_track(private_path)
+
+        dialog = controller._reference_track_dialog
+        assert dialog is not None
+        assert fake.loaded == []
+        assert dialog._load.text() == "Waiting to Load…"
+        assert dialog._load.isEnabled() is False
+
+        fake.release_refresh.set()
+        assert _wait_until(lambda: fake.loaded == [private_path])
+        assert _wait_until(
+            lambda: not controller._reference_track_operation_inflight
+        )
+        assert dialog._load.text() == "Load Song…"
+    finally:
+        fake.release_refresh.set()
+        controller.shutdown()
+
+
+def test_companion_diagnostics_include_only_public_reference_track_facts() -> None:
+    controller = _controller(host=True)
+    controller._reference_track = _FakeReferenceTrack()
+    try:
+        diagnostics = controller._companion_get_diagnostics()["reference_track"]
+        assert diagnostics["source_format"] == "WAV"
+        assert diagnostics["route_backend"] == "blackhole"
+        assert "source_name" not in diagnostics
+        assert "path" not in diagnostics
     finally:
         controller.shutdown()
 
@@ -234,6 +339,46 @@ def test_session_end_cancels_a_late_reference_route_before_it_can_persist() -> N
         controller.shutdown()
 
 
+def test_session_end_skips_play_queued_before_core_entry() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    controller._reference_track = fake
+    controller._jamulus_connected = True
+    primary_process = MagicMock()
+    primary_process.pid = 4244
+    primary_process.poll.return_value = None
+    controller.bridge.jamulus_process = primary_process
+    controller._reference_track_operation_lock.acquire()
+    try:
+        with (
+            patch.object(
+                controller.bridge,
+                "find_reference_track_jamulus",
+                return_value="/Applications/WebJam.app/JamulusHeadlessClient",
+            ),
+            patch.object(
+                controller.bridge,
+                "effective_server",
+                return_value="127.0.0.1:22124",
+            ),
+        ):
+            controller._play_reference_track()
+            controller._stop_reference_track_for_session_end(background=True)
+    finally:
+        controller._reference_track_operation_lock.release()
+
+    try:
+        assert _wait_until(
+            lambda: not controller._reference_track_operation_inflight
+        )
+        assert fake.contexts == []
+        assert fake.stops == 1
+    finally:
+        controller._jamulus_connected = False
+        controller.bridge.jamulus_process = None
+        controller.shutdown()
+
+
 def test_play_refuses_without_a_live_owned_primary_jamulus_pid() -> None:
     controller = _controller(host=True)
     fake = _FakeReferenceTrack()
@@ -259,6 +404,38 @@ def test_play_refuses_without_a_live_owned_primary_jamulus_pid() -> None:
         message = controller.window.flash_message.call_args.args[0]
         assert "active primary Jamulus process" in message
     finally:
+        controller._jamulus_connected = False
+        controller.shutdown()
+
+
+@pytest.mark.parametrize(
+    "blocked_state",
+    ("stopping", "cleanup_retry", "invite_switch"),
+)
+def test_play_is_blocked_while_session_ownership_is_changing(
+    blocked_state: str,
+) -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack()
+    controller._reference_track = fake
+    controller._jamulus_connected = True
+    controller.window.flash_message = MagicMock()
+    if blocked_state == "stopping":
+        controller.audio.stopping = True
+    elif blocked_state == "cleanup_retry":
+        controller.audio.cleanup_retry_required = True
+    else:
+        controller._invite_switch_in_flight = True
+    try:
+        controller._play_reference_track()
+
+        assert fake.contexts == []
+        message = controller.window.flash_message.call_args.args[0]
+        assert "session change" in message
+    finally:
+        controller.audio.stopping = False
+        controller.audio.cleanup_retry_required = False
+        controller._invite_switch_in_flight = False
         controller._jamulus_connected = False
         controller.shutdown()
 

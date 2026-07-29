@@ -17,13 +17,18 @@ from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 import math
-import os
 from pathlib import Path
 import stat
 import threading
 from typing import Callable, Protocol
 
 import numpy as np
+
+from core.project_audio import (
+    ProjectAudioDecoder,
+    ProjectAudioError,
+    project_audio_mp3_available,
+)
 
 
 REFERENCE_SAMPLE_RATE = 48_000
@@ -36,12 +41,35 @@ REFERENCE_MAX_TRIM_DB = 12.0
 REFERENCE_MAX_COUNT_IN_BEATS = 16
 REFERENCE_MIN_BPM = 20.0
 REFERENCE_MAX_BPM = 400.0
-_SUPPORTED_EXTENSIONS = frozenset({".wav", ".aif", ".aiff", ".flac", ".mp3"})
+_BASE_SUPPORTED_EXTENSIONS = (
+    ".wav",
+    ".wave",
+    ".aif",
+    ".aiff",
+    ".flac",
+)
 _ROUTE_WARNING = (
     "Jamulus-routed: everyone hears this like another musician, with the "
     "session's normal buffering, jitter handling, and network latency. "
     "A server recording captures it as a separate stem."
 )
+
+
+def reference_track_supported_extensions() -> tuple[str, ...]:
+    """Return the file-picker contract proved by the runtime decoder."""
+
+    if project_audio_mp3_available():
+        return (*_BASE_SUPPORTED_EXTENSIONS, ".mp3")
+    return _BASE_SUPPORTED_EXTENSIONS
+
+
+def reference_track_file_filter() -> str:
+    """Return a truthful Qt-style filter without importing Qt into core."""
+
+    patterns = " ".join(
+        f"*{extension}" for extension in reference_track_supported_extensions()
+    )
+    return f"Audio files ({patterns})"
 
 
 class ReferenceTrackError(RuntimeError):
@@ -67,6 +95,8 @@ class ReferenceTrackCapability:
     platform: str
     detail: str
     route_name: str = ""
+    backend: str = ""
+    reason_code: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "available", bool(self.available))
@@ -77,6 +107,38 @@ class ReferenceTrackCapability:
             object.__setattr__(self, name, value)
         if self.available and not self.route_name:
             raise ValueError("an available route requires route_name")
+        platform = self.platform.casefold()
+        backend = str(self.backend or "").strip().casefold()
+        if not backend:
+            backend = {
+                "macos": "blackhole",
+                "windows": "vb-cable-jack",
+                "linux": "jack",
+            }.get(platform, "unavailable")
+        if backend not in {
+            "blackhole",
+            "vb-cable-jack",
+            "jack",
+            "unavailable",
+        }:
+            backend = "unavailable"
+        object.__setattr__(self, "backend", backend)
+        reason = str(self.reason_code or "").strip().casefold()
+        if not reason:
+            reason = "ready" if self.available else "unavailable"
+        if reason not in {
+            "ready",
+            "unavailable",
+            "audience_bridge_conflict",
+            "physical_certification_required",
+            "blackhole_unavailable",
+            "windows_backend_unavailable",
+            "linux_backend_unavailable",
+            "live_route_unavailable",
+            "unsupported_platform",
+        }:
+            reason = "unavailable"
+        object.__setattr__(self, "reason_code", reason)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,16 +204,22 @@ class ReferenceTrackSnapshot:
     trim_db: float = 0.0
     count_in_beats: int = 0
     count_in_bpm: float = 120.0
+    source_format: str = ""
+    source_samplerate: int = 0
+    source_channels: int = 0
     route_detail: str = ""
     error: str = ""
     warning: str = _ROUTE_WARNING
+    cleanup_pending: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", ReferenceTrackState(self.state))
         if not isinstance(self.capability, ReferenceTrackCapability):
             raise ValueError("capability must be a ReferenceTrackCapability")
         source_name = str(self.source_name or "").strip()
-        if len(source_name) > 255 or any(c in source_name for c in ("\0", "\r", "\n")):
+        if len(source_name) > 255 or any(
+            c in source_name for c in ("\0", "\r", "\n", "/", "\\")
+        ):
             source_name = "Selected song"
         object.__setattr__(self, "source_name", source_name)
         for name in ("duration_s", "position_s", "loop_start_s"):
@@ -176,11 +244,32 @@ class ReferenceTrackSnapshot:
         if not REFERENCE_MIN_BPM <= bpm <= REFERENCE_MAX_BPM:
             raise ValueError("count_in_bpm is out of range")
         object.__setattr__(self, "count_in_bpm", bpm)
+        source_format = str(self.source_format or "").strip().upper()
+        if source_format not in {
+            "",
+            "WAV",
+            "WAVEX",
+            "RF64",
+            "AIFF",
+            "FLAC",
+            "MP3",
+        }:
+            source_format = "UNKNOWN" if source_name else ""
+        object.__setattr__(self, "source_format", source_format)
+        samplerate = int(self.source_samplerate)
+        if isinstance(self.source_samplerate, bool) or not 0 <= samplerate <= 384_000:
+            raise ValueError("source_samplerate is out of range")
+        object.__setattr__(self, "source_samplerate", samplerate)
+        channels = int(self.source_channels)
+        if isinstance(self.source_channels, bool) or not 0 <= channels <= 2:
+            raise ValueError("source_channels is out of range")
+        object.__setattr__(self, "source_channels", channels)
         for name in ("route_detail", "error", "warning"):
             value = str(getattr(self, name) or "").strip()
             if len(value) > 1_024:
                 raise ValueError(f"{name} is too long")
             object.__setattr__(self, name, value)
+        object.__setattr__(self, "cleanup_pending", bool(self.cleanup_pending))
 
     @property
     def loaded(self) -> bool:
@@ -200,11 +289,62 @@ class ReferenceTrackSnapshot:
 
     @property
     def active(self) -> bool:
-        return self.state in {
-            ReferenceTrackState.ROUTING,
-            ReferenceTrackState.PLAYING,
-            ReferenceTrackState.PAUSED,
-            ReferenceTrackState.STOPPING,
+        return bool(
+            self.cleanup_pending
+            or self.state
+            in {
+                ReferenceTrackState.ROUTING,
+                ReferenceTrackState.PLAYING,
+                ReferenceTrackState.PAUSED,
+                ReferenceTrackState.STOPPING,
+            }
+        )
+
+    def public_diagnostics(self) -> dict[str, object]:
+        """Return strict path- and filename-free Reference Track facts."""
+
+        raw_platform = self.capability.platform.casefold()
+        platform = (
+            raw_platform
+            if raw_platform in {"macos", "windows", "linux"}
+            else "unknown"
+        )
+        return {
+            "playback_state": self.state.value,
+            "source_state": (
+                "loading"
+                if self.state is ReferenceTrackState.LOADING
+                else (
+                    "loaded"
+                    if self.loaded
+                    else (
+                        "failed"
+                        if self.state is ReferenceTrackState.FAILED
+                        else "not_loaded"
+                    )
+                )
+            ),
+            "source_format": (
+                self.source_format
+                if self.source_format in {
+                    "WAV",
+                    "WAVEX",
+                    "RF64",
+                    "AIFF",
+                    "FLAC",
+                    "MP3",
+                }
+                else "unknown"
+            ),
+            "source_sample_rate_hz": self.source_samplerate,
+            "source_channels": self.source_channels,
+            "source_duration_s": round(self.duration_s, 3),
+            "route_available": self.capability.available,
+            "route_platform": platform or "unknown",
+            "route_backend": self.capability.backend,
+            "route_reason": self.capability.reason_code,
+            "route_active": self.active,
+            "cleanup_pending": self.cleanup_pending,
         }
 
 
@@ -236,84 +376,48 @@ class ReferenceTrackSourceInfo:
     source_samplerate: int
     channels: int
     output_frames: int
+    container: str
 
 
 class ReferenceTrackDecoder:
-    """Descriptor-bound, bounded mono/stereo decoder with 48-kHz output."""
+    """Reference Track adapter over the hardened project-audio decoder."""
 
     def __init__(self, path: str | Path) -> None:
         candidate = Path(path).expanduser()
+        suffix = candidate.suffix.casefold()
+        if suffix == ".mp3" and not project_audio_mp3_available():
+            raise ReferenceTrackError(
+                "MP3 decoding is unavailable in this build. Convert the song "
+                "to WAV, AIFF, or FLAC and try again."
+            ) from None
+        if suffix not in reference_track_supported_extensions():
+            raise ReferenceTrackError(
+                "Choose a local WAV, WAVE, AIFF, FLAC, or supported MP3 audio file."
+            )
         try:
             metadata = candidate.lstat()
         except OSError:
             raise ReferenceTrackError(
                 "That song is unavailable. Choose a local audio file and try again."
             ) from None
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or candidate.is_symlink()
-            or candidate.suffix.lower() not in _SUPPORTED_EXTENSIONS
-        ):
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
             raise ReferenceTrackError(
-                "Choose a local WAV, AIFF, FLAC, or supported MP3 audio file."
+                "Choose a regular local audio file instead of a link or folder."
             )
 
-        descriptor = -1
-        source_file = None
         try:
-            import soundfile as sf  # type: ignore
-
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-            flags |= getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(candidate, flags)
-            opened = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(opened.st_mode)
-                or opened.st_dev != metadata.st_dev
-                or opened.st_ino != metadata.st_ino
-            ):
-                raise OSError("source changed during open")
-            source_file = os.fdopen(descriptor, "rb", closefd=True)
-            descriptor = -1
-            reader = sf.SoundFile(source_file, mode="r")
-        except Exception:  # noqa: BLE001 - native decoder boundary
-            if descriptor >= 0:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-            if source_file is not None:
-                try:
-                    source_file.close()
-                except OSError:
-                    pass
+            decoder = ProjectAudioDecoder(candidate)
+        except ProjectAudioError:
             raise ReferenceTrackError(
-                "WebJam couldn't read that song. Try WAV, AIFF, FLAC, or "
-                "an MP3 supported by this build."
+                "WebJam couldn't safely read that song. Check that it is a "
+                "valid one- or two-channel local audio file whose format "
+                "matches its filename."
             ) from None
 
-        try:
-            source_rate = int(reader.samplerate)
-            channels = int(reader.channels)
-            source_frames = int(reader.frames)
-            if not 1 <= source_rate <= REFERENCE_MAX_SOURCE_RATE:
-                raise ValueError("unsupported source sample rate")
-            if channels not in {1, 2}:
-                raise ValueError("unsupported source channel count")
-            if source_frames <= 0:
-                raise ValueError("empty source")
-            output_frames = max(
-                1, int(round(source_frames * REFERENCE_SAMPLE_RATE / source_rate))
-            )
-        except Exception:
-            reader.close()
-            try:
-                source_file.close()
-            except OSError:
-                pass
-            raise ReferenceTrackError(
-                "That song needs one or two channels and a readable sample rate."
-            ) from None
+        probe = decoder.probe
+        source_rate = int(probe.source_sample_rate)
+        channels = int(probe.channels)
+        output_frames = int(probe.output_frames)
 
         safe_name = candidate.name.strip()
         if (
@@ -322,26 +426,25 @@ class ReferenceTrackDecoder:
             or any(c in safe_name for c in ("\0", "\r", "\n"))
         ):
             safe_name = "Selected song"
-        self._reader = reader
-        self._source_file = source_file
+        self._decoder = decoder
         self._source_rate = source_rate
-        self._source_frames = source_frames
         self._channels = channels
         self._output_frames = output_frames
         self._closed = False
-        self._lock = threading.Lock()
         self.info = ReferenceTrackSourceInfo(
             name=safe_name,
             duration_s=output_frames / REFERENCE_SAMPLE_RATE,
             source_samplerate=source_rate,
             channels=channels,
             output_frames=output_frames,
+            container=str(probe.container or "").upper(),
         )
 
     def __repr__(self) -> str:
         return (
             "ReferenceTrackDecoder("
-            f"rate={self._source_rate}, channels={self._channels}, "
+            f"container={self.info.container!r}, rate={self._source_rate}, "
+            f"channels={self._channels}, "
             f"output_frames={self._output_frames})"
         )
 
@@ -361,62 +464,22 @@ class ReferenceTrackDecoder:
         output = np.zeros((requested, 2), dtype=np.float32)
         if requested == 0 or start >= self._output_frames:
             return output
-        usable = min(requested, self._output_frames - start)
-        ratio = self._source_rate / REFERENCE_SAMPLE_RATE
-        positions = (start + np.arange(usable, dtype=np.float64)) * ratio
-        first = int(math.floor(float(positions[0])))
-        last = min(
-            self._source_frames - 1,
-            int(math.floor(float(positions[-1]))) + 1,
-        )
-        read_count = max(1, last - first + 1)
-        with self._lock:
-            if self._closed:
-                raise ReferenceTrackError("The selected song was already closed.")
-            try:
-                self._reader.seek(first)
-                source = self._reader.read(
-                    read_count, dtype="float32", always_2d=True
-                )
-            except Exception:  # noqa: BLE001
-                raise ReferenceTrackError(
-                    "WebJam lost access to the selected song. Load it again."
-                ) from None
-        if len(source) == 0:
-            return output
-        source = np.asarray(source, dtype=np.float32)
-        if source.shape[0] < read_count:
-            source = np.pad(
-                source,
-                ((0, read_count - source.shape[0]), (0, 0)),
-                mode="edge",
-            )
-        local = positions - first
-        left_index = np.floor(local).astype(np.int64)
-        right_index = np.minimum(left_index + 1, source.shape[0] - 1)
-        fraction = (local - left_index).astype(np.float32)[:, None]
-        rendered = (
-            source[left_index] * (1.0 - fraction)
-            + source[right_index] * fraction
-        )
-        if self._channels == 1:
-            rendered = np.repeat(rendered, 2, axis=1)
-        output[:usable] = rendered[:, :2]
+        if self._closed:
+            raise ReferenceTrackError("The selected song was already closed.")
+        try:
+            self._decoder.read_into(start, output)
+        except ProjectAudioError:
+            output.fill(0.0)
+            raise ReferenceTrackError(
+                "WebJam lost access to the selected song. Load it again."
+            ) from None
         return output
 
     def close(self) -> None:
-        with self._lock:
-            if self._closed:
-                return
-            self._closed = True
-            try:
-                self._reader.close()
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                self._source_file.close()
-            except Exception:  # noqa: BLE001
-                pass
+        if self._closed:
+            return
+        self._closed = True
+        self._decoder.close()
 
 
 @dataclass(slots=True)
@@ -802,22 +865,57 @@ class ReferenceTrackController:
         self._trim_db = 0.0
         self._count_in_beats = 0
         self._count_in_bpm = 120.0
+        self._source_format = ""
+        self._source_samplerate = 0
+        self._source_channels = 0
         self._route_detail = ""
         self._error = ""
+        # True only when FAILED means a pre-playback route/capability start
+        # failure and no owned Jamulus client remains. A successful explicit
+        # capability recheck may then return the loaded source to READY.
+        self._recoverable_route_failure = False
+        # Incrementing this token cancels a prepare/start operation that has
+        # temporarily released the controller lock. Stop, close, and an
+        # incompatible capability refresh all use it so a stale worker cannot
+        # resurrect an owned Jamulus client.
+        self._launch_generation = 0
+        self._source_generation = 0
         self._capability = self._safe_capability(False)
-        if not self._capability.available:
-            self._state = ReferenceTrackState.UNAVAILABLE
 
     @property
     def snapshot(self) -> ReferenceTrackSnapshot:
         with self._lock:
             return self._snapshot_locked()
 
+    def public_diagnostics(self) -> dict[str, object]:
+        """Return strict source/route facts suitable for a support bundle."""
+
+        return self.snapshot.public_diagnostics()
+
     def refresh_capability(
         self, audience_bridge_active: bool = False
     ) -> ReferenceTrackSnapshot:
         capability = self._safe_capability(audience_bridge_active)
         with self._lock:
+            self._require_open_locked()
+            # Publish incompatibility before observing session ownership. A
+            # concurrent play that has prepared but not yet published then
+            # sees either the changed generation or unavailable capability;
+            # a play already published is captured for immediate teardown.
+            self._capability = capability
+            if (
+                not capability.available
+                and self._state is ReferenceTrackState.ROUTING
+            ):
+                self._launch_generation += 1
+                if self._session is None:
+                    self._state = (
+                        ReferenceTrackState.READY
+                        if self._stream is not None
+                        else ReferenceTrackState.IDLE
+                    )
+                    self._error = ""
+                    self._recoverable_route_failure = False
             active_session = self._session is not None
         stopped: ReferenceTrackSnapshot | None = None
         if active_session and not capability.available:
@@ -838,13 +936,28 @@ class ReferenceTrackController:
                 # the more urgent fact is that owned-process death is unproved.
                 pass
             elif not capability.available and self._session is None:
-                self._state = ReferenceTrackState.UNAVAILABLE
+                if self._state is ReferenceTrackState.UNAVAILABLE:
+                    self._state = (
+                        ReferenceTrackState.READY
+                        if self._stream is not None
+                        else ReferenceTrackState.IDLE
+                    )
             elif capability.available and self._state is ReferenceTrackState.UNAVAILABLE:
                 self._state = (
                     ReferenceTrackState.READY
                     if self._stream is not None
                     else ReferenceTrackState.IDLE
                 )
+            elif (
+                capability.available
+                and self._state is ReferenceTrackState.FAILED
+                and self._recoverable_route_failure
+                and self._session is None
+                and self._stream is not None
+            ):
+                self._state = ReferenceTrackState.READY
+                self._error = ""
+                self._recoverable_route_failure = False
             snapshot = self._snapshot_locked()
         self._notify(snapshot)
         return snapshot
@@ -862,6 +975,9 @@ class ReferenceTrackController:
                 return stopped
             self._state = ReferenceTrackState.LOADING
             self._error = ""
+            self._recoverable_route_failure = False
+            self._source_generation += 1
+            source_generation = self._source_generation
             loading = self._snapshot_locked()
         self._notify(loading)
         try:
@@ -869,28 +985,48 @@ class ReferenceTrackController:
             stream = ReferenceTrackStream(decoder)
         except ReferenceTrackError as exc:
             with self._lock:
+                if (
+                    source_generation != self._source_generation
+                    or self._state is ReferenceTrackState.CLOSED
+                ):
+                    return self._snapshot_locked()
                 self._state = ReferenceTrackState.FAILED
                 self._error = str(exc)
+                self._recoverable_route_failure = False
                 failed = self._snapshot_locked()
             self._notify(failed)
             return failed
 
         old_stream: ReferenceTrackStream | None
         with self._lock:
-            old_stream = self._stream
-            self._stream = stream
-            self._source_name = decoder.info.name
-            self._duration_s = decoder.info.duration_s
-            self._loop_start_s = 0.0
-            self._loop_end_s = None
-            self._trim_db = 0.0
-            self._error = ""
-            self._state = (
-                ReferenceTrackState.READY
-                if self._capability.available
-                else ReferenceTrackState.UNAVAILABLE
-            )
-            snapshot = self._snapshot_locked()
+            if (
+                source_generation != self._source_generation
+                or self._state is ReferenceTrackState.CLOSED
+            ):
+                stale = self._snapshot_locked()
+                install_stream = False
+            else:
+                install_stream = True
+            if not install_stream:
+                old_stream = None
+            else:
+                old_stream = self._stream
+                self._stream = stream
+                self._source_name = decoder.info.name
+                self._duration_s = decoder.info.duration_s
+                self._loop_start_s = 0.0
+                self._loop_end_s = None
+                self._trim_db = 0.0
+                self._source_format = decoder.info.container
+                self._source_samplerate = decoder.info.source_samplerate
+                self._source_channels = decoder.info.channels
+                self._error = ""
+                self._recoverable_route_failure = False
+                self._state = ReferenceTrackState.READY
+                snapshot = self._snapshot_locked()
+        if not install_stream:
+            stream.close()
+            return stale
         if old_stream is not None:
             old_stream.close()
         self._notify(snapshot)
@@ -907,11 +1043,14 @@ class ReferenceTrackController:
             if context.audience_bridge_active:
                 return self._fail_locked(
                     "Reference Track can't share BlackHole with the Webex audience "
-                    "bridge. Switch Webex to talkback or video-only first."
+                    "bridge. Switch Webex to talkback or video-only first.",
+                    recoverable_route=True,
                 )
             if self._stream is None:
                 return self._fail_locked("Load a song before starting Reference Track.")
             if self._state is ReferenceTrackState.PLAYING:
+                return self._snapshot_locked()
+            if self._state is ReferenceTrackState.ROUTING:
                 return self._snapshot_locked()
             if (
                 self._state is ReferenceTrackState.PAUSED
@@ -939,18 +1078,54 @@ class ReferenceTrackController:
                 context.audience_bridge_active
             )
             if not self._capability.available:
-                return self._fail_locked(self._capability.detail)
+                return self._fail_locked(
+                    self._capability.detail,
+                    recoverable_route=True,
+                )
             self._state = ReferenceTrackState.ROUTING
             self._error = ""
+            self._recoverable_route_failure = False
+            self._launch_generation += 1
+            launch_generation = self._launch_generation
             routing = self._snapshot_locked()
         self._notify(routing)
 
         session: ReferenceAudioBridgeSession | None = None
         try:
             session = self._backend.prepare(context)
+            with self._lock:
+                launch_is_current = (
+                    launch_generation == self._launch_generation
+                    and self._state is ReferenceTrackState.ROUTING
+                    and self._capability.available
+                )
+            if not launch_is_current:
+                return self._retire_unpublished_session(session)
             session.start(self._stream.pull)
-            self._stream.play(count_in=True)
+            with self._lock:
+                launch_is_current = (
+                    launch_generation == self._launch_generation
+                    and self._state is ReferenceTrackState.ROUTING
+                    and self._capability.available
+                )
+                if launch_is_current:
+                    self._stream.play(count_in=True)
+                    self._session = session
+                    self._route_detail = session.route_name
+                    self._state = ReferenceTrackState.PLAYING
+                    self._error = ""
+                    self._recoverable_route_failure = False
+                    snapshot = self._snapshot_locked()
         except Exception as exc:  # noqa: BLE001 - backend boundary
+            with self._lock:
+                launch_is_current = (
+                    launch_generation == self._launch_generation
+                    and self._state is ReferenceTrackState.ROUTING
+                )
+            if not launch_is_current:
+                if session is None:
+                    return self.snapshot
+                return self._retire_unpublished_session(session)
             teardown_error = ""
             if session is not None:
                 try:
@@ -979,14 +1154,14 @@ class ReferenceTrackController:
                 )
             )
             with self._lock:
-                return self._fail_locked(message)
+                return self._fail_locked(
+                    message,
+                    recoverable_route=not teardown_error
+                    and self._session is None,
+                )
 
-        with self._lock:
-            self._session = session
-            self._route_detail = session.route_name
-            self._state = ReferenceTrackState.PLAYING
-            self._error = ""
-            snapshot = self._snapshot_locked()
+        if not launch_is_current:
+            return self._retire_unpublished_session(session)
         self._notify(snapshot)
         return snapshot
 
@@ -1085,6 +1260,7 @@ class ReferenceTrackController:
                 with self._lock:
                     self._state = ReferenceTrackState.FAILED
                     self._error = teardown_error or error
+                    self._recoverable_route_failure = False
                     snapshot = self._snapshot_locked()
                 self._notify(snapshot)
                 return snapshot
@@ -1093,6 +1269,7 @@ class ReferenceTrackController:
             with self._lock:
                 self._state = ReferenceTrackState.FAILED
                 self._error = teardown_error or stream.error
+                self._recoverable_route_failure = False
                 snapshot = self._snapshot_locked()
             self._notify(snapshot)
             return snapshot
@@ -1103,10 +1280,34 @@ class ReferenceTrackController:
     def handle_session_end(self) -> ReferenceTrackSnapshot:
         return self.stop()
 
+    def cancel_pending_start(self) -> ReferenceTrackSnapshot:
+        """Synchronously revoke an unpublished route start without blocking."""
+
+        with self._lock:
+            if self._state is ReferenceTrackState.CLOSED:
+                return self._snapshot_locked()
+            if (
+                self._state is not ReferenceTrackState.ROUTING
+                or self._session is not None
+            ):
+                return self._snapshot_locked()
+            self._launch_generation += 1
+            self._state = (
+                ReferenceTrackState.READY
+                if self._stream is not None
+                else ReferenceTrackState.IDLE
+            )
+            self._error = ""
+            self._recoverable_route_failure = False
+            snapshot = self._snapshot_locked()
+        self._notify(snapshot)
+        return snapshot
+
     def stop(self) -> ReferenceTrackSnapshot:
         with self._lock:
             if self._state is ReferenceTrackState.CLOSED:
                 return self._snapshot_locked()
+            self._launch_generation += 1
             has_active = self._session is not None
             if has_active:
                 self._state = ReferenceTrackState.STOPPING
@@ -1125,16 +1326,14 @@ class ReferenceTrackController:
             if teardown_error:
                 self._error = teardown_error
                 self._state = ReferenceTrackState.FAILED
+                self._recoverable_route_failure = False
             else:
                 self._error = ""
+                self._recoverable_route_failure = False
                 self._state = (
                     ReferenceTrackState.READY
-                    if self._stream is not None and self._capability.available
-                    else (
-                        ReferenceTrackState.UNAVAILABLE
-                        if not self._capability.available
-                        else ReferenceTrackState.IDLE
-                    )
+                    if self._stream is not None
+                    else ReferenceTrackState.IDLE
                 )
             snapshot = self._snapshot_locked()
         self._notify(snapshot)
@@ -1150,10 +1349,15 @@ class ReferenceTrackController:
                 return stopped
         with self._lock:
             stream = self._stream
+            self._source_generation += 1
             self._stream = None
             self._state = ReferenceTrackState.CLOSED
             self._source_name = ""
             self._duration_s = 0.0
+            self._source_format = ""
+            self._source_samplerate = 0
+            self._source_channels = 0
+            self._recoverable_route_failure = False
             snapshot = self._snapshot_locked()
         if stream is not None:
             stream.close()
@@ -1178,6 +1382,37 @@ class ReferenceTrackController:
             if self._session is session:
                 self._session = None
         return ""
+
+    def _retire_unpublished_session(
+        self,
+        session: ReferenceAudioBridgeSession,
+    ) -> ReferenceTrackSnapshot:
+        """Stop a prepared session whose launch authority was superseded."""
+
+        try:
+            session.stop()
+        except ReferenceTrackError as exc:
+            teardown_error = str(exc)
+        except Exception:  # noqa: BLE001
+            teardown_error = (
+                "Reference Track couldn't confirm that its owned Jamulus "
+                "client stopped."
+            )
+        else:
+            teardown_error = ""
+        if teardown_error:
+            with self._lock:
+                self._session = session
+                self._route_detail = str(
+                    getattr(session, "route_name", "") or ""
+                )
+                self._state = ReferenceTrackState.FAILED
+                self._error = teardown_error
+                self._recoverable_route_failure = False
+                snapshot = self._snapshot_locked()
+            self._notify(snapshot)
+            return snapshot
+        return self.snapshot
 
     def _safe_capability(self, audience_bridge_active: bool) -> ReferenceTrackCapability:
         try:
@@ -1209,13 +1444,26 @@ class ReferenceTrackController:
             trim_db=self._trim_db,
             count_in_beats=self._count_in_beats,
             count_in_bpm=self._count_in_bpm,
+            source_format=self._source_format,
+            source_samplerate=self._source_samplerate,
+            source_channels=self._source_channels,
             route_detail=self._route_detail,
             error=self._error,
+            cleanup_pending=(
+                self._session is not None
+                and self._state is ReferenceTrackState.FAILED
+            ),
         )
 
-    def _fail_locked(self, message: str) -> ReferenceTrackSnapshot:
+    def _fail_locked(
+        self,
+        message: str,
+        *,
+        recoverable_route: bool = False,
+    ) -> ReferenceTrackSnapshot:
         self._state = ReferenceTrackState.FAILED
         self._error = str(message or "Reference Track couldn't continue.").strip()
+        self._recoverable_route_failure = bool(recoverable_route)
         snapshot = self._snapshot_locked()
         self._notify(snapshot)
         return snapshot
@@ -1250,4 +1498,6 @@ __all__ = [
     "ReferenceTrackSourceInfo",
     "ReferenceTrackState",
     "ReferenceTrackStream",
+    "reference_track_file_filter",
+    "reference_track_supported_extensions",
 ]

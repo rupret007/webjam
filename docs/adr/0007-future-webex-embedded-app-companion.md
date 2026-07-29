@@ -102,10 +102,12 @@ content-retention design, secure-sync protocol tests, two-participant physical
 validation, and proof that disconnecting the companion cannot interrupt
 Jamulus, recording, or the desktop session.
 
-The v0.22.1 desktop candidate implements only native-app detection, official
-Cisco installer handoff, validated external meeting launch, and privacy-safe
-diagnostics. None of the hosted, OAuth, relay, embedded, or minimize-to-agent
-phases above are represented as shipped.
+The v0.22.2 desktop candidate implements native-app detection, official Cisco
+installer handoff, side-effect-free Conversation navigation, explicit
+Bring Forward and Join/Open actions, truthful Mute-in-Webex focus guidance,
+validated external meeting launch, and privacy-safe diagnostics. It does not
+control or verify external Webex mute. None of the hosted, OAuth, relay,
+embedded, or minimize-to-agent phases above are represented as shipped.
 
 ## Cisco references
 

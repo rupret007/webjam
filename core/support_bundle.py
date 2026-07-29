@@ -138,6 +138,45 @@ _WEBEX_APP_STATES = frozenset(
         "unavailable",
     }
 )
+_REFERENCE_TRACK_PLAYBACK_STATES = frozenset(
+    {
+        "unavailable",
+        "idle",
+        "loading",
+        "ready",
+        "routing",
+        "playing",
+        "paused",
+        "stopping",
+        "failed",
+        "closed",
+    }
+)
+_REFERENCE_TRACK_SOURCE_STATES = frozenset(
+    {"not_loaded", "loading", "loaded", "failed"}
+)
+_REFERENCE_TRACK_SOURCE_FORMATS = frozenset(
+    {"unknown", "WAV", "WAVEX", "RF64", "AIFF", "FLAC", "MP3"}
+)
+_REFERENCE_TRACK_ROUTE_PLATFORMS = frozenset(
+    {"unknown", "macos", "windows", "linux"}
+)
+_REFERENCE_TRACK_ROUTE_BACKENDS = frozenset(
+    {"blackhole", "vb-cable-jack", "jack", "unavailable"}
+)
+_REFERENCE_TRACK_ROUTE_REASONS = frozenset(
+    {
+        "ready",
+        "unavailable",
+        "audience_bridge_conflict",
+        "physical_certification_required",
+        "blackhole_unavailable",
+        "windows_backend_unavailable",
+        "linux_backend_unavailable",
+        "live_route_unavailable",
+        "unsupported_platform",
+    }
+)
 
 _LOG_ARCHIVE_NAMES = {
     "webjam": "logs/webjam.log",
@@ -160,6 +199,7 @@ class SupportFacts:
     jamulus_state: str = ""
     jamulus_update: Mapping[str, Any] = field(default_factory=dict)
     webex_app: Mapping[str, Any] = field(default_factory=dict)
+    reference_track: Mapping[str, Any] = field(default_factory=dict)
     session_transitions: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     musician_guidance: Mapping[str, Any] = field(default_factory=dict)
     engine_capabilities: Mapping[str, Any] = field(default_factory=dict)
@@ -305,6 +345,7 @@ def build_support_bundle(
             "jamulus": {"state": _safe_text(facts.jamulus_state)},
             "jamulus_update": _sanitize_jamulus_update(facts.jamulus_update),
             "webex_app": _sanitize_webex_app(facts.webex_app),
+            "reference_track": _sanitize_reference_track(facts.reference_track),
             "session": {
                 "guidance": _sanitize_guidance(facts.musician_guidance),
                 "transitions": _sanitize_records(
@@ -477,6 +518,42 @@ def _sanitize_webex_app(value: Mapping[str, Any] | Any) -> dict[str, Any]:
     reason = value.get("reason_code")
     if isinstance(reason, str) and _REASON_CODE_RE.fullmatch(reason):
         result["reason_code"] = reason
+    return result
+
+
+def _sanitize_reference_track(value: Mapping[str, Any] | Any) -> dict[str, Any]:
+    """Accept only bounded route and source-shape facts, never source identity."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    enum_fields = (
+        ("playback_state", _REFERENCE_TRACK_PLAYBACK_STATES),
+        ("source_state", _REFERENCE_TRACK_SOURCE_STATES),
+        ("source_format", _REFERENCE_TRACK_SOURCE_FORMATS),
+        ("route_platform", _REFERENCE_TRACK_ROUTE_PLATFORMS),
+        ("route_backend", _REFERENCE_TRACK_ROUTE_BACKENDS),
+        ("route_reason", _REFERENCE_TRACK_ROUTE_REASONS),
+    )
+    for key, allowed in enum_fields:
+        item = value.get(key)
+        if isinstance(item, str) and item in allowed:
+            result[key] = item
+
+    numeric_bounds = (
+        ("source_sample_rate_hz", 0.0, 384_000.0),
+        ("source_channels", 0.0, 2.0),
+        ("source_duration_s", 0.0, 24.0 * 60.0 * 60.0),
+    )
+    for key, minimum, maximum in numeric_bounds:
+        item = _safe_number(value.get(key))
+        if item is not None and minimum <= item <= maximum:
+            result[key] = item
+
+    for key in ("route_available", "route_active", "cleanup_pending"):
+        item = value.get(key)
+        if isinstance(item, bool):
+            result[key] = item
     return result
 
 

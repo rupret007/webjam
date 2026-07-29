@@ -15,14 +15,17 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QApplication,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from core.reference_track import reference_track_file_filter
 from webjam_qt.theme.tokens import Space
 
 
@@ -47,6 +50,7 @@ class ReferenceTrackDialog(QDialog):
     loop_requested = Signal(float, object)
     trim_requested = Signal(float)
     count_in_requested = Signal(int, float)
+    recheck_route_requested = Signal()
 
     _SEEK_STEPS = 10_000
     # A fast controller edit normally acknowledges synchronously or on the
@@ -60,6 +64,8 @@ class ReferenceTrackDialog(QDialog):
         self._snapshot = None
         self._syncing = False
         self._rendered_state = "unavailable"
+        self._route_checking = False
+        self._source_load_queued = False
         # Controller snapshots arrive every 250 ms.  Keep a just-committed
         # keyboard edit on screen until the controller echoes it back instead
         # of briefly replacing it with the preceding snapshot.
@@ -122,6 +128,11 @@ class ReferenceTrackDialog(QDialog):
         self._status = QLabel("Checking the isolated audio route…")
         self._status.setObjectName("DialogStatus")
         self._status.setWordWrap(True)
+        self._status.setMinimumWidth(0)
+        self._status.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         self._status.setTextFormat(Qt.TextFormat.PlainText)
         self._status.setAccessibleName("Reference Track status")
         self._status.setAccessibleDescription(self._status.text())
@@ -130,16 +141,54 @@ class ReferenceTrackDialog(QDialog):
         self._route = QLabel("")
         self._route.setObjectName("DialogHint")
         self._route.setWordWrap(True)
+        self._route.setMinimumWidth(0)
+        self._route.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         self._route.setTextFormat(Qt.TextFormat.PlainText)
         self._route.setAccessibleName("Reference Track routing status")
         self._route.setAccessibleDescription("")
         root.addWidget(self._route)
+
+        route_actions = QHBoxLayout()
+        self._route_guidance = QLabel(
+            "You can load and inspect a song before the playback route is ready."
+        )
+        self._route_guidance.setObjectName("DialogHint")
+        self._route_guidance.setWordWrap(True)
+        self._route_guidance.setMinimumWidth(0)
+        self._route_guidance.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._route_guidance.setTextFormat(Qt.TextFormat.PlainText)
+        self._route_guidance.setAccessibleName("Reference Track route guidance")
+        route_actions.addWidget(self._route_guidance, 1)
+        self._recheck_route = QPushButton("Recheck Route")
+        self._recheck_route.setObjectName("GhostButton")
+        self._recheck_route.setAccessibleName(
+            "Recheck the Reference Track playback route"
+        )
+        self._recheck_route.setToolTip(
+            "Inspect the isolated audio route again. This never starts playback."
+        )
+        self._recheck_route.clicked.connect(self.recheck_route_requested.emit)
+        route_actions.addWidget(self._recheck_route)
+        root.addLayout(route_actions)
 
         source_row = QHBoxLayout()
         self._source = QLabel("No song loaded")
         self._source.setObjectName("SimpleSettingsFieldLabel")
         self._source.setTextFormat(Qt.TextFormat.PlainText)
         self._source.setAccessibleName("Loaded Reference Track")
+        self._source.setWordWrap(True)
+        self._source.setMinimumWidth(0)
+        self._source.setMaximumHeight(48)
+        self._source.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         source_row.addWidget(self._source, 1)
         self._load = QPushButton("Load Song…")
         self._load.setObjectName("GhostButton")
@@ -147,6 +196,18 @@ class ReferenceTrackDialog(QDialog):
         self._load.clicked.connect(self._choose_source)
         source_row.addWidget(self._load)
         root.addLayout(source_row)
+
+        self._source_details = QLabel("No source details")
+        self._source_details.setObjectName("DialogHint")
+        self._source_details.setTextFormat(Qt.TextFormat.PlainText)
+        self._source_details.setWordWrap(True)
+        self._source_details.setMinimumWidth(0)
+        self._source_details.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
+        self._source_details.setAccessibleName("Reference Track source details")
+        root.addWidget(self._source_details)
 
         time_row = QHBoxLayout()
         self._time = QLabel("0:00 / 0:00")
@@ -269,7 +330,7 @@ class ReferenceTrackDialog(QDialog):
             self,
             "Load Reference Track",
             "",
-            "Audio files (*.wav *.wave *.aif *.aiff *.flac *.mp3)",
+            reference_track_file_filter(),
         )
         if path:
             self.load_requested.emit(path)
@@ -462,6 +523,14 @@ class ReferenceTrackDialog(QDialog):
     def set_snapshot(self, snapshot: object) -> None:
         """Render one controller-owned immutable snapshot on the Qt thread."""
 
+        previous_focus = QApplication.focusWidget()
+        previous_state = self._rendered_state
+        transport_controls = {
+            self._play,
+            self._pause,
+            self._restart,
+            self._stop,
+        }
         self._snapshot = snapshot
         state_value = getattr(getattr(snapshot, "state", None), "value", "")
         state = str(state_value or getattr(snapshot, "state", "unavailable")).lower()
@@ -469,20 +538,31 @@ class ReferenceTrackDialog(QDialog):
         capability = getattr(snapshot, "capability", None)
         capability_available = bool(getattr(capability, "available", False))
         source_name = str(getattr(snapshot, "source_name", "") or "")
+        loaded = bool(source_name)
         duration = max(0.0, float(getattr(snapshot, "duration_s", 0.0) or 0.0))
         position = min(
             duration,
             max(0.0, float(getattr(snapshot, "position_s", 0.0) or 0.0)),
         )
         error = str(getattr(snapshot, "error", "") or "")
+        cleanup_pending = bool(
+            getattr(snapshot, "cleanup_pending", False)
+        )
         route_detail = str(getattr(snapshot, "route_detail", "") or "")
         capability_detail = str(getattr(capability, "detail", "") or "")
+        source_format = str(getattr(snapshot, "source_format", "") or "").upper()
+        source_samplerate = max(
+            0, int(getattr(snapshot, "source_samplerate", 0) or 0)
+        )
+        source_channels = max(
+            0, int(getattr(snapshot, "source_channels", 0) or 0)
+        )
 
         state_labels = {
-            "unavailable": "Reference Track is unavailable",
+            "unavailable": "Ready to load a song",
             "idle": "Ready to load a song",
             "loading": "Checking and decoding the song…",
-            "ready": "Song ready; routing will be proven before playback",
+            "ready": "Song loaded and ready to inspect",
             "routing": "Starting the isolated Jamulus track participant…",
             "playing": "Playing through Jamulus",
             "paused": "Paused in Jamulus",
@@ -491,15 +571,61 @@ class ReferenceTrackDialog(QDialog):
             "closed": "Reference Track is closed",
         }
         status = state_labels.get(state, "Checking Reference Track state…")
+        if cleanup_pending:
+            status = (
+                "Reference Track still needs to finish stopping its separate "
+                "Jamulus participant"
+            )
         if error:
             status = f"{status}. {error}"
         self._set_dynamic_status(self._status, status)
+        route_prefix = (
+            "Playback locked—finish stopping. "
+            if cleanup_pending
+            else (
+                "Playback route ready. "
+                if capability_available
+                else "Playback route locked. "
+            )
+        )
         self._set_dynamic_status(
             self._route,
-            route_detail or capability_detail,
+            f"{route_prefix}{route_detail or capability_detail}".strip(),
         )
         self._route.setVisible(bool(self._route.text()))
-        self._source.setText(source_name or "No song loaded")
+        guidance = (
+            "Choose Stop again. Playback and route rechecks stay locked until "
+            "WebJam proves the separate participant has exited."
+            if cleanup_pending
+            else (
+            "WebJam proves the route again before playback. Loading or "
+            "inspecting a song does not start the Jamulus track participant."
+            if capability_available
+            else (
+                "Load and inspect a song now if you want. Playback remains "
+                "disabled until the setup above is complete; then choose "
+                "Recheck Route."
+            )
+            )
+        )
+        self._set_dynamic_status(self._route_guidance, guidance)
+        source_label = source_name or "No song loaded"
+        self._source.setText(source_label)
+        self._source.setToolTip(source_name)
+        self._source.setAccessibleDescription(source_label)
+        source_facts: list[str] = []
+        if source_format:
+            source_facts.append(source_format)
+        if source_samplerate:
+            rate_khz = source_samplerate / 1_000.0
+            source_facts.append(f"{rate_khz:g} kHz")
+        if source_channels:
+            source_facts.append("mono" if source_channels == 1 else "stereo")
+        if loaded and duration:
+            source_facts.append(_clock_text(duration))
+        self._source_details.setText(
+            " · ".join(source_facts) if source_facts else "No source details"
+        )
         self._time.setText(f"{_clock_text(position)} / {_clock_text(duration)}")
 
         snapshot_seek_value = (
@@ -607,7 +733,67 @@ class ReferenceTrackDialog(QDialog):
         finally:
             self._syncing = False
 
-        self._set_controls_enabled(capability_available, state=state)
+        self._set_controls_enabled(
+            capability_available and not cleanup_pending,
+            state=state,
+            loaded=loaded,
+            cleanup_pending=cleanup_pending,
+        )
+        if (
+            previous_focus in transport_controls
+            and (
+                state != previous_state
+                or not previous_focus.isEnabled()
+            )
+            and self.isVisible()
+        ):
+            target = (
+                self._stop
+                if state in {"routing", "stopping"} or cleanup_pending
+                else self._pause
+                if state == "playing"
+                else self._play
+                if state in {"ready", "paused"}
+                else None
+            )
+            if target is not None and target.isEnabled():
+                target.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def set_route_checking(self, checking: bool) -> None:
+        """Render one coalesced route probe without enabling duplicate work."""
+
+        self._route_checking = bool(checking)
+        self._recheck_route.setText(
+            "Checking…" if self._route_checking else "Recheck Route"
+        )
+        self._recheck_route.setAccessibleName(
+            (
+                "Checking the Reference Track playback route"
+                if self._route_checking
+                else "Recheck the Reference Track playback route"
+            )
+        )
+        if self._snapshot is not None:
+            self.set_snapshot(self._snapshot)
+
+    def set_source_load_queued(self, queued: bool) -> None:
+        """Show that one selected source will load after current safe work."""
+
+        self._source_load_queued = bool(queued)
+        self._load.setText(
+            "Waiting to Load…"
+            if self._source_load_queued
+            else "Load Song…"
+        )
+        self._load.setAccessibleName(
+            (
+                "Selected Reference Track is waiting to load"
+                if self._source_load_queued
+                else "Load a Reference Track audio file"
+            )
+        )
+        if self._snapshot is not None:
+            self.set_snapshot(self._snapshot)
 
     @staticmethod
     def _set_dynamic_status(label: QLabel, text: str) -> None:
@@ -641,17 +827,29 @@ class ReferenceTrackDialog(QDialog):
             line_edit is not None and line_edit.hasFocus()
         )
 
-    def _set_controls_enabled(self, capability_available: bool, *, state: str) -> None:
+    def _set_controls_enabled(
+        self,
+        capability_available: bool,
+        *,
+        state: str,
+        loaded: bool = False,
+        cleanup_pending: bool = False,
+    ) -> None:
         busy = state in {"loading", "routing", "stopping", "closed"}
-        loaded = state in {"ready", "routing", "playing", "paused", "stopping"}
-        editable = loaded and not busy and state != "playing"
-        self._load.setEnabled(capability_available and not busy)
+        editable = loaded and state in {"ready", "paused"}
+        self._load.setEnabled(not busy and not self._source_load_queued)
+        self._recheck_route.setEnabled(
+            not busy
+            and not self._route_checking
+            and not cleanup_pending
+            and state not in {"playing", "paused"}
+        )
         self._play.setEnabled(
-            capability_available and state in {"ready", "paused"}
+            loaded and capability_available and state in {"ready", "paused"}
         )
         self._pause.setEnabled(state == "playing")
         self._restart.setEnabled(
-            capability_available and state in {"ready", "playing", "paused"}
+            capability_available and state in {"playing", "paused"}
         )
         self._stop.setEnabled(state in {"routing", "playing", "paused", "failed"})
         self._seek.setEnabled(state == "paused")

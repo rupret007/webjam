@@ -28,6 +28,7 @@ from core.project_audio import (
 
 _FORMAT_CASES = (
     (".wav", "WAV", "FLOAT"),
+    (".wave", "WAV", "FLOAT"),
     (".aif", "AIFF", "PCM_16"),
     (".aiff", "AIFF", "PCM_16"),
     (".flac", "FLAC", "PCM_16"),

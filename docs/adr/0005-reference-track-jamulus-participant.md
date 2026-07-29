@@ -49,7 +49,7 @@ route. It resolves the owned primary Jamulus PID to its CoreAudio Process
 AudioObject, requires exactly one actively running input and output, rejects
 ambiguous or BlackHole routes, and repeats that proof during playback.
 
-That proof is not enabled in production v0.21.0 wiring. A reported CoreAudio
+That proof is not enabled in production v0.22.2 wiring. A reported CoreAudio
 failure can return a process's output device for the input scope after an input
 switch. Jamulus 3.12.2 exposes no independent live sound-device RPC, and a
 saved profile is only a secondary consistency check. Until the exact physical
@@ -73,10 +73,16 @@ underrun” tests do not certify callback scheduling.
 
 ## User controls
 
-The host can load a supported WAV, AIFF, FLAC, or decoder-supported MP3; play,
-pause, restart, seek while paused, set a loop range, apply bounded source trim,
-and add an audible count-in. WebJam does not persist the file path or represent
-the file as a recorded take.
+Source validation is intentionally independent from route authority. The host
+can load and inspect supported WAV/WAVE, AIFF, or FLAC while route capability
+is unavailable; MP3 is offered only when the packaged runtime proves decoder
+support. Loading and **Recheck Route** never start playback. Play remains
+fail-closed until fresh route and isolation evidence is available.
+
+Once route evidence is certified, the host can play, pause, restart, seek while
+paused, set a loop range, apply bounded source trim, and add an audible
+count-in. WebJam does not persist the file path or represent the file as a
+recorded take.
 
 The UI says **Jamulus-routed**, never “latency eliminated” or “synchronized.”
 The track receives Jamulus's normal buffering, jitter handling, and network
@@ -105,11 +111,13 @@ latency like another participant.
 
 ## Privacy and error handling
 
-Only a sanitized source filename may appear in a snapshot. The source path is
-memory-only and is excluded from settings, logs, metrics, diagnostics, support
-bundles, recovery records, and backend command output. Errors are bounded,
-musician-facing messages without raw paths, process arguments, secrets, or
-provider output.
+Only a sanitized source filename may appear in the private UI snapshot. The
+source path is memory-only and is excluded from settings, logs, metrics,
+diagnostics, support bundles, recovery records, and backend command output.
+Public diagnostics use a strict allowlist of finite playback/source/route
+state, source format/rate/channels/duration, platform, backend, and route reason
+without a filename or free-form text. Errors are bounded, musician-facing
+messages without raw paths, process arguments, secrets, or provider output.
 
 ## Consequences
 

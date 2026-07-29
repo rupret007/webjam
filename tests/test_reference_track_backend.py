@@ -232,6 +232,8 @@ def test_production_backend_locks_uncertified_route_before_any_native_work(
     assert "engine is included" in capability.detail
     assert "playback is locked" in capability.detail
     assert "physical macOS pilot" in capability.detail
+    assert capability.backend == "blackhole"
+    assert capability.reason_code == "physical_certification_required"
     assert backend.capability(audience_bridge_active=True).detail == capability.detail
     with pytest.raises(Exception, match="playback is locked"):
         backend.prepare(_context(binary))
@@ -271,11 +273,14 @@ def test_capability_is_macos_only_conflict_aware_and_requires_split_channels() -
     capability = available.capability()
     assert capability.available is True
     assert capability.route_name == "BlackHole 16ch"
+    assert capability.backend == "blackhole"
+    assert capability.reason_code == "ready"
     assert "verify" in capability.detail
 
     conflict = available.capability(audience_bridge_active=True)
     assert conflict.available is False
     assert "audience bridge" in conflict.detail
+    assert conflict.reason_code == "audience_bridge_conflict"
 
     two_channel = MacOSBlackHoleReferenceBackend(
         platform="darwin",
@@ -293,6 +298,8 @@ def test_capability_is_macos_only_conflict_aware_and_requires_split_channels() -
     ).capability()
     assert windows.available is False
     assert "Windows" in windows.detail
+    assert windows.backend == "vb-cable-jack"
+    assert windows.reason_code == "windows_backend_unavailable"
 
     unsupported_live_proof = MacOSBlackHoleReferenceBackend(
         platform="darwin",
@@ -308,6 +315,7 @@ def test_capability_is_macos_only_conflict_aware_and_requires_split_channels() -
     ).capability()
     assert unsupported_live_proof.available is False
     assert "macOS 14.2 or later" in unsupported_live_proof.detail
+    assert unsupported_live_proof.reason_code == "live_route_unavailable"
 
 
 def test_capability_rejects_wrong_rate_and_ambiguous_device_name() -> None:

@@ -41,7 +41,7 @@ def test_leave_and_shutdown_are_safe_idempotent_no_ops():
     embed.shutdown()
     embed.shutdown()
 
-    assert embed.fallback_button().text() == "Open Webex"
+    assert embed.fallback_button().text() == "Join / Open"
 
 
 def test_external_success_copy_never_claims_join_or_connection():
@@ -58,14 +58,18 @@ def test_external_success_copy_never_claims_join_or_connection():
 def test_install_action_stays_hidden_until_native_app_needs_attention():
     embed = WebexEmbed()
     requested = []
+    rechecks = []
     embed.install_webex_requested.connect(lambda: requested.append(True))
+    embed.recheck_webex_requested.connect(lambda: rechecks.append(True))
 
     assert embed.install_button().isHidden()
+    assert embed.recheck_button().isHidden()
     assert embed._app_status_label.isHidden()
 
     embed.set_app_status(WebexAppState.NOT_INSTALLED)
     assert not embed.install_button().isHidden()
     assert embed.install_button().text() == "Get Webex"
+    assert not embed.recheck_button().isHidden()
     assert embed._app_status_label.text() == "Webex app not installed"
     assert embed._app_status_label.accessibleName() == "Webex app status"
     assert "official Webex download" in (
@@ -73,7 +77,9 @@ def test_install_action_stays_hidden_until_native_app_needs_attention():
     )
 
     embed.install_button().click()
+    embed.recheck_button().click()
     assert requested == [True]
+    assert rechecks == [True]
 
     embed.set_app_status(WebexAppState.INVALID)
     assert not embed.install_button().isHidden()
@@ -81,6 +87,35 @@ def test_install_action_stays_hidden_until_native_app_needs_attention():
     assert "unverified installation" in (
         embed.install_button().accessibleDescription()
     )
+
+
+def test_native_app_rescan_and_activation_busy_states_are_truthful():
+    embed = WebexEmbed()
+
+    embed.set_app_checking()
+    assert embed._app_status_label.text() == "Checking for the Webex app…"
+    assert not embed.recheck_button().isHidden()
+    assert not embed.recheck_button().isEnabled()
+    assert not embed.bring_forward_button().isEnabled()
+    assert embed.bring_forward_button().text() == "Checking…"
+
+    embed.set_app_status(
+        WebexAppState.INSTALLED,
+        version="46.7.0",
+        publisher_verified=True,
+    )
+    assert embed.recheck_button().isHidden()
+    assert embed.bring_forward_button().isEnabled()
+    assert embed.bring_forward_button().text() == "Bring Forward"
+
+    embed.set_native_action_busy(True)
+    assert not embed.bring_forward_button().isEnabled()
+    assert not embed.mute_button().isEnabled()
+    assert embed.bring_forward_button().text() == "Checking…"
+
+    embed.set_native_action_busy(False)
+    assert embed.bring_forward_button().isEnabled()
+    assert embed.mute_button().isEnabled()
 
 
 def test_app_status_never_overwrites_external_meeting_launch_truth():
@@ -121,20 +156,149 @@ def test_unverified_platform_reports_app_found_without_publisher_claim():
     assert "publisher verification is not available" in description
     assert "publisher is verified" not in description
     assert embed.install_button().isHidden()
+    assert not embed.bring_forward_button().isEnabled()
+    assert not embed.mute_button().isEnabled()
 
 
 def test_unsupported_app_check_keeps_browser_meeting_action_available():
     embed = WebexEmbed()
+    embed.set_meeting_configured(True)
     embed.set_app_status("unsupported")
 
     assert embed.install_button().isHidden()
     assert embed.fallback_button().isEnabled()
-    assert embed.fallback_button().text() == "Open Webex"
+    assert embed.fallback_button().text() == "Join / Open"
     assert embed._app_status_label.text() == "Webex app check unavailable"
     assert "supported browser" in (
         embed._app_status_label.accessibleDescription()
     )
-    assert embed.maximumHeight() <= 96
+    assert embed.maximumHeight() <= 152
+
+
+def test_transient_app_check_failure_keeps_explicit_retry_available():
+    embed = WebexEmbed()
+    rechecks: list[bool] = []
+    embed.recheck_webex_requested.connect(lambda: rechecks.append(True))
+    embed.set_meeting_configured(True)
+
+    embed.set_app_status(
+        WebexAppState.UNSUPPORTED,
+        reason_code="detection-failed",
+    )
+
+    assert embed._app_status_label.text() == "Webex app check failed"
+    assert not embed.recheck_button().isHidden()
+    assert embed.recheck_button().isEnabled()
+    assert embed.fallback_button().isEnabled()
+    assert "Check Again" in embed._app_status_label.accessibleDescription()
+    embed.recheck_button().click()
+    assert rechecks == [True]
+
+
+def test_conversation_actions_are_distinct_and_truthful():
+    embed = WebexEmbed()
+    events: list[str] = []
+    embed.bring_forward_requested.connect(lambda: events.append("bring"))
+    embed.mute_in_webex_requested.connect(lambda: events.append("mute"))
+    embed.open_meeting_requested.connect(lambda: events.append("open"))
+    embed.change_link_requested.connect(lambda: events.append("settings"))
+    embed.set_meeting_configured(True)
+    embed.set_app_status(
+        WebexAppState.INSTALLED,
+        version="46.7.0",
+        publisher_verified=True,
+    )
+
+    embed.bring_forward_button().click()
+    embed.mute_button().click()
+    embed.fallback_button().click()
+    embed.change_link_button().click()
+
+    assert events == ["bring", "mute", "open", "settings"]
+    assert "without opening the meeting link" in (
+        embed.bring_forward_button().accessibleDescription()
+    )
+    mute_description = embed.mute_button().accessibleDescription()
+    assert "cannot verify or change mute" in mute_description
+    assert "Jamulus" not in embed.mute_button().text()
+
+
+def test_join_open_requires_a_configured_link_and_is_single_flight():
+    embed = WebexEmbed()
+    assert not embed.fallback_button().isEnabled()
+    assert embed.change_link_button().text() == "Add Link"
+
+    embed.set_meeting_configured(True)
+    assert embed.fallback_button().isEnabled()
+    assert embed.change_link_button().text() == "Change Link"
+
+    embed.set_launch_status("Opening…")
+    assert not embed.fallback_button().isEnabled()
+    assert embed.bring_forward_button().text() == "Bring Forward"
+
+    embed.set_launch_status("Opened externally")
+    assert embed.fallback_button().isEnabled()
+    assert embed.fallback_button().text() == "Open Again"
+
+
+def test_native_app_controls_fail_closed_until_detection_is_installed():
+    embed = WebexEmbed()
+    assert not embed.bring_forward_button().isEnabled()
+    assert not embed.mute_button().isEnabled()
+
+    embed.set_app_status(WebexAppState.NOT_INSTALLED)
+    assert not embed.bring_forward_button().isEnabled()
+    assert not embed.mute_button().isEnabled()
+
+    embed.set_app_status(
+        WebexAppState.INSTALLED,
+        publisher_verified=True,
+    )
+    assert embed.bring_forward_button().isEnabled()
+    assert embed.mute_button().isEnabled()
+
+
+@pytest.mark.parametrize("action_name", ("bring", "mute", "recheck"))
+def test_native_busy_state_never_moves_focus_to_join_open(action_name):
+    embed = WebexEmbed()
+    embed.set_meeting_configured(True)
+    if action_name == "recheck":
+        embed.set_app_status(WebexAppState.NOT_INSTALLED)
+        action = embed.recheck_button()
+    else:
+        embed.set_app_status(
+            WebexAppState.INSTALLED,
+            publisher_verified=True,
+        )
+        action = (
+            embed.bring_forward_button()
+            if action_name == "bring"
+            else embed.mute_button()
+        )
+    embed.show()
+    _app.processEvents()
+    action.setFocus()
+    _app.processEvents()
+
+    if action_name == "recheck":
+        embed.set_app_checking()
+    else:
+        embed.set_native_action_busy(True)
+    _app.processEvents()
+
+    assert QApplication.focusWidget() is embed._app_status_label
+    assert QApplication.focusWidget() is not embed.fallback_button()
+
+    if action_name == "recheck":
+        embed.set_app_status(
+            WebexAppState.NOT_INSTALLED,
+            reason_code="detection-failed",
+        )
+    else:
+        embed.set_native_action_busy(False)
+    _app.processEvents()
+    assert QApplication.focusWidget() is action
+    embed.close()
 
 
 def test_app_status_rejects_unknown_state_and_drops_unsafe_version_copy():

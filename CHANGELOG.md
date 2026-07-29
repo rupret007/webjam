@@ -4,6 +4,76 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [0.22.2] — 2026-07-29 demo-navigation and source-first Track candidate
+
+### Direct musician workflows
+
+- Added always-reachable **Webex** and **Studio** actions to the live session
+  rail, plus host-only **Reference Track**. The Trinity three-loop identity and existing
+  Record, Copy Invite, and End/Leave ownership remain unchanged.
+- Made direct and More-menu entries route to the same canonical workflow.
+  **Studio** still selects completed-take review in a live jam and the song
+  project workspace in standalone Reference Studio; no duplicate editor or
+  meeting lifecycle was added.
+- Added compact-size, keyboard, focus, tooltip, accessibility, and duplicate-
+  callback coverage for the direct actions at WebJam's supported geometry.
+
+### Truthful Webex handoff
+
+- The main **Webex** action and **More → Webex / Conversation** now reveal and
+  focus the Conversation panel without opening the saved meeting link.
+- Added distinct **Bring Forward**, **Join / Open**, **Change Link**, and
+  **Mute in Webex** actions. Bring Forward requests activation only after the
+  installed native app passes the platform publisher check; otherwise
+  Join/Open remains available. Only Join/Open performs one explicit,
+  single-flight URL handoff bound to the exact link authorized by that click.
+  Settings continue to persist only the validated Meeting or Personal Room
+  URL.
+- External native Webex does not provide a verifiable mute state/control to
+  this integration. Mute in Webex therefore brings the app forward for its own
+  Mute control and explicitly does not claim to change Webex or Jamulus. No
+  blind global shortcut, Webex credential, token, or private meeting path is
+  used or logged.
+
+### Reference Track source and diagnostics
+
+- Separated source preparation from playback-route authority. A host can load
+  and inspect a valid song while route certification is unavailable; Play
+  remains fail-closed until fresh isolation evidence is proven. **Recheck
+  Route** refreshes capability without starting playback. A song selected
+  during a slow initial route probe is retained in memory and loaded once the
+  probe finishes instead of being discarded.
+- Consolidated Reference Track probing/decoding on the hardened bounded project
+  decoder, accepted real `.wave` files consistently, and advertises MP3 only
+  when the packaged runtime proves decoder support. WAV/WAVE, AIFF, and FLAC
+  remain the unconditional source formats.
+- Added distinct source and route presentation plus allowlisted Support Bundle
+  facts for state, format, sample rate, channel count, duration, route reason,
+  platform, and backend. Source names, paths, raw errors, URLs, and credentials
+  remain excluded.
+
+### Startup reliability and evidence
+
+- Fixed an intermittent slow-host-start race where reconnect supervision could
+  cancel the still-active manual Jamulus launch generation and clear its native
+  profile, producing a false “couldn't restore its Jamulus profile” failure.
+  Reconnect remains generation-guarded and fail-closed for genuine stale work.
+- Added focused concurrency, decoder, route-lock, redaction, Webex idempotency,
+  native-focus, and Qt navigation tests. The four native packages remain an
+  unsigned Windows/portable Linux and ad-hoc-signed, unnotarized Mac private
+  test candidate.
+- Made Reference Track prepare/load operations generation-bound: Stop, Close,
+  session end, or an incompatible Webex route change cancels stale work,
+  tears down any unpublished companion, and never resurrects a closed
+  controller. Route probes and source selection are bounded/coalesced, while
+  teardown retains priority and unproved cleanup remains visible in support
+  diagnostics.
+- Physical two-endpoint Reference Track audibility/isolation, two-Mac music,
+  Webex mute/join state, hardware interruption, sleep/wake, long-session,
+  external-editor import, Windows publisher trust, and Apple notarization
+  remain **NOT RUN** unless separately recorded against the exact published
+  package and checksum.
+
 ## [0.22.1] — 2026-07-28 frozen updater reliability candidate
 
 ### Packaged Jamulus update checks

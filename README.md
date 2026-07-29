@@ -1,4 +1,4 @@
-# WebJam v0.22.1 unsigned private test candidate
+# WebJam v0.22.2 unsigned private test candidate
 
 WebJam has two deliberately separate musician workflows:
 
@@ -27,15 +27,16 @@ trust.
    automatically; the host then copies the invitation.
 5. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-6. Add Webex only if your band wants it through **More → Webex /
-   Conversation**; music remains in Jamulus.
+6. Choose the direct **Webex** action if your band wants conversation or video.
+   It shows WebJam's Conversation controls without opening a meeting; music
+   remains in Jamulus.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
 
 ## Jamulus updates without rebuilding WebJam
 
-WebJam v0.22.1 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+WebJam v0.22.2 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
 Reference Track companion as an offline fallback. In the background it checks
 a separately published, Ed25519-signed component catalog for Jamulus versions
 that have passed WebJam's exact routing, RPC, recording, and packaging
@@ -72,12 +73,24 @@ allowing Jamulus to silently shorten an identity.
 
 ## Optional Webex app
 
-WebJam still stores only a musician's Meeting or Personal Room link and opens
-the meeting externally; Webex owns sign-in, camera, microphone, speakers,
-participants, and meeting state. WebJam now detects the native Webex app and,
-when it is missing or invalid, offers the architecture-correct official Cisco
-installer in the browser after explicit confirmation. WebJam does not bundle,
-silently install, authenticate, or update Cisco's proprietary application.
+WebJam still stores only a musician's Meeting or Personal Room link. The direct
+**Webex** action reveals the Conversation panel and never launches or rejoins a
+meeting. **Bring Forward** activates the verified installed app without opening
+the saved link. **Join / Open** is the only meeting-link handoff and opens it
+once per explicit click; **Change Link** returns to Settings.
+
+Direct native activation stays disabled when WebJam cannot prove the app's
+publisher on that platform; **Join / Open** still uses the validated Webex link
+through the operating system or supported browser.
+
+Webex owns sign-in, camera, microphone, speakers, participants, mute, and
+meeting state. Because the external native app does not expose verifiable mute
+control to this integration, **Mute in Webex** brings Webex forward to its own
+Mute control and explicitly does not claim it changed Webex or Jamulus.
+WebJam detects the native Webex app and, when it is missing or invalid, offers
+the architecture-correct official Cisco installer in the browser after
+explicit confirmation. WebJam does not bundle, silently install, authenticate,
+or update Cisco's proprietary application.
 
 This release also records the design for a future focused Webex Embedded App
 companion. That hosted surface could show WebJam status and approved controls
@@ -146,7 +159,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.22.1 candidate retains the narrow Pocket Stage v1 vertical slice
+The v0.22.2 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
 **More -> Use iPhone** after both devices are on the same private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
@@ -187,13 +200,18 @@ and [threat model](docs/security/pocket-stage-mobile-threat-model.md).
 
 ## Host-controlled Reference Track pilot
 
-The source tree contains a macOS-first Reference Track engine and host UI under
-**More**. Its intended route sends a local WAV, AIFF, FLAC, or
-decoder-supported MP3 through a separately owned `WebJam Track` Jamulus client,
-so the song becomes one participant with an independent level and recording
-stem.
+The source tree contains a macOS-first Reference Track engine. During a hosted
+session the direct **Reference Track** action opens it; **More → Reference Track…** routes
+to the same panel. Loading is deliberately separate from routing: a host can
+load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked.
+MP3 appears in the picker only when the packaged decoder proves support.
+**Recheck Route** refreshes route evidence without starting playback.
 
-Playback remains deliberately **locked in the v0.22.1 private test candidate**.
+Its intended route sends the decoded source through a separately owned
+`WebJam Track` Jamulus client, so the song becomes one participant with an
+independent level and recording stem.
+
+Playback remains deliberately **locked in the v0.22.2 private test candidate**.
 Apple's CoreAudio process-device property has a reported case where its input
 result becomes the process's output device after an input switch. Jamulus
 3.12.2 has no independent live-device RPC, and its saved profile is not
@@ -281,20 +299,25 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Source and candidate state
 
-The source tree reports **v0.22.1** and adds the signed Jamulus component
-updater, exact Jamulus-name preview/validation, native Webex detection and
-official installer handoff, and expanded privacy-safe diagnostics. It retains
-standalone Reference Studio, Pocket Stage, the capability-gated macOS Reference
-Track pilot, session Studio, and the reviewed unsigned-candidate packaging
-described above. Published tags and assets remain immutable historical
-evidence. In particular, v0.20.0 history must not be moved. The
-v0.21.0 history must not be moved or silently replaced by this candidate.
-The v0.22.0 annotated tag and tagged bytes remain immutable. Its unpublished,
-package-failed draft stays untouched until v0.22.1 is publicly verified, then
-only that obsolete draft is deleted by release ID. v0.22.1 supersedes the
-candidate instead of rebuilding or moving v0.22.0.
+The source tree reports **v0.22.2**. It adds direct Live access to Webex,
+host-only Reference Track, and Studio; side-effect-free Conversation
+navigation; truthful native-app focus/mute guidance; source-first Reference
+Track loading and redacted route diagnostics; and a generation guard that
+prevents reconnect supervision from cancelling a slow manual Jamulus launch.
+It retains the signed Jamulus component updater, exact Jamulus-name
+preview/validation, standalone Reference Studio, Pocket Stage, the
+capability-gated macOS Reference Track pilot, session Studio, the Trinity
+three-loop identity, and the reviewed unsigned-candidate packaging described
+above.
 
-The v0.22.1 candidate workflow builds four targets from one source identity:
+Published tags and assets remain immutable historical evidence. In particular,
+v0.20.0 history must not be moved. The v0.21.0 history must not be moved or
+silently replaced by this candidate. The v0.22.0 annotated tag and tagged bytes
+remain immutable. The published v0.22.1 tag, assets, and checksums likewise
+remain immutable; v0.22.2 is a new patch identity, never a moved tag or rebuilt
+v0.22.1 asset.
+
+The v0.22.2 candidate workflow builds four targets from one source identity:
 Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. Its draft
 GitHub release must contain exactly seven packages—the Windows Setup and ZIP,
 two Mac DMGs and two Mac ZIPs, and the Linux ZIP—plus one exact SHA-256
@@ -360,7 +383,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.22.1,
+integrity—not a substitute for musicians hearing one another. For v0.22.2,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -371,7 +394,7 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.22.1 candidate notes and changelog](CHANGELOG.md)
+- [v0.22.2 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

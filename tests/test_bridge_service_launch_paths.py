@@ -884,12 +884,12 @@ class TestFindReferenceTrackJamulus(unittest.TestCase):
 class TestLaunchWebexFailure(unittest.TestCase):
     def test_manual_open_failure_shows_error(self, _thread, _sleep):
         bridge = _make_bridge()
-        bridge.webex_controller.join_meeting.return_value = False
+        bridge.webex_controller.join_meeting_url.return_value = False
 
         bridge.launch_webex(manual=True, reconnect=False)
 
         self.assertEqual(bridge.webex_state, "Open failed")
-        self.assertEqual(bridge.webex_controller.join_meeting.call_count, 1)
+        self.assertEqual(bridge.webex_controller.join_meeting_url.call_count, 1)
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0], "Webex Open Failed"
@@ -900,7 +900,7 @@ class TestLaunchWebexFailure(unittest.TestCase):
 
     def test_legacy_reconnect_argument_does_not_hide_failure(self, _thread, _sleep):
         bridge = _make_bridge()
-        bridge.webex_controller.join_meeting.side_effect = RuntimeError("boom")
+        bridge.webex_controller.join_meeting_url.side_effect = RuntimeError("boom")
 
         bridge.launch_webex(manual=False, reconnect=True)
 

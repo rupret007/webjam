@@ -40,13 +40,20 @@ def test_latest_promotion_is_manual_serialized_and_permission_bounded() -> None:
     assert "persist-credentials: true" not in WORKFLOW
 
 
-def test_latest_promotion_is_an_exact_one_off_v0221_gate() -> None:
-    assert "EXPECTED_PROMOTION_TAG: v0.22.1" in WORKFLOW_HEADER
-    assert 'if [[ "$tag" != "$EXPECTED_PROMOTION_TAG" ]]' in SMOKE_JOB
-    assert '[[ "$packaged_version" == "0.22.1" ]]' in SMOKE_JOB
-    assert '[[ "$REQUESTED_TAG" == "$EXPECTED_PROMOTION_TAG" ]]' in PUBLISH_JOB
-    assert '[[ "$VERSION" == "0.22.1" ]]' in PUBLISH_JOB
-    assert r"^v[0-9]+\.[0-9]+\.[0-9]+$" not in WORKFLOW
+def test_latest_promotion_accepts_only_an_exact_version_tag_from_master() -> None:
+    strict_tag = (
+        r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
+        r"(0|[1-9][0-9]*)$"
+    )
+    assert strict_tag in SMOKE_JOB
+    assert strict_tag in PUBLISH_JOB
+    assert '[[ "$tag" == "v${packaged_version}" ]]' in SMOKE_JOB
+    assert '[[ "$REQUESTED_TAG" == "$TAG" ]]' in PUBLISH_JOB
+    assert '[[ "$TAG" == "v${VERSION}" ]]' in PUBLISH_JOB
+    assert 'if [[ "$GITHUB_REF" != "refs/heads/master" ]]' in SMOKE_JOB
+    assert '[[ "$GITHUB_REF" == "refs/heads/master" ]]' in PUBLISH_JOB
+    assert "EXPECTED_PROMOTION_TAG" not in WORKFLOW
+    assert "v0.22.1 only" not in WORKFLOW
 
 
 def test_latest_promotion_requires_matching_immutable_annotated_tag() -> None:
@@ -66,12 +73,17 @@ def test_latest_promotion_requires_matching_immutable_annotated_tag() -> None:
         "tag_object",
         "tag_commit",
         "master_commit",
+        "workflow_commit",
     ):
         assert f"needs['frozen-package-smoke'].outputs.{output}" in PUBLISH_JOB
     assert '[[ "$(git rev-parse HEAD)" == "$EXPECTED_TAG_COMMIT" ]]' in (
         PUBLISH_JOB
     )
     assert '"$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT"' in PUBLISH_JOB
+    assert '"$EXPECTED_WORKFLOW_COMMIT" == "$EXPECTED_MASTER_COMMIT"' in (
+        PUBLISH_JOB
+    )
+    assert 'if [[ "$workflow_commit" != "$master_commit" ]]' in SMOKE_JOB
 
 
 def test_latest_promotion_pins_blocked_v0220_tag_object_and_commit() -> None:
@@ -90,70 +102,91 @@ def test_latest_promotion_pins_blocked_v0220_tag_object_and_commit() -> None:
         assert "git ls-remote --refs origin refs/tags/v0.22.0" in job
 
 
-def test_read_only_job_binds_exact_successful_tag_build_and_artifact() -> None:
-    assert "Bind the exact successful tag build and Linux artifact" in SMOKE_JOB
-    assert "EXPECTED_TAG_CI_RUN_ID: 30423344767" in WORKFLOW_HEADER
-    assert "EXPECTED_TAG_CI_WORKFLOW_ID: 235479110" in WORKFLOW_HEADER
-    assert "EXPECTED_LINUX_ARTIFACT_ID: 8712817155" in WORKFLOW_HEADER
+def test_read_only_job_discovers_one_successful_tag_build_and_artifact_set() -> None:
+    assert "Discover and bind the unique successful tag build artifacts" in SMOKE_JOB
+    assert "EXPECTED_TAG_CI_RUN_ID" not in WORKFLOW_HEADER
+    assert "EXPECTED_TAG_CI_WORKFLOW_ID" not in WORKFLOW_HEADER
+    assert "EXPECTED_LINUX_ARTIFACT_ID" not in WORKFLOW_HEADER
+    assert "EXPECTED_LINUX_ARTIFACT_DIGEST" not in WORKFLOW_HEADER
+    assert "EXPECTED_LINUX_PACKAGE_SHA256" not in WORKFLOW_HEADER
     assert (
-        "EXPECTED_LINUX_ARTIFACT_DIGEST: "
-        "sha256:2f11e188931aaeec45348737c1d37bd396992ba69854b92fc39a860c5e2d5ebf"
-        in WORKFLOW_HEADER
-    )
+        '"repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?'
+        'branch=$TAG&event=push&status=success&per_page=100"'
+    ) in SMOKE_JOB
     assert (
-        "EXPECTED_LINUX_PACKAGE_SHA256: "
-        "8cdfbeaee7fec89b0db71a0fb3b73c2449f66fbb934c35d8cebd67785b25a57f"
-        in WORKFLOW_HEADER
+        '"repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml"' in SMOKE_JOB
     )
-    assert (
-        '"repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_TAG_CI_RUN_ID"'
-        in SMOKE_JOB
-    )
+    assert '.name == "WebJam CI"' in SMOKE_JOB
+    assert '.state == "active"' in SMOKE_JOB
+    assert ".workflow_id == $workflow_id" in SMOKE_JOB
+    assert '[[ "$workflow_id" == "$ci_workflow_id" ]]' in SMOKE_JOB
     assert '.path == ".github/workflows/ci.yml"' in SMOKE_JOB
     assert '.event == "push"' in SMOKE_JOB
     assert ".head_branch == $tag" in SMOKE_JOB
     assert ".head_sha == $commit" in SMOKE_JOB
     assert '.conclusion == "success"' in SMOKE_JOB
-    assert ".run_attempt == 1" in SMOKE_JOB
+    assert ".run_attempt >= 1" in SMOKE_JOB
+    assert 'error("expected exactly one successful tag CI run")' in SMOKE_JOB
     assert (
-        '"repos/$GITHUB_REPOSITORY/actions/artifacts/'
-        '$EXPECTED_LINUX_ARTIFACT_ID"'
+        '"repos/$GITHUB_REPOSITORY/actions/runs/'
+        '$run_id/artifacts?per_page=100"'
     ) in SMOKE_JOB
-    assert '.name == "webjam-linux-x64"' in SMOKE_JOB
-    assert ".expired == false" in SMOKE_JOB
-    assert ".digest == $digest" in SMOKE_JOB
+    for artifact in (
+        "webjam-windows-x64",
+        "webjam-macos-arm64",
+        "webjam-macos-x64",
+        "webjam-linux-x64",
+    ):
+        assert f'"{artifact}"' in SMOKE_JOB
+    assert "([ $matches[].name ]" not in SMOKE_JOB
+    assert "([$matches[].name] | unique | length)" in SMOKE_JOB
+    assert "([$matches[].id] | unique | length)" in SMOKE_JOB
+    assert "([$matches[].digest] | unique | length)" in SMOKE_JOB
+    assert ".expired != false" in SMOKE_JOB
+    assert '.digest | test("^sha256:[0-9a-f]{64}$")' in SMOKE_JOB
+    assert ".workflow_run.id != $run_id" in SMOKE_JOB
+    assert "release_artifact_bindings:" in SMOKE_JOB
+    assert "tag_ci_run_id:" in SMOKE_JOB
+    assert "tag_ci_workflow_id:" in SMOKE_JOB
+    assert "tag_ci_run_attempt:" in SMOKE_JOB
     assert "$matches[0].draft != true" not in SMOKE_JOB
     assert "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" not in WORKFLOW
 
 
-def test_read_only_job_executes_only_digest_bound_tag_build_package() -> None:
-    assert "Download and bind only the exact tag-build Linux package" in SMOKE_JOB
+def test_read_only_job_binds_all_tag_packages_before_linux_smoke() -> None:
+    assert "Download and bind the exact tag-build release packages" in SMOKE_JOB
     assert (
-        '"repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"'
+        '"repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"'
         in SMOKE_JOB
     )
     assert '-H "Accept: application/vnd.github+json"' in SMOKE_JOB
     assert (
-        '[[ "sha256:$artifact_sha256" == "$EXPECTED_ARTIFACT_DIGEST" ]]'
+        '[[ "sha256:$artifact_sha256" == "$digest" ]]'
         in SMOKE_JOB
     )
-    assert (
-        '[[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]'
-        in SMOKE_JOB
+    assert '[[ "$(stat -c \'%s\' "$artifact_archive")" == "$artifact_size" ]]' in (
+        SMOKE_JOB
     )
-    assert 'expected_name = "WebJam-linux-x64.zip"' in SMOKE_JOB
-    assert "len(members) != 1" in SMOKE_JOB
+    assert "set(names) != expected_names" in SMOKE_JOB
+    assert "len(names) != len(set(names))" in SMOKE_JOB
     assert "stat.S_ISLNK(mode)" in SMOKE_JOB
-    assert "member.file_size != expected_size" in SMOKE_JOB
+    assert "member.file_size <= 0" in SMOKE_JOB
+    assert "member.file_size > maximum_member_size" in SMOKE_JOB
+    assert "total_size > maximum_artifact_size" in SMOKE_JOB
+    assert "PurePosixPath(member.filename).name" in SMOKE_JOB
     assert "target.open(\"xb\")" in SMOKE_JOB
+    assert 'sha256sum --check --strict "$windows_checksum"' in SMOKE_JOB
+    assert "package_bindings:" in SMOKE_JOB
+    assert "package_bindings_sha256:" in SMOKE_JOB
+    assert "length == 7" in SMOKE_JOB
     assert "Require live catalog proof from exact frozen Linux package" in SMOKE_JOB
     assert "tests/support/run_frozen_component_catalog_smoke.py" in SMOKE_JOB
     assert (
-        '--archive "$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip"'
+        '--archive "$RUNNER_TEMP/frozen-packages/WebJam-linux-x64.zip"'
         in SMOKE_JOB
     )
     assert "--expected-version \"$VERSION\"" in SMOKE_JOB
-    assert "--expected-sequence 2" in SMOKE_JOB
+    assert '--expected-sequence "$CATALOG_SEQUENCE"' in SMOKE_JOB
     assert "--expected-target linux-x64" in SMOKE_JOB
     assert "--expected-jamulus-version 3.12.3" in SMOKE_JOB
     assert "--expected-catalog-envelope-sha256" in SMOKE_JOB
@@ -174,8 +207,12 @@ def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> Non
     assert "$matches[0].assets[0].size <= 0" in SMOKE_JOB
     assert "tools.verify_jamulus_component_catalog" in SMOKE_JOB
     assert "--webjam-version \"$VERSION\"" in SMOKE_JOB
-    assert "--minimum-sequence 2" in SMOKE_JOB
-    assert ".sequence == 2" in SMOKE_JOB
+    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 3" in WORKFLOW_HEADER
+    assert (
+        '--minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE"'
+        in SMOKE_JOB
+    )
+    assert ".sequence >= $minimum" in SMOKE_JOB
     assert ".webjam_version == $version" in SMOKE_JOB
     assert ".component_count == 8" in SMOKE_JOB
     assert ".payload_sha256" in SMOKE_JOB
@@ -184,6 +221,7 @@ def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> Non
     for output in (
         "component_asset_id",
         "component_asset_digest",
+        "catalog_sequence",
         "catalog_envelope_sha256",
         "catalog_payload_sha256",
         "signer_fingerprint_sha256",
@@ -234,6 +272,18 @@ def test_write_job_revalidates_read_only_proof_before_publication() -> None:
         '[[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]'
         in PUBLISH_JOB
     )
+    assert (
+        "EXPECTED_PACKAGE_BINDINGS: "
+        "${{ needs['frozen-package-smoke'].outputs.package_bindings }}"
+    ) in PUBLISH_JOB
+    assert (
+        '[[ "$actual_package_bindings" == "$EXPECTED_PACKAGE_BINDINGS" ]]'
+        in PUBLISH_JOB
+    )
+    assert (
+        '[[ "$bindings_sha256" == "$EXPECTED_PACKAGE_BINDINGS_SHA256" ]]'
+        in PUBLISH_JOB
+    )
     assert "$matches[0].draft != true" in PUBLISH_JOB
     assert "$matches[0].prerelease != false" in PUBLISH_JOB
     assert (
@@ -250,6 +300,7 @@ def test_write_job_revalidates_read_only_proof_before_publication() -> None:
     ) in PUBLISH_JOB
     assert ".payload_sha256 == $payload" in PUBLISH_JOB
     assert ".signer_fingerprint_sha256 == $signer" in PUBLISH_JOB
+    assert ".sequence == $sequence" in PUBLISH_JOB
     assert PUBLISH_JOB.index(
         "Download and verify exact draft inventory and checksums"
     ) < PUBLISH_JOB.index(

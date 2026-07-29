@@ -1,4 +1,4 @@
-# WebJam musician guide — v0.22.1
+# WebJam musician guide — v0.22.2
 
 ## Follow the current guide
 
@@ -23,11 +23,13 @@ Jamulus is the live music engine. It owns your interface, inputs, outputs,
 channels, buffer, jitter, feedback protection, and musician mix. Configure
 those in Jamulus, not in WebJam.
 
-Webex is optional talking/video. WebJam can validate and open a link, but it
-does not claim that Webex joined, muted, selected devices, or sees anyone.
-WebJam also checks whether the native Webex app is installed. If it is missing,
-an explicit button opens Cisco's official installer in your browser; WebJam
-does not save a Webex password or install/update Webex silently.
+Webex is optional talking/video. The direct **Webex** action reveals
+Conversation without opening or rejoining a meeting. WebJam can validate and
+explicitly open a link, but it does not claim that Webex joined, muted,
+selected devices, or sees anyone. WebJam also checks whether the native Webex
+app is installed. If it is missing, an explicit button opens Cisco's official
+installer in your browser; WebJam does not save a Webex password or
+install/update Webex silently.
 
 ## Host a Jam
 
@@ -51,20 +53,36 @@ services required for that invitation. If setup fails, the in-memory intent is
 preserved only while it is safe to retry; WebJam never pretends an uncertain
 invitation succeeded.
 
-## More menu
+## Main session actions and More
+
+The main session rail keeps the everyday destinations visible:
+
+| Action | What it does |
+| --- | --- |
+| Webex | Shows Conversation controls without opening the saved link |
+| Reference Track | Host-only song source and route panel; loading never starts playback |
+| Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
 | Item | What it does |
 | --- | --- |
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
-| Webex / Conversation | Opens a configured link externally or lets you add one in WebJam Settings |
+| Webex / Conversation | Routes to the same Conversation panel as Webex; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Reference Track… | Host-only song-transport engine and controls; playback is visibly locked in v0.22.1 pending the physical macOS isolation pilot |
+| Reference Track… | Routes to the same host-only Track panel; source loading works independently while playback stays locked pending the physical macOS isolation pilot |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
-| Studio | Reviews and arranges takes; playback output appears only for review |
+| Studio | Routes to the same existing Studio workspace; it does not create a second editor |
 | Notes | Opens session notes |
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
+
+In Conversation, **Bring Forward** requests activation only when WebJam can
+verify the installed Webex publisher; it does not reopen the meeting link.
+When publisher proof is unavailable, use **Join / Open**, the only action that
+hands the saved link to the operating system, once per click. **Change Link**
+opens Settings. **Mute in Webex** requests that the verified external app come
+forward so you can use its own Mute control; WebJam cannot verify or change
+Webex mute and does not send a blind shortcut or touch Jamulus.
 
 ## Jamulus Updates
 
@@ -167,10 +185,15 @@ until recorded against exact builds.
 
 ## Reference Track — macOS source pilot
 
-The host can choose **More → Reference Track…** and inspect the song-transport
-panel. The engine supports local WAV, AIFF, FLAC, or packaged-decoder-supported
-MP3 plus play, pause, restart, paused seeking, loop in/out, source trim, and an
-audible count-in. Guests do not get the transport.
+The host can choose the direct **Reference Track** action or **More → Reference Track…**
+and inspect the same song-transport panel. Loading and route readiness are
+independent: **Load Song…** accepts validated WAV/WAVE, AIFF, or FLAC even when
+no playback route is ready. MP3 appears only when the packaged decoder reports
+support. The panel shows source format, sample rate, channels, duration, and a
+separate route state; **Recheck Route** refreshes route evidence without
+starting playback. Play, pause, restart, paused seeking, loop in/out, source
+trim, and an audible count-in remain transport controls. Guests do not get the
+transport.
 
 Reference Track is not Studio playback. Once the route is certified, its design
 streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
@@ -179,7 +202,7 @@ on BlackHole channels 3/4. The host must then hear it only through the normal
 primary Jamulus mix, and every musician can adjust the `WebJam Track`
 participant independently.
 
-The v0.22.1 private test candidate keeps playback locked even on a Mac with
+The v0.22.2 private test candidate keeps playback locked even on a Mac with
 BlackHole installed. CoreAudio has a reported device-switch failure where its
 process input query returns the output device instead, while Jamulus 3.12.2
 does not expose an independent live-device query. Physical BlackHole,
@@ -245,7 +268,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.22.1 source tree.
+v0.22.2 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

@@ -312,7 +312,7 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
     assert events == [
         "tool:audio_settings",
         "tool:jamulus_updates",
-        "open_webex",
+            "tool:conversation",
         "tool:recording_setup",
         "tool:reference_track",
         "tool:takes",

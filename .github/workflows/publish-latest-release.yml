@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Exact existing draft candidate tag to publish (v0.22.1 only)"
+        description: "Exact existing draft candidate tag to publish (for example v0.22.2)"
         required: true
         type: string
 
@@ -17,16 +17,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  EXPECTED_PROMOTION_TAG: v0.22.1
   V0220_TAG_OBJECT: 663075ec53aab36cc9de5d1b84aaec0b3733290b
   V0220_TAG_COMMIT: bf64c1165486a654d923c4e3cb6ede69e6458320
   COMPONENT_CHANNEL_ANCHOR: bf64c1165486a654d923c4e3cb6ede69e6458320
-  EXPECTED_TAG_CI_RUN_ID: 30423344767
-  EXPECTED_TAG_CI_WORKFLOW_ID: 235479110
-  EXPECTED_LINUX_ARTIFACT_ID: 8712817155
-  EXPECTED_LINUX_ARTIFACT_DIGEST: sha256:2f11e188931aaeec45348737c1d37bd396992ba69854b92fc39a860c5e2d5ebf
-  EXPECTED_LINUX_PACKAGE_SHA256: 8cdfbeaee7fec89b0db71a0fb3b73c2449f66fbb934c35d8cebd67785b25a57f
-  EXPECTED_LINUX_PACKAGE_SIZE: 167559457
+  MINIMUM_COMPONENT_CATALOG_SEQUENCE: 3
 
 jobs:
   frozen-package-smoke:
@@ -42,15 +36,22 @@ jobs:
       tag_object: ${{ steps.release.outputs.tag_object }}
       tag_commit: ${{ steps.release.outputs.tag_commit }}
       master_commit: ${{ steps.release.outputs.master_commit }}
+      workflow_commit: ${{ steps.release.outputs.workflow_commit }}
       tag_ci_run_id: ${{ steps.tag_build.outputs.run_id }}
+      tag_ci_workflow_id: ${{ steps.tag_build.outputs.workflow_id }}
+      tag_ci_run_attempt: ${{ steps.tag_build.outputs.run_attempt }}
+      release_artifact_bindings: ${{ steps.tag_build.outputs.artifact_bindings }}
       linux_artifact_id: ${{ steps.tag_build.outputs.artifact_id }}
       linux_artifact_digest: ${{ steps.tag_build.outputs.artifact_digest }}
-      linux_package_sha256: ${{ steps.linux.outputs.linux_package_sha256 }}
+      package_bindings: ${{ steps.packages.outputs.package_bindings }}
+      package_bindings_sha256: ${{ steps.packages.outputs.package_bindings_sha256 }}
+      linux_package_sha256: ${{ steps.packages.outputs.linux_package_sha256 }}
       component_tag_object: ${{ steps.component.outputs.tag_object }}
       component_tag_commit: ${{ steps.component.outputs.tag_commit }}
       component_release_id: ${{ steps.component.outputs.release_id }}
       component_asset_id: ${{ steps.component.outputs.asset_id }}
       component_asset_digest: ${{ steps.component.outputs.asset_digest }}
+      catalog_sequence: ${{ steps.component.outputs.catalog_sequence }}
       catalog_envelope_sha256: ${{ steps.component.outputs.catalog_envelope_sha256 }}
       catalog_payload_sha256: ${{ steps.component.outputs.catalog_payload_sha256 }}
       signer_fingerprint_sha256: ${{ steps.component.outputs.signer_fingerprint_sha256 }}
@@ -61,7 +62,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate exact immutable v0.22.1 release tag
+      - name: Validate exact immutable release tag and workflow source
         id: release
         shell: bash
         env:
@@ -69,12 +70,22 @@ jobs:
         run: |
           set -euo pipefail
           tag="$REQUESTED_TAG"
-          if [[ "$tag" != "$EXPECTED_PROMOTION_TAG" ]]; then
-            echo "This one-off promotion workflow accepts only v0.22.1." >&2
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Promotion requires one exact vMAJOR.MINOR.PATCH tag." >&2
             exit 1
           fi
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Release promotion must be dispatched from master." >&2
+            exit 1
+          fi
+          workflow_commit="$(git rev-parse HEAD)"
           git fetch --no-tags origin \
             "+refs/heads/master:refs/remotes/origin/master"
+          master_commit="$(git rev-parse refs/remotes/origin/master)"
+          if [[ "$workflow_commit" != "$master_commit" ]]; then
+            echo "Dispatched workflow source is not the exact origin/master commit." >&2
+            exit 1
+          fi
           historical_ref="refs/webjam-historical-tags/v0.22.0"
           git fetch --no-tags origin \
             "refs/tags/v0.22.0:${historical_ref}"
@@ -92,7 +103,6 @@ jobs:
           fi
           tag_object="$(git rev-parse "$tag_ref")"
           tag_commit="$(git rev-parse "${tag_ref}^{commit}")"
-          master_commit="$(git rev-parse refs/remotes/origin/master)"
           if [[ "$tag_commit" != "$master_commit" ]]; then
             echo "Release tag $tag is not the exact origin/master commit." >&2
             exit 1
@@ -113,14 +123,14 @@ jobs:
             echo "Tag $tag does not match packaged version ${packaged_version:-missing}." >&2
             exit 1
           }
-          [[ "$packaged_version" == "0.22.1" ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$packaged_version" >> "$GITHUB_OUTPUT"
           echo "tag_object=$tag_object" >> "$GITHUB_OUTPUT"
           echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
           echo "master_commit=$master_commit" >> "$GITHUB_OUTPUT"
+          echo "workflow_commit=$workflow_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Bind the exact successful tag build and Linux artifact
+      - name: Discover and bind the unique successful tag build artifacts
         id: tag_build
         shell: bash
         env:
@@ -131,50 +141,125 @@ jobs:
           set -euo pipefail
           gh api \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_TAG_CI_RUN_ID" \
-            > "$RUNNER_TEMP/tag-ci-run.json"
-          jq -e \
-            --arg tag "$TAG" \
-            --arg commit "$TAG_COMMIT" \
-            --argjson run_id "$EXPECTED_TAG_CI_RUN_ID" \
-            --argjson workflow_id "$EXPECTED_TAG_CI_WORKFLOW_ID" \
-            '
-              .id == $run_id
-              and .workflow_id == $workflow_id
-              and .path == ".github/workflows/ci.yml"
-              and .event == "push"
-              and .head_branch == $tag
-              and .head_sha == $commit
-              and .status == "completed"
-              and .conclusion == "success"
-              and .run_attempt == 1
-            ' \
-            "$RUNNER_TEMP/tag-ci-run.json" >/dev/null
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" \
+            > "$RUNNER_TEMP/ci-workflow.json"
+          jq -e '
+            .name == "WebJam CI"
+            and .path == ".github/workflows/ci.yml"
+            and .state == "active"
+            and (.id | type == "number")
+            and .id > 0
+          ' "$RUNNER_TEMP/ci-workflow.json" >/dev/null
+          ci_workflow_id="$(jq -r '.id' "$RUNNER_TEMP/ci-workflow.json")"
           gh api \
+            --paginate \
+            --slurp \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_LINUX_ARTIFACT_ID" \
-            > "$RUNNER_TEMP/linux-artifact.json"
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$TAG&event=push&status=success&per_page=100" \
+            > "$RUNNER_TEMP/tag-ci-runs.json"
           jq -e \
             --arg tag "$TAG" \
             --arg commit "$TAG_COMMIT" \
-            --arg digest "$EXPECTED_LINUX_ARTIFACT_DIGEST" \
-            --argjson run_id "$EXPECTED_TAG_CI_RUN_ID" \
-            --argjson artifact_id "$EXPECTED_LINUX_ARTIFACT_ID" \
+            --argjson workflow_id "$ci_workflow_id" \
             '
-              .id == $artifact_id
-              and .name == "webjam-linux-x64"
-              and .expired == false
-              and .size_in_bytes > 0
-              and .digest == $digest
-              and .workflow_run.id == $run_id
-              and .workflow_run.head_branch == $tag
-              and .workflow_run.head_sha == $commit
+              [
+                .[].workflow_runs[]
+                | select(
+                    .path == ".github/workflows/ci.yml"
+                    and .workflow_id == $workflow_id
+                    and .event == "push"
+                    and .head_branch == $tag
+                    and .head_sha == $commit
+                    and .status == "completed"
+                    and .conclusion == "success"
+                    and (.id | type == "number")
+                    and .id > 0
+                    and (.workflow_id | type == "number")
+                    and .workflow_id > 0
+                    and (.run_attempt | type == "number")
+                    and .run_attempt >= 1
+                  )
+              ] as $matches
+              | if ($matches | length) != 1 then
+                  error("expected exactly one successful tag CI run")
+                else
+                  $matches[0]
+                end
             ' \
-            "$RUNNER_TEMP/linux-artifact.json" >/dev/null
-          echo "run_id=$EXPECTED_TAG_CI_RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "artifact_id=$EXPECTED_LINUX_ARTIFACT_ID" >> "$GITHUB_OUTPUT"
-          echo "artifact_digest=$EXPECTED_LINUX_ARTIFACT_DIGEST" \
-            >> "$GITHUB_OUTPUT"
+            "$RUNNER_TEMP/tag-ci-runs.json" \
+            > "$RUNNER_TEMP/tag-ci-run.json"
+          run_id="$(jq -r '.id' "$RUNNER_TEMP/tag-ci-run.json")"
+          workflow_id="$(jq -r '.workflow_id' "$RUNNER_TEMP/tag-ci-run.json")"
+          run_attempt="$(jq -r '.run_attempt' "$RUNNER_TEMP/tag-ci-run.json")"
+          [[ "$workflow_id" == "$ci_workflow_id" ]]
+          gh api \
+            --paginate \
+            --slurp \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/tag-ci-artifact-pages.json"
+          jq -e \
+            --arg tag "$TAG" \
+            --arg commit "$TAG_COMMIT" \
+            --argjson run_id "$run_id" \
+            '
+              [
+                "webjam-windows-x64",
+                "webjam-macos-arm64",
+                "webjam-macos-x64",
+                "webjam-linux-x64"
+              ] as $expected
+              | [
+                  .[].artifacts[]
+                  | select(.name as $name | $expected | index($name))
+                ] as $matches
+              | if (
+                  ($matches | length) != ($expected | length)
+                  or ([$matches[].name] | unique | length) != ($expected | length)
+                  or ([$matches[].id] | unique | length) != ($expected | length)
+                  or ([$matches[].digest] | unique | length) != ($expected | length)
+                  or any(
+                    $matches[];
+                    (.id | type != "number")
+                    or .id <= 0
+                    or .expired != false
+                    or (.size_in_bytes | type != "number")
+                    or .size_in_bytes <= 0
+                    or (.digest | type != "string")
+                    or (.digest | test("^sha256:[0-9a-f]{64}$") | not)
+                    or .workflow_run.id != $run_id
+                    or .workflow_run.head_branch != $tag
+                    or .workflow_run.head_sha != $commit
+                  )
+                ) then
+                  error("tag CI release artifact identities are not exact")
+                else
+                  $matches
+                  | map({
+                      name,
+                      id,
+                      digest,
+                      size_in_bytes
+                    })
+                  | sort_by(.name)
+                end
+            ' \
+            "$RUNNER_TEMP/tag-ci-artifact-pages.json" \
+            > "$RUNNER_TEMP/release-artifact-bindings.json"
+          artifact_bindings="$(jq -c . \
+            "$RUNNER_TEMP/release-artifact-bindings.json")"
+          linux_artifact_id="$(jq -r \
+            '.[] | select(.name == "webjam-linux-x64") | .id' \
+            "$RUNNER_TEMP/release-artifact-bindings.json")"
+          linux_artifact_digest="$(jq -r \
+            '.[] | select(.name == "webjam-linux-x64") | .digest' \
+            "$RUNNER_TEMP/release-artifact-bindings.json")"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+          echo "artifact_bindings=$artifact_bindings" >> "$GITHUB_OUTPUT"
+          echo "artifact_id=$linux_artifact_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_digest=$linux_artifact_digest" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python for signed component-catalog verification
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -281,18 +366,21 @@ jobs:
           [[ "sha256:$catalog_envelope_sha256" == "$component_asset_digest" ]]
           python -m tools.verify_jamulus_component_catalog \
             --webjam-version "$VERSION" \
-            --minimum-sequence 2 \
+            --minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE" \
             "$catalog" \
             > "$RUNNER_TEMP/component-catalog-verification-smoke.json"
           jq -e \
             --arg version "$VERSION" \
+            --argjson minimum "$MINIMUM_COMPONENT_CATALOG_SEQUENCE" \
             '
-              .sequence == 2
+              .sequence >= $minimum
               and .webjam_version == $version
               and .component_count == 8
             ' \
             "$RUNNER_TEMP/component-catalog-verification-smoke.json" \
             >/dev/null
+          catalog_sequence="$(jq -r '.sequence' \
+            "$RUNNER_TEMP/component-catalog-verification-smoke.json")"
           catalog_payload_sha256="$(jq -r '.payload_sha256' \
             "$RUNNER_TEMP/component-catalog-verification-smoke.json")"
           signer_fingerprint_sha256="$(jq -r '.signer_fingerprint_sha256' \
@@ -304,31 +392,55 @@ jobs:
           echo "release_id=$component_release_id" >> "$GITHUB_OUTPUT"
           echo "asset_id=$component_asset_id" >> "$GITHUB_OUTPUT"
           echo "asset_digest=$component_asset_digest" >> "$GITHUB_OUTPUT"
+          echo "catalog_sequence=$catalog_sequence" >> "$GITHUB_OUTPUT"
           echo "catalog_envelope_sha256=$catalog_envelope_sha256" >> "$GITHUB_OUTPUT"
           echo "catalog_payload_sha256=$catalog_payload_sha256" >> "$GITHUB_OUTPUT"
           echo "signer_fingerprint_sha256=$signer_fingerprint_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Download and bind only the exact tag-build Linux package
-        id: linux
+      - name: Download and bind the exact tag-build release packages
+        id: packages
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ steps.tag_build.outputs.artifact_id }}
-          EXPECTED_ARTIFACT_DIGEST: ${{ steps.tag_build.outputs.artifact_digest }}
+          VERSION: ${{ steps.release.outputs.version }}
+          ARTIFACT_BINDINGS: ${{ steps.tag_build.outputs.artifact_bindings }}
         run: |
           set -euo pipefail
-          mkdir "$RUNNER_TEMP/frozen-package"
-          artifact_archive="$RUNNER_TEMP/frozen-package/tag-linux-artifact.zip"
-          archive="$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip"
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
-            > "$artifact_archive"
-          [[ -s "$artifact_archive" && ! -L "$artifact_archive" ]]
-          artifact_sha256="$(sha256sum -- "$artifact_archive" | awk '{print $1}')"
-          [[ "sha256:$artifact_sha256" == "$EXPECTED_ARTIFACT_DIGEST" ]]
-          python - "$artifact_archive" "$archive" <<'PY'
+          archive_dir="$RUNNER_TEMP/tag-build-artifacts"
+          package_dir="$RUNNER_TEMP/frozen-packages"
+          mkdir "$archive_dir" "$package_dir"
+          jq -e '
+            (type == "array")
+            and length == 4
+            and all(
+              .[];
+              (.name | type == "string")
+              and (.id | type == "number")
+              and .id > 0
+              and (.digest | type == "string")
+              and (.digest | test("^sha256:[0-9a-f]{64}$"))
+              and (.size_in_bytes | type == "number")
+              and .size_in_bytes > 0
+            )
+          ' <<<"$ARTIFACT_BINDINGS" >/dev/null
+          while IFS=$'\t' read -r name artifact_id digest artifact_size; do
+            [[ "$name" =~ ^webjam-(windows-x64|macos-arm64|macos-x64|linux-x64)$ ]]
+            artifact_archive="$archive_dir/${name}.zip"
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              > "$artifact_archive"
+            [[ -s "$artifact_archive" && ! -L "$artifact_archive" ]]
+            [[ "$(stat -c '%s' "$artifact_archive")" == "$artifact_size" ]]
+            artifact_sha256="$(sha256sum -- "$artifact_archive" | awk '{print $1}')"
+            [[ "sha256:$artifact_sha256" == "$digest" ]]
+          done < <(
+            jq -r \
+              '.[] | [.name, (.id | tostring), .digest, (.size_in_bytes | tostring)] | @tsv' \
+              <<<"$ARTIFACT_BINDINGS"
+          )
+          python - "$archive_dir" "$package_dir" "$VERSION" <<'PY'
           from __future__ import annotations
 
           import pathlib
@@ -336,33 +448,128 @@ jobs:
           import sys
           import zipfile
 
-          source = pathlib.Path(sys.argv[1])
-          target = pathlib.Path(sys.argv[2])
-          expected_name = "WebJam-linux-x64.zip"
-          expected_size = 167_559_457
-          with zipfile.ZipFile(source) as artifact:
-              members = artifact.infolist()
-              if len(members) != 1 or members[0].filename != expected_name:
-                  raise SystemExit("tag-build artifact inventory is not exact")
-              member = members[0]
-              mode = member.external_attr >> 16
-              if (
-                  member.is_dir()
-                  or stat.S_ISLNK(mode)
-                  or member.file_size != expected_size
-                  or member.compress_size <= 0
-              ):
-                  raise SystemExit("tag-build Linux package metadata is invalid")
-              with artifact.open(member, "r") as reader, target.open("xb") as writer:
-                  while chunk := reader.read(1024 * 1024):
-                      writer.write(chunk)
-          if target.stat().st_size != expected_size:
-              raise SystemExit("tag-build Linux package extraction was incomplete")
+          archive_dir = pathlib.Path(sys.argv[1])
+          target_dir = pathlib.Path(sys.argv[2])
+          version = sys.argv[3]
+          maximum_member_size = 2 * 1024 * 1024 * 1024
+          maximum_artifact_size = 4 * 1024 * 1024 * 1024
+          expected = {
+              "webjam-linux-x64": {
+                  "WebJam-linux-x64.zip",
+              },
+              "webjam-macos-arm64": {
+                  "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip",
+                  f"WebJam-v{version}-macos-arm64-ADHOC-TEST-ONLY.dmg",
+              },
+              "webjam-macos-x64": {
+                  "WebJam-macos-x64-ADHOC-TEST-ONLY.zip",
+                  f"WebJam-v{version}-macos-x64-ADHOC-TEST-ONLY.dmg",
+              },
+              "webjam-windows-x64": {
+                  "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip",
+                  f"WebJam-v{version}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe",
+                  f"WebJam-v{version}-windows-x64-SHA256SUMS.txt",
+              },
+          }
+          for artifact_name, expected_names in expected.items():
+              source = archive_dir / f"{artifact_name}.zip"
+              with zipfile.ZipFile(source) as artifact:
+                  members = artifact.infolist()
+                  names = [member.filename for member in members]
+                  if (
+                      len(members) != len(expected_names)
+                      or len(names) != len(set(names))
+                      or set(names) != expected_names
+                  ):
+                      raise SystemExit(
+                          f"{artifact_name} package inventory is not exact"
+                      )
+                  total_size = 0
+                  for member in members:
+                      mode = member.external_attr >> 16
+                      total_size += member.file_size
+                      if (
+                          pathlib.PurePosixPath(member.filename).name
+                          != member.filename
+                          or member.is_dir()
+                          or stat.S_ISLNK(mode)
+                          or member.file_size <= 0
+                          or member.file_size > maximum_member_size
+                          or member.compress_size <= 0
+                          or total_size > maximum_artifact_size
+                      ):
+                          raise SystemExit(
+                              f"{artifact_name} package metadata is invalid"
+                          )
+                      target = target_dir / member.filename
+                      with (
+                          artifact.open(member, "r") as reader,
+                          target.open("xb") as writer,
+                      ):
+                          while chunk := reader.read(1024 * 1024):
+                              writer.write(chunk)
+                      if target.stat().st_size != member.file_size:
+                          raise SystemExit(
+                              f"{artifact_name} package extraction was incomplete"
+                          )
           PY
-          [[ -s "$archive" && ! -L "$archive" ]]
-          [[ "$(stat -c '%s' "$archive")" == "$EXPECTED_LINUX_PACKAGE_SIZE" ]]
-          linux_package_sha256="$(sha256sum -- "$archive" | awk '{print $1}')"
-          [[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]
+          cd "$package_dir"
+          windows_checksum="WebJam-v${VERSION}-windows-x64-SHA256SUMS.txt"
+          [[ "$(wc -l < "$windows_checksum")" -eq 2 ]]
+          sha256sum --check --strict "$windows_checksum"
+          rm -- "$windows_checksum"
+          expected=(
+            "WebJam-linux-x64.zip"
+            "WebJam-macos-arm64-ADHOC-TEST-ONLY.zip"
+            "WebJam-macos-x64-ADHOC-TEST-ONLY.zip"
+            "WebJam-v${VERSION}-macos-arm64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${VERSION}-macos-x64-ADHOC-TEST-ONLY.dmg"
+            "WebJam-v${VERSION}-windows-x64-UNSIGNED-TEST-ONLY-setup.exe"
+            "WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip"
+          )
+          mapfile -t actual < <(
+            find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
+          )
+          mapfile -t wanted < <(
+            printf '%s\n' "${expected[@]}" | LC_ALL=C sort
+          )
+          diff -u \
+            <(printf '%s\n' "${wanted[@]}") \
+            <(printf '%s\n' "${actual[@]}")
+          : > "$RUNNER_TEMP/package-binding-lines.jsonl"
+          for package in "${expected[@]}"; do
+            [[ -s "$package" && ! -L "$package" ]]
+            package_sha256="$(sha256sum -- "$package" | awk '{print $1}')"
+            package_size="$(stat -c '%s' "$package")"
+            jq -cn \
+              --arg name "$package" \
+              --arg sha256 "$package_sha256" \
+              --argjson size "$package_size" \
+              '{name: $name, sha256: $sha256, size: $size}' \
+              >> "$RUNNER_TEMP/package-binding-lines.jsonl"
+          done
+          jq -sc 'sort_by(.name)' \
+            "$RUNNER_TEMP/package-binding-lines.jsonl" \
+            > "$RUNNER_TEMP/package-bindings.json"
+          jq -e '
+            length == 7
+            and ([.[].name] | unique | length) == 7
+            and all(
+              .[];
+              (.sha256 | test("^[0-9a-f]{64}$"))
+              and .size > 0
+            )
+          ' "$RUNNER_TEMP/package-bindings.json" >/dev/null
+          package_bindings="$(jq -c . \
+            "$RUNNER_TEMP/package-bindings.json")"
+          package_bindings_sha256="$(printf '%s' "$package_bindings" \
+            | sha256sum | awk '{print $1}')"
+          linux_package_sha256="$(jq -r \
+            '.[] | select(.name == "WebJam-linux-x64.zip") | .sha256' \
+            "$RUNNER_TEMP/package-bindings.json")"
+          echo "package_bindings=$package_bindings" >> "$GITHUB_OUTPUT"
+          echo "package_bindings_sha256=$package_bindings_sha256" \
+            >> "$GITHUB_OUTPUT"
           echo "linux_package_sha256=$linux_package_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Install exact frozen-package smoke runtime
@@ -384,15 +591,16 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          CATALOG_SEQUENCE: ${{ steps.component.outputs.catalog_sequence }}
           CATALOG_ENVELOPE_SHA256: ${{ steps.component.outputs.catalog_envelope_sha256 }}
           CATALOG_PAYLOAD_SHA256: ${{ steps.component.outputs.catalog_payload_sha256 }}
           SIGNER_FINGERPRINT_SHA256: ${{ steps.component.outputs.signer_fingerprint_sha256 }}
         run: |
           set -euo pipefail
           python tests/support/run_frozen_component_catalog_smoke.py \
-            --archive "$RUNNER_TEMP/frozen-package/WebJam-linux-x64.zip" \
+            --archive "$RUNNER_TEMP/frozen-packages/WebJam-linux-x64.zip" \
             --expected-version "$VERSION" \
-            --expected-sequence 2 \
+            --expected-sequence "$CATALOG_SEQUENCE" \
             --expected-target linux-x64 \
             --expected-jamulus-version 3.12.3 \
             --expected-catalog-envelope-sha256 "$CATALOG_ENVELOPE_SHA256" \
@@ -424,14 +632,16 @@ jobs:
           EXPECTED_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.tag_object }}
           EXPECTED_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.tag_commit }}
           EXPECTED_MASTER_COMMIT: ${{ needs['frozen-package-smoke'].outputs.master_commit }}
+          EXPECTED_WORKFLOW_COMMIT: ${{ needs['frozen-package-smoke'].outputs.workflow_commit }}
           EXPECTED_COMPONENT_TAG_OBJECT: ${{ needs['frozen-package-smoke'].outputs.component_tag_object }}
           EXPECTED_COMPONENT_TAG_COMMIT: ${{ needs['frozen-package-smoke'].outputs.component_tag_commit }}
         run: |
           set -euo pipefail
-          [[ "$REQUESTED_TAG" == "$EXPECTED_PROMOTION_TAG" ]]
-          [[ "$TAG" == "$EXPECTED_PROMOTION_TAG" ]]
-          [[ "$VERSION" == "0.22.1" ]]
+          [[ "$REQUESTED_TAG" == "$TAG" ]]
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$TAG" == "v${VERSION}" ]]
+          [[ "$GITHUB_REF" == "refs/heads/master" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_WORKFLOW_COMMIT" ]]
           git fetch --no-tags origin \
             "+refs/heads/master:refs/remotes/origin/master"
           historical_ref="refs/webjam-historical-tags/v0.22.0"
@@ -449,6 +659,7 @@ jobs:
           [[ "$(git rev-parse refs/remotes/origin/master)" == \
             "$EXPECTED_MASTER_COMMIT" ]]
           [[ "$EXPECTED_TAG_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
+          [[ "$EXPECTED_WORKFLOW_COMMIT" == "$EXPECTED_MASTER_COMMIT" ]]
           [[ "$(git ls-remote --refs origin "refs/tags/$TAG" \
             | awk 'NR == 1 {print $1}')" == "$EXPECTED_TAG_OBJECT" ]]
           [[ "$(git ls-remote --refs origin refs/heads/master \
@@ -505,6 +716,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs['frozen-package-smoke'].outputs.tag }}
           VERSION: ${{ needs['frozen-package-smoke'].outputs.version }}
+          EXPECTED_PACKAGE_BINDINGS: ${{ needs['frozen-package-smoke'].outputs.package_bindings }}
+          EXPECTED_PACKAGE_BINDINGS_SHA256: ${{ needs['frozen-package-smoke'].outputs.package_bindings_sha256 }}
           EXPECTED_LINUX_PACKAGE_SHA256: ${{ needs['frozen-package-smoke'].outputs.linux_package_sha256 }}
         run: |
           set -euo pipefail
@@ -591,6 +804,36 @@ jobs:
           linux_package_sha256="$(sha256sum -- \
             "WebJam-linux-x64.zip" | awk '{print $1}')"
           [[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]
+          bindings_sha256="$(printf '%s' "$EXPECTED_PACKAGE_BINDINGS" \
+            | sha256sum | awk '{print $1}')"
+          [[ "$bindings_sha256" == "$EXPECTED_PACKAGE_BINDINGS_SHA256" ]]
+          jq -e '
+            (type == "array")
+            and length == 7
+            and ([.[].name] | unique | length) == 7
+            and all(
+              .[];
+              (.name | type == "string")
+              and (.sha256 | type == "string")
+              and (.sha256 | test("^[0-9a-f]{64}$"))
+              and (.size | type == "number")
+              and .size > 0
+            )
+          ' <<<"$EXPECTED_PACKAGE_BINDINGS" >/dev/null
+          : > "$RUNNER_TEMP/draft-package-binding-lines.jsonl"
+          for package in "${expected[@]:0:7}"; do
+            package_sha256="$(sha256sum -- "$package" | awk '{print $1}')"
+            package_size="$(stat -c '%s' "$package")"
+            jq -cn \
+              --arg name "$package" \
+              --arg sha256 "$package_sha256" \
+              --argjson size "$package_size" \
+              '{name: $name, sha256: $sha256, size: $size}' \
+              >> "$RUNNER_TEMP/draft-package-binding-lines.jsonl"
+          done
+          actual_package_bindings="$(jq -sc 'sort_by(.name)' \
+            "$RUNNER_TEMP/draft-package-binding-lines.jsonl")"
+          [[ "$actual_package_bindings" == "$EXPECTED_PACKAGE_BINDINGS" ]]
           checksum_file="WebJam-v${VERSION}-SHA256SUMS.txt"
           [[ "$(wc -l < "$checksum_file")" -eq 7 ]]
           mapfile -t checksummed < <(
@@ -614,6 +857,7 @@ jobs:
           EXPECTED_COMPONENT_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.component_release_id }}
           EXPECTED_COMPONENT_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.component_asset_id }}
           EXPECTED_COMPONENT_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.component_asset_digest }}
+          EXPECTED_CATALOG_SEQUENCE: ${{ needs['frozen-package-smoke'].outputs.catalog_sequence }}
           EXPECTED_CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
           EXPECTED_CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
           EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
@@ -663,15 +907,16 @@ jobs:
             "$EXPECTED_COMPONENT_ASSET_DIGEST" ]]
           python -m tools.verify_jamulus_component_catalog \
             --webjam-version "$VERSION" \
-            --minimum-sequence 2 \
+            --minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE" \
             "$catalog" \
             > "$RUNNER_TEMP/component-catalog-verification-before.json"
           jq -e \
             --arg version "$VERSION" \
+            --argjson sequence "$EXPECTED_CATALOG_SEQUENCE" \
             --arg payload "$EXPECTED_CATALOG_PAYLOAD_SHA256" \
             --arg signer "$EXPECTED_SIGNER_FINGERPRINT_SHA256" \
             '
-              .sequence == 2
+              .sequence == $sequence
               and .webjam_version == $version
               and .component_count == 8
               and .payload_sha256 == $payload
@@ -695,6 +940,7 @@ jobs:
           EXPECTED_COMPONENT_RELEASE_ID: ${{ needs['frozen-package-smoke'].outputs.component_release_id }}
           EXPECTED_COMPONENT_ASSET_ID: ${{ needs['frozen-package-smoke'].outputs.component_asset_id }}
           EXPECTED_COMPONENT_ASSET_DIGEST: ${{ needs['frozen-package-smoke'].outputs.component_asset_digest }}
+          EXPECTED_CATALOG_SEQUENCE: ${{ needs['frozen-package-smoke'].outputs.catalog_sequence }}
           EXPECTED_CATALOG_ENVELOPE_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_envelope_sha256 }}
           EXPECTED_CATALOG_PAYLOAD_SHA256: ${{ needs['frozen-package-smoke'].outputs.catalog_payload_sha256 }}
           EXPECTED_SIGNER_FINGERPRINT_SHA256: ${{ needs['frozen-package-smoke'].outputs.signer_fingerprint_sha256 }}
@@ -806,15 +1052,16 @@ jobs:
             "$EXPECTED_COMPONENT_ASSET_DIGEST" ]]
           python -m tools.verify_jamulus_component_catalog \
             --webjam-version "$VERSION" \
-            --minimum-sequence 2 \
+            --minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE" \
             "$catalog" \
             > "$RUNNER_TEMP/component-catalog-verification-immediately-before.json"
           jq -e \
             --arg version "$VERSION" \
+            --argjson sequence "$EXPECTED_CATALOG_SEQUENCE" \
             --arg payload "$EXPECTED_CATALOG_PAYLOAD_SHA256" \
             --arg signer "$EXPECTED_SIGNER_FINGERPRINT_SHA256" \
             '
-              .sequence == 2
+              .sequence == $sequence
               and .webjam_version == $version
               and .component_count == 8
               and .payload_sha256 == $payload

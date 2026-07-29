@@ -93,16 +93,28 @@ class _UnavailableReferenceBackend:
                 "VB-CABLE/JACK isolation backend still needs physical proof."
             )
             platform = "windows"
+            backend = "vb-cable-jack"
+            reason_code = "windows_backend_unavailable"
         elif self._platform.startswith("linux"):
             detail = (
                 "Reference Track is not available on Linux yet. Its JACK "
                 "isolation backend still needs physical proof."
             )
             platform = "linux"
+            backend = "jack"
+            reason_code = "linux_backend_unavailable"
         else:
             detail = "Reference Track routing is not available on this platform."
             platform = self._platform or "unknown"
-        return ReferenceTrackCapability(False, platform, detail)
+            backend = "unavailable"
+            reason_code = "unsupported_platform"
+        return ReferenceTrackCapability(
+            False,
+            platform,
+            detail,
+            backend=backend,
+            reason_code=reason_code,
+        )
 
     def prepare(
         self, context: ReferenceTrackLaunchContext
@@ -458,6 +470,8 @@ class MacOSBlackHoleReferenceBackend:
                 False,
                 "macos",
                 _UNCERTIFIED_ROUTE_DETAIL,
+                backend="blackhole",
+                reason_code="physical_certification_required",
             )
         if audience_bridge_active:
             return ReferenceTrackCapability(
@@ -465,20 +479,36 @@ class MacOSBlackHoleReferenceBackend:
                 "macos",
                 "Reference Track can't share BlackHole with the Webex audience "
                 "bridge. Switch Webex to talkback or video-only first.",
+                backend="blackhole",
+                reason_code="audience_bridge_conflict",
             )
         live_route_error = self._process_route_probe.capability_error()
         if live_route_error:
-            return ReferenceTrackCapability(False, "macos", live_route_error)
+            return ReferenceTrackCapability(
+                False,
+                "macos",
+                live_route_error,
+                backend="blackhole",
+                reason_code="live_route_unavailable",
+            )
         try:
             route = self._resolve_route()
         except ReferenceTrackError as exc:
-            return ReferenceTrackCapability(False, "macos", str(exc))
+            return ReferenceTrackCapability(
+                False,
+                "macos",
+                str(exc),
+                backend="blackhole",
+                reason_code="blackhole_unavailable",
+            )
         return ReferenceTrackCapability(
             True,
             "macos",
             "BlackHole is ready at 48 kHz. WebJam will verify the primary "
             "Jamulus process's live route before playback.",
             route.name,
+            backend="blackhole",
+            reason_code="ready",
         )
 
     def prepare(

@@ -1011,11 +1011,11 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "pkg:generic/webjam@0.22.1",
+      "bom-ref": "pkg:generic/webjam@0.22.2",
       "name": "WebJam",
-      "purl": "pkg:generic/webjam@0.22.1",
+      "purl": "pkg:generic/webjam@0.22.2",
       "type": "application",
-      "version": "0.22.1"
+      "version": "0.22.2"
     },
     "properties": [
       {

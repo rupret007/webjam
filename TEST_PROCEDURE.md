@@ -1,7 +1,7 @@
-# WebJam v0.22.1 source and physical test procedure
+# WebJam v0.22.2 source and physical test procedure
 
-> The source tree reports v0.22.1. Published candidates remain immutable
-> rollback/reference evidence; they do not certify the v0.22.1 standalone
+> The source tree reports v0.22.2. Published candidates remain immutable
+> rollback/reference evidence; they do not certify the v0.22.2 standalone
 > Reference Studio, external Webex handoff, Reference Track pilot, or matching
 > iPhone setup kit.
 
@@ -86,6 +86,9 @@ Review at minimum:
 - Connection proof requires owned process, authenticated RPC, intended path,
   and exactly one local participant; human audibility remains explicit.
 - Restart recovery fails closed when profile truth changes.
+- Slow manual Jamulus launch remains the active generation; the reconnect
+  supervisor cannot cancel it or clear its native profile before that launch
+  completes.
 - Restart recovery handles stalled but alive Jamulus processes by force-restarting
   the process after repeated heartbeat timeout, then continuing regular auto-reconnect.
 - Webex is optional and a failure does not stop music.
@@ -93,6 +96,12 @@ Review at minimum:
   state; explicit installation opens an approved Cisco HTTPS URL and never
   stores credentials, downloads/executes a package silently, or changes
   Jamulus audio.
+- Direct **Webex** and **More → Webex / Conversation** reveal the same panel
+  without URL handoff. Repeated navigation, Settings changes, Studio return,
+  and **Bring Forward** do not create a meeting window; only **Join / Open**
+  hands off one validated URL per explicit click.
+- **Mute in Webex** focuses the verified external app for its own control and
+  never sends a blind shortcut, reports mute success, or changes Jamulus.
 - The Jamulus updater verifies the catalog signature, exact WebJam version,
   expiry, monotonic sequence, target/architecture/roles/capabilities, HTTPS
   origin/redirects, artifact size/hash, and platform publisher/inventory.
@@ -110,10 +119,21 @@ Review at minimum:
   UTF-16-unit and Unicode boundaries; the accessible 8+8 preview matches the
   native mixer behavior.
 - Diagnostics and the saved Support Bundle include bounded updater/catalog/
-  fallback and Webex-app facts without paths, URLs, meeting links, names,
-  tokens, credentials, or raw exceptions.
+  fallback, Webex-app, and Reference Track source/route facts without paths,
+  source names, URLs, meeting links, musician names, tokens, credentials, or
+  raw exceptions.
 - First Record offers shared-only versus Local Originals.
 - Studio output appears only in Studio review.
+- Direct **Studio**, its More entry, and Cmd/Ctrl+3 reuse the existing
+  live-take/offline-project route; direct **Reference Track** is host-only and routes to
+  the same panel as More → Reference Track.
+- Reference Track source validation accepts real WAV/WAVE, AIFF, and FLAC;
+  advertises MP3 only when the packaged decoder proves support; and safely
+  rejects renamed/malformed files, symlinks, unsupported channels, oversized
+  input, and stale async completion without exposing paths.
+- A host may load and inspect a valid source while route certification is
+  unavailable. Source/route status stays independent, Recheck Route starts no
+  playback, and Play remains locked without fresh route proof.
 - Studio Arrange edits, take-lane comps, undo/redo, save/reopen, and autosave
   failure/retry never change the take manifest or source WAV bytes.
 - Standalone Reference Studio create/import/save/reopen/Save As, local
@@ -161,13 +181,14 @@ Review at minimum:
    them to the desktop release inventory or accepting the macOS DMG SLA in CI.
 4. Sign nested apps, sidecar, and outer app; verify transport, Info.plist,
    signatures, fresh extraction, and archive SHA-256.
-5. Launch the fresh app and inspect Host, Join, Jamulus Updates, optional Webex
-   installed/missing behavior, Recording Setup, Studio Arrange/comp/undo/
-   autosave/export, standalone Reference Studio project/import/playback/mix/
-   bounce, Support diagnostics, End/Leave, and invalid/recovery states at
-   760×600, 1024×768, and 1440×900. On macOS/Linux, inspect the edited Studio
-   package. On Windows, verify the separately labelled aligned-originals/
-   reference-mix boundary above.
+5. Launch the fresh app and inspect Host, Join, Jamulus Updates, direct
+   Webex/Track/Studio actions, Webex installed/missing/focus/open behavior,
+   Recording Setup, Reference Track load/route separation, Studio
+   Arrange/comp/undo/autosave/export, standalone Reference Studio
+   project/import/playback/mix/bounce, Support diagnostics, End/Leave, and
+   invalid/recovery states at 720×560, 760×600, 1024×768, and 1440×900. On
+   macOS/Linux, inspect the edited Studio package. On Windows, verify the
+   separately labelled aligned-originals/reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
 

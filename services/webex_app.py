@@ -67,6 +67,8 @@ class WebexAppError(RuntimeError):
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
+ApplicationLauncher = Callable[[list[str]], bool]
+WebexDetector = Callable[..., WebexAppInfo]
 
 
 def _run_command(
@@ -82,6 +84,96 @@ def _run_command(
         check=False,
         shell=False,
     )
+
+
+def _launch_application(arguments: list[str]) -> bool:
+    """Launch one explicit native application target without a shell."""
+
+    if sys.platform == "darwin":
+        result = subprocess.run(
+            arguments,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15.0,
+            check=False,
+            shell=False,
+        )
+        return result.returncode == 0
+    subprocess.Popen(  # noqa: S603 - verified absolute app target, no shell
+        arguments,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        shell=False,
+    )
+    return True
+
+
+def bring_webex_forward(
+    info: WebexAppInfo,
+    *,
+    platform_name: str | None = None,
+    launcher: ApplicationLauncher = _launch_application,
+    detector: WebexDetector | None = None,
+) -> bool:
+    """Activate a detected Webex app without handing off a meeting URL.
+
+    The caller must supply the result of :func:`detect_webex_app`; missing,
+    invalid, stale, or unverified macOS applications fail closed. Paths are
+    passed as one argument with ``shell=False`` so spaces have no special
+    meaning.
+    """
+
+    platform_value = (platform_name or sys.platform).strip().lower()
+    path = info.path
+    if (
+        info.state is not WebexAppState.INSTALLED
+        or path is None
+        or not info.publisher_verified
+    ):
+        return False
+    candidate = Path(path)
+    try:
+        if candidate.is_symlink():
+            return False
+        if platform_value == "darwin":
+            if not info.publisher_verified or not candidate.is_dir():
+                return False
+        else:
+            if not candidate.is_file():
+                return False
+            if os.name == "posix" and not os.access(candidate, os.X_OK):
+                return False
+    except OSError:
+        return False
+
+    # Detection normally happens at startup, but an application can be
+    # replaced at the same path afterward. Re-run the complete platform
+    # identity/publisher check immediately before activation and require the
+    # verified target to be the exact path the UI displayed.
+    fresh_detector = detector or detect_webex_app
+    try:
+        fresh = fresh_detector(platform_name=platform_value)
+    except Exception:
+        return False
+    fresh_path = getattr(fresh, "path", None)
+    if (
+        getattr(fresh, "state", None) is not WebexAppState.INSTALLED
+        or fresh_path is None
+        or Path(fresh_path) != candidate
+        or not bool(getattr(fresh, "publisher_verified", False))
+    ):
+        return False
+    arguments = (
+        ["/usr/bin/open", str(candidate)]
+        if platform_value == "darwin"
+        else [str(candidate)]
+    )
+    try:
+        return bool(launcher(arguments))
+    except Exception as exc:  # noqa: BLE001 - activation is best effort
+        raise WebexAppError("the installed Webex app could not be activated") from exc
 
 
 def webex_installer_url(
@@ -312,6 +404,7 @@ __all__ = [
     "WebexAppError",
     "WebexAppInfo",
     "WebexAppState",
+    "bring_webex_forward",
     "detect_webex_app",
     "open_official_webex_installer",
     "webex_installer_url",

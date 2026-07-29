@@ -362,7 +362,7 @@ joining, hardware recovery, long-session, Windows publisher trust, WebJam
 Developer ID/notarization, or managed-device policy into PASS; record those as
 **NOT RUN** unless performed against the exact published assets.
 
-### v0.22.1 frozen-updater reliability candidate
+### Historical v0.22.1 frozen-updater reliability candidate
 
 v0.22.1 retains the reviewed v0.22.0 product behavior and fixes the frozen
 runtime's TLS trust selection. The updater explicitly loads the packaged,
@@ -402,19 +402,76 @@ desktop package:
   --expected-signer-fingerprint-sha256 "$signer_fingerprint_sha256"
 ```
 
-The probe must report packaged Certifi trust ready, environment CA overrides
+The probe reported packaged Certifi trust ready, environment CA overrides
 ignored, the explicit redirect allowlist, catalog sequence 2, approved Jamulus
-3.12.3, and exact agreement with the independently recorded envelope, payload,
-and signer digests. Use `macos-x64` for the Intel package. The promotion
-workflow's read-only job cannot inspect an unpublished GitHub draft. It instead
-binds the exact successful `v0.22.1` tag-CI run and its Linux artifact by run
-ID, workflow ID, tag, commit, artifact ID, outer-artifact digest, package size,
-and inner-package digest. It safely extracts and runs that exact Linux ZIP.
-Only afterward does the separate write-authorized job locate the draft and
-require its Linux asset to have the same proven package digest before checking
-the complete inventory and publishing. Open **More → Jamulus Updates → Check
-now** and confirm the same Available or Ready result in the real Mac UI. Only
-then run
-**Publish Verified WebJam Release** for v0.22.1 and independently prove that
-GitHub `/releases/latest` and the public asset bytes match the verified draft.
-Never publish the draft directly from the web page.
+3.12.3, and exact agreement with independently recorded envelope, payload, and
+signer digests. That publication procedure and its candidate-specific workflow
+configuration are historical evidence only. Do not copy v0.22.1 run or
+artifact identifiers into a new publisher. The current dynamic promotion
+contract is defined below.
+
+### v0.22.2 demo-navigation and source-first Track candidate
+
+v0.22.2 is a new immutable patch after v0.22.1; never move, replace, or rebuild
+the v0.22.1 tag or assets. It adds direct Webex/Track/Studio navigation,
+side-effect-free Conversation access, source-first Reference Track loading,
+redacted Track diagnostics, and the manual-launch/reconnect generation fix.
+It retains the same unsigned Windows and Linux/private portable trust boundary,
+ad-hoc-signed and unnotarized Mac boundary, Trinity identity, immutable
+Jamulus 3.12.2 fallback, and draft-first publication controls.
+
+The exact v0.22.2 draft inventory is:
+
+- `WebJam-v0.22.2-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.2-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.2-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.2-SHA256SUMS.txt`
+
+After tag CI creates the draft, independently download all eight assets. Prove
+the manifest lists exactly the other seven files and verify every checksum.
+The signed Jamulus catalog is version-specific: publish and independently
+verify a monotonic catalog sequence **3 or greater** targeting exact WebJam
+0.22.2 before testing the frozen updater or promoting the desktop draft. For
+the first clean attempt this is sequence 3; if that exact sequence has already
+been published, redownload and verify it instead of regenerating or advancing
+it casually. Never reuse the exact-v0.22.1 sequence-2 catalog as v0.22.2
+authorization, never move the stable component-channel tag, and never add the
+catalog to the desktop asset inventory.
+
+From both exact Mac packages, verify that the frozen catalog probe reports the
+independently recorded public envelope, payload, signer, sequence, expiry,
+target, Jamulus version, and packaged Certifi trust state. In the real packaged
+UI, verify:
+
+- direct **Webex** and its More entry show Conversation without launching;
+- **Bring Forward** does not reopen the meeting and **Join / Open** performs
+  only one explicit URL handoff;
+- **Mute in Webex** focuses Webex for its own control without claiming mute or
+  changing Jamulus;
+- direct **Studio** reaches the existing live/offline Studio route;
+- host-only **Reference Track** can load and inspect a source while Play remains locked,
+  and **Recheck Route** starts no playback;
+- a deliberately slow hosted-server start does not let reconnect supervision
+  cancel the manual Jamulus launch generation.
+
+Physical two-endpoint music, Reference Track audibility/isolation, external
+Webex join/mute state, hardware recovery, long-session behavior, Windows
+publisher trust, WebJam Developer ID/notarization, and managed-device policy
+remain **NOT RUN** unless the evidence names the exact v0.22.2 asset and
+checksum.
+
+The promotion workflow must dynamically discover the unique successful
+`v0.22.2` tag-CI run for the exact tag commit and all four expected native
+artifacts. It rejects missing or ambiguous runs/artifacts and verifies their
+GitHub digests, package inventories, versions, build IDs, and inner checksums.
+Do not enter or hardcode run IDs, workflow IDs, artifact IDs, sizes, or digests
+in the workflow. Require the draft assets to match those independently tested
+packages before checking the complete inventory. Only then run **Publish
+Verified WebJam Release** for v0.22.2. Independently prove that GitHub
+`/releases/latest` reports v0.22.2 as a published non-prerelease with exactly
+the seven packages plus checksum manifest. Never publish the draft directly
+from the web page.

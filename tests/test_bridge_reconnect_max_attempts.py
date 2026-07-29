@@ -53,6 +53,11 @@ class TestJamulusReconnectMaxAttempts(unittest.TestCase):
     def test_jamulus_reconnect_caps_at_5_attempts_then_gives_up(self):
         bridge = _make_bridge()
         bridge.jamulus_launch_intended = True
+        # Auto-reconnect is recovery for a client WebJam previously owned,
+        # never a substitute for an initial launch that has not established
+        # a process yet.
+        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process.poll.return_value = 1
 
         # find_jamulus -> None means launch_jamulus(reconnect=True) sets state
         # to "Not running" and bails immediately (no subprocess started).

@@ -297,8 +297,42 @@ def test_webex_detection_result_is_applied_on_ui_dispatch(controller):
         WebexAppState.INSTALLED,
         version="46.7.0",
         publisher_verified=True,
+        reason_code="",
     )
     assert controller._webex_app_info is info
+
+
+def test_webex_detection_exception_can_retry_to_verified_install(controller):
+    callbacks = []
+    controller._ui_invoker = SimpleNamespace(invoke=callbacks.append)
+
+    with patch(
+        "services.webex_app.detect_webex_app",
+        side_effect=RuntimeError("transient verifier timeout"),
+    ):
+        assert controller._start_webex_app_detection() is True
+        controller._webex_detection_thread.join(timeout=2.0)
+    callbacks.pop(0)()
+
+    embed = controller.window.webex_embed
+    assert embed._app_status_label.text() == "Webex app check failed"
+    assert not embed.recheck_button().isHidden()
+    assert embed.recheck_button().isEnabled()
+
+    verified = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        version="46.7.0",
+        publisher_verified=True,
+        path=Path("/Applications/Webex.app"),
+    )
+    with patch("services.webex_app.detect_webex_app", return_value=verified):
+        embed.recheck_button().click()
+        controller._webex_detection_thread.join(timeout=2.0)
+    callbacks.pop(0)()
+
+    assert embed.recheck_button().isHidden()
+    assert embed.bring_forward_button().isEnabled()
+    assert controller._webex_app_info is verified
 
 
 def test_webex_install_action_opens_only_ciscos_official_handoff(controller):

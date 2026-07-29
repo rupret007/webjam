@@ -44,6 +44,7 @@ PROJECT_AUDIO_MAX_SOURCE_FRAMES: Final = (
 
 _FORMAT_BY_SUFFIX: Final[dict[str, frozenset[str]]] = {
     ".wav": frozenset({"WAV", "WAVEX", "RF64"}),
+    ".wave": frozenset({"WAV", "WAVEX", "RF64"}),
     ".aif": frozenset({"AIFF"}),
     ".aiff": frozenset({"AIFF"}),
     ".flac": frozenset({"FLAC"}),
@@ -58,6 +59,20 @@ class ProjectAudioError(RuntimeError):
 
 class ProjectAudioCancelled(ProjectAudioError):
     """Raised when work belongs to an obsolete generation."""
+
+
+def project_audio_mp3_available() -> bool:
+    """Return runtime decoder truth without trusting an extension or manifest."""
+
+    try:
+        import soundfile as sf  # type: ignore
+
+        return bool(
+            "MP3" in sf.available_formats()
+            and sf.check_format("MP3")
+        )
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,14 +229,7 @@ class ProjectAudioDecoder:
             ) from None
 
         if suffix == ".mp3":
-            try:
-                mp3_available = (
-                    "MP3" in sf.available_formats()
-                    and bool(sf.check_format("MP3"))
-                )
-            except Exception:
-                mp3_available = False
-            if not mp3_available:
+            if not project_audio_mp3_available():
                 raise ProjectAudioError(
                     "MP3 decoding is unavailable in this build. Convert the "
                     "file to WAV, AIFF, FLAC, or OGG and try again."
@@ -914,4 +922,5 @@ __all__ = [
     "ProjectAudioGap",
     "ProjectAudioProbe",
     "RealtimeBlockPool",
+    "project_audio_mp3_available",
 ]

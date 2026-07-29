@@ -61,13 +61,19 @@ class WebexController:
         cycle but are intentionally unused; native Webex owns identity.
         """
         del name, email
+        return self.join_meeting_url(self.meeting_url)
+
+    def join_meeting_url(self, meeting_url: str) -> bool:
+        """Hand one immutable, caller-authorized URL to the operating system."""
+
         self.launch_state = WebexLaunchState.OPENING
-        hostname = _meeting_hostname(self.meeting_url)
+        requested_url = str(meeting_url or "")
+        hostname = _meeting_hostname(requested_url)
         try:
-            self.meeting_url = normalize_webex_url(self.meeting_url)
-            if not is_allowed_webex_url(self.meeting_url):
+            launch_url = normalize_webex_url(requested_url)
+            if not is_allowed_webex_url(launch_url):
                 raise RuntimeError("invalid or untrusted Webex meeting URL")
-            if not webbrowser.open(self.meeting_url):
+            if not webbrowser.open(launch_url):
                 raise RuntimeError("browser refused meeting URL")
         except Exception as exc:  # noqa: BLE001
             self.browser_opened = False

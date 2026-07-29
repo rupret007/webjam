@@ -400,6 +400,7 @@ class BridgeService:
         # success/failure cannot overwrite the currently configured link.
         self._webex_launch_lock = threading.Lock()
         self._webex_launch_generation = 0
+        self._webex_launch_inflight = False
         
         self.jamulus_launch_intended = False
         # A launch is intentionally asynchronous, while Stop/Leave is allowed
@@ -1335,15 +1336,32 @@ class BridgeService:
         if self.shutdown_requested():
             self.jamulus_reconnect_inflight = False
             return False
-            
+
+        reconnect_deferred = False
         with self._jamulus_launch_control_lock:
             previous_launch = self._pending_jamulus_launch_cancel
-            if previous_launch is not None:
-                previous_launch.set()
-            launch_cancel = threading.Event()
-            self._pending_jamulus_launch_cancel = launch_cancel
-            if manual:
-                self.jamulus_launch_intended = True
+            if reconnect and previous_launch is not None:
+                # Automatic recovery is lower priority than an accepted launch
+                # request. In particular, a hosted startup can spend longer
+                # than one reconnect-timer interval preparing the server. The
+                # timer must not cancel that manual request and replace it with
+                # a profile-less reconnect.
+                reconnect_deferred = True
+                launch_cancel = previous_launch
+            else:
+                if previous_launch is not None:
+                    previous_launch.set()
+                launch_cancel = threading.Event()
+                self._pending_jamulus_launch_cancel = launch_cancel
+                if manual:
+                    self.jamulus_launch_intended = True
+        if reconnect_deferred:
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            LOGGER.debug(
+                "Jamulus reconnect deferred while an accepted launch is pending."
+            )
+            return False
         if manual:
             self.jamulus_reconnect_attempts = 0
             self.jamulus_next_reconnect_at = 0.0
@@ -2957,10 +2975,18 @@ class BridgeService:
         with self._webex_launch_lock:
             self._webex_launch_generation += 1
 
-    def _begin_webex_launch(self) -> int:
+    def _begin_webex_launch(self) -> int | None:
         with self._webex_launch_lock:
+            if self._webex_launch_inflight:
+                return None
             self._webex_launch_generation += 1
+            self._webex_launch_inflight = True
+            self.webex_state = WebexLaunchState.OPENING.value
             return self._webex_launch_generation
+
+    def _finish_webex_launch(self) -> None:
+        with self._webex_launch_lock:
+            self._webex_launch_inflight = False
 
     def _webex_launch_is_current(self, generation: int) -> bool:
         with self._webex_launch_lock:
@@ -3002,17 +3028,18 @@ class BridgeService:
         if self.shutdown_requested():
             return
 
-        launch_generation = self._begin_webex_launch()
         launch_url = str(getattr(self.settings, "webex_url", "") or "").strip()
+        launch_generation = self._begin_webex_launch()
+        if launch_generation is None:
+            if manual:
+                self.set_status_banner(
+                    "Webex is already opening externally."
+                )
+            return False
             
         if manual:
             self.metrics_service.increment("metric_webex_open_attempt")
             
-        if not self._publish_webex_state_if_current(
-            launch_generation,
-            WebexLaunchState.OPENING,
-        ):
-            return
         self.set_status_banner("Opening Webex externally…", color="#BF5700")
         self._schedule_webex_ui_if_current(
             launch_generation,
@@ -3030,7 +3057,7 @@ class BridgeService:
                 if not self._webex_launch_is_current(launch_generation):
                     return
 
-                if not self.webex_controller.join_meeting():
+                if not self.webex_controller.join_meeting_url(launch_url):
                     raise RuntimeError(
                         self.webex_controller.last_error or "external launch refused"
                     )
@@ -3092,8 +3119,19 @@ class BridgeService:
                         copy_text=launch_url,
                     )
                 )
+            finally:
+                self._finish_webex_launch()
 
-        threading.Thread(target=_do_open, daemon=True).start()
+        try:
+            threading.Thread(target=_do_open, daemon=True).start()
+        except Exception:
+            self._finish_webex_launch()
+            self._publish_webex_state_if_current(
+                launch_generation,
+                WebexLaunchState.OPEN_FAILED,
+            )
+            raise
+        return True
 
     def _reconnect_delay_seconds(self, attempts: int) -> float:
         """Calculate exponential backoff delay."""
@@ -3166,12 +3204,25 @@ class BridgeService:
         self._attempt_auto_reconnect_jamulus(now)
 
     def _attempt_auto_reconnect_jamulus(self, now: float):
+        # A launch request exists before its worker publishes a process. A
+        # hosted server can make that window longer than the three-second
+        # reconnect interval, so treat the request token as authoritative
+        # in-flight work. ``launch_jamulus`` repeats this check atomically to
+        # close the race between this snapshot and the eventual call below.
+        with self._jamulus_launch_control_lock:
+            if self._pending_jamulus_launch_cancel is not None:
+                return
         with self._reconnect_lock:
             if not self.jamulus_launch_intended:
                 return
+            if self.jamulus_process is None:
+                # Recovery is only for a client that WebJam previously owned.
+                # An initial launch that has not established a process must
+                # finish (or report its own actionable failure) without being
+                # transformed into an automatic reconnect.
+                return
             is_running = (
-                self.jamulus_process is not None
-                and self.jamulus_process.poll() is None
+                self.jamulus_process.poll() is None
             )
             is_stalled = self._jamulus_process_is_stalled()
 

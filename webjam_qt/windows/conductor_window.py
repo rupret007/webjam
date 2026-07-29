@@ -127,6 +127,8 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._invite_button)
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
+        controls_layout.addWidget(self.session_strip._video_button)
+        controls_layout.addWidget(self.session_strip._studio_button)
         self.session_strip._tools_button.setText("More ▾")
         self.session_strip._tools_button.setAccessibleName("More session options")
         controls_layout.addWidget(self.session_strip._tools_button)
@@ -365,23 +367,36 @@ class ConductorWindow(QMainWindow):
         strip = self.session_strip
         order = [
             strip._title_input,
+            strip._reference_track_button,
             self.session_hud._input,
             self.session_hud._secondary_action,
             self.session_hud._action,
+            self.participant_grid,
             self.participant_grid._empty_primary,
+            self.participant_grid._empty_practice,
+            self.participant_grid._empty_ready,
         ]
         for card in self.participant_grid.cards():
             order.extend([card._fader, card._mute_button, card._solo_button])
         order.extend(
             [
+                self.webex_embed.bring_forward_button(),
+                self.webex_embed.mute_button(),
+                self.webex_embed.fallback_button(),
+                self.webex_embed.change_link_button(),
+                self.webex_embed.install_button(),
+                self.webex_embed.recheck_button(),
                 strip._invite_button,
                 strip._record_button,
+                strip._video_button,
+                strip._studio_button,
                 strip._tools_button,
                 strip._audio_button,
             ]
         )
         for current, following in zip(order, order[1:]):
             QWidget.setTabOrder(current, following)
+        QWidget.setTabOrder(order[-1], order[0])
 
     def show_reference_studio_only(self) -> None:
         """Present the offline song workspace without live-session chrome."""
@@ -448,9 +463,14 @@ class ConductorWindow(QMainWindow):
                 "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
                 "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
                 "<b>4.</b> The host presses <b>Record</b> for synchronized tracks.<br>"
-                "<b>5.</b> Use <b>More → Studio</b> to build a song project or "
+                "<b>5.</b> Choose <b>Studio</b> to build a song project or "
                 "review completed session takes.<br>"
-                "<b>6.</b> Press <b>End Session</b> when the jam is over.<br><br>"
+                "<b>6.</b> Choose <b>Webex</b> to show Conversation. Only "
+                "<b>Join / Open</b> opens the saved meeting link.<br>"
+                "<b>7.</b> The host can choose <b>Reference Track</b> to load "
+                "and inspect a song; Play stays locked until its isolated "
+                "Jamulus route is proven.<br>"
+                "<b>8.</b> Press <b>End Session</b> when the jam is over.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Band Check<br>"
                 f"{navigation_shortcuts} — Live / Notes / Studio<br>"

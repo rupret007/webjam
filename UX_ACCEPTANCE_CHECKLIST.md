@@ -1,4 +1,4 @@
-# WebJam v0.22.1 UX acceptance checklist
+# WebJam v0.22.2 UX acceptance checklist
 
 ## Unified guidance
 
@@ -53,15 +53,30 @@
 
 ## Optional features
 
-- [ ] Webex is available under **More** and never delays music readiness,
-      invitation sharing, or entry to the session.
-- [ ] Webex link is optional, external, and never auto-opened.
+- [ ] Direct **Webex** and **Studio** actions remain visible on the main session
+      rail; hosts also see **Reference Track**, with no clipping or lost Record,
+      Copy Invite, or End/Leave action at the supported compact sizes.
+- [ ] **Webex** and **More → Webex / Conversation** reveal and focus the same
+      panel without opening a URL; repeated navigation remains side-effect free.
+- [ ] **Bring Forward** activates the verified installed Webex app without
+      rejoining; only **Join / Open** hands off the URL, once per click.
+- [ ] **Mute in Webex** focuses Webex for its own Mute control and truthfully
+      says that WebJam neither changes nor verifies external mute or Jamulus.
+- [ ] Webex link is optional, external, persisted without credentials, and
+      never auto-opened.
 - [ ] UI says Jamulus carries music and reminds musicians to mute Webex while
       playing.
 - [ ] Recording starts only when Record is pressed.
 - [ ] First host Record offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
 - [ ] Studio playback output is shown only in Studio review.
+- [ ] Direct **Studio**, its More entry, and Cmd/Ctrl+3 reuse the existing
+      live-take/offline-project route and preserve a working return to Live.
+- [ ] A host can load and inspect WAV/WAVE, AIFF, or FLAC in **Reference Track** while
+      route readiness is unavailable; MP3 is offered only when the packaged
+      decoder proves support.
+- [ ] Source and route states remain distinct. **Recheck Route** starts no
+      playback, and Play stays fail-closed without current isolation evidence.
 - [ ] Reference Studio opens independently of Host/Join, retains the canonical
       trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
@@ -98,12 +113,15 @@
 - [ ] Keyboard focus reaches input and action controls in order.
 - [ ] Accessible names describe the symbol, invitation field, Webex field,
       and actions.
-- [ ] No clipping or horizontal scrolling at 760×600, 1024×768, or 1440×900.
+- [ ] No clipping or horizontal scrolling at 720×560, 760×600, 1024×768, or
+      1440×900.
 - [ ] Black, white, neutral gray, and burnt orange are the only authored UI
       colors; no purple or teal returns.
 - [ ] Cancel, retry, End, and Leave preserve safe process/recording truth.
 - [ ] Recovery data contains no invitation, URL, credential, device, path, or
       note content.
+- [ ] Support diagnostics expose only bounded Reference Track source/route
+      facts—never its source name, folder path, or a raw backend error.
 
 ## End, leave, and cleanup truth
 
@@ -120,7 +138,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.22.1 remains a private test candidate until real-output guidance
+- [ ] v0.22.2 remains a private test candidate until real-output guidance
       review, Arrange/comp playback, physical Reference Studio playback and
       recording, external-editor import, signed clean installation, and
       platform trust gates have evidence; all currently remain **NOT RUN**.

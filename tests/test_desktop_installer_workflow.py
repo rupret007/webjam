@@ -45,7 +45,7 @@ def test_current_candidate_identity_cannot_be_confused_with_latest_old_release()
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.22.1"
+    assert version == "0.22.2"
     assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
@@ -74,7 +74,8 @@ def test_macos_readme_uses_the_working_app_bundle_approval_path() -> None:
     assert "Recent macOS versions can block downloaded" in MACOS_README
     assert "Control-click the helper" not in MACOS_README
     assert "/bin/bash " in MACOS_README
-    assert "More > Webex / Conversation" in MACOS_README
+    assert "Webex on the main session rail" in MACOS_README
+    assert "only Join / Open hands off the saved link" in MACOS_README
     assert "Webex is not bundled with WebJam" in MACOS_README
 
 

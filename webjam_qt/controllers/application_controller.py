@@ -361,6 +361,13 @@ class ApplicationController(QObject):
         self._reference_track = None
         self._reference_track_dialog = None
         self._reference_track_operation_lock = threading.RLock()
+        self._reference_track_worker_state_lock = threading.Lock()
+        self._reference_track_operation_inflight = False
+        self._reference_track_operation_kind = ""
+        self._reference_track_route_check_pending: tuple[int, bool] | None = None
+        self._reference_track_route_check_generation = 0
+        self._reference_track_load_pending: str | None = None
+        self._reference_track_teardown_pending = False
         self._reference_track_session_generation = 0
         # Desktop integration checks begin only after the main window is
         # visible (see start_desktop_integrations). Keeping both services lazy
@@ -374,6 +381,8 @@ class ApplicationController(QObject):
         self._webex_app_info = None
         self._webex_detection_generation = 0
         self._webex_detection_thread: threading.Thread | None = None
+        self._webex_activation_generation = 0
+        self._webex_activation_inflight = False
         self._register_managed_jamulus_providers()
         from services.pocket_stage_gateway import PocketStageGateway
 
@@ -690,6 +699,7 @@ class ApplicationController(QObject):
         if reference_track is not None:
             reference_closed = False
             try:
+                reference_track.cancel_pending_start()
                 with self._reference_track_operation_lock:
                     snapshot = reference_track.close()
                 reference_closed = (
@@ -896,6 +906,10 @@ class ApplicationController(QObject):
         self._webex_detection_generation = (
             int(getattr(self, "_webex_detection_generation", 0)) + 1
         )
+        self._webex_activation_generation = (
+            int(getattr(self, "_webex_activation_generation", 0)) + 1
+        )
+        self._webex_activation_inflight = False
         try:
             self.webex.stop()
         except Exception:  # noqa: BLE001
@@ -1724,6 +1738,7 @@ class ApplicationController(QObject):
             return False
         self._webex_detection_generation += 1
         generation = self._webex_detection_generation
+        self.window.webex_embed.set_app_checking()
 
         def detect() -> None:
             from services.webex_app import (
@@ -1770,6 +1785,7 @@ class ApplicationController(QObject):
             info.state,
             version=info.version,
             publisher_verified=info.publisher_verified,
+            reason_code=info.reason_code,
         )
 
     def _on_install_webex_requested(self, *, parent=None) -> None:
@@ -1807,9 +1823,120 @@ class ApplicationController(QObject):
             return
         self.window.flash_message(
             "Cisco's official Webex download opened. Finish installation and "
-            "sign-in there; Webex manages its own updates.",
+            "sign-in there, then return here and choose Check Again. Webex "
+            "manages its own updates.",
             ms=8000,
         )
+
+    def _bring_webex_forward(self, *, mute_guidance: bool = False) -> None:
+        """Activate the detected native Webex app without reopening a meeting."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        from services.webex_app import WebexAppState, bring_webex_forward
+
+        info = getattr(self, "_webex_app_info", None)
+        if info is None:
+            self._start_webex_app_detection()
+            self.window.flash_message(
+                "WebJam is checking the Webex app. Try Bring Forward again "
+                "when its status appears.",
+                ms=6000,
+            )
+            return
+        if (
+            getattr(info, "state", None) is not WebexAppState.INSTALLED
+            or getattr(info, "path", None) is None
+            or not bool(getattr(info, "publisher_verified", False))
+        ):
+            self.window.flash_message(
+                "Webex is not available to bring forward. Use Get Webex, "
+                "choose Check Again after installation, or use Join / Open "
+                "in a supported browser.",
+                ms=7000,
+            )
+            return
+        if self._webex_activation_inflight:
+            self.window.flash_message(
+                "WebJam is still verifying Webex. Wait a moment and try again.",
+                ms=5000,
+            )
+            return
+        self._webex_activation_generation += 1
+        generation = self._webex_activation_generation
+        self._webex_activation_inflight = True
+        self.window.webex_embed.set_native_action_busy(True)
+        self.window.flash_message(
+            "Verifying the installed Webex app…",
+            ms=4000,
+        )
+
+        def activate() -> None:
+            try:
+                activated = bring_webex_forward(info)
+            except Exception as exc:  # noqa: BLE001 - optional native handoff
+                LOGGER.warning(
+                    "Native Webex activation failed; exception_type=%s",
+                    type(exc).__name__,
+                )
+                activated = False
+            self._ui_invoker.invoke(
+                lambda result=activated, token=generation: (
+                    self._finish_webex_activation(
+                        result,
+                        token,
+                        mute_guidance=mute_guidance,
+                    )
+                )
+            )
+
+        threading.Thread(
+            target=activate,
+            daemon=True,
+            name="webex-app-activation",
+        ).start()
+
+    def _finish_webex_activation(
+        self,
+        activated: bool,
+        generation: int,
+        *,
+        mute_guidance: bool,
+    ) -> None:
+        if (
+            self._shutdown
+            or generation != self._webex_activation_generation
+        ):
+            return
+        self._webex_activation_inflight = False
+        self.window.webex_embed.set_native_action_busy(False)
+        if not activated:
+            self._start_webex_app_detection()
+            self.window.flash_message(
+                "WebJam couldn't reverify and bring Webex forward. Choose "
+                "Check Again, use Join / Open, or switch to Webex manually.",
+                ms=8000,
+            )
+            return
+        if mute_guidance:
+            self.window.flash_message(
+                "WebJam asked Webex to come forward—switch to Webex if "
+                "needed, then use its Mute control. WebJam did not change "
+                "Webex mute or any Jamulus audio.",
+                ms=8000,
+            )
+            return
+        self.window.flash_message(
+            "WebJam asked Webex to come forward without reopening the "
+            "meeting. Switch to Webex if needed; meeting and mute state "
+            "remain managed there.",
+            ms=7000,
+        )
+
+    def _focus_webex_mute(self) -> None:
+        """Guide the user to Webex-owned mute without a blind shortcut."""
+
+        self._bring_webex_forward(mute_guidance=True)
 
     def _jamulus_update_public_diagnostics(self) -> dict[str, object]:
         service = getattr(self, "_jamulus_update_service", None)
@@ -1903,6 +2030,17 @@ class ApplicationController(QObject):
         result = dict(value)
         result["installed"] = result.get("state") == "installed"
         return result
+
+    def _reference_track_public_diagnostics(self) -> dict[str, object]:
+        controller = getattr(self, "_reference_track", None)
+        public = getattr(controller, "public_diagnostics", None)
+        if not callable(public):
+            return {}
+        try:
+            value = public()
+        except Exception:  # noqa: BLE001 - support evidence remains optional
+            return {}
+        return dict(value) if isinstance(value, dict) else {}
 
     @property
     def _jamulus_connected(self) -> bool:
@@ -2136,6 +2274,7 @@ class ApplicationController(QObject):
             ),
             "jamulus_updater": self._jamulus_update_public_diagnostics(),
             "webex_app": self._webex_app_public_diagnostics(),
+            "reference_track": self._reference_track_public_diagnostics(),
         }
 
     # ------------------------------------------------------------------
@@ -2617,10 +2756,23 @@ class ApplicationController(QObject):
         self.window.session_hud.secondary_action_requested.connect(
             self._on_conductor_secondary_action_requested
         )
-        # Both launch affordances share URL validation and truthful state.
-        self.window.webex_embed.fallback_button().clicked.connect(self._on_join_video)
+        # Conversation navigation is side-effect free. Only the explicit
+        # Join/Open action hands the configured meeting link to the OS.
+        self.window.webex_embed.open_meeting_requested.connect(self._on_join_video)
+        self.window.webex_embed.bring_forward_requested.connect(
+            self._bring_webex_forward
+        )
+        self.window.webex_embed.mute_in_webex_requested.connect(
+            self._focus_webex_mute
+        )
+        self.window.webex_embed.change_link_requested.connect(
+            self._open_settings_wizard
+        )
         self.window.webex_embed.install_webex_requested.connect(
             self._on_install_webex_requested
+        )
+        self.window.webex_embed.recheck_webex_requested.connect(
+            self._start_webex_app_detection
         )
         self.window.confirm_close = self._confirm_close
         self.window.finalize_close = self.shutdown
@@ -2709,6 +2861,9 @@ class ApplicationController(QObject):
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
+        self.window.webex_embed.set_meeting_configured(
+            bool(str(self.settings.webex_url or "").strip())
+        )
         self.window.session_strip.set_tools_enabled(True)
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self.window.recording_studio.set_takes_directory(self.settings.takes_directory)
@@ -2717,8 +2872,8 @@ class ApplicationController(QObject):
             self.settings.take_playback_output_device
         )
         hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        # Recording, video, conversation, notes, and settings live behind Session
-        # Tools.  The live header keeps only the one action needed now.
+        # Direct Webex and Studio navigation remain visible. Recording and
+        # host-only tools still follow current session ownership/readiness.
         self.window.session_strip.set_recording_available(False)
         self.window.session_strip.set_reference_track_available(hosting)
         self.window.session_strip.set_invite_available(False)
@@ -7277,17 +7432,31 @@ class ApplicationController(QObject):
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
 
+    def _show_webex_conversation(self) -> None:
+        """Reveal Conversation controls without launching or rejoining Webex."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        self.window.side_rail.set_active_key("stage")
+        self._on_rail_view_changed("stage")
+        self.window.webex_embed.setVisible(True)
+        self.window.webex_embed.focus_primary_action()
+
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""
         from core.webex_url import normalize_webex_url, webex_url_error
 
         if self._shutdown_cleanup_blocks_action():
             return
-        # Conversation is progressively disclosed under More. Reveal its
-        # truthful external-launch card before validation so a missing or
-        # invalid link still leaves the native-app status and official
-        # Get Webex recovery action available in the main window.
+        # Keep the card visible for truthful launch status and recovery. This
+        # method is reached only from the card's explicit Join/Open action.
         self.window.webex_embed.setVisible(True)
+        if self.bridge.webex_state == "Opening…":
+            self.window.flash_message(
+                "Webex is already opening. Finish joining there.",
+                ms=5000,
+            )
+            return
         url = normalize_webex_url(self.settings.webex_url)
         if not url:
             self._show_actionable_error(
@@ -7313,11 +7482,31 @@ class ApplicationController(QObject):
             return
 
         self.webex.meeting_url = url
-        self.bridge.webex_state = "Opening…"
+        accepted = self.bridge.launch_webex(manual=True)
+        if not accepted:
+            self.window.set_status_video(self.bridge.webex_state)
+            self.window.session_strip.set_video_state(
+                "Open Webex",
+                enabled=True,
+            )
+            self.window.webex_embed.set_launch_status(
+                self.bridge.webex_state
+                if self.bridge.webex_state in {
+                    "Not opened",
+                    "Opened externally",
+                    "Open failed",
+                }
+                else "Not opened"
+            )
+            self.window.flash_message(
+                "A previous Webex open request is still finishing. Wait a "
+                "moment, then choose Join / Open again for the new link.",
+                ms=7000,
+            )
+            return
         self.window.set_status_video("Opening…")
         self.window.session_strip.set_video_state("Opening…", enabled=False)
         self.window.webex_embed.set_launch_status("Opening…")
-        self.bridge.launch_webex(manual=True)
 
     def _is_video_active(self) -> bool:
         """Return whether an external launch is in progress or succeeded.
@@ -7903,6 +8092,7 @@ class ApplicationController(QObject):
             metrics_service=self.metrics,
             jamulus_update=self._jamulus_update_public_diagnostics(),
             webex_app=self._webex_app_public_diagnostics(),
+            reference_track=self._reference_track_public_diagnostics(),
         )
 
     def _on_save_support_bundle(self) -> None:
@@ -8055,6 +8245,9 @@ class ApplicationController(QObject):
         self.window.session_strip.set_video_configured(
             bool(str(self.settings.webex_url or "").strip())
         )
+        self.window.webex_embed.set_meeting_configured(
+            bool(str(self.settings.webex_url or "").strip())
+        )
         self.window.webex_embed.set_audio_mode(self._webex_audio_mode())
         self._start_routing_scan()
 
@@ -8118,8 +8311,14 @@ class ApplicationController(QObject):
             self.start_companion_api()
         reference_track = getattr(self, "_reference_track", None)
         if reference_track is not None:
-            reference_track.refresh_capability(
-                self._webex_audio_mode() == "audience_bridge"
+            # A route-mode change revokes any unpublished start immediately;
+            # the potentially slow hardware probe then runs through the
+            # coalesced off-UI operation lane.
+            reference_track.cancel_pending_start()
+            self._request_reference_track_route_check(
+                audience_bridge_active=(
+                    self._webex_audio_mode() == "audience_bridge"
+                )
             )
 
     def _open_settings_wizard(self) -> None:
@@ -8199,8 +8398,8 @@ class ApplicationController(QObject):
             if self.settings.webex_url != old_webex_url and webex_was_active:
                 warnings.append(
                     (
-                        "Any Webex meeting already open stays open there. Use "
-                        "Webex / Conversation to open the new link."
+                        "Any Webex meeting already open stays open there. Open "
+                        "Conversation, then choose Join / Open for the new link."
                     )
                     if self.settings.webex_url
                     else (
@@ -8345,7 +8544,9 @@ class ApplicationController(QObject):
         # Keys that represent actual view changes (persist selection)
         _CONTENT_KEYS = frozenset({"stage", "canvas", "takes"})
 
-        if key == "reference_track":
+        if key == "conversation":
+            self._show_webex_conversation()
+        elif key == "reference_track":
             self._open_reference_track()
         elif key == "jamulus_updates":
             self._open_jamulus_updates()
@@ -8441,7 +8642,6 @@ class ApplicationController(QObject):
             on_snapshot=self._on_reference_track_snapshot,
         )
         self._reference_track = controller
-        controller.refresh_capability(self._webex_audio_mode() == "audience_bridge")
         return controller
 
     def _open_reference_track(self) -> None:
@@ -8456,13 +8656,15 @@ class ApplicationController(QObject):
             )
             return
         controller = self._reference_track_controller()
-        controller.refresh_capability(self._webex_audio_mode() == "audience_bridge")
         dialog = self._reference_track_dialog
         if dialog is None:
             from webjam_qt.windows.reference_track import ReferenceTrackDialog
 
             dialog = ReferenceTrackDialog(parent=self.window)
             dialog.load_requested.connect(self._load_reference_track)
+            dialog.recheck_route_requested.connect(
+                self._request_reference_track_route_check
+            )
             dialog.play_requested.connect(self._play_reference_track)
             dialog.pause_requested.connect(
                 lambda: self._run_reference_track_fast(controller.pause)
@@ -8471,10 +8673,7 @@ class ApplicationController(QObject):
                 lambda: self._run_reference_track_fast(controller.restart)
             )
             dialog.stop_requested.connect(
-                lambda: self._run_reference_track_operation(
-                    controller.stop,
-                    thread_name="webjam-reference-track-stop",
-                )
+                self._queue_reference_track_teardown
             )
             dialog.seek_requested.connect(
                 lambda seconds: self._run_reference_track_fast(
@@ -8502,6 +8701,7 @@ class ApplicationController(QObject):
         dialog.raise_()
         dialog.activateWindow()
         self._reference_track_timer.start()
+        self._request_reference_track_route_check()
 
     def _on_reference_track_snapshot(self, snapshot) -> None:
         if self._shutdown:
@@ -8541,11 +8741,30 @@ class ApplicationController(QObject):
         operation,
         *,
         thread_name: str,
-    ) -> None:
-        """Serialize potentially blocking decoder/process work off the UI."""
+    ) -> bool:
+        """Run one blocking user operation; reject duplicate queued work."""
 
         if self._shutdown_cleanup_blocks_action():
-            return
+            return False
+        with self._reference_track_worker_state_lock:
+            if self._reference_track_operation_inflight:
+                self.window.flash_message(
+                    "Reference Track is finishing another operation…",
+                    ms=2500,
+                )
+                return False
+            self._reference_track_operation_inflight = True
+            self._reference_track_operation_kind = "user"
+        self._start_reference_track_worker(operation, thread_name=thread_name)
+        return True
+
+    def _start_reference_track_worker(
+        self,
+        operation,
+        *,
+        thread_name: str,
+    ) -> None:
+        """Start one already-authorized operation and drain bounded follow-ups."""
 
         def _worker() -> None:
             try:
@@ -8563,12 +8782,119 @@ class ApplicationController(QObject):
                 self._ui_invoker.invoke(
                     lambda safe=message: self._show_reference_track_error(safe)
                 )
+            finally:
+                self._ui_invoker.invoke(
+                    self._finish_reference_track_operation
+                )
 
         threading.Thread(
             target=_worker,
             daemon=True,
             name=thread_name,
         ).start()
+
+    def _finish_reference_track_operation(self) -> None:
+        """Release the single worker slot and run teardown before route checks."""
+
+        with self._reference_track_worker_state_lock:
+            self._reference_track_operation_inflight = False
+            self._reference_track_operation_kind = ""
+        self._drain_reference_track_pending()
+
+    def _request_reference_track_route_check(
+        self,
+        *,
+        audience_bridge_active: bool | None = None,
+    ) -> None:
+        """Coalesce route probes to the newest mode without queuing threads."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        audience_active = (
+            self._webex_audio_mode() == "audience_bridge"
+            if audience_bridge_active is None
+            else bool(audience_bridge_active)
+        )
+        with self._reference_track_worker_state_lock:
+            self._reference_track_route_check_generation += 1
+            self._reference_track_route_check_pending = (
+                self._reference_track_route_check_generation,
+                audience_active,
+            )
+        dialog = getattr(self, "_reference_track_dialog", None)
+        if dialog is not None:
+            dialog.set_route_checking(True)
+        self._drain_reference_track_pending()
+
+    def _queue_reference_track_teardown(self) -> None:
+        """Coalesce one highest-priority session-end cleanup operation."""
+
+        controller = getattr(self, "_reference_track", None)
+        if controller is None:
+            return
+        controller.cancel_pending_start()
+        with self._reference_track_worker_state_lock:
+            self._reference_track_teardown_pending = True
+        self._drain_reference_track_pending()
+
+    def _drain_reference_track_pending(self) -> None:
+        """Start at most one teardown or newest route check after current work."""
+
+        operation = None
+        thread_name = ""
+        with self._reference_track_worker_state_lock:
+            if (
+                self._reference_track_operation_inflight
+                or self._shutdown
+            ):
+                return
+            controller = getattr(self, "_reference_track", None)
+            if controller is None:
+                self._reference_track_route_check_pending = None
+                self._reference_track_load_pending = None
+                self._reference_track_teardown_pending = False
+            elif self._reference_track_teardown_pending:
+                self._reference_track_teardown_pending = False
+                operation = controller.handle_session_end
+                thread_name = "webjam-reference-track-session-stop"
+                self._reference_track_operation_kind = "teardown"
+            elif self._reference_track_load_pending is not None:
+                source_path = self._reference_track_load_pending
+                self._reference_track_load_pending = None
+
+                def _load_source() -> None:
+                    controller.load(source_path)
+
+                operation = _load_source
+                thread_name = "webjam-reference-track-load"
+                self._reference_track_operation_kind = "load"
+            elif self._reference_track_route_check_pending is not None:
+                _generation, audience_active = (
+                    self._reference_track_route_check_pending
+                )
+                self._reference_track_route_check_pending = None
+                def _refresh_route() -> None:
+                    controller.refresh_capability(audience_active)
+
+                operation = _refresh_route
+                thread_name = "webjam-reference-track-route-check"
+                self._reference_track_operation_kind = "route-check"
+            if operation is not None:
+                self._reference_track_operation_inflight = True
+            checking = bool(
+                self._reference_track_route_check_pending is not None
+                or self._reference_track_operation_kind == "route-check"
+            )
+            load_queued = self._reference_track_load_pending is not None
+        dialog = getattr(self, "_reference_track_dialog", None)
+        if dialog is not None:
+            dialog.set_route_checking(checking)
+            dialog.set_source_load_queued(load_queued)
+        if operation is not None:
+            self._start_reference_track_worker(
+                operation,
+                thread_name=thread_name,
+            )
 
     def _run_reference_track_fast(self, operation) -> None:
         """Apply a bounded in-memory control only when no launch is in flight."""
@@ -8596,11 +8922,23 @@ class ApplicationController(QObject):
             self._reference_track_operation_lock.release()
 
     def _load_reference_track(self, path: str) -> None:
-        controller = self._reference_track_controller()
-        self._run_reference_track_operation(
-            lambda: controller.load(path),
-            thread_name="webjam-reference-track-load",
-        )
+        source_path = str(path or "")
+        if not source_path or self._shutdown_cleanup_blocks_action():
+            return
+        self._reference_track_controller()
+        with self._reference_track_worker_state_lock:
+            was_busy = self._reference_track_operation_inflight
+            self._reference_track_load_pending = source_path
+        dialog = getattr(self, "_reference_track_dialog", None)
+        if dialog is not None:
+            dialog.set_source_load_queued(was_busy)
+        if was_busy:
+            self.window.flash_message(
+                "Song selected. WebJam will load it as soon as the current "
+                "Reference Track check finishes.",
+                ms=5000,
+            )
+        self._drain_reference_track_pending()
 
     def _reference_track_primary_device_names(self) -> tuple[str, str]:
         """Read profile names only as a secondary live-proof consistency check."""
@@ -8632,6 +8970,13 @@ class ApplicationController(QObject):
 
     def _play_reference_track(self) -> None:
         if self._shutdown_cleanup_blocks_action():
+            return
+        if self._reference_track_lifecycle_blocks_play():
+            self.window.flash_message(
+                "Wait for the current session change to finish before "
+                "starting Reference Track.",
+                ms=6000,
+            )
             return
         if not self._reference_track_is_host() or not self._jamulus_connected:
             self.window.flash_message(
@@ -8673,6 +9018,13 @@ class ApplicationController(QObject):
         generation = self._reference_track_session_generation
 
         def _play_for_current_session() -> None:
+            if (
+                generation != self._reference_track_session_generation
+                or self._shutdown
+                or not self._jamulus_connected
+                or self._reference_track_lifecycle_blocks_play()
+            ):
+                return
             controller.play(context)
             if (
                 generation != self._reference_track_session_generation
@@ -8684,6 +9036,17 @@ class ApplicationController(QObject):
         self._run_reference_track_operation(
             _play_for_current_session,
             thread_name="webjam-reference-track-start",
+        )
+
+    def _reference_track_lifecycle_blocks_play(self) -> bool:
+        """Return whether session ownership is currently changing."""
+
+        return bool(
+            self.audio.stopping
+            or self.audio.cleanup_retry_required
+            or self._invite_switch_in_flight
+            or self._shutdown_in_progress
+            or self._shutdown_cleanup_pending
         )
 
     def _stop_reference_track_for_session_end(
@@ -8698,10 +9061,7 @@ class ApplicationController(QObject):
         if controller is None:
             return True
         if background:
-            self._run_reference_track_operation(
-                controller.handle_session_end,
-                thread_name="webjam-reference-track-session-stop",
-            )
+            self._queue_reference_track_teardown()
             return True
         try:
             with self._reference_track_operation_lock:
@@ -8714,14 +9074,22 @@ class ApplicationController(QObject):
 
     def _refresh_reference_track_health(self) -> None:
         controller = getattr(self, "_reference_track", None)
-        if controller is None or not bool(controller.snapshot.active):
+        if controller is None:
             return
+        snapshot = controller.snapshot
+        if not bool(snapshot.active):
+            return
+        operation = (
+            controller.stop
+            if bool(getattr(snapshot, "cleanup_pending", False))
+            else controller.refresh_health
+        )
 
         def _health_worker() -> None:
             if not self._reference_track_operation_lock.acquire(blocking=False):
                 return
             try:
-                controller.refresh_health()
+                operation()
             except Exception:  # noqa: BLE001
                 LOGGER.error("Reference Track health check failed safely")
             finally:

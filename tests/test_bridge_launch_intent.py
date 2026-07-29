@@ -145,6 +145,67 @@ def test_accepted_restart_replaces_stale_stopped_state_before_worker_poll() -> N
     assert bridge.jamulus_launch_intended is True
 
 
+def test_pending_host_launch_is_not_misclassified_as_a_dropped_client() -> None:
+    """The reconnect timer must leave a slow accepted host launch alone."""
+
+    bridge = _bridge()
+    bridge.settings.host_server_enabled = True
+    bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+    with patch("services.bridge_service.threading.Thread") as thread_class:
+        thread_class.return_value = MagicMock()
+        assert bridge.launch_jamulus(manual=True) is True
+        pending = bridge._pending_jamulus_launch_cancel
+
+        bridge._attempt_auto_reconnect_jamulus(now=100.0)
+
+    assert pending is not None
+    assert bridge._pending_jamulus_launch_cancel is pending
+    assert pending.is_set() is False
+    assert thread_class.call_count == 1
+    assert bridge.jamulus_reconnect_attempts == 0
+    assert bridge.jamulus_reconnect_inflight is False
+    assert not any(
+        item.args == ("metric_jamulus_reconnect_attempt",)
+        for item in bridge.metrics_service.increment.call_args_list
+    )
+
+
+def test_racing_auto_reconnect_cannot_supersede_an_accepted_manual_launch() -> None:
+    """The launch boundary repeats the timer guard to close the check/call race."""
+
+    bridge = _bridge()
+    bridge.settings.host_server_enabled = True
+    bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+    native_profile = object()
+    bridge._active_native_profile = native_profile
+
+    with patch("services.bridge_service.threading.Thread") as thread_class:
+        thread_class.return_value = MagicMock()
+        assert bridge.launch_jamulus(manual=True) is True
+        pending = bridge._pending_jamulus_launch_cancel
+        bridge.jamulus_reconnect_inflight = True
+
+        # Model a reconnect tick that passed an earlier state snapshot just
+        # before the musician's manual launch was accepted.
+        assert (
+            bridge.launch_jamulus(
+                manual=False,
+                reconnect=True,
+                force_restart=False,
+            )
+            is False
+        )
+
+    assert pending is not None
+    assert bridge._pending_jamulus_launch_cancel is pending
+    assert pending.is_set() is False
+    assert bridge._active_native_profile is native_profile
+    assert bridge.jamulus_launch_intended is True
+    assert bridge.jamulus_reconnect_inflight is False
+    assert thread_class.call_count == 1
+
+
 def test_stop_during_successful_port_preflight_cannot_publish_starting() -> None:
     """A Stop that wins preflight keeps the terminal state and spawns nothing."""
 

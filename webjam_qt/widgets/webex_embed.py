@@ -1,9 +1,9 @@
-"""Lightweight external-Webex status card for the live workspace.
+"""Lightweight external-Webex conversation card for the live workspace.
 
 WebJam never embeds, authenticates, joins, monitors, or controls a Webex
-meeting.  The native Webex application or system browser owns sign-in, media
-devices, meeting membership, and leave state.  This widget only presents the
-truthful result of handing a trusted meeting link to the operating system.
+meeting. The native Webex application or system browser owns sign-in, media
+devices, meeting membership, mute state, and leave state. This widget keeps
+navigation, app activation, and an explicit meeting-link handoff separate.
 """
 
 from __future__ import annotations
@@ -15,8 +15,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QApplication,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -34,14 +36,24 @@ class WebexEmbed(QFrame):
 
     meeting_state_changed = Signal(str)
     install_webex_requested = Signal()
+    bring_forward_requested = Signal()
+    open_meeting_requested = Signal()
+    change_link_requested = Signal()
+    mute_in_webex_requested = Signal()
+    recheck_webex_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("WebexEmbed")
-        self.setMinimumHeight(64)
-        self.setMaximumHeight(96)
+        self.setMinimumHeight(112)
+        self.setMaximumHeight(152)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._audio_mode = "talkback"
+        self._meeting_configured = False
+        self._launch_busy = False
+        self._native_app_available = False
+        self._native_action_busy = False
+        self._native_focus_restore: QPushButton | None = None
 
         self._title_label = QLabel("Webex conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
@@ -55,6 +67,7 @@ class WebexEmbed(QFrame):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._app_status_label.setAccessibleName("Webex app status")
+        self._app_status_label.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._app_status_label.setVisible(False)
 
         self._mode_label = QLabel()
@@ -73,12 +86,56 @@ class WebexEmbed(QFrame):
         self._status_label.setAccessibleName("Webex launch status")
         self._status_label.setAccessibleDescription(self._status_label.text())
 
-        self._fallback_btn = QPushButton("Open Webex")
-        self._fallback_btn.setObjectName("GhostButton")
-        self._fallback_btn.setAccessibleName("Open Webex externally")
-        self._fallback_btn.setAccessibleDescription(
-            "Open the configured meeting in the native Webex app or browser."
+        self._bring_forward_btn = QPushButton("Bring Forward")
+        self._bring_forward_btn.setObjectName("GhostButton")
+        self._bring_forward_btn.setAccessibleName("Bring Webex forward")
+        self._bring_forward_btn.setAccessibleDescription(
+            "Activate the installed Webex app without opening the meeting link."
         )
+        self._bring_forward_btn.setToolTip(
+            "Bring the installed Webex app forward without joining again."
+        )
+        self._bring_forward_btn.clicked.connect(
+            self.bring_forward_requested.emit
+        )
+        self._bring_forward_btn.setEnabled(False)
+
+        self._mute_btn = QPushButton("Mute in Webex")
+        self._mute_btn.setObjectName("GhostButton")
+        self._mute_btn.setAccessibleName("Mute in Webex")
+        self._mute_btn.setAccessibleDescription(
+            "Bring Webex forward so you can use its Mute control. WebJam "
+            "cannot verify or change mute in the external Webex app."
+        )
+        self._mute_btn.setToolTip(
+            "Bring Webex forward and use its own Mute control.\n"
+            "WebJam will not change Jamulus or claim Webex is muted."
+        )
+        self._mute_btn.clicked.connect(self.mute_in_webex_requested.emit)
+        self._mute_btn.setEnabled(False)
+
+        self._fallback_btn = QPushButton("Join / Open")
+        self._fallback_btn.setObjectName("GhostButton")
+        self._fallback_btn.setAccessibleName("Join or open the Webex meeting")
+        self._fallback_btn.setAccessibleDescription(
+            "Explicitly open the configured meeting in Webex or a browser."
+        )
+        self._fallback_btn.setToolTip(
+            "Open the configured meeting link once. Finish joining in Webex."
+        )
+        self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
+        self._fallback_btn.setEnabled(False)
+
+        self._change_link_btn = QPushButton("Add Link")
+        self._change_link_btn.setObjectName("GhostButton")
+        self._change_link_btn.setAccessibleName("Add Webex meeting link")
+        self._change_link_btn.setAccessibleDescription(
+            "Open WebJam Settings to add a Webex Meeting or Personal Room link."
+        )
+        self._change_link_btn.setToolTip(
+            "Open Settings to add or change the Webex meeting link."
+        )
+        self._change_link_btn.clicked.connect(self.change_link_requested.emit)
 
         self._install_btn = QPushButton("Get Webex")
         self._install_btn.setObjectName("GhostButton")
@@ -89,6 +146,18 @@ class WebexEmbed(QFrame):
         )
         self._install_btn.setVisible(False)
         self._install_btn.clicked.connect(self.install_webex_requested.emit)
+
+        self._recheck_btn = QPushButton("Check Again")
+        self._recheck_btn.setObjectName("GhostButton")
+        self._recheck_btn.setAccessibleName("Check for the Webex app again")
+        self._recheck_btn.setAccessibleDescription(
+            "Recheck Webex after installing, updating, or repairing it."
+        )
+        self._recheck_btn.setToolTip(
+            "Check again after you finish installing or repairing Webex."
+        )
+        self._recheck_btn.setVisible(False)
+        self._recheck_btn.clicked.connect(self.recheck_webex_requested.emit)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -102,11 +171,15 @@ class WebexEmbed(QFrame):
         text_column.addWidget(self._mode_label)
         text_column.addWidget(self._status_label)
 
-        actions = QHBoxLayout()
+        actions = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
-        actions.addWidget(self._install_btn)
-        actions.addWidget(self._fallback_btn)
+        actions.addWidget(self._bring_forward_btn, 0, 0)
+        actions.addWidget(self._mute_btn, 0, 1)
+        actions.addWidget(self._fallback_btn, 1, 0)
+        actions.addWidget(self._change_link_btn, 1, 1)
+        actions.addWidget(self._install_btn, 2, 0)
+        actions.addWidget(self._recheck_btn, 2, 1)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
@@ -119,14 +192,51 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
 
     def fallback_button(self) -> QPushButton:
-        """Return the external Webex launch button."""
+        """Return the explicit external meeting-link handoff button."""
 
         return self._fallback_btn
+
+    def bring_forward_button(self) -> QPushButton:
+        """Return the installed-app activation action."""
+
+        return self._bring_forward_btn
+
+    def mute_button(self) -> QPushButton:
+        """Return the truthful external mute-guidance action."""
+
+        return self._mute_btn
+
+    def change_link_button(self) -> QPushButton:
+        """Return the Webex-link Settings action."""
+
+        return self._change_link_btn
 
     def install_button(self) -> QPushButton:
         """Return the normally hidden official-installer action."""
 
         return self._install_btn
+
+    def recheck_button(self) -> QPushButton:
+        """Return the explicit post-install native-app rescan action."""
+
+        return self._recheck_btn
+
+    def set_app_checking(self) -> None:
+        """Show a bounded native-app rescan without changing meeting truth."""
+
+        text = "Checking for the Webex app…"
+        self._app_status_label.setText(text)
+        self._app_status_label.setAccessibleDescription(text)
+        self._app_status_label.setVisible(True)
+        self._recheck_btn.setVisible(True)
+        self._native_app_available = False
+        self._set_native_busy(True)
+        self._announce_description_change(self._app_status_label)
+
+    def set_native_action_busy(self, busy: bool) -> None:
+        """Disable duplicate app activations while publisher checks run."""
+
+        self._set_native_busy(bool(busy))
 
     def set_app_status(
         self,
@@ -134,10 +244,12 @@ class WebexEmbed(QFrame):
         *,
         version: str = "",
         publisher_verified: bool = False,
+        reason_code: str = "",
     ) -> None:
         """Show native-app availability without changing meeting-launch truth."""
 
         value = str(getattr(status, "value", status) or "").strip().lower()
+        clean_reason = str(reason_code or "").strip().lower()
         clean_version = str(version or "").strip()
         if (
             len(clean_version) > 32
@@ -159,8 +271,9 @@ class WebexEmbed(QFrame):
                 + (f" • {clean_version}" if clean_version else ""),
                 (
                     "The Webex app was found, but publisher verification is "
-                    "not available on this platform. Opening a meeting still "
-                    "happens externally."
+                    "not available on this platform, so WebJam will not "
+                    "activate it directly. Use Join / Open for the configured "
+                    "meeting."
                 ),
             )
         )
@@ -206,6 +319,16 @@ class WebexEmbed(QFrame):
             ]
         except KeyError as exc:
             raise ValueError("unsupported Webex app status") from exc
+        retryable_detection_failure = (
+            value == "unsupported" and clean_reason == "detection-failed"
+        )
+        if retryable_detection_failure:
+            text = "Webex app check failed"
+            accessible_description = (
+                "The native Webex app check did not finish. Choose Check "
+                "Again; the configured meeting can still open in a supported "
+                "browser."
+            )
         self._app_status_label.setText(text)
         self._app_status_label.setAccessibleDescription(accessible_description)
         self._app_status_label.setToolTip(accessible_description)
@@ -215,7 +338,41 @@ class WebexEmbed(QFrame):
         self._install_btn.setAccessibleDescription(accessible_description)
         self._install_btn.setToolTip(accessible_description)
         self._install_btn.setVisible(show_install)
+        self._recheck_btn.setVisible(
+            value in {"not-installed", "invalid"}
+            or retryable_detection_failure
+        )
+        self._native_app_available = bool(
+            value == "installed" and publisher_verified
+        )
+        self._native_action_busy = False
+        self._sync_native_actions()
+        self._restore_native_focus()
         self._announce_description_change(self._app_status_label)
+
+    def set_meeting_configured(self, configured: bool) -> None:
+        """Render whether Join/Open has a trusted saved link to hand off."""
+
+        self._meeting_configured = bool(configured)
+        self._change_link_btn.setText(
+            "Change Link" if self._meeting_configured else "Add Link"
+        )
+        self._change_link_btn.setAccessibleName(
+            (
+                "Change Webex meeting link"
+                if self._meeting_configured
+                else "Add Webex meeting link"
+            )
+        )
+        self._change_link_btn.setAccessibleDescription(
+            "Open WebJam Settings to "
+            + (
+                "change the saved Webex Meeting or Personal Room link."
+                if self._meeting_configured
+                else "add a Webex Meeting or Personal Room link."
+            )
+        )
+        self._sync_meeting_action()
 
     def set_launch_status(self, status: str) -> None:
         """Show external-launch truth without implying meeting membership."""
@@ -235,12 +392,25 @@ class WebexEmbed(QFrame):
             if status == "Opening…"
             else "Open Again"
             if status == "Opened externally"
-            else "Open Webex"
+            else "Join / Open"
         )
         self._fallback_btn.setText(button_text)
-        self._fallback_btn.setEnabled(status != "Opening…")
+        self._launch_busy = status == "Opening…"
+        self._sync_meeting_action()
         self._fallback_btn.setAccessibleName(button_text)
         self._fallback_btn.setAccessibleDescription(description)
+
+    def focus_primary_action(self) -> None:
+        """Place keyboard focus on the safest useful Conversation action."""
+
+        target = (
+            self._bring_forward_btn
+            if self._bring_forward_btn.isEnabled()
+            else self._fallback_btn
+            if self._fallback_btn.isEnabled()
+            else self._change_link_btn
+        )
+        target.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def set_audio_mode(self, mode: str) -> None:
         """Render concise role guidance for the selected Webex audio mode."""
@@ -269,6 +439,48 @@ class WebexEmbed(QFrame):
 
     def shutdown(self) -> None:
         """Compatibility no-op; this card owns no browser or media process."""
+
+    def _sync_meeting_action(self) -> None:
+        self._fallback_btn.setEnabled(
+            self._meeting_configured and not self._launch_busy
+        )
+
+    def _sync_native_actions(self) -> None:
+        enabled = self._native_app_available and not self._native_action_busy
+        self._bring_forward_btn.setEnabled(enabled)
+        self._mute_btn.setEnabled(enabled)
+        self._recheck_btn.setEnabled(not self._native_action_busy)
+        self._bring_forward_btn.setText(
+            "Checking…" if self._native_action_busy else "Bring Forward"
+        )
+
+    def _set_native_busy(self, busy: bool) -> None:
+        busy = bool(busy)
+        if busy and not self._native_action_busy:
+            focused = QApplication.focusWidget()
+            if focused in {
+                self._bring_forward_btn,
+                self._mute_btn,
+                self._recheck_btn,
+            }:
+                self._native_focus_restore = focused
+                self._app_status_label.setFocus(
+                    Qt.FocusReason.OtherFocusReason
+                )
+        self._native_action_busy = busy
+        self._sync_native_actions()
+        if not busy:
+            self._restore_native_focus()
+
+    def _restore_native_focus(self) -> None:
+        target = self._native_focus_restore
+        self._native_focus_restore = None
+        if (
+            target is not None
+            and target.isVisible()
+            and target.isEnabled()
+        ):
+            target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _render_audio_guidance(self) -> None:
         titles = {

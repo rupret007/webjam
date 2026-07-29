@@ -4,7 +4,7 @@ WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source candidate: **v0.22.1 unsigned private test candidate**. Its
+Current source candidate: **v0.22.2 unsigned private test candidate**. Its
 four-platform workflow covers Windows, Ubuntu 22.04, Intel Mac, and
 Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc signed
 and not notarized.
@@ -48,16 +48,24 @@ does not start, stop, configure, or feed Jamulus.
 ## If you need help
 
 - **Sound needs attention:** choose **More → Audio Settings in Jamulus**.
-- **Talking/video:** choose **More → Webex / Conversation**. Jamulus still
-  carries music; WebJam never says that Webex joined or muted itself. If the
-  native Webex app is missing, WebJam can open Cisco's official installer
-  page after you confirm; it does not save a Webex password or install silently.
+- **Talking/video:** choose the direct **Webex** action. It only shows
+  Conversation. Use **Bring Forward** to focus the native app without
+  rejoining, or **Join / Open** for the one explicit meeting-link handoff.
+  **Mute in Webex** focuses Webex so you can use its own Mute control; WebJam
+  never claims it changed Webex or Jamulus. If the native app is missing,
+  WebJam can open Cisco's official installer page after you confirm; it does
+  not save a Webex password or install silently.
 - **Something failed:** use **More → Band Check / Verify Sound** and the
   support/diagnostics action. The report includes bounded Jamulus updater and
   Webex app state without local paths, meeting links, names, or credentials.
 - **Recording:** the host chooses **Record**. The first time, choose shared
   recording only or also keep this Mac’s separate Local Originals.
-- **Review a take:** choose **More → Studio**. Choose a playback output only
+- **Reference Track:** during a hosted session choose **Reference Track**. You can load
+  and inspect WAV/WAVE, AIFF, or FLAC even when the playback route is not
+  ready; MP3 is shown only when this package proves decoder support. **Recheck
+  Route** starts no playback, and Play remains locked until isolation is
+  proven.
+- **Review a take:** choose the direct **Studio** action. Choose a playback output only
   while reviewing a take. Move or trim regions on the Arrange timeline, use
   Undo/Redo, or add a safely matched repeated recording as a take lane and
   Option/Alt-drag the parts you want in the comp.
@@ -77,4 +85,4 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.22.1.
+gates are **NOT RUN** for v0.22.2.

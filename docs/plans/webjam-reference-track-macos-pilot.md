@@ -4,7 +4,7 @@ This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
-The v0.22.1 production factory intentionally keeps playback locked. Run this
+The v0.22.2 production factory intentionally keeps playback locked. Run this
 procedure only from a separately identified, instrumented source-pilot build
 whose internal test wiring explicitly constructs
 `MacOSBlackHoleReferenceBackend(physical_route_certified=True)`. Record that
@@ -49,28 +49,32 @@ Webex link, invitation, token, password, or RPC secret in evidence.
 
 For every step, record PASS, FAIL, or NOT RUN plus a timestamp and observation.
 
-1. Open **More → Reference Track…** as host. Confirm a guest cannot open the
-   panel.
-2. Verify the panel names BlackHole readiness without exposing a filesystem
-   path. Load WAV, AIFF, FLAC, and MP3 samples one at a time; reject malformed
-   and unsupported files safely.
-3. Press Play. Require exactly one separately named `WebJam Track` participant
+1. Open the direct **Reference Track** action as host, then confirm **More → Reference
+   Track…** opens the same panel and a guest cannot open either route.
+2. Verify the panel keeps source and route states separate and names BlackHole
+   readiness without exposing a filesystem path. With the production route
+   still locked, load and inspect WAV/WAVE, AIFF, and FLAC one at a time.
+   Exercise MP3 only when the packaged decoder advertises it. Reject malformed,
+   renamed, symlinked, unsupported-channel, and oversized files safely.
+3. Choose **Recheck Route**. Require a bounded status refresh with no playback,
+   backing-client launch, or source loss.
+4. Press Play. Require exactly one separately named `WebJam Track` participant
    on both mixers and one separately owned backing client. Record the primary
    Jamulus PID and the input/output device names WebJam reports as live proof;
    do not substitute saved profile text.
-4. On both endpoints, listen through Jamulus. Require the same clean musical
+5. On both endpoints, listen through Jamulus. Require the same clean musical
    passage, no physical/direct-monitor duplicate, and no feedback.
-5. Move the track participant's fader independently on each endpoint. Require
+6. Move the track participant's fader independently on each endpoint. Require
    only that musician's monitor level to change.
-6. Mute the track on one endpoint. Require the other endpoint to remain
+7. Mute the track on one endpoint. Require the other endpoint to remain
    audible.
-7. Exercise pause, restart, paused seek, loop in/out, source trim, count-in,
+8. Exercise pause, restart, paused seek, loop in/out, source trim, count-in,
    and rapid but valid controls. Require one bounded transition per command,
    no hang, and no duplicate client.
-8. Start server recording before playback, during playback, and during a
+9. Start server recording before playback, during playback, and during a
    paused interval. Require one aligned Reference Track stem and no corruption
    of musician stems. Verify silence where the track was paused.
-9. Confirm the host never hears a second local copy outside the primary
+10. Confirm the host never hears a second local copy outside the primary
    Jamulus mix. Muting `WebJam Track` in the host's primary mixer must make it
    inaudible to the host.
 
