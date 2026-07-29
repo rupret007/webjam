@@ -30,8 +30,10 @@ def test_latest_promotion_is_manual_serialized_and_permission_bounded() -> None:
 
     assert "  frozen-package-smoke:" in JOBS
     assert "    permissions:\n      contents: read" in SMOKE_JOB
+    assert "      actions: read" in SMOKE_JOB
     assert "    needs: frozen-package-smoke" in PUBLISH_JOB
     assert "    permissions:\n      contents: write" in PUBLISH_JOB
+    assert "      actions: read" not in PUBLISH_JOB
     assert "environment:\n      name: release-latest" not in SMOKE_JOB
     assert "environment:\n      name: release-latest" in PUBLISH_JOB
     assert WORKFLOW.count("persist-credentials: false") == 2
@@ -88,30 +90,61 @@ def test_latest_promotion_pins_blocked_v0220_tag_object_and_commit() -> None:
         assert "git ls-remote --refs origin refs/tags/v0.22.0" in job
 
 
-def test_read_only_job_binds_one_unpublished_draft_and_linux_asset() -> None:
-    assert "Bind one unpublished draft and its Linux asset" in SMOKE_JOB
-    assert "--paginate" in SMOKE_JOB
-    assert "--slurp" in SMOKE_JOB
-    assert "repos/$GITHUB_REPOSITORY/releases?per_page=100" in SMOKE_JOB
-    assert "[ .[][] | select(.tag_name == $tag) ] as $matches" in SMOKE_JOB
-    assert "($matches | length) != 1" in SMOKE_JOB
-    assert "$matches[0].draft != true" in SMOKE_JOB
-    assert "$matches[0].prerelease != false" in SMOKE_JOB
-    assert "expected exactly one Linux package asset" in SMOKE_JOB
-    assert '[[ "$linux_asset_digest" =~ ^sha256:[0-9a-f]{64}$ ]]' in SMOKE_JOB
+def test_read_only_job_binds_exact_successful_tag_build_and_artifact() -> None:
+    assert "Bind the exact successful tag build and Linux artifact" in SMOKE_JOB
+    assert "EXPECTED_TAG_CI_RUN_ID: 30423344767" in WORKFLOW_HEADER
+    assert "EXPECTED_TAG_CI_WORKFLOW_ID: 235479110" in WORKFLOW_HEADER
+    assert "EXPECTED_LINUX_ARTIFACT_ID: 8712817155" in WORKFLOW_HEADER
+    assert (
+        "EXPECTED_LINUX_ARTIFACT_DIGEST: "
+        "sha256:2f11e188931aaeec45348737c1d37bd396992ba69854b92fc39a860c5e2d5ebf"
+        in WORKFLOW_HEADER
+    )
+    assert (
+        "EXPECTED_LINUX_PACKAGE_SHA256: "
+        "8cdfbeaee7fec89b0db71a0fb3b73c2449f66fbb934c35d8cebd67785b25a57f"
+        in WORKFLOW_HEADER
+    )
+    assert (
+        '"repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_TAG_CI_RUN_ID"'
+        in SMOKE_JOB
+    )
+    assert '.path == ".github/workflows/ci.yml"' in SMOKE_JOB
+    assert '.event == "push"' in SMOKE_JOB
+    assert ".head_branch == $tag" in SMOKE_JOB
+    assert ".head_sha == $commit" in SMOKE_JOB
+    assert '.conclusion == "success"' in SMOKE_JOB
+    assert ".run_attempt == 1" in SMOKE_JOB
+    assert (
+        '"repos/$GITHUB_REPOSITORY/actions/artifacts/'
+        '$EXPECTED_LINUX_ARTIFACT_ID"'
+    ) in SMOKE_JOB
+    assert '.name == "webjam-linux-x64"' in SMOKE_JOB
+    assert ".expired == false" in SMOKE_JOB
+    assert ".digest == $digest" in SMOKE_JOB
+    assert "$matches[0].draft != true" not in SMOKE_JOB
     assert "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" not in WORKFLOW
 
 
-def test_read_only_job_executes_only_the_digest_bound_linux_asset() -> None:
-    assert "Download and bind only the exact Linux package" in SMOKE_JOB
+def test_read_only_job_executes_only_digest_bound_tag_build_package() -> None:
+    assert "Download and bind only the exact tag-build Linux package" in SMOKE_JOB
     assert (
-        '"repos/$GITHUB_REPOSITORY/releases/assets/$LINUX_ASSET_ID"'
+        '"repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"'
         in SMOKE_JOB
     )
     assert (
-        '[[ "sha256:$linux_package_sha256" == "$EXPECTED_LINUX_DIGEST" ]]'
+        '[[ "sha256:$artifact_sha256" == "$EXPECTED_ARTIFACT_DIGEST" ]]'
         in SMOKE_JOB
     )
+    assert (
+        '[[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]'
+        in SMOKE_JOB
+    )
+    assert 'expected_name = "WebJam-linux-x64.zip"' in SMOKE_JOB
+    assert "len(members) != 1" in SMOKE_JOB
+    assert "stat.S_ISLNK(mode)" in SMOKE_JOB
+    assert "member.file_size != expected_size" in SMOKE_JOB
+    assert "target.open(\"xb\")" in SMOKE_JOB
     assert "Require live catalog proof from exact frozen Linux package" in SMOKE_JOB
     assert "tests/support/run_frozen_component_catalog_smoke.py" in SMOKE_JOB
     assert (
@@ -200,6 +233,16 @@ def test_write_job_revalidates_read_only_proof_before_publication() -> None:
         '[[ "$linux_package_sha256" == "$EXPECTED_LINUX_PACKAGE_SHA256" ]]'
         in PUBLISH_JOB
     )
+    assert "$matches[0].draft != true" in PUBLISH_JOB
+    assert "$matches[0].prerelease != false" in PUBLISH_JOB
+    assert (
+        '"sha256:$EXPECTED_LINUX_PACKAGE_SHA256"' in PUBLISH_JOB
+    )
+    assert 'echo "release_id=$release_id" >> "$GITHUB_OUTPUT"' in PUBLISH_JOB
+    assert PUBLISH_JOB.count(
+        "EXPECTED_RELEASE_ID: ${{ steps.draft.outputs.release_id }}"
+    ) == 2
+    assert "steps.draft.outputs.release_id" not in SMOKE_JOB
     assert (
         '"$catalog_envelope_sha256" == \\\n'
         '            "$EXPECTED_CATALOG_ENVELOPE_SHA256"'
