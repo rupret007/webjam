@@ -37,8 +37,10 @@ def settings(tmp_path):
 
 
 def make_dialog(settings, *, client="/bundle/Jamulus", server="/bundle/Server"):
+    # Resolve the lazy bridge imports for the real host before changing the
+    # process-wide platform value. Otherwise a Linux test process can make
+    # urllib request macOS-only modules such as _scproxy during patch setup.
     with (
-        patch.object(sys, "platform", "darwin"),
         patch(
             "services.bridge_service._bundled_jamulus_candidate",
             return_value=client,
@@ -48,6 +50,7 @@ def make_dialog(settings, *, client="/bundle/Jamulus", server="/bundle/Server"):
             return_value=server,
         ),
         patch.object(Path, "is_file", return_value=False),
+        patch.object(sys, "platform", "darwin"),
     ):
         return FirstRunSetupDialog(settings)
 
@@ -129,12 +132,12 @@ def test_join_shows_single_server_address(qapp, settings):
 
 def test_host_is_unavailable_off_macos(qapp, settings):
     with (
-        patch.object(sys, "platform", "win32"),
         patch(
             "services.bridge_service._bundled_jamulus_candidate",
             return_value="/bundle/Jamulus",
         ),
         patch.object(Path, "is_file", return_value=False),
+        patch.object(sys, "platform", "win32"),
     ):
         dialog = FirstRunSetupDialog(settings)
     assert not dialog._host_card.isEnabled()
