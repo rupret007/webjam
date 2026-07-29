@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import ssl
+import subprocess
+import sys
 import urllib.request
 
 import certifi
@@ -638,6 +640,25 @@ def test_https_transport_uses_packaged_ca_bytes_and_ignores_environment(
         "environment_ca_overrides": "ignored",
         "redirect_policy": "explicit-allowlist",
     }
+
+
+def test_offline_component_helpers_import_without_site_packages():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "from core.component_download import verify_downloaded_file",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "PYTHONNOUSERSITE": "1"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 @pytest.mark.parametrize(

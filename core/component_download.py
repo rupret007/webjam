@@ -15,8 +15,6 @@ from typing import Callable, Mapping, Protocol
 import urllib.error
 import urllib.request
 
-import certifi
-
 from core.component_hosts import (
     ComponentUrlError,
     HttpsHostPolicy,
@@ -149,6 +147,11 @@ class UrllibHttpsTransport:
             if self._opener is not None:
                 return self._opener
             try:
+                # Keep hashing, package inspection, and other offline helpers
+                # importable in minimal release jobs. Certifi is a direct,
+                # frozen dependency, but only the HTTPS boundary needs it.
+                import certifi
+
                 ca_data = certifi.contents()
                 if not isinstance(ca_data, str):
                     raise TypeError("certificate bundle did not return text")
@@ -173,7 +176,14 @@ class UrllibHttpsTransport:
                     _NoRedirect(),
                     urllib.request.HTTPSHandler(context=context),
                 )
-            except (OSError, UnicodeError, TypeError, ValueError, ssl.SSLError) as exc:
+            except (
+                ImportError,
+                OSError,
+                UnicodeError,
+                TypeError,
+                ValueError,
+                ssl.SSLError,
+            ) as exc:
                 self._trust_status = "unavailable"
                 raise ComponentTlsTrustError(
                     "WebJam's packaged TLS trust data is unavailable"

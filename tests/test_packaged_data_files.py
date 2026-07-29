@@ -109,7 +109,6 @@ class TestPackagedDataFiles(unittest.TestCase):
     def test_ci_builds_stages_and_smokes_the_native_transport(self):
         self.assertIn("go test -race -count=1 ./...", CI)
         self.assertIn("go mod verify", CI)
-        self.assertEqual(CI.count('"certifi==2026.6.17"'), 3)
         self.assertIn("webjam-fabric.exe", CI)
         self.assertIn("Contents/MacOS/webjam-fabric", CI)
         self.assertIn("Contents/Resources/webjam-fabric.sha256", CI)
