@@ -1,5 +1,8 @@
 # Reference Track macOS physical pilot
 
+> **Unreleased after v0.22.2:** callback and source-load details below describe
+> source changes not present in the immutable published v0.22.2 packages.
+
 This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
@@ -40,10 +43,14 @@ Webex link, invitation, token, password, or RPC secret in evidence.
 4. Keep Webex closed for the baseline. If Webex is tested later, its
    microphone must remain muted while musicians play.
 5. Confirm no old `WebJam Track` participant, backing Jamulus process, client
-   RPC listener, or stale virtual connection exists before starting.
+   RPC listener, stale virtual connection, or session-unique Reference Track
+   profile/secret/quarantine entry exists before starting. Inventory names by
+   bounded pattern; do not assume the old fixed filenames.
 6. Confirm no unrelated process has BlackHole selected for input or output.
-   Keep a dated process/device inventory as physical evidence; the source pilot
-   does not yet establish system-wide exclusive ownership itself.
+   Keep a dated process/device inventory as physical evidence. The source pilot
+   coordinates every WebJam 16ch/64ch owner, including an orphaned backing
+   child, but does not establish system-wide ownership against unrelated audio
+   applications.
 
 ## Core acceptance
 
@@ -60,8 +67,9 @@ For every step, record PASS, FAIL, or NOT RUN plus a timestamp and observation.
    backing-client launch, or source loss.
 4. Press Play. Require exactly one separately named `WebJam Track` participant
    on both mixers and one separately owned backing client. Record the primary
-   Jamulus PID and the input/output device names WebJam reports as live proof;
-   do not substitute saved profile text.
+   and backing Jamulus PIDs and the input/output device identity WebJam reports
+   for each live process; the backing process must prove the exact selected
+   BlackHole device in both directions. Do not substitute saved profile text.
 5. On both endpoints, listen through Jamulus. Require the same clean musical
    passage, no physical/direct-monitor duplicate, and no feedback.
 6. Move the track participant's fader independently on each endpoint. Require
@@ -99,16 +107,20 @@ For every step, record PASS, FAIL, or NOT RUN plus a timestamp and observation.
 7. End the jam while playing. Require the stream and backing client to stop
    before the primary client/server; recording finalization must remain safe.
 8. Quit WebJam while ready, playing, paused, routing, and failed. Require no
-   owned backing process, RPC port, secret, virtual connection, or decoder
-   worker after the bounded shutdown window.
+   owned backing process, RPC port, secret, session-unique profile, quarantine
+   entry, virtual connection, lifecycle claim, or decoder worker after the
+   bounded shutdown window. Force the parent pilot process to exit while its
+   backing Jamulus child is alive: a second pilot must refuse ownership until
+   the orphan child exits, then acquire it normally.
 9. Repeat load/play/pause/stop for at least 25 cycles, then run a 60-minute
    rehearsal. Record CPU, memory trend, underruns, route stability, and process
    residue.
 10. Instrument callback duration and allocation/lock behavior under CPU,
-    storage, UI, and network load. The present Python callback uses ordinary
-    locks and per-call NumPy allocations, so it is a promotion blocker until
-    replaced by a preallocated non-blocking handoff or proven equivalent at the
-    native callback boundary.
+    storage, UI, and network load. The source pilot now uses a preallocated SPSC
+    handoff; its callback performs no mutex acquisition, wait, source I/O, or new
+    audio-buffer allocation and pulls into caller-provided output. Still require
+    physical allocation and callback-timing evidence at the native boundary;
+    source review and synthetic tests alone are not promotion evidence.
 
 ## Webex coexistence check
 
@@ -124,8 +136,9 @@ The macOS backend remains production-locked until every core and cleanup gate
 passes on two real Jamulus endpoints against the exact controlled-pilot hash,
 the reported CoreAudio switch case is independently closed, and BlackHole
 exclusive ownership is either proven in code or enforced by a reviewed setup.
-The callback must also have a reviewed non-blocking, preallocated real-time
-handoff; a clean synthetic run alone is insufficient.
+The callback's reviewed non-blocking, preallocated handoff must also pass the
+physical allocation and timing gate; a clean synthetic run alone is
+insufficient.
 Windows and Linux audibility remain **NOT RUN** until their own backends repeat
 the same physical evidence. A failed isolation, feedback, wrong participant,
 uncontrolled return, primary-client interruption, recording corruption, or

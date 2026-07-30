@@ -1,5 +1,8 @@
 # WebJam architecture — v0.22.2
 
+> **Unreleased after v0.22.2:** this maintained architecture document includes
+> source changes not present in the immutable published v0.22.2 assets.
+
 ## Product boundary
 
 WebJam is an orchestration layer around unmodified Jamulus and optional Webex.
@@ -13,7 +16,7 @@ The boundary is deliberate:
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
 | `core/jamulus_compatibility.py`, `core/component_*` | Exact approved Jamulus identities, signed-catalog verification, bounded downloads, per-user component storage, atomic pointers, and rollback |
 | `services/jamulus_component_update.py`, `services/jamulus_component_platform.py` | Async update orchestration, idle proof, explicit OS approval, macOS upstream trust verification, and path-free presentation/diagnostics |
-| `services/webex_app.py` | Native Webex detection and explicit official Cisco installer-browser handoff; no credentials, redistribution, or silent installation |
+| `services/webex_app.py` | macOS running-process discovery, exact-PID publisher re-verification, and typed activation request; cross-platform native-app detection; and explicit official Cisco installer-browser handoff; no app launch, meeting URL on activation, credentials, redistribution, or silent installation |
 | `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
 | `services/pocket_stage_gateway.py` / `services/pocket_stage_tls.py` | Explicit private-Wi-Fi WSS listener and ephemeral pinned TLS identity, separate from the Local API |
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
@@ -93,19 +96,44 @@ identity, camera, microphone, speakers, mute, and meeting state. Native app
 detection is diagnostic convenience; an explicit install action opens only an
 approved Cisco HTTPS URL and does not download or execute a package itself.
 
-The direct Live **Webex** action is navigation only. It reveals the
-Conversation panel without opening the link. **Bring Forward** activates the
-verified native app, **Join / Open** performs the one explicit URL handoff, and
-**Mute in Webex** can only focus Webex for its own Mute control because this
-external-app integration cannot verify mute state. None of those actions alter
-Jamulus. The direct **Studio** action reuses the existing session/offline Studio
-route rather than creating another editor lifecycle.
+The direct Live **Webex Controls** action and **More → Webex Controls** are
+navigation only. They reveal the Conversation panel without opening the link.
+On macOS, **Show Webex App** requires Webex to be running. It dynamically finds
+the exact Cisco process, re-verifies that PID, and asks macOS to activate that
+same application. It does not launch Webex, pass a meeting URL, open a browser,
+or prove that a minimized window was restored. If Webex is stopped, the user
+opens it manually or chooses **Join / Open Meeting**, which performs the one
+explicit URL handoff. **Mute in Webex** can only show the running verified app
+for its own Mute control because this external-app integration cannot verify
+mute state. Windows and Linux currently detect only an executable location,
+not a verified publisher identity, so native focus and focus-based mute
+guidance fail closed there. None of those actions alter Jamulus. The direct
+**Studio** action reuses the existing session/offline Studio route rather than
+creating another editor lifecycle.
+
+The controller retains at most 12 allowlisted Webex action/result events for
+diagnosis: Conversation navigation, show-app or mute guidance, and meeting
+handoff. The Support Bundle sanitizer revalidates those finite values and
+optional reason codes; no URL, meeting ID, account, participant, app path,
+credential, or raw exception crosses the boundary.
 
 Reference Track also separates source and route authority. A host can load,
-decode, and inspect a bounded source while route capability is unavailable.
-Only Play requires fresh isolation evidence. The support projection exports
-allowlisted source format/rate/channel/duration and finite route state, never a
-source name or path.
+decode the first bounded block, and inspect a source while route capability is
+unavailable. Production refuses route capability before device scanning, so
+BlackHole setup and **Recheck Route** cannot unlock a downloaded v0.22.2
+package. The support projection exports allowlisted source
+format/rate/channel/duration and finite route state, never a source name or
+path.
+
+The retained controlled macOS pilot uses a separately owned Jamulus process,
+session-unique descriptor-pinned profile and RPC-secret files, and one global
+WebJam lifecycle claim shared across eligible BlackHole devices. A kernel
+socket inherited by the child preserves that claim if the parent exits.
+Playback authority requires fresh PID-bound CoreAudio proof for both primary
+and backing clients. Cleanup retains every owner and reports a retryable
+`cleanup_pending` state until the process, RPC, private files, and route lease
+are all proved retired. None of these source mechanisms unlock production
+before the physical pilot.
 
 A future Webex Embedded App is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a
@@ -160,7 +188,7 @@ participants into session-local slots. Neither surface receives notes, titles,
 musician names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.18. A future model-assisted
+No model SDK or cloud assistant is part of v0.22.2. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
@@ -169,10 +197,10 @@ offline path must remain available.
 ## Pocket Stage developer-preview boundary
 
 Pocket Stage is an owner-device iPhone companion vertical slice. It is activated
-by **More -> Use iPhone** and binds a dedicated WSS gateway to one current
-private IPv4 interface and a random port. The normal Host/Join path does not
-start it. The existing loopback, read-only Local Companion API is neither
-modified nor exposed to the LAN.
+by **More → Use iPhone as Pocket Stage…** and binds a dedicated WSS gateway to
+one current private IPv4 interface and a random port. The normal Host/Join path
+does not start it. The existing loopback, read-only Local Companion API is
+neither modified nor exposed to the LAN.
 
 ```text
 generated native SwiftUI app
@@ -249,8 +277,11 @@ shared guidance contract and into `SessionHud`, the stage, Canvas, and Studio:
 Jamulus setup is not a WebJam approval gate: WebJam watches for fresh,
 authenticated connection proof and moves into the session automatically. It
 does not call that proof audibility; musicians play a note and verify each
-other, with Band Check available if help is needed. Webex is optional under
-**More** and never delays the session or invite.
+other, with Band Check available if help is needed. The direct **Webex
+Controls** action and its **More → Webex Controls** alias reveal the same optional
+Conversation panel without opening a meeting, and Webex never delays the
+session or invite. Direct **Reference Track** and **Studio** actions likewise
+reuse their existing More-menu destinations.
 
 The persisted attempt record holds only a digest ID, generation, role, safe
 server/client phases, profile fingerprint, connection state, compatibility

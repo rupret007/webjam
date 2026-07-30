@@ -13,7 +13,6 @@ isolation can be proved there.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 import math
@@ -25,6 +24,7 @@ from typing import Callable, Protocol
 import numpy as np
 
 from core.project_audio import (
+    RealtimeBlockPool,
     ProjectAudioDecoder,
     ProjectAudioError,
     project_audio_mp3_available,
@@ -41,6 +41,7 @@ REFERENCE_MAX_TRIM_DB = 12.0
 REFERENCE_MAX_COUNT_IN_BEATS = 16
 REFERENCE_MIN_BPM = 20.0
 REFERENCE_MAX_BPM = 400.0
+REFERENCE_MAX_DIAGNOSTIC_COUNTER = (1 << 63) - 1
 _BASE_SUPPORTED_EXTENSIONS = (
     ".wav",
     ".wave",
@@ -53,6 +54,16 @@ _ROUTE_WARNING = (
     "session's normal buffering, jitter handling, and network latency. "
     "A server recording captures it as a separate stem."
 )
+
+
+def _bounded_diagnostic_counter(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return min(REFERENCE_MAX_DIAGNOSTIC_COUNTER, max(0, number))
 
 
 def reference_track_supported_extensions() -> tuple[str, ...]:
@@ -131,6 +142,7 @@ class ReferenceTrackCapability:
             "unavailable",
             "audience_bridge_conflict",
             "physical_certification_required",
+            "cleanup_pending",
             "blackhole_unavailable",
             "windows_backend_unavailable",
             "linux_backend_unavailable",
@@ -352,7 +364,7 @@ class ReferenceAudioBridgeSession(Protocol):
     @property
     def route_name(self) -> str: ...
 
-    def start(self, pull: Callable[[int], np.ndarray]) -> None: ...
+    def start(self, pull_into: Callable[[np.ndarray], int]) -> None: ...
 
     def health_error(self) -> str: ...
 
@@ -368,6 +380,8 @@ class ReferenceAudioBridgeBackend(Protocol):
         self, context: ReferenceTrackLaunchContext
     ) -> ReferenceAudioBridgeSession: ...
 
+    def retry_cleanup(self) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ReferenceTrackSourceInfo:
@@ -377,6 +391,7 @@ class ReferenceTrackSourceInfo:
     channels: int
     output_frames: int
     container: str
+    initial_decode_frames: int
 
 
 class ReferenceTrackDecoder:
@@ -418,6 +433,25 @@ class ReferenceTrackDecoder:
         source_rate = int(probe.source_sample_rate)
         channels = int(probe.channels)
         output_frames = int(probe.output_frames)
+        initial_decode_frames = min(REFERENCE_BLOCK_FRAMES, output_frames)
+        initial_audio = np.empty((initial_decode_frames, 2), dtype=np.float32)
+        try:
+            decoded_frames = decoder.read_into(0, initial_audio)
+        except ProjectAudioError:
+            decoder.close()
+            initial_audio.fill(0.0)
+            raise ReferenceTrackError(
+                "WebJam couldn't safely decode the beginning of that song. "
+                "Check that the local audio file is complete and try again."
+            ) from None
+        if decoded_frames != initial_decode_frames:
+            decoder.close()
+            initial_audio.fill(0.0)
+            raise ReferenceTrackError(
+                "WebJam couldn't safely decode the beginning of that song. "
+                "Check that the local audio file is complete and try again."
+            )
+        initial_audio.fill(0.0)
 
         safe_name = candidate.name.strip()
         if (
@@ -438,6 +472,7 @@ class ReferenceTrackDecoder:
             channels=channels,
             output_frames=output_frames,
             container=str(probe.container or "").upper(),
+            initial_decode_frames=initial_decode_frames,
         )
 
     def __repr__(self) -> str:
@@ -453,27 +488,41 @@ class ReferenceTrackDecoder:
         return self._output_frames
 
     def read_48k(self, start_frame: int, frames: int) -> np.ndarray:
-        """Decode an exact bounded output window without retaining the file."""
+        """Allocate and decode one bounded worker-thread output window."""
 
-        start = int(start_frame)
         requested = int(frames)
-        if start < 0:
-            raise ValueError("start_frame must be non-negative")
         if not 0 <= requested <= REFERENCE_MAX_DECODE_FRAMES:
             raise ValueError("frames exceeds the bounded decoder limit")
         output = np.zeros((requested, 2), dtype=np.float32)
-        if requested == 0 or start >= self._output_frames:
-            return output
+        self.read_48k_into(start_frame, output)
+        return output
+
+    def read_48k_into(self, start_frame: int, output: np.ndarray) -> int:
+        """Decode into caller-owned storage on the producer thread."""
+
+        start = int(start_frame)
+        if start < 0:
+            raise ValueError("start_frame must be non-negative")
+        if (
+            not isinstance(output, np.ndarray)
+            or output.dtype != np.float32
+            or output.ndim != 2
+            or output.shape[1] != 2
+            or not output.flags.c_contiguous
+            or not 0 <= output.shape[0] <= REFERENCE_MAX_DECODE_FRAMES
+        ):
+            raise ValueError(
+                "output must be a bounded C-contiguous float32 stereo array"
+            )
         if self._closed:
             raise ReferenceTrackError("The selected song was already closed.")
         try:
-            self._decoder.read_into(start, output)
+            return self._decoder.read_into(start, output)
         except ProjectAudioError:
             output.fill(0.0)
             raise ReferenceTrackError(
                 "WebJam lost access to the selected song. Load it again."
             ) from None
-        return output
 
     def close(self) -> None:
         if self._closed:
@@ -482,17 +531,172 @@ class ReferenceTrackDecoder:
         self._decoder.close()
 
 
-@dataclass(slots=True)
-class _QueuedBlock:
-    audio: np.ndarray
-    song_start_frame: int
-    song_end_frame: int
-    finish_after: bool = False
-    count_in: bool = False
+class _ReferencePlaybackRing:
+    """Preallocated SPSC handoff from decoder worker to audio callback.
+
+    The producer owns ``_write_sequence`` and the callback owns
+    ``_read_sequence``. Both sides only read the other sequence, so neither
+    needs a mutex or a shared read/modify/write counter. Control-plane changes
+    advance a generation rather than clearing storage underneath the callback.
+    """
+
+    def __init__(self, capacity: int, block_frames: int) -> None:
+        self.pool = RealtimeBlockPool(capacity, block_frames, 2)
+        self.capacity = self.pool.capacity
+        self.block_frames = self.pool.block_frames
+        self._frame_counts = np.zeros(self.capacity, dtype=np.int32)
+        self._start_frames = np.zeros(self.capacity, dtype=np.int64)
+        self._end_frames = np.zeros(self.capacity, dtype=np.int64)
+        self._generations = np.zeros(self.capacity, dtype=np.int64)
+        self._count_in = np.zeros(self.capacity, dtype=np.bool_)
+        self._finish_after = np.zeros(self.capacity, dtype=np.bool_)
+        self._write_sequence = 0
+        self._read_sequence = 0
+        self._front_offset = 0
+        self.position_frame = 0
+        self.position_generation = -1
+        self.finished_generation = -1
+        self._pending_generation = -1
+        self._pending_position_frame = -1
+        self._pending_finished = False
+        self.callback_calls = 0
+        self.requested_frames = 0
+        self.delivered_frames = 0
+        self.underrun_frames = 0
+
+    @property
+    def has_write_capacity(self) -> bool:
+        return self._write_sequence - self._read_sequence < self.capacity
+
+    def acquire_write_buffer(self) -> np.ndarray | None:
+        if not self.has_write_capacity:
+            return None
+        return self.pool.buffer(self._write_sequence % self.capacity)
+
+    def commit_write(
+        self,
+        frame_count: int,
+        *,
+        song_start_frame: int,
+        song_end_frame: int,
+        generation: int,
+        count_in: bool,
+        finish_after: bool,
+    ) -> bool:
+        if not self.has_write_capacity:
+            return False
+        slot = self._write_sequence % self.capacity
+        self._frame_counts[slot] = int(frame_count)
+        self._start_frames[slot] = int(song_start_frame)
+        self._end_frames[slot] = int(song_end_frame)
+        self._generations[slot] = int(generation)
+        self._count_in[slot] = bool(count_in)
+        self._finish_after[slot] = bool(finish_after)
+        # Publishing the sequence is deliberately the final producer write.
+        self._write_sequence += 1
+        return True
+
+    def pull_into(self, output: np.ndarray, *, generation: int) -> int:
+        """Fill callback-owned storage without waiting or allocating audio."""
+
+        if (
+            not isinstance(output, np.ndarray)
+            or output.dtype != np.float32
+            or output.ndim != 2
+            or output.shape[1] != 2
+            or output.shape[0] > REFERENCE_MAX_DECODE_FRAMES
+        ):
+            raise ValueError("output does not fit the Reference Track ring")
+        output.fill(0.0)
+        requested = int(output.shape[0])
+        self._pending_generation = generation
+        self._pending_position_frame = -1
+        self._pending_finished = False
+        self.callback_calls = min(
+            REFERENCE_MAX_DIAGNOSTIC_COUNTER,
+            self.callback_calls + 1,
+        )
+        self.requested_frames = min(
+            REFERENCE_MAX_DIAGNOSTIC_COUNTER,
+            self.requested_frames + requested,
+        )
+        written = 0
+        while written < requested:
+            if self._read_sequence >= self._write_sequence:
+                break
+            slot = self._read_sequence % self.capacity
+            frame_count = int(self._frame_counts[slot])
+            slot_generation = int(self._generations[slot])
+            if slot_generation < generation:
+                self._read_sequence += 1
+                self._front_offset = 0
+                continue
+            if slot_generation > generation:
+                # An obsolete callback must never consume blocks already
+                # prepared for a newer play/restart generation.
+                break
+            available = frame_count - self._front_offset
+            if available <= 0:
+                self._read_sequence += 1
+                self._front_offset = 0
+                continue
+            amount = min(requested - written, available)
+            source = self.pool.buffer(slot)
+            begin = self._front_offset
+            np.copyto(
+                output[written : written + amount],
+                source[begin : begin + amount],
+            )
+            self._front_offset += amount
+            written += amount
+            if not bool(self._count_in[slot]):
+                self._pending_position_frame = min(
+                    int(self._end_frames[slot]),
+                    int(self._start_frames[slot]) + self._front_offset,
+                )
+            if self._front_offset >= frame_count:
+                finish_after = bool(self._finish_after[slot])
+                self._read_sequence += 1
+                self._front_offset = 0
+                if finish_after:
+                    self._pending_finished = True
+                    break
+        self.delivered_frames = min(
+            REFERENCE_MAX_DIAGNOSTIC_COUNTER,
+            self.delivered_frames + written,
+        )
+        self.underrun_frames = min(
+            REFERENCE_MAX_DIAGNOSTIC_COUNTER,
+            self.underrun_frames + requested - written,
+        )
+        return written
+
+    def commit_pull_metadata(self, generation: int) -> None:
+        """Publish cursor/EOF facts only for audio accepted by the callback."""
+
+        if self._pending_generation != generation:
+            return
+        if self._pending_position_frame >= 0:
+            self.position_frame = self._pending_position_frame
+            self.position_generation = generation
+        if self._pending_finished:
+            self.finished_generation = generation
+        self._pending_generation = -1
+        self._pending_position_frame = -1
+        self._pending_finished = False
+
+    def discard_pull_metadata(self, generation: int) -> None:
+        """Discard cursor/EOF facts for a callback whose output was silenced."""
+
+        if self._pending_generation != generation:
+            return
+        self._pending_generation = -1
+        self._pending_position_frame = -1
+        self._pending_finished = False
 
 
 class ReferenceTrackStream:
-    """Bounded decode producer and non-blocking-ish callback consumer."""
+    """Bounded producer with a preallocated, lock-free callback handoff."""
 
     def __init__(
         self,
@@ -511,13 +715,15 @@ class ReferenceTrackStream:
         self._block_frames = block_frames
         self._queue_blocks = queue_blocks
         self._condition = threading.Condition(threading.Lock())
-        self._queue: deque[_QueuedBlock] = deque()
-        self._front_offset = 0
+        self._ring = _ReferencePlaybackRing(queue_blocks, block_frames)
         self._playing = False
         self._closed = False
         self._finished = False
         self._error = ""
         self._generation = 0
+        # Callback-visible latches. Reads and single-object assignments are
+        # atomic under CPython's GIL; no callback path acquires _condition.
+        self._realtime_generation = 0
         self._producer_position = 0
         self._consumer_position = 0
         self._loop_start = 0
@@ -542,17 +748,42 @@ class ReferenceTrackStream:
     @property
     def position_s(self) -> float:
         with self._condition:
-            return self._consumer_position / REFERENCE_SAMPLE_RATE
+            if self._ring.position_generation == self._generation:
+                position = self._ring.position_frame
+            else:
+                position = self._consumer_position
+            return position / REFERENCE_SAMPLE_RATE
 
     @property
     def finished(self) -> bool:
         with self._condition:
-            return self._finished
+            return bool(
+                self._finished
+                or self._ring.finished_generation == self._generation
+            )
 
     @property
     def error(self) -> str:
         with self._condition:
             return self._error
+
+    def realtime_stats(self) -> dict[str, int]:
+        """Return path-free SPSC counters outside the callback thread."""
+
+        return {
+            "callback_calls": _bounded_diagnostic_counter(
+                self._ring.callback_calls
+            ),
+            "requested_frames": _bounded_diagnostic_counter(
+                self._ring.requested_frames
+            ),
+            "delivered_frames": _bounded_diagnostic_counter(
+                self._ring.delivered_frames
+            ),
+            "underrun_frames": _bounded_diagnostic_counter(
+                self._ring.underrun_frames
+            ),
+        }
 
     def configure_loop(self, start_s: float, end_s: float | None) -> None:
         start = self._seconds_to_frame(start_s)
@@ -623,11 +854,13 @@ class ReferenceTrackStream:
             else:
                 self._count_in_total = 0
             self._count_in_cursor = 0
+            self._realtime_generation = self._generation
             self._condition.notify_all()
 
     def pause(self) -> None:
         with self._condition:
             self._playing = False
+            self._realtime_generation = 0
             self._count_in_total = 0
             self._count_in_cursor = 0
             self._reset_producer_locked()
@@ -649,39 +882,32 @@ class ReferenceTrackStream:
         self.play(count_in=count_in)
 
     def pull(self, frames: int) -> np.ndarray:
-        """Consume prepared audio; never performs source I/O."""
+        """Allocate a convenience result outside the real-time callback."""
 
         requested = int(frames)
         if requested <= 0 or requested > REFERENCE_MAX_DECODE_FRAMES:
             raise ValueError("pull frames is out of range")
         output = np.zeros((requested, 2), dtype=np.float32)
-        written = 0
-        with self._condition:
-            if not self._playing or self._closed:
-                return output
-            while written < requested and self._queue:
-                block = self._queue[0]
-                available = block.audio.shape[0] - self._front_offset
-                take = min(available, requested - written)
-                begin = self._front_offset
-                output[written : written + take] = block.audio[begin : begin + take]
-                self._front_offset += take
-                written += take
-                if not block.count_in:
-                    self._consumer_position = min(
-                        block.song_end_frame,
-                        block.song_start_frame + self._front_offset,
-                    )
-                if self._front_offset >= block.audio.shape[0]:
-                    self._queue.popleft()
-                    self._front_offset = 0
-                    if block.finish_after:
-                        self._finished = True
-                        self._playing = False
-                if self._finished:
-                    break
-            self._condition.notify_all()
+        self.pull_into(output)
         return output
+
+    def pull_into(self, output: np.ndarray) -> int:
+        """Fill callback-owned storage without locks, I/O, or audio allocation."""
+
+        generation = self._realtime_generation
+        if generation <= 0 or self._closed:
+            output.fill(0.0)
+            return 0
+        delivered = self._ring.pull_into(output, generation=generation)
+        # Pause/restart/control can publish a new generation while the callback
+        # is copying an older block. Never let obsolete audio escape and never
+        # mutate the newer control generation from this callback.
+        if self._realtime_generation != generation or self._closed:
+            self._ring.discard_pull_metadata(generation)
+            output.fill(0.0)
+            return 0
+        self._ring.commit_pull_metadata(generation)
+        return delivered
 
     def close(self) -> None:
         with self._condition:
@@ -689,15 +915,16 @@ class ReferenceTrackStream:
                 return
             self._closed = True
             self._playing = False
-            self._queue.clear()
+            self._realtime_generation = 0
             self._condition.notify_all()
         self._thread.join(timeout=2.0)
         self._decoder.close()
 
     def _reset_producer_locked(self) -> None:
+        if self._ring.position_generation == self._generation:
+            self._consumer_position = self._ring.position_frame
         self._generation += 1
-        self._queue.clear()
-        self._front_offset = 0
+        self._realtime_generation = self._generation if self._playing else 0
         self._producer_position = self._consumer_position
         self._condition.notify_all()
 
@@ -710,29 +937,43 @@ class ReferenceTrackStream:
     def _run(self) -> None:
         while True:
             with self._condition:
-                while (
-                    not self._closed
-                    and (
-                        not self._playing
-                        or len(self._queue) >= self._queue_blocks
-                        or (
-                            self._producer_position >= self._decoder.output_frames
-                            and self._loop_end is None
-                            and self._count_in_cursor >= self._count_in_total
-                        )
+                while not self._closed:
+                    at_end = (
+                        self._producer_position >= self._decoder.output_frames
+                        and self._loop_end is None
+                        and self._count_in_cursor >= self._count_in_total
                     )
-                ):
-                    self._condition.wait(timeout=0.25)
+                    if (
+                        self._playing
+                        and self._ring.has_write_capacity
+                        and not at_end
+                    ):
+                        break
+                    # The callback never enters this condition merely to wake
+                    # the producer. Poll a full ring well inside one 1024-frame
+                    # period; idle/control waits can remain relaxed.
+                    timeout = (
+                        0.005
+                        if self._playing
+                        and not self._ring.has_write_capacity
+                        else 0.05
+                        if self._playing
+                        else 0.25
+                    )
+                    self._condition.wait(timeout=timeout)
                 if self._closed:
                     return
                 generation = self._generation
+                target = self._ring.acquire_write_buffer()
+                if target is None:
+                    self._condition.wait(timeout=0.005)
+                    continue
                 count_remaining = self._count_in_total - self._count_in_cursor
                 if count_remaining > 0:
                     amount = min(self._block_frames, count_remaining)
                     count_start = self._count_in_cursor
                     self._count_in_cursor += amount
                     song_start = self._producer_position
-                    trim_gain = self._trim_gain
                     count_config = (
                         self._count_in_bpm,
                         self._count_in_beats,
@@ -760,57 +1001,64 @@ class ReferenceTrackStream:
                     trim_gain = self._trim_gain
 
             if count_remaining > 0:
-                audio = self._render_count_in(
+                self._render_count_in_into(
+                    target[:amount],
                     count_start,
-                    amount,
                     bpm=count_config[0],
                     total_beats=count_config[1],
                     total_frames=count_config[2],
                 )
-                block = _QueuedBlock(
-                    # Source trim is intentionally not a count-in gain. The
-                    # cue must remain audible even when a hot song is trimmed
-                    # far down.
-                    audio=np.clip(audio, -1.0, 1.0),
-                    song_start_frame=song_start,
-                    song_end_frame=song_start,
-                    count_in=True,
-                )
+                # Source trim is intentionally not a count-in gain. The cue
+                # remains audible even when a hot song is trimmed far down.
+                np.clip(target[:amount], -1.0, 1.0, out=target[:amount])
+                song_end = song_start
+                count_in = True
+                finish_after = False
             else:
                 try:
-                    audio = self._decoder.read_48k(song_start, amount)
+                    self._decoder.read_48k_into(song_start, target[:amount])
                 except ReferenceTrackError as exc:
                     with self._condition:
                         if generation == self._generation:
                             self._error = str(exc)
                             self._finished = True
                             self._playing = False
+                            self._realtime_generation = 0
                     continue
-                block = _QueuedBlock(
-                    audio=np.clip(audio * trim_gain, -1.0, 1.0),
-                    song_start_frame=song_start,
-                    song_end_frame=song_start + amount,
-                    finish_after=finish_after,
+                np.multiply(
+                    target[:amount],
+                    np.float32(trim_gain),
+                    out=target[:amount],
                 )
+                np.clip(target[:amount], -1.0, 1.0, out=target[:amount])
+                song_end = song_start + amount
+                count_in = False
             with self._condition:
                 if (
                     not self._closed
                     and self._playing
                     and generation == self._generation
                 ):
-                    self._queue.append(block)
-                    self._condition.notify_all()
+                    self._ring.commit_write(
+                        amount,
+                        song_start_frame=song_start,
+                        song_end_frame=song_end,
+                        generation=generation,
+                        count_in=count_in,
+                        finish_after=finish_after,
+                    )
 
     @staticmethod
-    def _render_count_in(
+    def _render_count_in_into(
+        output: np.ndarray,
         start: int,
-        frames: int,
         *,
         bpm: float,
         total_beats: int,
         total_frames: int,
-    ) -> np.ndarray:
+    ) -> None:
         del total_beats
+        frames = int(output.shape[0])
         per_beat = max(1, round(REFERENCE_SAMPLE_RATE * 60.0 / bpm))
         indexes = start + np.arange(frames, dtype=np.int64)
         phase_in_beat = indexes % per_beat
@@ -834,7 +1082,8 @@ class ReferenceTrackStream:
             * active
             * 0.55
         ).astype(np.float32)
-        return np.column_stack((tone, tone))
+        output[:, 0] = tone
+        output[:, 1] = tone
 
 
 class ReferenceTrackController:
@@ -855,6 +1104,11 @@ class ReferenceTrackController:
         self._is_host = is_host
         self._on_snapshot = on_snapshot
         self._lock = threading.RLock()
+        # Serializes the blocking backend ownership boundary.  State updates
+        # still use ``_lock`` and ``cancel_pending_start`` remains an immediate
+        # non-blocking revocation, but Stop/Close may not report completion
+        # while a prepare/start call can still create cleanup work.
+        self._route_lifecycle_lock = threading.RLock()
         self._stream: ReferenceTrackStream | None = None
         self._session: ReferenceAudioBridgeSession | None = None
         self._state = ReferenceTrackState.IDLE
@@ -890,7 +1144,42 @@ class ReferenceTrackController:
     def public_diagnostics(self) -> dict[str, object]:
         """Return strict source/route facts suitable for a support bundle."""
 
-        return self.snapshot.public_diagnostics()
+        with self._lock:
+            snapshot = self._snapshot_locked()
+            stream = self._stream
+            session = self._session
+        diagnostics = snapshot.public_diagnostics()
+        stream_stats = stream.realtime_stats() if stream is not None else {}
+        session_stats: object = {}
+        if session is not None:
+            reader = getattr(session, "realtime_stats", None)
+            if callable(reader):
+                try:
+                    session_stats = reader()
+                except Exception:  # noqa: BLE001 - diagnostics are advisory
+                    session_stats = {}
+        if not isinstance(session_stats, dict):
+            session_stats = {}
+        diagnostics.update(
+            {
+                "audio_callback_calls": _bounded_diagnostic_counter(
+                    stream_stats.get("callback_calls", 0)
+                ),
+                "audio_requested_frames": _bounded_diagnostic_counter(
+                    stream_stats.get("requested_frames", 0)
+                ),
+                "audio_delivered_frames": _bounded_diagnostic_counter(
+                    stream_stats.get("delivered_frames", 0)
+                ),
+                "audio_underrun_frames": _bounded_diagnostic_counter(
+                    stream_stats.get("underrun_frames", 0)
+                ),
+                "audio_callback_faults": _bounded_diagnostic_counter(
+                    session_stats.get("callback_faults", 0)
+                ),
+            }
+        )
+        return diagnostics
 
     def refresh_capability(
         self, audience_bridge_active: bool = False
@@ -903,6 +1192,9 @@ class ReferenceTrackController:
             # sees either the changed generation or unavailable capability;
             # a play already published is captured for immediate teardown.
             self._capability = capability
+            backend_cleanup_pending = (
+                capability.reason_code == "cleanup_pending"
+            )
             if (
                 not capability.available
                 and self._state is ReferenceTrackState.ROUTING
@@ -916,6 +1208,10 @@ class ReferenceTrackController:
                     )
                     self._error = ""
                     self._recoverable_route_failure = False
+            if backend_cleanup_pending:
+                self._state = ReferenceTrackState.FAILED
+                self._error = capability.detail
+                self._recoverable_route_failure = False
             active_session = self._session is not None
         stopped: ReferenceTrackSnapshot | None = None
         if active_session and not capability.available:
@@ -927,7 +1223,11 @@ class ReferenceTrackController:
         with self._lock:
             self._require_open_locked()
             self._capability = capability
-            if (
+            if backend_cleanup_pending:
+                self._state = ReferenceTrackState.FAILED
+                self._error = capability.detail
+                self._recoverable_route_failure = False
+            elif (
                 stopped is not None
                 and stopped.state is ReferenceTrackState.FAILED
                 and self._session is not None
@@ -968,7 +1268,10 @@ class ReferenceTrackController:
             self._require_open_locked()
             if (
                 stopped.state is ReferenceTrackState.FAILED
-                and self._session is not None
+                and (
+                    self._session is not None
+                    or stopped.cleanup_pending
+                )
             ):
                 # Never replace the source (or hide the failure state) while
                 # an older owned Jamulus process may still be alive.
@@ -1033,6 +1336,13 @@ class ReferenceTrackController:
         return snapshot
 
     def play(self, context: ReferenceTrackLaunchContext) -> ReferenceTrackSnapshot:
+        with self._route_lifecycle_lock:
+            return self._play_route(context)
+
+    def _play_route(
+        self,
+        context: ReferenceTrackLaunchContext,
+    ) -> ReferenceTrackSnapshot:
         resume_session: ReferenceAudioBridgeSession | None = None
         with self._lock:
             self._require_open_locked()
@@ -1073,10 +1383,20 @@ class ReferenceTrackController:
                 resumed = self._snapshot_locked()
             self._notify(resumed)
             return resumed
-        with self._lock:
-            self._capability = self._safe_capability(
+        capability = self._safe_capability(context.audience_bridge_active)
+        if capability.reason_code == "cleanup_pending":
+            cleanup_error = self._retry_backend_cleanup()
+            if cleanup_error:
+                with self._lock:
+                    return self._fail_locked(
+                        cleanup_error,
+                        recoverable_route=False,
+                    )
+            capability = self._safe_capability(
                 context.audience_bridge_active
             )
+        with self._lock:
+            self._capability = capability
             if not self._capability.available:
                 return self._fail_locked(
                     self._capability.detail,
@@ -1101,7 +1421,7 @@ class ReferenceTrackController:
                 )
             if not launch_is_current:
                 return self._retire_unpublished_session(session)
-            session.start(self._stream.pull)
+            session.start(self._stream.pull_into)
             with self._lock:
                 launch_is_current = (
                     launch_generation == self._launch_generation
@@ -1117,13 +1437,28 @@ class ReferenceTrackController:
                     self._recoverable_route_failure = False
                     snapshot = self._snapshot_locked()
         except Exception as exc:  # noqa: BLE001 - backend boundary
+            failure_capability = self._safe_capability(
+                context.audience_bridge_active
+            )
             with self._lock:
+                self._capability = failure_capability
+                backend_cleanup_pending = (
+                    failure_capability.reason_code == "cleanup_pending"
+                )
                 launch_is_current = (
                     launch_generation == self._launch_generation
                     and self._state is ReferenceTrackState.ROUTING
                 )
             if not launch_is_current:
                 if session is None:
+                    if backend_cleanup_pending:
+                        with self._lock:
+                            self._state = ReferenceTrackState.FAILED
+                            self._error = failure_capability.detail
+                            self._recoverable_route_failure = False
+                            pending_snapshot = self._snapshot_locked()
+                        self._notify(pending_snapshot)
+                        return pending_snapshot
                     return self.snapshot
                 return self._retire_unpublished_session(session)
             teardown_error = ""
@@ -1148,7 +1483,9 @@ class ReferenceTrackController:
             message = (
                 teardown_error
                 or (
-                    str(exc)
+                    failure_capability.detail
+                    if backend_cleanup_pending
+                    else str(exc)
                     if isinstance(exc, ReferenceTrackError)
                     else "WebJam couldn't prove a safe Reference Track route."
                 )
@@ -1156,7 +1493,8 @@ class ReferenceTrackController:
             with self._lock:
                 return self._fail_locked(
                     message,
-                    recoverable_route=not teardown_error
+                    recoverable_route=not backend_cleanup_pending
+                    and not teardown_error
                     and self._session is None,
                 )
 
@@ -1304,6 +1642,10 @@ class ReferenceTrackController:
         return snapshot
 
     def stop(self) -> ReferenceTrackSnapshot:
+        with self._route_lifecycle_lock:
+            return self._stop_route()
+
+    def _stop_route(self) -> ReferenceTrackSnapshot:
         with self._lock:
             if self._state is ReferenceTrackState.CLOSED:
                 return self._snapshot_locked()
@@ -1321,6 +1663,12 @@ class ReferenceTrackController:
             stream.pause()
             stream.seek(0.0)
         teardown_error = self._stop_session()
+        if not teardown_error:
+            latest_capability = self._safe_capability(False)
+            with self._lock:
+                self._capability = latest_capability
+            if latest_capability.reason_code == "cleanup_pending":
+                teardown_error = self._retry_backend_cleanup()
         with self._lock:
             self._route_detail = ""
             if teardown_error:
@@ -1340,29 +1688,30 @@ class ReferenceTrackController:
         return snapshot
 
     def close(self) -> ReferenceTrackSnapshot:
-        stopped = self.stop()
-        with self._lock:
-            if (
-                stopped.state is ReferenceTrackState.FAILED
-                and self._session is not None
-            ):
-                return stopped
-        with self._lock:
-            stream = self._stream
-            self._source_generation += 1
-            self._stream = None
-            self._state = ReferenceTrackState.CLOSED
-            self._source_name = ""
-            self._duration_s = 0.0
-            self._source_format = ""
-            self._source_samplerate = 0
-            self._source_channels = 0
-            self._recoverable_route_failure = False
-            snapshot = self._snapshot_locked()
-        if stream is not None:
-            stream.close()
-        self._notify(snapshot)
-        return snapshot
+        with self._route_lifecycle_lock:
+            stopped = self.stop()
+            with self._lock:
+                if stopped.cleanup_pending or (
+                    stopped.state is ReferenceTrackState.FAILED
+                    and self._session is not None
+                ):
+                    return stopped
+            with self._lock:
+                stream = self._stream
+                self._source_generation += 1
+                self._stream = None
+                self._state = ReferenceTrackState.CLOSED
+                self._source_name = ""
+                self._duration_s = 0.0
+                self._source_format = ""
+                self._source_samplerate = 0
+                self._source_channels = 0
+                self._recoverable_route_failure = False
+                snapshot = self._snapshot_locked()
+            if stream is not None:
+                stream.close()
+            self._notify(snapshot)
+            return snapshot
 
     def _stop_session(self) -> str:
         with self._lock:
@@ -1431,6 +1780,31 @@ class ReferenceTrackController:
             )
         return capability
 
+    def _retry_backend_cleanup(self) -> str:
+        retry = getattr(self._backend, "retry_cleanup", None)
+        if not callable(retry):
+            return (
+                "Reference Track private cleanup is still pending. Restart "
+                "WebJam before trying the route again."
+            )
+        try:
+            retry()
+        except ReferenceTrackError as exc:
+            message = str(exc).strip()
+        except Exception:  # noqa: BLE001 - backend recovery boundary
+            message = (
+                "Reference Track private cleanup could not be confirmed. "
+                "Choose Stop again."
+            )
+        else:
+            message = ""
+        capability = self._safe_capability(False)
+        with self._lock:
+            self._capability = capability
+        if capability.reason_code == "cleanup_pending":
+            return message or capability.detail
+        return ""
+
     def _snapshot_locked(self) -> ReferenceTrackSnapshot:
         position = self._stream.position_s if self._stream is not None else 0.0
         return ReferenceTrackSnapshot(
@@ -1450,8 +1824,11 @@ class ReferenceTrackController:
             route_detail=self._route_detail,
             error=self._error,
             cleanup_pending=(
-                self._session is not None
-                and self._state is ReferenceTrackState.FAILED
+                (
+                    self._session is not None
+                    and self._state is ReferenceTrackState.FAILED
+                )
+                or self._capability.reason_code == "cleanup_pending"
             ),
         )
 
@@ -1484,6 +1861,7 @@ class ReferenceTrackController:
 
 __all__ = [
     "REFERENCE_BLOCK_FRAMES",
+    "REFERENCE_MAX_DIAGNOSTIC_COUNTER",
     "REFERENCE_MAX_DECODE_FRAMES",
     "REFERENCE_QUEUE_BLOCKS",
     "REFERENCE_SAMPLE_RATE",

@@ -1,5 +1,8 @@
 # WebJam musician guide — v0.22.2
 
+> **Unreleased after v0.22.2:** this maintained guide includes source behavior
+> not present in the immutable published v0.22.2 packages.
+
 ## Follow the current guide
 
 The always-visible Session HUD is the dominant action surface. **Notes** opens
@@ -23,7 +26,7 @@ Jamulus is the live music engine. It owns your interface, inputs, outputs,
 channels, buffer, jitter, feedback protection, and musician mix. Configure
 those in Jamulus, not in WebJam.
 
-Webex is optional talking/video. The direct **Webex** action reveals
+Webex is optional talking/video. The direct **Webex Controls** action reveals
 Conversation without opening or rejoining a meeting. WebJam can validate and
 explicitly open a link, but it does not claim that Webex joined, muted,
 selected devices, or sees anyone. WebJam also checks whether the native Webex
@@ -59,14 +62,14 @@ The main session rail keeps the everyday destinations visible:
 
 | Action | What it does |
 | --- | --- |
-| Webex | Shows Conversation controls without opening the saved link |
+| Webex Controls | Shows Conversation controls without opening the saved link |
 | Reference Track | Host-only song source and route panel; loading never starts playback |
 | Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
 | Item | What it does |
 | --- | --- |
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
-| Webex / Conversation | Routes to the same Conversation panel as Webex; it has no launch side effect |
+| Webex Controls | Routes to the same Conversation panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
 | Reference Track… | Routes to the same host-only Track panel; source loading works independently while playback stays locked pending the physical macOS isolation pilot |
@@ -76,13 +79,18 @@ The main session rail keeps the everyday destinations visible:
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
 
-In Conversation, **Bring Forward** requests activation only when WebJam can
-verify the installed Webex publisher; it does not reopen the meeting link.
-When publisher proof is unavailable, use **Join / Open**, the only action that
-hands the saved link to the operating system, once per click. **Change Link**
-opens Settings. **Mute in Webex** requests that the verified external app come
-forward so you can use its own Mute control; WebJam cannot verify or change
-Webex mute and does not send a blind shortcut or touch Jamulus.
+In Conversation on macOS, **Show Webex App** re-verifies Cisco's installed app.
+It requires Webex already running, dynamically verifies the exact Cisco PID,
+and asks macOS to activate that same app. It never launches Webex, opens a
+browser, hands off the meeting link, joins a meeting, or proves that a minimized
+window was restored. If Webex is stopped, open it manually or choose **Join /
+Open Meeting**. That is the only action that hands the saved link to the
+operating system, once per click. **Change Link** opens Settings. **Mute in
+Webex** shows the running verified external app so you can use its own Mute
+control; WebJam cannot verify or change Webex mute and does not send a blind
+shortcut or touch Jamulus. Windows and Linux keep these native-focus actions
+unavailable because their current packages do not verify the installed app's
+publisher; use **Join / Open Meeting** there.
 
 ## Jamulus Updates
 
@@ -129,17 +137,23 @@ value Jamulus would silently shorten.
 
 ## Use iPhone as Pocket Stage — developer preview
 
-Pocket Stage is currently an owner-device Xcode developer preview, not an
-iPhone binary included with the published WebJam packages. Generate the
-checked-in app project with `ios/Generate Pocket Stage Project.command`, select
-your Apple Personal Team and unique bundle identifier in Xcode, and run it on
-your iPhone. The app includes an in-app QR scanner. Its text field is a
-Simulator/developer aid, not a physical-user fallback, because the desktop
-intentionally does not expose the bearer pairing text. If Camera permission is
-off, restore it in iPhone Settings and scan a fresh code.
+Pocket Stage is currently an owner-device Xcode developer preview, not a
+pre-signed iPhone binary. A published v0.22.2 Mac DMG or ZIP includes **Pocket
+Stage iPhone Setup** with the exact generated, CI-compiled Xcode project and
+an optional **Open Pocket Stage in Xcode.command** convenience helper. Open
+`WebJamPocketStage.xcodeproj` directly; if its file association fails, use
+**Xcode → File → Open**. Then select your Apple Personal Team and a unique
+bundle identifier, connect the iPhone, and press Run; release users do not need
+the repository or XcodeGen.
+Source developers can instead generate the checked-in project with
+`ios/Generate Pocket Stage Project.command`. The app includes an in-app QR
+scanner. Its text field is a Simulator/developer aid, not a physical-user
+fallback, because the desktop intentionally does not expose the bearer pairing
+text. If Camera permission is off, restore it in iPhone Settings and scan a
+fresh code.
 
 To try it, put the Mac and iPhone on the same private Wi-Fi, start the desktop
-session normally, and choose **More -> Use iPhone as Pocket Stage…**. The code is
+session normally, and choose **More → Use iPhone as Pocket Stage…**. The code is
 one-use and expires after two minutes. It pins the phone to the desktop's
 temporary self-signed certificate using the SHA-256 fingerprint of the exact
 certificate DER bytes. If the phone disconnects, choose **New Code** and pair
@@ -189,11 +203,12 @@ The host can choose the direct **Reference Track** action or **More → Referenc
 and inspect the same song-transport panel. Loading and route readiness are
 independent: **Load Song…** accepts validated WAV/WAVE, AIFF, or FLAC even when
 no playback route is ready. MP3 appears only when the packaged decoder reports
-support. The panel shows source format, sample rate, channels, duration, and a
-separate route state; **Recheck Route** refreshes route evidence without
-starting playback. Play, pause, restart, paused seeking, loop in/out, source
-trim, and an audible count-in remain transport controls. Guests do not get the
-transport.
+support. Loading decodes the first bounded audio block, so a source that cannot
+produce usable audio fails during load. The panel shows source format, sample
+rate, channels, duration, and a separate route state; **Recheck Route** refreshes
+route evidence without starting playback. Play, pause, restart, paused seeking,
+loop in/out, source trim, and an audible count-in remain transport controls.
+Guests do not get the transport.
 
 Reference Track is not Studio playback. Once the route is certified, its design
 streams the song at 48 kHz into BlackHole channels 1/2, launches a separately
@@ -208,14 +223,26 @@ process input query returns the output device instead, while Jamulus 3.12.2
 does not expose an independent live-device query. Physical BlackHole,
 direct-monitor, and two-endpoint evidence is also **NOT RUN**. WebJam therefore
 does not turn a saved profile, process, moving meter, or synthetic test into
-permission to route audio. There is no user or environment override.
+permission to route audio. Production refuses before scanning devices. There is
+no user or environment override, and installing BlackHole, running setup, or
+choosing **Recheck Route** cannot unlock downloaded v0.22.2.
 
 For controlled source-pilot work, the retained backend requires macOS 14.2 or
 later and one unambiguous BlackHole 16ch/64ch device at 48 kHz. It then checks
-the owned primary Jamulus PID, separate backing profile and ports, private RPC
-secret, authenticated client, connected roster, zero return faders, and route
-freshness. BlackHole 2ch and uncertain evidence are rejected. This
-constructor-only test seam is not enabled by production packages.
+both the owned primary and backing Jamulus PIDs, a session-unique private
+backing profile and secret, separate ports, authenticated RPC, connected
+roster, zero return faders, and combined route freshness. The primary must
+remain on its physical interface while the backing client proves the exact
+selected BlackHole device for input and output. One inherited lifecycle claim
+prevents another WebJam window from starting a competing 16ch/64ch Track while
+the first backing child survives. BlackHole 2ch and uncertain evidence are
+rejected. This constructor-only test seam is not enabled by production
+packages.
+
+If private process, RPC, profile, secret, or route cleanup cannot be proved,
+the panel reports cleanup pending. Choose **Stop** to retry. WebJam will not
+replace the song or finish quitting until the retained cleanup succeeds; a
+late startup failure cannot be reported as an earlier clean Close.
 
 This is **Jamulus-routed**, not latency eliminated. It gets Jamulus's usual
 buffering, jitter handling, and network delay. A server recording captures it

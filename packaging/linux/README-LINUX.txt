@@ -1,6 +1,9 @@
 WEBJAM FOR LINUX x64
 ====================
 
+UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
+that are not in the immutable published v0.22.2 assets.
+
 This test build is certified only for 64-bit Ubuntu 22.04. Other Ubuntu
 versions and Linux distributions are not certified. Keep the entire WebJam
 folder together; the files under _internal are required at runtime.
@@ -42,14 +45,14 @@ launch is active.
 3. Choose Join a Jam and paste the invitation from the Mac host. Jamulus owns
    the audio interface, channels, buffer, headphones, and monitor mix.
 
-Webex is optional and is not bundled. Choose Webex on WebJam's main session
-rail to show Conversation controls without opening or rejoining the meeting.
-Bring Forward activates a verified native app where supported; only Join /
-Open hands off the saved link. Mute in Webex brings the app forward so you can
-use its own Mute control; WebJam cannot verify or change external Webex mute.
-Where native-app activation is unavailable, a supported browser remains the
-meeting fallback. Cisco owns Webex installation, sign-in, and updates. Keep
-Webex muted while playing because Jamulus remains the music path.
+Webex is optional and is not bundled. Choose Webex Controls on WebJam's main
+session rail or More > Webex Controls to show Conversation controls without
+opening or rejoining the meeting. This Linux package can locate Webex but does
+not establish a trusted publisher identity, so Show Webex App and the
+focus-based Mute in Webex guidance stay unavailable. Join / Open Meeting hands
+off the saved link to a supported browser. Cisco owns Webex installation,
+sign-in, and updates. Keep Webex muted while playing because Jamulus remains
+the music path.
 
 This ZIP is not a distro-native signed package. Verify the published SHA-256
 before extracting it. WebJam separately verifies its packaged transport hash,

@@ -370,6 +370,34 @@ def test_integration_diagnostics_never_include_local_application_path(controller
     assert "path" not in str(diagnostics).lower()
 
 
+def test_webex_action_diagnostics_are_bounded_and_identity_free(controller):
+    controller._webex_app_info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        version="46.7.0",
+        publisher_verified=True,
+        path=Path("/Users/private/Applications/Webex.app"),
+    )
+    controller._webex_events = []
+    controller._record_webex_event("conversation-panel", "shown")
+    controller._record_webex_event("show-webex-app", "activated-running")
+    controller._record_webex_event(
+        "meeting-handoff",
+        "open-failed",
+        reason_code="/meet/private-room",
+    )
+
+    diagnostics = controller._webex_app_public_diagnostics()
+
+    assert diagnostics["events"] == [
+        {"action": "conversation-panel", "result": "shown"},
+        {"action": "show-webex-app", "result": "activated-running"},
+        {"action": "meeting-handoff", "result": "open-failed"},
+    ]
+    assert "private" not in str(diagnostics).lower()
+    assert "meet/" not in str(diagnostics).lower()
+    assert "path" not in str(diagnostics).lower()
+
+
 def test_controller_passes_component_trust_facts_to_saved_support_bundle(
     controller,
 ):

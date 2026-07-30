@@ -98,6 +98,49 @@ class ApplicationController(QObject):
     _METER_TICK_MS = 40  # global LevelMeter decay tick (was per-meter)
     _CONNECTION_TIMEOUT_MS = 30_000
     _WAKE_REVALIDATION_GAP_SECONDS = 12.0
+    _WEBEX_EVENT_ACTIONS = frozenset(
+        {
+            "conversation-panel",
+            "show-webex-app",
+            "mute-guidance",
+            "meeting-handoff",
+        }
+    )
+    _WEBEX_EVENT_RESULTS = frozenset(
+        {
+            "shown",
+            "check-pending",
+            "unavailable",
+            "busy",
+            "activated-running",
+            "refused",
+            "failed",
+            "missing-link",
+            "invalid-link",
+            "accepted",
+            "opened-externally",
+            "open-failed",
+            "cancelled",
+        }
+    )
+    _WEBEX_EVENT_REASON_CODES = frozenset(
+        {
+            "activation-cancelled",
+            "activation-exception",
+            "ambiguous-running-instances",
+            "app-not-running",
+            "application-path-unverified",
+            "invalid-activation-result",
+            "native-activation-failed",
+            "native-activation-unavailable",
+            "process-publisher-unverified",
+            "reverification-failed",
+            "reverification-refused",
+            "running-target-mismatch",
+            "target-invalid",
+            "verified-app-unavailable",
+        }
+    )
 
     def __init__(
         self,
@@ -193,6 +236,10 @@ class ApplicationController(QObject):
         # the ordinary session UI back into service. Keep this latch set until
         # a later Quit retry proves that every owned process/listener stopped.
         self._shutdown_cleanup_pending = False
+        # Bounded, allowlisted action evidence makes Show App versus meeting
+        # handoff failures diagnosable without retaining a link, room name,
+        # application path, account identity, or credential.
+        self._webex_events: list[dict[str, str]] = []
         # Compatibility state for AudioCoordinator while the nonexistent
         # Jamulus 3.12.2 live-send mute is retired. These values remain false;
         # no UI or reconnect path may promote them.
@@ -213,6 +260,7 @@ class ApplicationController(QObject):
                 "shutdown_requested": lambda: self._shutdown,
                 "schedule_ui_callback": self._ui_invoker.invoke,
                 "retry_audio_launch": self.begin_startup_journey,
+                "webex_event": self._record_webex_event,
             },
         )
 
@@ -710,9 +758,10 @@ class ApplicationController(QObject):
             if not reference_closed:
                 return self._show_shutdown_cleanup_retry(
                     "Reference Track is still stopping",
-                    "WebJam silenced the song but could not yet confirm that its "
-                    "separate Jamulus client stopped. Wait a moment, then quit "
-                    "again. Your primary jam is still running.",
+                    "WebJam silenced the song but could not yet confirm all "
+                    "private Reference Track process, profile, control, and "
+                    "audio-route cleanup. Wait a moment, then quit again. Your "
+                    "primary jam is still running.",
                 )
         # A hosted band server dies with WebJam: stop any recording cleanly
         # first so the server finalizes every musician's track, then
@@ -1828,18 +1877,25 @@ class ApplicationController(QObject):
             ms=8000,
         )
 
-    def _bring_webex_forward(self, *, mute_guidance: bool = False) -> None:
-        """Activate the detected native Webex app without reopening a meeting."""
+    def _show_webex_app(self, *, mute_guidance: bool = False) -> None:
+        """Show the exact native Webex app without reopening a meeting."""
 
         if self._shutdown_cleanup_blocks_action():
             return
-        from services.webex_app import WebexAppState, bring_webex_forward
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppState,
+            show_webex_app,
+        )
 
+        event_action = "mute-guidance" if mute_guidance else "show-webex-app"
         info = getattr(self, "_webex_app_info", None)
         if info is None:
+            self._record_webex_event(event_action, "check-pending")
             self._start_webex_app_detection()
             self.window.flash_message(
-                "WebJam is checking the Webex app. Try Bring Forward again "
+                "WebJam is checking the Webex app. Try Show Webex App again "
                 "when its status appears.",
                 ms=6000,
             )
@@ -1849,14 +1905,16 @@ class ApplicationController(QObject):
             or getattr(info, "path", None) is None
             or not bool(getattr(info, "publisher_verified", False))
         ):
+            self._record_webex_event(event_action, "unavailable")
             self.window.flash_message(
-                "Webex is not available to bring forward. Use Get Webex, "
-                "choose Check Again after installation, or use Join / Open "
-                "in a supported browser.",
+                "Webex is not available for direct app activation. Use Get "
+                "Webex, choose Check Again after installation, or use Join / "
+                "Open Meeting in a supported browser.",
                 ms=7000,
             )
             return
         if self._webex_activation_inflight:
+            self._record_webex_event(event_action, "busy")
             self.window.flash_message(
                 "WebJam is still verifying Webex. Wait a moment and try again.",
                 ms=5000,
@@ -1872,18 +1930,28 @@ class ApplicationController(QObject):
         )
 
         def activate() -> None:
+            def cancelled() -> bool:
+                return bool(
+                    self._shutdown
+                    or self._shutdown_in_progress
+                    or generation != self._webex_activation_generation
+                )
+
             try:
-                activated = bring_webex_forward(info)
+                result = show_webex_app(info, cancelled=cancelled)
             except Exception as exc:  # noqa: BLE001 - optional native handoff
                 LOGGER.warning(
                     "Native Webex activation failed; exception_type=%s",
                     type(exc).__name__,
                 )
-                activated = False
+                result = WebexActivationResult(
+                    WebexActivationState.FAILED,
+                    "activation-exception",
+                )
             self._ui_invoker.invoke(
-                lambda result=activated, token=generation: (
+                lambda value=result, token=generation: (
                     self._finish_webex_activation(
-                        result,
+                        value,
                         token,
                         mute_guidance=mute_guidance,
                     )
@@ -1898,45 +1966,111 @@ class ApplicationController(QObject):
 
     def _finish_webex_activation(
         self,
-        activated: bool,
+        result,
         generation: int,
         *,
         mute_guidance: bool,
     ) -> None:
         if (
             self._shutdown
+            or self._shutdown_in_progress
             or generation != self._webex_activation_generation
         ):
             return
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+        )
+
         self._webex_activation_inflight = False
         self.window.webex_embed.set_native_action_busy(False)
-        if not activated:
+        if not isinstance(result, WebexActivationResult):
+            result = WebexActivationResult(
+                WebexActivationState.FAILED,
+                "invalid-activation-result",
+            )
+        event_action = "mute-guidance" if mute_guidance else "show-webex-app"
+        self._record_webex_event(
+            event_action,
+            result.state.value,
+            reason_code=result.reason_code,
+        )
+        if not result.succeeded:
+            if result.reason_code == "app-not-running":
+                self.window.flash_message(
+                    "Webex is installed but is not running. Open Webex "
+                    "manually, then choose Show Webex App again—or use Join / "
+                    "Open Meeting.",
+                    ms=9000,
+                )
+                return
             self._start_webex_app_detection()
             self.window.flash_message(
-                "WebJam couldn't reverify and bring Webex forward. Choose "
-                "Check Again, use Join / Open, or switch to Webex manually.",
+                "WebJam couldn't verify and activate the exact running Webex "
+                "app. Choose Check Again, use Join / Open Meeting, or switch "
+                "to Webex manually.",
                 ms=8000,
             )
             return
         if mute_guidance:
             self.window.flash_message(
-                "WebJam asked Webex to come forward—switch to Webex if "
-                "needed, then use its Mute control. WebJam did not change "
-                "Webex mute or any Jamulus audio.",
+                "The verified running Webex app is active. If its window "
+                "remains minimized, restore it from the Dock, then use "
+                "Webex’s own Mute control. WebJam did not change Webex mute "
+                "or any Jamulus audio.",
                 ms=8000,
             )
             return
         self.window.flash_message(
-            "WebJam asked Webex to come forward without reopening the "
-            "meeting. Switch to Webex if needed; meeting and mute state "
-            "remain managed there.",
+            "The verified running Webex app is active. If its window remains "
+            "minimized, restore it from the Dock. No browser or meeting link "
+            "was opened; meeting and mute state remain managed in Webex.",
             ms=7000,
         )
+
+    def _bring_webex_forward(self, *, mute_guidance: bool = False) -> None:
+        """Compatibility shim for the renamed Show Webex App action."""
+
+        self._show_webex_app(mute_guidance=mute_guidance)
 
     def _focus_webex_mute(self) -> None:
         """Guide the user to Webex-owned mute without a blind shortcut."""
 
-        self._bring_webex_forward(mute_guidance=True)
+        self._show_webex_app(mute_guidance=True)
+
+    def _record_webex_event(
+        self,
+        action: str,
+        result: str,
+        *,
+        reason_code: str = "",
+    ) -> None:
+        """Record one allowlisted Webex action result with no user identity."""
+
+        clean_action = str(action or "").strip().lower()
+        clean_result = str(result or "").strip().lower()
+        clean_reason = str(reason_code or "").strip().lower()
+        if (
+            clean_action not in self._WEBEX_EVENT_ACTIONS
+            or clean_result not in self._WEBEX_EVENT_RESULTS
+        ):
+            LOGGER.warning("Refused an unknown Webex diagnostic event")
+            return
+        event = {"action": clean_action, "result": clean_result}
+        if clean_reason in self._WEBEX_EVENT_REASON_CODES:
+            event["reason_code"] = clean_reason
+        events = getattr(self, "_webex_events", None)
+        if not isinstance(events, list):
+            events = []
+            self._webex_events = events
+        events.append(event)
+        del events[:-12]
+        LOGGER.info(
+            "Webex action event action=%s result=%s reason_code=%s",
+            clean_action,
+            clean_result,
+            event.get("reason_code", "none"),
+        )
 
     def _jamulus_update_public_diagnostics(self) -> dict[str, object]:
         service = getattr(self, "_jamulus_update_service", None)
@@ -2029,6 +2163,13 @@ class ApplicationController(QObject):
             return {"state": "unavailable"}
         result = dict(value)
         result["installed"] = result.get("state") == "installed"
+        events = getattr(self, "_webex_events", None)
+        if isinstance(events, list) and events:
+            result["events"] = [
+                dict(event)
+                for event in events[-12:]
+                if isinstance(event, dict)
+            ]
         return result
 
     def _reference_track_public_diagnostics(self) -> dict[str, object]:
@@ -2760,7 +2901,7 @@ class ApplicationController(QObject):
         # Join/Open action hands the configured meeting link to the OS.
         self.window.webex_embed.open_meeting_requested.connect(self._on_join_video)
         self.window.webex_embed.bring_forward_requested.connect(
-            self._bring_webex_forward
+            self._show_webex_app
         )
         self.window.webex_embed.mute_in_webex_requested.connect(
             self._focus_webex_mute
@@ -7441,6 +7582,7 @@ class ApplicationController(QObject):
         self._on_rail_view_changed("stage")
         self.window.webex_embed.setVisible(True)
         self.window.webex_embed.focus_primary_action()
+        self._record_webex_event("conversation-panel", "shown")
 
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""
@@ -7452,6 +7594,7 @@ class ApplicationController(QObject):
         # method is reached only from the card's explicit Join/Open action.
         self.window.webex_embed.setVisible(True)
         if self.bridge.webex_state == "Opening…":
+            self._record_webex_event("meeting-handoff", "busy")
             self.window.flash_message(
                 "Webex is already opening. Finish joining there.",
                 ms=5000,
@@ -7459,6 +7602,7 @@ class ApplicationController(QObject):
             return
         url = normalize_webex_url(self.settings.webex_url)
         if not url:
+            self._record_webex_event("meeting-handoff", "missing-link")
             self._show_actionable_error(
                 "No Webex Link",
                 what_failed=("No Webex Meeting or Personal Room link is configured."),
@@ -7470,6 +7614,7 @@ class ApplicationController(QObject):
             return
         error = webex_url_error(url)
         if error:
+            self._record_webex_event("meeting-handoff", "invalid-link")
             self._show_actionable_error(
                 "Invalid Webex URL",
                 what_failed="WebJam will not open this meeting link.",
@@ -7484,6 +7629,7 @@ class ApplicationController(QObject):
         self.webex.meeting_url = url
         accepted = self.bridge.launch_webex(manual=True)
         if not accepted:
+            self._record_webex_event("meeting-handoff", "busy")
             self.window.set_status_video(self.bridge.webex_state)
             self.window.session_strip.set_video_state(
                 "Open Webex",
@@ -7500,10 +7646,12 @@ class ApplicationController(QObject):
             )
             self.window.flash_message(
                 "A previous Webex open request is still finishing. Wait a "
-                "moment, then choose Join / Open again for the new link.",
+                "moment, then choose Join / Open Meeting again for the new "
+                "link.",
                 ms=7000,
             )
             return
+        self._record_webex_event("meeting-handoff", "accepted")
         self.window.set_status_video("Opening…")
         self.window.session_strip.set_video_state("Opening…", enabled=False)
         self.window.webex_embed.set_launch_status("Opening…")
@@ -8399,7 +8547,8 @@ class ApplicationController(QObject):
                 warnings.append(
                     (
                         "Any Webex meeting already open stays open there. Open "
-                        "Conversation, then choose Join / Open for the new link."
+                        "Conversation, then choose Join / Open Meeting for the "
+                        "new link."
                     )
                     if self.settings.webex_url
                     else (
@@ -9070,7 +9219,10 @@ class ApplicationController(QObject):
             LOGGER.error("Reference Track session cleanup could not be confirmed")
             return False
         state = getattr(getattr(snapshot, "state", None), "value", "")
-        return state in {"ready", "unavailable", "idle", "closed"}
+        return (
+            not bool(getattr(snapshot, "cleanup_pending", False))
+            and state in {"ready", "unavailable", "idle", "closed"}
+        )
 
     def _refresh_reference_track_health(self) -> None:
         controller = getattr(self, "_reference_track", None)

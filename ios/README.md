@@ -1,5 +1,9 @@
 # Pocket Stage iPhone app
 
+> **Unreleased after v0.22.2:** these maintained setup instructions include
+> source-documentation changes not present in the immutable published v0.22.2
+> packages.
+
 This folder contains a reproducible XcodeGen app specification, the complete
 iPhone SwiftUI source, and a strict cross-platform protocol package. Generated
 Xcode project and user-state files stay untracked, so each musician can choose
@@ -41,12 +45,15 @@ transport.
 1. Install the full **Xcode** app from Apple and open it once. In **Xcode →
    Settings → Accounts**, add the Apple ID that will own the free Personal
    Team.
-2. From a matching v0.22.2 Mac candidate, open **Pocket Stage iPhone Setup** and
-   double-click **Open Pocket Stage in Xcode.command**. That folder already
-   contains the exact generated project compiled by CI, so release users do not
-   need XcodeGen. Source developers instead install XcodeGen 2.45.4 or newer
-   (`brew install xcodegen`) and run **Generate Pocket Stage Project.command**
-   to regenerate the project from `project.yml`.
+2. From a matching v0.22.2 Mac candidate or later, open **Pocket Stage iPhone
+   Setup**, then open **WebJamPocketStage.xcodeproj** directly. If Finder does
+   not associate it with Xcode, use **Xcode → File → Open** and select the
+   project. **Open Pocket Stage in Xcode.command** is an optional convenience
+   and may itself be quarantined. The folder already contains the exact
+   generated project compiled by CI, so release users do not need XcodeGen.
+   Source developers instead install XcodeGen 2.45.4 or newer (`brew install
+   xcodegen`) and run **Generate Pocket Stage Project.command** to regenerate
+   the project from `project.yml`.
 3. In the PocketStage target's **Signing & Capabilities**, set its bundle
    identifier to one you control, for example
    `com.yourname.pocketstage`, then select your **Personal Team** in

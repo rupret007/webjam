@@ -1,21 +1,32 @@
 # Webex companion guidance — v0.22.2
 
+> **Unreleased after v0.22.2:** this maintained guide includes source behavior
+> not present in the immutable published v0.22.2 packages.
+
 Webex is optional for talking or video. Jamulus carries the music.
 
-Use the direct **Webex** action only if the band wants it. It reveals the
-Conversation panel without opening or rejoining a meeting. In **Settings →
-Conversation**, each musician can enter their own **Meeting or Personal Room
-link**. WebJam displays the Webex site hostname and offers **Open in Webex** to
-test the draft link. It saves only the link and opens it externally only after
-an explicit user action.
+Use the direct **Webex Controls** action or **More → Webex Controls** only if
+the band wants it. Both reveal the Conversation panel without opening or
+rejoining a meeting. In **Settings → Conversation**, each musician can enter
+their own **Meeting or Personal Room link**. WebJam displays the Webex site
+hostname and offers **Open in Webex** to test the draft link. It saves only the
+link and opens it externally only after an explicit user action.
 
-In Conversation, **Bring Forward** requests activation only after WebJam proves
-the installed app's publisher and never opens the saved link. If publisher
-proof is unavailable, **Join / Open** still performs the one explicit
+In Conversation on macOS, **Show Webex App** re-verifies Cisco's exact bundle.
+It works only when Webex is already running: every click dynamically finds the
+exact Cisco process, verifies that PID, and asks macOS to activate that same
+app. It never launches Webex, passes the saved link, opens a browser, joins a
+meeting, or proves that a minimized window was restored. If Webex is stopped,
+open it manually or use **Join / Open Meeting** for the one explicit
 meeting-link handoff. **Change Link** returns to Settings. **Mute in Webex**
-requests that the verified native app come forward for its own Mute control.
-WebJam cannot verify or change mute in an externally owned meeting, so it never
-sends a blind shortcut or reports Webex—or Jamulus—as muted.
+shows the running verified native app for its own Mute control. WebJam cannot
+verify or change mute in an externally owned meeting, so it never sends a blind
+shortcut or reports Webex—or Jamulus—as muted.
+
+The current Windows and Linux packages can locate Webex but do not prove its
+publisher identity, so **Show Webex App** and the focus-based mute guidance
+remain unavailable there. **Join / Open Meeting** remains the supported
+external handoff.
 
 Webex handles sign-in, participant identity, camera, microphone, speakers, and
 meeting controls. A WebJam musician name does not change the user's Webex
@@ -25,12 +36,19 @@ verified the Webex participant list.
 
 WebJam detects a native Webex installation after startup. On macOS it verifies
 the Cisco bundle identifier, Developer ID Team `DE8Y96K9QP`, deep signature,
-and Apple notarization before reporting it as verified. If Webex is missing or
-invalid, WebJam offers the architecture-correct installer from
+and Apple notarization before reporting it as verified, then repeats that
+verification immediately before activation. If Webex is missing or invalid,
+WebJam offers the architecture-correct installer from
 `https://binaries.webex.com/` (or Cisco's public downloads page on an
 unsupported target) only after an explicit user confirmation. Cisco's app owns
 its installation and automatic updates. WebJam does not redistribute, silently
 install, launch an installer executable, or store Cisco credentials.
+
+Diagnostics keep only a bounded allowlist of action and result categories such
+as Conversation shown, running-app activation requested/confirmed/refused or
+failed, and meeting handoff accepted/opened/failed. They never retain the
+meeting URL or ID, Webex account, application path, participant identity, or
+credential.
 
 ## Safe rehearsal habit
 

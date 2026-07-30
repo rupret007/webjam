@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import json
 from pathlib import Path
 import plistlib
@@ -13,13 +14,17 @@ from services import webex_app
 from services.webex_app import (
     WEBEX_DOWNLOAD_PAGE,
     WEBEX_MAC_BUNDLE_ID,
+    WEBEX_MAC_PROCESS_REQUIREMENT,
     WEBEX_MAC_TEAM_ID,
+    WebexActivationState,
+    WebexActivationResult,
     WebexAppError,
     WebexAppInfo,
     WebexAppState,
     bring_webex_forward,
     detect_webex_app,
     open_official_webex_installer,
+    show_webex_app,
     webex_installer_url,
 )
 
@@ -262,25 +267,195 @@ def test_regular_executable_detection_rejects_symlinks(tmp_path):
     assert "path" not in installed.to_public_dict()
 
 
-def test_bring_forward_targets_verified_mac_bundle_without_a_shell(tmp_path):
+class _FakeMacRuntime:
+    def __init__(
+        self,
+        *,
+        applications=(),
+        activate_result=True,
+    ):
+        self._applications = tuple(applications)
+        self.activate_result = activate_result
+        self.queries: list[str] = []
+        self.activations: list[object] = []
+        self.session_entries = 0
+
+    def activation_session(self):
+        self.session_entries += 1
+        return nullcontext(self)
+
+    def running_applications(self, bundle_identifier):
+        self.queries.append(bundle_identifier)
+        return self._applications
+
+    def activate(self, application):
+        self.activations.append(application)
+        return self.activate_result
+
+
+def _running_application(path: Path | None, *, pid=4321, handle=99):
+    return webex_app._MacRunningApplication(
+        native_handle=handle,
+        process_identifier=pid,
+        path=path,
+    )
+
+
+def _verified_process_runner(calls):
+    def run(arguments, *, timeout):
+        calls.append((list(arguments), timeout))
+        return _completed(arguments)
+
+    return run
+
+
+def test_show_app_activates_one_pid_verified_running_bundle_without_handoff(
+    tmp_path,
+    monkeypatch,
+):
     app = _mac_app(tmp_path / "Home With Spaces")
-    calls: list[list[str]] = []
+    running = _running_application(app, pid=7654)
+    runtime = _FakeMacRuntime(applications=(running,))
+    process_calls = []
     info = WebexAppInfo(
         state=WebexAppState.INSTALLED,
         version="46.7.0",
         publisher_verified=True,
         path=app,
     )
-
-    assert bring_webex_forward(
-        info,
-        platform_name="darwin",
-        launcher=lambda arguments: calls.append(arguments) or True,
-        detector=lambda **_kwargs: info,
+    monkeypatch.setattr(
+        webex_app.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Show Webex App must not invoke /usr/bin/open"
+        ),
+    )
+    monkeypatch.setattr(
+        webex_app.webbrowser,
+        "open",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Show Webex App must not open a browser"
+        ),
     )
 
-    assert calls == [["/usr/bin/open", str(app)]]
-    assert all("meet/" not in argument for argument in calls[0])
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+    )
+
+    assert result.state is WebexActivationState.ACTIVATED_RUNNING
+    assert result.succeeded
+    assert runtime.queries == [WEBEX_MAC_BUNDLE_ID]
+    assert runtime.activations == [running]
+    assert runtime.activations[0] is running
+    assert process_calls == [
+        (
+            [
+                "/usr/bin/codesign",
+                "--verify",
+                "--strict",
+                "--verbose=2",
+                f"-R={WEBEX_MAC_PROCESS_REQUIREMENT}",
+                "7654",
+            ],
+            30.0,
+        )
+    ]
+    assert all(str(app) not in argument for argument in process_calls[0][0])
+    assert result.to_public_dict() == {"state": "activated-running"}
+
+
+def test_show_app_refuses_when_verified_webex_is_not_running(tmp_path):
+    app = _mac_app(tmp_path / "Stopped")
+    runtime = _FakeMacRuntime(applications=())
+    process_calls = []
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "app-not-running"
+    assert runtime.activations == []
+    assert process_calls == []
+    assert not hasattr(runtime, "launch_exact")
+
+
+def test_show_app_running_activation_failure_is_truthful(tmp_path):
+    app = _mac_app(tmp_path / "Running")
+    running = _running_application(app)
+    runtime = _FakeMacRuntime(
+        applications=(running,),
+        activate_result=False,
+    )
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner([]),
+    )
+
+    assert result.state is WebexActivationState.FAILED
+    assert result.reason_code == "native-activation-failed"
+    assert not result
+    assert runtime.activations == [running]
+
+
+def test_native_activation_unhides_requests_all_windows_and_proves_active():
+    runtime = object.__new__(webex_app._MacOSApplicationRuntime)
+    calls = []
+    runtime._selector = lambda name: name
+    runtime._send_void = (
+        lambda application, selector: calls.append(
+            ("void", application, selector)
+        )
+    )
+    runtime._send_bool_ulong = (
+        lambda application, selector, options: calls.append(
+            ("bool", application, selector, options)
+        )
+        or True
+    )
+    runtime._send_bool = (
+        lambda application, selector: calls.append(
+            ("active", application, selector)
+        )
+        or True
+    )
+
+    assert runtime._activate(42)
+    assert calls == [
+        ("void", 42, "unhide"),
+        ("bool", 42, "activateWithOptions:", 3),
+        ("active", 42, "isActive"),
+    ]
+
+
+def test_typed_activation_result_rejects_unbounded_private_reason_text():
+    with pytest.raises(ValueError, match="unsupported Webex activation reason"):
+        WebexActivationResult(
+            WebexActivationState.FAILED,
+            "/Users/private/meet/secret",
+        )
 
 
 @pytest.mark.parametrize(
@@ -300,14 +475,12 @@ def test_bring_forward_targets_verified_mac_bundle_without_a_shell(tmp_path):
     ],
 )
 def test_bring_forward_fails_closed_without_a_verified_detected_mac_app(info):
-    calls = []
-
-    assert not bring_webex_forward(
+    result = bring_webex_forward(
         info,
         platform_name="darwin",
-        launcher=lambda arguments: calls.append(arguments) or True,
     )
-    assert calls == []
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "verified-app-unavailable"
 
 
 def test_bring_forward_rejects_stale_and_symlinked_targets(tmp_path):
@@ -318,37 +491,34 @@ def test_bring_forward_rejects_stale_and_symlinked_targets(tmp_path):
     linked.symlink_to(real)
 
     for path in (linked, tmp_path / "missing"):
-        calls = []
         info = WebexAppInfo(
             state=WebexAppState.INSTALLED,
+            publisher_verified=True,
             path=path,
             reason_code="publisher-check-deferred",
         )
-        assert not bring_webex_forward(
+        result = bring_webex_forward(
             info,
-            platform_name="linux",
-            launcher=lambda arguments: calls.append(arguments) or True,
+            platform_name="darwin",
         )
-        assert calls == []
+        assert result.state is WebexActivationState.REFUSED
+        assert result.reason_code == "target-invalid"
 
 
-def test_bring_forward_wraps_launcher_failure_without_disclosing_path(tmp_path):
-    executable = tmp_path / "Private Folder" / "CiscoCollabHost.exe"
-    executable.parent.mkdir()
-    executable.write_bytes(b"binary")
-    executable.chmod(0o755)
+def test_show_app_wraps_native_failure_without_disclosing_path(tmp_path):
+    app = _mac_app(tmp_path / "Private Folder")
     info = WebexAppInfo(
         state=WebexAppState.INSTALLED,
         publisher_verified=True,
-        path=executable,
+        path=app,
     )
 
     with pytest.raises(WebexAppError) as raised:
-        bring_webex_forward(
+        show_webex_app(
             info,
-            platform_name="win32",
-            launcher=lambda _arguments: (_ for _ in ()).throw(OSError("no")),
+            platform_name="darwin",
             detector=lambda **_kwargs: info,
+            mac_runtime_factory=lambda: (_ for _ in ()).throw(OSError("no")),
         )
 
     assert str(tmp_path) not in str(raised.value)
@@ -364,18 +534,37 @@ def test_unverified_cross_platform_executable_is_never_activated(tmp_path):
         path=executable,
         reason_code="publisher-check-deferred",
     )
-    calls: list[list[str]] = []
-
-    assert not bring_webex_forward(
+    result = bring_webex_forward(
         info,
         platform_name="win32",
-        launcher=lambda arguments: calls.append(arguments) or True,
         detector=lambda **_kwargs: info,
     )
-    assert calls == []
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "verified-app-unavailable"
 
 
-def test_bring_forward_revalidates_the_exact_target_before_launch(tmp_path):
+def test_windows_direct_activation_remains_unavailable_without_authenticode(
+    tmp_path,
+):
+    executable = tmp_path / "CiscoCollabHost.exe"
+    executable.write_bytes(b"binary")
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=executable,
+    )
+
+    result = show_webex_app(
+        info,
+        platform_name="win32",
+        detector=lambda **_kwargs: info,
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "native-activation-unavailable"
+
+
+def test_bring_forward_revalidates_the_exact_target_before_activation(tmp_path):
     app = _mac_app(tmp_path / "Verified Webex")
     original = WebexAppInfo(
         state=WebexAppState.INSTALLED,
@@ -388,15 +577,13 @@ def test_bring_forward_revalidates_the_exact_target_before_launch(tmp_path):
         reason_code="signature-invalid",
         path=app,
     )
-    calls: list[list[str]] = []
-
-    assert not bring_webex_forward(
+    result = bring_webex_forward(
         original,
         platform_name="darwin",
-        launcher=lambda arguments: calls.append(arguments) or True,
         detector=lambda **_kwargs: replacement,
     )
-    assert calls == []
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "reverification-refused"
 
 
 def test_bring_forward_rejects_a_different_fresh_install_path(tmp_path):
@@ -413,9 +600,231 @@ def test_bring_forward_rejects_a_different_fresh_install_path(tmp_path):
         path=other_path,
     )
 
-    assert not bring_webex_forward(
+    result = bring_webex_forward(
         original,
         platform_name="darwin",
-        launcher=lambda _arguments: True,
         detector=lambda **_kwargs: fresh,
     )
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "reverification-refused"
+
+
+def test_show_app_refuses_running_same_bundle_from_a_different_path(tmp_path):
+    verified = _mac_app(tmp_path / "Verified")
+    other = _mac_app(tmp_path / "Other")
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=verified,
+    )
+    runtime = _FakeMacRuntime(
+        applications=(_running_application(other),)
+    )
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner([]),
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "running-target-mismatch"
+    assert runtime.activations == []
+
+
+def test_show_app_refuses_ambiguous_running_instances(tmp_path):
+    app = _mac_app(tmp_path / "Verified")
+    runtime = _FakeMacRuntime(
+        applications=(
+            _running_application(app, pid=1001, handle=11),
+            _running_application(app, pid=1002, handle=12),
+        )
+    )
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    process_calls = []
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "ambiguous-running-instances"
+    assert process_calls == []
+    assert runtime.activations == []
+
+
+def test_show_app_refuses_when_live_path_identity_cannot_be_proven(
+    tmp_path,
+    monkeypatch,
+):
+    app = _mac_app(tmp_path / "Verified")
+    runtime = _FakeMacRuntime(
+        applications=(_running_application(app),)
+    )
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    path_checks = 0
+
+    def samefile(*_args):
+        nonlocal path_checks
+        path_checks += 1
+        if path_checks == 1:
+            return True
+        raise OSError("unavailable")
+
+    monkeypatch.setattr(webex_app.os.path, "samefile", samefile)
+    process_calls = []
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "application-path-unverified"
+    assert path_checks == 2
+    assert process_calls == []
+    assert runtime.activations == []
+
+
+def test_same_path_running_process_must_pass_dynamic_publisher_requirement(
+    tmp_path,
+):
+    app = _mac_app(tmp_path / "Verified")
+    running = _running_application(app, pid=8765)
+    runtime = _FakeMacRuntime(applications=(running,))
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    calls = []
+
+    def unverified(arguments, *, timeout):
+        calls.append((arguments, timeout))
+        return _completed(
+            arguments,
+            returncode=1,
+            stderr=b"/Users/private/meet/secret",
+        )
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=unverified,
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "process-publisher-unverified"
+    assert calls[0][0][-1] == "8765"
+    assert runtime.activations == []
+    assert "private" not in json.dumps(result.to_public_dict()).lower()
+
+
+def test_cancellation_after_disk_reverification_never_enters_runtime(tmp_path):
+    app = _mac_app(tmp_path / "Verified")
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    cancelled = {"value": False}
+    runtime_factory_calls = []
+
+    def detector(**_kwargs):
+        cancelled["value"] = True
+        return info
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=detector,
+        mac_runtime_factory=lambda: runtime_factory_calls.append(True),
+        cancelled=lambda: cancelled["value"],
+    )
+
+    assert result.state is WebexActivationState.REFUSED
+    assert result.reason_code == "activation-cancelled"
+    assert runtime_factory_calls == []
+
+
+def test_cancellation_immediately_before_pid_validation_never_activates(
+    tmp_path,
+):
+    app = _mac_app(tmp_path / "Verified")
+    running = _running_application(app)
+    runtime = _FakeMacRuntime(applications=(running,))
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    cancellation_checks = 0
+    process_calls = []
+
+    def cancelled():
+        nonlocal cancellation_checks
+        cancellation_checks += 1
+        return cancellation_checks >= 2
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+        cancelled=cancelled,
+    )
+
+    assert result.reason_code == "activation-cancelled"
+    assert process_calls == []
+    assert runtime.activations == []
+
+
+def test_cancellation_after_pid_validation_never_activates(tmp_path):
+    app = _mac_app(tmp_path / "Verified")
+    running = _running_application(app)
+    runtime = _FakeMacRuntime(applications=(running,))
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+    cancellation_checks = 0
+    process_calls = []
+
+    def cancelled():
+        nonlocal cancellation_checks
+        cancellation_checks += 1
+        return cancellation_checks >= 3
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner(process_calls),
+        cancelled=cancelled,
+    )
+
+    assert result.reason_code == "activation-cancelled"
+    assert len(process_calls) == 1
+    assert runtime.activations == []

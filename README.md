@@ -1,5 +1,10 @@
 # WebJam v0.22.2 unsigned private test candidate
 
+> **Unreleased after v0.22.2:** this maintained source documentation includes
+> Webex activation and Reference Track loading changes that are not in the
+> immutable published v0.22.2 assets. The code version remains 0.22.2 until the
+> next release is cut.
+
 WebJam has two deliberately separate musician workflows:
 
 - **Host a Jam** and **Join a Jam** keep private live rehearsal simple: set up
@@ -27,9 +32,9 @@ trust.
    automatically; the host then copies the invitation.
 5. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-6. Choose the direct **Webex** action if your band wants conversation or video.
-   It shows WebJam's Conversation controls without opening a meeting; music
-   remains in Jamulus.
+6. Choose the direct **Webex Controls** action if your band wants conversation
+   or video. It shows WebJam's Conversation controls without opening a meeting;
+   music remains in Jamulus.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
@@ -44,8 +49,9 @@ contracts. It never follows an upstream “latest” link blindly.
 
 The packaged updater uses WebJam's release-locked Certifi CA set with hostname
 verification and TLS 1.2 or newer; launch-environment CA overrides cannot
-replace that trust root. A package-only release probe verifies this exact
-boundary against the live signed catalog before GitHub Latest promotion.
+replace that trust root. The v0.22.2 package-only release probe verified this
+exact boundary against the live signed catalog before GitHub Latest
+publication.
 
 An approved update can download without interrupting rehearsal, but it cannot
 install, activate, or roll back while a client, server, Reference Track,
@@ -74,19 +80,27 @@ allowing Jamulus to silently shorten an identity.
 ## Optional Webex app
 
 WebJam still stores only a musician's Meeting or Personal Room link. The direct
-**Webex** action reveals the Conversation panel and never launches or rejoins a
-meeting. **Bring Forward** activates the verified installed app without opening
-the saved link. **Join / Open** is the only meeting-link handoff and opens it
-once per explicit click; **Change Link** returns to Settings.
+**Webex Controls** action and **More → Webex Controls** reveal the Conversation
+panel and never launch or rejoin a meeting. On macOS, **Show Webex App** works
+only when Webex is already running: each click locates the exact running Cisco
+process, re-verifies that PID, and asks macOS to activate that same app. It does
+not hand off the saved meeting link, launch Webex, open a browser, or prove that
+a minimized Webex window was restored. If Webex is stopped, open it manually or
+choose **Join / Open Meeting**. That is the only meeting-link handoff and opens
+it once per explicit click; **Change Link** returns to Settings.
 
 Direct native activation stays disabled when WebJam cannot prove the app's
-publisher on that platform; **Join / Open** still uses the validated Webex link
-through the operating system or supported browser.
+publisher on that platform. The current Windows and Linux packages can detect
+an app location but do not establish a trusted publisher identity, so
+**Show Webex App** and its focus-based mute guidance stay unavailable there;
+**Join / Open Meeting** still uses the validated Webex link through the
+operating system or supported browser.
 
 Webex owns sign-in, camera, microphone, speakers, participants, mute, and
 meeting state. Because the external native app does not expose verifiable mute
-control to this integration, **Mute in Webex** brings Webex forward to its own
-Mute control and explicitly does not claim it changed Webex or Jamulus.
+control to this integration, **Mute in Webex** shows the verified Webex app so
+the musician can use its own Mute control and explicitly does not claim it
+changed Webex or Jamulus.
 WebJam detects the native Webex app and, when it is missing or invalid, offers
 the architecture-correct official Cisco installer in the browser after
 explicit confirmation. WebJam does not bundle, silently install, authenticate,
@@ -161,7 +175,8 @@ playhead, animation, audio, capture, or playback callbacks.
 
 The v0.22.2 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
-**More -> Use iPhone** after both devices are on the same private Wi-Fi.
+**More → Use iPhone as Pocket Stage…** after both devices are on the same
+private Wi-Fi.
 WebJam displays a one-use QR code that expires after two minutes and starts a
 separate secure local gateway only for this explicitly requested sharing
 session.
@@ -205,7 +220,9 @@ session the direct **Reference Track** action opens it; **More → Reference Tra
 to the same panel. Loading is deliberately separate from routing: a host can
 load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked.
 MP3 appears in the picker only when the packaged decoder proves support.
-**Recheck Route** refreshes route evidence without starting playback.
+Loading decodes the first bounded audio block so malformed or unusable input
+fails before playback is considered. **Recheck Route** refreshes route evidence
+without starting playback.
 
 Its intended route sends the decoded source through a separately owned
 `WebJam Track` Jamulus client, so the song becomes one participant with an
@@ -218,13 +235,19 @@ result becomes the process's output device after an input switch. Jamulus
 sufficient proof. Because physical BlackHole isolation and direct-monitor
 tests are also **NOT RUN**, production wiring refuses playback before scanning,
 launching a backing client, or opening audio. There is no setting, environment
-variable, command-line switch, or UI override.
+variable, command-line switch, or UI override. Installing BlackHole, running its
+setup guidance, or choosing **Recheck Route** cannot unlock a downloaded
+v0.22.2 package.
 
 The retained source-pilot implementation is exercised only through an explicit
 constructor-only certification seam. It requires macOS 14.2 or later, an
-unambiguous 48-kHz BlackHole 16ch/64ch route, live PID-bound primary-route
-checks, a dedicated profile and ports, private authenticated RPC, a connected
-roster, and zero return faders. Lost or stale proof emits silence and retires
+unambiguous 48-kHz BlackHole 16ch/64ch route, live PID-bound primary and backing
+route checks, session-unique descriptor-pinned profile/secret files, dedicated
+ports, private authenticated RPC, a connected roster, and zero return faders.
+One global WebJam lifecycle claim is inherited by the backing child so another
+WebJam process cannot start a competing Track while an orphan survives.
+Failed cleanup stays visible and retryable rather than allowing source
+replacement or shutdown. Lost or stale route proof emits silence and retires
 the backing client without ending the primary connection. These mechanisms are
 implementation evidence, not permission for a release package to play.
 
@@ -297,9 +320,12 @@ musician's normal `Jamulus.ini`. WebJam’s private restart records contain only
 allowlisted profile and phase hashes—never invitation URLs, Webex URLs,
 credentials, device identifiers, raw paths, or notes.
 
-## Source and candidate state
+## Published source and candidate state
 
-The source tree reports **v0.22.2**. It adds direct Live access to Webex,
+The source tree and GitHub **Latest** release both report **v0.22.2**. The
+[published release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
+is a non-prerelease explicitly titled as an unsigned private test candidate. It
+adds direct Live access to Webex,
 host-only Reference Track, and Studio; side-effect-free Conversation
 navigation; truthful native-app focus/mute guidance; source-first Reference
 Track loading and redacted route diagnostics; and a generation guard that
@@ -317,14 +343,13 @@ remain immutable. The published v0.22.1 tag, assets, and checksums likewise
 remain immutable; v0.22.2 is a new patch identity, never a moved tag or rebuilt
 v0.22.1 asset.
 
-The v0.22.2 candidate workflow builds four targets from one source identity:
-Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. Its draft
-GitHub release must contain exactly seven packages—the Windows Setup and ZIP,
-two Mac DMGs and two Mac ZIPs, and the Linux ZIP—plus one exact SHA-256
-manifest. After the draft inventory and every checksum pass, the separate
-publisher must publish it as a non-prerelease and explicitly mark it
-GitHub **Latest**. A successful Actions build or draft release alone is not a
-published Latest release.
+The v0.22.2 workflow built four targets from one source identity: Windows x64,
+Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. The published release
+contains exactly seven packages—the Windows Setup and ZIP, two Mac DMGs and two
+Mac ZIPs, and the Linux ZIP—plus one exact SHA-256 manifest. It was promoted
+from a verified draft by the separate publisher and explicitly marked GitHub
+**Latest**. For future candidates, a successful Actions build or draft release
+alone is still not a published Latest release.
 
 The Jamulus catalog is intentionally **not** one of those desktop assets. It is
 published under a separate non-Latest component release, signed by an offline
@@ -366,19 +391,23 @@ macOS path. Recent macOS versions may block downloaded `.command` files from
 Finder, so those helpers are documented for explicit Terminal use instead.
 
 The source continues to isolate Authenticode and Developer ID credentials in
-separate protected `windows-release` and `macos-release` manual rehearsal jobs.
-Those optional jobs preserve the future production-trust path without blocking
-private test candidates. Native packaging installs the reviewed Python graph
-from target-specific, hash-locked wheel files rather than resolving new
-dependencies during a release build.
+separate `windows-release` and `macos-release` environment-bound manual
+rehearsal jobs. Those environments still need protection rules and credentials
+before they can serve as production-trust gates. The optional jobs preserve the
+future production-trust path without blocking private test candidates. Native
+packaging installs the reviewed Python graph from target-specific, hash-locked
+wheel files rather than resolving new dependencies during a release build.
 
 The implemented Windows PFX path is suitable only when the project already has
 an eligible exportable legacy or internal-enterprise code-signing key. Newly
 issued public code-signing keys are normally hardware- or service-backed, so a
 production-trusted release still needs an explicit signing-provider choice and
 integration.
-The repository does not yet have the protected GitHub Environments or
-credentials configured, and no credentialed rehearsal has completed. A managed
+The repository has `windows-release`, `macos-release`, and `release-latest`
+GitHub Environments, but they currently have no protection rules; the two trust
+environments also have no release credentials, and no credentialed rehearsal
+has completed. Configure required reviewers, deployment restrictions, and
+credential isolation before using them as production-trust controls. A managed
 Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 

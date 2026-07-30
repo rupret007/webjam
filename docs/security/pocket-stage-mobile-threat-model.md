@@ -1,5 +1,8 @@
 # Pocket Stage developer-preview threat model
 
+> **Unreleased after v0.22.2:** the current menu label below is not present in
+> the immutable published v0.22.2 packages.
+
 - Date: 2026-07-21
 - Applies to: implemented Pocket Stage v1 generated native-app vertical slice
 - Evidence status: Source defenses, generated-project CI compilation, and live
@@ -49,7 +52,7 @@ user or an unlocked, paired phone.
 
 ## Pairing and secret lifecycle
 
-Pocket Stage is off until **More -> Use iPhone**. The desktop binds a dedicated
+Pocket Stage is off until **More → Use iPhone as Pocket Stage…**. The desktop binds a dedicated
 WSS listener to one private IPv4 interface and random port, then creates an
 ephemeral self-signed certificate and private key.
 

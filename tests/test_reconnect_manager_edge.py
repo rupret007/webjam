@@ -249,6 +249,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge = _make_bridge()
         bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
         bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_attempts = 1
         bridge.jamulus_next_reconnect_at = 5.0
@@ -278,6 +279,7 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.shutdown_requested = lambda: shutdown_flag["value"]
         bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
         bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_inflight = True
 

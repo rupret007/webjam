@@ -1,12 +1,18 @@
 # Desktop release runbook
 
+> **Unreleased after v0.22.2:** current workflow facts in this maintained
+> runbook may describe source changes not present in the immutable published
+> v0.22.2 assets. The historical v0.22.2 release record below remains unchanged
+> release evidence.
+
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
-candidate. The environment-gated `windows-release-trust` and
+candidate. The environment-bound `windows-release-trust` and
 `macos-release-trust` jobs remain the only authoritative packagers for a future
-signed platform release. Do not reuse a package from a different source commit
-or replace assets on a published tag.
+signed platform release, once their GitHub Environments have real protection
+rules and credentials. Do not reuse a package from a different source commit or
+replace assets on a published tag.
 
 ## Supported targets
 
@@ -94,7 +100,7 @@ the Setup, portable ZIP, and a verified two-entry
 `WebJam-v<VERSION>-windows-x64-SHA256SUMS.txt` manifest.
 
 A manual `workflow_dispatch` with `windows_signing_rehearsal=true` runs a
-separate job bound to the protected
+separate job bound to the environment-bound, intended-to-be-protected
 `windows-release` environment. It requires environment secrets
 `WINDOWS_CODESIGN_PFX` and `WINDOWS_CODESIGN_PASSWORD` plus the non-secret
 environment variable `WINDOWS_CODESIGN_SUBJECT`. The job requires exactly one
@@ -179,29 +185,36 @@ manual rehearsals do not block the private candidate lane. If no
 eligible Windows PFX already exists, remote/provider-backed signing integration
 is still required. Missing credentials, an unexpected Windows publisher,
 rejected signatures/notarization, failed stapling, or failed platform trust
-assessment all stop the protected jobs. For a future production-trusted
-release, do not create its release tag until both signing rehearsals succeed,
+assessment all stop the environment-bound trust jobs. For a future
+production-trusted release, do not create its release tag until both signing
+rehearsals succeed,
 physical acceptance is recorded, and GitHub immutable releases are enabled.
 Those gates do not block the explicitly unsigned/ad-hoc private-candidate lane.
 
-Before provisioning any private key, a repository administrator must create
-two protected GitHub Environments:
+The repository currently has three GitHub Environments, but as of 2026-07-29
+all three have empty protection rules and no deployment-branch policy. Treat
+their names as workflow routing only, not as an approval boundary, until a
+repository administrator configures them:
 
 - `windows-release`, containing only the two Windows secrets and pinned
   `WINDOWS_CODESIGN_SUBJECT` environment variable when using the eligible PFX
   path, or the least-privilege OIDC/provider configuration selected for remote
   signing;
 - `macos-release`, containing only the five Apple secrets and pinned
-  `APPLE_DEVELOPER_TEAM_ID` environment variable.
+  `APPLE_DEVELOPER_TEAM_ID` environment variable;
+- `release-latest`, containing no signing secret and protecting the final
+  revalidation-and-publication job.
 
 Configure required reviewers, prevent self-review, disable administrator
 bypass when the repository policy allows it, and restrict deployment branches
-and tags to the approved rehearsal ref and version tags. Both workflow jobs are
-already isolated and explicitly bound to those environments with
-`deployment: false`; environment secrets remain unavailable until protection
-rules pass. Do not copy these values into repository-level secrets. The current
-environments contain no release credentials, so credential provisioning remains
-a production-trusted-release blocker but not a private-candidate blocker.
+and tags to the approved rehearsal ref and version tags. The two trust workflow
+jobs are already isolated and explicitly bound to their environments with
+`deployment: false`; the publisher is bound separately to `release-latest`.
+Environment secrets remain unavailable until applicable protection rules pass.
+Do not copy trust credentials into repository-level secrets. The current trust
+environments contain no release credentials, so protection and credential
+provisioning remain production-trusted-release blockers but not
+private-candidate blockers.
 
 ## Manual release gates
 
@@ -410,7 +423,7 @@ configuration are historical evidence only. Do not copy v0.22.1 run or
 artifact identifiers into a new publisher. The current dynamic promotion
 contract is defined below.
 
-### v0.22.2 demo-navigation and source-first Track candidate
+### Published v0.22.2 demo-navigation candidate — historical record
 
 v0.22.2 is a new immutable patch after v0.22.1; never move, replace, or rebuild
 the v0.22.1 tag or assets. It adds direct Webex/Track/Studio navigation,
@@ -419,6 +432,14 @@ redacted Track diagnostics, and the manual-launch/reconnect generation fix.
 It retains the same unsigned Windows and Linux/private portable trust boundary,
 ad-hoc-signed and unnotarized Mac boundary, Trinity identity, immutable
 Jamulus 3.12.2 fallback, and draft-first publication controls.
+
+The verified publisher completed this procedure. GitHub now reports
+[`v0.22.2`](https://github.com/rupret007/webjam/releases/tag/v0.22.2) as a
+published, non-prerelease **Latest** release with the exact inventory below.
+The separate non-Latest `jamulus-components-v1` release contains signed
+sequence 3 for exact WebJam 0.22.2. The remaining text in this subsection is
+the immutable release procedure and evidence boundary, not a pending
+publication instruction.
 
 The exact v0.22.2 draft inventory is:
 

@@ -45,6 +45,7 @@ def _snapshot(
                 else "Install and verify BlackHole before loading a song."
             ),
             route_name="BlackHole 16ch" if available else "",
+            reason_code="ready" if available else "unavailable",
         ),
         source_name="Rehearsal Reference.flac" if loaded else "",
         duration_s=120.0 if loaded else 0.0,
@@ -134,6 +135,57 @@ def test_unavailable_route_allows_loading_but_keeps_playback_fail_closed() -> No
         assert dialog._play.isEnabled() is False
         assert dialog._pause.isEnabled() is False
         assert dialog._stop.isEnabled() is False
+    finally:
+        dialog.close()
+
+
+def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
+    dialog = ReferenceTrackDialog()
+    plays: list[bool] = []
+    dialog.play_requested.connect(lambda: plays.append(True))
+    snapshot = _snapshot(_State.READY, available=False)
+    snapshot.source_name = "Band Reference.mp3"
+    snapshot.source_format = "MP3"
+    snapshot.capability.reason_code = "physical_certification_required"
+    snapshot.capability.detail = (
+        "The Reference Track engine is included, but playback is locked until "
+        "the physical macOS pilot passes."
+    )
+    try:
+        dialog.set_snapshot(snapshot)
+
+        assert dialog._route.text() == (
+            "Playback locked in this downloaded candidate. Installing BlackHole "
+            "or choosing Recheck Route cannot unlock it."
+        )
+        assert dialog._route.toolTip() == snapshot.capability.detail
+        assert "MP3 loaded and its first bounded audio block decoded" in (
+            dialog._route_guidance.text()
+        )
+        assert dialog._status.text() == (
+            "MP3 loaded and decoded; Play is locked in this downloaded candidate"
+        )
+        assert "will not enable Play" in dialog._route_guidance.text()
+        assert "future certified pilot/build" in dialog._route_guidance.text()
+        assert "BlackHole 2ch" in dialog._route_guidance.text()
+        assert "WebJam Bridge" in dialog._route_guidance.text()
+        assert dialog._blackhole_setup.isHidden() is False
+        assert "will not download" in dialog._blackhole_setup.toolTip()
+        assert "cannot unlock" in dialog._blackhole_setup.toolTip()
+        with patch(
+            "webjam_qt.windows.reference_track.QDesktopServices.openUrl",
+            return_value=True,
+        ) as opener:
+            dialog._blackhole_setup.click()
+        opened = opener.call_args.args[0]
+        assert opened.scheme() == "https"
+        assert opened.host() == "existential.audio"
+        assert opened.path() == "/blackhole/"
+        assert dialog._load.isEnabled() is True
+        assert dialog._play.isEnabled() is False
+        assert "locked in this downloaded candidate" in dialog._play.toolTip()
+        dialog._play.click()
+        assert plays == []
     finally:
         dialog.close()
 
@@ -258,13 +310,15 @@ def test_cleanup_pending_never_claims_route_ready() -> None:
     snapshot.cleanup_pending = True
     try:
         dialog.set_snapshot(snapshot)
-        assert "still needs to finish stopping" in dialog._status.text()
+        assert "cleanup is still pending" in dialog._status.text()
         assert dialog._route.text().startswith(
             "Playback locked—finish stopping."
         )
         assert "Playback route ready" not in dialog._route.text()
         assert dialog._play.isEnabled() is False
+        assert dialog._load.isEnabled() is False
         assert dialog._recheck_route.isEnabled() is False
+        assert dialog._blackhole_setup.isEnabled() is False
         assert dialog._stop.isEnabled() is True
     finally:
         dialog.close()

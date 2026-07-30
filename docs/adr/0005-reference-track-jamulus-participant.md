@@ -8,6 +8,9 @@
   two-endpoint audibility, independent musician mixes, real server recording,
   route removal, and long-rehearsal behavior are **NOT RUN**.
 
+> **Unreleased after v0.22.2:** callback and source-load details below describe
+> source changes not present in the immutable published v0.22.2 packages.
+
 ## Context
 
 Bands often rehearse to a demo, click-free guide, or finished song. Playing the
@@ -45,9 +48,12 @@ file validation, bounded decoding, transport intent, state transitions, and
 fail-closed cleanup. Qt only renders snapshots and emits semantic controls.
 
 The retained backend is a macOS 14.2-or-later source pilot for a BlackHole
-route. It resolves the owned primary Jamulus PID to its CoreAudio Process
-AudioObject, requires exactly one actively running input and output, rejects
-ambiguous or BlackHole routes, and repeats that proof during playback.
+route. It resolves both the owned primary Jamulus PID and the separately owned
+backing PID to CoreAudio Process AudioObjects. The primary must have exactly
+one actively running physical input and output and must not use BlackHole. The
+backing client must use the exact selected BlackHole device for both directions.
+WebJam repeats the combined proof during playback and silences the callback
+whenever it is absent, changed, ambiguous, or stale.
 
 That proof is not enabled in production v0.22.2 wiring. A reported CoreAudio
 failure can return a process's output device for the input scope after an input
@@ -55,7 +61,9 @@ switch. Jamulus 3.12.2 exposes no independent live sound-device RPC, and a
 saved profile is only a secondary consistency check. Until the exact physical
 pilot proves device-switch truth, BlackHole exclusivity, and no direct monitor,
 the production backend returns an unavailable capability and `prepare()`
-independently refuses all native work.
+independently refuses all native work. Production capability refusal occurs
+before device scanning, so BlackHole setup and **Recheck Route** cannot unlock
+a downloaded v0.22.2 package.
 
 The certification seam is an explicit boolean constructor argument used only
 by controlled tests or an instrumented source pilot. Production construction
@@ -63,21 +71,24 @@ leaves it false. No environment variable, setting, command-line option, or UI
 action can change it. Windows VB-CABLE/JACK and Linux JACK backends likewise
 stay unavailable until they receive equivalent physical evidence.
 
-The current Python stream callback also remains pilot code: it takes ordinary
-threading locks and creates NumPy arrays on each callback. Those operations can
-miss a real-time audio deadline even though source decoding is off-thread.
-Before the production lock is removed, this boundary must use a preallocated,
-non-blocking single-producer/single-consumer buffer (or receive equivalent
-measured proof with a native callback boundary). Synthetic “returns silence on
-underrun” tests do not certify callback scheduling.
+The source pilot now uses a preallocated single-producer/single-consumer handoff.
+The callback performs no mutex acquisition, wait, source I/O, or new audio-buffer
+allocation; it pulls into caller-provided output and emits preallocated silence
+on underrun. That reviewed source boundary is still not physical scheduling or
+allocation proof. Before the production lock is removed, instrument callback
+timing and allocation behavior on real hardware under load (or obtain equivalent
+measured proof at a native callback boundary). Synthetic underrun tests alone do
+not certify callback scheduling.
 
 ## User controls
 
 Source validation is intentionally independent from route authority. The host
 can load and inspect supported WAV/WAVE, AIFF, or FLAC while route capability
 is unavailable; MP3 is offered only when the packaged runtime proves decoder
-support. Loading and **Recheck Route** never start playback. Play remains
-fail-closed until fresh route and isolation evidence is available.
+support. Loading decodes the first bounded audio block. Loading and **Recheck
+Route** never start playback. Production Play remains locked before route
+scanning until physical route and isolation evidence is accepted into a future
+release.
 
 Once route evidence is certified, the host can play, pause, restart, seek while
 paused, set a loop range, apply bounded source trim, and add an audible
@@ -91,11 +102,20 @@ latency like another participant.
 ## Isolation and lifecycle invariants
 
 - The backing client has its own native profile, client RPC port, secret, and
-  process ownership. It does not reuse the musician client's lifecycle.
+  process ownership. Each start reserves unpredictable, session-unique private
+  profile and secret names beneath one descriptor-pinned directory. It does
+  not reuse the musician client's lifecycle.
+- All eligible BlackHole variants share one WebJam-owned lifecycle claim. The
+  process-local claim is reinforced by an interprocess lock and a kernel
+  loopback socket inherited by the backing Jamulus child. A second WebJam
+  process cannot start another Reference Track while the first route or an
+  orphaned backing child still holds that socket. This coordinates WebJam
+  owners; it does not claim to exclude an unrelated same-user audio
+  application.
 - In a controlled certified pilot, playback begins only after route identity,
-  separate-client ownership, RPC control, live PID-bound primary-route
-  isolation, and zero return levels are proven. Saved profile device names are
-  only a secondary consistency check.
+  separate-client ownership, RPC control, live PID-bound primary and backing
+  route isolation, and zero return levels are proven. Saved profile device
+  names are only a secondary consistency check.
 - The backing client's return uses separate BlackHole channels and has no
   physical monitor route. The host must hear the track only through the primary
   Jamulus mix.
@@ -104,6 +124,12 @@ latency like another participant.
   stops. Uncertain state is failure, not “playing.”
 - End/Leave and application shutdown stop the Reference Track before the
   primary musician client or hosted server.
+- Cleanup retains the process, RPC, descriptor-pinned files, and route lease
+  until every step is proved. Jamulus may atomically rewrite its profile on
+  exit; WebJam removes that replacement only after bounded XML validation
+  proves the expected participant, device, and channel identity. A failed
+  cleanup remains visible and retryable through **Stop**, and blocks source
+  replacement and shutdown instead of reporting success.
 - The legacy Webex audience bridge and Reference Track cannot claim the same
   virtual route at the same time.
 - A hosted recording captures the dedicated participant as its own stem; the

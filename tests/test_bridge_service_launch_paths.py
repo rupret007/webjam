@@ -885,6 +885,7 @@ class TestLaunchWebexFailure(unittest.TestCase):
     def test_manual_open_failure_shows_error(self, _thread, _sleep):
         bridge = _make_bridge()
         bridge.webex_controller.join_meeting_url.return_value = False
+        bridge.webex_event = MagicMock()
 
         bridge.launch_webex(manual=True, reconnect=False)
 
@@ -896,6 +897,31 @@ class TestLaunchWebexFailure(unittest.TestCase):
         )
         bridge.metrics_service.increment.assert_any_call(
             "metric_webex_open_failed"
+        )
+        bridge.webex_event.assert_called_once_with(
+            "meeting-handoff",
+            "open-failed",
+        )
+        self.assertNotIn(
+            "webex.com",
+            str(bridge.webex_event.call_args).lower(),
+        )
+
+    def test_success_reports_only_a_finite_handoff_result(self, _thread, _sleep):
+        bridge = _make_bridge()
+        bridge.webex_controller.join_meeting_url.return_value = True
+        bridge.webex_event = MagicMock()
+
+        bridge.launch_webex(manual=True)
+
+        self.assertEqual(bridge.webex_state, "Opened externally")
+        bridge.webex_event.assert_called_once_with(
+            "meeting-handoff",
+            "opened-externally",
+        )
+        self.assertNotIn(
+            "webex.com",
+            str(bridge.webex_event.call_args).lower(),
         )
 
     def test_legacy_reconnect_argument_does_not_hide_failure(self, _thread, _sleep):

@@ -138,6 +138,49 @@ _WEBEX_APP_STATES = frozenset(
         "unavailable",
     }
 )
+_WEBEX_EVENT_ACTIONS = frozenset(
+    {
+        "conversation-panel",
+        "show-webex-app",
+        "mute-guidance",
+        "meeting-handoff",
+    }
+)
+_WEBEX_EVENT_RESULTS = frozenset(
+    {
+        "shown",
+        "check-pending",
+        "unavailable",
+        "busy",
+        "activated-running",
+        "refused",
+        "failed",
+        "missing-link",
+        "invalid-link",
+        "accepted",
+        "opened-externally",
+        "open-failed",
+        "cancelled",
+    }
+)
+_WEBEX_EVENT_REASON_CODES = frozenset(
+    {
+        "activation-cancelled",
+        "activation-exception",
+        "ambiguous-running-instances",
+        "app-not-running",
+        "application-path-unverified",
+        "invalid-activation-result",
+        "native-activation-failed",
+        "native-activation-unavailable",
+        "process-publisher-unverified",
+        "reverification-failed",
+        "reverification-refused",
+        "running-target-mismatch",
+        "target-invalid",
+        "verified-app-unavailable",
+    }
+)
 _REFERENCE_TRACK_PLAYBACK_STATES = frozenset(
     {
         "unavailable",
@@ -170,6 +213,7 @@ _REFERENCE_TRACK_ROUTE_REASONS = frozenset(
         "unavailable",
         "audience_bridge_conflict",
         "physical_certification_required",
+        "cleanup_pending",
         "blackhole_unavailable",
         "windows_backend_unavailable",
         "linux_backend_unavailable",
@@ -498,7 +542,7 @@ def _sanitize_jamulus_update(value: Mapping[str, Any] | Any) -> dict[str, Any]:
 
 
 def _sanitize_webex_app(value: Mapping[str, Any] | Any) -> dict[str, Any]:
-    """Accept only native-app presence and publisher-verification facts."""
+    """Accept only native-app trust facts and finite, identity-free actions."""
 
     if not isinstance(value, Mapping):
         return {}
@@ -518,6 +562,34 @@ def _sanitize_webex_app(value: Mapping[str, Any] | Any) -> dict[str, Any]:
     reason = value.get("reason_code")
     if isinstance(reason, str) and _REASON_CODE_RE.fullmatch(reason):
         result["reason_code"] = reason
+    raw_events = value.get("events")
+    if (
+        isinstance(raw_events, Sequence)
+        and not isinstance(raw_events, (str, bytes, bytearray))
+    ):
+        events: list[dict[str, str]] = []
+        for raw_event in list(raw_events)[-12:]:
+            if not isinstance(raw_event, Mapping):
+                continue
+            action = raw_event.get("action")
+            event_result = raw_event.get("result")
+            if (
+                not isinstance(action, str)
+                or action not in _WEBEX_EVENT_ACTIONS
+                or not isinstance(event_result, str)
+                or event_result not in _WEBEX_EVENT_RESULTS
+            ):
+                continue
+            event = {"action": action, "result": event_result}
+            event_reason = raw_event.get("reason_code")
+            if (
+                isinstance(event_reason, str)
+                and event_reason in _WEBEX_EVENT_REASON_CODES
+            ):
+                event["reason_code"] = event_reason
+            events.append(event)
+        if events:
+            result["events"] = events
     return result
 
 

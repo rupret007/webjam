@@ -1,5 +1,8 @@
 # ADR 0003: Pocket Stage native iPhone companion
 
+> **Unreleased after v0.22.2:** the current menu label below is not present in
+> the immutable published v0.22.2 packages.
+
 - Status: Accepted; owner-device developer-preview vertical slice implemented
 - Date: 2026-07-21
 - Scope: Pocket Stage v1 generated native-app developer preview
@@ -38,7 +41,7 @@ Jamulus / host recorder
 ```
 
 The desktop remains authoritative. Pocket Stage is activated explicitly from
-**More -> Use iPhone** and is intended only for an iPhone on the same private
+**More → Use iPhone as Pocket Stage…** and is intended only for an iPhone on the same private
 Wi-Fi network as that desktop. Choosing it starts a dedicated listener; normal
 Host/Join behavior does not start the listener.
 

@@ -1,13 +1,18 @@
 # WebJam, simply
 
+> **Unreleased after v0.22.2:** this maintained source guide includes fixes that
+> are not in the immutable published v0.22.2 downloads. The code version is
+> still 0.22.2 pending the next release.
+
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source candidate: **v0.22.2 unsigned private test candidate**. Its
-four-platform workflow covers Windows, Ubuntu 22.04, Intel Mac, and
-Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc signed
-and not notarized.
+Current source candidate: **v0.22.2 unsigned private test candidate**. That
+same version is the published GitHub **Latest** release. Its four-platform
+release covers Windows, Ubuntu 22.04, Intel Mac, and Apple-silicon Mac
+packages. Windows is unsigned; Mac packages are ad-hoc signed and not
+notarized.
 The Mac downloads use drag-to-Applications as the primary path and include
 optional verified Terminal helpers, including a separately labeled advanced
 helper that removes quarantine from WebJam only.
@@ -48,13 +53,18 @@ does not start, stop, configure, or feed Jamulus.
 ## If you need help
 
 - **Sound needs attention:** choose **More → Audio Settings in Jamulus**.
-- **Talking/video:** choose the direct **Webex** action. It only shows
-  Conversation. Use **Bring Forward** to focus the native app without
-  rejoining, or **Join / Open** for the one explicit meeting-link handoff.
-  **Mute in Webex** focuses Webex so you can use its own Mute control; WebJam
-  never claims it changed Webex or Jamulus. If the native app is missing,
-  WebJam can open Cisco's official installer page after you confirm; it does
-  not save a Webex password or install silently.
+- **Talking/video:** choose the direct **Webex Controls** action (or **More →
+  Webex Controls**). It only shows Conversation. On macOS, **Show Webex App**
+  re-verifies and activates the exact Cisco process only when Webex is already
+  running; it does not launch Webex, open a browser, hand off a meeting link, or
+  prove that a minimized window was restored. If Webex is stopped, open it
+  manually or use **Join / Open Meeting** for the one explicit meeting-link
+  handoff. **Mute in Webex** shows the verified app so you can use its own Mute
+  control; WebJam never claims it changed Webex or Jamulus.
+  Windows and Linux use **Join / Open Meeting** because their current packages
+  do not verify the native app publisher. If the app is missing, WebJam can
+  open Cisco's official installer page after you confirm; it does not save a
+  Webex password or install silently.
 - **Something failed:** use **More → Band Check / Verify Sound** and the
   support/diagnostics action. The report includes bounded Jamulus updater and
   Webex app state without local paths, meeting links, names, or credentials.
@@ -63,8 +73,9 @@ does not start, stop, configure, or feed Jamulus.
 - **Reference Track:** during a hosted session choose **Reference Track**. You can load
   and inspect WAV/WAVE, AIFF, or FLAC even when the playback route is not
   ready; MP3 is shown only when this package proves decoder support. **Recheck
-  Route** starts no playback, and Play remains locked until isolation is
-  proven.
+  Route** starts no playback, and Play remains locked before route scanning in
+  production. Loading decodes the first bounded block, but installing
+  BlackHole, running setup, or rechecking cannot unlock downloaded v0.22.2.
 - **Review a take:** choose the direct **Studio** action. Choose a playback output only
   while reviewing a take. Move or trim regions on the Arrange timeline, use
   Undo/Redo, or add a safely matched repeated recording as a take lane and

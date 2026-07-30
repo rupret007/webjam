@@ -1,17 +1,21 @@
-# Jamulus component catalog release runbook — WebJam v0.22.2
+# Jamulus component catalog release runbook
 
 This runbook renews the small signed catalog that tells WebJam which exact
 Jamulus client/server packages are approved. It does not publish WebJam,
 redistribute Jamulus packages, approve HEADLESS, or make a desktop release
 Latest.
 
+## Current public state
+
 The first public catalog was sequence 1 for exact WebJam 0.22.0. Its stable
 lightweight channel tag, `jamulus-components-v1`, is permanently anchored at
 commit `bf64c1165486a654d923c4e3cb6ede69e6458320`. Never move or replace that
 tag. v0.22.1 authorization came from the immutable, signature-valid sequence 2
-catalog targeting exact WebJam 0.22.1. v0.22.2 requires a signature-valid,
-unexpired sequence 3 catalog whose payload targets exact WebJam 0.22.2; the
-sequence-2 bytes cannot authorize the new desktop version.
+catalog targeting exact WebJam 0.22.1. As independently reverified on
+2026-07-29, the public component release contains signature-valid sequence 3
+targeting exact WebJam 0.22.2, with eight Jamulus 3.12.3 client/server entries
+and expiry `2026-08-28T15:03:21Z`. Its release description also names sequence
+3 and v0.22.2. Sequence-2 bytes cannot authorize v0.22.2.
 
 ## Trust boundary
 
@@ -30,7 +34,119 @@ sequence-2 bytes cannot authorize the new desktop version.
 - The desktop draft remains unpublished if catalog generation, public
   redownload, frozen-runtime verification, or UI verification fails.
 
-## Preflight
+## Maintained renewal procedure: sequence N to N+1
+
+Use this section for every catalog renewal, including renewing the same
+published WebJam version before expiry. The exact v0.22.2 sequence-3 commands
+later in this file are a historical publication record, not a template with
+numbers to edit in place.
+
+1. Choose the exact desktop version to authorize and work from its clean,
+   immutable tag in an isolated checkout. Confirm the checked-out source
+   reports that exact version. Do not generate from a moving branch, dirty
+   tree, or a tag whose desktop packages are not the packages being tested.
+2. Create a new private evidence directory and download the current public
+   `WebJam-Jamulus-components-v1.json` into it. Record the component release ID,
+   asset ID, GitHub `digest`, local SHA-256, signer fingerprint, exact target
+   WebJam version, sequence **N**, issue/expiry times, and verified snapshot.
+   Require `draft=false`, `prerelease=true`, exactly one asset, and exclusion
+   from `/releases/latest`. Verify the asset signature and exact inventory with
+   the checked-in verifier before doing anything with the private key.
+3. Set **N+1** to exactly one greater than the verified public sequence. If
+   public sequence N+1 already exists, do not regenerate, replace, or advance
+   it. Redownload those bytes, require the previously recorded SHA-256 and
+   signature, verify their exact WebJam target and future expiry, and resume
+   package testing with those same bytes. Different bytes at the same sequence
+   are equivocation and stop the release.
+4. Re-run the compatibility registry, updater, TLS, license, packaging, and
+   real-Jamulus gates for the exact target. Confirm the catalog will contain
+   exactly eight approved Jamulus 3.12.3 client/server entries—Windows x64,
+   Linux x64, macOS arm64, and macOS x64—with no HEADLESS role.
+5. On the trusted release workstation, confirm the Ed25519 private key is an
+   owner-private regular non-symlink file with mode `0600` and matches embedded
+   key ID `webjam-component-2026-07`. Generate once into a new directory and
+   non-existing output file:
+
+   ```bash
+   : "${TARGET_WEBJAM_VERSION:?set the exact target, for example 0.22.2}"
+   : "${CURRENT_SEQUENCE:?set verified public sequence N}"
+   case "$CURRENT_SEQUENCE" in
+     *[!0-9]*|'') exit 2 ;;
+   esac
+   test "$CURRENT_SEQUENCE" -ge 1
+   next_sequence=$((CURRENT_SEQUENCE + 1))
+   output_directory="$HOME/private-webjam-evidence/catalog-sequence-$next_sequence"
+   test "$(
+     .venv/bin/python -c \
+       'from webjam_qt import __version__; print(__version__)'
+   )" = "$TARGET_WEBJAM_VERSION"
+   test ! -e "$output_directory/WebJam-Jamulus-components-v1.json"
+   mkdir -p "$output_directory"
+   .venv/bin/python -m tools.create_jamulus_component_catalog \
+     --sequence "$next_sequence" \
+     --validity-days 30 \
+     --private-key \
+       "$HOME/.config/webjam-release/component-catalog-ed25519-private.pem" \
+     --output \
+       "$output_directory/WebJam-Jamulus-components-v1.json"
+   .venv/bin/python -m tools.verify_jamulus_component_catalog \
+     --webjam-version "$TARGET_WEBJAM_VERSION" \
+     --minimum-sequence "$next_sequence" \
+     "$output_directory/WebJam-Jamulus-components-v1.json"
+   ```
+
+   Inspect the verified snapshot and require its sequence to equal N+1, not
+   merely meet the minimum. Require one through 30 days of validity and record
+   the new envelope, payload, and signer SHA-256 values without exposing the
+   private key.
+6. Preserve the verified sequence-N evidence before replacing the stable
+   release's one asset. Upload only the new verified N+1 bytes with
+   the commands below; `--clobber` is permitted only for this verified
+   higher-sequence replacement. Never move the stable tag, create another asset
+   name, change Latest, or upload private-key material.
+
+   ```bash
+   catalog_file="$output_directory/WebJam-Jamulus-components-v1.json"
+   gh release upload jamulus-components-v1 "$catalog_file" \
+     --repo rupret007/webjam \
+     --clobber
+   gh release edit jamulus-components-v1 \
+     --repo rupret007/webjam \
+     --prerelease \
+     --latest=false \
+     --title "WebJam Jamulus component catalog v1" \
+     --notes \
+       "Signed, expiring Jamulus compatibility catalog sequence $next_sequence for exact WebJam v$TARGET_WEBJAM_VERSION. This is not a desktop release."
+   ```
+7. Download the public asset into a second new directory. Require its GitHub
+   digest and local SHA-256 to equal the pre-upload N+1 file exactly, then
+   independently reverify its signature, exact sequence, target, expiry, signer,
+   and eight-entry inventory. Recheck the one-asset/prerelease/non-Latest
+   release contract and immutable channel-tag commit. If upload or verification
+   is uncertain, stop; never roll the public asset back to N or create different
+   N+1 bytes.
+8. Derive the frozen-smoke envelope, payload, and signer digests only from that
+   independently downloaded public file. Run the fixed-URL frozen updater probe
+   against every exact target desktop package and exercise the packaged update
+   UI plus offline, expired, tampered, and missing-trust behavior. A renewal for
+   an already published desktop does not change its immutable release assets.
+   A new desktop draft remains unpublished until all catalog and package gates
+   pass.
+9. Retain the old and new public bytes, API metadata, verifier snapshots,
+   hashes, frozen-probe results, and UI evidence. Record no private key, local
+   private-key path, credential, meeting URL, or raw private environment data.
+
+An expired catalog is a normal fail-closed state. It is safer for WebJam to keep
+the last verified managed component or embedded 3.12.2 fallback than to reuse a
+sequence, publish unsigned metadata, or bypass exact target verification.
+
+## Historical v0.22.2 sequence-3 publication record
+
+The remaining steps record how sequence 3 was created and verified before
+v0.22.2 became GitHub Latest. Preserve their exact identities for audit
+history; use the maintained N→N+1 procedure above for the next renewal.
+
+### Preflight
 
 1. Work from the exact clean annotated `v0.22.2` tag after tag CI finishes the
    four-target matrix and creates the unpublished desktop draft. Verify that
@@ -82,7 +198,7 @@ sequence-2 bytes cannot authorize the new desktop version.
    Do not renew approval merely because an upstream asset is still named
    “latest.”
 
-## Create and verify sequence 3
+### Create and verify sequence 3
 
 Use an absolute output path. The release tool reads the private key from its
 file and does not print it:
@@ -110,7 +226,7 @@ official Jamulus 3.12.3 entries (client/server for Windows x64, Linux x64,
 macOS arm64, and macOS x64), no HEADLESS entry, private path, URL credential,
 or secret.
 
-## Publish without moving the channel tag or Latest
+### Publish without moving the channel tag or Latest
 
 Upload only the verified higher-sequence asset:
 
@@ -133,7 +249,7 @@ or any command that changes `jamulus-components-v1`. The signed sequence,
 expiry, exact WebJam identity, and Ed25519 signature—not tag movement—are the
 client trust decision.
 
-## Public verification before desktop promotion
+### Public verification before desktop promotion
 
 1. Download the public asset into a different new directory. Verify its
    GitHub digest and local SHA-256 match the pre-upload file exactly. Keep the

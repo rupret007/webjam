@@ -1,9 +1,12 @@
 # WebJam v0.22.2 source and physical test procedure
 
-> The source tree reports v0.22.2. Published candidates remain immutable
-> rollback/reference evidence; they do not certify the v0.22.2 standalone
-> Reference Studio, external Webex handoff, Reference Track pilot, or matching
-> iPhone setup kit.
+> The source tree and published GitHub **Latest** release report v0.22.2.
+> **Unreleased after v0.22.2:** this maintained procedure includes source
+> behavior not present in the immutable published v0.22.2 packages. v0.22.2 CI
+> certifies the packaged Pocket Stage setup-kit inventory and unsigned compile;
+> physical installation and pairing remain **NOT RUN**, as do physical
+> standalone Reference Studio audio, external Webex behavior, and Reference
+> Track routing.
 
 ## Scope
 
@@ -96,11 +99,17 @@ Review at minimum:
   state; explicit installation opens an approved Cisco HTTPS URL and never
   stores credentials, downloads/executes a package silently, or changes
   Jamulus audio.
-- Direct **Webex** and **More → Webex / Conversation** reveal the same panel
+- Direct **Webex Controls** and **More → Webex Controls** reveal the same panel
   without URL handoff. Repeated navigation, Settings changes, Studio return,
-  and **Bring Forward** do not create a meeting window; only **Join / Open**
-  hands off one validated URL per explicit click.
-- **Mute in Webex** focuses the verified external app for its own control and
+  and **Show Webex App** do not create a meeting window; only **Join / Open
+  Meeting** hands off one validated URL per explicit click.
+- On macOS, **Show Webex App** requires Webex already running, dynamically
+  re-verifies the exact Cisco PID, and returns a typed activation result after
+  requesting activation of that same app. It never launches Webex, passes a URL,
+  opens a browser, or claims a minimized window was restored. A stopped app
+  remains stopped; the user opens it manually or uses **Join / Open Meeting**.
+  Windows/Linux native activation remains disabled without publisher proof.
+- **Mute in Webex** shows the verified external app for its own control and
   never sends a blind shortcut, reports mute success, or changes Jamulus.
 - The Jamulus updater verifies the catalog signature, exact WebJam version,
   expiry, monotonic sequence, target/architecture/roles/capabilities, HTTPS
@@ -130,10 +139,17 @@ Review at minimum:
 - Reference Track source validation accepts real WAV/WAVE, AIFF, and FLAC;
   advertises MP3 only when the packaged decoder proves support; and safely
   rejects renamed/malformed files, symlinks, unsupported channels, oversized
-  input, and stale async completion without exposing paths.
+  input, a source that cannot decode its first bounded audio block, and stale
+  async completion without exposing paths.
 - A host may load and inspect a valid source while route certification is
   unavailable. Source/route status stays independent, Recheck Route starts no
-  playback, and Play remains locked without fresh route proof.
+  playback, and production Play remains locked before route scanning. BlackHole
+  setup and **Recheck Route** cannot unlock downloaded v0.22.2.
+- Controlled-pilot lifecycle tests prove unique descriptor-pinned profile and
+  secret ownership, one global WebJam 16ch/64ch claim inherited by the backing
+  child, exact live primary/backing CoreAudio routes, retryable startup
+  cleanup, and Close serialization. No machine test is recorded as physical
+  audibility, independent-mix, direct-monitor, or stem evidence.
 - Studio Arrange edits, take-lane comps, undo/redo, save/reopen, and autosave
   failure/retry never change the take manifest or source WAV bytes.
 - Standalone Reference Studio create/import/save/reopen/Save As, local
@@ -203,13 +219,14 @@ Review at minimum:
   Jamulus/JamulusServer verification, transport checks, and a frozen Host smoke.
   Keep a rollback package on hand before installing this verified candidate.
 
-## v0.18.0 physical and credentialed ledger
+## v0.22.2 physical and credentialed ledger
 
 The source suite does not replace this ledger. Every item remains **NOT RUN**
-for v0.18.0 until a dated package/build identity and evidence location are
-recorded.
+for v0.22.2 until a dated exact asset name, build ID, SHA-256, test environment,
+and evidence location are recorded. Publishing v0.22.2 as GitHub Latest did not
+convert any row to PASS.
 
-| Gate | v0.18.0 status |
+| Gate | v0.22.2 status |
 | --- | --- |
 | Two Macs hear each other through physical Jamulus interfaces | **NOT RUN** |
 | Host/guest native setup and returning path on both Macs | **NOT RUN** |
@@ -218,10 +235,18 @@ recorded.
 | Shared take, Local Originals, transfer, and host finalization | **NOT RUN** |
 | Long recording plus interruption/recovery with source hashes preserved | **NOT RUN** |
 | Studio Arrange playback, take-lane audition, and comp through real outputs | **NOT RUN** |
+| Reference Studio physical playback, recording, and latency calibration | **NOT RUN** |
 | Import edited/original stems, markers, and provenance in an external editor | **NOT RUN** |
-| Webex optional behavior without duplicated music | **NOT RUN** |
+| macOS Show Webex App versus Join/Open action separation with real Webex | **NOT RUN** |
+| Webex optional behavior without duplicated or interrupted Jamulus music | **NOT RUN** |
+| Reference Track two-endpoint audibility, isolation, independent mix/stem, and teardown | **NOT RUN** |
+| Pocket Stage physical QR pairing, permissions, control, interruption, and accessibility | **NOT RUN** |
 | Signed clean install, quarantine/SmartScreen, trust, and notarization | **NOT RUN** |
 
-Use [V018_UNIFIED_GUIDANCE_PILOT.md](V018_UNIFIED_GUIDANCE_PILOT.md) for the
-musician-facing cross-surface observations and exact evidence to record during
-those physical runs.
+The historical
+[v0.18 unified-guidance pilot](V018_UNIFIED_GUIDANCE_PILOT.md) remains useful
+for its musician-facing observation format, but record v0.22.2 results here
+with the current labels and exact package identity. Use the dedicated
+[Reference Track macOS pilot](docs/plans/webjam-reference-track-macos-pilot.md)
+and [Pocket Stage plan](docs/plans/webjam-pocket-stage-v1.md) for those
+feature-specific gates.

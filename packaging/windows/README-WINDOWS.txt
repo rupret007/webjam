@@ -1,6 +1,9 @@
 WebJam for Windows x64
 ======================
 
+UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
+that are not in the immutable published v0.22.2 assets.
+
 This package is an unsigned private test candidate. Verify its filename and
 published SHA-256 before running it. Windows SmartScreen or organizational
 policy may block it; WebJam does not bypass those controls.
@@ -30,15 +33,15 @@ bundled Jamulus 3.12.2 fallback installer from the Host/Join screen. Jamulus is
 a separate application. On a managed work PC, your organization's application
 policy may require IT approval even though WebJam itself installs per user.
 
-Webex is optional and is not bundled. In a session, choose Webex on WebJam's
-main rail to show Conversation controls; this does not open or rejoin the
-meeting. Bring Forward activates the native app, and only Join / Open hands
-off the saved link. Mute in Webex brings the app forward so you can use its own
-Mute control; WebJam cannot verify or change external Webex mute. If the native
-app is missing, Get Webex opens Cisco's official Windows x64 installer after
-you confirm. Cisco owns that download, license, installation, sign-in, and
-updates. Jamulus remains the music path; keep Webex muted while playing to
-avoid delayed duplicate audio.
+Webex is optional and is not bundled. In a session, choose Webex Controls on
+WebJam's main rail or More > Webex Controls to show Conversation controls; this
+does not open or rejoin the meeting. This Windows package can locate Webex but
+does not yet perform the required Authenticode publisher verification, so Show
+Webex App and the focus-based Mute in Webex guidance stay unavailable. Join /
+Open Meeting is the only saved-link handoff. If the native app is missing, Get
+Webex opens Cisco's official Windows x64 installer after you confirm. Cisco owns
+that download, license, installation, sign-in, and updates. Jamulus remains the
+music path; keep Webex muted while playing to avoid delayed duplicate audio.
 
 This candidate has no trusted WebJam publisher signature. A future signed
 release must show the expected publisher, but even a valid signature would not

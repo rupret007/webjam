@@ -7,6 +7,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
@@ -41,7 +43,7 @@ def test_leave_and_shutdown_are_safe_idempotent_no_ops():
     embed.shutdown()
     embed.shutdown()
 
-    assert embed.fallback_button().text() == "Join / Open"
+    assert embed.fallback_button().text() == "Join / Open Meeting"
 
 
 def test_external_success_copy_never_claims_join_or_connection():
@@ -97,7 +99,7 @@ def test_native_app_rescan_and_activation_busy_states_are_truthful():
     assert not embed.recheck_button().isHidden()
     assert not embed.recheck_button().isEnabled()
     assert not embed.bring_forward_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Checking…"
+    assert embed.bring_forward_button().text() == "Verifying…"
 
     embed.set_app_status(
         WebexAppState.INSTALLED,
@@ -106,12 +108,12 @@ def test_native_app_rescan_and_activation_busy_states_are_truthful():
     )
     assert embed.recheck_button().isHidden()
     assert embed.bring_forward_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Bring Forward"
+    assert embed.bring_forward_button().text() == "Show Webex App"
 
     embed.set_native_action_busy(True)
     assert not embed.bring_forward_button().isEnabled()
     assert not embed.mute_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Checking…"
+    assert embed.bring_forward_button().text() == "Verifying…"
 
     embed.set_native_action_busy(False)
     assert embed.bring_forward_button().isEnabled()
@@ -167,7 +169,7 @@ def test_unsupported_app_check_keeps_browser_meeting_action_available():
 
     assert embed.install_button().isHidden()
     assert embed.fallback_button().isEnabled()
-    assert embed.fallback_button().text() == "Join / Open"
+    assert embed.fallback_button().text() == "Join / Open Meeting"
     assert embed._app_status_label.text() == "Webex app check unavailable"
     assert "supported browser" in (
         embed._app_status_label.accessibleDescription()
@@ -215,9 +217,13 @@ def test_conversation_actions_are_distinct_and_truthful():
     embed.change_link_button().click()
 
     assert events == ["bring", "mute", "open", "settings"]
-    assert "without opening the meeting link" in (
+    assert "without opening the meeting link or a browser" in (
         embed.bring_forward_button().accessibleDescription()
     )
+    assert "never starts Webex" in (
+        embed.bring_forward_button().accessibleDescription()
+    )
+    assert "already running" in embed.bring_forward_button().toolTip()
     mute_description = embed.mute_button().accessibleDescription()
     assert "cannot verify or change mute" in mute_description
     assert "Jamulus" not in embed.mute_button().text()
@@ -234,11 +240,59 @@ def test_join_open_requires_a_configured_link_and_is_single_flight():
 
     embed.set_launch_status("Opening…")
     assert not embed.fallback_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Bring Forward"
+    assert embed.bring_forward_button().text() == "Show Webex App"
 
     embed.set_launch_status("Opened externally")
     assert embed.fallback_button().isEnabled()
     assert embed.fallback_button().text() == "Open Again"
+
+
+def test_keyboard_show_app_and_join_meeting_remain_distinct():
+    embed = WebexEmbed()
+    events: list[str] = []
+    embed.bring_forward_requested.connect(lambda: events.append("show-app"))
+    embed.open_meeting_requested.connect(lambda: events.append("join-meeting"))
+    embed.set_meeting_configured(True)
+    embed.set_app_status(
+        WebexAppState.INSTALLED,
+        publisher_verified=True,
+    )
+    embed.show()
+    _app.processEvents()
+
+    embed.show_app_button().setFocus()
+    QTest.keyClick(embed.show_app_button(), Qt.Key.Key_Space)
+    _app.processEvents()
+    assert events == ["show-app"]
+
+    embed.fallback_button().setFocus()
+    QTest.keyClick(embed.fallback_button(), Qt.Key.Key_Space)
+    _app.processEvents()
+    assert events == ["show-app", "join-meeting"]
+    embed.close()
+
+
+def test_explicit_webex_actions_remain_legible_at_760_pixels():
+    embed = WebexEmbed()
+    embed.resize(760, embed.maximumHeight())
+    embed.set_meeting_configured(True)
+    embed.set_app_status(
+        WebexAppState.INSTALLED,
+        version="46.7.0.35472",
+        publisher_verified=True,
+    )
+    embed.show()
+    _app.processEvents()
+
+    assert embed.minimumSizeHint().width() <= 760
+    for button in (
+        embed.show_app_button(),
+        embed.mute_button(),
+        embed.fallback_button(),
+        embed.change_link_button(),
+    ):
+        assert button.width() >= button.sizeHint().width()
+    embed.close()
 
 
 def test_native_app_controls_fail_closed_until_detection_is_installed():

@@ -2,6 +2,9 @@
 
 Status: **NOT RUN**
 
+> **Unreleased after v0.22.2:** this maintained worksheet uses source behavior
+> not present in the immutable published v0.22.2 packages.
+
 This worksheet validates WebJam's external Webex handoff without storing a
 Webex username, password, token, admin address, or private meeting path in the
 repository or evidence bundle.
@@ -42,7 +45,12 @@ the derived `*.webex.com` site hostname.
 | Malformed input is rejected | NOT RUN | |
 | An HTTP Webex link is rejected | NOT RUN | |
 | A non-Webex HTTPS link is rejected | NOT RUN | |
-| **Open in Webex** opens the intended native Webex app or browser destination | NOT RUN | |
+| Direct **Webex Controls** and **More → Webex Controls** show the same Conversation panel without a launch | NOT RUN | |
+| On macOS, **Show Webex App** dynamically re-verifies the exact running Cisco PID and requests activation without opening a browser or meeting | NOT RUN | |
+| A minimized-window check records what the musician sees without claiming WebJam can prove restoration | NOT RUN | |
+| On macOS with Webex stopped, **Show Webex App** refuses without launching; guidance says to open Webex manually or use Join/Open | NOT RUN | |
+| Windows/Linux native focus stays unavailable without publisher proof | NOT RUN | |
+| **Join / Open Meeting** opens the intended native Webex app or browser destination exactly once | NOT RUN | |
 | WebJam says “Opened externally—finish joining in Webex” and never claims it joined | NOT RUN | |
 
 ## Two-endpoint meeting

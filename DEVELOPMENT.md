@@ -1,5 +1,8 @@
 # Developing WebJam v0.22.2
 
+> **Unreleased after v0.22.2:** this maintained development guide includes
+> behavior not present in the immutable published v0.22.2 assets.
+
 ## Local setup
 
 Use the repository virtual environment:
@@ -23,8 +26,10 @@ jitter settings.
 
 ## Pocket Stage developer preview
 
-Pocket Stage is owner-device development work, not a distributed iOS binary or
-desktop-package claim. Run the focused desktop tests with:
+Pocket Stage is owner-device development work, not a distributed or pre-signed
+iOS binary. The v0.22.2 Mac packages do include the generated, CI-compiled
+Xcode project and setup kit; physical installation and pairing remain
+owner-performed and **NOT RUN**. Run the focused desktop tests with:
 
 ```bash
 .venv/bin/python -m pytest -q \
@@ -51,18 +56,20 @@ WEBJAM_RUN_SWIFT_POCKET_STAGE_INTEGRATION=1 \
   .venv/bin/pytest -q tests/test_pocket_stage_swift_integration.py
 ```
 
-For an owner-device experiment, follow `ios/README.md`: run the checked-in
-generator, select a unique bundle identifier and the owner's Apple Personal
-Team in the generated target, then install from Xcode. The generated target
-already contains the local package and required privacy/network keys. The Pair
-view uses a native QR scanner; text injection is only a Simulator/developer
-aid, not a physical-user fallback. App Store/TestFlight distribution is not
-implemented.
+For an owner-device experiment, follow `ios/README.md`. From a Mac release
+package, open the included `Pocket Stage iPhone Setup/WebJamPocketStage.xcodeproj`
+directly in Xcode; source developers can generate the same project with the
+checked-in generator. Select a unique bundle identifier and the owner's Apple
+Personal Team, then install from Xcode. The generated target already contains
+the local package and required privacy/network keys. The Pair view uses a
+native QR scanner; text injection is only a Simulator/developer aid, not a
+physical-user fallback. App Store/TestFlight distribution is not implemented.
 
 Preserve these boundaries in every Pocket Stage change:
 
-- the gateway stays off until **More -> Use iPhone** and binds only a selected
-  private interface, never wildcard/public or plaintext WebSocket;
+- the gateway stays off until **More → Use iPhone as Pocket Stage…** and binds
+  only a selected private interface, never wildcard/public or plaintext
+  WebSocket;
 - the QR capability is one-use, expires in 120 seconds, and pins the exact
   SHA-256 of the ephemeral leaf certificate's DER bytes;
 - there is no durable reconnect credential; a disconnected phone needs a fresh
@@ -148,13 +155,12 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.22.2`. Published v0.20.0, v0.21.0, and v0.22.1 desktop assets
-remain immutable historical evidence and must never be overwritten or served
-under a moved tag. v0.21.0 is the prior rollback/reference candidate;
-v0.22.2 becomes current only after its verified GitHub Latest promotion:
-
-- GitHub release: [`v0.21.0`](https://github.com/rupret007/webjam/releases/tag/v0.21.0),
-  clearly labeled as an unsigned/unnotarized private test candidate.
+The source tree reports `0.22.2`, and
+[`v0.22.2`](https://github.com/rupret007/webjam/releases/tag/v0.22.2) is the
+published non-prerelease GitHub **Latest** release, clearly labeled as an
+unsigned/unnotarized private test candidate. Published v0.20.0, v0.21.0,
+v0.22.0, and v0.22.1 tags and assets remain immutable historical evidence and
+must never be overwritten or served under a moved tag.
 
 The local source-bundle smoke command is:
 

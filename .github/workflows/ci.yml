@@ -1418,7 +1418,8 @@ jobs:
             # Nest the pinned upstream Jamulus client/server and license.
             # Build artifacts replace the upstream signatures ad hoc so App
             # Sandbox does not prevent WebJam from provisioning command-line
-            # RPC secrets/recordings. The isolated protected release job later
+            # RPC secrets/recordings. The isolated environment-bound release
+            # job, intended to be protected by repository policy, later
             # replaces every nested signature with its explicit Developer ID
             # entitlement policy.
             mkdir -p dist/WebJam.app/Contents/Resources/THIRD_PARTY_LICENSES
@@ -1498,7 +1499,8 @@ jobs:
               > dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.sha256
             # PyInstaller signs the outer bundle before the CI-only Jamulus
             # copy above. Refresh the shallow outer seal so the unsigned source
-            # artifact is internally consistent before protected signing.
+            # artifact is internally consistent before environment-bound
+            # signing.
             jamulus_cdhash_before="$(codesign -dv --verbose=4 \
               dist/WebJam.app/Contents/Resources/Jamulus.app 2>&1 \
               | awk -F= '/^CDHash=/{print $2}')"
@@ -2253,11 +2255,13 @@ jobs:
           retention-days: 14
 
   # ------------------------------------------------------------------
-  # Protected Windows release trust
+  # Environment-bound Windows release trust
   #
   # The ordinary matrix creates and fully exercises an unsigned source Setup.
-  # Only an explicit rehearsal can enter this environment-gated job,
-  # which validates the pinned publisher certificate, signs owned executables,
+  # Only an explicit rehearsal can enter this environment-bound job. Its named
+  # environment is not an approval boundary until repository protection rules
+  # are configured. The job validates the pinned publisher certificate, signs
+  # owned executables,
   # rebuilds/signs Setup and its uninstaller, removes the private key, and then
   # repeats installation and launch checks on the final signed container.
   # ------------------------------------------------------------------
@@ -2874,13 +2878,15 @@ jobs:
           retention-days: 90
 
   # ------------------------------------------------------------------
-  # Protected macOS release trust
+  # Environment-bound macOS release trust
   #
   # The ordinary matrix above never receives Apple credentials. An explicit
   # rehearsal first builds and exercises an ad-hoc source artifact, then this
-  # separate job requests approval for the protected macos-release environment
-  # before any environment secret becomes available. It remains available for
-  # a future production-trusted release without blocking private candidates.
+  # separate job enters the macos-release environment, which is intended to be
+  # protected but is not an approval boundary until repository rules are
+  # configured, before any environment secret becomes available. It remains
+  # available for a future production-trusted release without blocking private
+  # candidates.
   # ------------------------------------------------------------------
   macos-release-trust:
     name: macOS Release Trust (${{ matrix.target }})
@@ -2920,8 +2926,8 @@ jobs:
           path: release-source/
 
       # Prove the downloaded source is the exact architecture, version, and
-      # commit that this protected job is about before mapping any secret into
-      # a process environment or materializing a private key.
+      # commit that this environment-bound job is about before mapping any
+      # secret into a process environment or materializing a private key.
       - name: Verify downloaded macOS source before credential access
         shell: bash
         run: |

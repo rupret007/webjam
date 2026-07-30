@@ -1,5 +1,8 @@
 # Pocket Stage v1 developer-preview implementation and validation plan
 
+> **Unreleased after v0.22.2:** the current menu label below is not present in
+> the immutable published v0.22.2 packages.
+
 - Date: 2026-07-21
 - Status: Reproducible app vertical slice implemented; physical validation **NOT RUN**
 - Distribution: Generated Xcode project in Mac candidates + Apple Personal Team development only
@@ -29,7 +32,7 @@ credential.
 | Swift protocol, transport, and state-model tests | `ios/Sources/` and `ios/Tests/` |
 | SwiftUI app + reproducible target | `ios/PocketStage/` and `ios/project.yml` |
 
-The desktop entry point is **More -> Use iPhone**. It starts a dedicated gateway
+The desktop entry point is **More → Use iPhone as Pocket Stage…**. It starts a dedicated gateway
 only when requested and displays a one-use QR code that expires in 120 seconds.
 The gateway creates an ephemeral self-signed certificate, and the QR carries
 the exact SHA-256 fingerprint of that leaf certificate's DER bytes.
@@ -72,7 +75,7 @@ channel. No iOS binary should be published as a normal WebJam release asset.
 2. Start or join the desktop jam and complete Jamulus audio setup normally.
 3. If host recording will be tested, complete the first-record/Recording Setup
    choice on the desktop before using the phone control.
-4. Choose **More -> Use iPhone**. Record the exact desktop commit/build and
+4. Choose **More → Use iPhone as Pocket Stage…**. Record the exact desktop commit/build and
    iPhone build used.
 5. In Pocket Stage, choose **Scan Pairing QR**. The payload field is for
    Simulator/developer injection only; the desktop deliberately has no

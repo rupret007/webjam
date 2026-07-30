@@ -4,6 +4,34 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
+## [Unreleased] — v0.22.3 Reference Track reliability candidate
+
+### Reference Track route ownership and cleanup
+
+- Hardened the controlled macOS source pilot around one global WebJam
+  Reference Track lifecycle. Every start gets unique private Jamulus profile
+  and RPC-secret names opened through a retained directory descriptor; cleanup
+  accepts only the exact files WebJam created or Jamulus's bounded,
+  identity-matching profile rewrite.
+- The lifecycle claim is held both in-process and by an inherited kernel
+  socket in the owned backing Jamulus process. A second WebJam process cannot
+  claim either eligible BlackHole route while the first route—or an orphaned
+  backing client—still owns it.
+- Playback now requires fresh PID-bound CoreAudio proof for both the primary
+  musician Jamulus client and the separately owned `WebJam Track` client.
+  Uncertain, changed, or stale proof emits silence and tears down the backing
+  route without stopping the primary session.
+- Startup teardown failures remain visible as cleanup pending. **Stop** retries
+  the retained process, RPC, file, and route owners; source replacement and
+  application shutdown stay blocked until cleanup is proved. Blocking route
+  start, Stop, and Close are serialized inside the core controller so a late
+  startup failure cannot be hidden by an earlier clean-close result.
+- These are source and machine-test improvements, not production
+  certification. The v0.22.3 candidate cannot be tagged or published until the
+  exact controlled-pilot build passes the two-endpoint audibility, independent
+  mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
+  physical gates.
+
 ## [0.22.2] — 2026-07-29 demo-navigation and source-first Track candidate
 
 ### Direct musician workflows

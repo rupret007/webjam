@@ -102,7 +102,7 @@ class TestToggleButtonState(unittest.TestCase):
         self.controller.bridge.webex_state = "Not opened"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Webex"
+            self.window.session_strip._video_button.text(), "Webex Controls"
         )
         self.assertEqual(
             self.window.session_strip._video_button.property("webexLaunchAction"),
@@ -114,7 +114,7 @@ class TestToggleButtonState(unittest.TestCase):
         self.controller.bridge.webex_state = "Opened externally"
         self.controller._refresh_readiness()
         self.assertEqual(
-            self.window.session_strip._video_button.text(), "Webex"
+            self.window.session_strip._video_button.text(), "Webex Controls"
         )
         self.assertEqual(
             self.window.session_strip._video_button.property("webexLaunchAction"),

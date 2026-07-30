@@ -167,9 +167,10 @@ and teardown. The standalone workflow makes no such claim.
 
 ## Candidate download checklist
 
-The v0.22.2 GitHub release is valid only when it is a published,
-non-prerelease release marked **Latest** and contains exactly these seven
-packages plus the checksum manifest:
+The
+[v0.22.2 GitHub release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
+is now published as a non-prerelease marked **Latest**. Its verified inventory
+is exactly these seven packages plus the checksum manifest:
 
 - `WebJam-v0.22.2-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
 - `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`

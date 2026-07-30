@@ -76,6 +76,8 @@ class _ControllerTestBase(unittest.TestCase):
         c._invite_switch_in_flight = False
         c._webex_app_info = None
         c._webex_activation_inflight = False
+        c._webex_events = []
+        c._shutdown_in_progress = False
         c.window.session_strip.set_tools_enabled(True)
 
 
@@ -91,6 +93,10 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         c.window.webex_embed.setVisible.assert_called_once_with(True)
         c.window.webex_embed.focus_primary_action.assert_called_once_with()
         self.assertEqual(c._last_content_key, "stage")
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "conversation-panel", "result": "shown"},
+        )
 
     def test_more_conversation_uses_the_same_side_effect_free_route(self):
         c = self.controller
@@ -100,7 +106,7 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         action = next(
             action
             for action in c.window.session_strip._tools_button.menu().actions()
-            if action.text() == "Webex / Conversation"
+            if action.text() == "Webex Controls"
         )
 
         action.trigger()
@@ -133,6 +139,10 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         )
         c.window.webex_embed.set_launch_status.assert_called_with("Opening…")
         c.window.webex_embed.load_meeting.assert_not_called()
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "meeting-handoff", "result": "accepted"},
+        )
 
     def test_rejected_single_flight_launch_never_leaves_opening_ui(self):
         c = self.controller
@@ -168,6 +178,10 @@ class TestExternalWebexLaunch(_ControllerTestBase):
         self.assertEqual(
             c._show_actionable_error.call_args.args[0],
             "Invalid Webex URL",
+        )
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "meeting-handoff", "result": "invalid-link"},
         )
         c.bridge.launch_webex = MagicMock()
         c.bridge.launch_webex.assert_not_called()
@@ -213,7 +227,12 @@ class TestExternalWebexLaunch(_ControllerTestBase):
 
 class TestNativeWebexControls(_ControllerTestBase):
     def test_bring_forward_activates_only_the_detected_app(self):
-        from services.webex_app import WebexAppInfo, WebexAppState
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
 
         c = self.controller
         info = WebexAppInfo(
@@ -225,10 +244,12 @@ class TestNativeWebexControls(_ControllerTestBase):
         c._webex_app_info = info
         c.bridge.launch_webex = MagicMock()
         with patch(
-            "services.webex_app.bring_webex_forward",
-            return_value=True,
+            "services.webex_app.show_webex_app",
+            return_value=WebexActivationResult(
+                WebexActivationState.ACTIVATED_RUNNING
+            ),
         ) as activate:
-            c._bring_webex_forward()
+            c._show_webex_app()
             self.assertTrue(
                 _wait_until(
                     lambda: activate.called
@@ -236,19 +257,30 @@ class TestNativeWebexControls(_ControllerTestBase):
                 )
             )
 
-        activate.assert_called_once_with(info)
+        activate.assert_called_once()
+        self.assertEqual(activate.call_args.args, (info,))
+        self.assertTrue(callable(activate.call_args.kwargs["cancelled"]))
         c.bridge.launch_webex.assert_not_called()
         self.assertIn(
-            "asked Webex to come forward",
+            "verified running Webex app is active",
             c.window.flash_message.call_args.args[0],
         )
         self.assertIn(
-            "Switch to Webex if needed",
+            "No browser or meeting link was opened",
             c.window.flash_message.call_args.args[0],
+        )
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "show-webex-app", "result": "activated-running"},
         )
 
     def test_mute_action_never_changes_webex_or_jamulus_audio_blindly(self):
-        from services.webex_app import WebexAppInfo, WebexAppState
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
 
         c = self.controller
         c._webex_app_info = WebexAppInfo(
@@ -261,8 +293,10 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_mute = MagicMock()
         c.jamulus.set_self_muted = MagicMock()
         with patch(
-            "services.webex_app.bring_webex_forward",
-            return_value=True,
+            "services.webex_app.show_webex_app",
+            return_value=WebexActivationResult(
+                WebexActivationState.ACTIVATED_RUNNING
+            ),
         ) as activate:
             c._focus_webex_mute()
             self.assertTrue(
@@ -276,9 +310,14 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_mute.assert_not_called()
         c.jamulus.set_self_muted.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        self.assertIn("asked Webex to come forward", message)
-        self.assertIn("use its Mute control", message)
+        self.assertIn("verified running Webex app is active", message)
+        self.assertIn("use Webex’s own Mute control", message)
+        self.assertIn("restore it from the Dock", message)
         self.assertIn("did not change", message)
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "mute-guidance", "result": "activated-running"},
+        )
 
     def test_unavailable_app_does_not_launch_a_meeting_as_fallback(self):
         from services.webex_app import WebexAppInfo, WebexAppState
@@ -298,7 +337,12 @@ class TestNativeWebexControls(_ControllerTestBase):
         )
 
     def test_failed_revalidation_rescans_without_opening_a_meeting(self):
-        from services.webex_app import WebexAppInfo, WebexAppState
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
 
         c = self.controller
         c._webex_app_info = WebexAppInfo(
@@ -308,8 +352,11 @@ class TestNativeWebexControls(_ControllerTestBase):
         )
         c.bridge.launch_webex = MagicMock()
         with patch(
-            "services.webex_app.bring_webex_forward",
-            return_value=False,
+            "services.webex_app.show_webex_app",
+            return_value=WebexActivationResult(
+                WebexActivationState.REFUSED,
+                "reverification-refused",
+            ),
         ) as activate, patch.object(
             c,
             "_start_webex_app_detection",
@@ -326,9 +373,126 @@ class TestNativeWebexControls(_ControllerTestBase):
         rescan.assert_called_once_with()
         c.bridge.launch_webex.assert_not_called()
         self.assertIn(
-            "couldn't reverify",
+            "couldn't verify",
             c.window.flash_message.call_args.args[0],
         )
+        self.assertEqual(
+            c._webex_events[-1],
+            {
+                "action": "show-webex-app",
+                "result": "refused",
+                "reason_code": "reverification-refused",
+            },
+        )
+
+    def test_stopped_app_is_never_launched_and_has_manual_guidance(self):
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        with patch(
+            "services.webex_app.show_webex_app",
+            return_value=WebexActivationResult(
+                WebexActivationState.REFUSED,
+                "app-not-running",
+            ),
+        ), patch.object(
+            c,
+            "_start_webex_app_detection",
+        ) as rescan:
+            c._show_webex_app()
+            self.assertTrue(
+                _wait_until(lambda: not c._webex_activation_inflight)
+            )
+
+        rescan.assert_not_called()
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("not running", message)
+        self.assertIn("Open Webex manually", message)
+        self.assertIn("Join / Open Meeting", message)
+
+    def test_shutdown_during_disk_reverification_never_enters_appkit(self):
+        from services.webex_app import WebexAppInfo, WebexAppState
+
+        c = self.controller
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "Webex.app"
+            app.mkdir()
+            info = WebexAppInfo(
+                state=WebexAppState.INSTALLED,
+                publisher_verified=True,
+                path=app,
+            )
+            c._webex_app_info = info
+
+            def reverify(**_kwargs):
+                c._shutdown_in_progress = True
+                return info
+
+            with patch(
+                "services.webex_app.sys.platform",
+                "darwin",
+            ), patch(
+                "services.webex_app.detect_webex_app",
+                side_effect=reverify,
+            ), patch(
+                "services.webex_app._MacOSApplicationRuntime",
+            ) as runtime, patch.object(
+                c,
+                "_start_webex_app_detection",
+            ):
+                c._show_webex_app()
+                self.assertTrue(
+                    _wait_until(lambda: c._shutdown_in_progress)
+                )
+
+            runtime.assert_not_called()
+        c._shutdown_in_progress = False
+        c._webex_activation_inflight = False
+
+    def test_native_activation_cancellation_tracks_generation_change(self):
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        observed = []
+
+        def activate(_info, *, cancelled):
+            observed.append(cancelled())
+            c._webex_activation_generation += 1
+            observed.append(cancelled())
+            return WebexActivationResult(
+                WebexActivationState.REFUSED,
+                "activation-cancelled",
+            )
+
+        with patch(
+            "services.webex_app.show_webex_app",
+            side_effect=activate,
+        ) as request:
+            c._show_webex_app()
+            self.assertTrue(_wait_until(lambda: request.called))
+
+        self.assertEqual(observed, [False, True])
+        c._webex_activation_inflight = False
 
     def test_native_activation_is_single_flight(self):
         from services.webex_app import WebexAppInfo, WebexAppState
@@ -340,8 +504,8 @@ class TestNativeWebexControls(_ControllerTestBase):
             path=Path("/Applications/Webex.app"),
         )
         c._webex_activation_inflight = True
-        with patch("services.webex_app.bring_webex_forward") as activate:
-            c._bring_webex_forward()
+        with patch("services.webex_app.show_webex_app") as activate:
+            c._show_webex_app()
 
         activate.assert_not_called()
         self.assertIn(

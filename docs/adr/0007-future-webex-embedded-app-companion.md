@@ -4,6 +4,9 @@
 - Date: 2026-07-28
 - Scope: Optional in-meeting companion surface
 
+> **Unreleased after v0.22.2:** current desktop labels and activation behavior
+> below are not present in the immutable published v0.22.2 packages.
+
 ## Context
 
 WebJam currently opens a musician-supplied Webex Meeting or Personal Room link
@@ -102,12 +105,14 @@ content-retention design, secure-sync protocol tests, two-participant physical
 validation, and proof that disconnecting the companion cannot interrupt
 Jamulus, recording, or the desktop session.
 
-The v0.22.2 desktop candidate implements native-app detection, official Cisco
-installer handoff, side-effect-free Conversation navigation, explicit
-Bring Forward and Join/Open actions, truthful Mute-in-Webex focus guidance,
-validated external meeting launch, and privacy-safe diagnostics. It does not
-control or verify external Webex mute. None of the hosted, OAuth, relay,
-embedded, or minimize-to-agent phases above are represented as shipped.
+The current desktop implements native-app detection, official Cisco installer
+handoff, side-effect-free **Webex Controls** navigation, running-only
+exact-PID-verified **Show Webex App**, explicit **Join / Open Meeting**,
+truthful Mute-in-Webex focus guidance, validated external meeting launch, and
+privacy-safe diagnostics. It does not launch Webex through Show, prove that a
+minimized Webex window was restored, or control or verify external Webex mute.
+None of the hosted, OAuth, relay, embedded, or minimize-to-agent phases above
+are represented as shipped.
 
 ## Cisco references
 

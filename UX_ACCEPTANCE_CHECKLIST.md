@@ -1,5 +1,8 @@
 # WebJam v0.22.2 UX acceptance checklist
 
+> **Unreleased after v0.22.2:** this maintained checklist includes source
+> behavior not present in the immutable published v0.22.2 packages.
+
 ## Unified guidance
 
 - [ ] HUD, passive stage, Session Canvas, recorder, and Studio use the same
@@ -53,15 +56,25 @@
 
 ## Optional features
 
-- [ ] Direct **Webex** and **Studio** actions remain visible on the main session
-      rail; hosts also see **Reference Track**, with no clipping or lost Record,
-      Copy Invite, or End/Leave action at the supported compact sizes.
-- [ ] **Webex** and **More → Webex / Conversation** reveal and focus the same
-      panel without opening a URL; repeated navigation remains side-effect free.
-- [ ] **Bring Forward** activates the verified installed Webex app without
-      rejoining; only **Join / Open** hands off the URL, once per click.
-- [ ] **Mute in Webex** focuses Webex for its own Mute control and truthfully
-      says that WebJam neither changes nor verifies external mute or Jamulus.
+- [ ] Direct **Webex Controls** and **Studio** actions remain visible on the main
+      session rail; hosts also see **Reference Track**, with no clipping or lost
+      Record, Copy Invite, or End/Leave action at the supported compact sizes.
+- [ ] Direct **Webex Controls** and **More → Webex Controls** reveal and focus
+      the same panel without opening a URL; repeated navigation remains
+      side-effect free.
+- [ ] On macOS, **Show Webex App** requires Webex already running, dynamically
+      re-verifies the exact Cisco PID, requests activation of that same app, and
+      never launches Webex, opens a browser, or hands off a meeting; a stopped
+      app remains stopped and only **Join / Open Meeting** hands off the URL,
+      once per click.
+- [ ] The UI does not claim that **Show Webex App** proved a minimized window
+      was restored; it tells the musician to open Webex manually or use **Join /
+      Open Meeting** when the app is stopped.
+- [ ] Windows/Linux keep native focus unavailable without publisher proof and
+      still provide the truthful **Join / Open Meeting** handoff.
+- [ ] **Mute in Webex** shows the verified app for its own Mute control and
+      truthfully says that WebJam neither changes nor verifies external mute or
+      Jamulus.
 - [ ] Webex link is optional, external, persisted without credentials, and
       never auto-opened.
 - [ ] UI says Jamulus carries music and reminds musicians to mute Webex while
@@ -74,9 +87,10 @@
       live-take/offline-project route and preserve a working return to Live.
 - [ ] A host can load and inspect WAV/WAVE, AIFF, or FLAC in **Reference Track** while
       route readiness is unavailable; MP3 is offered only when the packaged
-      decoder proves support.
+      decoder proves support, and load decodes the first bounded audio block.
 - [ ] Source and route states remain distinct. **Recheck Route** starts no
-      playback, and Play stays fail-closed without current isolation evidence.
+      playback, production locks before route scanning, and BlackHole setup or
+      Recheck cannot unlock a downloaded v0.22.2 package.
 - [ ] Reference Studio opens independently of Host/Join, retains the canonical
       trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim
@@ -127,6 +141,12 @@
 
 - [ ] Cancel during startup cannot leave a late Jamulus client or private
       server running.
+- [ ] A concurrent Reference Track Close cannot report `closed` before an
+      in-flight backing-client start has either retired cleanly or exposed
+      retryable cleanup pending.
+- [ ] Reference Track cleanup retains its owned process, RPC, session-unique
+      profile/secret, and global 16ch/64ch lifecycle claim until every step is
+      proved; **Stop** retries and shutdown remains blocked on uncertainty.
 - [ ] End/Leave stops only owned processes and preserves an unfinished local
       original for review rather than calling it complete.
 

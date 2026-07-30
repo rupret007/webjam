@@ -1,8 +1,11 @@
 # ADR 0004: External Webex launch and future OAuth connection
 
 - Status: Accepted for external launch; OAuth is roadmap-only
-- Date: 2026-07-27
+- Date: 2026-07-29
 - Scope: Optional Webex conversation/video companion
+
+> **Unreleased after v0.22.2:** the current-decision text includes source
+> behavior not present in the immutable published v0.22.2 packages.
 
 ## Context
 
@@ -16,12 +19,18 @@ permission, credential, and shutdown risk.
 
 WebJam stores only `AppSettings.webex_url`. Each musician enters their own
 HTTPS `webex.com` Meeting or Personal Room link. The UI shows only its
-validated site hostname. The direct **Webex** action and its More-menu alias
-only reveal/focus Conversation; they never open the saved link. **Bring
-Forward** requests activation only after the native app passes the platform
-publisher check. Only explicit **Join / Open** hands the full link to the
-operating system, once per click, and the asynchronous worker remains bound to
-that immutable authorized URL.
+validated site hostname. The direct **Webex Controls** action and **More →
+Webex Controls** only reveal/focus Conversation; they never open the saved
+link. On macOS,
+**Show Webex App** requires Webex already running. It dynamically identifies
+the exact Cisco process, re-verifies that PID immediately before activation,
+and returns a typed result after requesting activation of that same app. It
+does not launch Webex, pass a URL, open a browser or meeting, or prove that a
+minimized window was restored. If Webex is stopped, the user opens it manually
+or uses explicit **Join / Open Meeting**, which hands the full link to the
+operating system once per click; the asynchronous worker remains bound to that
+immutable authorized URL. Windows and Linux keep native focus disabled because
+their current detection does not establish publisher proof.
 
 The native Webex app or browser owns authentication, participant identity,
 camera, microphone, speaker, join state, meeting controls, and leave state.
@@ -30,7 +39,7 @@ WebJam reports only `Not opened`, `Opening…`, `Opened externally`, or
 membership.
 
 The external app does not expose verifiable mute control to this integration.
-**Mute in Webex** therefore brings Webex forward for its own Mute control and
+**Mute in Webex** therefore shows the verified Webex app for its own Mute control and
 truthfully says that WebJam did not change or verify mute. It does not send a
 blind system-wide shortcut or alter Jamulus controls.
 

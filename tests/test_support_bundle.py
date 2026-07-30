@@ -254,6 +254,28 @@ class TestSupportArtifact(unittest.TestCase):
                     "version": "46.7.0.35472",
                     "publisher_verified": True,
                     "reason_code": "publisher-check-deferred",
+                    "events": [
+                        {
+                            "action": "conversation-panel",
+                            "result": "shown",
+                        },
+                        {
+                            "action": "show-webex-app",
+                            "result": "activated-running",
+                        },
+                        {
+                            "action": "meeting-handoff",
+                            "result": "open-failed",
+                            "reason_code": "native-activation-failed",
+                            "url": (
+                                "https://example.webex.com/meet/private-room"
+                            ),
+                        },
+                        {
+                            "action": "private-room",
+                            "result": "secret",
+                        },
+                    ],
                     "path": "/Applications/Webex.app",
                     "meeting_url": (
                         "https://example.webex.com/meet/private-room"
@@ -270,7 +292,7 @@ class TestSupportArtifact(unittest.TestCase):
                     "route_available": False,
                     "route_platform": "macos",
                     "route_backend": "blackhole",
-                    "route_reason": "physical_certification_required",
+                    "route_reason": "cleanup_pending",
                     "route_active": False,
                     "cleanup_pending": True,
                     "source_name": "Private Demo Song.flac",
@@ -310,6 +332,21 @@ class TestSupportArtifact(unittest.TestCase):
                 "reason_code": "publisher-check-deferred",
                 "state": "installed",
                 "version": "46.7.0.35472",
+                "events": [
+                    {
+                        "action": "conversation-panel",
+                        "result": "shown",
+                    },
+                    {
+                        "action": "show-webex-app",
+                        "result": "activated-running",
+                    },
+                    {
+                        "action": "meeting-handoff",
+                        "reason_code": "native-activation-failed",
+                        "result": "open-failed",
+                    },
+                ],
             },
         )
         self.assertEqual(
@@ -321,7 +358,7 @@ class TestSupportArtifact(unittest.TestCase):
                 "route_available": False,
                 "route_backend": "blackhole",
                 "route_platform": "macos",
-                "route_reason": "physical_certification_required",
+                "route_reason": "cleanup_pending",
                 "source_channels": 2,
                 "source_duration_s": 321.125,
                 "source_format": "FLAC",

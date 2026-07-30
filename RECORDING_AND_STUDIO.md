@@ -1,4 +1,4 @@
-# Recording and Studio — v0.18.0
+# Recording and Studio — v0.22.2
 
 ## Recording is separate from live music
 
@@ -45,9 +45,11 @@ synchronized or that an external editor has been tested.
 
 ## Studio
 
-Studio opens from **More → Studio**. It is a Logic-like review workspace, not
-a Logic integration. Open a completed or explicitly recovered schema-v2 take to
-use its multitrack review and Arrange workspace.
+Studio opens from the direct **Studio** action; **More → Studio** and
+Cmd/Ctrl+3 reach that same editor rather than creating another workspace. It is
+a Logic-like review workspace, not a Logic integration. Open a completed or
+explicitly recovered schema-v2 take to use its multitrack review and Arrange
+workspace.
 
 ### Arrange and mix
 
@@ -192,15 +194,17 @@ requested operation.
 
 Export never rewrites the original take.
 
-## v0.18.0 evidence boundary
+## v0.22.2 evidence boundary
 
 Automated source tests cover the arrangement model, persistence/recovery,
 history/controller behavior, renderer, comping, source catalog, waveform
 pipeline, export transaction, and headless Qt interactions. Those checks do not
 prove that musicians heard the result through physical interfaces.
 
-For this source candidate, real two-Mac listening, interface
-disconnect/reconnect, sleep/wake, interruption and long-recording recovery,
-external-editor import of an exported package, signed clean installation, and
-platform trust/notarization are **NOT RUN**. Record those separately before
-promoting a v0.18.0 package.
+For the published v0.22.2 private test candidate, real two-Mac listening,
+interface disconnect/reconnect, sleep/wake, interruption and long-recording
+recovery, Studio playback through physical outputs, external-editor import of
+an exported package, signed clean installation, and platform
+trust/notarization remain **NOT RUN**. Record any later result against the exact
+asset name, build ID, and SHA-256; publishing the candidate did not convert
+those physical or credentialed gates into PASS.

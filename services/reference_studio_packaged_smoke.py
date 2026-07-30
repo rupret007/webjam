@@ -12,6 +12,7 @@ import hashlib
 import os
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -19,6 +20,7 @@ import numpy as np
 import soundfile as sf
 
 from core.project_recording_commit import inspect_project_recording_recovery
+from core.reference_track import ReferenceTrackDecoder, ReferenceTrackStream
 from core.song_bounce import (
     BounceFormat,
     SongBounceCancelled,
@@ -100,6 +102,59 @@ def _write_backing(path: Path) -> None:
         _SAMPLE_RATE,
         subtype="FLOAT",
     )
+
+
+def _exercise_packaged_reference_track_mp3(root: Path) -> None:
+    """Prove the frozen runtime can decode a real 44.1-kHz stereo MP3."""
+
+    if "MP3" not in sf.available_formats() or not sf.check_format("MP3"):
+        raise RuntimeError(
+            "Packaged Reference Track MP3 decoding is unavailable."
+        )
+    source = root / "Reference Track MP3 With Spaces.mp3"
+    sample_rate = 44_100
+    frames = np.arange(sample_rate * 2, dtype=np.float32)
+    left = np.sin(frames * np.float32(2.0 * np.pi * 220.0 / sample_rate))
+    right = np.sin(frames * np.float32(2.0 * np.pi * 330.0 / sample_rate))
+    sf.write(
+        source,
+        np.column_stack((left, right)),
+        sample_rate,
+        format="MP3",
+        subtype="MPEG_LAYER_III",
+    )
+
+    decoder = ReferenceTrackDecoder(source)
+    stream = ReferenceTrackStream(decoder)
+    output = np.empty((1_024, 2), dtype=np.float32)
+    try:
+        if (
+            decoder.info.container != "MP3"
+            or decoder.info.source_samplerate != sample_rate
+            or decoder.info.channels != 2
+            or not 0 < decoder.info.initial_decode_frames <= 1_024
+        ):
+            raise RuntimeError(
+                "Packaged Reference Track MP3 validation is invalid."
+            )
+        stream.play()
+        deadline = time.monotonic() + 3.0
+        delivered = 0
+        while time.monotonic() < deadline:
+            delivered = stream.pull_into(output)
+            if delivered and float(np.max(np.abs(output))) > 0.001:
+                break
+            time.sleep(0.01)
+        if (
+            delivered <= 0
+            or not np.all(np.isfinite(output))
+            or float(np.max(np.abs(output))) <= 0.001
+        ):
+            raise RuntimeError(
+                "Packaged Reference Track MP3 produced no bounded audio."
+            )
+    finally:
+        stream.close()
 
 
 def _verify_artifact(path: Path, expected_sha256: str) -> None:
@@ -316,7 +371,9 @@ def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
     with tempfile.TemporaryDirectory(
         prefix="webjam-reference-studio-work-"
     ) as directory:
-        _exercise_reference_studio(Path(directory))
+        root = Path(directory)
+        _exercise_reference_studio(root)
+        _exercise_packaged_reference_track_mp3(root)
     _write_success_marker(result_path)
     return 0
 

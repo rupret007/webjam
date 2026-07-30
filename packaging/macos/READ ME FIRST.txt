@@ -1,5 +1,8 @@
 WEBJAM PRIVATE TEST CANDIDATE — PLEASE READ
 
+UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
+that are not in the immutable published v0.22.2 assets.
+
 This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
 Only install it if you downloaded it from the official WebJam GitHub release
 and the release checksum matches your download.
@@ -35,27 +38,35 @@ writable and otherwise falls back to your personal ~/Applications folder.
 
 Optional Webex conversation
 ---------------------------
-Webex is not bundled with WebJam. After WebJam opens, choose
-Webex on the main session rail to show Conversation controls. This does not
-open or rejoin a meeting. Bring Forward activates the verified native app, and
-only Join / Open hands off the saved link. Mute in Webex brings the app forward
-so you can use Webex's own Mute control; WebJam cannot verify or change
-external Webex mute. If the native Webex app is missing, Get Webex opens
-Cisco's official installer for this Mac after you confirm. Cisco owns that
-download, license, installation, sign-in, and its automatic updates. Jamulus
-remains the music path; keep Webex muted while playing to avoid delayed
-duplicate audio.
+Webex is not bundled with WebJam. After WebJam opens, choose Webex Controls
+(described in v0.22.2 as Webex on the main session rail) or More > Webex
+Controls to show Conversation controls. This does not open or rejoin a meeting.
+For compatibility with the earlier wording, only Join / Open hands off the saved link;
+the current button is labeled Join / Open Meeting. Show Webex App
+works only when Webex is already running: it dynamically re-verifies the exact
+Cisco process and asks macOS to activate that same app. It does not launch
+Webex, hand off a meeting link, open a browser, or prove that a minimized
+window was restored. If Webex is stopped, open it manually or choose Join /
+Open Meeting. Mute in Webex shows the running verified app so you can use
+Webex's own Mute control; WebJam cannot verify or change external Webex mute.
+If the native Webex app is missing, Get Webex opens Cisco's official installer
+for this Mac after you confirm. Cisco owns that download, license, installation,
+sign-in, and its automatic updates. Jamulus remains the music path; keep Webex
+muted while playing to avoid delayed duplicate audio.
 
 iPhone Pocket Stage setup
 -------------------------
 The "Pocket Stage iPhone Setup" folder contains the exact generated Xcode
 project compiled by this candidate's CI run. Install the full Xcode app, add
-your Apple ID in Xcode > Settings > Accounts, then double-click "Open Pocket
-Stage in Xcode.command". In Xcode, choose your free Personal Team, enter a
-unique bundle identifier, connect your iPhone, and press Run. A paid Apple
-Developer Program membership and XcodeGen are not required for this
-owner-device test. This is source for temporary Personal Team installation,
-not a pre-signed or App Store-distributed iPhone app.
+your Apple ID in Xcode > Settings > Accounts, then open
+"WebJamPocketStage.xcodeproj" directly. If Finder does not associate that file
+with Xcode, use Xcode > File > Open and select it. "Open Pocket Stage in
+Xcode.command" is only an optional convenience and may itself be quarantined.
+In Xcode, choose your free Personal Team, enter a unique bundle identifier,
+connect your iPhone, and press Run. A paid Apple Developer Program membership
+and XcodeGen are not required for this owner-device test. This is source for
+temporary Personal Team installation, not a pre-signed or App Store-distributed
+iPhone app.
 
 Apple's guidance for unidentified apps:
 https://support.apple.com/en-us/102445

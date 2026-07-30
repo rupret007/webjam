@@ -157,7 +157,7 @@ class SessionStrip(QFrame):
         # should not look like a checklist musicians must operate.
         self._test_button.setVisible(False)
 
-        self._video_button = QPushButton("Webex")
+        self._video_button = QPushButton("Webex Controls")
         self._video_button.setObjectName("GhostButton")
         self._video_button.setAccessibleName("Show Webex conversation controls")
         self._video_button.setToolTip(
@@ -233,7 +233,7 @@ class SessionStrip(QFrame):
         jamulus_updates_action.triggered.connect(
             lambda: self.tool_requested.emit("jamulus_updates")
         )
-        conversation_action = QAction("Webex / Conversation", tools_menu)
+        conversation_action = QAction("Webex Controls", tools_menu)
         conversation_action.setToolTip(
             "Show Conversation controls without opening the meeting."
         )
@@ -400,9 +400,9 @@ class SessionStrip(QFrame):
 
     def set_video_configured(self, configured: bool) -> None:
         self._video_action.setText(
-            "Webex / Conversation"
+            "Webex Controls"
             if configured
-            else "Add Webex / Conversation"
+            else "Set Up Webex Controls"
         )
         self._video_button.setToolTip(
             (

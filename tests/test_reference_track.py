@@ -11,7 +11,9 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from core.project_audio import ProjectAudioError, ProjectAudioProbe
 from core.reference_track import (
+    REFERENCE_MAX_DIAGNOSTIC_COUNTER,
     REFERENCE_SAMPLE_RATE,
     ReferenceTrackCapability,
     ReferenceTrackController,
@@ -21,6 +23,7 @@ from core.reference_track import (
     ReferenceTrackSnapshot,
     ReferenceTrackState,
     ReferenceTrackStream,
+    _ReferencePlaybackRing,
     reference_track_file_filter,
     reference_track_supported_extensions,
 )
@@ -51,6 +54,7 @@ class _Session:
         self.start_error = ""
         self.started = 0
         self.stopped = 0
+        self.stats: dict[str, object] = {}
 
     def start(self, pull) -> None:
         self.pull = pull
@@ -65,6 +69,9 @@ class _Session:
         self.stopped += 1
         if self.stop_error:
             raise ReferenceTrackError(self.stop_error)
+
+    def realtime_stats(self) -> dict[str, object]:
+        return dict(self.stats)
 
 
 class _Backend:
@@ -92,6 +99,9 @@ class _Backend:
         self.sessions.append(session)
         return session
 
+    def retry_cleanup(self) -> None:
+        return
+
 
 class _BlockingPrepareBackend(_Backend):
     def __init__(self, available: bool = True) -> None:
@@ -106,6 +116,64 @@ class _BlockingPrepareBackend(_Backend):
         session = _Session()
         self.sessions.append(session)
         return session
+
+
+class _StartupCleanupBackend(_Backend):
+    def __init__(self) -> None:
+        super().__init__(available=True)
+        self.pending = False
+        self.fail_prepare_once = True
+        self.retry_failures = 0
+        self.retry_calls = 0
+
+    def capability(self, audience_bridge_active: bool = False):
+        if self.pending:
+            return ReferenceTrackCapability(
+                False,
+                "macos",
+                "Private Reference Track cleanup is still pending.",
+                backend="blackhole",
+                reason_code="cleanup_pending",
+            )
+        return super().capability(audience_bridge_active)
+
+    def prepare(self, context: ReferenceTrackLaunchContext):
+        self.prepared.append(context)
+        if self.fail_prepare_once:
+            self.fail_prepare_once = False
+            self.pending = True
+            raise ReferenceTrackError(
+                "Reference Track startup cleanup could not be confirmed."
+            )
+        session = _Session()
+        self.sessions.append(session)
+        return session
+
+    def retry_cleanup(self) -> None:
+        self.retry_calls += 1
+        if self.retry_failures:
+            self.retry_failures -= 1
+            raise ReferenceTrackError(
+                "Private Reference Track cleanup is still pending."
+            )
+        self.pending = False
+
+
+class _BlockingStartupCleanupBackend(_StartupCleanupBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.prepare_entered = threading.Event()
+        self.release_prepare = threading.Event()
+
+    def prepare(self, context: ReferenceTrackLaunchContext):
+        self.prepared.append(context)
+        self.prepare_entered.set()
+        assert self.release_prepare.wait(timeout=3.0)
+        self.fail_prepare_once = False
+        self.pending = True
+        raise ReferenceTrackError(
+            "Reference Track startup cleanup could not be confirmed."
+        )
 
 
 def _context(**changes) -> ReferenceTrackLaunchContext:
@@ -186,12 +254,63 @@ def test_decoder_streams_mono_as_stereo_and_resamples_to_48k(
     assert decoder.info.source_samplerate == 44_100
     assert decoder.info.channels == 1
     assert decoder.info.output_frames == round(0.25 * REFERENCE_SAMPLE_RATE)
+    assert decoder.info.initial_decode_frames == 1_024
     block = decoder.read_48k(0, 1_024)
     assert block.shape == (1_024, 2)
     assert block.dtype == np.float32
     np.testing.assert_allclose(block[:, 0], block[:, 1])
+    caller_owned = np.empty((512, 2), dtype=np.float32)
+    identity = id(caller_owned)
+    assert decoder.read_48k_into(256, caller_owned) == 512
+    assert id(caller_owned) == identity
+    assert np.max(np.abs(caller_owned)) > 0.0
     assert str(tmp_path) not in repr(decoder)
     decoder.close()
+
+
+def test_initial_decode_probe_is_bounded_path_free_and_closes_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "Private Broken Reference.wav"
+    source.write_bytes(b"synthetic")
+
+    class FailingProjectDecoder:
+        output_frames = 48_000
+        probe = ProjectAudioProbe(
+            container="WAV",
+            subtype="PCM_16",
+            source_sample_rate=48_000,
+            channels=2,
+            source_frames=48_000,
+            output_frames=48_000,
+        )
+
+        def __init__(self, _path: Path) -> None:
+            self.closed = False
+            self.requested = 0
+
+        def read_into(self, _start: int, output: np.ndarray) -> int:
+            self.requested = int(output.shape[0])
+            raise ProjectAudioError("private decoder detail")
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake = FailingProjectDecoder(source)
+    monkeypatch.setattr(
+        "core.reference_track.ProjectAudioDecoder",
+        lambda _path: fake,
+    )
+
+    with pytest.raises(ReferenceTrackError, match="decode the beginning") as caught:
+        ReferenceTrackDecoder(source)
+
+    assert fake.requested == 1_024
+    assert fake.closed is True
+    assert str(tmp_path) not in str(caught.value)
+    assert source.name not in str(caught.value)
+    assert caught.value.__cause__ is None
 
 
 def test_decoder_rejects_symlink_wrong_extension_and_multichannel(
@@ -397,10 +516,10 @@ def test_stream_latches_a_path_free_decode_failure(tmp_path: Path) -> None:
     decoder = ReferenceTrackDecoder(_audio_file(tmp_path / "source.wav"))
     stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=2)
 
-    def fail_decode(_start: int, _frames: int):
+    def fail_decode(_start: int, _output: np.ndarray):
         raise ReferenceTrackError("WebJam lost access to the selected song.")
 
-    decoder.read_48k = fail_decode  # type: ignore[method-assign]
+    decoder.read_48k_into = fail_decode  # type: ignore[method-assign]
     try:
         stream.play()
         deadline = time.monotonic() + 1.0
@@ -411,6 +530,213 @@ def test_stream_latches_a_path_free_decode_failure(tmp_path: Path) -> None:
         assert np.count_nonzero(stream.pull(256)) == 0
     finally:
         stream.close()
+
+
+def test_realtime_pull_never_waits_for_control_lock_or_allocates_audio_buffer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(tmp_path / "callback.wav", samplerate=48_000, seconds=1.0)
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_control_lock() -> None:
+        with stream._condition:  # type: ignore[attr-defined]
+            lock_held.set()
+            assert release_lock.wait(timeout=2.0)
+
+    holder = threading.Thread(target=hold_control_lock, daemon=True)
+    try:
+        stream.play()
+        _await_nonzero(stream)
+        holder.start()
+        assert lock_held.wait(timeout=1.0)
+        output = np.empty((256, 2), dtype=np.float32)
+
+        def forbidden_zeros(*_args, **_kwargs):
+            raise AssertionError("callback allocated a new NumPy audio buffer")
+
+        monkeypatch.setattr("core.reference_track.np.zeros", forbidden_zeros)
+        started = time.perf_counter()
+        delivered = stream.pull_into(output)
+        elapsed = time.perf_counter() - started
+
+        assert 0 <= delivered <= 256
+        assert elapsed < 0.1
+        assert np.isfinite(output).all()
+        stats = stream.realtime_stats()
+        assert stats["callback_calls"] >= 2
+        assert stats["requested_frames"] >= 512
+        assert stats["delivered_frames"] <= stats["requested_frames"]
+        assert stats["underrun_frames"] == (
+            stats["requested_frames"] - stats["delivered_frames"]
+        )
+    finally:
+        release_lock.set()
+        holder.join(timeout=1.0)
+        stream.close()
+
+
+def test_preallocated_handoff_survives_25_control_generations(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(tmp_path / "generations.wav", samplerate=48_000, seconds=2.0)
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    output = np.empty((256, 2), dtype=np.float32)
+    try:
+        for cycle in range(25):
+            stream.seek(cycle * 0.01)
+            stream.play()
+            stream.pull_into(output)
+            stream.pause()
+            assert stream.pull_into(output) == 0
+            assert np.count_nonzero(output) == 0
+
+        stream.seek(0.25)
+        stream.play()
+        recovered = _await_nonzero(stream)
+        assert np.max(np.abs(recovered)) > 0.001
+        assert stream.position_s >= 0.25
+    finally:
+        stream.close()
+
+
+def test_pause_during_old_callback_zeros_obsolete_output(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(tmp_path / "pause-race.wav", samplerate=48_000, seconds=1.0)
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    entered = threading.Event()
+    release = threading.Event()
+    result: dict[str, object] = {}
+    output = np.empty((256, 2), dtype=np.float32)
+    stream.play()
+    old_generation = stream._realtime_generation  # type: ignore[attr-defined]
+    original_pull = stream._ring.pull_into  # type: ignore[attr-defined]
+    deadline = time.monotonic() + 1.0
+    while (
+        stream._ring._write_sequence <= stream._ring._read_sequence  # type: ignore[attr-defined]
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.005)
+    assert stream._ring._write_sequence > stream._ring._read_sequence  # type: ignore[attr-defined]
+    position_before = stream.position_s
+
+    def blocked_pull(target: np.ndarray, *, generation: int) -> int:
+        assert generation == old_generation
+        delivered = original_pull(target, generation=generation)
+        assert delivered > 0
+        entered.set()
+        assert release.wait(timeout=2.0)
+        return delivered
+
+    stream._ring.pull_into = blocked_pull  # type: ignore[method-assign,attr-defined]
+
+    def invoke() -> None:
+        result["delivered"] = stream.pull_into(output)
+
+    worker = threading.Thread(target=invoke, daemon=True)
+    try:
+        worker.start()
+        assert entered.wait(timeout=1.0)
+        stream.pause()
+        assert stream._realtime_generation == 0  # type: ignore[attr-defined]
+        assert stream.position_s == position_before
+        release.set()
+        worker.join(timeout=1.0)
+        assert not worker.is_alive()
+        assert result["delivered"] == 0
+        assert np.count_nonzero(output) == 0
+        assert stream.position_s == position_before
+    finally:
+        release.set()
+        worker.join(timeout=1.0)
+        stream.close()
+
+
+def test_old_eof_callback_cannot_finish_or_clear_restarted_generation(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(tmp_path / "restart-race.wav", samplerate=48_000, seconds=1.0)
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    entered = threading.Event()
+    release = threading.Event()
+    result: dict[str, object] = {}
+    output = np.empty((256, 2), dtype=np.float32)
+    stream.play()
+    old_generation = stream._realtime_generation  # type: ignore[attr-defined]
+    original_pull = stream._ring.pull_into  # type: ignore[attr-defined]
+
+    def old_eof_pull(target: np.ndarray, *, generation: int) -> int:
+        assert generation == old_generation
+        target.fill(0.5)
+        stream._ring.finished_generation = generation  # type: ignore[attr-defined]
+        entered.set()
+        assert release.wait(timeout=2.0)
+        return int(target.shape[0])
+
+    stream._ring.pull_into = old_eof_pull  # type: ignore[method-assign,attr-defined]
+
+    def invoke() -> None:
+        result["delivered"] = stream.pull_into(output)
+
+    worker = threading.Thread(target=invoke, daemon=True)
+    try:
+        worker.start()
+        assert entered.wait(timeout=1.0)
+        stream.restart(count_in=False)
+        new_generation = stream._realtime_generation  # type: ignore[attr-defined]
+        assert new_generation > old_generation
+        release.set()
+        worker.join(timeout=1.0)
+        assert not worker.is_alive()
+        assert result["delivered"] == 0
+        assert np.count_nonzero(output) == 0
+        assert stream._realtime_generation == new_generation  # type: ignore[attr-defined]
+        assert stream.finished is False
+
+        stream._ring.pull_into = original_pull  # type: ignore[method-assign,attr-defined]
+        assert np.max(np.abs(_await_nonzero(stream))) > 0.001
+    finally:
+        release.set()
+        worker.join(timeout=1.0)
+        stream.close()
+
+
+def test_obsolete_callback_does_not_consume_new_generation_blocks() -> None:
+    ring = _ReferencePlaybackRing(capacity=2, block_frames=64)
+    prepared = ring.acquire_write_buffer()
+    assert prepared is not None
+    prepared[:64].fill(0.375)
+    assert ring.commit_write(
+        64,
+        song_start_frame=0,
+        song_end_frame=64,
+        generation=2,
+        count_in=False,
+        finish_after=True,
+    )
+
+    obsolete = np.ones((64, 2), dtype=np.float32)
+    assert ring.pull_into(obsolete, generation=1) == 0
+    assert np.count_nonzero(obsolete) == 0
+    assert ring.finished_generation == -1
+
+    current = np.zeros((64, 2), dtype=np.float32)
+    assert ring.pull_into(current, generation=2) == 64
+    np.testing.assert_allclose(current, 0.375)
+    assert ring.finished_generation == -1
+    ring.commit_pull_metadata(2)
+    assert ring.finished_generation == 2
 
 
 def test_controller_requires_host_and_refuses_audience_bridge(
@@ -552,6 +878,77 @@ def test_controller_teardown_failure_never_reports_ready(
     assert session.stopped == 3
 
 
+def test_startup_cleanup_pending_is_visible_and_stop_retries_without_restart(
+    tmp_path: Path,
+) -> None:
+    backend = _StartupCleanupBackend()
+    backend.retry_failures = 1
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "song.wav"))
+
+    failed = controller.play(_context())
+
+    assert failed.state is ReferenceTrackState.FAILED
+    assert failed.cleanup_pending is True
+    assert failed.active is True
+    assert failed.capability.reason_code == "cleanup_pending"
+    assert failed.public_diagnostics()["cleanup_pending"] is True
+    assert backend.retry_calls == 0
+
+    still_pending = controller.stop()
+    assert still_pending.state is ReferenceTrackState.FAILED
+    assert still_pending.cleanup_pending is True
+    assert backend.retry_calls == 1
+
+    cleaned = controller.stop()
+    assert cleaned.state is ReferenceTrackState.READY
+    assert cleaned.cleanup_pending is False
+    assert cleaned.capability.available is True
+    assert backend.retry_calls == 2
+    assert controller.close().state is ReferenceTrackState.CLOSED
+
+
+def test_pending_startup_cleanup_blocks_load_and_close_until_retry(
+    tmp_path: Path,
+) -> None:
+    backend = _StartupCleanupBackend()
+    backend.retry_failures = 2
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    first = _audio_file(tmp_path / "first.wav")
+    second = _audio_file(tmp_path / "second.wav")
+    controller.load(first)
+    assert controller.play(_context()).cleanup_pending is True
+
+    blocked_load = controller.load(second)
+    assert blocked_load.cleanup_pending is True
+    assert blocked_load.source_name == first.name
+    blocked_close = controller.close()
+    assert blocked_close.state is ReferenceTrackState.FAILED
+    assert blocked_close.cleanup_pending is True
+    assert blocked_close.loaded is True
+
+    assert controller.stop().cleanup_pending is False
+    assert controller.load(second).source_name == second.name
+    assert controller.close().state is ReferenceTrackState.CLOSED
+
+
+def test_play_can_retry_backend_cleanup_before_a_new_prepare(
+    tmp_path: Path,
+) -> None:
+    backend = _StartupCleanupBackend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "song.wav"))
+    assert controller.play(_context()).cleanup_pending is True
+
+    playing = controller.play(_context())
+
+    assert backend.retry_calls == 1
+    assert len(backend.prepared) == 2
+    assert playing.state is ReferenceTrackState.PLAYING
+    assert playing.cleanup_pending is False
+    assert controller.close().state is ReferenceTrackState.CLOSED
+
+
 def test_failed_owned_teardown_blocks_source_replacement_until_retry(
     tmp_path: Path,
 ) -> None:
@@ -644,18 +1041,27 @@ def test_stop_or_close_cancels_a_concurrent_prepare_without_resurrection(
     worker.start()
     assert backend.prepare_entered.wait(timeout=3.0)
 
-    cancelled = getattr(controller, operation)()
+    controller.cancel_pending_start()
+    cancelled: list[ReferenceTrackSnapshot] = []
+    cleanup_worker = threading.Thread(
+        target=lambda: cancelled.append(getattr(controller, operation)()),
+    )
+    cleanup_worker.start()
+    time.sleep(0.02)
+    assert cleanup_worker.is_alive()
     backend.release_prepare.set()
     worker.join(timeout=3.0)
+    cleanup_worker.join(timeout=3.0)
 
     assert not worker.is_alive()
+    assert not cleanup_worker.is_alive()
     assert result
     expected = (
         ReferenceTrackState.CLOSED
         if operation == "close"
         else ReferenceTrackState.READY
     )
-    assert cancelled.state is expected
+    assert cancelled[-1].state is expected
     assert controller.snapshot.state is expected
     session = backend.sessions[-1]
     assert session.started == 0
@@ -663,6 +1069,45 @@ def test_stop_or_close_cancels_a_concurrent_prepare_without_resurrection(
     assert controller.snapshot.active is False
     if operation == "stop":
         controller.close()
+
+
+def test_close_waits_for_prepare_cleanup_truth_before_reporting_result(
+    tmp_path: Path,
+) -> None:
+    backend = _BlockingStartupCleanupBackend()
+    backend.retry_failures = 1
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "song.wav"))
+    play_result: list[ReferenceTrackSnapshot] = []
+    close_result: list[ReferenceTrackSnapshot] = []
+    play_worker = threading.Thread(
+        target=lambda: play_result.append(controller.play(_context())),
+    )
+    play_worker.start()
+    assert backend.prepare_entered.wait(timeout=3.0)
+
+    close_worker = threading.Thread(
+        target=lambda: close_result.append(controller.close()),
+    )
+    close_worker.start()
+    time.sleep(0.02)
+
+    assert close_worker.is_alive()
+    assert close_result == []
+    backend.release_prepare.set()
+    play_worker.join(timeout=3.0)
+    close_worker.join(timeout=3.0)
+
+    assert not play_worker.is_alive()
+    assert not close_worker.is_alive()
+    assert play_result[-1].cleanup_pending is True
+    assert close_result[-1].state is ReferenceTrackState.FAILED
+    assert close_result[-1].cleanup_pending is True
+    assert controller.snapshot.state is ReferenceTrackState.FAILED
+    assert controller.snapshot.cleanup_pending is True
+    assert backend.retry_calls == 1
+
+    assert controller.close().state is ReferenceTrackState.CLOSED
 
 
 def test_capability_loss_during_prepare_cancels_unpublished_session(
@@ -885,6 +1330,11 @@ def test_public_diagnostics_are_path_and_filename_free(
         "route_reason": "unavailable",
         "route_active": False,
         "cleanup_pending": False,
+        "audio_callback_calls": 0,
+        "audio_requested_frames": 0,
+        "audio_delivered_frames": 0,
+        "audio_underrun_frames": 0,
+        "audio_callback_faults": 0,
     }
     controller.close()
 
@@ -894,6 +1344,37 @@ def test_public_diagnostics_are_path_and_filename_free(
     assert failed_public["source_state"] == "failed"
     assert "Secret" not in repr(failed_public)
     failed.close()
+
+
+def test_public_realtime_diagnostics_are_bounded_and_sanitized(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(_audio_file(tmp_path / "diagnostics.wav"))
+    controller.play(_context())
+    stream = controller._stream  # type: ignore[attr-defined]
+    assert stream is not None
+    stream._ring.callback_calls = -1  # type: ignore[attr-defined]
+    stream._ring.requested_frames = 1 << 100  # type: ignore[attr-defined]
+    stream._ring.delivered_frames = 123  # type: ignore[attr-defined]
+    stream._ring.underrun_frames = 456  # type: ignore[attr-defined]
+    backend.sessions[-1].stats = {
+        "callback_faults": "/Users/private/should-not-serialize"
+    }
+
+    diagnostics = controller.public_diagnostics()
+
+    assert diagnostics["audio_callback_calls"] == 0
+    assert (
+        diagnostics["audio_requested_frames"]
+        == REFERENCE_MAX_DIAGNOSTIC_COUNTER
+    )
+    assert diagnostics["audio_delivered_frames"] == 123
+    assert diagnostics["audio_underrun_frames"] == 456
+    assert diagnostics["audio_callback_faults"] == 0
+    assert "private" not in repr(diagnostics).casefold()
+    controller.close()
 
 
 def test_controller_seeking_is_paused_only(tmp_path: Path) -> None:

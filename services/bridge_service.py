@@ -384,6 +384,12 @@ class BridgeService:
         self.show_message = ui_callbacks.get("show_message")
         self.shutdown_requested = ui_callbacks.get("shutdown_requested", lambda: False)
         self.schedule_ui_callback = ui_callbacks.get("schedule_ui_callback", lambda f: f())
+        # The callback receives only finite action/result labels. It must
+        # never receive the configured Webex URL or provider error text.
+        self.webex_event = ui_callbacks.get(
+            "webex_event",
+            lambda _action, _result: None,
+        )
         # Production retries must re-enter the controller so connection
         # timers and the optional v2 peer are restored with the client.
         self.retry_audio_launch = ui_callbacks.get(
@@ -3075,6 +3081,13 @@ class BridgeService:
                     return
 
                 self.metrics_service.increment("metric_webex_open_success")
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    lambda: self.webex_event(
+                        "meeting-handoff",
+                        "opened-externally",
+                    ),
+                )
                     
                 self._schedule_webex_ui_if_current(
                     launch_generation,
@@ -3101,6 +3114,13 @@ class BridgeService:
                     return
                 LOGGER.warning("External Webex launch failed: %s", type(exc).__name__)
                 self.metrics_service.increment("metric_webex_open_failed")
+                self._schedule_webex_ui_if_current(
+                    launch_generation,
+                    lambda: self.webex_event(
+                        "meeting-handoff",
+                        "open-failed",
+                    ),
+                )
                 self._schedule_webex_ui_if_current(
                     launch_generation,
                     self.refresh_readiness,

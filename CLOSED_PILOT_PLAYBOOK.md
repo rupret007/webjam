@@ -1,14 +1,21 @@
 # WebJam closed-pilot handoff
 
-The current v0.22.2 private test candidate validates a simple live rehearsal,
-session-arranging, and standalone Reference Studio experience:
+> **Unreleased after v0.22.2:** this maintained pilot uses source behavior not
+> present in the immutable published v0.22.2 packages.
+
+The current v0.22.2 private test candidate is immutable. The unreleased source
+is intended to validate a simple live rehearsal, session-arranging, and
+standalone Reference Studio experience:
 
 1. Host or Join.
 2. Native Jamulus sound setup; WebJam moves into the session automatically
    after fresh authenticated connection proof.
 3. Play a note and have musicians verify that they hear each other.
-4. Optional Webex through the direct **Webex** action. Showing Conversation
-   must not open a meeting; use **Join / Open** explicitly.
+4. Optional Webex through the direct **Webex Controls** action. Showing
+   Conversation must not open a meeting; use **Join / Open Meeting** explicitly.
+   On macOS, **Show Webex App** must activate only an already-running,
+   exact-PID-verified Cisco app—never launch Webex, hand off the meeting link, or
+   open a browser.
 5. Invite/play/record/review.
 6. Arrange, move a named song section, audition/comp a repeated take, and test
    cycle playback through a real output.

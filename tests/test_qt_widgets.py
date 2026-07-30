@@ -240,7 +240,7 @@ class TestSessionStrip(unittest.TestCase):
         s._video_button.click()
         self.assertEqual(tools, ["conversation"])
         self.assertEqual(launches, [])
-        self.assertEqual(s._video_button.text(), "Webex")
+        self.assertEqual(s._video_button.text(), "Webex Controls")
 
     def test_main_studio_button_uses_the_canonical_workspace_route(self):
         s = self._strip()
@@ -273,9 +273,9 @@ class TestSessionStrip(unittest.TestCase):
     def test_webex_menu_label_recovers_after_link_is_configured(self):
         s = self._strip()
         s.set_video_configured(False)
-        self.assertEqual(s._video_action.text(), "Add Webex / Conversation")
+        self.assertEqual(s._video_action.text(), "Set Up Webex Controls")
         s.set_video_configured(True)
-        self.assertEqual(s._video_action.text(), "Webex / Conversation")
+        self.assertEqual(s._video_action.text(), "Webex Controls")
 
     def test_external_handoff_progress_never_disables_conversation_navigation(self):
         s = self._strip()
@@ -284,7 +284,7 @@ class TestSessionStrip(unittest.TestCase):
 
         self.assertTrue(s._video_button.isEnabled())
         self.assertTrue(s._video_action.isEnabled())
-        self.assertEqual(s._video_button.text(), "Webex")
+        self.assertEqual(s._video_button.text(), "Webex Controls")
         self.assertEqual(
             s._video_button.property("webexLaunchAction"),
             "Opening…",
@@ -299,7 +299,7 @@ class TestSessionStrip(unittest.TestCase):
         expected_tools = {
             "Audio Settings in Jamulus": "audio_settings",
             "Jamulus Updates…": "jamulus_updates",
-            "Webex / Conversation": "conversation",
+            "Webex Controls": "conversation",
             "Recording Setup": "recording_setup",
             "Reference Track…": "reference_track",
             "Studio": "takes",
@@ -1059,8 +1059,12 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Choose <b>Studio</b>", body)
         self.assertIn("build a song project", body)
         self.assertIn("review completed session takes", body)
-        self.assertIn("Choose <b>Webex</b> to show Conversation", body)
-        self.assertIn("Only <b>Join / Open</b> opens", body)
+        self.assertIn("Choose <b>Webex Controls</b> to show Conversation", body)
+        self.assertIn(
+            "<b>Show Webex App</b> only activates a verified running app",
+            body,
+        )
+        self.assertIn("only <b>Join / Open Meeting</b> opens", body)
         self.assertIn("<b>Reference Track</b> to load", body)
         self.assertIn("Play stays locked until", body)
         self.assertNotIn("Multitrack Studio", body)

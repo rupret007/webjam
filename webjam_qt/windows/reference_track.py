@@ -5,8 +5,8 @@ from __future__ import annotations
 from time import monotonic
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtCore import QUrl, Qt, Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
 
 from core.reference_track import reference_track_file_filter
 from webjam_qt.theme.tokens import Space
+
+_BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
 
 
 def _clock_text(seconds: float) -> str:
@@ -175,6 +177,19 @@ class ReferenceTrackDialog(QDialog):
         )
         self._recheck_route.clicked.connect(self.recheck_route_requested.emit)
         route_actions.addWidget(self._recheck_route)
+        self._blackhole_setup = QPushButton("BlackHole Setup…")
+        self._blackhole_setup.setObjectName("GhostButton")
+        self._blackhole_setup.setAccessibleName(
+            "Open the official BlackHole setup page"
+        )
+        self._blackhole_setup.setToolTip(
+            "Open the official HTTPS setup page for a future certified pilot. "
+            "WebJam will not download or install a driver, and setup cannot "
+            "unlock this downloaded candidate."
+        )
+        self._blackhole_setup.clicked.connect(self._open_blackhole_setup)
+        self._blackhole_setup.setVisible(False)
+        route_actions.addWidget(self._blackhole_setup)
         root.addLayout(route_actions)
 
         source_row = QHBoxLayout()
@@ -334,6 +349,17 @@ class ReferenceTrackDialog(QDialog):
         )
         if path:
             self.load_requested.emit(path)
+
+    def _open_blackhole_setup(self) -> None:
+        """Open only the reviewed official setup page after an explicit click."""
+
+        if QDesktopServices.openUrl(QUrl(_BLACKHOLE_SETUP_URL)):
+            return
+        self._set_dynamic_status(
+            self._route_guidance,
+            "WebJam couldn't open the official BlackHole setup page. No driver "
+            "was downloaded or installed.",
+        )
 
     def _emit_seek(self) -> None:
         if (
@@ -537,6 +563,9 @@ class ReferenceTrackDialog(QDialog):
         self._rendered_state = state
         capability = getattr(snapshot, "capability", None)
         capability_available = bool(getattr(capability, "available", False))
+        capability_reason = str(
+            getattr(capability, "reason_code", "") or ""
+        ).casefold()
         source_name = str(getattr(snapshot, "source_name", "") or "")
         loaded = bool(source_name)
         duration = max(0.0, float(getattr(snapshot, "duration_s", 0.0) or 0.0))
@@ -571,10 +600,19 @@ class ReferenceTrackDialog(QDialog):
             "closed": "Reference Track is closed",
         }
         status = state_labels.get(state, "Checking Reference Track state…")
+        if loaded and state == "ready" and not capability_available:
+            status = (
+                "Song loaded and ready to inspect; initial audio decoded; "
+                "playback route is locked"
+            )
+            if capability_reason == "physical_certification_required":
+                status = (
+                    f"{source_format or 'Song'} loaded and decoded; Play is "
+                    "locked in this downloaded candidate"
+                )
         if cleanup_pending:
             status = (
-                "Reference Track still needs to finish stopping its separate "
-                "Jamulus participant"
+                "Private Reference Track cleanup is still pending"
             )
         if error:
             status = f"{status}. {error}"
@@ -588,26 +626,60 @@ class ReferenceTrackDialog(QDialog):
                 else "Playback route locked. "
             )
         )
-        self._set_dynamic_status(
-            self._route,
-            f"{route_prefix}{route_detail or capability_detail}".strip(),
-        )
+        route_message = f"{route_prefix}{route_detail or capability_detail}".strip()
+        if capability_reason == "physical_certification_required":
+            route_message = (
+                "Playback locked in this downloaded candidate. Installing "
+                "BlackHole or choosing Recheck Route cannot unlock it."
+            )
+        self._set_dynamic_status(self._route, route_message)
+        self._route.setToolTip(capability_detail)
         self._route.setVisible(bool(self._route.text()))
-        guidance = (
-            "Choose Stop again. Playback and route rechecks stay locked until "
-            "WebJam proves the separate participant has exited."
-            if cleanup_pending
-            else (
-            "WebJam proves the route again before playback. Loading or "
-            "inspecting a song does not start the Jamulus track participant."
-            if capability_available
-            else (
+        self._blackhole_setup.setVisible(
+            capability_reason
+            in {
+                "physical_certification_required",
+                "blackhole_unavailable",
+            }
+        )
+        if cleanup_pending:
+            guidance = (
+                "Choose Stop again. Loading, playback, and route rechecks stay "
+                "locked until WebJam confirms its private process, profile, "
+                "control, and audio-route cleanup."
+            )
+        elif capability_available:
+            guidance = (
+                "WebJam proves the route again before playback. Loading or "
+                "inspecting a song does not start the Jamulus track participant."
+            )
+        elif capability_reason == "physical_certification_required":
+            source_truth = (
+                f"{source_format or 'The song'} loaded and its first bounded "
+                "audio block decoded successfully. "
+                if loaded
+                else "You can still load and inspect a song. "
+            )
+            setup = (
+                "Official BlackHole 16ch or 64ch at 48 kHz is only a prerequisite "
+                "for a future certified pilot/build. Installing it or choosing "
+                "Recheck Route will not enable Play in this downloaded candidate. "
+                "BlackHole 2ch and WebJam Bridge cannot safely isolate the return "
+                "mix."
+            )
+            guidance = source_truth + setup
+        elif capability_reason == "blackhole_unavailable":
+            guidance = (
+                "Install official BlackHole 16ch or 64ch manually, set it to "
+                "48 kHz in Audio MIDI Setup, then choose Recheck Route. "
+                "BlackHole 2ch and WebJam Bridge are not safe substitutes."
+            )
+        else:
+            guidance = (
                 "Load and inspect a song now if you want. Playback remains "
                 "disabled until the setup above is complete; then choose "
                 "Recheck Route."
             )
-            )
-        )
         self._set_dynamic_status(self._route_guidance, guidance)
         source_label = source_name or "No song loaded"
         self._source.setText(source_label)
@@ -837,21 +909,45 @@ class ReferenceTrackDialog(QDialog):
     ) -> None:
         busy = state in {"loading", "routing", "stopping", "closed"}
         editable = loaded and state in {"ready", "paused"}
-        self._load.setEnabled(not busy and not self._source_load_queued)
+        self._load.setEnabled(
+            not busy
+            and not cleanup_pending
+            and not self._source_load_queued
+        )
         self._recheck_route.setEnabled(
             not busy
             and not self._route_checking
             and not cleanup_pending
             and state not in {"playing", "paused"}
         )
+        self._blackhole_setup.setEnabled(not busy and not cleanup_pending)
         self._play.setEnabled(
             loaded and capability_available and state in {"ready", "paused"}
         )
+        capability = getattr(self._snapshot, "capability", None)
+        reason = str(getattr(capability, "reason_code", "") or "").casefold()
+        if self._play.isEnabled():
+            play_tooltip = "Play the loaded song through the isolated Jamulus route."
+        elif reason == "physical_certification_required":
+            play_tooltip = (
+                "Play is locked in this downloaded candidate because physical "
+                "BlackHole/Jamulus isolation has not been certified."
+            )
+        elif loaded and not capability_available:
+            play_tooltip = (
+                "Play is unavailable until WebJam proves the isolated audio route."
+            )
+        else:
+            play_tooltip = "Load a supported song before playing."
+        self._play.setToolTip(play_tooltip)
         self._pause.setEnabled(state == "playing")
         self._restart.setEnabled(
             capability_available and state in {"playing", "paused"}
         )
-        self._stop.setEnabled(state in {"routing", "playing", "paused", "failed"})
+        self._stop.setEnabled(
+            cleanup_pending
+            or state in {"routing", "playing", "paused", "failed"}
+        )
         self._seek.setEnabled(state == "paused")
         for control in (
             self._loop,
