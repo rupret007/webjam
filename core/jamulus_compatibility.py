@@ -1110,20 +1110,18 @@ def official_jamulus_compatibility_registry() -> JamulusCompatibilityRegistry:
     """
 
     entries: list[JamulusCompatibility] = []
-    role_capabilities = {
-        JamulusRole.CLIENT: JamulusCapabilities(
-            frozenset(
-                {
-                    "audio-client",
-                    "json-rpc-client",
-                    "native-gui",
-                    "webjam-route-profile",
-                }
-            )
+    # The upstream macOS DMGs are exact, Developer-ID-notarized source
+    # artifacts, but their app bundles currently carry App Sandbox.  That
+    # sandbox cannot consume WebJam-owned profile/secret/recording paths.
+    # Consequently the catalog must not advertise those execution
+    # capabilities for the untouched upstream Mac apps.  A future
+    # WebJam-integrated asset needs its own independently verified execution
+    # contract before it may add them.
+    base_role_capabilities = {
+        JamulusRole.CLIENT: frozenset(
+            {"audio-client", "json-rpc-client", "native-gui"}
         ),
-        JamulusRole.SERVER: JamulusCapabilities(
-            frozenset({"audio-server", "json-rpc-server", "recording"})
-        ),
+        JamulusRole.SERVER: frozenset({"audio-server", "json-rpc-server"}),
     }
     for version, release in _OFFICIAL_RELEASES.items():
         license_path = (
@@ -1185,7 +1183,17 @@ def official_jamulus_compatibility_registry() -> JamulusCompatibilityRegistry:
                 sha256=digest,
                 kind=kind,
             )
-            for role, capabilities in role_capabilities.items():
+            for role, base_capabilities in base_role_capabilities.items():
+                capabilities = set(base_capabilities)
+                if target not in {
+                    ComponentTarget.MACOS_ARM64,
+                    ComponentTarget.MACOS_X64,
+                }:
+                    capabilities.add(
+                        "webjam-route-profile"
+                        if role is JamulusRole.CLIENT
+                        else "recording"
+                    )
                 entries.append(
                     JamulusCompatibility(
                         component_id="jamulus",
@@ -1197,7 +1205,9 @@ def official_jamulus_compatibility_registry() -> JamulusCompatibilityRegistry:
                         artifact=artifact,
                         runtime_files=runtime_files,
                         executable_relative_path=executable_relative_path,
-                        capabilities=capabilities,
+                        capabilities=JamulusCapabilities(
+                            frozenset(capabilities)
+                        ),
                         webjam_range=webjam_range,
                         legal=legal,
                         activation_mode=ActivationMode.PLATFORM_APPROVAL,

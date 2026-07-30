@@ -323,32 +323,6 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
     return settings
 
 
-def jamulus_server_container_documents() -> Path:
-    """The sandboxed JamulusServer.app writable Documents directory.
-
-    The official server bundle is sandboxed: recordings and its RPC secret
-    must live inside its container (Data/Music is only a symlink and is not
-    writable). Mirrors server/start_macos_pilot.sh.
-    """
-    return (
-        Path.home() / "Library" / "Containers"
-        / "app.jamulussoftware.JamulusServer" / "Data" / "Documents"
-    )
-
-
-def jamulus_client_container_documents() -> Path:
-    """Writable Documents directory for the sandboxed Jamulus client.
-
-    The official macOS Jamulus.app has App Sandbox enabled.  A secret in the
-    user's bare home directory is visible to WebJam but not to Jamulus, which
-    makes Jamulus exit immediately when launched with --jsonrpcsecretfile.
-    """
-    return (
-        Path.home() / "Library" / "Containers"
-        / "app.jamulussoftware.Jamulus" / "Data" / "Documents"
-    )
-
-
 def webjam_application_support_dir() -> Path:
     """Private runtime data owned by the packaged WebJam application."""
     return Path.home() / "Library" / "Application Support" / "WebJam"
@@ -357,28 +331,26 @@ def webjam_application_support_dir() -> Path:
 def jamulus_client_rpc_secret_path() -> Path:
     """Cross-platform location shared by Jamulus and JamulusRpcClient."""
     if sys.platform == "darwin":
-        if getattr(sys, "frozen", False):
-            return (
-                webjam_application_support_dir()
-                / "JamulusClient" / "webjam_client_rpc.secret"
-            )
-        return jamulus_client_container_documents() / "webjam_client_rpc.secret"
+        return (
+            webjam_application_support_dir()
+            / "JamulusClient" / "webjam_client_rpc.secret"
+        )
     return Path.home() / ".webjam_jsonrpc_secret"
 
 
 def hosted_server_secret_path() -> Path:
-    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+    if sys.platform == "darwin":
         return (
             webjam_application_support_dir()
             / "JamulusServer" / "webjam_server_rpc.secret"
         )
-    return jamulus_server_container_documents() / "webjam_server_rpc.secret"
+    return Path.home() / ".webjam_server_rpc.secret"
 
 
 def hosted_server_recordings_dir() -> Path:
-    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+    if sys.platform == "darwin":
         return webjam_application_support_dir() / "JamulusServer" / "Recordings"
-    return jamulus_server_container_documents() / "WebJam Recordings"
+    return Path.home() / "WebJam Recordings"
 
 
 def save_settings(settings: AppSettings) -> None:

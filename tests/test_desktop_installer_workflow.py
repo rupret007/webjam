@@ -27,6 +27,10 @@ PROJECT_README = (ROOT / "README.md").read_text(encoding="utf-8")
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 VERSION_SOURCE = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 THIRD_PARTY_NOTICES = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+TEST_PROCEDURE = (ROOT / "TEST_PROCEDURE.md").read_text(encoding="utf-8")
+DESKTOP_RELEASE_RUNBOOK = (
+    ROOT / "docs" / "DESKTOP_RELEASE_RUNBOOK.md"
+).read_text(encoding="utf-8")
 MACOS_README = (ROOT / "packaging" / "macos" / "READ ME FIRST.txt").read_text(
     encoding="utf-8"
 )
@@ -84,9 +88,28 @@ def test_macos_readme_uses_the_working_app_bundle_approval_path() -> None:
     assert "Webex on the main session rail" in MACOS_README
     assert "only Join / Open hands off the saved link" in MACOS_README
     assert "Webex is not bundled with WebJam" in MACOS_README
-    assert re.search(r"quit WebJam completely,\s+reopen it", MACOS_README)
-    assert "macOS may ask again after you quit" in MACOS_README
-    assert "Apple grants this access only" not in MACOS_README
+    assert "~/Library/Application Support/WebJam" in MACOS_README
+    assert "must not ask WebJam for permission to access data from other apps" in (
+        MACOS_README
+    )
+    assert "separately ask for microphone access" in MACOS_README
+    assert re.search(
+        r"do not add\s+WebJam to Full Disk\s+Access",
+        MACOS_README,
+    )
+    assert "Choose Allow so WebJam" not in MACOS_README
+    assert "macOS may ask again after you quit" not in MACOS_README
+
+
+def test_current_macos_docs_require_permissionless_jamulus_profiles() -> None:
+    assert "does not declare `NSAppDataUsageDescription`" in PROJECT_README
+    assert "no longer declares `NSAppDataUsageDescription`" in CHANGELOG
+    assert "`NSAppDataUsageDescription` must be absent everywhere" in TEST_PROCEDURE
+    assert "do not click **Allow**" in TEST_PROCEDURE
+    assert "Mac bundle must omit `NSAppDataUsageDescription`" in (
+        DESKTOP_RELEASE_RUNBOOK
+    )
+    assert "Full Disk Access or Other Application Data" in THIRD_PARTY_NOTICES
 
 
 def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
@@ -100,11 +123,6 @@ def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
 
 
 def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None:
-    expected_app_data_purpose = (
-        "WebJam accesses Jamulus app data only for dedicated WebJam profiles "
-        "and private Reference Track audio-route and control files. It never "
-        "reads or changes your regular Jamulus profile."
-    )
     build_step = _workflow_step("Build desktop artifact")
     fresh_zip_step = build_step.split(
         'ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"',
@@ -132,20 +150,23 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert 'ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"' in WORKFLOW
     assert 'codesign --verify --deep --strict "$copied_app"' in mounted_step
     assert "'Print :NSAppDataUsageDescription'" in mounted_step
-    assert expected_app_data_purpose in mounted_step
+    assert "! /usr/libexec/PlistBuddy" in mounted_step
+    assert '"$copied_app"' in mounted_step
     assert (
-        '"$copied_app/Contents/Resources/$nested_name/Contents/Info.plist"'
+        '"$copied_app/Contents/Resources/JamulusHeadlessClient.app"'
         in mounted_step
     )
     assert 'codesign --verify --deep --strict "$fresh_dir/WebJam.app"' in (
         fresh_zip_step
     )
     assert "'Print :NSAppDataUsageDescription'" in fresh_zip_step
-    assert expected_app_data_purpose in fresh_zip_step
+    assert "! /usr/libexec/PlistBuddy" in fresh_zip_step
+    assert '"$fresh_dir/WebJam.app"' in fresh_zip_step
     assert (
         '"$fresh_dir/WebJam.app/Contents/Resources/'
-        '$nested_name/Contents/Info.plist"' in fresh_zip_step
+        'JamulusHeadlessClient.app"' in fresh_zip_step
     )
+    assert "WebJam accesses Jamulus app data" not in WORKFLOW
     assert '--build-id "$build_id"' in WORKFLOW
     assert 'webjam-build-id.txt")" = "$build_id"' in WORKFLOW
     assert '-verify_arch "$expected_machine"' in WORKFLOW

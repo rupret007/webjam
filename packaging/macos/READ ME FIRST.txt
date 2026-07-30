@@ -38,14 +38,21 @@ writable and otherwise falls back to your personal ~/Applications folder.
 
 First Jamulus sound setup
 --------------------------
-When you first host or join during a WebJam launch, macOS may ask whether
-WebJam can access data from other apps. Choose Allow so WebJam can prepare the
-dedicated profile location that Jamulus uses for WebJam and verify that profile
-for safe restarts. Jamulus owns the profile settings; WebJam does not read or
-change your regular Jamulus profile. Reference Track uses separate private
-files under the same bounded permission. macOS may ask again after you quit the
-app. If you choose Don't Allow, no music client starts; quit WebJam completely,
-reopen it, and try Host or Join again.
+On a fresh setup, Jamulus may need you to choose your interface, input
+channels, headphones, and buffer once for WebJam's dedicated profile. Jamulus
+creates and owns those settings. WebJam does not open, read, or change the
+regular Jamulus profile.
+
+WebJam keeps its launch workspace, loopback control credentials, and private
+Reference Track profile/control files under your own
+~/Library/Application Support/WebJam folder. Host, Join, and Reference Track
+must not ask WebJam for permission to access data from other apps.
+
+macOS may separately ask for microphone access when you use an audio input.
+That expected audio permission is not an Other Application Data prompt. If
+macOS says WebJam wants data from other apps, do not add WebJam to Full Disk
+Access or treat the prompt as normal. Record the WebJam version and build ID,
+close the setup, and report the package as a test-candidate failure.
 
 Optional Webex conversation
 ---------------------------

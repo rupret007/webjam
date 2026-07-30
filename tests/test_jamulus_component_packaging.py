@@ -369,6 +369,16 @@ def test_release_catalog_payload_is_exact_expiring_and_excludes_headless() -> No
     }
     assert all(item["activation_mode"] == "platform-approval" for item in components)
     assert all(item["variant"] == "official" for item in components)
+    for item in components:
+        target = item["target"]
+        capabilities = set(item["capabilities"])
+        if target in {"macos-arm64", "macos-x64"}:
+            assert "webjam-route-profile" not in capabilities
+            assert "recording" not in capabilities
+        elif item["role"] == JamulusRole.CLIENT.value:
+            assert "webjam-route-profile" in capabilities
+        else:
+            assert "recording" in capabilities
 
 
 @pytest.mark.parametrize(

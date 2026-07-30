@@ -153,9 +153,11 @@ class JamulusUpdateDialog(QDialog):
 
         platform_note = QLabel(
             "Updates never interrupt a live session. macOS keeps and verifies "
-            "the upstream Developer ID signature and notarization. Windows "
-            "and Linux require an explicit operating-system installation "
-            "approval; WebJam never uses hidden elevation."
+            "the upstream Developer ID signature and notarization as source "
+            "evidence; only a separately verified WebJam-integrated Mac "
+            "runtime may run. Windows and Linux require an explicit "
+            "operating-system installation approval; WebJam never uses hidden "
+            "elevation."
         )
         platform_note.setWordWrap(True)
         platform_note.setObjectName("SecondaryText")
@@ -242,6 +244,7 @@ class JamulusUpdateDialog(QDialog):
         active = str(getattr(snapshot, "active_version", "") or "")
         available = str(getattr(snapshot, "available_version", "") or "")
         previous = str(getattr(snapshot, "previous_version", "") or "")
+        reason = str(getattr(snapshot, "reason_code", "") or "").strip()
 
         self._status.setText(status)
         self._detail.setText(detail)
@@ -251,7 +254,13 @@ class JamulusUpdateDialog(QDialog):
         if active:
             versions.append(f"Active: Jamulus {active}")
         if available and available != active:
-            versions.append(f"Approved update: Jamulus {available}")
+            if reason == "macos-integrated-runtime-required":
+                versions.append(
+                    "Unavailable for WebJam integration: "
+                    f"Jamulus {available}"
+                )
+            else:
+                versions.append(f"Approved update: Jamulus {available}")
         if previous and previous != active:
             versions.append(f"Recovery version: Jamulus {previous}")
         self._versions.setText(" · ".join(versions))

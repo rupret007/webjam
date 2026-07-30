@@ -5,11 +5,13 @@ or buffers.  Those choices belong to Jamulus's own sound setup.  This module
 only gives WebJam a dedicated Jamulus profile name to launch with and a tiny
 piece of restart-safe readiness evidence.
 
-WebJam only supplies a dedicated filename and safe working directory.
-Jamulus creates that file and owns every setting in it.  In particular, this
-module never writes an audio-device, channel, or buffer setting (or any
-Jamulus profile content at all).  It also leaves the musician's normal
-``Jamulus.ini`` untouched.
+WebJam only supplies a dedicated filename and safe WebJam-owned working
+directory.  The verified macOS component used by the integrated session is
+non-sandboxed and resolves that filename relative to the supplied working
+directory.  WebJam validates the resulting private file but never writes an
+audio-device, channel, or buffer setting (or any Jamulus profile content at
+all).  Jamulus creates and owns every setting in it.  The musician's normal
+``Jamulus.ini`` remains untouched.
 
 The readiness file is intentionally small and private.  It records only the
 role, a one-way profile fingerprint, the Jamulus version, and whether a human
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 import hashlib
 import json
@@ -36,6 +38,11 @@ from typing import Callable, Iterable, Mapping, NoReturn
 from xml.etree import ElementTree
 
 from core.file_io import atomic_write_text
+from core.jamulus_child_environment import (
+    JamulusChildEnvironmentError,
+    sanitized_jamulus_child_environment,
+)
+from core.secure_runtime import SecureRuntimeDirectory, SecureRuntimeError
 
 
 WEBJAM_NATIVE_PROFILE_FILENAME = "WebJam-native-v0.16.ini"
@@ -54,8 +61,10 @@ class JamulusNativeProfileError(RuntimeError):
     """A musician-safe failure preparing the native Jamulus profile."""
 
 
-class JamulusAppDataPermissionError(JamulusNativeProfileError):
-    """macOS denied this launch access to Jamulus's protected app data."""
+class NativeProfileAccess(str, Enum):
+    """Whether WebJam may inspect the file represented by ``profile_path``."""
+
+    WEBJAM_READABLE = "webjam_readable"
 
 
 class StartupRole(str, Enum):
@@ -125,7 +134,10 @@ class JamulusNativeProfilePlan:
 
     ``working_directory`` and ``profile_path`` are process-local launch
     details.  They are deliberately not part of ``profile_fingerprint`` and
-    must never be written to the readiness record.
+    must never be written to the readiness record.  On macOS,
+    ``profile_path`` is the real dedicated profile inside WebJam's private
+    Application Support launch directory.  It is validated as a bounded
+    regular file while Jamulus alone owns its settings.
     """
 
     profile_filename: str
@@ -135,7 +147,15 @@ class JamulusNativeProfilePlan:
     profile_fingerprint: str
     jamulus_version: str
     profile_exists: bool
+    working_directory_device: int
+    working_directory_inode: int
     environment: Mapping[str, str] = field(default_factory=dict)
+    profile_access: NativeProfileAccess | str = NativeProfileAccess.WEBJAM_READABLE
+    _directory_runtime: SecureRuntimeDirectory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         if Path(self.profile_filename).name != self.profile_filename:
@@ -145,6 +165,27 @@ class JamulusNativeProfilePlan:
         if not _FINGERPRINT_RE.fullmatch(self.profile_fingerprint):
             raise ValueError("profile_fingerprint must be a SHA-256 hex digest")
         _normalize_version(self.jamulus_version)
+        if (
+            isinstance(self.working_directory_device, bool)
+            or isinstance(self.working_directory_inode, bool)
+            or int(self.working_directory_device) <= 0
+            or int(self.working_directory_inode) <= 0
+        ):
+            raise ValueError("working directory identity must be positive")
+        object.__setattr__(
+            self,
+            "profile_access",
+            NativeProfileAccess(self.profile_access),
+        )
+        if self._directory_runtime is not None and (
+            self._directory_runtime.path != self.working_directory
+            or not self._directory_runtime.path_matches()
+            or self._directory_runtime.proof.device
+            != int(self.working_directory_device)
+            or self._directory_runtime.proof.inode
+            != int(self.working_directory_inode)
+        ):
+            raise ValueError("profile runtime does not match working directory")
 
     def readiness_record(
         self,
@@ -368,11 +409,12 @@ class StartupAttemptRecord:
 class JamulusNativeProfileManager:
     """Provision a dedicated, Jamulus-owned profile without audio routing.
 
-    On macOS Jamulus accepts only a filename for ``--inifile`` in the bundled
-    sandbox's configuration area.  We consequently use that established
-    directory as the process working directory and pass the fixed filename
-    only.  The directory is checked before use so a symlink cannot redirect
-    the child process to an unexpected location.
+    On macOS the verified, non-sandboxed integrated component accepts a
+    filename for ``--inifile`` and resolves it relative to the supplied
+    working directory.  WebJam passes that fixed filename while starting the
+    process from a private WebJam-owned directory.  It never creates, stats,
+    reads, resolves, or changes Jamulus's container.  The launch directory and
+    profile are checked before use so a symlink cannot redirect the child.
     """
 
     def __init__(
@@ -395,25 +437,41 @@ class JamulusNativeProfileManager:
         self._platform = str(platform or sys.platform).lower()
         self._profile_filename = filename
         self._version_probe = version_probe or default_jamulus_version_probe
+        self._runtime_directory: SecureRuntimeDirectory | None = None
+
+    def close(self) -> None:
+        """Release the retained macOS profile-directory proof."""
+
+        runtime = self._runtime_directory
+        self._runtime_directory = None
+        if runtime is None:
+            return
+        try:
+            runtime.close()
+        except SecureRuntimeError:
+            pass
 
     @property
     def profile_filename(self) -> str:
         return self._profile_filename
 
     def profile_directory(self) -> Path:
-        """Return the conventional directory required by this Jamulus build."""
+        """Return the WebJam-managed directory for the integrated profile."""
 
         if self._platform.startswith("darwin"):
             return (
                 self._home
                 / "Library"
-                / "Containers"
-                / JAMULUS_CONTAINER_ID
-                / "Data"
-                / ".config"
-                / "Jamulus"
+                / "Application Support"
+                / "WebJam"
+                / "Jamulus Launch"
             )
         return self._home / ".config" / "Jamulus"
+
+    def launch_working_directory(self) -> Path:
+        """Return the process cwd that WebJam is allowed to own and validate."""
+
+        return self.profile_directory()
 
     def plan(self, *, jamulus_version: str) -> JamulusNativeProfilePlan:
         """Return filename-only launch facts without writing a profile.
@@ -426,30 +484,86 @@ class JamulusNativeProfileManager:
         """
 
         version = _normalize_version(jamulus_version)
-        directory = self._safe_profile_directory()
-        profile_path = directory / self._profile_filename
+        runtime: SecureRuntimeDirectory | None = None
         try:
-            profile_exists = self._profile_exists(profile_path)
-            profile_bytes = (
-                self._read_profile(profile_path) if profile_exists else b""
+            if self._platform.startswith("darwin") and os.name == "posix":
+                runtime = SecureRuntimeDirectory.open(
+                    home=self._home,
+                    directory=self.launch_working_directory(),
+                )
+                directory = runtime.path
+                directory_device = runtime.proof.device
+                directory_inode = runtime.proof.inode
+            else:
+                directory = self._safe_launch_directory()
+                directory_device, directory_inode = _directory_identity(
+                    directory,
+                    error_type=JamulusNativeProfileError,
+                    error_message=(
+                        "WebJam couldn't prepare its Jamulus profile. Reopen "
+                        "WebJam and try again."
+                    ),
+                )
+            profile_path = directory / self._profile_filename
+            profile_exists, profile_bytes = _read_profile_snapshot(
+                directory=directory,
+                filename=self._profile_filename,
+                expected_device=directory_device,
+                expected_inode=directory_inode,
+                allow_missing=True,
+            )
+            profile_access = NativeProfileAccess.WEBJAM_READABLE
+            fingerprint = native_profile_fingerprint(
+                profile_filename=self._profile_filename,
+                jamulus_version=version,
+                profile_bytes=profile_bytes,
+                profile_exists=profile_exists,
+            )
+            planned = JamulusNativeProfilePlan(
+                profile_filename=self._profile_filename,
+                arguments=("--inifile", self._profile_filename),
+                working_directory=directory,
+                profile_path=profile_path,
+                profile_fingerprint=fingerprint,
+                jamulus_version=version,
+                profile_exists=profile_exists,
+                working_directory_device=directory_device,
+                working_directory_inode=directory_inode,
+                profile_access=profile_access,
+                _directory_runtime=runtime,
             )
         except PermissionError as exc:
+            if runtime is not None:
+                try:
+                    runtime.close()
+                except SecureRuntimeError:
+                    pass
             self._raise_profile_permission_error(exc)
-        fingerprint = native_profile_fingerprint(
-            profile_filename=self._profile_filename,
-            jamulus_version=version,
-            profile_bytes=profile_bytes,
-            profile_exists=profile_exists,
-        )
-        return JamulusNativeProfilePlan(
-            profile_filename=self._profile_filename,
-            arguments=("--inifile", self._profile_filename),
-            working_directory=directory,
-            profile_path=profile_path,
-            profile_fingerprint=fingerprint,
-            jamulus_version=version,
-            profile_exists=profile_exists,
-        )
+        except SecureRuntimeError:
+            if runtime is not None:
+                try:
+                    runtime.close()
+                except SecureRuntimeError:
+                    pass
+            raise JamulusNativeProfileError(
+                "WebJam couldn't prepare its Jamulus profile. Reopen WebJam "
+                "and try again."
+            ) from None
+        except Exception:
+            if runtime is not None:
+                try:
+                    runtime.close()
+                except SecureRuntimeError:
+                    pass
+            raise
+        previous = self._runtime_directory
+        self._runtime_directory = runtime
+        if previous is not None and previous is not runtime:
+            try:
+                previous.close()
+            except SecureRuntimeError:
+                pass
+        return planned
 
     def prepare(
         self,
@@ -509,103 +623,156 @@ class JamulusNativeProfileManager:
             )
         return self.plan(jamulus_version=version)
 
-    def validate_active(self, plan: JamulusNativeProfilePlan) -> None:
-        """Recheck only profile-file safety before an automatic reconnect.
+    def validate_active(
+        self,
+        plan: JamulusNativeProfilePlan,
+    ) -> JamulusNativeProfilePlan:
+        """Recheck profile safety and return current content identity.
 
         No device snapshot is taken and no native Jamulus setting is changed.
-        A musician can intentionally adjust sound in Jamulus; the next client
-        launch then uses that native profile without WebJam second-guessing it.
+        A musician can intentionally adjust sound in Jamulus.  The returned
+        plan refreshes the one-way fingerprint so stale human-confirmation
+        evidence cannot silently carry across that change.
         """
 
         if not isinstance(plan, JamulusNativeProfilePlan):
             raise JamulusNativeProfileError(
                 "WebJam couldn't restore its Jamulus profile. Start the jam again."
             )
-        directory = self._safe_profile_directory()
+        runtime = plan._directory_runtime
+        if runtime is not None:
+            if (
+                runtime is not self._runtime_directory
+                or not runtime.path_matches()
+            ):
+                raise JamulusNativeProfileError(
+                    "WebJam couldn't restore its Jamulus profile. Start the "
+                    "jam again."
+                )
+            directory = runtime.path
+            directory_device = runtime.proof.device
+            directory_inode = runtime.proof.inode
+        else:
+            if self._platform.startswith("darwin") and os.name == "posix":
+                raise JamulusNativeProfileError(
+                    "WebJam couldn't restore its Jamulus profile. Start the "
+                    "jam again."
+                )
+            directory = self._safe_launch_directory()
+            directory_device, directory_inode = _directory_identity(
+                directory,
+                error_type=JamulusNativeProfileError,
+                error_message=(
+                    "WebJam couldn't restore its Jamulus profile. Start the "
+                    "jam again."
+                ),
+            )
         expected_path = directory / self._profile_filename
+        expected_access = NativeProfileAccess.WEBJAM_READABLE
         if (
             plan.profile_filename != self._profile_filename
             or plan.working_directory != directory
             or plan.profile_path != expected_path
+            or plan.profile_access is not expected_access
+        ):
+            raise JamulusNativeProfileError(
+                "WebJam couldn't restore its Jamulus profile. Start the jam again."
+            )
+        if (
+            directory_device != plan.working_directory_device
+            or directory_inode != plan.working_directory_inode
         ):
             raise JamulusNativeProfileError(
                 "WebJam couldn't restore its Jamulus profile. Start the jam again."
             )
         try:
-            _require_regular_file(expected_path, allow_missing=True)
+            profile_exists, profile_bytes = _read_profile_snapshot(
+                directory=directory,
+                filename=self._profile_filename,
+                expected_device=directory_device,
+                expected_inode=directory_inode,
+                allow_missing=not plan.profile_exists,
+            )
         except PermissionError as exc:
             self._raise_profile_permission_error(exc)
+        fingerprint = native_profile_fingerprint(
+            profile_filename=self._profile_filename,
+            jamulus_version=plan.jamulus_version,
+            profile_bytes=profile_bytes,
+            profile_exists=profile_exists,
+        )
+        if (
+            profile_exists == plan.profile_exists
+            and fingerprint == plan.profile_fingerprint
+        ):
+            return plan
+        return replace(
+            plan,
+            profile_exists=profile_exists,
+            profile_fingerprint=fingerprint,
+        )
 
-    def _safe_profile_directory(self) -> Path:
-        candidate = self.profile_directory()
-        app_data_denied = self._platform.startswith("darwin")
+    def _safe_launch_directory(self) -> Path:
+        candidate = self.launch_working_directory()
         return _ensure_managed_directory(
             home=self._home,
             directory=candidate,
-            private=False,
+            private=True,
             error_type=JamulusNativeProfileError,
             error_message="WebJam couldn't prepare its Jamulus profile. Reopen WebJam and try again.",
-            permission_error_type=(
-                JamulusAppDataPermissionError if app_data_denied else None
-            ),
-            permission_error_message=(
-                "macOS didn't allow WebJam to use the Jamulus-owned profile "
-                "dedicated to WebJam."
-                if app_data_denied
-                else None
-            ),
         )
 
     def _raise_profile_permission_error(
         self,
-        exc: PermissionError,
+        _exc: PermissionError,
     ) -> NoReturn:
-        if self._platform.startswith("darwin"):
-            raise JamulusAppDataPermissionError(
-                "macOS didn't allow WebJam to use the Jamulus-owned profile "
-                "dedicated to WebJam."
-            ) from exc
         raise JamulusNativeProfileError(
             "WebJam couldn't access its Jamulus profile. Reopen WebJam and try "
             "again."
-        ) from exc
-
-    @staticmethod
-    def _profile_exists(profile_path: Path) -> bool:
-        return _require_regular_file(profile_path, allow_missing=True)
-
-    @staticmethod
-    def _read_profile(profile_path: Path) -> bytes:
-        _require_regular_file(profile_path, allow_missing=False)
-        try:
-            size = profile_path.stat().st_size
-            if size < 0 or size > _MAX_PROFILE_BYTES:
-                raise ValueError("profile is too large")
-            return profile_path.read_bytes()
-        except PermissionError:
-            raise
-        except (OSError, ValueError) as exc:
-            raise JamulusNativeProfileError(
-                "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
-            ) from exc
-
+        ) from None
 
 def read_native_audio_device_names(
     plan: JamulusNativeProfilePlan,
 ) -> tuple[str, str]:
     """Read the active Jamulus-owned CoreAudio selector without persisting it.
 
-    This is a narrow runtime safety boundary for Reference Track.  The values
-    are read only while the primary client is alive and are never copied into
-    WebJam settings, logs, readiness records, or support artifacts.
+    This is a narrow optional consistency check for the WebJam-owned profile
+    file. CoreAudio process-route proof remains authoritative; profile names
+    only catch an obvious mismatch. Returned values are never copied into
+    settings, logs, readiness records, or support artifacts.
     """
 
     if not isinstance(plan, JamulusNativeProfilePlan):
         raise JamulusNativeProfileError(
             "WebJam couldn't verify the primary Jamulus audio route."
         )
+    if _path_mentions_jamulus_container(plan.profile_path):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        )
+    if plan.profile_path != (
+        plan.working_directory / plan.profile_filename
+    ):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        )
+    if (
+        plan._directory_runtime is not None
+        and not plan._directory_runtime.path_matches()
+    ):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't verify the primary Jamulus audio route."
+        )
     try:
-        raw = JamulusNativeProfileManager._read_profile(plan.profile_path)
+        profile_exists, raw = _read_profile_snapshot(
+            directory=plan.working_directory,
+            filename=plan.profile_filename,
+            expected_device=plan.working_directory_device,
+            expected_inode=plan.working_directory_inode,
+            allow_missing=False,
+        )
+        if not profile_exists:
+            raise ValueError("missing profile")
         root = ElementTree.fromstring(raw)
         if root.tag != "client":
             raise ValueError("unexpected profile root")
@@ -922,15 +1089,37 @@ def _attempt_digest(
 def default_jamulus_version_probe(binary: str) -> str:
     """Read the Jamulus version without opening a UI or joining a session."""
 
+    path = Path(binary)
+    platform_name = (
+        "darwin"
+        if sys.platform.startswith("darwin")
+        else "win32"
+        if sys.platform.startswith("win")
+        else "linux"
+        if sys.platform.startswith("linux")
+        else ""
+    )
     try:
+        environment = sanitized_jamulus_child_environment(
+            os.environ,
+            platform_name=platform_name,
+            executable=path,
+        )
         completed = subprocess.run(
-            [str(binary), "--version"],
+            [str(path), "--version"],
             capture_output=True,
             text=True,
             timeout=8,
             check=False,
+            shell=False,
+            env=environment,
+            cwd=str(path.parent if platform_name == "win32" else Path("/")),
         )
-    except (OSError, subprocess.SubprocessError):
+    except (
+        JamulusChildEnvironmentError,
+        OSError,
+        subprocess.SubprocessError,
+    ):
         return "unverified"
     match = re.search(
         r"(?:version\s+)?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)",
@@ -960,20 +1149,38 @@ def _ensure_managed_directory(
     """Create and validate an app-owned descendant without accepting links."""
 
     try:
-        safe_home = Path(home).expanduser().resolve()
-        relative = Path(directory).expanduser().relative_to(Path(home).expanduser())
-        candidate = safe_home / relative
-        candidate.mkdir(parents=True, exist_ok=True, mode=0o700)
-        resolved = candidate.resolve(strict=True)
-        try:
-            resolved.relative_to(safe_home)
-        except ValueError as exc:
-            raise error_type(error_message) from exc
-        if candidate.is_symlink() or not stat.S_ISDIR(candidate.stat().st_mode):
+        requested_home = Path(home).expanduser()
+        safe_home = requested_home.resolve(strict=True)
+        relative = Path(directory).expanduser().relative_to(requested_home)
+        if any(component in {"", ".", ".."} for component in relative.parts):
             raise error_type(error_message)
+        if os.name == "posix":
+            return _ensure_managed_directory_posix(
+                safe_home=safe_home,
+                relative=relative,
+                private=private,
+                error_type=error_type,
+                error_message=error_message,
+            )
+        candidate = safe_home
+        for component in relative.parts:
+            child = candidate / component
+            try:
+                status = child.lstat()
+            except FileNotFoundError:
+                child.mkdir(mode=0o700 if private else 0o777)
+                status = child.lstat()
+            if (
+                stat.S_ISLNK(status.st_mode)
+                or not stat.S_ISDIR(status.st_mode)
+                or not _owned_by_current_user(status)
+                or stat.S_IMODE(status.st_mode) & 0o022
+            ):
+                raise error_type(error_message)
+            candidate = child
         if private:
             os.chmod(candidate, 0o700)
-        return resolved
+        return candidate
     except error_type:
         raise
     except PermissionError as exc:
@@ -982,6 +1189,284 @@ def _ensure_managed_directory(
         raise denied_type(denied_message) from exc
     except (OSError, ValueError) as exc:
         raise error_type(error_message) from exc
+
+
+def _ensure_managed_directory_posix(
+    *,
+    safe_home: Path,
+    relative: Path,
+    private: bool,
+    error_type: type[Exception],
+    error_message: str,
+) -> Path:
+    """Walk from a retained home dirfd so intermediate links cannot redirect."""
+
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    current_fd = os.open(safe_home, flags)
+    candidate = safe_home
+    try:
+        home_details = os.fstat(current_fd)
+        if (
+            not stat.S_ISDIR(home_details.st_mode)
+            or not _owned_by_current_user(home_details)
+            or stat.S_IMODE(home_details.st_mode) & 0o022
+        ):
+            raise error_type(error_message)
+        for component in relative.parts:
+            try:
+                next_fd = os.open(component, flags, dir_fd=current_fd)
+            except FileNotFoundError:
+                os.mkdir(
+                    component,
+                    mode=0o700 if private else 0o777,
+                    dir_fd=current_fd,
+                )
+                next_fd = os.open(component, flags, dir_fd=current_fd)
+            try:
+                next_details = os.fstat(next_fd)
+                if (
+                    not stat.S_ISDIR(next_details.st_mode)
+                    or not _owned_by_current_user(next_details)
+                    or stat.S_IMODE(next_details.st_mode) & 0o022
+                ):
+                    raise error_type(error_message)
+            except Exception:
+                os.close(next_fd)
+                raise
+            os.close(current_fd)
+            current_fd = next_fd
+            candidate = candidate / component
+
+        opened = os.fstat(current_fd)
+        if (
+            not stat.S_ISDIR(opened.st_mode)
+            or not _owned_by_current_user(opened)
+            or stat.S_IMODE(opened.st_mode) & 0o022
+        ):
+            raise error_type(error_message)
+        if private:
+            os.fchmod(current_fd, 0o700)
+            opened = os.fstat(current_fd)
+            if stat.S_IMODE(opened.st_mode) != 0o700:
+                raise error_type(error_message)
+        visible = candidate.lstat()
+        if (
+            stat.S_ISLNK(visible.st_mode)
+            or not stat.S_ISDIR(visible.st_mode)
+            or int(visible.st_dev) != int(opened.st_dev)
+            or int(visible.st_ino) != int(opened.st_ino)
+        ):
+            raise error_type(error_message)
+        return candidate
+    finally:
+        os.close(current_fd)
+
+
+def _directory_identity(
+    directory: Path,
+    *,
+    error_type: type[Exception],
+    error_message: str,
+) -> tuple[int, int]:
+    """Return a positive, owner-bound directory identity without following links."""
+
+    try:
+        details = Path(directory).lstat()
+    except OSError as exc:
+        raise error_type(error_message) from exc
+    if (
+        stat.S_ISLNK(details.st_mode)
+        or not stat.S_ISDIR(details.st_mode)
+        or int(details.st_dev) <= 0
+        or int(details.st_ino) <= 0
+        or not _owned_by_current_user(details)
+    ):
+        raise error_type(error_message)
+    return int(details.st_dev), int(details.st_ino)
+
+
+def _owned_by_current_user(details: os.stat_result) -> bool:
+    return not hasattr(os, "geteuid") or int(details.st_uid) == int(os.geteuid())
+
+
+def _read_profile_snapshot(
+    *,
+    directory: Path,
+    filename: str,
+    expected_device: int,
+    expected_inode: int,
+    allow_missing: bool,
+) -> tuple[bool, bytes]:
+    """Read one bounded profile through its verified directory descriptor."""
+
+    if Path(filename).name != filename or filename in {"", ".", ".."}:
+        raise JamulusNativeProfileError(
+            "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
+        )
+    if os.name != "posix":
+        return _read_profile_snapshot_portable(
+            directory=directory,
+            filename=filename,
+            expected_device=expected_device,
+            expected_inode=expected_inode,
+            allow_missing=allow_missing,
+        )
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    if not nofollow or not directory_flag:
+        raise JamulusNativeProfileError(
+            "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
+        )
+    directory_descriptor = -1
+    profile_descriptor = -1
+    try:
+        directory_descriptor = os.open(
+            directory,
+            os.O_RDONLY
+            | nofollow
+            | directory_flag
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+        directory_details = os.fstat(directory_descriptor)
+        if (
+            not stat.S_ISDIR(directory_details.st_mode)
+            or not _owned_by_current_user(directory_details)
+            or stat.S_IMODE(directory_details.st_mode) & 0o022
+            or int(directory_details.st_dev) != int(expected_device)
+            or int(directory_details.st_ino) != int(expected_inode)
+        ):
+            raise ValueError("profile directory identity changed")
+        try:
+            profile_descriptor = os.open(
+                filename,
+                os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_descriptor,
+            )
+        except FileNotFoundError:
+            if allow_missing:
+                return False, b""
+            raise ValueError("profile disappeared") from None
+        details = os.fstat(profile_descriptor)
+        size = int(details.st_size)
+        if (
+            not stat.S_ISREG(details.st_mode)
+            or not _owned_by_current_user(details)
+            or int(details.st_nlink) != 1
+            or stat.S_IMODE(details.st_mode) & 0o022
+            or size < 0
+            or size > _MAX_PROFILE_BYTES
+        ):
+            raise ValueError("profile is unsafe")
+        payload = bytearray()
+        while len(payload) <= _MAX_PROFILE_BYTES:
+            chunk = os.read(
+                profile_descriptor,
+                min(64 * 1024, _MAX_PROFILE_BYTES + 1 - len(payload)),
+            )
+            if not chunk:
+                break
+            payload.extend(chunk)
+        if len(payload) > _MAX_PROFILE_BYTES:
+            raise ValueError("profile is too large")
+        final = os.fstat(profile_descriptor)
+        entry = os.stat(
+            filename,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            len(payload) != size
+            or not stat.S_ISREG(final.st_mode)
+            or int(final.st_dev) != int(details.st_dev)
+            or int(final.st_ino) != int(details.st_ino)
+            or int(final.st_size) != size
+            or int(final.st_nlink) != 1
+            or not _owned_by_current_user(final)
+            or stat.S_IMODE(final.st_mode) & 0o022
+            or not stat.S_ISREG(entry.st_mode)
+            or int(entry.st_dev) != int(details.st_dev)
+            or int(entry.st_ino) != int(details.st_ino)
+            or int(entry.st_size) != size
+            or int(entry.st_nlink) != 1
+            or not _owned_by_current_user(entry)
+            or stat.S_IMODE(entry.st_mode) & 0o022
+        ):
+            raise ValueError("profile changed during validation")
+        return True, bytes(payload)
+    except PermissionError:
+        raise
+    except (NotImplementedError, OSError, ValueError):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
+        ) from None
+    finally:
+        if profile_descriptor >= 0:
+            try:
+                os.close(profile_descriptor)
+            except OSError:
+                pass
+        if directory_descriptor >= 0:
+            try:
+                os.close(directory_descriptor)
+            except OSError:
+                pass
+
+
+def _read_profile_snapshot_portable(
+    *,
+    directory: Path,
+    filename: str,
+    expected_device: int,
+    expected_inode: int,
+    allow_missing: bool,
+) -> tuple[bool, bytes]:
+    """Portable fallback; macOS/Linux use the descriptor-anchored boundary."""
+
+    profile_path = Path(directory) / filename
+    try:
+        directory_details = Path(directory).lstat()
+        if (
+            stat.S_ISLNK(directory_details.st_mode)
+            or not stat.S_ISDIR(directory_details.st_mode)
+            or int(directory_details.st_dev) != int(expected_device)
+            or int(directory_details.st_ino) != int(expected_inode)
+        ):
+            raise ValueError("profile directory identity changed")
+        try:
+            details = profile_path.lstat()
+        except FileNotFoundError:
+            if allow_missing:
+                return False, b""
+            raise ValueError("profile disappeared") from None
+        if (
+            stat.S_ISLNK(details.st_mode)
+            or not stat.S_ISREG(details.st_mode)
+            or int(details.st_nlink) != 1
+            or int(details.st_size) < 0
+            or int(details.st_size) > _MAX_PROFILE_BYTES
+        ):
+            raise ValueError("profile is unsafe")
+        payload = profile_path.read_bytes()
+        if len(payload) > _MAX_PROFILE_BYTES:
+            raise ValueError("profile is too large")
+        after = profile_path.lstat()
+        if (
+            int(after.st_dev) != int(details.st_dev)
+            or int(after.st_ino) != int(details.st_ino)
+            or int(after.st_size) != int(details.st_size)
+        ):
+            raise ValueError("profile changed during validation")
+        return True, payload
+    except PermissionError:
+        raise
+    except (OSError, ValueError):
+        raise JamulusNativeProfileError(
+            "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
+        ) from None
 
 
 def _require_regular_file(path: Path, *, allow_missing: bool) -> bool:
@@ -994,6 +1479,16 @@ def _require_regular_file(path: Path, *, allow_missing: bool) -> bool:
     if stat.S_ISLNK(status.st_mode) or not stat.S_ISREG(status.st_mode):
         raise JamulusNativeProfileError("WebJam couldn't safely access its startup files.")
     return True
+
+
+def _path_mentions_jamulus_container(path: Path) -> bool:
+    """Reject another-app container paths lexically without resolving them."""
+
+    try:
+        parts = tuple(Path(path).parts)
+    except (TypeError, ValueError):
+        return True
+    return JAMULUS_CONTAINER_ID in parts
 
 
 def _fsync_directory(directory: Path) -> None:

@@ -60,12 +60,10 @@ as appropriate:
 - expected native application and transport architecture;
 - transport SHA-256, embedded build ID, protocol hello, and clean shutdown;
 - required QSS, Jamulus 3.12.2 payload, and license files;
-- the source, mounted-DMG copy, and portable-ZIP copy of the outer Mac bundle
-  must each contain this exact `NSAppDataUsageDescription` value from
-  `webjam.spec`: “WebJam accesses Jamulus app data only for dedicated WebJam
-  profiles and private Reference Track audio-route and control files. It never
-  reads or changes your regular Jamulus profile.” Missing, empty, generic, or
-  alternate text fails packaging;
+- the source, mounted-DMG copy, and portable-ZIP copy of every outer and nested
+  Mac bundle must omit `NSAppDataUsageDescription`; any declaration is a
+  package failure because Host, Join, and Reference Track use only WebJam-owned
+  Application Support storage and must not request Other Application Data;
 - absence of the retired Qt WebEngine/Webex-widget runtime;
 - a real frozen Host/Join-dialog launch with an isolated home directory;
 - no startup exception or owned-process residue.
@@ -248,17 +246,19 @@ Before publishing, record the exact artifact SHA-256 and complete:
    verify exact checksums plus absence of partial outputs. On supported physical
    hardware, separately record input mapping, count-in, punch/cycle recording,
    latency compensation, dropout/recovery behavior, and audible playback.
-6. On each Mac architecture, run the installed app's Other Application Data
-   decision and recovery gate while hashing the user's regular `Jamulus.ini`
-   before and after. **Allow** must continue normal Host/Join through the
-   dedicated `WebJam-native-v0.16.ini`. **Don't Allow** must start no musician
-   Jamulus client and must give explicit quit-WebJam-completely, reopen, and
-   choose-Allow guidance, with no in-process retry. After that full relaunch,
-   **Allow** must recover normal Host/Join. In the same allowed controlled-pilot
-   launch, Reference Track must not cause a second dialog or a generic/default
-   purpose prompt. The regular `Jamulus.ini` must remain unchanged throughout.
-   Because macOS can ask again after WebJam quits, record and retest a repeated
-   prompt rather than claiming durable install-level permission.
+6. On each Mac architecture, run the installed app's permissionless Jamulus
+   profile gate with no Full Disk Access and, where possible, an existing
+   denied Other Application Data state. Hash the user's regular `Jamulus.ini`
+   before and after. Fresh Host/Join must open the dedicated
+   `WebJam-native-v0.16.ini`, allow its one-time native sound setup, and reach
+   authenticated connection evidence without an App Data prompt. A separate
+   microphone prompt is recorded as audio permission, not App Data. Repeat
+   after a complete quit to prove the returning path. In the same controlled
+   pilot, Reference Track must keep its profile and control files below
+   `~/Library/Application Support/WebJam/runtime/reference-track` and must not
+   prompt for another application's data. The regular `Jamulus.ini` must
+   remain unchanged throughout. Any App Data prompt is a package failure; do
+   not grant it or add WebJam to Full Disk Access.
 
 If any gate is not run, report it as **NOT RUN**. A process launch, synthetic
 JACK graph, or connected roster is not evidence that a person heard audio.

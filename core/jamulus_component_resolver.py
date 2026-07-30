@@ -57,6 +57,7 @@ class ValidatedExternalComponent:
     architecture_verified: bool
     publisher_verified: bool
     trust_policy_verified: bool = False
+    execution_contract_verified: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.entry, JamulusCompatibility):
@@ -68,6 +69,7 @@ class ValidatedExternalComponent:
             "architecture_verified",
             "publisher_verified",
             "trust_policy_verified",
+            "execution_contract_verified",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be boolean")

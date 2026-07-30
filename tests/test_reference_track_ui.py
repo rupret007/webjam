@@ -13,7 +13,10 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from webjam_qt.theme import load_stylesheet  # noqa: E402
-from webjam_qt.windows.reference_track import ReferenceTrackDialog  # noqa: E402
+from webjam_qt.windows.reference_track import (  # noqa: E402
+    ReferenceTrackDialog,
+    ReferenceTrackPrimaryGate,
+)
 
 _app = QApplication.instance() or QApplication([])
 
@@ -281,6 +284,7 @@ def test_transport_focus_follows_start_pause_and_resume_state() -> None:
     dialog = ReferenceTrackDialog()
     try:
         dialog.show()
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(_snapshot(_State.READY))
         dialog._play.setFocus()
         _app.processEvents()
@@ -309,6 +313,7 @@ def test_cleanup_pending_never_claims_route_ready() -> None:
     )
     snapshot.cleanup_pending = True
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(snapshot)
         assert "cleanup is still pending" in dialog._status.text()
         assert dialog._route.text().startswith(
@@ -331,6 +336,7 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
     dialog.play_requested.connect(lambda: plays.append(True))
     dialog.pause_requested.connect(lambda: pauses.append(True))
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(_snapshot(_State.READY))
         assert dialog._source.text() == "Rehearsal Reference.flac"
         assert dialog._source_details.text() == "FLAC · 44.1 kHz · stereo · 2:00"
@@ -353,6 +359,201 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
         dialog.close()
 
 
+def test_loaded_song_waits_visibly_for_primary_jamulus_connection() -> None:
+    dialog = ReferenceTrackDialog()
+    plays: list[bool] = []
+    dialog.play_requested.connect(lambda: plays.append(True))
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.NOT_CONNECTED)
+        dialog.set_snapshot(_snapshot(_State.READY))
+
+        assert "waiting for a verified primary Jamulus control connection" in (
+            dialog._status.text()
+        )
+        assert "finish Jamulus sound setup" in (
+            dialog._route_guidance.text()
+        )
+        assert dialog._play.isEnabled() is False
+        assert "Finish Jamulus sound setup" in dialog._play.toolTip()
+        dialog._play.click()
+        assert plays == []
+
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        assert dialog._play.isEnabled() is True
+        assert "waiting for a verified primary Jamulus control connection" not in (
+            dialog._status.text()
+        )
+        dialog._play.click()
+        assert plays == [True]
+    finally:
+        dialog.close()
+
+
+def test_session_change_gate_is_distinct_and_moves_focus_safely() -> None:
+    dialog = ReferenceTrackDialog()
+    plays: list[bool] = []
+    stops: list[bool] = []
+    dialog.play_requested.connect(lambda: plays.append(True))
+    dialog.stop_requested.connect(lambda: stops.append(True))
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        dialog.set_snapshot(_snapshot(_State.PAUSED))
+        dialog.show()
+        dialog._play.setFocus()
+        _app.processEvents()
+        assert dialog._play.hasFocus()
+
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.SESSION_CHANGING)
+        _app.processEvents()
+
+        assert dialog._play.isEnabled() is False
+        assert "current session change" in dialog._status.text()
+        assert "ending, leaving, or switching" in dialog._route_guidance.text()
+        assert "session change" in dialog._play.toolTip()
+        assert "session change" in dialog._play.accessibleDescription()
+        assert "session change" in dialog._restart.toolTip()
+        assert "session change" in dialog._restart.accessibleDescription()
+        assert "Finish Jamulus sound setup" not in dialog._route_guidance.text()
+        assert dialog._recheck_route.isEnabled() is False
+        assert dialog._stop.isEnabled() is False
+        assert "single cleanup owner" in dialog._stop.toolTip()
+        assert "single cleanup owner" in dialog._stop.accessibleDescription()
+        assert dialog._play.hasFocus() is False
+        assert dialog._done.hasFocus()
+        dialog._play.click()
+        dialog._stop.click()
+        assert plays == []
+        assert stops == []
+
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        assert dialog._play.isEnabled() is True
+    finally:
+        dialog.close()
+
+
+def test_host_required_gate_never_claims_connection_will_unlock_play() -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.HOST_REQUIRED)
+        dialog.set_snapshot(_snapshot(_State.READY))
+
+        assert dialog._play.isEnabled() is False
+        assert "only to the host" in dialog._status.text()
+        assert "Only the host" in dialog._route_guidance.text()
+        assert "will not unlock Play" in dialog._route_guidance.text()
+        assert "Only the host" in dialog._play.accessibleDescription()
+        assert "primary Jamulus connection" not in dialog._status.text()
+        assert "Play will unlock automatically" not in (
+            dialog._route_guidance.text()
+        )
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize(
+    ("gate", "status_text", "guidance_text"),
+    (
+        (
+            ReferenceTrackPrimaryGate.RECOVERING,
+            "waiting for band audio recovery",
+            "recovering or safely retiring",
+        ),
+        (
+            ReferenceTrackPrimaryGate.RECOVERY_FAILED,
+            "start a clean band audio session",
+            "Press Start Session",
+        ),
+    ),
+)
+def test_recovery_gates_keep_transport_locked_with_truthful_next_step(
+    gate: ReferenceTrackPrimaryGate,
+    status_text: str,
+    guidance_text: str,
+) -> None:
+    dialog = ReferenceTrackDialog()
+    try:
+        dialog.set_primary_gate(gate)
+        dialog.set_snapshot(_snapshot(_State.PAUSED))
+
+        assert status_text in dialog._status.text()
+        assert guidance_text in dialog._route_guidance.text()
+        assert dialog._play.isEnabled() is False
+        assert dialog._restart.isEnabled() is False
+        assert dialog._play.accessibleDescription()
+        assert dialog._restart.accessibleDescription()
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize("state", (_State.PLAYING, _State.PAUSED))
+@pytest.mark.parametrize(
+    ("gate", "status_text"),
+    (
+        (
+            ReferenceTrackPrimaryGate.RECOVERING,
+            "band audio recovery",
+        ),
+        (
+            ReferenceTrackPrimaryGate.SESSION_CHANGING,
+            "current session change",
+        ),
+    ),
+)
+def test_active_track_locks_every_mutation_when_primary_is_not_ready(
+    state: _State,
+    gate: ReferenceTrackPrimaryGate,
+    status_text: str,
+) -> None:
+    dialog = ReferenceTrackDialog()
+    intents: list[str] = []
+    dialog.play_requested.connect(lambda: intents.append("play"))
+    dialog.pause_requested.connect(lambda: intents.append("pause"))
+    dialog.restart_requested.connect(lambda: intents.append("restart"))
+    dialog.stop_requested.connect(lambda: intents.append("stop"))
+    dialog.seek_requested.connect(lambda _value: intents.append("seek"))
+    dialog.loop_requested.connect(
+        lambda _start, _end: intents.append("loop")
+    )
+    dialog.trim_requested.connect(lambda _value: intents.append("trim"))
+    dialog.count_in_requested.connect(
+        lambda _beats, _bpm: intents.append("count-in")
+    )
+    try:
+        dialog.set_primary_gate(gate)
+        dialog.set_snapshot(_snapshot(state))
+
+        assert status_text in dialog._status.text()
+        assert "controls are locked" in dialog._status.text()
+        for control in (
+            dialog._play,
+            dialog._pause,
+            dialog._restart,
+            dialog._stop,
+            dialog._seek,
+            dialog._loop,
+            dialog._loop_start,
+            dialog._loop_end,
+            dialog._trim,
+            dialog._count_in,
+            dialog._count_bpm,
+        ):
+            assert control.isEnabled() is False
+
+        # Handler guards remain authoritative even if a stale accessibility or
+        # queued callback reaches them after the widgets were disabled.
+        dialog._emit_play()
+        dialog._emit_pause()
+        dialog._emit_restart()
+        dialog._emit_stop()
+        dialog._emit_seek()
+        dialog._emit_loop()
+        dialog._emit_trim()
+        dialog._emit_count_in()
+        assert intents == []
+    finally:
+        dialog.close()
+
+
 def test_paused_seek_and_loop_emit_bounded_semantic_intent() -> None:
     dialog = ReferenceTrackDialog()
     seeks: list[float] = []
@@ -360,6 +561,7 @@ def test_paused_seek_and_loop_emit_bounded_semantic_intent() -> None:
     dialog.seek_requested.connect(seeks.append)
     dialog.loop_requested.connect(lambda start, end: loops.append((start, end)))
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(_snapshot(_State.PAUSED))
         assert dialog._seek.isEnabled() is True
         dialog._seek.setValue(dialog._SEEK_STEPS // 2)
@@ -385,6 +587,7 @@ def test_keyboard_seek_and_in_progress_trim_survive_snapshot_refresh() -> None:
     dialog.seek_requested.connect(seeks.append)
     dialog.trim_requested.connect(trims.append)
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(_snapshot(_State.PAUSED))
         dialog.show()
         _app.processEvents()
@@ -420,6 +623,7 @@ def test_committed_keyboard_edits_survive_stale_snapshot_until_acknowledged() ->
     )
     stale = _snapshot(_State.PAUSED)
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(stale)
         dialog.show()
         _app.processEvents()
@@ -510,6 +714,7 @@ def test_typed_edits_emit_once_and_remain_bounded_across_focus_changes() -> None
         _app.processEvents()
 
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(stale)
         dialog.show()
         _app.processEvents()
@@ -552,6 +757,7 @@ def test_rejected_optimistic_edit_returns_to_controller_truth() -> None:
     dialog = ReferenceTrackDialog()
     stale = _snapshot(_State.PAUSED)
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(stale)
         with patch(
             "webjam_qt.windows.reference_track.monotonic",
@@ -624,6 +830,7 @@ def test_loaded_source_remains_editable_when_route_is_unavailable() -> None:
         snapshot.source_samplerate = 48_000
         snapshot.source_channels = 1
         snapshot.route_detail = ""
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(snapshot)
 
         assert "loaded and ready to inspect" in dialog._status.text().lower()
@@ -642,6 +849,7 @@ def test_loaded_source_remains_editable_when_route_is_unavailable() -> None:
 def test_failure_snapshot_shows_safe_controller_message() -> None:
     dialog = ReferenceTrackDialog()
     try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
         dialog.set_snapshot(
             _snapshot(
                 _State.FAILED,

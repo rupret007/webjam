@@ -1066,6 +1066,10 @@ def test_default_input_meter_does_not_claim_session_audio_ready(qapp, tmp_path):
 
 
 def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
+    from core.jamulus_rpc_client import (
+        JamulusRpcMonitorIdentity,
+        JamulusRpcMonitorSnapshot,
+    )
     from jamulus_controller import JamulusParticipant
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
@@ -1081,7 +1085,27 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
         initial_title="Host Roster Truth",
     )
     controller = ApplicationController(window, settings=settings)
+    primary = MagicMock()
+    primary.pid = 7331
+    primary.poll.return_value = None
+    controller.bridge.jamulus_process = primary
+    controller.bridge._jamulus_process_generation_counter = 1
+    controller.bridge._jamulus_process_generation = 1
     controller.bridge.jamulus_launch_intended = True
+    controller.jamulus.rpc_client = MagicMock()
+    controller.jamulus.rpc_client.available = True
+    controller.jamulus.rpc_client.last_activity_age.return_value = 0.0
+    source_identity = JamulusRpcMonitorIdentity(1, 1, primary.pid)
+    controller.jamulus.rpc_monitor_snapshot_for = MagicMock(
+        return_value=JamulusRpcMonitorSnapshot(
+            identity=source_identity,
+            running=True,
+            available=True,
+            authenticated=True,
+            last_activity_at=time.monotonic(),
+            last_activity_age_seconds=0.0,
+        )
+    )
     controller.bridge.hosted_server_alive = MagicMock(return_value=True)
     with patch.object(
         controller,
@@ -1089,7 +1113,8 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
         return_value=create_invite_link("192.168.1.42"),
     ):
         controller._apply_jamulus_participants(
-            [JamulusParticipant(channel_id=7, name="Guest", is_local=False)]
+            [JamulusParticipant(channel_id=7, name="Guest", is_local=False)],
+            source_identity=source_identity,
         )
     assert controller._jamulus_connected is False
     assert 7 in controller.participants
@@ -1103,7 +1128,8 @@ def test_host_requires_its_own_roster_entry_before_connected(qapp, tmp_path):
             [
                 JamulusParticipant(channel_id=3, name="Host", is_local=True),
                 JamulusParticipant(channel_id=7, name="Guest", is_local=False),
-            ]
+            ],
+            source_identity=source_identity,
         )
     assert controller._jamulus_connected is True
     assert not controller._connection_timer.isActive()
@@ -1226,6 +1252,21 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
     controller.bridge.stop_jamulus = MagicMock(
         side_effect=lambda: events.append("client-stop") or True
     )
+    dead_client = MagicMock()
+    dead_client.poll.return_value = 1
+    controller.bridge.jamulus_process = dead_client
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.attempt_auto_reconnects = MagicMock()
+    controller._jamulus_connected = True
+
+    def stop_reference_track(*, background: bool) -> bool:
+        events.append(f"reference-stop-{background}")
+        if not background:
+            # Reconnect polling can race a deliberate switch after the old
+            # process exits. The switch worker must remain the sole teardown
+            # owner and the poll must not start auto-reconnect beside it.
+            controller._on_reconnect_tick()
+        return True
 
     def stop_hosted_server() -> bool:
         events.append("server-stop")
@@ -1250,11 +1291,19 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
         patch.object(
             controller._ui_invoker, "invoke", side_effect=lambda callback: callback()
         ),
+        patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            side_effect=stop_reference_track,
+        ) as stop_reference,
     ):
         assert controller.accept_invite_url(link) is True
 
     assert question.call_args.args[4] == QMessageBox.StandardButton.No
+    stop_reference.assert_called_once_with(background=False)
+    controller.bridge.attempt_auto_reconnects.assert_not_called()
     assert events == [
+        "reference-stop-False",
         "recorder-stop",
         "client-stop",
         "server-stop",

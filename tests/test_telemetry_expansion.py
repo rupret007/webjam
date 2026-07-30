@@ -21,6 +21,7 @@ _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
 from jamulus_controller import JamulusParticipant  # noqa: E402
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from ui.services import MetricsService  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.controllers.mix_manager import MixManager  # noqa: E402
@@ -106,6 +107,17 @@ class TestApplicationControllerMetrics(unittest.TestCase):
         # Reset session-started latch
         self.controller._jamulus_connected = False
         self.controller._reset_to_demo_state()
+        process = mock.MagicMock()
+        process.pid = 4400
+        process.poll.return_value = None
+        self.controller.bridge.jamulus_process = process
+        self.controller.bridge.jamulus_launch_intended = True
+        self.controller.bridge.jamulus_state = "Running"
+        rpc = mock.MagicMock()
+        rpc.available = True
+        rpc.last_activity_age.return_value = 0.1
+        self.controller.jamulus.rpc_client = rpc
+        self.source_identity = bind_primary_rpc_monitor(self.controller)
 
     def _called(self, key: str) -> bool:
         return any(
@@ -155,13 +167,19 @@ class TestApplicationControllerMetrics(unittest.TestCase):
     def test_first_jamulus_participants_increments_session_started(self) -> None:
         # First arrival flips the latch and increments once.
         first = [JamulusParticipant(channel_id=10, name="Alice", is_local=True)]
-        self.controller._apply_jamulus_participants(first)
+        self.controller._apply_jamulus_participants(
+            first,
+            source_identity=self.source_identity,
+        )
         # Second arrival does not re-increment (latch is set).
         second = [
             JamulusParticipant(channel_id=10, name="Alice", is_local=True),
             JamulusParticipant(channel_id=11, name="Bob"),
         ]
-        self.controller._apply_jamulus_participants(second)
+        self.controller._apply_jamulus_participants(
+            second,
+            source_identity=self.source_identity,
+        )
 
         session_calls = [
             c for c in self._metrics_mock.increment.call_args_list

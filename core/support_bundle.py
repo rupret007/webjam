@@ -88,6 +88,9 @@ _PORT_FIELDS = frozenset(
 )
 _RECONNECT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
 _EXPORT_COUNT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
+_JAMULUS_RPC_FRESHNESS = frozenset(
+    {"no_process", "starting", "fresh", "stale"}
+)
 _GUIDANCE_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 )
@@ -246,6 +249,7 @@ class SupportFacts:
     architecture: str = ""
     jamulus_version: str = ""
     jamulus_state: str = ""
+    jamulus_recovery: Mapping[str, Any] = field(default_factory=dict)
     jamulus_update: Mapping[str, Any] = field(default_factory=dict)
     webex_app: Mapping[str, Any] = field(default_factory=dict)
     reference_track: Mapping[str, Any] = field(default_factory=dict)
@@ -391,7 +395,12 @@ def build_support_bundle(
                 "os": _safe_text(facts.os_name),
                 "architecture": _safe_text(facts.architecture),
             },
-            "jamulus": {"state": _safe_text(facts.jamulus_state)},
+            "jamulus": {
+                "state": _safe_text(facts.jamulus_state),
+                "recovery": _sanitize_jamulus_recovery(
+                    facts.jamulus_recovery
+                ),
+            },
             "jamulus_update": _sanitize_jamulus_update(facts.jamulus_update),
             "webex_app": _sanitize_webex_app(facts.webex_app),
             "reference_track": _sanitize_reference_track(facts.reference_track),
@@ -468,6 +477,61 @@ def _recorder_report(facts: SupportFacts) -> dict[str, Any]:
     if facts.dropped_blocks is not None:
         report["dropped_blocks"] = _safe_nonnegative_int(facts.dropped_blocks)
     return report
+
+
+def _sanitize_jamulus_recovery(
+    value: Mapping[str, Any] | Any,
+) -> dict[str, Any]:
+    """Accept one complete, bounded, path-free recovery snapshot."""
+
+    if not isinstance(value, Mapping):
+        return {}
+
+    result: dict[str, Any] = {}
+    integer_fields = (
+        "generation",
+        "recovery_generation",
+        "attempts_started",
+        "max_attempts",
+        "process_id",
+    )
+    for key in integer_fields:
+        item = value.get(key)
+        if (
+            not isinstance(item, int)
+            or isinstance(item, bool)
+            or not 0 <= item <= 2**63 - 1
+        ):
+            return {}
+        result[key] = item
+
+    if result["max_attempts"] <= 0:
+        return {}
+    if result["attempts_started"] > result["max_attempts"]:
+        return {}
+
+    for key in (
+        "launch_intended",
+        "pending",
+        "active",
+        "inflight",
+        "exhausted",
+        "process_alive",
+    ):
+        item = value.get(key)
+        if not isinstance(item, bool):
+            return {}
+        result[key] = item
+
+    freshness = value.get("rpc_freshness")
+    if not isinstance(freshness, str) or freshness not in _JAMULUS_RPC_FRESHNESS:
+        return {}
+    result["rpc_freshness"] = freshness
+
+    age = _safe_number(value.get("rpc_age_seconds"))
+    if age is not None and age >= 0:
+        result["rpc_age_seconds"] = age
+    return result
 
 
 def _sanitize_jamulus_update(value: Mapping[str, Any] | Any) -> dict[str, Any]:

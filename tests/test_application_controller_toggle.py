@@ -17,6 +17,7 @@ import unittest  # noqa: E402
 from unittest import mock  # noqa: E402
 
 from core.settings import AppSettings  # noqa: E402
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
@@ -217,11 +218,31 @@ class TestAloneOnServerStatus(unittest.TestCase):
     def tearDownClass(cls):
         cls.controller.shutdown()
 
+    def setUp(self):
+        process = mock.MagicMock()
+        process.pid = 4200
+        process.poll.return_value = None
+        self.controller.bridge.jamulus_process = process
+        self.controller.bridge.jamulus_launch_intended = True
+        self.controller.bridge.jamulus_state = "Running"
+        rpc = mock.MagicMock()
+        rpc.available = True
+        rpc.last_activity_age.return_value = 0.1
+        self.controller.jamulus.rpc_client = rpc
+        self.source_identity = bind_primary_rpc_monitor(self.controller)
+        self.controller._jamulus_connected = False
+        self.controller.audio.cleanup_retry_required = False
+        self.controller._reconnect_gave_up = False
+        self.controller._clear_primary_local_roster_proof()
+
     def test_single_participant_shows_waiting_message(self):
         """v0.4.4: solo participant triggers 'waiting for others' hint."""
         from jamulus_controller import JamulusParticipant
         p = JamulusParticipant(channel_id=0, name="You", is_local=True)
-        self.controller._apply_jamulus_participants([p])
+        self.controller._apply_jamulus_participants(
+            [p],
+            source_identity=self.source_identity,
+        )
         text = self.window._status_latency.text()
         self.assertIn("1 participant", text)
         self.assertIn("waiting for others", text)
@@ -233,7 +254,10 @@ class TestAloneOnServerStatus(unittest.TestCase):
             JamulusParticipant(channel_id=0, name="You", is_local=True),
             JamulusParticipant(channel_id=1, name="Bandmate"),
         ]
-        self.controller._apply_jamulus_participants(participants)
+        self.controller._apply_jamulus_participants(
+            participants,
+            source_identity=self.source_identity,
+        )
         text = self.window._status_latency.text()
         self.assertIn("2 participants", text)
         self.assertNotIn("waiting", text)

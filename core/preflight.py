@@ -180,8 +180,8 @@ def _check_selected_input(settings) -> CheckItem:
 def _ensure_takes_dir(settings) -> tuple[Path, str | None]:
     """Resolve the Takes folder and report why it is unusable, if it is.
 
-    Hosted mode derives the Takes folder inside the sandboxed JamulusServer
-    container, which otherwise only materializes at Start Audio
+    Hosted mode derives the Takes folder inside WebJam's own Application
+    Support tree, which otherwise only materializes at Start Audio
     (BridgeService.ensure_hosted_server). Band Check may legitimately run
     first, so in hosted mode create the folder here the same way Start Audio
     would. A folder the user chose explicitly (non-hosted mode) is never

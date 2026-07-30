@@ -32,15 +32,42 @@ All notable improvements and features for the WebJam music collaboration platfor
   mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
   physical gates.
 
-### macOS Jamulus profile permission clarity
+### Permissionless macOS Jamulus profiles
 
-- Added a truthful outer-app purpose string and typed recovery for macOS Other
-  Application Data access. **Allow** continues normal Host/Join with the
-  Jamulus-owned profile dedicated to WebJam; **Don't Allow** starts no Jamulus
-  client and requires a complete quit/reopen instead of an in-process retry.
-  The regular `Jamulus.ini` remains untouched, Reference Track must cause no
-  second or generic permission prompt, and macOS may ask again after WebJam
-  quits.
+- Host and Join now give the verified non-sandboxed integrated Jamulus
+  component a dedicated filename while WebJam keeps that profile, its launch
+  workspace, and loopback credential under its own Application Support tree.
+  WebJam no longer opens or verifies files in Jamulus's container.
+- Reference Track keeps its separate private profile and control credential in
+  WebJam's Application Support tree. PID-bound CoreAudio route proof remains
+  authoritative; the primary profile's device names are only a secondary
+  consistency check.
+- The outer Mac bundle no longer declares `NSAppDataUsageDescription`.
+  Host, Join, and Reference Track must not ask for Other Application Data or
+  Full Disk Access. A fresh Jamulus profile can still require one-time sound
+  setup and macOS can separately request microphone access for the chosen
+  audio input. The regular `Jamulus.ini` remains untouched.
+
+### Authenticated bounded Jamulus recovery
+
+- Replaced mutable reconnect-field inference with one immutable recovery
+  snapshot bound to the exact recovery generation, process generation, and
+  process ID. A replacement is accepted only after its authenticated RPC is
+  fresh and the same local musician identity appears in the roster; delayed
+  proof from an older process cannot authenticate a newer one.
+- Kept automatic client recovery to five starts, with pending and in-flight
+  work represented explicitly. Exhaustion stops automatic retries and presents
+  a fresh explicit Host/Join restart instead of remaining indefinitely in
+  Recovering, silently starting a sixth client, or treating process existence
+  as a connection.
+- Added the same immutable recovery truth to privacy-safe diagnostics and
+  Support Bundles: generations, launch/pending/active state, attempts and
+  maximum, in-flight/exhausted state, process ID/liveness, RPC freshness, and
+  finite RPC age. Monotonic deadlines, paths, profiles, secrets, invitations,
+  meeting links, and raw exceptions are excluded.
+- This remains unreleased source work. The immutable **Latest** GitHub release
+  and downloadable assets remain **v0.22.2** until every v0.22.3 physical and
+  release gate passes.
 
 ### Webex native-show reliability
 

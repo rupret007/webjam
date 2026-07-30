@@ -164,13 +164,7 @@ if actual_apps != expected_apps:
     raise SystemExit(f"nested app policy mismatch; unexpected={unexpected}, missing={missing}")
 
 for bundle, keys in (
-    (
-        root,
-        (
-            "NSMicrophoneUsageDescription",
-            "NSAppDataUsageDescription",
-        ),
-    ),
+    (root, ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[2]), ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[3]), ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[4]), ("NSMicrophoneUsageDescription",)),
@@ -180,20 +174,9 @@ for bundle, keys in (
     missing = [key for key in keys if not info.get(key)]
     if missing:
         raise SystemExit(f"{bundle} is missing privacy strings: {missing}")
-    if bundle == root:
-        expected = (
-            "WebJam accesses Jamulus app data only for dedicated WebJam "
-            "profiles and private Reference Track audio-route and control "
-            "files. It never reads or changes your regular Jamulus profile."
-        )
-        actual = info.get("NSAppDataUsageDescription")
-        if actual != expected:
-            raise SystemExit(
-                "outer app has an unexpected NSAppDataUsageDescription"
-            )
-    elif "NSAppDataUsageDescription" in info:
+    if "NSAppDataUsageDescription" in info:
         raise SystemExit(
-            f"nested app must not declare NSAppDataUsageDescription: {bundle}"
+            f"bundle must not declare NSAppDataUsageDescription: {bundle}"
         )
 PY
 

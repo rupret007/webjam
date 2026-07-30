@@ -16,7 +16,6 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
-from jamulus_controller import JamulusParticipant  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
@@ -43,10 +42,16 @@ class TestCardFaderSignalWiring(unittest.TestCase):
         self.controller.jamulus = fake_jamulus
         self.controller._jamulus_connected = True
 
-        # Push a real participant so a card exists in the grid for ch 7.
-        self.controller._apply_jamulus_participants(
-            [JamulusParticipant(channel_id=7, name="Tester", is_local=False)]
+        # This test starts at the mixer boundary; roster authentication is
+        # covered separately. Publish a connected card directly so moving it
+        # exercises only the card → grid → controller → Jamulus signal chain.
+        self.controller.participants[7] = ParticipantPresentation(
+            channel_id=7,
+            name="Tester",
+            is_local=True,
+            is_connected=True,
         )
+        self.controller._push_participants_to_grid()
 
         cards = self.window.participant_grid._cards
         self.assertIn(7, cards, f"card for ch 7 missing; cards: {list(cards)}")

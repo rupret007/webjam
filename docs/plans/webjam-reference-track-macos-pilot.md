@@ -93,9 +93,11 @@ For every step, record PASS, FAIL, or NOT RUN plus a timestamp and observation.
 2. Change the primary Jamulus input or output, route it to BlackHole, or stop
    either primary I/O direction. Require silence and safe stop on the next
    bounded live-route check without stopping the primary client.
-   Repeat with a duplex physical interface and after making the Jamulus profile
-   temporarily unwritable. This specifically tests the reported CoreAudio
-   wrong-input result and stale-profile counterexample.
+   Repeat with a duplex physical interface. This specifically tests the
+   reported CoreAudio wrong-input result. The filename-only primary profile is
+   under WebJam's private Application Support launch directory; leave the
+   musician's normal Jamulus profile untouched. Live PID-bound CoreAudio route
+   evidence is the authoritative check.
 3. Sleep/wake or otherwise delay route checking past its freshness window.
    Require silence rather than reuse of stale pre-sleep evidence.
 4. Terminate the backing client RPC connection. Require playback refusal/stop;

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import asdict
 import json
 import logging
+import math
 import platform
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from core.support_bundle import (
     SupportFacts,
     build_support_bundle,
 )
+from services.bridge_service import JamulusRecoverySnapshot
 
 LOGGER = logging.getLogger("webjam.qt.diagnostics")
 
@@ -102,6 +104,7 @@ class DiagnosticsExporter:
 
     def _build_artifact(self) -> SupportBundleArtifact:
         diagnostics = self._audio_diagnostics()
+        recovery = self._jamulus_recovery()
         engine_capabilities: dict[str, Any] = {}
         for source_name, report_name in (
             ("backend", "backend"),
@@ -113,27 +116,19 @@ class DiagnosticsExporter:
             if value is not None:
                 engine_capabilities[report_name] = value
 
-        rpc = getattr(self.jamulus, "rpc_client", None)
-        rpc_available = _plain_value(getattr(rpc, "available", None))
-        if isinstance(rpc_available, bool):
-            engine_capabilities["rpc_available"] = rpc_available
-        try:
-            age = rpc.last_activity_age() if rpc is not None else None
-        except Exception:  # noqa: BLE001 - diagnostics must remain best-effort
-            age = None
-        if isinstance(age, (int, float)) and not isinstance(age, bool):
-            engine_capabilities["rpc_last_activity_age_s"] = max(0.0, float(age))
+        rpc_freshness = recovery.get("rpc_freshness")
+        if isinstance(rpc_freshness, str):
+            engine_capabilities["rpc_available"] = rpc_freshness == "fresh"
+        rpc_age = recovery.get("rpc_age_seconds")
+        if isinstance(rpc_age, (int, float)) and not isinstance(rpc_age, bool):
+            engine_capabilities["rpc_last_activity_age_s"] = rpc_age
 
         sample_rate = _plain_value(getattr(diagnostics, "samplerate", None))
-        reconnect_attempts = _plain_value(
-            getattr(self.bridge, "jamulus_reconnect_attempts", None)
-        )
         metric_values = self._metric_values()
         reconnect_counts: dict[str, int] = {}
-        if isinstance(reconnect_attempts, int) and not isinstance(
-            reconnect_attempts, bool
-        ):
-            reconnect_counts["attempts"] = max(0, reconnect_attempts)
+        reconnect_attempts = recovery.get("attempts_started")
+        if isinstance(reconnect_attempts, int):
+            reconnect_counts["attempts"] = reconnect_attempts
         for field, metric_name in (
             ("succeeded", "metric_jamulus_reconnect_success"),
             ("failed", "metric_jamulus_reconnect_failed"),
@@ -169,6 +164,7 @@ class DiagnosticsExporter:
             jamulus_state=str(
                 _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
             ),
+            jamulus_recovery=recovery,
             jamulus_update=_public_mapping(self.jamulus_update),
             webex_app=_public_mapping(self.webex_app),
             reference_track=_public_mapping(self.reference_track),
@@ -189,6 +185,43 @@ class DiagnosticsExporter:
             port_cleanup=port_cleanup,
         )
         return build_support_bundle(facts, log_excerpts=self._log_excerpts())
+
+    def _jamulus_recovery(self) -> dict[str, Any]:
+        """Serialize only the immutable primary-client recovery contract."""
+
+        snapshot_factory = getattr(self.bridge, "jamulus_recovery_snapshot", None)
+        if not callable(snapshot_factory):
+            return {}
+        try:
+            snapshot = snapshot_factory()
+        except Exception:  # noqa: BLE001 - support evidence remains optional
+            return {}
+        if not isinstance(snapshot, JamulusRecoverySnapshot):
+            return {}
+
+        recovery: dict[str, Any] = {
+            "generation": snapshot.generation,
+            "recovery_generation": snapshot.recovery_generation,
+            "launch_intended": snapshot.launch_intended,
+            "pending": snapshot.pending,
+            "active": snapshot.active,
+            "attempts_started": snapshot.attempts_started,
+            "max_attempts": snapshot.max_attempts,
+            "inflight": snapshot.inflight,
+            "exhausted": snapshot.exhausted,
+            "process_id": snapshot.process_id,
+            "process_alive": snapshot.process_alive,
+            "rpc_freshness": snapshot.rpc_freshness.value,
+        }
+        age = snapshot.rpc_age_seconds
+        if (
+            isinstance(age, (int, float))
+            and not isinstance(age, bool)
+            and math.isfinite(float(age))
+            and float(age) >= 0.0
+        ):
+            recovery["rpc_age_seconds"] = float(age)
+        return recovery
 
     def _session_transitions(self) -> tuple[dict[str, str], ...]:
         """Return only the lifecycle's explicit, allowlisted timeline."""

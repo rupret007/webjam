@@ -210,14 +210,12 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     assert "ADHOC-TEST-ONLY.dmg" in source
     assert "codesign --verify --deep --strict" in source
     assert "'Print :NSAppDataUsageDescription'" in source
+    assert "! /usr/libexec/PlistBuddy" in source
+    assert '"$app"' in source
     assert (
-        "WebJam accesses Jamulus app data only for dedicated WebJam profiles "
-        "and private Reference Track audio-route and control files. It never "
-        "reads or changes your regular Jamulus profile."
-    ) in source
-    assert (
-        '"$app/Contents/Resources/$nested_name/Contents/Info.plist"' in source
+        '"$app/Contents/Resources/JamulusHeadlessClient.app"' in source
     )
+    assert "WebJam accesses Jamulus app data" not in source
     assert "verify_packaged_transport" not in source
     assert "/usr/bin/shasum -a 256" in source
     assert "/usr/bin/file" in source

@@ -274,6 +274,22 @@ def test_official_registry_centralizes_exact_3122_and_3123_artifacts():
     assert mac.publisher == (
         "Developer ID Application: Jonathan Chung (V9ZZ6B9WH8)"
     )
+    assert mac.capabilities.includes(
+        {"audio-client", "json-rpc-client", "native-gui"}
+    )
+    assert not mac.capabilities.includes({"webjam-route-profile"})
+    mac_server = registry.exact(
+        component_id="jamulus",
+        role=JamulusRole.SERVER,
+        target=ComponentTarget.MACOS_ARM64,
+        version="3.12.3",
+        variant="official",
+    )
+    assert mac_server.capabilities.includes(
+        {"audio-server", "json-rpc-server"}
+    )
+    assert not mac_server.capabilities.includes({"recording"})
+    assert windows.capabilities.includes({"webjam-route-profile"})
     headless = registry.exact(
         component_id="jamulus",
         role=JamulusRole.HEADLESS,

@@ -11,6 +11,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from core.jamulus_compatibility import ComponentTarget  # noqa: E402
 from services.bridge_service import BridgeService  # noqa: E402
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
@@ -51,6 +52,10 @@ def make_bridge(tmp_path: Path) -> tuple[BridgeService, SimpleNamespace]:
     bridge.find_jamulus_server_with_source = mock.Mock(
         return_value=(BINARY, "installed")
     )
+    # These tests isolate binding argv and process ownership, not macOS source
+    # artifact policy. Simulate a platform where an approved installed runtime
+    # is executable; dedicated tests prove upstream Mac apps remain source-only.
+    bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
     return bridge, settings
 
 

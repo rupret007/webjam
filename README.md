@@ -26,11 +26,10 @@ trust.
 
 1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
 2. WebJam starts the private session or consumes the invitation.
-3. On macOS, the first live setup in a WebJam launch may ask whether WebJam can
-   access data from other apps. Choose **Allow** so WebJam can prepare and
-   verify the dedicated profile that Jamulus uses for WebJam. Jamulus creates
-   and owns its settings; WebJam does not read or change the musician's normal
-   Jamulus settings. macOS may ask again after WebJam is quit.
+3. On a fresh Mac setup, Jamulus opens its dedicated WebJam profile and may
+   need you to choose the interface, input channels, headphones, and buffer
+   once. WebJam does not open the regular Jamulus profile or request access to
+   data from other apps.
 4. Jamulus opens normally. Choose the interface, channels, headphones, and
    buffer in **Jamulus → Settings → Audio/Network Settings**.
 5. When WebJam sees the authenticated music connection, it opens the session
@@ -43,6 +42,29 @@ trust.
 
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
+
+## Bounded Jamulus recovery in the unreleased source
+
+The source after v0.22.2 treats a running Jamulus process as necessary but not
+sufficient recovery evidence. Each replacement is bound to the exact recovery
+generation, process generation, and process ID that WebJam launched. WebJam
+returns to Connected only after that same process has fresh authenticated RPC
+activity and its local musician row is proved in the roster. Delayed evidence
+from an earlier process cannot authenticate its replacement.
+
+Automatic recovery is bounded to five starts. While one is pending or in
+flight, WebJam reports Recovery in progress instead of starting competing
+clients. If the bounded attempt set is exhausted, automatic recovery stops and
+the musician gets an explicit fresh Host/Join restart path; a timer cannot
+silently create a sixth attempt or call an unauthenticated process Connected.
+The Support Bundle records only the immutable generations, attempt state,
+process ID/liveness, finite RPC freshness category, and finite RPC age. It
+never includes the Jamulus profile path, RPC secret, invitation, meeting link,
+or raw exception.
+
+This recovery work is unreleased. GitHub **Latest** and the immutable
+downloadable assets remain **v0.22.2** until the v0.22.3 physical and release
+gates pass.
 
 ## Jamulus updates without rebuilding WebJam
 
@@ -323,17 +345,27 @@ On macOS WebJam launches Jamulus with the supported filename-only argument:
 --inifile WebJam-native-v0.16.ini
 ```
 
-Jamulus creates and owns that profile. WebJam opens Jamulus's protected
-app-data container to prepare the dedicated location, verify the profile
-fingerprint for safe restarts, and read only its active audio-device selector
-when Reference Track validates an isolated route. Reference Track separately
-uses WebJam-owned route and private-control files in the same container. macOS
-therefore asks for Other Application Data permission; the packaged purpose
-text names that bounded reason. WebJam never writes device, channel, buffer,
-jitter, quality, or mix values to the native profile, and it never reads or
-overwrites the musician's normal `Jamulus.ini`. WebJam’s private restart
-records contain only allowlisted profile and phase hashes—never invitation
-URLs, Webex URLs, credentials, device identifiers, raw paths, or notes.
+The verified non-sandboxed integrated Jamulus component resolves that filename
+relative to WebJam's private launch workspace under
+`~/Library/Application Support/WebJam`. Jamulus alone writes the native sound
+settings. WebJam only validates the dedicated file as a bounded regular file,
+fingerprints it for restart-safe readiness, and may read its device names as a
+secondary route-consistency check. WebJam never opens or uses Jamulus's
+container.
+
+Reference Track uses a separate reviewed headless Jamulus component and keeps
+its private profile and control credential under WebJam's Application Support
+tree too. PID-bound CoreAudio route evidence—not saved profile text—proves
+primary-route isolation. The outer WebJam bundle therefore
+does not declare `NSAppDataUsageDescription`, and Host, Join, and Reference
+Track must not produce an Other Application Data prompt. A separate microphone
+prompt can still appear when an audio input is used.
+
+WebJam never writes device, channel, buffer, jitter, quality, or mix values to
+the musician's native profile, and it never reads or overwrites the regular
+`Jamulus.ini`. WebJam's private restart records contain only allowlisted
+profile identity and phase hashes—never invitation URLs, Webex URLs,
+credentials, device identifiers, raw paths, or notes.
 
 ## Published source and candidate state
 

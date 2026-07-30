@@ -7,12 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.jamulus_profile import (
-    JamulusAppDataPermissionError,
-    JamulusNativeProfileError,
-)
+from core.jamulus_profile import JamulusNativeProfileError
 from core.settings import AppSettings
-from services.bridge_service import BridgeService, JamulusLaunchFailureKind
+from services.bridge_service import BridgeService
 from tests.support.component_store import isolated_component_store_root
 
 
@@ -134,81 +131,27 @@ def test_native_profile_error_stops_before_server_or_client_processes(
     )
     assert "Open Jamulus Audio Settings" in error.kwargs["next_action"]
     assert error.kwargs["retry_callback"] == bridge.retry_audio_launch
-    assert (
-        bridge.last_jamulus_launch_failure
-        is JamulusLaunchFailureKind.NONE
-    )
 
 
 @patch(
     "services.bridge_service.threading.Thread",
     side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
 )
-def test_app_data_denial_requires_full_relaunch_instead_of_retry(
-    _thread: MagicMock,
-) -> None:
-    bridge = _bridge()
-    bridge.settings.host_server_enabled = True
-    bridge.ensure_hosted_server = MagicMock()
-    manager = MagicMock()
-    manager.prepare.side_effect = JamulusAppDataPermissionError(
-        "macOS didn't allow WebJam to use the Jamulus-owned profile dedicated "
-        "to WebJam."
-    )
-    bridge._native_profile_manager = manager
-
-    with patch("services.bridge_service.subprocess.Popen") as popen:
-        assert bridge.launch_jamulus(manual=True) is True
-
-    popen.assert_not_called()
-    bridge.ensure_hosted_server.assert_not_called()
-    error = bridge.show_actionable_error.call_args
-    assert error.args[0] == "Band audio needs attention"
-    assert "Other Application Data" in error.kwargs["likely_cause"]
-    assert "Quit WebJam completely" in error.kwargs["next_action"]
-    assert "choose Allow" in error.kwargs["next_action"]
-    assert error.kwargs["retry_callback"] is None
-    assert bridge.jamulus_state == "Launch failed"
-    assert bridge.jamulus_launch_intended is False
-    assert (
-        bridge.last_jamulus_launch_failure
-        is JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-    )
-
-    assert bridge.stop_jamulus() is True
-    assert (
-        bridge.last_jamulus_launch_failure
-        is JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-    )
-    bridge.show_actionable_error.reset_mock()
-    manager.prepare.reset_mock()
-    with patch("services.bridge_service.subprocess.Popen") as second_popen:
-        assert bridge.launch_jamulus(manual=True) is False
-
-    manager.prepare.assert_not_called()
-    second_popen.assert_not_called()
-    repeated = bridge.show_actionable_error.call_args
-    assert repeated.args[0] == "Band audio needs attention"
-    assert "Quit WebJam completely" in repeated.kwargs["next_action"]
-    assert repeated.kwargs["retry_callback"] is None
-
-
-@patch(
-    "services.bridge_service.threading.Thread",
-    side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
-)
-def test_stale_app_data_denial_cannot_release_a_newer_launch_lease(
+def test_cancelled_profile_failure_cannot_release_a_newer_launch_lease(
     _thread: MagicMock,
 ) -> None:
     bridge = _bridge()
     superseding_token = threading.Event()
     manager = MagicMock()
 
-    def supersede_then_deny(*_args, **_kwargs):
+    def supersede_then_fail(*_args, **_kwargs):
+        current_token = bridge._pending_jamulus_launch_cancel
+        assert current_token is not None
+        current_token.set()
         bridge._pending_jamulus_launch_cancel = superseding_token
-        raise JamulusAppDataPermissionError("stale denial")
+        raise JamulusNativeProfileError("stale profile failure")
 
-    manager.prepare.side_effect = supersede_then_deny
+    manager.prepare.side_effect = supersede_then_fail
     bridge._native_profile_manager = manager
 
     with patch("services.bridge_service.subprocess.Popen") as popen:
@@ -219,59 +162,8 @@ def test_stale_app_data_denial_cannot_release_a_newer_launch_lease(
     assert bridge._runtime_component_lease is not None
     assert bridge._runtime_component_lease_claims == {"client"}
     assert bridge.jamulus_state == "Starting"
-    assert (
-        bridge.last_jamulus_launch_failure
-        is JamulusLaunchFailureKind.NONE
-    )
     bridge.show_actionable_error.assert_not_called()
     bridge._release_runtime_component_lease("client")
-
-
-def test_racing_launch_rechecks_app_data_denial_inside_request_lock() -> None:
-    bridge = _bridge()
-    raw_lock = threading.Lock()
-    waiting = threading.Event()
-
-    class _NotifyingLock:
-        def __enter__(self):
-            waiting.set()
-            raw_lock.acquire()
-            return self
-
-        def __exit__(self, *_args):
-            raw_lock.release()
-
-    raw_lock.acquire()
-    bridge._jamulus_launch_control_lock = _NotifyingLock()
-    bridge.find_jamulus = MagicMock(
-        side_effect=AssertionError("denial latch was bypassed")
-    )
-    outcome: dict[str, object] = {}
-
-    def launch() -> None:
-        try:
-            outcome["accepted"] = bridge.launch_jamulus(manual=True)
-        except BaseException as exc:  # noqa: BLE001 - surface worker failures
-            outcome["error"] = exc
-
-    worker = threading.Thread(target=launch)
-    worker.start()
-    reached_request_lock = waiting.wait(timeout=1.0)
-    if reached_request_lock:
-        bridge.last_jamulus_launch_failure = (
-            JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-        )
-    raw_lock.release()
-    worker.join(timeout=2.0)
-
-    assert reached_request_lock
-    assert worker.is_alive() is False
-    assert "error" not in outcome
-    assert outcome["accepted"] is False
-    bridge.find_jamulus.assert_not_called()
-    assert bridge._pending_jamulus_launch_cancel is None
-    assert bridge.jamulus_launch_intended is False
-    assert bridge.show_actionable_error.call_args.kwargs["retry_callback"] is None
 
 
 @patch(

@@ -11,14 +11,16 @@ import pytest
 
 from core.jamulus_compatibility import (
     ActivationMode,
+    ArtifactKind,
     ComponentTarget,
     JamulusCapabilities,
     JamulusRole,
+    RuntimeFileIdentity,
     WebJamVersionRange,
     official_jamulus_compatibility_registry,
 )
 from core.jamulus_component_resolver import ValidatedExternalComponent
-from services.bridge_service import BridgeService
+from services.bridge_service import BridgeService, _jamulus_child_environment
 
 
 class _ImmediateThread:
@@ -36,7 +38,64 @@ def _executable(path: Path) -> Path:
     return path
 
 
-def _bridge(component_store_root: Path) -> BridgeService:
+def _integrated_macos_entry(
+    role: JamulusRole,
+    *,
+    target: ComponentTarget = ComponentTarget.MACOS_ARM64,
+):
+    baseline = official_jamulus_compatibility_registry().exact(
+        component_id="jamulus",
+        role=role,
+        target=target,
+        version="3.12.3",
+    )
+    executable = (
+        "Jamulus.app/Contents/MacOS/Jamulus"
+        if role is JamulusRole.CLIENT
+        else "JamulusServer.app/Contents/MacOS/JamulusServer"
+    )
+    capabilities = (
+        {
+            "audio-client",
+            "json-rpc-client",
+            "native-gui",
+            "webjam-route-profile",
+            "webjam-integrated-runtime",
+        }
+        if role is JamulusRole.CLIENT
+        else {
+            "audio-server",
+            "json-rpc-server",
+            "recording",
+            "webjam-integrated-runtime",
+        }
+    )
+    return replace(
+        baseline,
+        variant="webjam-integrated",
+        artifact=replace(
+            baseline.artifact,
+            kind=ArtifactKind.ARCHIVE,
+        ),
+        runtime_files=(
+            RuntimeFileIdentity(
+                relative_path=executable,
+                size=20,
+                sha256="a" * 64,
+                executable=True,
+            ),
+        ),
+        executable_relative_path=executable,
+        capabilities=JamulusCapabilities(frozenset(capabilities)),
+        activation_mode=ActivationMode.MANAGED,
+    )
+
+
+def _bridge(
+    component_store_root: Path,
+    *,
+    target: ComponentTarget | None = None,
+) -> BridgeService:
     settings = MagicMock()
     settings.jamulus_server = "band.example.test"
     settings.jamulus_port = 22124
@@ -60,6 +119,8 @@ def _bridge(component_store_root: Path) -> BridgeService:
         },
         component_store_root=component_store_root,
     )
+    if target is not None:
+        bridge._jamulus_component_target = target
     bridge._runtime_webjam_version = lambda: "0.22.0"
     bridge._is_rpc_port_in_use = MagicMock(return_value=False)
     return bridge
@@ -68,7 +129,10 @@ def _bridge(component_store_root: Path) -> BridgeService:
 def test_managed_client_precedes_embedded_and_is_reverified_each_use(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     managed = _executable(tmp_path / "managed-client")
     calls = 0
 
@@ -97,7 +161,10 @@ def test_managed_client_precedes_embedded_and_is_reverified_each_use(
 def test_invalid_managed_client_falls_back_to_embedded_without_using_explicit(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.MACOS_ARM64,
+    )
     managed = _executable(tmp_path / "unapproved-managed-client")
     explicit = _executable(tmp_path / "explicit-client")
     bridge.settings.jamulus_candidates = [str(explicit)]
@@ -118,8 +185,186 @@ def test_invalid_managed_client_falls_back_to_embedded_without_using_explicit(
     assert component.source == "bundled"
 
 
+@pytest.mark.parametrize("role", (JamulusRole.CLIENT, JamulusRole.SERVER))
+def test_macos_upstream_source_caps_cannot_activate_but_bundled_can(
+    tmp_path: Path,
+    role: JamulusRole,
+    monkeypatch,
+) -> None:
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.MACOS_ARM64,
+    )
+    target = bridge._jamulus_component_target
+    assert target in {
+        ComponentTarget.MACOS_ARM64,
+        ComponentTarget.MACOS_X64,
+    }
+    binary = _executable(tmp_path / role.value)
+    entry = replace(
+        official_jamulus_compatibility_registry().exact(
+            component_id="jamulus",
+            role=role,
+            target=target,
+            version="3.12.3",
+        ),
+        # Model an older or compromised signed catalog that still advertises
+        # WebJam-owned runtime-file capabilities. The platform rule, not the
+        # catalog assertion, must remain authoritative.
+        capabilities=JamulusCapabilities(
+            (
+                frozenset(
+                    {
+                        "audio-client",
+                        "json-rpc-client",
+                        "native-gui",
+                        "webjam-route-profile",
+                    }
+                )
+                if role is JamulusRole.CLIENT
+                else frozenset(
+                    {
+                        "audio-server",
+                        "json-rpc-server",
+                        "recording",
+                    }
+                )
+            )
+        ),
+    )
+    validated = ValidatedExternalComponent(
+        entry=entry,
+        executable_path=binary,
+        content_verified=True,
+        version_verified=True,
+        architecture_verified=True,
+        publisher_verified=True,
+        execution_contract_verified=True,
+    )
+    monkeypatch.setattr(
+        "services.jamulus_component_platform."
+        "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
+        True,
+    )
+    assert bridge._approved_runtime_versions(role) == frozenset()
+    assert "3.12.2" in bridge._approved_embedded_runtime_versions(role)
+
+    if role is JamulusRole.CLIENT:
+        bridge.set_managed_jamulus_components(lambda: validated, None)
+        with patch(
+            "services.bridge_service._bundled_jamulus_candidate",
+            return_value="/embedded/Jamulus",
+        ):
+            assert bridge.find_jamulus() == "/embedded/Jamulus"
+        component = bridge._last_resolved_client_component
+    else:
+        bridge.set_managed_jamulus_components(None, lambda: validated)
+        with patch(
+            "services.bridge_service._bundled_jamulus_server_candidate",
+            return_value="/embedded/JamulusServer",
+        ):
+            assert bridge.find_jamulus_server_with_source() == (
+                "/embedded/JamulusServer",
+                "bundled",
+            )
+        component = bridge._last_resolved_server_component
+
+    assert component is not None
+    assert component.version == "3.12.2"
+    assert component.source == "bundled"
+    assert component.catalog_entry is None
+
+
+@pytest.mark.parametrize(
+    ("verifier_enabled", "contract_verified", "expected_managed"),
+    (
+        (False, True, False),
+        (True, False, False),
+        (True, True, True),
+    ),
+)
+def test_future_macos_integrated_runtime_requires_shared_gate_and_live_proof(
+    tmp_path: Path,
+    monkeypatch,
+    verifier_enabled: bool,
+    contract_verified: bool,
+    expected_managed: bool,
+) -> None:
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.MACOS_ARM64,
+    )
+    binary = _executable(tmp_path / "integrated-Jamulus")
+    entry = _integrated_macos_entry(JamulusRole.CLIENT)
+    validated = ValidatedExternalComponent(
+        entry=entry,
+        executable_path=binary,
+        content_verified=True,
+        version_verified=True,
+        architecture_verified=True,
+        publisher_verified=False,
+        trust_policy_verified=True,
+        execution_contract_verified=contract_verified,
+    )
+    bridge.set_managed_jamulus_components(lambda: validated, None)
+    monkeypatch.setattr(
+        "services.jamulus_component_platform."
+        "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
+        verifier_enabled,
+    )
+
+    with patch(
+        "services.bridge_service._bundled_jamulus_candidate",
+        return_value="/embedded/Jamulus",
+    ):
+        selected = bridge.find_jamulus()
+
+    if expected_managed:
+        assert selected == str(binary)
+        component = bridge._last_resolved_client_component
+        assert component is not None
+        assert component.catalog_entry == entry
+        assert component.source == "managed"
+    else:
+        assert selected == "/embedded/Jamulus"
+        component = bridge._last_resolved_client_component
+        assert component is not None
+        assert component.catalog_entry is None
+        assert component.source == "bundled"
+
+
+def test_bridge_child_environment_scrubs_all_native_loader_controls() -> None:
+    inherited = {
+        "PATH": "/tmp/untrusted-bin",
+        "dyld_insert_libraries": "/tmp/untrusted.dylib",
+        "LD_AUDIT": "/tmp/untrusted-audit.so",
+        "qT_Plugin_Path": "/tmp/untrusted-qt",
+        "QML2_IMPORT_PATH": "/tmp/untrusted-qml",
+        "QT_LOGGING_RULES": "qt.*=true",
+        "WEBJAM_TEST_KEEP": "yes",
+    }
+    with patch.dict(
+        "services.bridge_service.os.environ",
+        inherited,
+        clear=True,
+    ), patch("services.bridge_service.sys.platform", "darwin"):
+        child = _jamulus_child_environment(
+            catalog_verified=False,
+            executable="/Applications/WebJam.app/Contents/Resources/Jamulus",
+        )
+
+    assert child == {
+        "PATH": "/usr/bin:/bin",
+        "QT_LOGGING_RULES": "default.warning=false",
+        "WEBJAM_TEST_KEEP": "yes",
+    }
+
+
 def test_explicit_client_requires_an_approved_version(tmp_path: Path) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     explicit = _executable(tmp_path / "explicit-client")
     bridge.settings.jamulus_candidates = [str(explicit)]
 
@@ -140,7 +385,10 @@ def test_explicit_client_requires_an_approved_version(tmp_path: Path) -> None:
 
 
 def test_client_and_server_providers_are_role_separated(tmp_path: Path) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     client = _executable(tmp_path / "Jamulus")
     server = _executable(tmp_path / "JamulusServer")
     client_provider = MagicMock(return_value=client)
@@ -175,7 +423,10 @@ def test_managed_version_drives_native_profile_selection(
     _thread: MagicMock,
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     managed = _executable(tmp_path / "Jamulus")
     bridge.set_managed_jamulus_paths(lambda: managed, None)
     plan = SimpleNamespace(
@@ -215,7 +466,10 @@ def test_managed_version_drives_native_profile_selection(
 def test_live_session_pin_refuses_component_swap_or_provider_replacement(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     first = _executable(tmp_path / "managed-first")
     replacement = _executable(tmp_path / "managed-replacement")
     selected = [first]
@@ -239,7 +493,10 @@ def test_live_session_pin_refuses_component_swap_or_provider_replacement(
 
 
 def test_live_host_pin_refuses_server_component_swap(tmp_path: Path) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     first = _executable(tmp_path / "server-first")
     replacement = _executable(tmp_path / "server-replacement")
     selected = [first]
@@ -266,7 +523,10 @@ def test_live_host_pin_refuses_server_component_swap(tmp_path: Path) -> None:
 def test_reference_track_never_uses_managed_interactive_client(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     managed = _executable(tmp_path / "managed-client")
     provider = MagicMock(return_value=managed)
     bridge.set_managed_jamulus_paths(provider, None)
@@ -285,7 +545,10 @@ def test_reference_track_never_uses_managed_interactive_client(
 def test_catalog_component_accepts_future_compatible_version_not_baked_in(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "future-Jamulus")
     baseline = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",
@@ -332,7 +595,10 @@ def test_future_catalog_client_is_launchable_with_native_profile(
     _thread: MagicMock,
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "future-Jamulus")
     baseline = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",
@@ -394,7 +660,10 @@ def test_future_catalog_client_is_launchable_with_native_profile(
 def test_future_catalog_server_is_launchable(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "future-JamulusServer")
     baseline = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",
@@ -473,7 +742,10 @@ def test_catalog_component_rejects_incomplete_verification(
     tmp_path: Path,
     change: dict[str, bool],
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "Jamulus")
     entry = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",
@@ -667,7 +939,10 @@ def test_catalog_component_rejects_unsafe_executable_path(
 def test_catalog_component_resolution_does_not_execute_prevalidated_binary(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "Jamulus")
     entry = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",
@@ -697,7 +972,10 @@ def test_catalog_component_resolution_does_not_execute_prevalidated_binary(
 def test_catalog_session_pin_revalidates_exact_identity(
     tmp_path: Path,
 ) -> None:
-    bridge = _bridge(tmp_path / "components")
+    bridge = _bridge(
+        tmp_path / "components",
+        target=ComponentTarget.WINDOWS_X64,
+    )
     binary = _executable(tmp_path / "Jamulus")
     entry = official_jamulus_compatibility_registry().exact(
         component_id="jamulus",

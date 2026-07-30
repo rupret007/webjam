@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from PySide6.QtWidgets import QMessageBox
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
+from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
+from services.bridge_service import JamulusRpcFreshness
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.session_state import SessionUiState
 from core.session_lifecycle import SessionLifecyclePhase
@@ -150,13 +152,9 @@ class AudioCoordinator:
                 self._c.window.session_strip.set_tools_enabled(True)
                 return False
             self.ended_by_user = False
-            self.connection_timed_out = False
-            self.recovering = False
             self._c._local_audio_seen = False
             self._c._remote_audio_seen = False
-            self._c._reconnect_banner_shown = False
-            self._c._rpc_hang_banner_shown = False
-            self._c._reconnect_gave_up = False
+            self._c._clear_primary_local_roster_proof()
             self._reset_musician_name_sync()
             self._c.window.set_status_audio("Launching…")
             self._c.window.session_strip.set_tools_enabled(True)
@@ -185,6 +183,15 @@ class AudioCoordinator:
             accepted = bool(self._c.bridge.launch_jamulus(manual=True))
             if not accepted:
                 return False
+            # Recovery exhaustion is terminal until this explicit launch has
+            # actually been accepted. A denied/busy launch must retain the
+            # failed presentation and keep late old-process rosters blocked.
+            self._c._reconnect_gave_up = False
+            self._c._reconnect_banner_shown = False
+            self._c._rpc_hang_banner_shown = False
+            self.recovering = False
+            self.connection_timed_out = False
+            self._c._sync_reference_track_primary_gate()
             if bool(getattr(self._c.settings, "host_server_enabled", False)):
                 self._c._transition_lifecycle(
                     SessionLifecyclePhase.WAITING_FOR_REACHABILITY,
@@ -193,21 +200,22 @@ class AudioCoordinator:
             self._c._connection_timer.start()
             return True
 
-    def on_practice_requested(self) -> None:
+    def on_practice_requested(self) -> bool:
         if self.stopping or self.cleanup_retry_required:
             self._c.window.flash_message(
                 "Wait for the current session cleanup to finish before "
                 "starting practice.",
                 ms=5000,
             )
-            return
+            return False
         if self._c._is_jamulus_running():
             self._c.window.flash_message(
                 "End the current session first, then start a solo practice.",
                 ms=4000,
             )
-            return
+            return False
         self._c.window.set_status_audio("Starting practice…")
+        self._c._clear_primary_local_roster_proof()
         self._reset_musician_name_sync()
         self._c._transition_lifecycle(
             SessionLifecyclePhase.STARTING_HOST,
@@ -225,7 +233,28 @@ class AudioCoordinator:
         if not started:
             self._c.window.session_strip.set_audio_state("Start Session", enabled=True)
             self._c.window.set_status_audio("Ready to launch")
-            self.reset_to_idle()
+            if getattr(self._c, "_reconnect_gave_up", False):
+                # Keep the terminal recovery owner and its conductor generation
+                # intact when Practice was refused. Only an accepted fresh
+                # process may reopen roster authentication.
+                self._c._transition_lifecycle(
+                    SessionLifecyclePhase.FAILED_RECOVERABLE,
+                    "Fresh practice launch was not accepted",
+                )
+                self._c.window.participant_grid.set_session_state(
+                    SessionUiState.reconnect_failed()
+                )
+                self._c._update_session_hud()
+            else:
+                self.reset_to_idle()
+            return False
+        self._c._reconnect_gave_up = False
+        self._c._reconnect_banner_shown = False
+        self._c._rpc_hang_banner_shown = False
+        self.recovering = False
+        self.connection_timed_out = False
+        self._c._sync_reference_track_primary_gate()
+        return True
 
     def stop(self) -> None:
         if self.stopping:
@@ -282,6 +311,7 @@ class AudioCoordinator:
         self.stopping = True
         self.ended_by_user = True
         self.recovering = False
+        self._c._clear_primary_local_roster_proof()
         self._c.window.session_strip.set_tools_enabled(False)
         prepare_pocket_stage = getattr(
             self._c,
@@ -319,6 +349,7 @@ class AudioCoordinator:
             name="webjam-session-stop",
         ).start()
         self.connected = False
+        self._c._sync_reference_track_primary_gate()
         self._c._local_audio_seen = False
         self._c._remote_audio_seen = False
         self._c._level_timer.stop()
@@ -543,6 +574,7 @@ class AudioCoordinator:
     def reset_to_idle(self) -> None:
         self.stopping = False
         self.cleanup_retry_required = False
+        self._c._clear_primary_local_roster_proof()
         self._reset_musician_name_sync()
         self._c.session_health.reset_live_truth()
         self._c.session_lifecycle.reset(reason="Ready for a new session")
@@ -585,17 +617,26 @@ class AudioCoordinator:
         """Compatibility alias retained for older extensions."""
         self.reset_to_idle()
 
-    def apply_participants(self, jamulus_participants: list) -> None:
-        if self.stopping:
-            return
+    def apply_participants(
+        self,
+        jamulus_participants: list,
+        *,
+        source_identity: JamulusRpcMonitorIdentity | None = None,
+    ) -> bool:
+        if (
+            self.stopping
+            or self.cleanup_retry_required
+            or getattr(self._c, "_reconnect_gave_up", False)
+            or getattr(
+                self._c,
+                "_primary_recovery_retire_inflight",
+                False,
+            )
+        ):
+            return False
         if not jamulus_participants:
-            reference_track = getattr(self._c, "_reference_track", None)
-            if reference_track is not None and bool(
-                reference_track.snapshot.active
-            ):
-                self._c._stop_reference_track_for_session_end(background=True)
             if self.connected:
-                self.connected = False
+                self._c._handle_unexpected_primary_jamulus_loss()
                 self.recovering = True
                 self._c._local_audio_seen = False
                 self._c._remote_audio_seen = False
@@ -613,19 +654,74 @@ class AudioCoordinator:
                 )
                 if self._c.bridge.jamulus_launch_intended:
                     self._c._connection_timer.start()
-            return
-        hosting = bool(getattr(self._c.settings, "host_server_enabled", False))
-        local_session_proven = not hosting or any(
+            return False
+        # Client RPC identifies this Mac's own row explicitly. A nonempty
+        # server/remote-only roster proves that the room exists, not that this
+        # musician's audio path joined it; require the local row for both host
+        # and guest recovery acknowledgement.
+        local_roster_proven = any(
             self._c._is_local_participant(person)
             for person in jamulus_participants
         )
+        recovery = self._c._primary_jamulus_recovery_snapshot()
+        source_matches_process = bool(
+            isinstance(source_identity, JamulusRpcMonitorIdentity)
+            and source_identity.monitor_epoch > 0
+            and source_identity.is_process_bound
+            and recovery is not None
+            and source_identity.process_generation == recovery.generation
+            and source_identity.process_id == recovery.process_id
+        )
+        local_session_proven = bool(
+            local_roster_proven
+            and source_matches_process
+            and recovery is not None
+            and recovery.launch_intended
+            and recovery.process_alive
+            and recovery.generation > 0
+            and recovery.process_id > 0
+            and recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+            and not recovery.pending
+            and not recovery.inflight
+        )
+        if local_session_proven and recovery is not None and recovery.active:
+            try:
+                local_session_proven = bool(
+                    self._c.bridge.mark_jamulus_reconnect_authenticated(
+                        generation=recovery.generation,
+                        process_id=recovery.process_id,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - recovery ownership fails closed
+                LOGGER.warning(
+                    "Jamulus roster recovery acknowledgement failed",
+                    exc_info=True,
+                )
+                local_session_proven = False
+        if local_session_proven and recovery is not None:
+            self._c._record_primary_local_roster_proof(recovery)
+        elif not self.connected:
+            self._c._clear_primary_local_roster_proof()
         if not local_session_proven and self.connected:
             # The hosted server may still report guests after this Mac's
             # client/audio path has failed. Keep their cards visible, but do
             # not call the host connected or cancel its recovery timeout.
-            self.connected = False
+            self._c._handle_unexpected_primary_jamulus_loss()
+            self.recovering = True
             self._c._local_audio_seen = False
+            self._c._remote_audio_seen = False
             self._c._level_timer.stop()
+            self._c.window.set_status_audio("Connecting…")
+            self._c.window.set_status_latency(
+                "Server roster visible · this Mac is reconnecting"
+            )
+            self._c.window.participant_grid.set_session_state(
+                SessionUiState.reconnecting()
+            )
+            self._c._transition_lifecycle(
+                SessionLifecyclePhase.RECONNECTING,
+                "The server roster no longer proves this Mac's audio path",
+            )
             if self._c.bridge.jamulus_launch_intended:
                 self._c._connection_timer.start()
         elif (
@@ -643,11 +739,22 @@ class AudioCoordinator:
 
         if not self.connected and local_session_proven:
             recovered_from_interruption = bool(
-                self.recovering or self.connection_timed_out
+                self.recovering
+                or self.connection_timed_out
+                or self._c._reconnect_banner_shown
+                or self._c._rpc_hang_banner_shown
             )
             self.connected = True
             self.recovering = False
             self.connection_timed_out = False
+            if recovered_from_interruption:
+                # The authenticated client roster is the one recovery owner.
+                # Clear every presentation latch atomically so the reconnect
+                # timer cannot emit a second success message on its next tick.
+                self._c._reconnect_banner_shown = False
+                self._c._rpc_hang_banner_shown = False
+                self._c._reconnect_gave_up = False
+            self._c._sync_reference_track_primary_gate()
             self._c._connection_timer.stop()
             self._c.window.session_strip.start_session_clock()
             self._c.window.session_strip.set_tools_enabled(True)
@@ -675,7 +782,11 @@ class AudioCoordinator:
             else:
                 self._c.window.set_status_audio("Connected")
                 self._c.window.flash_message(
-                    "Connected. Waiting for band members…",
+                    (
+                        "Band audio reconnected."
+                        if recovered_from_interruption
+                        else "Connected. Waiting for band members…"
+                    ),
                     ms=4000,
                 )
 
@@ -721,6 +832,7 @@ class AudioCoordinator:
                     existing.role = new_role
 
         self._c._push_participants_to_grid()
+        return local_session_proven
 
     def on_readiness_refresh(self, jamulus_up: bool) -> None:
         if not jamulus_up and not self.ended_by_user:

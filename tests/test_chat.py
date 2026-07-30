@@ -106,9 +106,12 @@ class TestAppChatIntegration(unittest.TestCase):
         cls._tmp.cleanup()
 
     def test_chat_callback_is_wired(self):
-        # The controller wired its chat handler into the Jamulus controller.
-        self.assertEqual(self.controller.jamulus.chat_callback,
-                         self.controller._on_jamulus_chat)
+        # Production delivery preserves process/monitor provenance through Qt.
+        self.assertIsNone(self.controller.jamulus.chat_callback)
+        self.assertEqual(
+            self.controller.jamulus.chat_callback_with_source,
+            self.controller._on_jamulus_chat,
+        )
 
     def test_incoming_chat_appended_to_canvas_html_stripped(self):
         self.controller.window.session_canvas.set_notes("")

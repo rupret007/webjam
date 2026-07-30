@@ -109,6 +109,26 @@ def test_update_dialog_exposes_only_actions_valid_for_each_state():
     assert dialog._check.isEnabled()
 
 
+def test_macos_source_only_candidate_is_labeled_unavailable_not_approved():
+    dialog = JamulusUpdateDialog()
+    dialog.set_snapshot(
+        _presentation(
+            JamulusUpdateState.FALLBACK,
+            reason="macos-integrated-runtime-required",
+        )
+    )
+
+    assert "Active: Jamulus 3.12.2" in dialog._versions.text()
+    assert (
+        "Unavailable for WebJam integration: Jamulus 3.12.3"
+        in dialog._versions.text()
+    )
+    assert "Approved update" not in dialog._versions.text()
+    assert not dialog._download.isVisibleTo(dialog)
+    assert not dialog._activate.isVisibleTo(dialog)
+    assert not dialog._approve.isVisibleTo(dialog)
+
+
 def test_update_dialog_signals_and_download_cancellation_are_accessible():
     dialog = JamulusUpdateDialog()
     events: list[str] = []

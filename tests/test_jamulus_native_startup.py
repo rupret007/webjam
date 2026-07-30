@@ -20,7 +20,6 @@ from core.session_conductor import (
     SessionPrimaryAction,
     SessionRole,
 )
-from services.bridge_service import JamulusLaunchFailureKind
 from webjam_qt.controllers.application_controller import ApplicationController
 
 
@@ -388,34 +387,12 @@ def test_cancelled_host_setup_keeps_failure_visible_until_cleanup_is_confirmed()
         controller._cancel_startup_journey()
 
     assert controller._startup_attempt["phase"] == "failed"
+    assert controller._startup_attempt["retryable"] is True
+    assert "Try again after the music connection has stopped" in (
+        controller._startup_attempt["failure"]
+    )
     assert controller._startup_attempt_store.cleared == 0
     controller.audio.reset_to_idle.assert_not_called()
-
-
-def test_app_data_denial_cleanup_failure_still_never_offers_retry() -> None:
-    controller = _controller(hosting=True)
-    controller.bridge.last_jamulus_launch_failure = (
-        JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-    )
-    controller._startup_attempt = {
-        "generation": 1,
-        "role": "host",
-        "phase": "failed",
-        "retryable": False,
-    }
-    controller.bridge.stop_jamulus = mock.Mock(return_value=False)
-    controller.bridge.stop_hosted_server = mock.Mock(return_value=True)
-
-    with mock.patch(
-        "webjam_qt.controllers.application_controller.threading.Thread",
-        _ImmediateThread,
-    ):
-        controller._cancel_startup_journey()
-
-    assert controller._startup_attempt["phase"] == "failed"
-    assert controller._startup_attempt["retryable"] is False
-    assert "Quit WebJam completely" in controller._startup_attempt["failure"]
-    assert controller._startup_attempt_store.cleared == 0
 
 
 def test_cancel_during_host_startup_never_completes_into_a_client_launch() -> None:
@@ -498,12 +475,9 @@ def test_starting_state_cannot_fail_a_queued_native_restart() -> None:
     assert controller._startup_attempt["phase"] == "verifying_music"
 
 
-def test_app_data_denial_blocks_startup_retry_until_webjam_relaunch() -> None:
+def test_terminal_native_launch_failure_offers_retry() -> None:
     controller = _controller(hosting=True)
     controller.bridge.jamulus_state = "Launch failed"
-    controller.bridge.last_jamulus_launch_failure = (
-        JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-    )
     controller._startup_attempt = {
         "generation": 1,
         "role": "host",
@@ -515,22 +489,19 @@ def test_app_data_denial_blocks_startup_retry_until_webjam_relaunch() -> None:
     controller._poll_startup_connection(1)
 
     assert controller._startup_attempt["phase"] == "failed"
-    assert controller._startup_attempt["retryable"] is False
-    assert "Quit WebJam completely" in controller._startup_attempt["failure"]
+    assert controller._startup_attempt["retryable"] is True
+    assert "Check Jamulus, then try again" in controller._startup_attempt["failure"]
     controller._render_startup_journey.assert_called_once_with()
 
 
-def test_app_data_denial_hud_has_close_only_and_no_retry_action() -> None:
+def test_nonretryable_startup_hud_has_close_only_and_no_retry_action() -> None:
     controller = _controller(hosting=False)
     controller._startup_attempt = {
         "generation": 1,
         "role": "guest",
         "phase": "failed",
         "retryable": False,
-        "failure": (
-            "Quit WebJam completely, reopen it, start Host or Join again, "
-            "then choose Allow."
-        ),
+        "failure": "Quit and reopen WebJam before trying this setup again.",
     }
     controller._session_conductor_facts = mock.Mock(
         return_value=SessionConductorFacts(role=SessionRole.GUEST)
@@ -543,6 +514,7 @@ def test_app_data_denial_hud_has_close_only_and_no_retry_action() -> None:
 
     call = controller.window.session_hud.set_state.call_args
     assert call.args[0] == "Quit and reopen WebJam"
+    assert "Quit and reopen WebJam" in call.args[1]
     assert call.kwargs["action_visible"] is False
     assert call.kwargs["secondary_action_text"] == "Close Setup"
     assert call.kwargs["secondary_action_kind"] == "cancel_startup"
@@ -575,9 +547,8 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
     call = controller.window.session_hud.set_state.call_args
     assert call.args[0] == "Set up your sound in Jamulus"
     assert "automatically" in call.args[1]
-    assert "choose Allow if asked about other app data" in call.args[1]
-    assert "Jamulus-owned profile dedicated to WebJam" in call.args[1]
-    assert "leaves your regular Jamulus profile untouched" in call.args[1]
+    assert "dedicated Jamulus profile" in call.args[1]
+    assert "leaves your regular Jamulus settings untouched" in call.args[1]
     assert call.kwargs["action_text"] == "Bring Jamulus Forward"
     assert call.kwargs["action_kind"] == "bring_jamulus"
     assert "secondary_action_text" not in call.kwargs

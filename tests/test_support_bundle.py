@@ -223,6 +223,90 @@ class TestRecursiveRedaction(unittest.TestCase):
 
 
 class TestSupportArtifact(unittest.TestCase):
+    def test_jamulus_recovery_is_complete_bounded_and_path_free(self):
+        recovery = {
+            "generation": 12,
+            "recovery_generation": 3,
+            "launch_intended": True,
+            "pending": False,
+            "active": True,
+            "attempts_started": 2,
+            "max_attempts": 5,
+            "inflight": True,
+            "exhausted": False,
+            "process_id": 456,
+            "process_alive": True,
+            "rpc_freshness": "fresh",
+            "rpc_age_seconds": 0.125,
+            "next_attempt_at": float("inf"),
+            "profile_path": "/Users/alice/private/WebJam.ini",
+            "rpc_secret": "private-secret",
+        }
+        artifact = build_support_bundle(
+            SupportFacts(jamulus_recovery=recovery),
+            created_at=CREATED_AT,
+        )
+
+        safe = artifact.structured_report["jamulus"]["recovery"]
+        self.assertEqual(
+            safe,
+            {
+                "active": True,
+                "attempts_started": 2,
+                "exhausted": False,
+                "generation": 12,
+                "inflight": True,
+                "launch_intended": True,
+                "max_attempts": 5,
+                "pending": False,
+                "process_alive": True,
+                "process_id": 456,
+                "recovery_generation": 3,
+                "rpc_age_seconds": 0.125,
+                "rpc_freshness": "fresh",
+            },
+        )
+        encoded = json.dumps(artifact.structured_report, allow_nan=False)
+        for forbidden in (
+            "next_attempt_at",
+            "profile_path",
+            "/Users/alice",
+            "rpc_secret",
+            "private-secret",
+            "Infinity",
+            "NaN",
+        ):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_incomplete_or_impossible_recovery_is_not_reported(self):
+        base = {
+            "generation": 12,
+            "recovery_generation": 3,
+            "launch_intended": True,
+            "pending": False,
+            "active": True,
+            "attempts_started": 2,
+            "max_attempts": 5,
+            "inflight": False,
+            "exhausted": False,
+            "process_id": 456,
+            "process_alive": True,
+            "rpc_freshness": "fresh",
+        }
+        invalid_values = (
+            {key: value for key, value in base.items() if key != "process_id"},
+            {**base, "attempts_started": 6},
+            {**base, "rpc_freshness": "/Users/alice/private"},
+        )
+
+        for recovery in invalid_values:
+            with self.subTest(recovery=recovery):
+                report = build_support_bundle(
+                    SupportFacts(jamulus_recovery=recovery),
+                    created_at=CREATED_AT,
+                ).structured_report
+                self.assertNotIn("recovery", report.get("jamulus", {}))
+
     def test_component_sections_keep_only_bounded_path_free_trust_facts(self):
         artifact = build_support_bundle(
             SupportFacts(

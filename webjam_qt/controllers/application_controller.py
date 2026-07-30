@@ -15,6 +15,7 @@ sends them to Jamulus via JSON-RPC (preferred) or UDP protocol (fallback).
 from __future__ import annotations
 
 import logging
+import math
 import re
 import sys
 import threading
@@ -27,6 +28,7 @@ from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
+from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
 from core.network_invite import BandInvite
 from core.pocket_stage import (
     MobileParticipant,
@@ -74,7 +76,12 @@ from core.session_transfer_runtime import (
     HostPeerSession,
     default_installation_identity_path,
 )
-from services.bridge_service import BridgeService, JamulusLaunchFailureKind
+from services.bridge_service import (
+    BridgeService,
+    JamulusRecoverySnapshot,
+    JamulusRpcFreshness,
+    RECONNECT_HANG_THRESHOLD_SECONDS,
+)
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
 
@@ -317,13 +324,22 @@ class ApplicationController(QObject):
         self._reconnect_banner_shown = False
         # Latch so the 'gave up after 5 tries' message fires once.
         self._reconnect_gave_up = False
+        # A local roster callback is connection proof only for the exact
+        # Bridge-published Jamulus generation and PID that produced it. Keep
+        # this memory-only identity beside the presentation latches so a late
+        # callback from an old process can never authenticate its replacement.
+        self._jamulus_local_roster_generation = 0
+        self._jamulus_local_roster_process_id = 0
+        # Recovery exhaustion retires the owned primary client on a worker
+        # before "Start Session" can truthfully mean a fresh launch.
+        self._primary_recovery_retire_inflight = False
         # Latch for the "RPC hung" banner — fires once when activity stalls,
         # cleared when activity resumes.
         self._rpc_hang_banner_shown = False
         # If RPC is silent for this many seconds, we consider it hung.
         # Generous: poll cadence is 5s and SSE level events fire ~50ms,
         # so 15s is plenty of margin.
-        self._RPC_HANG_THRESHOLD_S = 15.0
+        self._RPC_HANG_THRESHOLD_S = RECONNECT_HANG_THRESHOLD_SECONDS
         # Mix-dirty tracking: True when fader/mute/solo state has changed
         # since the last successful save.  shutdown() auto-saves if True
         # AND _jamulus_connected (so we don't overwrite a real saved mix
@@ -407,6 +423,11 @@ class ApplicationController(QObject):
         # still retiring the old jam. Keep only the newest typed invitation:
         # cleanup remains single-flight and no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
+        # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
+        # The switch worker has already retired Reference Track in that case;
+        # carry that one-shot fact until the authenticated remote route is
+        # installed so settings reconfiguration cannot stop it twice.
+        self._reference_track_remote_route_pre_retired = False
         # Reference Track is created lazily when a host opens its panel. The
         # operation lock serializes decoder/process work without ever blocking
         # the Qt event thread; shutdown takes the same lock before releasing
@@ -451,6 +472,18 @@ class ApplicationController(QObject):
         self._startup_attempt: dict[str, object] | None = None
         self._startup_profile_plan = None
         self._startup_host_thread: threading.Thread | None = None
+        # An explicit Start/Retry gesture can authorize exactly one startup
+        # journey generation after terminal primary-client retirement. Ordinary
+        # provider callbacks never receive this memory-only token. A remote
+        # transport may retain the generation only while its exact runtime
+        # object owns the continuation into the native Jamulus launch.
+        self._startup_launch_authorization_generation = 0
+        self._pending_startup_launch_authorization: (
+            tuple[int, object] | None
+        ) = None
+        self._remote_startup_launch_continuation: (
+            tuple[int, object] | None
+        ) = None
         from core.jamulus_profile import StartupAttemptStore, StartupReadinessStore
 
         self._startup_readiness_store = StartupReadinessStore()
@@ -507,8 +540,13 @@ class ApplicationController(QObject):
         self._connection_timer.setInterval(self._CONNECTION_TIMEOUT_MS)
         self._connection_timer.timeout.connect(self._on_connection_timeout)
 
-        # Register real participant callback
-        self.jamulus.register_callback(self._on_jamulus_participants)
+        # Only the process-bound RPC callback may authenticate this Mac's
+        # roster. Hosted-server, UDP, and compatibility callbacks can still
+        # feed JamulusController internals, but cannot connect the WebJam UI
+        # or acknowledge primary-client recovery.
+        self.jamulus.register_identity_callback(
+            self._on_jamulus_participants
+        )
 
         # Session metadata persistence (notes + title + mode)
         self._persistence = SessionPersistence(
@@ -694,6 +732,7 @@ class ApplicationController(QObject):
         if bool(
             getattr(getattr(self, "audio", None), "stopping", False)
             or getattr(self, "_invite_switch_in_flight", False)
+            or getattr(self, "_primary_recovery_retire_inflight", False)
         ):
             flash_message = getattr(self.window, "flash_message", None)
             if callable(flash_message):
@@ -2217,6 +2256,20 @@ class ApplicationController(QObject):
     def _jamulus_connected(self, value: bool) -> None:
         self.audio.connected = value
 
+    def _handle_unexpected_primary_jamulus_loss(self) -> bool:
+        """Retire backing audio on one authoritative live-to-lost transition."""
+
+        was_connected = bool(self.audio.connected)
+        self.audio.connected = False
+        self._clear_primary_local_roster_proof()
+        if was_connected and not self._reference_track_lifecycle_blocks_play():
+            # This increments the session generation and synchronously cancels
+            # an unpublished start before queuing the bounded teardown. A fast
+            # reconnect therefore cannot revive work from the lost session.
+            self._stop_reference_track_for_session_end(background=True)
+        self._sync_reference_track_primary_gate()
+        return was_connected
+
     def _live_session_conductor(
         self,
         facts: SessionConductorFacts | None = None,
@@ -2897,8 +2950,15 @@ class ApplicationController(QObject):
 
     def _attach_jamulus_callbacks(self) -> None:
         """Attach UI callbacks to the current JamulusController instance."""
-        self.jamulus.chat_callback = self._on_jamulus_chat
-        self.jamulus.recorder_state_callback = self._on_recorder_state
+        # Production RPC delivery stays process-bound through the queued Qt
+        # handoff. Legacy source-free hooks remain available to isolated
+        # callers, but the application never uses them for server truth.
+        self.jamulus.chat_callback = None
+        self.jamulus.recorder_state_callback = None
+        self.jamulus.chat_callback_with_source = self._on_jamulus_chat
+        self.jamulus.recorder_state_callback_with_source = (
+            self._on_recorder_state
+        )
 
     # ------------------------------------------------------------------
     # Initial wiring
@@ -3075,10 +3135,21 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Real Jamulus participant callback (called from background thread)
     # ------------------------------------------------------------------
-    def _on_jamulus_participants(self, jamulus_participants: list) -> None:
-        """Receive live participant list from JamulusController — runs on a worker thread."""
+    def _on_jamulus_participants(
+        self,
+        jamulus_participants: list,
+        source_identity: JamulusRpcMonitorIdentity,
+    ) -> None:
+        """Queue one detached, process-bound RPC roster for the UI thread."""
+
+        detached_participants = list(jamulus_participants)
         self._ui_invoker.invoke(
-            lambda: self._apply_jamulus_participants(jamulus_participants)
+            lambda participants=detached_participants, identity=source_identity: (
+                self._apply_jamulus_participants(
+                    participants,
+                    source_identity=identity,
+                )
+            )
         )
 
     def _on_ready_check(self) -> None:
@@ -3097,6 +3168,13 @@ class ApplicationController(QObject):
         from core.band_check import BandCheckMode
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        if getattr(self, "_primary_recovery_retire_inflight", False):
+            self.window.flash_message(
+                "Wait for the previous music engine to finish stopping before "
+                "starting a new session.",
+                ms=6000,
+            )
             return
         self._conductor_setup_requested = True
         self._conductor_band_check = EvidenceState.IN_PROGRESS
@@ -3223,9 +3301,125 @@ class ApplicationController(QObject):
         self._update_session_hud()
         self._start_after_band_check(settings_generation)
 
+    def _new_startup_launch_authorization(self) -> tuple[int, object]:
+        """Issue one memory-only token for the current explicit Start gesture."""
+
+        generation = int(
+            getattr(self, "_startup_launch_authorization_generation", 0)
+        ) + 1
+        self._startup_launch_authorization_generation = generation
+        token = (generation, object())
+        self._pending_startup_launch_authorization = token
+        return token
+
+    def _consume_startup_launch_authorization(self) -> int:
+        """Consume the one authorization visible to this synchronous entry."""
+
+        token = getattr(self, "_pending_startup_launch_authorization", None)
+        self._pending_startup_launch_authorization = None
+        if (
+            not isinstance(token, tuple)
+            or len(token) != 2
+            or not isinstance(token[0], int)
+            or token[0] <= 0
+            or token[0]
+            != int(getattr(self, "_startup_launch_authorization_generation", 0))
+        ):
+            return 0
+        return token[0]
+
+    def _begin_explicit_startup_journey(self) -> bool:
+        """Enter the central startup sink with one non-replayable authorization."""
+
+        token = self._new_startup_launch_authorization()
+        try:
+            return bool(self.begin_startup_journey())
+        finally:
+            if (
+                getattr(self, "_pending_startup_launch_authorization", None)
+                is token
+            ):
+                self._pending_startup_launch_authorization = None
+
+    def _bind_remote_startup_continuation(
+        self,
+        source: object,
+        authorization_generation: int,
+    ) -> None:
+        """Bind an explicit Start across one exact remote-runtime enrollment."""
+
+        if source is None or int(authorization_generation) <= 0:
+            return
+        if int(authorization_generation) != int(
+            getattr(self, "_startup_launch_authorization_generation", 0)
+        ):
+            return
+        self._remote_startup_launch_continuation = (
+            int(authorization_generation),
+            source,
+        )
+
+    def _continue_startup_from_remote(self, source: object) -> bool:
+        """Continue a remote enrollment without authorizing a replaced callback."""
+
+        continuation = getattr(
+            self,
+            "_remote_startup_launch_continuation",
+            None,
+        )
+        token = None
+        if (
+            isinstance(continuation, tuple)
+            and len(continuation) == 2
+            and continuation[1] is source
+            and int(continuation[0]) > 0
+            and int(continuation[0])
+            == int(getattr(self, "_startup_launch_authorization_generation", 0))
+        ):
+            token = (int(continuation[0]), object())
+            self._pending_startup_launch_authorization = token
+            self._remote_startup_launch_continuation = None
+        try:
+            return bool(self.begin_startup_journey())
+        finally:
+            if (
+                token is not None
+                and getattr(self, "_pending_startup_launch_authorization", None)
+                is token
+            ):
+                self._pending_startup_launch_authorization = None
+
+    def _accept_explicit_primary_launch(
+        self,
+        authorization_generation: int,
+    ) -> bool:
+        """Clear terminal recovery truth only after an explicit launch is accepted."""
+
+        generation = int(authorization_generation)
+        if generation <= 0 or generation != int(
+            getattr(self, "_startup_launch_authorization_generation", 0)
+        ):
+            return False
+        self._reconnect_gave_up = False
+        self._reconnect_banner_shown = False
+        self._rpc_hang_banner_shown = False
+        self.audio.recovering = False
+        self.audio.connection_timed_out = False
+        self.audio.connected = False
+        self._clear_primary_local_roster_proof()
+        self._sync_reference_track_primary_gate()
+        return True
+
     def _on_session_audio_requested(self) -> None:
         """Start/cancel the native journey, or end an already live jam."""
         if self._shutdown_cleanup_blocks_action():
+            return
+        if getattr(self, "_primary_recovery_retire_inflight", False):
+            self.window.flash_message(
+                "WebJam is still retiring the previous music engine safely. "
+                "Start Session will become available when that finishes.",
+                ms=6000,
+            )
             return
         if bool(getattr(getattr(self, "audio", None), "stopping", False)):
             return
@@ -3259,7 +3453,7 @@ class ApplicationController(QObject):
         if self._is_jamulus_running():
             self._on_launch_audio()
             return
-        self.begin_startup_journey()
+        self._begin_explicit_startup_journey()
 
     # ------------------------------------------------------------------
     # Jamulus-native startup journey
@@ -3277,27 +3471,45 @@ class ApplicationController(QObject):
         self.window.show_reference_studio_only()
         self._on_rail_view_changed("takes")
 
-    def begin_startup_journey(self) -> None:
+    def begin_startup_journey(self) -> bool:
         """Start one non-modal host/join journey without a WebJam device gate."""
 
+        authorization_generation = self._consume_startup_launch_authorization()
         if (
             getattr(self, "_shutdown", False)
             or getattr(self, "_shutdown_in_progress", False)
             or getattr(self, "_shutdown_cleanup_pending", False)
             or bool(getattr(getattr(self, "audio", None), "stopping", False))
+            or bool(
+                getattr(
+                    getattr(self, "audio", None),
+                    "cleanup_retry_required",
+                    False,
+                )
+            )
+            or getattr(self, "_invite_switch_in_flight", False)
+            or getattr(self, "_primary_recovery_retire_inflight", False)
         ):
-            return
+            return False
+        if (
+            getattr(self, "_reconnect_gave_up", False)
+            and authorization_generation <= 0
+        ):
+            self._sync_reference_track_primary_gate()
+            return False
         active = getattr(self, "_startup_attempt", None)
         if active is not None and str(active.get("phase", "")) not in {"failed"}:
-            return
+            return False
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
-            return
+            return False
         # The v3 transport has its own authenticated enrollment state. It is
         # intentionally kept out of the LAN/Jamulus-native profile flow.
         if getattr(self, "_remote_invitation", None) is not None:
-            self._begin_remote_join()
-            return
+            self._begin_remote_join(
+                startup_authorization_generation=authorization_generation,
+            )
+            return True
         if bool(getattr(self.settings, "host_server_enabled", False)):
             from services.native_remote_transport import reference_local_host_requested
 
@@ -3305,8 +3517,10 @@ class ApplicationController(QObject):
                 reference_local_host_requested()
                 and getattr(self, "_remote_invite_owner", None) is None
             ):
-                self._begin_remote_host()
-                return
+                self._begin_remote_host(
+                    startup_authorization_generation=authorization_generation,
+                )
+                return True
 
         role = (
             "host"
@@ -3338,6 +3552,9 @@ class ApplicationController(QObject):
             "human_confirmed": False,
             "fast_path": False,
             "webex_decision": None,
+            "explicit_launch_authorization_generation": (
+                authorization_generation
+            ),
         }
         if (
             recovery is not None
@@ -3368,6 +3585,7 @@ class ApplicationController(QObject):
                 role="join",
             )
             self._launch_native_jamulus_for_startup(generation)
+        return True
 
     def _startup_attempt_for(self, generation: int) -> dict[str, object] | None:
         attempt = getattr(self, "_startup_attempt", None)
@@ -3458,27 +3676,25 @@ class ApplicationController(QObject):
         self._render_startup_journey()
         if not self._is_jamulus_running():
             self.audio.ended_by_user = False
-            self.audio.connection_timed_out = False
-            self.audio.recovering = False
             self._local_audio_seen = False
             self._remote_audio_seen = False
             accepted = bool(self.bridge.launch_jamulus(manual=True))
             if not accepted:
-                if self._jamulus_app_data_permission_denied():
-                    self._fail_startup_journey(
-                        generation,
-                        "macOS didn't allow WebJam to use the Jamulus-owned "
-                        "profile dedicated to WebJam. Quit WebJam completely, "
-                        "reopen it, start Host or Join again, then choose Allow.",
-                        retryable=False,
-                    )
-                else:
-                    self._fail_startup_journey(
-                        generation,
-                        "WebJam couldn't open Jamulus. Reinstall this WebJam "
-                        "build, then try again.",
-                    )
+                self._fail_startup_journey(
+                    generation,
+                    "WebJam couldn't open Jamulus. Reinstall this WebJam "
+                    "build, then try again.",
+                )
                 return
+            self._accept_explicit_primary_launch(
+                int(
+                    attempt.get(
+                        "explicit_launch_authorization_generation",
+                        0,
+                    )
+                    or 0
+                )
+            )
             self._connection_timer.start()
         self._schedule_startup_poll(generation)
 
@@ -3502,20 +3718,11 @@ class ApplicationController(QObject):
         terminal = {"Stopped", "Launch failed", "Not found", "Port in use"}
         state = str(getattr(self.bridge, "jamulus_state", "") or "")
         if state in terminal:
-            if self._jamulus_app_data_permission_denied():
-                self._fail_startup_journey(
-                    generation,
-                    "macOS didn't allow WebJam to use the Jamulus-owned "
-                    "profile dedicated to WebJam. Quit WebJam completely, "
-                    "reopen it, start Host or Join again, then choose Allow.",
-                    retryable=False,
-                )
-            else:
-                self._fail_startup_journey(
-                    generation,
-                    "Jamulus couldn't open the music connection. Check "
-                    "Jamulus, then try again.",
-                )
+            self._fail_startup_journey(
+                generation,
+                "Jamulus couldn't open the music connection. Check "
+                "Jamulus, then try again.",
+            )
             return
 
         plan = getattr(self.bridge, "native_profile_plan", None)
@@ -3824,16 +4031,6 @@ class ApplicationController(QObject):
         self._clear_startup_recovery()
         self._update_session_hud()
 
-    def _jamulus_app_data_permission_denied(self) -> bool:
-        return (
-            getattr(
-                self.bridge,
-                "last_jamulus_launch_failure",
-                JamulusLaunchFailureKind.NONE,
-            )
-            == JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
-        )
-
     def _fail_startup_journey(
         self,
         generation: int,
@@ -3846,9 +4043,7 @@ class ApplicationController(QObject):
             return
         attempt["phase"] = "failed"
         attempt["failure"] = str(message)
-        attempt["retryable"] = bool(
-            retryable and not self._jamulus_app_data_permission_denied()
-        )
+        attempt["retryable"] = bool(retryable)
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "Jamulus-native startup needs attention",
@@ -3858,7 +4053,7 @@ class ApplicationController(QObject):
     def _retry_startup_journey(self) -> None:
         attempt = getattr(self, "_startup_attempt", None)
         if attempt is None:
-            self.begin_startup_journey()
+            self._begin_explicit_startup_journey()
             return
         role = str(attempt.get("role", "guest"))
         self._startup_attempt = None
@@ -3866,6 +4061,8 @@ class ApplicationController(QObject):
         # A healthy owned host server remains available while only the client
         # is retried. This avoids duplicate servers and preserves invite truth.
         if role == "host" and self.bridge.hosted_server_alive():
+            authorization = self._new_startup_launch_authorization()
+            self._pending_startup_launch_authorization = None
             self._startup_generation += 1
             generation = self._startup_generation
             conductor_token = self._start_session_conductor_attempt("host")
@@ -3880,10 +4077,11 @@ class ApplicationController(QObject):
                 "human_confirmed": False,
                 "fast_path": False,
                 "webex_decision": None,
+                "explicit_launch_authorization_generation": authorization[0],
             }
             self._launch_native_jamulus_for_startup(generation)
             return
-        self.begin_startup_journey()
+        self._begin_explicit_startup_journey()
 
     def _cancel_startup_journey(self) -> None:
         attempt = getattr(self, "_startup_attempt", None)
@@ -3913,21 +4111,12 @@ class ApplicationController(QObject):
                 if self._startup_attempt_for(generation) is None:
                     return
                 if not cleanup_ok:
-                    if self._jamulus_app_data_permission_denied():
-                        self._fail_startup_journey(
-                            generation,
-                            "WebJam couldn't finish closing this private "
-                            "setup. Quit WebJam completely, reopen it, and "
-                            "choose Allow when macOS asks about other app data.",
-                            retryable=False,
-                        )
-                    else:
-                        self._fail_startup_journey(
-                            generation,
-                            "WebJam couldn't finish closing this startup "
-                            "attempt. Try again after the music connection has "
-                            "stopped.",
-                        )
+                    self._fail_startup_journey(
+                        generation,
+                        "WebJam couldn't finish closing this startup "
+                        "attempt. Try again after the music connection has "
+                        "stopped.",
+                    )
                     return
                 self._clear_startup_recovery()
                 self.audio.ended_by_user = False
@@ -4090,9 +4279,8 @@ class ApplicationController(QObject):
             self.window.session_hud.set_state(
                 "Set up your sound in Jamulus",
                 "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. On macOS, choose Allow if asked about other app "
-                "data. WebJam uses only the Jamulus-owned profile dedicated to "
-                "WebJam and leaves your regular Jamulus profile untouched. "
+                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
+                "app and leaves your regular Jamulus settings untouched. "
                 "WebJam will continue automatically when the music connection "
                 "is ready.",
                 action_text="Bring Jamulus Forward",
@@ -4186,8 +4374,8 @@ class ApplicationController(QObject):
                 str(
                     attempt.get(
                         "failure",
-                        "Quit WebJam completely, reopen it, then choose Allow "
-                        "when macOS asks about other app data.",
+                        "WebJam couldn't finish this music setup safely. Quit "
+                        "and reopen WebJam before trying again.",
                     )
                 ),
                 action_visible=False,
@@ -4251,9 +4439,8 @@ class ApplicationController(QObject):
         if phase == "failed" and not bool(attempt.get("retryable", True)):
             return GuidanceDisplayOverride(
                 "Quit and reopen WebJam",
-                "macOS did not allow this WebJam launch to use the "
-                "Jamulus-owned profile dedicated to WebJam. Close this setup, "
-                "quit WebJam completely, reopen it, and choose Allow.",
+                "WebJam couldn't finish this music setup safely. Close this "
+                "setup, quit and reopen WebJam, then try again.",
                 SessionPrimaryAction.NONE,
             )
         values = {
@@ -4265,18 +4452,16 @@ class ApplicationController(QObject):
             "launching_client": GuidanceDisplayOverride(
                 "Set up your sound in Jamulus",
                 "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. On macOS, choose Allow if asked about other app "
-                "data. WebJam uses only the Jamulus-owned profile dedicated to "
-                "WebJam and leaves your regular Jamulus profile untouched.",
+                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
+                "app and leaves your regular Jamulus settings untouched.",
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
                 "Set up your sound in Jamulus",
                 "Choose your interface, input channels, headphones, and buffer "
-                "in Jamulus. On macOS, choose Allow if asked about other app "
-                "data. WebJam uses only the Jamulus-owned profile dedicated to "
-                "WebJam and leaves your regular Jamulus profile untouched.",
+                "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
+                "app and leaves your regular Jamulus settings untouched.",
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
@@ -4339,6 +4524,13 @@ class ApplicationController(QObject):
         """
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        if getattr(self, "_primary_recovery_retire_inflight", False):
+            self.window.flash_message(
+                "Wait for the previous music engine to finish stopping before "
+                "starting a new session.",
+                ms=6000,
+            )
             return
         self._conductor_setup_requested = True
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
@@ -4463,15 +4655,12 @@ class ApplicationController(QObject):
         from core.band_check import BandCheckObservations
 
         rpc = getattr(self.jamulus, "rpc_client", None)
-        rpc_available = bool(getattr(rpc, "available", False))
-        responsive = rpc_available
-        if rpc_available:
-            try:
-                age = rpc.last_activity_age()
-                if age is not None:
-                    responsive = float(age) <= self._RPC_HANG_THRESHOLD_S
-            except Exception:  # noqa: BLE001
-                responsive = False
+        rpc_available = getattr(rpc, "available", False) is True
+        recovery = self._primary_jamulus_recovery_snapshot()
+        responsive = bool(
+            recovery is not None
+            and recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+        )
         meter_active = False
         meter_rms = 0.0
         try:
@@ -4558,14 +4747,67 @@ class ApplicationController(QObject):
             return
         self.window.session_canvas.append_line(f"You: {text}")
 
-    def _on_recorder_state(self, recording: bool, raw_state: int) -> None:
-        """Server recorder state changed (arrives on the RPC reader thread)."""
-        self._ui_invoker.invoke(lambda: self._apply_recorder_state(recording))
+    def _rpc_ui_source_is_current(
+        self,
+        source_identity: JamulusRpcMonitorIdentity,
+    ) -> bool:
+        """Revalidate queued RPC work against Bridge's exact live epoch."""
+
+        if (
+            not isinstance(source_identity, JamulusRpcMonitorIdentity)
+            or source_identity.monitor_epoch <= 0
+            or not source_identity.is_process_bound
+            or self._shutdown
+            or self.audio.stopping
+            or self.audio.cleanup_retry_required
+            or self._invite_switch_in_flight
+            or self._primary_recovery_retire_inflight
+            or self._shutdown_in_progress
+            or self._shutdown_cleanup_pending
+        ):
+            return False
+        recovery = self._primary_jamulus_recovery_snapshot()
+        return bool(
+            isinstance(recovery, JamulusRecoverySnapshot)
+            and recovery.launch_intended
+            and recovery.process_alive
+            and recovery.generation > 0
+            and recovery.process_id > 0
+            and recovery.rpc_monitor_epoch > 0
+            and source_identity.process_generation == recovery.generation
+            and source_identity.process_id == recovery.process_id
+            and source_identity.monitor_epoch == recovery.rpc_monitor_epoch
+        )
+
+    def _on_recorder_state(
+        self,
+        recording: bool,
+        raw_state: int,
+        source_identity: JamulusRpcMonitorIdentity | None = None,
+    ) -> None:
+        """Queue recorder truth and retire it if its RPC epoch is replaced."""
+
+        del raw_state
+        if source_identity is None:
+            # Compatibility seam for isolated application tests and extensions.
+            self._ui_invoker.invoke(lambda: self._apply_recorder_state(recording))
+            return
+        self._ui_invoker.invoke(
+            lambda identity=source_identity: (
+                self._apply_recorder_state(recording)
+                if self._rpc_ui_source_is_current(identity)
+                else None
+            )
+        )
 
     def _apply_recorder_state(self, recording: bool) -> None:
         self.recording.on_server_state(recording)
 
-    def _on_jamulus_chat(self, text: str) -> None:
+    def _on_jamulus_chat(
+        self,
+        text: str,
+        source_identity: JamulusRpcMonitorIdentity | None = None,
+    ) -> None:
         """Incoming band chat (arrives on the RPC reader thread).
 
         Jamulus chat text can contain HTML markup (sender/time formatting);
@@ -4577,15 +4819,35 @@ class ApplicationController(QObject):
         plain = re.sub(r"<[^>]+>", "", text or "").strip()
         if not plain:
             return
-        self._ui_invoker.invoke(lambda: self.window.session_canvas.append_line(plain))
+        if source_identity is None:
+            # Compatibility seam for isolated application tests and extensions.
+            self._ui_invoker.invoke(
+                lambda: self.window.session_canvas.append_line(plain)
+            )
+            return
+        self._ui_invoker.invoke(
+            lambda identity=source_identity: (
+                self.window.session_canvas.append_line(plain)
+                if self._rpc_ui_source_is_current(identity)
+                else None
+            )
+        )
 
-    def _apply_jamulus_participants(self, jamulus_participants: list) -> None:
+    def _apply_jamulus_participants(
+        self,
+        jamulus_participants: list,
+        *,
+        source_identity: JamulusRpcMonitorIdentity | None = None,
+    ) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
-        self.audio.apply_participants(jamulus_participants)
+        local_session_proven = self.audio.apply_participants(
+            jamulus_participants,
+            source_identity=source_identity,
+        )
         # Bind only this process's authenticated local participant. The host
         # resolves remote channels from each joiner's signed presence update,
         # so duplicate or renamed display names never become identity keys.
-        for person in jamulus_participants:
+        for person in jamulus_participants if local_session_proven else ():
             if not self._is_local_participant(person):
                 continue
             if self.host_peer.active:
@@ -4723,6 +4985,23 @@ class ApplicationController(QObject):
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
         if self._shutdown_cleanup_blocks_action():
             return
+        if getattr(self, "_primary_recovery_retire_inflight", False):
+            self.window.flash_message(
+                "WebJam is finishing the interrupted music engine cleanup. "
+                "Wait for Start Session to become available.",
+                ms=6000,
+            )
+            return
+        if self.audio.stopping or getattr(
+            self,
+            "_invite_switch_in_flight",
+            False,
+        ):
+            self.window.flash_message(
+                "Wait for the current session change to finish.",
+                ms=5000,
+            )
+            return
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             # An attempted v3 enrollment may have consumed its one-use
             # capability. Do not let a generic Start Audio action turn that
@@ -4833,6 +5112,17 @@ class ApplicationController(QObject):
             self._remote_invite_owner = None
             if getattr(self, "_remote_session", None) is owner:
                 self._remote_session = None
+            continuation = getattr(
+                self,
+                "_remote_startup_launch_continuation",
+                None,
+            )
+            if (
+                isinstance(continuation, tuple)
+                and len(continuation) == 2
+                and continuation[1] is owner
+            ):
+                self._remote_startup_launch_continuation = None
         if self.bridge.hosted_server_alive():
             # A failed stop remains owned. Keep its launch constraint intact;
             # the mode is ephemeral and disappears with this app process.
@@ -4880,6 +5170,17 @@ class ApplicationController(QObject):
                 runtime_stopped = False
         if runtime_stopped:
             self._remote_session = None
+            continuation = getattr(
+                self,
+                "_remote_startup_launch_continuation",
+                None,
+            )
+            if (
+                isinstance(continuation, tuple)
+                and len(continuation) == 2
+                and continuation[1] is runtime
+            ):
+                self._remote_startup_launch_continuation = None
         else:
             # Do not disable or overwrite the route beneath an unproved
             # sidecar stop. Keeping both owner and route reachable is what
@@ -4903,6 +5204,7 @@ class ApplicationController(QObject):
         self._remote_route_generation = 0
         self._remote_band_check_token = None
         self._remote_band_check_completed_token = None
+        self._reference_track_remote_route_pre_retired = False
         if (
             restore_route
             and base_settings is not None
@@ -5052,6 +5354,13 @@ class ApplicationController(QObject):
 
         if self._shutdown_cleanup_blocks_action():
             return False
+        if getattr(self, "_primary_recovery_retire_inflight", False):
+            self.window.flash_message(
+                "WebJam is still retiring the interrupted music connection. "
+                "Open the invitation again when Start Session is available.",
+                ms=7000,
+            )
+            return False
         if bool(getattr(self, "_offline_reference_studio", False)):
             if not isinstance(invitation, (BandInvite, RemoteInvitation)):
                 raise TypeError("invitation must be a BandInvite or RemoteInvitation")
@@ -5092,7 +5401,12 @@ class ApplicationController(QObject):
             return self._accept_band_invitation(invitation)
         raise TypeError("invitation must be a BandInvite or RemoteInvitation")
 
-    def _accept_remote_invitation(self, invitation: RemoteInvitation) -> bool:
+    def _accept_remote_invitation(
+        self,
+        invitation: RemoteInvitation,
+        *,
+        reference_track_already_retired: bool = False,
+    ) -> bool:
         """Retain one typed v3 capability until the transport consumes it.
 
         A remote session cannot be passed into the legacy settings/Jamulus
@@ -5132,6 +5446,9 @@ class ApplicationController(QObject):
         if not self._stop_session_peer(clear_invite=True):
             self._show_private_session_cleanup_failure()
             return False
+        self._reference_track_remote_route_pre_retired = bool(
+            reference_track_already_retired
+        )
         self._remote_invitation = invitation
         self.window.session_strip.set_invite_available(False)
         self.window.session_strip.set_reset_invite_available(False)
@@ -5186,6 +5503,7 @@ class ApplicationController(QObject):
             # host cleanup retry into a guest-only Leave.
             self.audio._stop_hosting = switch_was_hosting
             self.audio.stopping = True
+            self._sync_reference_track_primary_gate()
             self.window.session_strip.set_tools_enabled(False)
             self.window.session_strip.set_audio_state("Switching…", enabled=False)
             self._prepare_pocket_stage_for_session_end()
@@ -5360,7 +5678,10 @@ class ApplicationController(QObject):
                 self.window.session_strip.set_tools_enabled(True)
                 self._complete_pocket_stage_session_end(succeeded=True)
                 try:
-                    accepted = self._accept_remote_invitation(selected)
+                    accepted = self._accept_remote_invitation(
+                        selected,
+                        reference_track_already_retired=True,
+                    )
                 except Exception:  # noqa: BLE001 - keep the UI recoverable
                     LOGGER.exception(
                         "Could not launch the replacement private invitation"
@@ -5466,9 +5787,13 @@ class ApplicationController(QObject):
         if not hasattr(self, "_startup_generation"):
             self.start_session_or_band_check()
             return
-        self.begin_startup_journey()
+        self._begin_explicit_startup_journey()
 
-    def _begin_remote_join(self) -> None:
+    def _begin_remote_join(
+        self,
+        *,
+        startup_authorization_generation: int = 0,
+    ) -> None:
         """Enroll a v3 guest before Jamulus can see its loopback proxy."""
 
         from services.native_remote_transport import NativeGuestTransportBackend
@@ -5496,6 +5821,10 @@ class ApplicationController(QObject):
             RemoteSessionPhase.PREPARING,
             RemoteSessionPhase.CONNECTED,
         }:
+            self._bind_remote_startup_continuation(
+                runtime,
+                startup_authorization_generation,
+            )
             return
 
         self.window.participant_grid.set_session_state(
@@ -5533,9 +5862,17 @@ class ApplicationController(QObject):
             return
         callback_source["value"] = runtime
         self._remote_session = runtime
+        self._bind_remote_startup_continuation(
+            runtime,
+            startup_authorization_generation,
+        )
         runtime.start_guest(invitation)
 
-    def _begin_remote_host(self) -> None:
+    def _begin_remote_host(
+        self,
+        *,
+        startup_authorization_generation: int = 0,
+    ) -> None:
         """Prepare the opt-in local reference host before Band Check starts."""
 
         if getattr(self, "_remote_host_preparing", False):
@@ -5595,6 +5932,10 @@ class ApplicationController(QObject):
                     self._show_remote_session_failure()
                     return
                 self._remote_session = owner
+                self._bind_remote_startup_continuation(
+                    owner,
+                    startup_authorization_generation,
+                )
                 snapshot = getattr(owner, "snapshot", None)
                 if snapshot is not None:
                     # Constructor-time callbacks are intentionally ignored
@@ -5613,7 +5954,7 @@ class ApplicationController(QObject):
                             connected=False,
                         )
                 self._update_session_hud()
-                self.begin_startup_journey()
+                self._continue_startup_from_remote(owner)
 
             try:
                 self._ui_invoker.invoke(deliver)
@@ -5646,7 +5987,7 @@ class ApplicationController(QObject):
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
             if snapshot.role.value == "guest":
-                self._activate_remote_guest_route(snapshot)
+                self._activate_remote_guest_route(snapshot, source=source)
             else:
                 self._remote_route_generation = snapshot.generation
                 self._mark_remote_band_check_path(
@@ -5665,13 +6006,13 @@ class ApplicationController(QObject):
                 retry_safe=bool(getattr(snapshot, "invitation_retry_safe", False)),
             )
 
-    def _activate_remote_guest_route(self, snapshot) -> None:
+    def _activate_remote_guest_route(self, snapshot, *, source: object) -> None:
         """Point Jamulus at the authenticated proxy without persisting it."""
 
         if snapshot.generation == getattr(self, "_remote_route_generation", 0):
             if self._mark_remote_band_check_path(snapshot, connected=True):
                 if not self._is_jamulus_running():
-                    self.begin_startup_journey()
+                    self._continue_startup_from_remote(source)
             return
         from copy import deepcopy
 
@@ -5683,7 +6024,17 @@ class ApplicationController(QObject):
         routed.jamulus_server = "127.0.0.1"
         routed.jamulus_port = int(snapshot.loopback_port)
         invalidation = self._replace_settings_object(routed)
-        self._reconfigure_services_after_settings(old_settings)
+        reference_track_already_retired = bool(
+            self._reference_track_remote_route_pre_retired
+        )
+        self._reconfigure_services_after_settings(
+            old_settings,
+            reference_track_already_retired=reference_track_already_retired,
+        )
+        # Consume only after the routed settings were applied successfully.
+        # A failed activation may be retried, but an unrelated Settings save
+        # cannot see or consume this private one-shot ownership fact.
+        self._reference_track_remote_route_pre_retired = False
         enable_remote_guest_mode = getattr(
             self.bridge,
             "enable_remote_guest_mode",
@@ -5703,7 +6054,7 @@ class ApplicationController(QObject):
             snapshot.musician_status,
             "Jamulus is opening your music connection.",
         )
-        self.begin_startup_journey()
+        self._continue_startup_from_remote(source)
 
     def _show_remote_session_failure(
         self,
@@ -5713,6 +6064,7 @@ class ApplicationController(QObject):
     ) -> None:
         """Render a remote failure without replaying an uncertain invitation."""
 
+        self._remote_startup_launch_continuation = None
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "The private music path could not open",
@@ -5734,12 +6086,14 @@ class ApplicationController(QObject):
             # controller copy before any generic start path can see it.
             self._remote_invitation = None
             self._remote_invitation_requires_replacement = True
+            self._reference_track_remote_route_pre_retired = False
             self.window.participant_grid.set_session_state(
                 SessionUiState.remote_session_fresh_invitation_required()
             )
             self._render_remote_fresh_invitation_hud()
             flash_message = "Ask the host for a fresh private invitation."
         else:
+            self._reference_track_remote_route_pre_retired = False
             self.window.participant_grid.set_session_state(
                 SessionUiState.session_unavailable()
             )
@@ -5842,6 +6196,25 @@ class ApplicationController(QObject):
     def _on_connection_timeout(self) -> None:
         """Turn an endless spinner into one plain recovery action."""
         if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
+            return
+        recovery = self._primary_jamulus_recovery_snapshot()
+        if (
+            getattr(self, "_primary_recovery_retire_inflight", False)
+            or self.audio.recovering
+            or self._reconnect_banner_shown
+            or self._rpc_hang_banner_shown
+            or (
+                recovery is not None
+                and (
+                    recovery.active
+                    or recovery.pending
+                    or recovery.inflight
+                )
+            )
+        ):
+            # This timer bounds the initial connection only. Bridge owns its
+            # longer five-attempt recovery/backoff lifecycle, and exhausted
+            # cleanup has its own single worker.
             return
         self.audio.connection_timed_out = True
         self._transition_lifecycle(
@@ -6480,9 +6853,7 @@ class ApplicationController(QObject):
             band_check = EvidenceState.NOT_REQUIRED
 
         failure = FailureDisposition.NONE
-        if self._jamulus_app_data_permission_denied():
-            failure = FailureDisposition.BLOCKED
-        elif (
+        if (
             bool(getattr(audio, "connection_timed_out", False))
             or self._remote_join_retry_pending()
         ):
@@ -7638,15 +8009,29 @@ class ApplicationController(QObject):
         # than letting those practice facts be rejected by the old token.
         if self._shutdown_cleanup_blocks_action():
             return
-        if not self._is_jamulus_running():
-            conductor = self._live_session_conductor()
-            if conductor.token.role is not SessionRole.PRACTICE:
-                self._session_conductor_token = conductor.reset_to_idle(
-                    SessionRole.PRACTICE
-                )
-            self._start_session_conductor_attempt(SessionRole.PRACTICE)
+        if (
+            getattr(self, "_primary_recovery_retire_inflight", False)
+            or self.audio.stopping
+            or self.audio.cleanup_retry_required
+            or getattr(self, "_invite_switch_in_flight", False)
+        ):
+            self.window.flash_message(
+                "Wait for the current session cleanup to finish before "
+                "starting practice.",
+                ms=6000,
+            )
+            return
+        started = bool(self.audio.on_practice_requested())
+        if not started:
+            return
+        conductor = self._live_session_conductor()
+        if conductor.token.role is not SessionRole.PRACTICE:
+            self._session_conductor_token = conductor.reset_to_idle(
+                SessionRole.PRACTICE
+            )
+        self._start_session_conductor_attempt(SessionRole.PRACTICE)
         self._conductor_setup_requested = True
-        self.audio.on_practice_requested()
+        self._update_session_hud()
 
     def _use_system_input(self) -> None:
         """Compatibility shim: live device changes belong to Jamulus."""
@@ -8017,7 +8402,7 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Auto-reconnect
     # ------------------------------------------------------------------
-    def _revalidate_after_wake_gap(self) -> None:
+    def _revalidate_after_wake_gap(self) -> bool:
         """Drop stale live truth after a long event-loop pause.
 
         A Mac can sleep while the Jamulus process object still exists. Process
@@ -8043,7 +8428,7 @@ class ApplicationController(QObject):
             max(0.0, now_wall - previous_wall),
         )
         if observed_gap < self._WAKE_REVALIDATION_GAP_SECONDS:
-            return
+            return False
         if self._pocket_stage_starting:
             self._pocket_stage_retire_after_start = True
         elif self.pocket_stage_gateway.running and not self._pocket_stage_stopping:
@@ -8059,8 +8444,8 @@ class ApplicationController(QObject):
             or not self.bridge.jamulus_launch_intended
             or not self._jamulus_connected
         ):
-            return
-        self.audio.connected = False
+            return False
+        self._handle_unexpected_primary_jamulus_loss()
         self.audio.recovering = True
         self._local_audio_seen = False
         self._remote_audio_seen = False
@@ -8078,6 +8463,140 @@ class ApplicationController(QObject):
             self.metrics.increment("metric_session_wake_revalidation")
         except Exception:  # noqa: BLE001
             LOGGER.debug("wake revalidation metric failed", exc_info=True)
+        return True
+
+    def _retire_primary_after_recovery_exhaustion(
+        self,
+        *,
+        unresponsive: bool,
+    ) -> bool:
+        """Retire one exhausted primary client before offering a fresh Start.
+
+        The owned Jamulus process and controller can block for a few seconds
+        while stopping, so cleanup runs off the Qt thread. The hosted server
+        remains alive. Late roster callbacks are ignored until this worker
+        proves whether the narrow primary cleanup succeeded.
+        """
+
+        if self._shutdown or self._primary_recovery_retire_inflight:
+            return False
+        self._primary_recovery_retire_inflight = True
+        self._reconnect_gave_up = True
+        self.audio.connected = False
+        self.audio.recovering = True
+        self._clear_primary_local_roster_proof()
+        self._connection_timer.stop()
+        self._sync_reference_track_primary_gate()
+        self.window.set_status_audio("Finishing recovery…")
+        self.window.session_strip.set_audio_state(
+            "Finishing recovery…",
+            enabled=False,
+        )
+        self.window.session_strip.set_tools_enabled(False)
+        self.window.participant_grid.set_session_state(
+            SessionUiState.reconnecting()
+        )
+        self.window.session_hud.set_state(
+            "Finishing band-audio recovery",
+            "WebJam is safely retiring the interrupted music engine before a "
+            "clean restart.",
+        )
+        self.window.flash_message(
+            (
+                "The music engine is still not responding after 5 recovery "
+                "attempts. WebJam is stopping it safely before enabling a clean "
+                "Start Session."
+                if unresponsive
+                else "Band audio did not reconnect after 5 attempts. WebJam is "
+                "finishing cleanup before enabling a clean Start Session."
+            ),
+            ms=8000,
+        )
+
+        def worker() -> None:
+            reference_stopped = False
+            primary_stopped = False
+            try:
+                reference_stopped = bool(
+                    self._stop_reference_track_for_session_end(background=False)
+                )
+                if reference_stopped:
+                    primary_stopped = bool(self.bridge.stop_jamulus())
+            except Exception as exc:  # noqa: BLE001 - ownership failure stays retryable
+                LOGGER.error(
+                    "Exhausted primary Jamulus cleanup could not be confirmed "
+                    "(%s).",
+                    type(exc).__name__,
+                )
+
+            def deliver() -> None:
+                self._primary_recovery_retire_inflight = False
+                self.audio.connected = False
+                self.audio.recovering = False
+                self._connection_timer.stop()
+                if getattr(self, "_shutdown", False):
+                    return
+                if reference_stopped and primary_stopped:
+                    self._reconnect_banner_shown = False
+                    self._rpc_hang_banner_shown = False
+                    self.window.set_status_audio("Not connected")
+                    self.window.set_status_latency("Not connected")
+                    self.window.session_strip.set_tools_enabled(True)
+                    self.window.session_strip.set_audio_state(
+                        "Start Session",
+                        enabled=True,
+                    )
+                    self.window.participant_grid.set_session_state(
+                        SessionUiState.reconnect_failed()
+                    )
+                    self._transition_lifecycle(
+                        SessionLifecyclePhase.FAILED_RECOVERABLE,
+                        "Automatic recovery exhausted and the primary client "
+                        "was retired safely",
+                        recovery_attempt=5,
+                    )
+                    self.window.session_hud.set_state(
+                        "Band audio needs a fresh start",
+                        "The interrupted music engine stopped safely. Press "
+                        "Start Session to launch a clean connection.",
+                    )
+                    self.window.flash_message(
+                        "The interrupted music engine stopped safely — press "
+                        "Start Session to try again.",
+                        ms=8000,
+                    )
+                else:
+                    self.audio.require_cleanup_retry(
+                        hosting=bool(
+                            getattr(self.settings, "host_server_enabled", False)
+                        ),
+                        error=(
+                            "WebJam could not yet prove that the interrupted "
+                            "music engine stopped. Finish cleanup before "
+                            "starting another session."
+                        ),
+                        title="Band audio cleanup needs attention",
+                        detail=(
+                            "WebJam kept the existing session protected. Try "
+                            "ending or leaving again; Start remains unavailable "
+                            "until every owned process is confirmed stopped."
+                        ),
+                    )
+                self._sync_reference_track_primary_gate()
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                LOGGER.debug(
+                    "Primary recovery cleanup finished after Qt shutdown"
+                )
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-primary-recovery-cleanup",
+        ).start()
+        return True
 
     def _on_reconnect_tick(self) -> None:
         """Called every 3 s; lets BridgeService retry dropped services.
@@ -8086,123 +8605,206 @@ class ApplicationController(QObject):
         conductor knows something is happening (auto-reconnect is otherwise
         invisible).
         """
-        self._revalidate_after_wake_gap()
+        # Hosted-server supervision is independent from the primary musician
+        # client. Keep the server alive even while client recovery is terminal
+        # or an ordered client cleanup causes the normal reconnect path to
+        # return early.
+        recover_hosted_server = getattr(
+            self.bridge,
+            "attempt_hosted_server_recovery",
+            None,
+        )
+        hosted_recovery_blocked = bool(
+            self._shutdown
+            or self.audio.stopping
+            or self.audio.cleanup_retry_required
+            or self._invite_switch_in_flight
+            or self._shutdown_in_progress
+            or self._shutdown_cleanup_pending
+        )
+        if callable(recover_hosted_server) and not hosted_recovery_blocked:
+            try:
+                recover_hosted_server()
+            except Exception as exc:  # noqa: BLE001 - periodic supervision stays alive
+                LOGGER.warning(
+                    "Hosted Jamulus server recovery check failed (%s).",
+                    type(exc).__name__,
+                )
+        wake_revalidated = self._revalidate_after_wake_gap()
         self._revalidate_pocket_stage_route()
+        if wake_revalidated:
+            # Let a fresh authenticated callback arrive before classifying the
+            # post-wake process as healthy or hung. Crash supervision still
+            # runs below on the next bounded three-second tick.
+            self._sync_reference_track_primary_gate()
+            self.bridge.attempt_auto_reconnects()
+            return
+        if self._reference_track_lifecycle_blocks_play():
+            # End/Leave, invitation switching, exhausted-recovery cleanup, and
+            # shutdown already have one ordered owner. A reconnect tick must
+            # not start another teardown or relaunch the primary beside it.
+            self._sync_reference_track_primary_gate()
+            return
+        if self._reconnect_gave_up:
+            # Exhaustion is an explicit retry boundary. Late callbacks from
+            # the retired generation cannot resurrect it; only Start Session
+            # opens a fresh lifecycle/launch generation.
+            self._sync_reference_track_primary_gate()
+            return
         self._refresh_reference_track_health()
 
-        # Detect Jamulus dying: launch was intended, process exists but exited.
-        proc = self.bridge.jamulus_process
-        if (
-            self.bridge.jamulus_launch_intended
-            and proc is not None
-            and proc.poll() is not None
-            and not self._reconnect_banner_shown
-        ):
-            self._stop_reference_track_for_session_end(background=True)
-            attempts = self.bridge.jamulus_reconnect_attempts + 1
-            self.window.flash_message(
-                f"Band audio disconnected — reconnecting (attempt {attempts}/5)…",
-                ms=5000,
+        recovery = self._primary_jamulus_recovery_snapshot()
+        if recovery is None:
+            # Bridge owns all retry mutation. Without its immutable snapshot
+            # the controller cannot safely classify the process, freshness,
+            # attempt count, or exhaustion, so keep every play surface locked
+            # and let the bounded supervisor make progress.
+            self._sync_reference_track_primary_gate()
+            self.bridge.attempt_auto_reconnects()
+            return
+        process_alive = recovery.process_alive
+        process_exited = bool(
+            recovery.launch_intended
+            and not process_alive
+            and not recovery.pending
+            and not recovery.inflight
+            and (
+                recovery.active
+                or getattr(self.bridge, "jamulus_process", None) is not None
             )
-            self.window.set_status_audio("Reconnecting…")
-            self.audio.recovering = True
-            self._local_audio_seen = False
-            self._remote_audio_seen = False
-            self.participants.clear()
-            self._push_participants_to_grid()
-            self.window.participant_grid.set_session_state(
-                SessionUiState.reconnecting(attempts)
-            )
-            self._transition_lifecycle(
-                SessionLifecyclePhase.RECONNECTING,
-                "The music engine exited and WebJam is retrying",
-                recovery_attempt=attempts,
-            )
-            self._connection_timer.start()
-            self._reconnect_banner_shown = True
-        elif (
-            self.bridge.jamulus_state in ("Running", "Already running")
-            and self._reconnect_banner_shown
-            and self._jamulus_connected
-        ):
-            # A process restart is not success. Proven roster/RPC truth is.
-            self._reconnect_banner_shown = False
-            self._reconnect_gave_up = False
-            self.audio.recovering = False
-            self.window.flash_message("Band audio reconnected.", ms=3000)
-        elif (
-            self.bridge.jamulus_launch_intended
-            and proc is not None
-            and proc.poll() is not None
-            and self.bridge.jamulus_reconnect_attempts >= 5
-            and not getattr(self, "_reconnect_gave_up", False)
-        ):
-            # Auto-reconnect exhausted its 5 attempts and the process is still
-            # dead. Tell the user once, and stop showing "Reconnecting…"
-            # forever (which the crash branch above would otherwise leave up).
-            self._reconnect_gave_up = True
-            self.window.set_status_audio("Not connected")
-            self.window.session_strip.set_audio_state("Start Session", enabled=True)
-            self.window.participant_grid.set_session_state(
-                SessionUiState.reconnect_failed()
-            )
-            self._transition_lifecycle(
-                SessionLifecyclePhase.FAILED_RECOVERABLE,
-                "Automatic reconnect attempts were exhausted",
-                recovery_attempt=self.bridge.jamulus_reconnect_attempts,
-            )
-            self.window.flash_message(
-                "Couldn't reconnect after 5 tries — press Start Session to try again.",
-                ms=8000,
-            )
-        elif (
-            self.bridge.jamulus_launch_intended
-            and proc is not None
-            and proc.poll() is None
-            and self._rpc_hang_banner_shown
-            and self.bridge.jamulus_reconnect_attempts >= 5
-            and not getattr(self, "_reconnect_gave_up", False)
-        ):
-            # Auto-reconnect has retried a hung live process 5 times and still
-            # fails to produce timely RPC heartbeats.
-            self._reconnect_gave_up = True
-            self._rpc_hang_banner_shown = False
-            self.window.set_status_audio("Not responding")
-            self.window.session_strip.set_audio_state("Start Session", enabled=True)
-            self.audio.connected = False
-            self.audio.recovering = False
-            self.window.participant_grid.set_session_state(
-                SessionUiState.reconnect_failed()
-            )
-            self._transition_lifecycle(
-                SessionLifecyclePhase.FAILED_RECOVERABLE,
-                "Automatic reconnect attempts were exhausted for an unresponsive process",
-                recovery_attempt=self.bridge.jamulus_reconnect_attempts,
-            )
-            self.window.flash_message(
-                "Music engine is not responding — couldn't recover after 5 tries. "
-                "Press Start Session to relaunch.",
-                ms=8000,
-            )
+        )
+        rpc_fresh = (
+            recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+        )
+        rpc_stale = (
+            recovery.rpc_freshness is JamulusRpcFreshness.STALE
+        )
+        rpc_age = recovery.rpc_age_seconds
+        reconnect_attempts = recovery.attempts_started
+        local_roster_current = self._primary_local_roster_matches(recovery)
 
-        # Detect RPC hang: process is alive AND was previously responsive
-        # (we got past _jamulus_connected=True) AND the RPC heartbeat hasn't
-        # fired in a while.  Distinct from a crash (proc.poll != None) — here
-        # the process is still alive but unresponsive.
-        if self._jamulus_connected and proc is not None and proc.poll() is None:
-            try:
-                age = self.jamulus.rpc_client.last_activity_age()
-            except AttributeError:
-                age = 0.0
-            if age > self._RPC_HANG_THRESHOLD_S and not self._rpc_hang_banner_shown:
-                self.window.flash_message(
-                    f"The music engine stopped responding ({int(age)}s of silence). "
-                    "WebJam is preparing a safe retry.",
-                    ms=8000,
+        # Attempt five is a terminal ownership boundary even when Bridge had to
+        # clear launch intent after a failed publication, or when a live/FRESH
+        # replacement never authenticated this Mac's exact local roster row.
+        # Never turn either state into healthy idle or schedule a sixth retry.
+        authenticated_current_process = bool(
+            process_alive
+            and rpc_fresh
+            and self._jamulus_connected
+            and local_roster_current
+        )
+        if (
+            recovery.active
+            and recovery.exhausted
+            and not recovery.pending
+            and not recovery.inflight
+            and not authenticated_current_process
+        ):
+            self._retire_primary_after_recovery_exhaustion(
+                unresponsive=bool(process_alive and rpc_stale),
+            )
+            return
+
+        # Evaluate authenticated recovery before terminal exhaustion. A live
+        # current process, fresh RPC heartbeat, and local roster are stronger
+        # evidence than a stale presentation latch or an old attempt counter.
+        if (
+            process_alive
+            and rpc_fresh
+            and self._jamulus_connected
+            and local_roster_current
+        ):
+            recovered = bool(
+                recovery.active
+                or self.audio.recovering
+                or self._rpc_hang_banner_shown
+                or self._reconnect_banner_shown
+            )
+            recovery_authenticated = not recovery.active
+            if recovery.active and not (
+                recovery.pending or recovery.inflight
+            ):
+                try:
+                    recovery_authenticated = bool(
+                        self.bridge.mark_jamulus_reconnect_authenticated(
+                            generation=recovery.generation,
+                            process_id=recovery.process_id,
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - fail closed on ownership
+                    LOGGER.warning(
+                        "Primary Jamulus recovery acknowledgement failed (%s).",
+                        type(exc).__name__,
+                    )
+                    recovery_authenticated = False
+            if recovered and recovery_authenticated:
+                self._rpc_hang_banner_shown = False
+                self._reconnect_banner_shown = False
+                self._reconnect_gave_up = False
+                self.audio.recovering = False
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.CONNECTED,
+                    "Authenticated Jamulus control and local roster recovered",
                 )
-                self.window.set_status_audio("Not responding")
-                self._rpc_hang_banner_shown = True
-                self.audio.connected = False
+                self.window.flash_message("Band audio reconnected.", ms=3000)
+            self._sync_reference_track_primary_gate()
+
+        # Connection truth and cleanup are never notification-gated. A banner
+        # may remain visible across a fast reconnect, but a replacement process
+        # that exits must still invalidate that newly proven live session.
+        if process_exited:
+            lost_now = self._handle_unexpected_primary_jamulus_loss()
+            if lost_now or not self.audio.recovering:
+                self.window.set_status_audio("Reconnecting…")
+                self.audio.recovering = True
+                self._local_audio_seen = False
+                self._remote_audio_seen = False
+                self.participants.clear()
+                self._push_participants_to_grid()
+                self.window.participant_grid.set_session_state(
+                    SessionUiState.reconnecting()
+                )
+                self._transition_lifecycle(
+                    SessionLifecyclePhase.RECONNECTING,
+                    "The music engine exited and WebJam is retrying",
+                    recovery_attempt=reconnect_attempts,
+                )
+                self._connection_timer.start()
+            if recovery.exhausted:
+                self._retire_primary_after_recovery_exhaustion(
+                    unresponsive=False
+                )
+                return
+            if not self._reconnect_banner_shown:
+                self.window.flash_message(
+                    "Band audio disconnected — WebJam is reconnecting "
+                    "automatically…",
+                    ms=5000,
+                )
+                self._reconnect_banner_shown = True
+
+        # A live process can still have a dead authenticated client-RPC path.
+        # Hosted-server roster fallback and a replacement Popen cannot prove
+        # recovery. Invalid, unavailable, non-finite, or stale RPC evidence
+        # keeps the application fail-closed.
+        rpc_hang_announced_now = False
+        rpc_recovery_unhealthy = bool(
+            process_alive
+            and rpc_stale
+            and (
+                self._jamulus_connected
+                or recovery.active
+                or self.audio.recovering
+                or self._reconnect_banner_shown
+                or self._rpc_hang_banner_shown
+            )
+        )
+        if rpc_recovery_unhealthy:
+            if self._jamulus_connected:
+                lost_now = self._handle_unexpected_primary_jamulus_loss()
+            else:
+                lost_now = False
+            if lost_now or not self.audio.recovering:
                 self.audio.recovering = True
                 self._local_audio_seen = False
                 self._remote_audio_seen = False
@@ -8220,18 +8822,44 @@ class ApplicationController(QObject):
                     "The music engine stopped responding. WebJam is preparing a safe retry.",
                 )
                 self._connection_timer.start()
+            if not self._rpc_hang_banner_shown:
+                rpc_hang_announced_now = True
+                heartbeat_detail = (
+                    f"{min(int(rpc_age), 999)}s of silence"
+                    if rpc_age is not None
+                    else "no verified heartbeat"
+                )
+                self.window.flash_message(
+                    f"The music engine stopped responding "
+                    f"({heartbeat_detail}). "
+                    "WebJam is preparing a safe retry.",
+                    ms=8000,
+                )
+                self.window.set_status_audio("Not responding")
+                self._rpc_hang_banner_shown = True
                 try:
                     self.metrics.increment("metric_jamulus_hang_detected")
                 except Exception:  # noqa: BLE001
                     LOGGER.debug("hang metric failed", exc_info=True)
-            elif age <= self._RPC_HANG_THRESHOLD_S and self._rpc_hang_banner_shown:
-                self._rpc_hang_banner_shown = False
-                self._reconnect_gave_up = False
-                self.audio.recovering = False
-                self.window.flash_message(
-                    "The music engine is responding again.", ms=3000
-                )
 
+        if (
+            rpc_recovery_unhealthy
+            and rpc_stale
+            and self._rpc_hang_banner_shown
+            and recovery.exhausted
+            and not getattr(self, "_reconnect_gave_up", False)
+            and not rpc_hang_announced_now
+        ):
+            self._retire_primary_after_recovery_exhaustion(
+                unresponsive=True
+            )
+            return
+
+        # Publish the state transition in this same supervision tick.  In
+        # particular, a newly detected RPC hang must move every open
+        # Reference Track surface from "not connected" to the more truthful
+        # recovery gate without waiting for another timer callback.
+        self._sync_reference_track_primary_gate()
         self.bridge.attempt_auto_reconnects()
         # A private LAN address may change on Wi-Fi roaming, sleep/wake, or
         # interface changes without killing the local Jamulus process. Polling
@@ -8456,7 +9084,12 @@ class ApplicationController(QObject):
     # ------------------------------------------------------------------
     # Settings wizard (Phase 6)
     # ------------------------------------------------------------------
-    def _reconfigure_services_after_settings(self, old_settings: AppSettings) -> None:
+    def _reconfigure_services_after_settings(
+        self,
+        old_settings: AppSettings,
+        *,
+        reference_track_already_retired: bool = False,
+    ) -> None:
         """Apply freshly saved settings to all long-lived integration objects."""
         webex_url_changed = (
             str(getattr(old_settings, "webex_url", "") or "").strip()
@@ -8476,7 +9109,14 @@ class ApplicationController(QObject):
                 != getattr(self.settings, "webex_audio_mode", "talkback"),
             )
         )
-        if reference_route_changed:
+        if (
+            reference_route_changed
+            and not reference_track_already_retired
+            and not self._reference_track_lifecycle_blocks_play()
+        ):
+            # An ordinary Settings change retires a now-stale route. Ordered
+            # End/Leave/invite-switch cleanup already stopped the backing
+            # client synchronously and must remain the sole teardown owner.
             self._stop_reference_track_for_session_end(background=True)
         self.window.session_strip.set_reference_track_available(
             bool(getattr(self.settings, "host_server_enabled", False))
@@ -8542,10 +9182,14 @@ class ApplicationController(QObject):
 
             self.jamulus.rpc_client = JamulusRpcClient(
                 port=self.settings.jamulus_rpc_port,
-                on_participants_changed=self.jamulus._on_rpc_participants,
+                on_participants_changed_with_source=(
+                    self.jamulus._on_rpc_participants_with_source
+                ),
                 on_levels=self.jamulus._on_rpc_levels,
-                on_chat=self.jamulus._on_rpc_chat,
-                on_recorder_state=self.jamulus._on_rpc_recorder_state,
+                on_chat_with_source=self.jamulus._on_rpc_chat_with_source,
+                on_recorder_state_with_source=(
+                    self.jamulus._on_rpc_recorder_state_with_source
+                ),
             )
 
         self.bridge.jamulus_controller = self.jamulus
@@ -8936,9 +9580,7 @@ class ApplicationController(QObject):
             dialog.restart_requested.connect(
                 lambda: self._run_reference_track_fast(controller.restart)
             )
-            dialog.stop_requested.connect(
-                self._queue_reference_track_teardown
-            )
+            dialog.stop_requested.connect(self._request_reference_track_teardown)
             dialog.seek_requested.connect(
                 lambda seconds: self._run_reference_track_fast(
                     lambda: controller.seek(float(seconds))
@@ -8960,6 +9602,7 @@ class ApplicationController(QObject):
                 )
             )
             self._reference_track_dialog = dialog
+        self._sync_reference_track_primary_gate(dialog)
         dialog.set_snapshot(controller.snapshot)
         dialog.show()
         dialog.raise_()
@@ -8979,6 +9622,7 @@ class ApplicationController(QObject):
             return
         dialog = getattr(self, "_reference_track_dialog", None)
         if dialog is not None:
+            self._sync_reference_track_primary_gate(dialog)
             dialog.set_snapshot(snapshot)
         if bool(getattr(snapshot, "active", False)) or (
             dialog is not None and dialog.isVisible()
@@ -9090,14 +9734,42 @@ class ApplicationController(QObject):
             dialog.set_route_checking(True)
         self._drain_reference_track_pending()
 
+    def _request_reference_track_teardown(self) -> None:
+        """Accept an interactive Stop only outside ordered session cleanup."""
+
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        if (
+            self._reference_track_lifecycle_blocks_play()
+            or self._reference_track_primary_gate()
+            is not ReferenceTrackPrimaryGate.READY
+        ):
+            self._sync_reference_track_primary_gate()
+            self.window.flash_message(
+                "Reference Track controls are locked until the primary Jamulus "
+                "session is ready. Use WebJam's main End or Leave control if "
+                "session cleanup is required.",
+                ms=4000,
+            )
+            return
+        self._queue_reference_track_teardown()
+
     def _queue_reference_track_teardown(self) -> None:
         """Coalesce one highest-priority session-end cleanup operation."""
 
+        if self._reference_track_lifecycle_blocks_play():
+            self._sync_reference_track_primary_gate()
+            return
         controller = getattr(self, "_reference_track", None)
         if controller is None:
             return
         controller.cancel_pending_start()
         with self._reference_track_worker_state_lock:
+            if self._reference_track_teardown_pending or (
+                self._reference_track_operation_inflight
+                and self._reference_track_operation_kind == "teardown"
+            ):
+                return
             self._reference_track_teardown_pending = True
         self._drain_reference_track_pending()
 
@@ -9164,6 +9836,14 @@ class ApplicationController(QObject):
         """Apply a bounded in-memory control only when no launch is in flight."""
 
         if self._shutdown_cleanup_blocks_action():
+            return
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        if (
+            self._reference_track_primary_gate()
+            is not ReferenceTrackPrimaryGate.READY
+        ):
+            self._sync_reference_track_primary_gate()
             return
         if not self._reference_track_operation_lock.acquire(blocking=False):
             self.window.flash_message(
@@ -9232,22 +9912,211 @@ class ApplicationController(QObject):
             return 0
         return pid if pid > 0 else 0
 
+    def _primary_jamulus_rpc_freshness(self) -> tuple[bool, float | None]:
+        """Return fail-closed authenticated client-RPC freshness evidence.
+
+        ``None`` means there is no safe numeric age to show. An unavailable
+        client, a never-completed heartbeat, non-finite/negative data, or any
+        provider error is not freshness evidence.
+        """
+
+        snapshot = self._primary_jamulus_recovery_snapshot()
+        if snapshot is None:
+            return False, None
+        age = snapshot.rpc_age_seconds
+        rpc = getattr(self.jamulus, "rpc_client", None)
+        if getattr(rpc, "available", False) is not True:
+            age = None
+        elif age is not None and (
+            not math.isfinite(age) or age < 0.0
+        ):
+            age = None
+        return snapshot.rpc_freshness is JamulusRpcFreshness.FRESH, age
+
+    def _primary_jamulus_recovery_snapshot(
+        self,
+    ) -> JamulusRecoverySnapshot | None:
+        """Read Bridge's immutable primary-client truth without fallbacks."""
+
+        try:
+            snapshot = self.bridge.jamulus_recovery_snapshot()
+        except Exception as exc:  # noqa: BLE001 - supervision evidence fails closed
+            LOGGER.warning(
+                "Primary Jamulus recovery snapshot was unavailable (%s).",
+                type(exc).__name__,
+            )
+            return None
+        return (
+            snapshot
+            if isinstance(snapshot, JamulusRecoverySnapshot)
+            else None
+        )
+
+    def _record_primary_local_roster_proof(
+        self,
+        snapshot: JamulusRecoverySnapshot,
+    ) -> None:
+        """Bind one authenticated local-roster observation to its process."""
+
+        generation = int(snapshot.generation)
+        process_id = int(snapshot.process_id)
+        if generation <= 0 or process_id <= 0 or not snapshot.process_alive:
+            self._clear_primary_local_roster_proof()
+            return
+        self._jamulus_local_roster_generation = generation
+        self._jamulus_local_roster_process_id = process_id
+
+    def _clear_primary_local_roster_proof(self) -> None:
+        self._jamulus_local_roster_generation = 0
+        self._jamulus_local_roster_process_id = 0
+
+    def _primary_local_roster_matches(
+        self,
+        snapshot: JamulusRecoverySnapshot,
+    ) -> bool:
+        return bool(
+            snapshot.process_alive
+            and snapshot.generation > 0
+            and snapshot.process_id > 0
+            and snapshot.generation
+            == self._jamulus_local_roster_generation
+            and snapshot.process_id
+            == self._jamulus_local_roster_process_id
+        )
+
+    def _reference_track_primary_gate(
+        self,
+        recovery_snapshot: JamulusRecoverySnapshot | None = None,
+    ):
+        """Derive one finite play gate from application-owned session truth."""
+
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        if self._primary_recovery_retire_inflight:
+            return ReferenceTrackPrimaryGate.RECOVERING
+        if self._reference_track_lifecycle_blocks_play():
+            return ReferenceTrackPrimaryGate.SESSION_CHANGING
+        if not self._reference_track_is_host():
+            return ReferenceTrackPrimaryGate.HOST_REQUIRED
+        if self._reconnect_gave_up:
+            return ReferenceTrackPrimaryGate.RECOVERY_FAILED
+        if (
+            self.audio.recovering
+            or self._reconnect_banner_shown
+            or self._rpc_hang_banner_shown
+        ):
+            return ReferenceTrackPrimaryGate.RECOVERING
+        recovery = (
+            recovery_snapshot
+            if isinstance(recovery_snapshot, JamulusRecoverySnapshot)
+            else self._primary_jamulus_recovery_snapshot()
+        )
+        if recovery is None:
+            return ReferenceTrackPrimaryGate.NOT_CONNECTED
+        if recovery.active:
+            return ReferenceTrackPrimaryGate.RECOVERING
+        if (
+            not self._jamulus_connected
+            or not recovery.launch_intended
+            or recovery.pending
+            or recovery.inflight
+            or not recovery.process_alive
+            or recovery.generation <= 0
+            or recovery.process_id <= 0
+            or not self._primary_local_roster_matches(recovery)
+            or recovery.rpc_freshness is not JamulusRpcFreshness.FRESH
+        ):
+            return ReferenceTrackPrimaryGate.NOT_CONNECTED
+        return ReferenceTrackPrimaryGate.READY
+
+    def _reference_track_primary_identity_ready(
+        self,
+        snapshot: JamulusRecoverySnapshot | None,
+        *,
+        generation: int,
+        process_id: int,
+    ) -> bool:
+        """Prove READY for one exact primary process generation and PID."""
+
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        return bool(
+            isinstance(snapshot, JamulusRecoverySnapshot)
+            and generation > 0
+            and process_id > 0
+            and snapshot.generation == generation
+            and snapshot.process_id == process_id
+            and self._primary_local_roster_matches(snapshot)
+            and self._reference_track_primary_gate(snapshot)
+            is ReferenceTrackPrimaryGate.READY
+        )
+
+    def _sync_reference_track_primary_gate(self, dialog=None) -> None:
+        """Publish the current finite gate to an open dialog, if any."""
+
+        target = (
+            dialog
+            if dialog is not None
+            else getattr(self, "_reference_track_dialog", None)
+        )
+        if target is not None:
+            target.set_primary_gate(self._reference_track_primary_gate())
+
     def _play_reference_track(self) -> None:
         if self._shutdown_cleanup_blocks_action():
+            self._sync_reference_track_primary_gate()
             return
-        if self._reference_track_lifecycle_blocks_play():
+        from webjam_qt.windows.reference_track import ReferenceTrackPrimaryGate
+
+        primary_gate = self._reference_track_primary_gate()
+        self._sync_reference_track_primary_gate()
+        if primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
             self.window.flash_message(
                 "Wait for the current session change to finish before "
                 "starting Reference Track.",
                 ms=6000,
             )
             return
-        if not self._reference_track_is_host() or not self._jamulus_connected:
+        if primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED:
             self.window.flash_message(
-                "Start the hosted jam and wait for your Jamulus connection "
-                "before playing a Reference Track.",
+                "Reference Track playback is host-only. Start a hosted jam "
+                "before sending a song to the band.",
                 ms=7000,
             )
+            return
+        if primary_gate in {
+            ReferenceTrackPrimaryGate.NOT_CONNECTED,
+            ReferenceTrackPrimaryGate.RECOVERING,
+            ReferenceTrackPrimaryGate.RECOVERY_FAILED,
+        }:
+            if primary_gate is ReferenceTrackPrimaryGate.RECOVERY_FAILED:
+                message = (
+                    "Band audio recovery stopped safely. Press Start Session "
+                    "to launch a clean music connection before playing."
+                )
+            elif primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
+                message = (
+                    "WebJam is still recovering band audio. Wait for that "
+                    "recovery to finish before playing a Reference Track."
+                )
+            elif self._reference_track_primary_process_id() <= 0:
+                message = (
+                    "WebJam couldn't identify the active primary Jamulus "
+                    "process. Reconnect band audio, then try Reference Track "
+                    "again."
+                )
+            elif self._reference_track_is_host() and self._jamulus_connected:
+                message = (
+                    "WebJam has not verified a fresh primary Jamulus control "
+                    "connection. Reconnect band audio, then try Reference Track "
+                    "again."
+                )
+            else:
+                message = (
+                    "Start the hosted jam and wait for your Jamulus connection "
+                    "before playing a Reference Track."
+                )
+            self.window.flash_message(message, ms=8000)
             return
         controller = self._reference_track_controller()
         jamulus_binary = self.bridge.find_reference_track_jamulus()
@@ -9260,15 +10129,30 @@ class ApplicationController(QObject):
             return
         from core.reference_track import ReferenceTrackLaunchContext
 
-        primary_input, primary_output = self._reference_track_primary_device_names()
-        primary_process_id = self._reference_track_primary_process_id()
-        if primary_process_id <= 0:
+        primary_recovery = self._primary_jamulus_recovery_snapshot()
+        if primary_recovery is None:
+            self._sync_reference_track_primary_gate()
             self.window.flash_message(
-                "WebJam couldn't identify the active primary Jamulus process. "
+                "WebJam couldn't verify the active primary Jamulus session. "
                 "Reconnect band audio, then try Reference Track again.",
                 ms=8000,
             )
             return
+        primary_generation = int(primary_recovery.generation)
+        primary_process_id = int(primary_recovery.process_id)
+        if not self._reference_track_primary_identity_ready(
+            primary_recovery,
+            generation=primary_generation,
+            process_id=primary_process_id,
+        ):
+            self._sync_reference_track_primary_gate()
+            self.window.flash_message(
+                "The primary Jamulus session changed before Reference Track "
+                "could start. Wait for band audio to reconnect, then try again.",
+                ms=8000,
+            )
+            return
+        primary_input, primary_output = self._reference_track_primary_device_names()
         context = ReferenceTrackLaunchContext(
             server_address=self.bridge.effective_server(),
             jamulus_binary=str(jamulus_binary),
@@ -9282,18 +10166,27 @@ class ApplicationController(QObject):
         generation = self._reference_track_session_generation
 
         def _play_for_current_session() -> None:
+            current_primary = self._primary_jamulus_recovery_snapshot()
             if (
                 generation != self._reference_track_session_generation
                 or self._shutdown
-                or not self._jamulus_connected
-                or self._reference_track_lifecycle_blocks_play()
+                or not self._reference_track_primary_identity_ready(
+                    current_primary,
+                    generation=primary_generation,
+                    process_id=primary_process_id,
+                )
             ):
                 return
             controller.play(context)
+            current_primary = self._primary_jamulus_recovery_snapshot()
             if (
                 generation != self._reference_track_session_generation
                 or self._shutdown
-                or not self._jamulus_connected
+                or not self._reference_track_primary_identity_ready(
+                    current_primary,
+                    generation=primary_generation,
+                    process_id=primary_process_id,
+                )
             ):
                 controller.handle_session_end()
 
@@ -9309,6 +10202,7 @@ class ApplicationController(QObject):
             self.audio.stopping
             or self.audio.cleanup_retry_required
             or self._invite_switch_in_flight
+            or self._primary_recovery_retire_inflight
             or self._shutdown_in_progress
             or self._shutdown_cleanup_pending
         )
@@ -9329,7 +10223,16 @@ class ApplicationController(QObject):
             return True
         try:
             with self._reference_track_operation_lock:
-                snapshot = controller.handle_session_end()
+                snapshot = controller.snapshot
+                state = getattr(getattr(snapshot, "state", None), "value", "")
+                already_retired = bool(
+                    not bool(getattr(snapshot, "active", False))
+                    and not bool(getattr(snapshot, "cleanup_pending", False))
+                    and state
+                    in {"ready", "unavailable", "idle", "closed"}
+                )
+                if not already_retired:
+                    snapshot = controller.handle_session_end()
         except Exception:  # noqa: BLE001
             LOGGER.error("Reference Track session cleanup could not be confirmed")
             return False

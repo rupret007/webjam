@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from unittest import mock
 
@@ -106,6 +107,164 @@ def test_v3_guest_waits_for_authenticated_backend_then_routes_jamulus(
     controller._stop_remote_transport()
     assert controller.settings.jamulus_port == 22124
     assert not controller.bridge.remote_guest_mode_enabled
+    controller.shutdown()
+
+
+def test_direct_remote_route_activation_retires_reference_track_once(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    class Backend:
+        def start_guest(self, invitation, *, generation):
+            assert invitation is remote
+            return RemoteGuestConnection(
+                loopback_port=43123,
+                path=TransportPath.SECURE_RELAY,
+                quality=ConnectionQuality.UNKNOWN,
+                generation=generation,
+            )
+
+        def stop(self):
+            return None
+
+    remote = _invitation()
+    controller = _controller(tmp_path)
+    controller.begin_startup_journey = mock.MagicMock()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        Backend,
+    )
+
+    with mock.patch.object(
+        controller,
+        "_stop_reference_track_for_session_end",
+        return_value=True,
+    ) as stop_reference:
+        assert controller.accept_invitation(remote)
+        _drain_until(qapp, lambda: controller.settings.jamulus_port == 43123)
+
+        stop_reference.assert_called_once_with(background=True)
+        assert controller._reference_track_remote_route_pre_retired is False
+
+    controller._stop_remote_transport()
+    controller.shutdown()
+
+
+def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    class Backend:
+        def start_guest(self, invitation, *, generation):
+            assert invitation is remote
+            return RemoteGuestConnection(
+                loopback_port=43124,
+                path=TransportPath.SECURE_RELAY,
+                quality=ConnectionQuality.UNKNOWN,
+                generation=generation,
+            )
+
+        def stop(self):
+            return None
+
+    class DeferredSwitchThread:
+        def __init__(self, *, target=None, **_kwargs):
+            self._target = target
+
+        def start(self):
+            return None
+
+    remote = _invitation()
+    controller = _controller(tmp_path)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = mock.MagicMock(return_value=False)
+    controller.bridge.hosted_server_owned = mock.MagicMock(return_value=False)
+    controller.begin_startup_journey = mock.MagicMock()
+    switch_worker = {}
+    real_thread = threading.Thread
+
+    def thread_factory(*args, **kwargs):
+        if kwargs.get("name") == "webjam-invite-switch":
+            thread = DeferredSwitchThread(*args, **kwargs)
+            switch_worker["target"] = thread._target
+            return thread
+        return real_thread(*args, **kwargs)
+
+    def stop_primary():
+        controller.bridge.jamulus_state = "Stopped"
+        return True
+
+    controller.bridge.stop_jamulus = mock.MagicMock(side_effect=stop_primary)
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        Backend,
+    )
+
+    with (
+        mock.patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
+        mock.patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=thread_factory,
+        ),
+        mock.patch.object(
+            controller,
+            "_stop_reference_track_for_session_end",
+            return_value=True,
+        ) as stop_reference,
+    ):
+        assert controller.accept_invite_url(
+            create_invite_link("192.168.1.42", session_name="Legacy Replacement")
+        )
+        assert controller._invite_switch_in_flight is True
+        assert controller.accept_invitation(remote)
+        assert controller._pending_invitation is remote
+
+        switch_worker["target"]()
+        _drain_until(qapp, lambda: controller.settings.jamulus_port == 43124)
+
+        stop_reference.assert_called_once_with(background=False)
+        assert controller._reference_track_remote_route_pre_retired is False
+        assert controller._pending_invitation is None
+        assert controller._invite_switch_in_flight is False
+
+    controller._stop_remote_transport()
+    controller.shutdown()
+
+
+def test_retry_safe_remote_failure_retains_pre_retired_marker_until_cleanup(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    class Backend:
+        def start_guest(self, _invitation, *, generation):
+            raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+
+        def stop(self):
+            return None
+
+    invitation = _invitation()
+    controller = _controller(tmp_path)
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        Backend,
+    )
+
+    assert controller._accept_remote_invitation(
+        invitation,
+        reference_track_already_retired=True,
+    )
+    _drain_until(
+        qapp,
+        lambda: (
+            controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
+            and controller._remote_invitation is invitation
+        ),
+    )
+
+    assert controller._reference_track_remote_route_pre_retired is True
+    assert controller._stop_remote_transport() is True
+    assert controller._reference_track_remote_route_pre_retired is False
     controller.shutdown()
 
 

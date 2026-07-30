@@ -48,6 +48,7 @@ from core.component_store import (
 )
 from core.file_io import atomic_write_text
 from core.jamulus_compatibility import (
+    ActivationMode,
     ComponentTarget,
     JamulusCompatibility,
     JamulusCompatibilityRegistry,
@@ -61,8 +62,13 @@ from services.jamulus_component_platform import (
     JamulusPlatformError,
     JamulusPlatformInstallDeferred,
     JamulusPlatformInstallationNotFound,
+    MACOS_INTEGRATED_RUNTIME_VARIANT,
+    MacOSExecutionContract,
+    MacOSExecutionContractKind,
     MacOSJamulusComponentStore,
     PlatformInstalledJamulusStore,
+    macos_integrated_runtime_contract_allows,
+    macos_integrated_runtime_entry_is_eligible,
     open_platform_jamulus_installer,
     platform_component_target,
 )
@@ -73,6 +79,17 @@ DEFAULT_COMPONENT_CATALOG_URL = (
     "jamulus-components-v1/WebJam-Jamulus-components-v1.json"
 )
 EMBEDDED_FALLBACK_VERSION = "3.12.2"
+_CLIENT_EXECUTION_CAPABILITIES = frozenset(
+    {
+        "audio-client",
+        "json-rpc-client",
+        "native-gui",
+        "webjam-route-profile",
+    }
+)
+_SERVER_EXECUTION_CAPABILITIES = frozenset(
+    {"audio-server", "json-rpc-server", "recording"}
+)
 
 
 class JamulusComponentUpdateError(RuntimeError):
@@ -457,6 +474,8 @@ class JamulusComponentUpdateService:
         return self.approve_ready()
 
     def rollback(self) -> bool:
+        with self._state_lock:
+            rollback_available = self._rollback_available
         if (
             self.target
             not in {
@@ -464,6 +483,7 @@ class JamulusComponentUpdateService:
                 ComponentTarget.MACOS_X64,
             }
             or self._platform_store is None
+            or not rollback_available
         ):
             self._publish_failure(
                 "rollback-unavailable",
@@ -523,13 +543,28 @@ class JamulusComponentUpdateService:
                 current = self._platform_store.current()
                 if current is None:
                     return None
+                contract = current.execution_contract_for(role)
+                if (
+                    not isinstance(contract, MacOSExecutionContract)
+                    or contract.kind
+                    is not MacOSExecutionContractKind.WEBJAM_INTEGRATED
+                    or not contract.activation_allowed
+                ):
+                    return None
                 entry = self._registry.exact(
                     component_id="jamulus",
                     role=role,
                     target=current.target,
                     version=current.version,
+                    variant=MACOS_INTEGRATED_RUNTIME_VARIANT,
                 )
-                if entry.artifact.sha256 != current.artifact_sha256:
+                if (
+                    entry.artifact.sha256 != current.artifact_sha256
+                    or not macos_integrated_runtime_contract_allows(
+                        entry,
+                        contract,
+                    )
+                ):
                     return None
                 executable = (
                     current.client_path
@@ -542,8 +577,13 @@ class JamulusComponentUpdateService:
                     content_verified=True,
                     version_verified=True,
                     architecture_verified=True,
-                    publisher_verified=True,
+                    # The integrated live contract proves WebJam's exact
+                    # runtime policy. It does not by itself assert an Apple
+                    # Developer ID identity (ad-hoc test candidates are an
+                    # allowed future signing mode).
+                    publisher_verified=False,
                     trust_policy_verified=True,
+                    execution_contract_verified=True,
                 )
             if self._installed_store is None:
                 return None
@@ -630,6 +670,7 @@ class JamulusComponentUpdateService:
     ) -> None:
         envelope: bytes | None = None
         network_failed = False
+        incompatible_macos_version = ""
         try:
             envelope = self.catalog_fetcher.fetch(
                 self.catalog_url,
@@ -711,43 +752,132 @@ class JamulusComponentUpdateService:
                     and not self._installed_store_injected
                 ):
                     installed_store = self._make_installed_store(registry)
-                candidates = catalog.registry.compatible(
+                candidates = registry.compatible(
                     role=JamulusRole.CLIENT,
                     target=self.target,
                     webjam_version=self.webjam_version,
-                    required_capabilities={"audio-client", "json-rpc-client"},
+                    required_capabilities=_CLIENT_EXECUTION_CAPABILITIES,
                 )
+                if self.target in {
+                    ComponentTarget.MACOS_ARM64,
+                    ComponentTarget.MACOS_X64,
+                }:
+                    candidates = tuple(
+                        entry
+                        for entry in candidates
+                        if macos_integrated_runtime_entry_is_eligible(entry)
+                    )
                 if not candidates:
-                    raise JamulusComponentUpdateError(
-                        "the signed catalog has no compatible client"
+                    source_candidates = registry.compatible(
+                        role=JamulusRole.CLIENT,
+                        target=self.target,
+                        webjam_version=self.webjam_version,
+                        required_capabilities={
+                            "audio-client",
+                            "json-rpc-client",
+                        },
                     )
-                candidate = candidates[0]
-                server = catalog.registry.exact(
-                    component_id=candidate.component_id,
-                    role=JamulusRole.SERVER,
-                    target=self.target,
-                    version=candidate.version,
-                    variant=candidate.variant,
-                )
-                if server.artifact != candidate.artifact:
-                    raise JamulusComponentUpdateError(
-                        "the approved client/server package identities differ"
+                    if (
+                        self.target
+                        in {
+                            ComponentTarget.MACOS_ARM64,
+                            ComponentTarget.MACOS_X64,
+                        }
+                        and source_candidates
+                    ):
+                        incompatible_macos_version = source_candidates[0].version
+                        source_server = registry.exact(
+                            component_id=source_candidates[0].component_id,
+                            role=JamulusRole.SERVER,
+                            target=self.target,
+                            version=incompatible_macos_version,
+                            variant=source_candidates[0].variant,
+                        )
+                        if (
+                            source_server.artifact
+                            != source_candidates[0].artifact
+                            or not source_server.capabilities.includes(
+                                {"audio-server", "json-rpc-server"}
+                            )
+                        ):
+                            raise JamulusComponentUpdateError(
+                                "the approved client/server package identities differ"
+                            )
+                        with self._state_lock:
+                            self._catalog = catalog
+                            self._registry = registry
+                            self._store = store
+                            self._platform_store = platform_store
+                            self._installed_store = installed_store
+                            self._candidate = None
+                            self._server_candidate = None
+                        active = self._safe_active_version()
+                    else:
+                        raise JamulusComponentUpdateError(
+                            "the signed catalog has no compatible client"
+                        )
+                else:
+                    candidate = candidates[0]
+                    server = registry.exact(
+                        component_id=candidate.component_id,
+                        role=JamulusRole.SERVER,
+                        target=self.target,
+                        version=candidate.version,
+                        variant=candidate.variant,
                     )
-                with self._state_lock:
-                    self._catalog = catalog
-                    self._registry = registry
-                    self._store = store
-                    self._platform_store = platform_store
-                    self._installed_store = installed_store
-                    self._candidate = candidate
-                    self._server_candidate = server
-                active = self._safe_active_version()
-                cached = store.cached_artifact(candidate)
+                    if (
+                        server.artifact != candidate.artifact
+                        or not server.capabilities.includes(
+                            _SERVER_EXECUTION_CAPABILITIES
+                        )
+                        or (
+                            self.target
+                            in {
+                                ComponentTarget.MACOS_ARM64,
+                                ComponentTarget.MACOS_X64,
+                            }
+                            and not macos_integrated_runtime_entry_is_eligible(
+                                server
+                            )
+                        )
+                    ):
+                        raise JamulusComponentUpdateError(
+                            "the approved client/server execution contract differs"
+                        )
+                    with self._state_lock:
+                        self._catalog = catalog
+                        self._registry = registry
+                        self._store = store
+                        self._platform_store = platform_store
+                        self._installed_store = installed_store
+                        self._candidate = candidate
+                        self._server_candidate = server
+                    active = self._safe_active_version()
+                    cached = store.cached_artifact(candidate)
         except Exception:
             self._clear_actionable_catalog()
             raise
 
         checked_at = _utc_now()
+        if incompatible_macos_version:
+            self._publish(
+                JamulusUpdateSnapshot(
+                    state=JamulusUpdateState.FALLBACK,
+                    active_version=active,
+                    available_version=incompatible_macos_version,
+                    target=self.target.value,
+                    reason_code="macos-integrated-runtime-required",
+                    message=(
+                        f"Jamulus {incompatible_macos_version} is verified as "
+                        "an upstream Mac download, but it does not have the "
+                        "WebJam-integrated execution contract needed for "
+                        "private profiles, RPC secrets, and recordings. "
+                        f"WebJam kept its integrated {active} component."
+                    ),
+                    checked_at_utc=checked_at,
+                )
+            )
+            return
         if _version_tuple(active) >= _version_tuple(candidate.version):
             snapshot = JamulusUpdateSnapshot(
                 state=JamulusUpdateState.UP_TO_DATE,
@@ -1159,7 +1289,18 @@ class JamulusComponentUpdateService:
         if platform_store is not None:
             try:
                 previous = platform_store.previous()
-                if previous is not None:
+                previous_activatable = bool(
+                    previous is not None
+                    and (
+                        self.target
+                        not in {
+                            ComponentTarget.MACOS_ARM64,
+                            ComponentTarget.MACOS_X64,
+                        }
+                        or bool(getattr(previous, "activation_allowed", False))
+                    )
+                )
+                if previous_activatable:
                     value = str(previous.version or "").strip()
                     _version_tuple(value)
                     previous_version = value
@@ -1413,7 +1554,7 @@ class JamulusComponentUpdateService:
                 current = self._platform_store.current()
             except JamulusPlatformError:
                 current = None
-            if current is not None:
+            if current is not None and current.activation_allowed:
                 return current.version
         if self._installed_store is not None:
             try:
@@ -1478,11 +1619,56 @@ def _merge_registries(
     for entry in catalog.entries:
         existing = values.get(entry.key)
         if existing is not None and existing != entry:
+            if _macos_source_capability_overclaim_is_downgradable(
+                existing,
+                entry,
+            ):
+                # Older signed catalogs described the untouched upstream Mac
+                # DMG as if it could use WebJam-owned files. Keep the signed
+                # artifact/source/publisher evidence, but enforce the narrower
+                # baked execution policy until a corrected higher-sequence
+                # catalog is published.
+                continue
             raise JamulusComponentUpdateError(
                 "the signed catalog conflicts with the built-in compatibility record"
             )
         values[entry.key] = entry
     return JamulusCompatibilityRegistry(values.values())
+
+
+def _macos_source_capability_overclaim_is_downgradable(
+    baked: JamulusCompatibility,
+    signed: JamulusCompatibility,
+) -> bool:
+    if (
+        baked.key != signed.key
+        or baked.target
+        not in {
+            ComponentTarget.MACOS_ARM64,
+            ComponentTarget.MACOS_X64,
+        }
+        or baked.role not in {JamulusRole.CLIENT, JamulusRole.SERVER}
+        or baked.variant != "official"
+        or baked.activation_mode is not ActivationMode.PLATFORM_APPROVAL
+        or signed.activation_mode is not ActivationMode.PLATFORM_APPROVAL
+    ):
+        return False
+    baked_values = baked.capabilities.values
+    signed_values = signed.capabilities.values
+    permitted_extra = (
+        {"webjam-route-profile"}
+        if baked.role is JamulusRole.CLIENT
+        else {"recording"}
+    )
+    if not (
+        baked_values < signed_values
+        and signed_values - baked_values <= permitted_extra
+    ):
+        return False
+    baked_dict = baked.to_dict()
+    signed_dict = signed.to_dict()
+    signed_dict["capabilities"] = baked_dict["capabilities"]
+    return signed_dict == baked_dict
 
 
 def _version_tuple(value: str) -> tuple[int, int, int]:
@@ -1541,6 +1727,11 @@ def _detail_for_reason(reason_code: str) -> str:
         "platform-verification-failed": (
             "The installed copy did not satisfy WebJam’s complete runtime trust "
             "policy. The known-good fallback remains active."
+        ),
+        "macos-integrated-runtime-required": (
+            "The upstream Mac download remains verified source evidence only. "
+            "WebJam will not activate it until a separately inventoried, "
+            "live-verified integrated runtime is available."
         ),
         "automatic-download-deferred": (
             "Download it when the rehearsal is idle, or choose Download when "

@@ -115,7 +115,13 @@ latency like another participant.
 - In a controlled certified pilot, playback begins only after route identity,
   separate-client ownership, RPC control, live PID-bound primary and backing
   route isolation, and zero return levels are proven. Saved profile device
-  names are only a secondary consistency check.
+  names are only a secondary consistency check. On macOS the verified
+  non-sandboxed integrated client resolves its filename-only profile in
+  WebJam's private Application Support launch directory. Primary CoreAudio
+  process-route proof remains authoritative. The separately owned Reference
+  Track client keeps descriptor-pinned ownership and cleanup for its private
+  profile, with pre/post launch path validation, and does not weaken that
+  boundary.
 - The backing client's return uses separate BlackHole channels and has no
   physical monitor route. The host must hear the track only through the primary
   Jamulus mix.

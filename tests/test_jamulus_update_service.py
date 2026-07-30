@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -38,8 +40,10 @@ from core.jamulus_compatibility import (
     JamulusRole,
     JamulusSourceIdentity,
     LegalInventory,
+    RuntimeFileIdentity,
     SourceProvenance,
     WebJamVersionRange,
+    official_jamulus_compatibility_registry,
 )
 from core.jamulus_update_state import JamulusUpdateState
 from core.jamulus_component_resolver import (
@@ -50,7 +54,13 @@ from services.jamulus_component_platform import (
     JamulusLicenseApprovalRequired,
     JamulusPlatformError,
     JamulusPlatformInstallationNotFound,
+    MacOSBundleVerifier,
+    MacOSExecutionContract,
+    MacOSExecutionContractKind,
     MacOSJamulusComponentStore,
+    VerifiedMacBundle,
+    macos_integrated_runtime_contract_allows,
+    macos_integrated_runtime_entry_is_eligible,
     open_platform_jamulus_installer,
     platform_component_target,
 )
@@ -149,6 +159,64 @@ def _pair(
         **common,
     )
     return client, server
+
+
+def _integrated_macos_pair(
+    *,
+    target: ComponentTarget = ComponentTarget.MACOS_ARM64,
+) -> tuple[JamulusCompatibility, JamulusCompatibility]:
+    client, server = _pair(target=target, version="3.12.4")
+    artifact = replace(client.artifact, kind=ArtifactKind.ARCHIVE)
+
+    def integrated(
+        entry: JamulusCompatibility,
+        executable: str,
+        capabilities: frozenset[str],
+    ) -> JamulusCompatibility:
+        return replace(
+            entry,
+            variant="webjam-integrated",
+            artifact=artifact,
+            runtime_files=(
+                RuntimeFileIdentity(
+                    relative_path=executable,
+                    size=20,
+                    sha256="a" * 64,
+                    executable=True,
+                ),
+            ),
+            executable_relative_path=executable,
+            capabilities=JamulusCapabilities(capabilities),
+            activation_mode=ActivationMode.MANAGED,
+        )
+
+    return (
+        integrated(
+            client,
+            "Jamulus.app/Contents/MacOS/Jamulus",
+            frozenset(
+                {
+                    "audio-client",
+                    "json-rpc-client",
+                    "native-gui",
+                    "webjam-route-profile",
+                    "webjam-integrated-runtime",
+                }
+            ),
+        ),
+        integrated(
+            server,
+            "JamulusServer.app/Contents/MacOS/JamulusServer",
+            frozenset(
+                {
+                    "audio-server",
+                    "json-rpc-server",
+                    "recording",
+                    "webjam-integrated-runtime",
+                }
+            ),
+        ),
+    )
 
 
 def _catalog(
@@ -253,6 +321,7 @@ def _service(
     automatic_download: bool = False,
     now=None,
     installed_store=None,
+    platform_store=None,
 ) -> tuple[JamulusComponentUpdateService, bytes]:
     data = b"approved Jamulus installer"
     client, server = _pair(data, target=target)
@@ -269,6 +338,7 @@ def _service(
         automatic_download=automatic_download,
         now=now,
         installed_store=installed_store,
+        platform_store=platform_store,
     )
     return service, data
 
@@ -865,6 +935,501 @@ def test_platform_target_mapping_rejects_unknown_architectures():
         platform_component_target(platform_name="darwin", machine="ppc")
 
 
+def test_macos_upstream_catalog_and_existing_pointer_stay_source_only(
+    tmp_path,
+):
+    class SourceOnlyContract:
+        activation_allowed = False
+
+    class SourceOnlyInstalled:
+        version = "3.12.4"
+        activation_allowed = False
+
+        @staticmethod
+        def execution_contract_for(_role):
+            return SourceOnlyContract()
+
+    class SourceOnlyStore:
+        @staticmethod
+        def current():
+            return SourceOnlyInstalled()
+
+        @staticmethod
+        def previous():
+            return None
+
+    downloader = _Downloader(b"approved Jamulus installer")
+    service, _data = _service(
+        tmp_path,
+        target=ComponentTarget.MACOS_ARM64,
+        downloader=downloader,
+        platform_store=SourceOnlyStore(),
+    )
+
+    assert service.check_now()
+    _wait(service)
+
+    assert service.snapshot.state is JamulusUpdateState.FALLBACK
+    assert service.snapshot.active_version == "3.12.2"
+    assert service.snapshot.available_version == "3.12.4"
+    assert (
+        service.snapshot.reason_code
+        == "macos-integrated-runtime-required"
+    )
+    assert "does not have the WebJam-integrated execution contract" in (
+        service.snapshot.message
+    )
+    assert not service.snapshot.can_download
+    assert not service.snapshot.can_approve
+    assert not service.snapshot.can_activate
+    assert not service.snapshot.can_rollback
+    assert downloader.calls == 0
+    assert service.managed_client_component() is None
+    assert service.managed_server_component() is None
+
+
+def test_typed_macos_source_contract_cannot_claim_runtime_file_capability():
+    with pytest.raises(JamulusPlatformError, match="runtime-file capabilities"):
+        MacOSExecutionContract(
+            kind=MacOSExecutionContractKind.OFFICIAL_SOURCE,
+            role=JamulusRole.CLIENT,
+            target=ComponentTarget.MACOS_ARM64,
+            source_app_sandbox_enabled=True,
+            source_entitlements_sha256="a" * 64,
+            runtime_capabilities=frozenset(
+                {
+                    "audio-client",
+                    "json-rpc-client",
+                    "native-gui",
+                    "webjam-route-profile",
+                }
+            ),
+            activation_allowed=False,
+            reason_code="official-source-app-sandboxed",
+        )
+
+
+def test_shared_macos_integrated_policy_requires_gate_shape_and_live_contract():
+    client, _server = _integrated_macos_pair()
+    contract = MacOSExecutionContract(
+        kind=MacOSExecutionContractKind.WEBJAM_INTEGRATED,
+        role=JamulusRole.CLIENT,
+        target=ComponentTarget.MACOS_ARM64,
+        source_app_sandbox_enabled=False,
+        source_entitlements_sha256="b" * 64,
+        runtime_capabilities=client.capabilities.values,
+        activation_allowed=True,
+        reason_code="verified-webjam-integrated-runtime",
+    )
+
+    assert not macos_integrated_runtime_entry_is_eligible(client)
+    assert not macos_integrated_runtime_contract_allows(client, contract)
+    assert macos_integrated_runtime_entry_is_eligible(
+        client,
+        verifier_enabled=True,
+    )
+    assert macos_integrated_runtime_contract_allows(
+        client,
+        contract,
+        verifier_enabled=True,
+    )
+
+    official = official_jamulus_compatibility_registry().exact(
+        component_id="jamulus",
+        role=JamulusRole.CLIENT,
+        target=ComponentTarget.MACOS_ARM64,
+        version="3.12.3",
+    )
+    assert not macos_integrated_runtime_entry_is_eligible(
+        official,
+        verifier_enabled=True,
+    )
+
+
+def test_integrated_execution_contract_rejects_app_sandbox():
+    client, _server = _integrated_macos_pair()
+
+    with pytest.raises(JamulusPlatformError, match="sandboxed"):
+        MacOSExecutionContract(
+            kind=MacOSExecutionContractKind.WEBJAM_INTEGRATED,
+            role=JamulusRole.CLIENT,
+            target=ComponentTarget.MACOS_ARM64,
+            source_app_sandbox_enabled=True,
+            source_entitlements_sha256="b" * 64,
+            runtime_capabilities=client.capabilities.values,
+            activation_allowed=True,
+            reason_code="verified-webjam-integrated-runtime",
+        )
+
+
+def test_updater_handoff_uses_shared_integrated_gate_and_contract(
+    tmp_path,
+    monkeypatch,
+):
+    client, server = _integrated_macos_pair()
+    client_path = tmp_path / "Jamulus"
+    server_path = tmp_path / "JamulusServer"
+    client_path.write_bytes(b"client")
+    server_path.write_bytes(b"server")
+    client_path.chmod(0o700)
+    server_path.chmod(0o700)
+    contracts = {
+        JamulusRole.CLIENT: MacOSExecutionContract(
+            kind=MacOSExecutionContractKind.WEBJAM_INTEGRATED,
+            role=JamulusRole.CLIENT,
+            target=ComponentTarget.MACOS_ARM64,
+            source_app_sandbox_enabled=False,
+            source_entitlements_sha256="b" * 64,
+            runtime_capabilities=client.capabilities.values,
+            activation_allowed=True,
+            reason_code="verified-webjam-integrated-runtime",
+        ),
+        JamulusRole.SERVER: MacOSExecutionContract(
+            kind=MacOSExecutionContractKind.WEBJAM_INTEGRATED,
+            role=JamulusRole.SERVER,
+            target=ComponentTarget.MACOS_ARM64,
+            source_app_sandbox_enabled=False,
+            source_entitlements_sha256="c" * 64,
+            runtime_capabilities=server.capabilities.values,
+            activation_allowed=True,
+            reason_code="verified-webjam-integrated-runtime",
+        ),
+    }
+    current = SimpleNamespace(
+        version=client.version,
+        target=ComponentTarget.MACOS_ARM64,
+        artifact_sha256=client.artifact.sha256,
+        client_path=client_path,
+        server_path=server_path,
+        execution_contract_for=lambda role: contracts[JamulusRole(role)],
+    )
+    store = SimpleNamespace(
+        current=lambda: current,
+        previous=lambda: None,
+    )
+    service, _data = _service(
+        tmp_path,
+        target=ComponentTarget.MACOS_ARM64,
+        platform_store=store,
+    )
+    service._registry = JamulusCompatibilityRegistry((client, server))
+
+    assert service.managed_client_component() is None
+    assert service.managed_server_component() is None
+
+    monkeypatch.setattr(
+        "services.jamulus_component_platform."
+        "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
+        True,
+    )
+    managed_client = service.managed_client_component()
+    managed_server = service.managed_server_component()
+
+    assert managed_client is not None
+    assert managed_client.entry.variant == "webjam-integrated"
+    assert managed_client.publisher_verified is False
+    assert managed_client.trust_policy_verified is True
+    assert managed_client.execution_contract_verified is True
+    assert managed_client.executable_path == client_path
+    assert managed_server is not None
+    assert managed_server.entry.variant == "webjam-integrated"
+    assert managed_server.publisher_verified is False
+    assert managed_server.trust_policy_verified is True
+    assert managed_server.execution_contract_verified is True
+    assert managed_server.executable_path == server_path
+
+
+@pytest.mark.parametrize(
+    ("role", "overclaim"),
+    (
+        (JamulusRole.CLIENT, "webjam-route-profile"),
+        (JamulusRole.SERVER, "recording"),
+    ),
+)
+def test_old_signed_macos_capability_overclaim_is_narrowed_not_activated(
+    role,
+    overclaim,
+):
+    baseline = official_jamulus_compatibility_registry()
+    baked = baseline.exact(
+        component_id="jamulus",
+        role=role,
+        target=ComponentTarget.MACOS_ARM64,
+        version="3.12.3",
+    )
+    overclaimed = baked.to_dict()
+    overclaimed["capabilities"].append(overclaim)
+    signed = JamulusCompatibilityRegistry(
+        (JamulusCompatibility.from_dict(overclaimed),)
+    )
+
+    merged = update_module._merge_registries(baseline, signed)
+    accepted = merged.require_exact(baked)
+
+    assert accepted == baked
+    assert not accepted.capabilities.includes({overclaim})
+
+
+def test_signed_macos_identity_conflict_cannot_use_overclaim_downgrade():
+    baseline = official_jamulus_compatibility_registry()
+    baked = baseline.exact(
+        component_id="jamulus",
+        role=JamulusRole.CLIENT,
+        target=ComponentTarget.MACOS_ARM64,
+        version="3.12.3",
+    )
+    changed = baked.to_dict()
+    changed["capabilities"].append("webjam-route-profile")
+    changed["publisher"] = "Different publisher"
+    signed = JamulusCompatibilityRegistry(
+        (JamulusCompatibility.from_dict(changed),)
+    )
+
+    with pytest.raises(
+        update_module.JamulusComponentUpdateError,
+        match="conflicts",
+    ):
+        update_module._merge_registries(baseline, signed)
+
+
+def _mac_bundle_for_verifier(
+    tmp_path: Path,
+    *,
+    role: JamulusRole = JamulusRole.CLIENT,
+) -> Path:
+    executable_name = (
+        "Jamulus" if role is JamulusRole.CLIENT else "JamulusServer"
+    )
+    bundle = tmp_path / f"{executable_name}.app"
+    executable = bundle / "Contents" / "MacOS" / executable_name
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"mock Mach-O")
+    executable.chmod(0o755)
+    (bundle / "Contents" / "Info.plist").write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleIdentifier": (
+                    "app.jamulussoftware.Jamulus"
+                    if role is JamulusRole.CLIENT
+                    else "app.jamulussoftware.JamulusServer"
+                ),
+                "CFBundleVersion": "3.12.3",
+            }
+        )
+    )
+    return bundle
+
+
+@pytest.mark.parametrize(
+    "target",
+    (ComponentTarget.MACOS_ARM64, ComponentTarget.MACOS_X64),
+)
+@pytest.mark.parametrize(
+    "role",
+    (JamulusRole.CLIENT, JamulusRole.SERVER),
+)
+def test_macos_bundle_verifier_records_live_sandbox_entitlement(
+    tmp_path,
+    monkeypatch,
+    target,
+    role,
+):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    bundle = _mac_bundle_for_verifier(tmp_path, role=role)
+    entitlement_bytes = plistlib.dumps(
+        {
+            "com.apple.security.app-sandbox": True,
+            "com.apple.security.network.client": True,
+        }
+    )
+
+    def runner(arguments, **_kwargs):
+        args = list(arguments)
+        if args[:3] == ["/usr/bin/codesign", "--verify", "--deep"]:
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        if args[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
+            identifier = (
+                b"app.jamulussoftware.Jamulus"
+                if role is JamulusRole.CLIENT
+                else b"app.jamulussoftware.JamulusServer"
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                b"",
+                (
+                    b"Identifier=" + identifier + b"\n"
+                    b"TeamIdentifier=V9ZZ6B9WH8\n"
+                    b"Authority=Developer ID Application: Jonathan Chung "
+                    b"(V9ZZ6B9WH8)\n"
+                ),
+            )
+        if args[:3] == ["/usr/bin/codesign", "-d", "--xml"]:
+            return subprocess.CompletedProcess(args, 0, entitlement_bytes, b"")
+        if args[0] == "/usr/sbin/spctl":
+            return subprocess.CompletedProcess(
+                args, 0, b"", b"source=Notarized Developer ID"
+            )
+        if args[:2] == ["/usr/bin/lipo", "-archs"]:
+            return subprocess.CompletedProcess(args, 0, b"arm64 x86_64", b"")
+        raise AssertionError(args)
+
+    verified = MacOSBundleVerifier(command_runner=runner).verify(
+        bundle,
+        role=role,
+        version="3.12.3",
+        target=target,
+    )
+
+    assert verified.app_sandbox_enabled is True
+    assert len(verified.entitlements_sha256) == 64
+
+
+def test_macos_bundle_verifier_rejects_non_boolean_sandbox_entitlement(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    bundle = _mac_bundle_for_verifier(tmp_path)
+
+    def runner(arguments, **_kwargs):
+        args = list(arguments)
+        if args[:3] == ["/usr/bin/codesign", "--verify", "--deep"]:
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        if args[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                b"",
+                (
+                    b"Identifier=app.jamulussoftware.Jamulus\n"
+                    b"TeamIdentifier=V9ZZ6B9WH8\n"
+                    b"Authority=Developer ID Application: Jonathan Chung "
+                    b"(V9ZZ6B9WH8)\n"
+                ),
+            )
+        if args[:3] == ["/usr/bin/codesign", "-d", "--xml"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                plistlib.dumps(
+                    {"com.apple.security.app-sandbox": "true"}
+                ),
+                b"",
+            )
+        raise AssertionError(args)
+
+    with pytest.raises(JamulusPlatformError, match="Sandbox entitlement"):
+        MacOSBundleVerifier(command_runner=runner).verify(
+            bundle,
+            role=JamulusRole.CLIENT,
+            version="3.12.3",
+            target=ComponentTarget.MACOS_ARM64,
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure", "match"),
+    (
+        ("tampered-or-partially-signed", "signature is invalid"),
+        ("wrong-publisher", "publisher identity"),
+        ("wrong-architecture", "does not support"),
+    ),
+)
+def test_macos_bundle_verifier_rejects_incomplete_execution_evidence(
+    tmp_path,
+    monkeypatch,
+    failure,
+    match,
+):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    bundle = _mac_bundle_for_verifier(tmp_path)
+
+    def runner(arguments, **_kwargs):
+        args = list(arguments)
+        if args[:3] == ["/usr/bin/codesign", "--verify", "--deep"]:
+            return subprocess.CompletedProcess(
+                args,
+                1 if failure == "tampered-or-partially-signed" else 0,
+                b"",
+                b"",
+            )
+        if args[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
+            authority = (
+                b"Authority=Developer ID Application: Someone Else "
+                b"(BADTEAM123)\n"
+                if failure == "wrong-publisher"
+                else (
+                    b"Authority=Developer ID Application: Jonathan Chung "
+                    b"(V9ZZ6B9WH8)\n"
+                )
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                b"",
+                (
+                    b"Identifier=app.jamulussoftware.Jamulus\n"
+                    b"TeamIdentifier=V9ZZ6B9WH8\n"
+                    + authority
+                ),
+            )
+        if args[:3] == ["/usr/bin/codesign", "-d", "--xml"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                plistlib.dumps(
+                    {"com.apple.security.app-sandbox": True}
+                ),
+                b"",
+            )
+        if args[0] == "/usr/sbin/spctl":
+            return subprocess.CompletedProcess(
+                args, 0, b"", b"source=Notarized Developer ID"
+            )
+        if args[:2] == ["/usr/bin/lipo", "-archs"]:
+            architectures = (
+                b"x86_64"
+                if failure == "wrong-architecture"
+                else b"arm64 x86_64"
+            )
+            return subprocess.CompletedProcess(
+                args, 0, architectures, b""
+            )
+        raise AssertionError(args)
+
+    with pytest.raises(JamulusPlatformError, match=match):
+        MacOSBundleVerifier(command_runner=runner).verify(
+            bundle,
+            role=JamulusRole.CLIENT,
+            version="3.12.3",
+            target=ComponentTarget.MACOS_ARM64,
+        )
+
+
+def test_macos_bundle_verifier_rejects_escaping_bundle_symlink(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    bundle = _mac_bundle_for_verifier(tmp_path)
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"not part of bundle")
+    (bundle / "Contents" / "escape").symlink_to(outside)
+
+    with pytest.raises(JamulusPlatformError, match="escaping symlink"):
+        MacOSBundleVerifier(
+            command_runner=lambda *_args, **_kwargs: pytest.fail(
+                "no platform command may run after a symlink violation"
+            )
+        ).verify(
+            bundle,
+            role=JamulusRole.CLIENT,
+            version="3.12.3",
+            target=ComponentTarget.MACOS_ARM64,
+        )
+
+
 class _NoopMacVerifier:
     def verify(self, *args, **kwargs):
         raise AssertionError("bundle verification must not run before acceptance")
@@ -877,7 +1442,22 @@ class _AcceptingMacVerifier:
     def verify(self, bundle, *, role, version, target):
         self.calls.append((Path(bundle).name, role.value, version))
         assert target is ComponentTarget.MACOS_ARM64
-        return object()
+        return VerifiedMacBundle(
+            path=Path(bundle),
+            role=role,
+            version=version,
+            architectures=("arm64", "x86_64"),
+            team_identifier="V9ZZ6B9WH8",
+            bundle_identifier=(
+                "app.jamulussoftware.Jamulus"
+                if role is JamulusRole.CLIENT
+                else "app.jamulussoftware.JamulusServer"
+            ),
+            app_sandbox_enabled=True,
+            entitlements_sha256=hashlib.sha256(
+                b"test-sandbox-entitlements"
+            ).hexdigest(),
+        )
 
 
 class _FakeMacCommands:
@@ -920,7 +1500,7 @@ class _FakeMacCommands:
         raise AssertionError(f"unexpected command: {args}")
 
 
-def test_macos_external_validation_uses_runtime_webjam_version(
+def test_macos_external_validation_never_activates_upstream_source(
     tmp_path,
     monkeypatch,
 ):
@@ -959,9 +1539,8 @@ def test_macos_external_validation_uses_runtime_webjam_version(
         ComponentTarget.MACOS_ARM64,
     )
 
-    assert result is not None
-    assert result.entry == client
-    assert calls == ["0.22.1"]
+    assert result is None
+    assert calls == []
 
 
 def test_macos_license_refusal_mounts_nothing(tmp_path, monkeypatch):
@@ -1028,6 +1607,21 @@ def test_macos_store_installs_atomically_keeps_previous_and_rolls_back(
     )
     assert first.current.version == "3.12.3"
     assert first.previous is None
+    assert first.current.activation_allowed is False
+    assert (
+        first.current.client_execution_contract.reason_code
+        == "official-source-app-sandboxed"
+    )
+    assert (
+        first.current.server_execution_contract.reason_code
+        == "official-source-app-sandboxed"
+    )
+    assert "webjam-route-profile" not in (
+        first.current.client_execution_contract.runtime_capabilities
+    )
+    assert "recording" not in (
+        first.current.server_execution_contract.runtime_capabilities
+    )
 
     new_dmg = tmp_path / new_client.artifact.filename
     new_dmg.write_bytes(new_data)

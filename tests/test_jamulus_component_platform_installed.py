@@ -38,6 +38,7 @@ from services.jamulus_component_platform import (
     JamulusPlatformInstallationNotFound,
     PlatformInstalledJamulusStore,
     _sanitized_loader_environment,
+    sanitized_jamulus_child_environment,
 )
 
 
@@ -723,6 +724,32 @@ def test_installed_version_probe_environment_removes_loader_injection() -> None:
 
     assert environment == {
         "HOME": "/home/musician",
+        "WEBJAM_DIAGNOSTIC": "safe",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def test_every_native_jamulus_role_uses_one_complete_environment_scrubber() -> None:
+    environment = sanitized_jamulus_child_environment(
+        {
+            "HOME": "/Users/musician",
+            "DYLD_INSERT_LIBRARIES": "/tmp/injected.dylib",
+            "DyLd_Custom_Attack": "/tmp/custom",
+            "LD_PRELOAD": "/tmp/injected.so",
+            "GCONV_PATH": "/tmp/gconv",
+            "QML_IMPORT_PATH": "/tmp/qml",
+            "QT_PLUGIN_PATH": "/tmp/plugins",
+            "QT_LOGGING_RULES": "*=true",
+            "WEBJAM_DIAGNOSTIC": "safe",
+            "PATH": "/tmp/untrusted",
+        },
+        platform_name="darwin",
+        executable="/Applications/WebJam.app/Contents/Resources/Jamulus.app/"
+        "Contents/MacOS/Jamulus",
+    )
+
+    assert environment == {
+        "HOME": "/Users/musician",
         "WEBJAM_DIAGNOSTIC": "safe",
         "PATH": "/usr/bin:/bin",
     }

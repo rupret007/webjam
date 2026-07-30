@@ -420,14 +420,13 @@ def test_main_meeting_controls_fit_without_overlap(styled_qapp, width, height):
         _destroy(window)
 
 
-def test_native_jamulus_permission_guidance_fits_at_760_by_600(styled_qapp):
+def test_native_jamulus_setup_guidance_fits_at_760_by_600(styled_qapp):
     window = _window()
     window.resize(760, 600)
     detail = (
         "Choose your interface, input channels, headphones, and buffer in "
-        "Jamulus. On macOS, choose Allow if asked about other app data. "
-        "WebJam uses only the Jamulus-owned profile dedicated to WebJam and "
-        "leaves your regular Jamulus profile untouched. WebJam will continue "
+        "Jamulus. WebJam uses a dedicated Jamulus profile for this app and "
+        "leaves your regular Jamulus settings untouched. WebJam will continue "
         "automatically when the music connection is ready."
     )
     window.session_hud.set_state(

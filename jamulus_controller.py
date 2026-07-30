@@ -13,6 +13,7 @@ instance.  ``JamulusParticipant`` is re-exported here so existing callers
 import os
 import threading
 import time
+from dataclasses import replace
 from typing import List, Callable, Optional, Dict
 import json
 import tempfile
@@ -21,7 +22,11 @@ from pathlib import Path
 from core.audio_engine import RealAudioEngine
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_protocol import JamulusProtocolAdapter
-from core.jamulus_rpc_client import JamulusRpcClient
+from core.jamulus_rpc_client import (
+    JamulusRpcClient,
+    JamulusRpcMonitorIdentity,
+    JamulusRpcMonitorSnapshot,
+)
 from core.logging_config import configure_logging
 from core.settings import load_settings
 from jamulus_state_manager import JamulusParticipant, ParticipantStateManager
@@ -31,6 +36,8 @@ __all__ = [
     "JamulusController",
     "JamulusAudioMonitor",
     "JamulusMessageType",
+    "JamulusRpcMonitorIdentity",
+    "JamulusRpcMonitorSnapshot",
     "create_jamulus_controller",
 ]
 
@@ -61,8 +68,14 @@ class JamulusController:
         self.port = port
         self.rpc_port = rpc_port
         self.callbacks: List[Callable] = []
+        self.identity_callbacks: List[Callable] = []
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._rpc_identity_lock = threading.RLock()
         self.running = False
+        self._stopping = False
+        self._rpc_monitor_identity: JamulusRpcMonitorIdentity | None = None
+        self._rpc_starting_process: tuple[int, int] | None = None
         self.monitor_thread: Optional[threading.Thread] = None
 
         # State manager owns participants/_pre_solo_mute/_participants_lock.
@@ -71,17 +84,27 @@ class JamulusController:
 
         # Optional consumer hook for incoming band chat (set by the UI).
         self.chat_callback: Optional[Callable[[str], None]] = None
+        self.chat_callback_with_source: Optional[
+            Callable[[str, JamulusRpcMonitorIdentity], None]
+        ] = None
         # Optional hook for server recorder-state changes (set by the UI).
         # Called with (recording: bool, raw_state: int).
         self.recorder_state_callback: Optional[Callable[[bool, int], None]] = None
+        self.recorder_state_callback_with_source: Optional[
+            Callable[[bool, int, JamulusRpcMonitorIdentity], None]
+        ] = None
 
         # Primary integration: JSON-RPC (Jamulus 3.9+)
         self.rpc_client = JamulusRpcClient(
             port=rpc_port,
-            on_participants_changed=self._on_rpc_participants,
+            on_participants_changed_with_source=(
+                self._on_rpc_participants_with_source
+            ),
             on_levels=self._on_rpc_levels,
-            on_chat=self._on_rpc_chat,
-            on_recorder_state=self._on_rpc_recorder_state,
+            on_chat_with_source=self._on_rpc_chat_with_source,
+            on_recorder_state_with_source=(
+                self._on_rpc_recorder_state_with_source
+            ),
         )
 
         # The legacy UDP monitor registers itself with the server as another
@@ -153,6 +176,24 @@ class JamulusController:
     def _participants_lock(self, value: "threading.RLock") -> None:
         self._state._participants_lock = value
 
+    def _lifecycle_guard(self) -> "threading.RLock":
+        """Return the lifecycle lock, including for __new__ test fixtures."""
+
+        lock = self.__dict__.get("_lifecycle_lock")
+        if lock is None:
+            lock = threading.RLock()
+            self.__dict__["_lifecycle_lock"] = lock
+        return lock
+
+    def _rpc_identity_guard(self) -> "threading.RLock":
+        """Return the identity lock, including for __new__ test fixtures."""
+
+        lock = self.__dict__.get("_rpc_identity_lock")
+        if lock is None:
+            lock = threading.RLock()
+            self.__dict__["_rpc_identity_lock"] = lock
+        return lock
+
     def _cache_protocol_participants(self, cached: Dict[int, str]) -> None:
         """State-manager callback — push the latest participant name map
         back into the UDP protocol adapter's cache.  Resilient to fixtures
@@ -167,55 +208,160 @@ class JamulusController:
 
         self._live_audio_route_owned = bool(owned)
 
-    def start(self):
-        """Start authoritative monitoring and a meter only when it is safe."""
-        if self.running:
-            return
+    def start(
+        self,
+        *,
+        process_generation: int | None = None,
+        process_id: int | None = None,
+    ) -> JamulusRpcMonitorIdentity | None:
+        """Start monitoring for one exact native Jamulus process.
 
-        # Participant/mixer truth is the critical path. Some CoreAudio drivers
-        # block while Jamulus already owns the interface; start RPC and the
-        # monitor before the optional local meter so device contention can
-        # never prevent the session from becoming connected. start_receiving
-        # is intentionally a no-op for the dormant legacy adapter.
-        self.rpc_client.start()
-        self.protocol.start_receiving()
-        self.running = True
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self.monitor_thread.start()
-        if self._live_audio_route_owned:
-            self.logger.info(
-                "Skipping the optional local meter: Jamulus owns the live audio route"
+        Bridge-owned launches pass a positive generation and PID.  A running
+        controller refuses to relabel its existing reader as a different
+        process; callers must stop the old monitor first.  The no-argument
+        form remains for isolated legacy users and tests, but cannot produce
+        process-authenticating evidence.
+        """
+
+        generation, pid = JamulusRpcClient._validated_process_identity(
+            process_generation,
+            process_id,
+        )
+        with self._lifecycle_guard():
+            if getattr(self, "_stopping", False):
+                raise RuntimeError("JamulusController is still stopping")
+            if self.running:
+                current = getattr(self, "_rpc_monitor_identity", None)
+                if generation == 0 and pid == 0:
+                    return current
+                if (
+                    current is not None
+                    and (
+                        current.process_generation,
+                        current.process_id,
+                    )
+                    == (generation, pid)
+                ):
+                    return current
+                raise RuntimeError(
+                    "JamulusController already monitors a different process"
+                )
+
+            # Participant/mixer truth is the critical path. Some CoreAudio
+            # drivers block while Jamulus already owns the interface; start
+            # RPC before the optional local meter.
+            starting_process = (generation, pid)
+            with self._rpc_identity_guard():
+                self._rpc_starting_process = starting_process
+            if generation == 0 and pid == 0:
+                try:
+                    identity = self.rpc_client.start()
+                except Exception:
+                    with self._rpc_identity_guard():
+                        self._rpc_starting_process = None
+                    raise
+            else:
+                try:
+                    identity = self.rpc_client.start(
+                        process_generation=generation,
+                        process_id=pid,
+                    )
+                except Exception:
+                    with self._rpc_identity_guard():
+                        self._rpc_starting_process = None
+                    raise
+            with self._rpc_identity_guard():
+                self._rpc_monitor_identity = (
+                    identity
+                    if isinstance(identity, JamulusRpcMonitorIdentity)
+                    else None
+                )
+                self._rpc_starting_process = None
+                self.running = True
+            self.protocol.start_receiving()
+            self.monitor_thread = threading.Thread(
+                target=self._monitor_loop,
+                daemon=True,
             )
-        else:
-            self.audio_engine.start()
+            self.monitor_thread.start()
+            if self._live_audio_route_owned:
+                self.logger.info(
+                    "Skipping the optional local meter: Jamulus owns the live audio route"
+                )
+            else:
+                self.audio_engine.start()
+            return self._rpc_monitor_identity
 
     def stop(self):
         """Stop all monitoring and release per-channel level cache."""
-        self.running = False
-        self.rpc_client.stop()
-        self.protocol.stop_receiving()
-        if self.monitor_thread:
-            self.monitor_thread.join(timeout=2)
-            if self.monitor_thread.is_alive():
-                self.logger.warning(
-                    "Jamulus monitor thread did not exit within 2s — may leak resources",
-                )
-        # Drop any per-channel RPC level overrides — the next session may
-        # have completely different channel IDs, and stale entries shouldn't
-        # leak between sessions.
+        with self._lifecycle_guard():
+            if getattr(self, "_stopping", False):
+                return
+            self._stopping = True
+            with self._rpc_identity_guard():
+                self.running = False
+                self._rpc_monitor_identity = None
+                self._rpc_starting_process = None
+        # Do not hold the controller lifecycle lock while RpcClient drains an
+        # already-entered participant callback. A callback is allowed to call
+        # controller lifecycle methods; `_stopping` makes those calls fail
+        # closed without creating lifecycle -> callback -> lifecycle cycles.
         try:
-            self.audio_engine.clear_level_overrides()
-        except AttributeError:
-            pass  # older audio engine without the method
-        self.audio_engine.stop()
-        # Keep registered UI callbacks across Stop Audio -> Launch Audio.
-        # ApplicationController registers its participant callback once during
-        # construction; clearing here disconnects future sessions from the UI.
+            self.rpc_client.stop()
+            self.protocol.stop_receiving()
+            if self.monitor_thread:
+                self.monitor_thread.join(timeout=2)
+                if self.monitor_thread.is_alive():
+                    self.logger.warning(
+                        "Jamulus monitor thread did not exit within 2s — may leak resources",
+                    )
+            # Drop any per-channel RPC level overrides — the next session may
+            # have completely different channel IDs, and stale entries
+            # shouldn't leak between sessions.
+            try:
+                self.audio_engine.clear_level_overrides()
+            except AttributeError:
+                pass  # older audio engine without the method
+            self.audio_engine.stop()
+            # Keep registered UI callbacks across Stop Audio -> Launch Audio.
+        finally:
+            with self._lifecycle_guard():
+                self._stopping = False
 
     # ------------------------------------------------------------------
     # RPC / UDP participant callbacks (called from background threads)
     # ------------------------------------------------------------------
-    def _on_rpc_participants(self, channel_infos: list) -> None:
+    def _on_rpc_participants_with_source(
+        self,
+        channel_infos: list,
+        source: JamulusRpcMonitorIdentity,
+    ) -> None:
+        """Accept participant truth only from this controller's exact epoch."""
+
+        with self._rpc_identity_guard():
+            current = getattr(self, "_rpc_monitor_identity", None)
+            starting = getattr(self, "_rpc_starting_process", None)
+            valid_current = self.running and source == current
+            valid_starting = (
+                current is None
+                and starting is not None
+                and source.is_process_bound
+                and (
+                    source.process_generation,
+                    source.process_id,
+                )
+                == starting
+            )
+        if not (valid_current or valid_starting):
+            return
+        self._on_rpc_participants(channel_infos, source=source)
+
+    def _on_rpc_participants(
+        self,
+        channel_infos: list,
+        *,
+        source: JamulusRpcMonitorIdentity | None = None,
+    ) -> None:
         """Receive participant list from JSON-RPC (authoritative when available)."""
         if not channel_infos:
             with self._participants_lock:
@@ -223,6 +369,8 @@ class JamulusController:
                 self.participants.clear()
             if had_participants:
                 self._notify_callbacks()
+            if source is not None:
+                self._notify_identity_callbacks(source)
             return
 
         normalized: Dict[int, str] = {}
@@ -265,6 +413,11 @@ class JamulusController:
             # Notify again now that it's attached.
             if changed:
                 self._notify_callbacks()
+            if source is not None:
+                # Publish one fully-normalized snapshot with the immutable
+                # process identity.  The StateManager's compatibility
+                # callback above intentionally remains one-argument only.
+                self._notify_identity_callbacks(source)
 
     def _on_rpc_levels(self, levels: Dict[int, float]) -> None:
         """Receive audio levels from JSON-RPC SSE events."""
@@ -494,6 +647,51 @@ class JamulusController:
         except Exception:
             pass
 
+    def _rpc_event_source_is_current(
+        self,
+        source: JamulusRpcMonitorIdentity,
+    ) -> bool:
+        """Accept an event only from this controller's bound monitor epoch."""
+
+        if not isinstance(source, JamulusRpcMonitorIdentity):
+            return False
+        if not source.is_process_bound or source.monitor_epoch <= 0:
+            return False
+        with self._rpc_identity_guard():
+            current = getattr(self, "_rpc_monitor_identity", None)
+            starting = getattr(self, "_rpc_starting_process", None)
+            return bool(
+                (self.running and source == current)
+                or (
+                    current is None
+                    and starting is not None
+                    and (
+                        source.process_generation,
+                        source.process_id,
+                    )
+                    == starting
+                )
+            )
+
+    def _on_rpc_recorder_state_with_source(
+        self,
+        recording: bool,
+        raw_state: int,
+        source: JamulusRpcMonitorIdentity,
+    ) -> None:
+        """Forward recorder truth with exact native-process provenance."""
+
+        if not self._rpc_event_source_is_current(source):
+            return
+        cb = self.recorder_state_callback_with_source
+        if cb is None:
+            self._on_rpc_recorder_state(recording, raw_state)
+            return
+        try:
+            cb(recording, raw_state, source)
+        except Exception:
+            pass
+
     def _on_rpc_chat(self, text: str) -> None:
         """Incoming band chat from Jamulus — forward to the UI hook if set."""
         cb = self.chat_callback
@@ -501,6 +699,24 @@ class JamulusController:
             return
         try:
             cb(text)
+        except Exception:
+            pass
+
+    def _on_rpc_chat_with_source(
+        self,
+        text: str,
+        source: JamulusRpcMonitorIdentity,
+    ) -> None:
+        """Forward chat with exact native-process provenance."""
+
+        if not self._rpc_event_source_is_current(source):
+            return
+        cb = self.chat_callback_with_source
+        if cb is None:
+            self._on_rpc_chat(text)
+            return
+        try:
+            cb(text, source)
         except Exception:
             pass
     
@@ -545,15 +761,39 @@ class JamulusController:
         }
     
     def register_callback(self, callback: Callable):
-        """Register a callback for participant updates"""
+        """Register a legacy one-argument participant callback."""
         with self._lock:
             self.callbacks.append(callback)
 
     def unregister_callback(self, callback: Callable) -> None:
-        """Remove a previously-registered callback. Silent on missing."""
+        """Remove a legacy callback. Silent on missing."""
         with self._lock:
             try:
                 self.callbacks.remove(callback)
+            except ValueError:
+                pass
+
+    def register_identity_callback(self, callback: Callable) -> None:
+        """Register ``callback(participants, source_identity)``.
+
+        Identity-aware callbacks fire only for authenticated RPC participant
+        events from the exact native process supplied to :meth:`start`.  UDP,
+        hosted-server fallback, manual test participants, and unbound legacy
+        starts never produce this process-authenticating signal.
+        """
+
+        with self._lock:
+            callbacks = self.__dict__.setdefault("identity_callbacks", [])
+            callbacks.append(callback)
+
+    def unregister_identity_callback(self, callback: Callable) -> None:
+        """Remove a process-identity callback. Silent on missing."""
+
+        with self._lock:
+            try:
+                self.__dict__.setdefault("identity_callbacks", []).remove(
+                    callback
+                )
             except ValueError:
                 pass
     
@@ -567,6 +807,67 @@ class JamulusController:
                 callback(participants)
             except Exception as e:
                 self.logger.warning("Callback error: %s", e)
+
+    def _notify_identity_callbacks(
+        self,
+        source: JamulusRpcMonitorIdentity,
+    ) -> None:
+        """Publish a detached participant snapshot with exact provenance."""
+
+        with self._rpc_identity_guard():
+            current = getattr(self, "_rpc_monitor_identity", None)
+            starting = getattr(self, "_rpc_starting_process", None)
+            valid_current = self.running and source == current
+            valid_starting = (
+                current is None
+                and starting is not None
+                and source.is_process_bound
+                and (
+                    source.process_generation,
+                    source.process_id,
+                )
+                == starting
+            )
+        if not source.is_process_bound or not (valid_current or valid_starting):
+            return
+        # Do not hold a controller lifecycle/identity lock while invoking
+        # consumers. JamulusRpcClient's callback gate already makes stop()
+        # wait for this call, and avoiding the inverse
+        # controller-lifecycle -> client-callback lock order prevents a
+        # participant callback racing Stop Audio from deadlocking.
+        with self._lock:
+            callbacks = list(getattr(self, "identity_callbacks", []))
+        with self._participants_lock:
+            # JamulusParticipant is mutable mixer state.  Detach every row
+            # so a queued UI delivery cannot observe a later process's
+            # changes under an older source identity.
+            participants = [
+                replace(participant)
+                for participant in self.participants.values()
+            ]
+        for callback in callbacks:
+            try:
+                callback(participants, source)
+            except Exception as exc:
+                self.logger.warning("Identity callback error: %s", exc)
+
+    def rpc_monitor_snapshot(self) -> JamulusRpcMonitorSnapshot:
+        """Return the RPC client's immutable current-epoch observation."""
+
+        return self.rpc_client.monitor_snapshot()
+
+    def rpc_monitor_snapshot_for(
+        self,
+        *,
+        process_generation: int,
+        process_id: int,
+    ) -> JamulusRpcMonitorSnapshot | None:
+        """Return RPC evidence only for the requested exact native process."""
+
+        return self.rpc_client.monitor_snapshot_for(
+            process_generation=process_generation,
+            process_id=process_id,
+        )
 
     @staticmethod
     def _normalize_participant_name(name: object) -> str:

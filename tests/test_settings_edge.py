@@ -30,7 +30,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertFalse(hasattr(s, "webex_config_file"))
         self.assertEqual(s.take_playback_output_device, "")
 
-    def test_macos_client_rpc_secret_lives_in_jamulus_sandbox(self):
+    def test_macos_runtime_paths_are_owned_by_webjam_in_source_mode(self):
         from core.settings import jamulus_client_rpc_secret_path
         with patch("core.settings.sys.platform", "darwin"), patch(
             "core.settings.Path.home", return_value=Path("/Users/tester")
@@ -38,9 +38,10 @@ class TestSettingsDefaults(unittest.TestCase):
             path = jamulus_client_rpc_secret_path()
         self.assertEqual(
             path,
-            Path("/Users/tester/Library/Containers/"
-                 "app.jamulussoftware.Jamulus/Data/Documents/"
-                 "webjam_client_rpc.secret"),
+            Path(
+                "/Users/tester/Library/Application Support/WebJam/"
+                "JamulusClient/webjam_client_rpc.secret"
+            ),
         )
 
     def test_frozen_macos_runtime_paths_are_owned_by_webjam(self):

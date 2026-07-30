@@ -1,8 +1,4 @@
-"""
-After 5 failed Jamulus reconnect attempts, the BridgeService stops trying and
-leaves jamulus_state at "Not running". This ensures we don't hammer the user
-with a reconnect loop forever when their Jamulus install is broken.
-"""
+"""Terminal recovery behavior for a permanently missing Jamulus runtime."""
 from __future__ import annotations
 
 import unittest
@@ -50,7 +46,7 @@ def _make_bridge():
 
 
 class TestJamulusReconnectMaxAttempts(unittest.TestCase):
-    def test_jamulus_reconnect_caps_at_5_attempts_then_gives_up(self):
+    def test_missing_executable_terminalizes_after_one_nonrecoverable_attempt(self):
         bridge = _make_bridge()
         bridge.jamulus_launch_intended = True
         # Auto-reconnect is recovery for a client WebJam previously owned,
@@ -63,29 +59,28 @@ class TestJamulusReconnectMaxAttempts(unittest.TestCase):
         # to "Not running" and bails immediately (no subprocess started).
         bridge.find_jamulus = MagicMock(return_value=None)
 
-        # Walk monotonic time forward past each backoff window so the
-        # next reconnect actually fires.
+        # Repeated timer ticks must not retry a condition that cannot recover
+        # without an external runtime install/update.
         now = 1000.0
-        for _ in range(7):  # try more than 5 to confirm it caps
+        for _ in range(7):
             bridge._attempt_auto_reconnect_jamulus(now=now)
-            # Advance past the next scheduled retry (delay capped at 45s).
             now = bridge.jamulus_next_reconnect_at + 1.0
 
-        # After 5 failures we cap and stop. attempts can't exceed 5.
-        self.assertEqual(bridge.jamulus_reconnect_attempts, 5)
-        # After the failed reconnect each launch_jamulus(reconnect=True) call
-        # set state to "Not running" because find_jamulus returned None.
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 1)
         self.assertEqual(bridge.jamulus_state, "Not running")
-        # No reconnect_inflight latch remaining.
         self.assertFalse(bridge.jamulus_reconnect_inflight)
-        # Metric for failed reconnect should be incremented at least 5 times.
+        self.assertFalse(bridge.jamulus_launch_intended)
+        snapshot = bridge.jamulus_recovery_snapshot(now=now)
+        self.assertTrue(snapshot.active)
+        self.assertTrue(snapshot.exhausted)
+        bridge.find_jamulus.assert_called_once_with()
+
         failed_calls = [
             c for c in bridge.metrics_service.increment.call_args_list
             if c.args and c.args[0] == "metric_jamulus_reconnect_failed"
         ]
-        self.assertGreaterEqual(len(failed_calls), 5)
+        self.assertEqual(len(failed_calls), 1)
 
-        # Further calls should be no-ops (cap holds).
         before = bridge.jamulus_reconnect_attempts
         bridge._attempt_auto_reconnect_jamulus(now=now + 100.0)
         self.assertEqual(bridge.jamulus_reconnect_attempts, before)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from xml.etree import ElementTree
 
 import numpy as np
@@ -23,8 +24,8 @@ from core.coreaudio_process_route import (
     CoreAudioProcessRouteSnapshot,
 )
 from core.component_lock import InterProcessComponentLock
-from core.macos_audio_route import jamulus_macos_config_directory
 from core.reference_track import ReferenceTrackLaunchContext
+import core.secure_runtime as secure_runtime
 from services.reference_track_backend import (
     create_reference_audio_backend,
     MacOSBlackHoleReferenceBackend,
@@ -33,8 +34,21 @@ from services.reference_track_backend import (
     _claim_blackhole_route,
     _ReferenceRpcControl,
     _reference_track_lock_path,
+    reference_track_runtime_directory,
 )
 import services.reference_track_backend as reference_backend
+
+
+def _legacy_jamulus_container_directory(home: Path) -> Path:
+    return (
+        home
+        / "Library"
+        / "Containers"
+        / "app.jamulussoftware.Jamulus"
+        / "Data"
+        / ".config"
+        / "Jamulus"
+    )
 
 
 def _hold_reference_track_lock(
@@ -78,6 +92,283 @@ def _device(
 
 def _scan(*devices: CoreAudioDevice) -> CoreAudioScan:
     return CoreAudioScan(devices=tuple(devices))
+
+
+def test_reference_runtime_belongs_to_webjam_not_jamulus_container(
+    tmp_path: Path,
+) -> None:
+    runtime = reference_track_runtime_directory(tmp_path)
+
+    assert runtime == (
+        tmp_path
+        / "Library"
+        / "Application Support"
+        / "WebJam"
+        / "runtime"
+        / "reference-track"
+    )
+    assert runtime != _legacy_jamulus_container_directory(tmp_path)
+    assert "Containers" not in runtime.parts
+
+
+def test_reference_version_probe_uses_bounded_environment_and_neutral_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary = tmp_path / "JamulusHeadlessClient"
+    observed: dict[str, object] = {}
+    monkeypatch.setenv("DYLD_INSERT_LIBRARIES", "/tmp/injected.dylib")
+    monkeypatch.setenv("LD_PRELOAD", "/tmp/injected.so")
+    monkeypatch.setenv("QML2_IMPORT_PATH", "/tmp/qml")
+    monkeypatch.setenv("QTWEBENGINEPROCESS_PATH", "/tmp/qt-helper")
+    monkeypatch.setenv("WEBJAM_DIAGNOSTIC", "safe")
+    monkeypatch.setenv("PATH", "/tmp/untrusted")
+
+    def run(arguments, **kwargs):
+        observed["arguments"] = list(arguments)
+        observed["kwargs"] = dict(kwargs)
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            "Jamulus version 3.12.2\n",
+            "",
+        )
+
+    monkeypatch.setattr(reference_backend.subprocess, "run", run)
+
+    assert reference_backend._default_version_probe(str(binary)) == "3.12.2"
+    assert observed["arguments"] == [str(binary), "--version"]
+    kwargs = observed["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["shell"] is False
+    assert kwargs["cwd"] == (
+        str(binary.parent) if sys.platform.startswith("win") else "/"
+    )
+    environment = kwargs["env"]
+    assert isinstance(environment, dict)
+    assert environment["WEBJAM_DIAGNOSTIC"] == "safe"
+    assert not any(
+        key.upper().startswith(("DYLD_", "LD_", "QML", "QT"))
+        for key in environment
+    )
+    assert environment["PATH"] != "/tmp/untrusted"
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("darwin"),
+    reason="otool proof is macOS-only",
+)
+def test_headless_probe_uses_system_otool_with_bounded_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    monkeypatch.setenv("DYLD_INSERT_LIBRARIES", "/tmp/injected.dylib")
+    monkeypatch.setenv("QT_PLUGIN_PATH", "/tmp/plugins")
+    monkeypatch.setenv("PATH", "/tmp/untrusted")
+
+    def run(arguments, **kwargs):
+        observed["arguments"] = list(arguments)
+        observed["kwargs"] = dict(kwargs)
+        return subprocess.CompletedProcess(arguments, 0, "libSystem.B.dylib\n", "")
+
+    monkeypatch.setattr(reference_backend.subprocess, "run", run)
+
+    binary = "/Applications/WebJam.app/Contents/MacOS/JamulusHeadlessClient"
+    assert reference_backend._default_headless_client_probe(binary) is True
+    assert observed["arguments"] == ["/usr/bin/otool", "-L", binary]
+    kwargs = observed["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["shell"] is False
+    assert kwargs["cwd"] == "/"
+    environment = kwargs["env"]
+    assert isinstance(environment, dict)
+    assert "DYLD_INSERT_LIBRARIES" not in environment
+    assert "QT_PLUGIN_PATH" not in environment
+    assert environment["PATH"] == "/usr/bin:/bin"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no-follow dirfd test needs POSIX")
+@pytest.mark.parametrize(
+    "linked_component",
+    ("WebJam", "runtime", "reference-track"),
+)
+def test_reference_runtime_rejects_every_managed_symlink_without_touching_target(
+    tmp_path: Path,
+    linked_component: str,
+) -> None:
+    support = tmp_path / "Library" / "Application Support"
+    support.mkdir(parents=True)
+    webjam = support / "WebJam"
+    runtime = webjam / "runtime"
+    reference = runtime / "reference-track"
+    outside = tmp_path / f"outside-{linked_component}"
+    outside.mkdir(mode=0o751)
+    outside.chmod(0o751)
+    marker = outside / "keep.txt"
+    marker.write_bytes(b"outside stays untouched\n")
+
+    if linked_component == "WebJam":
+        link = webjam
+    elif linked_component == "runtime":
+        webjam.mkdir(mode=0o700)
+        link = runtime
+    else:
+        webjam.mkdir(mode=0o700)
+        runtime.mkdir(mode=0o700)
+        link = reference
+    link.symlink_to(outside, target_is_directory=True)
+    outside_mode = stat.S_IMODE(outside.stat().st_mode)
+
+    with pytest.raises(Exception, match="establish"):
+        reference_backend._ReferencePrivateFiles.open(
+            reference_track_runtime_directory(tmp_path),
+            home=tmp_path,
+        )
+
+    assert link.is_symlink()
+    assert stat.S_IMODE(outside.stat().st_mode) == outside_mode == 0o751
+    assert marker.read_bytes() == b"outside stays untouched\n"
+    assert tuple(outside.iterdir()) == (marker,)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no-follow dirfd test needs POSIX")
+def test_reference_runtime_rejects_owner_mismatch_before_chmod(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = reference_track_runtime_directory(tmp_path).parent
+    runtime.mkdir(parents=True, mode=0o755)
+    runtime.chmod(0o755)
+    runtime_identity = (runtime.stat().st_dev, runtime.stat().st_ino)
+    original_owner_check = secure_runtime._owned
+
+    def reject_runtime_owner(details: os.stat_result) -> bool:
+        if (details.st_dev, details.st_ino) == runtime_identity:
+            return False
+        return original_owner_check(details)
+
+    monkeypatch.setattr(
+        secure_runtime,
+        "_owned",
+        reject_runtime_owner,
+    )
+
+    with pytest.raises(Exception, match="establish"):
+        reference_backend._ReferencePrivateFiles.open(
+            reference_track_runtime_directory(tmp_path),
+            home=tmp_path,
+        )
+
+    assert stat.S_IMODE(runtime.stat().st_mode) == 0o755
+    assert not (runtime / "reference-track").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no-follow dirfd test needs POSIX")
+def test_reference_lifecycle_lock_rejects_symlink_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    pinned = reference_backend._open_webjam_runtime_directory(
+        tmp_path,
+        reference_track=False,
+    )
+    pinned.close()
+    outside = tmp_path / "unrelated-lock-target"
+    outside.write_bytes(b"unrelated lock bytes\n")
+    outside.chmod(0o644)
+    lock_path = _reference_track_lock_path(tmp_path)
+    lock_path.symlink_to(outside)
+
+    with pytest.raises(Exception, match="couldn't reserve"):
+        _claim_blackhole_route("BlackHole16ch_UID", home=tmp_path)
+
+    assert lock_path.is_symlink()
+    assert outside.read_bytes() == b"unrelated lock bytes\n"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+
+    lock_path.unlink()
+    lease = _claim_blackhole_route("BlackHole16ch_UID", home=tmp_path)
+    lease.release()
+
+
+def test_reference_lifecycle_lock_is_private_and_single_link(
+    tmp_path: Path,
+) -> None:
+    lease = _claim_blackhole_route("BlackHole16ch_UID", home=tmp_path)
+    try:
+        details = _reference_track_lock_path(tmp_path).stat()
+        assert stat.S_ISREG(details.st_mode)
+        assert stat.S_IMODE(details.st_mode) == 0o600
+        assert details.st_nlink == 1
+    finally:
+        lease.release()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no-follow dirfd test needs POSIX")
+def test_reference_lifecycle_lock_rejects_symlinked_parent_and_recovers(
+    tmp_path: Path,
+) -> None:
+    webjam = (
+        tmp_path
+        / "Library"
+        / "Application Support"
+        / "WebJam"
+    )
+    webjam.mkdir(parents=True, mode=0o700)
+    outside = tmp_path / "outside-runtime"
+    outside.mkdir(mode=0o751)
+    outside.chmod(0o751)
+    marker = outside / "keep.txt"
+    marker.write_bytes(b"outside runtime stays untouched\n")
+    runtime = webjam / "runtime"
+    runtime.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(Exception, match="couldn't reserve"):
+        _claim_blackhole_route("BlackHole16ch_UID", home=tmp_path)
+
+    assert runtime.is_symlink()
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o751
+    assert marker.read_bytes() == b"outside runtime stays untouched\n"
+    assert tuple(outside.iterdir()) == (marker,)
+
+    runtime.unlink()
+    lease = _claim_blackhole_route("BlackHole16ch_UID", home=tmp_path)
+    lease.release()
+
+
+def test_reference_child_environment_rejects_native_loader_and_plugin_injection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dangerous = {
+        "DYLD_INSERT_LIBRARIES": "/tmp/untrusted.dylib",
+        "DYLD_FRAMEWORK_PATH": "/tmp/untrusted-frameworks",
+        "LD_PRELOAD": "/tmp/untrusted.so",
+        "LD_LIBRARY_PATH": "/tmp/untrusted-libraries",
+        "QT_PLUGIN_PATH": "/tmp/untrusted-qt",
+        "QT_QPA_PLATFORM_PLUGIN_PATH": "/tmp/untrusted-qpa",
+        "QTWEBENGINEPROCESS_PATH": "/tmp/untrusted-webengine",
+        "QT_LOGGING_RULES": "jamulus.rpc.debug=true",
+        "QML2_IMPORT_PATH": "/tmp/untrusted-qml2",
+        "QML_IMPORT_PATH": "/tmp/untrusted-qml",
+        "GCONV_PATH": "/tmp/untrusted-gconv",
+        "dyld_insert_libraries": "/tmp/untrusted-lowercase.dylib",
+    }
+    for key, value in dangerous.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("WEBJAM_REFERENCE_SAFE_TEST", "preserved")
+
+    environment = MacOSBlackHoleReferenceBackend._child_environment(
+        Path(sys.executable).resolve()
+    )
+
+    assert all(
+        key not in environment
+        for key in dangerous
+        if key != "QT_LOGGING_RULES"
+    )
+    assert environment["QT_LOGGING_RULES"] == "default.warning=false"
+    assert environment["WEBJAM_REFERENCE_SAFE_TEST"] == "preserved"
+    assert environment.get("HOME") == os.environ.get("HOME")
+    assert "/tmp/untrusted" not in environment["PATH"]
 
 
 class _OutputStream:
@@ -312,7 +603,7 @@ def test_production_backend_locks_uncertified_route_before_any_native_work(
     with pytest.raises(Exception, match="playback is locked"):
         backend.prepare(_context(binary))
     assert calls == []
-    assert not jamulus_macos_config_directory(tmp_path).exists()
+    assert not reference_track_runtime_directory(tmp_path).exists()
 
 
 def test_physical_route_certification_seam_requires_an_explicit_boolean() -> None:
@@ -645,7 +936,7 @@ def test_gui_client_is_rejected_before_process_ports_or_files(
         backend.prepare(_context(binary))
     assert launches == []
     assert port_calls == []
-    assert not jamulus_macos_config_directory(tmp_path).exists()
+    assert not reference_track_runtime_directory(tmp_path).exists()
 
 
 @pytest.mark.parametrize("direction", ("input", "output"))
@@ -683,7 +974,7 @@ def test_live_primary_blackhole_conflict_fails_before_binary_or_files(
     assert version_calls == []
     assert headless_calls == []
     assert launches == []
-    assert not jamulus_macos_config_directory(tmp_path).exists()
+    assert not reference_track_runtime_directory(tmp_path).exists()
 
 
 def test_saved_profile_names_are_not_accepted_over_changed_live_route(
@@ -715,7 +1006,7 @@ def test_saved_profile_names_are_not_accepted_over_changed_live_route(
 
     with pytest.raises(Exception, match="does not match its current launch profile"):
         backend.prepare(_context(binary))
-    assert not jamulus_macos_config_directory(tmp_path).exists()
+    assert not reference_track_runtime_directory(tmp_path).exists()
 
 
 def test_owned_second_client_has_separate_profile_ports_secret_and_route(
@@ -729,6 +1020,10 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     popen_calls = []
     rpc_instances: list[_Rpc] = []
     ports = iter((33101, 33102))
+    regular_jamulus_dir = _legacy_jamulus_container_directory(tmp_path)
+    regular_jamulus_dir.mkdir(parents=True)
+    regular_profile = regular_jamulus_dir / "Jamulus.ini"
+    regular_profile.write_bytes(b"regular musician profile stays untouched\n")
 
     def popen(command, **kwargs):
         popen_calls.append((command, kwargs))
@@ -754,7 +1049,7 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
 
     session = backend.prepare(_context(binary))
 
-    config_dir = jamulus_macos_config_directory(tmp_path)
+    config_dir = reference_track_runtime_directory(tmp_path)
     config_path, secret_path = _owned_paths(session)
     assert config_path.parent == config_dir
     assert secret_path.parent == config_dir
@@ -762,6 +1057,8 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert secret_path.name.startswith(".WebJam-reference-track-v1-")
     assert config_path.is_file()
     assert secret_path.is_file()
+    assert stat.S_IMODE(config_dir.stat().st_mode) == 0o700
+    assert config_path.stat().st_mode & 0o777 == 0o600
     assert secret_path.stat().st_mode & 0o777 == 0o600
     command, kwargs = popen_calls[0]
     assert command[0] == str(binary)
@@ -770,10 +1067,21 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert command[command.index("--port") + 1] == "33101"
     assert command[command.index("--jsonrpcport") + 1] == "33102"
     assert command[command.index("--jsonrpcbindip") + 1] == "127.0.0.1"
-    assert command[command.index("--inifile") + 1] == config_path.name
-    assert command[command.index("--jsonrpcsecretfile") + 1] == secret_path.name
+    assert command[command.index("--inifile") + 1] == str(config_path)
+    assert command[command.index("--jsonrpcsecretfile") + 1] == str(secret_path)
     assert command[command.index("--clientname") + 1] == REFERENCE_PARTICIPANT_NAME
     assert kwargs["cwd"] == str(config_dir)
+    assert kwargs["env"].get("HOME") == os.environ.get("HOME")
+    assert kwargs["env"].get("XDG_CONFIG_HOME") == os.environ.get(
+        "XDG_CONFIG_HOME"
+    )
+    assert "Library/Containers" not in str(config_path)
+    assert "Library/Containers" not in str(secret_path)
+    assert (
+        regular_profile.read_bytes()
+        == b"regular musician profile stays untouched\n"
+    )
+    assert tuple(regular_jamulus_dir.iterdir()) == (regular_profile,)
     assert "22124" not in {
         command[command.index("--port") + 1],
         command[command.index("--jsonrpcport") + 1],
@@ -847,6 +1155,228 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert rpc_instances[0].closed == 1
     assert not secret_path.exists()
     assert not config_path.exists()
+    assert (
+        regular_profile.read_bytes()
+        == b"regular musician profile stays untouched\n"
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="hard-link test needs POSIX dirfds")
+def test_private_launch_rejects_hardlinked_secret_before_popen_and_recovers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    launches: list[bool] = []
+    linked: dict[str, Path] = {}
+    ports = iter((33111, 33112))
+    original = reference_backend._ReferencePrivateFiles.launch_files_are_exact
+
+    def hardlink_before_check(owner) -> bool:
+        if not linked:
+            attack = owner.secret_path.with_name(f"{owner.secret_path.name}.linked")
+            os.link(owner.secret_path, attack)
+            linked["path"] = attack
+        return original(owner)
+
+    monkeypatch.setattr(
+        reference_backend._ReferencePrivateFiles,
+        "launch_files_are_exact",
+        hardlink_before_check,
+    )
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=lambda *_args, **_kwargs: launches.append(True),
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="cleanup could not be confirmed") as failure:
+        backend.prepare(_context(binary))
+    assert str(tmp_path) not in str(failure.value)
+    assert launches == []
+    linked["path"].unlink()
+    backend.retry_cleanup()
+    assert backend.capability().reason_code == "ready"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("mode", "hardlink", "replacement"),
+)
+def test_private_launch_revalidates_files_after_popen_and_terminates(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    process = _Process()
+    captured: dict[str, Path] = {}
+    ports = iter((33121, 33122))
+
+    def popen(command, **_kwargs):
+        secret = Path(command[command.index("--jsonrpcsecretfile") + 1])
+        captured["secret"] = secret
+        if mutation == "mode":
+            secret.chmod(0o644)
+        elif mutation == "hardlink":
+            attack = secret.with_name(f"{secret.name}.linked")
+            os.link(secret, attack)
+            captured["attack"] = attack
+        else:
+            backup = secret.with_name(f"{secret.name}.owned-backup")
+            os.link(secret, backup)
+            replacement = secret.with_name(f"{secret.name}.replacement")
+            replacement.write_bytes(b"attacker-controlled replacement\n")
+            replacement.chmod(0o600)
+            os.replace(replacement, secret)
+            captured["backup"] = backup
+        return process
+
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=popen,
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="cleanup could not be confirmed") as failure:
+        backend.prepare(_context(binary))
+    assert str(tmp_path) not in str(failure.value)
+    assert process.terminated == 1
+    secret = captured["secret"]
+    if mutation == "mode":
+        secret.chmod(0o600)
+    elif mutation == "hardlink":
+        captured["attack"].unlink()
+    else:
+        secret.unlink()
+        captured["backup"].rename(secret)
+    backend.retry_cleanup()
+    assert not secret.exists()
+    assert backend.capability().reason_code == "ready"
+
+
+def test_private_launch_rewalks_ancestor_chain_after_popen(
+    tmp_path: Path,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    process = _Process()
+    moved: dict[str, Path] = {}
+    ports = iter((33131, 33132))
+
+    def popen(_command, **_kwargs):
+        webjam = (
+            tmp_path
+            / "Library"
+            / "Application Support"
+            / "WebJam"
+        )
+        owned = webjam.with_name("WebJam-owned")
+        webjam.rename(owned)
+        webjam.symlink_to(owned, target_is_directory=True)
+        moved["link"] = webjam
+        moved["owned"] = owned
+        return process
+
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=popen,
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="launch profile changed") as failure:
+        backend.prepare(_context(binary))
+    assert str(tmp_path) not in str(failure.value)
+    assert process.terminated == 1
+    moved["link"].unlink()
+    moved["owned"].rename(moved["link"])
+    assert backend.capability().reason_code == "ready"
+
+
+def test_private_popen_os_error_cannot_leak_runtime_path_in_traceback(
+    tmp_path: Path,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    ports = iter((33141, 33142))
+
+    def popen(command, **_kwargs):
+        secret = command[command.index("--jsonrpcsecretfile") + 1]
+        raise FileNotFoundError(
+            errno.ENOENT,
+            "synthetic private launch failure",
+            secret,
+        )
+
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=popen,
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="prepare a safe Reference Track") as failure:
+        backend.prepare(_context(binary))
+    formatted = "".join(
+        traceback.format_exception(
+            failure.type,
+            failure.value,
+            failure.tb,
+        )
+    )
+    assert str(tmp_path) not in formatted
+    assert "synthetic private launch failure" not in formatted
+    assert backend.capability().reason_code == "ready"
+
+
+def test_reference_process_poll_failure_is_unknown_not_an_exception() -> None:
+    class PollFailureProcess:
+        def __init__(self) -> None:
+            self.terminated = 0
+
+        def poll(self):
+            raise OSError("synthetic process-state failure")
+
+        def terminate(self) -> None:
+            self.terminated += 1
+            raise OSError("synthetic termination failure")
+
+    process = PollFailureProcess()
+
+    assert MacOSBlackHoleReferenceBackend._terminate_process(process) is False
+    assert process.terminated == 1
 
 
 def test_legacy_fixed_profile_is_never_replaced_by_unique_session_profile(
@@ -855,7 +1385,7 @@ def test_legacy_fixed_profile_is_never_replaced_by_unique_session_profile(
     binary = tmp_path / "Jamulus"
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
     binary.chmod(0o700)
-    config_dir = jamulus_macos_config_directory(tmp_path)
+    config_dir = reference_track_runtime_directory(tmp_path)
     config_dir.mkdir(parents=True)
     config_path = config_dir / REFERENCE_PROFILE_FILENAME
     config_path.write_bytes(b"previous owned profile\n")
@@ -943,7 +1473,7 @@ def test_replaced_config_directory_cannot_redirect_dirfd_cleanup(
     )
     session = backend.prepare(_context(binary))
     config_path, secret_path = _owned_paths(session)
-    config_dir = jamulus_macos_config_directory(tmp_path)
+    config_dir = reference_track_runtime_directory(tmp_path)
     original_dir = config_dir.with_name(config_dir.name + ".owned")
     config_dir.rename(original_dir)
     config_dir.mkdir(mode=0o700)
@@ -987,6 +1517,7 @@ def test_atomic_jamulus_profile_rewrite_is_validated_before_cleanup(
     ElementTree.SubElement(root, "runtime_setting").text = "Jamulus persisted this"
     replacement = profile_path.with_name(f".{profile_path.name}.replacement")
     replacement.write_bytes(ElementTree.tostring(root, encoding="utf-8"))
+    replacement.chmod(0o600)
     os.replace(replacement, profile_path)
 
     session.stop()
@@ -994,6 +1525,47 @@ def test_atomic_jamulus_profile_rewrite_is_validated_before_cleanup(
     assert process.terminated == 1
     assert not profile_path.exists()
     assert not secret_path.exists()
+
+
+def test_world_readable_jamulus_profile_rewrite_fails_closed_then_recovers(
+    tmp_path: Path,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    process = _Process()
+    ports = iter((33236, 33237))
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=lambda *_args, **_kwargs: process,
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+    session = backend.prepare(_context(binary))
+    profile_path, secret_path = _owned_paths(session)
+    root = ElementTree.fromstring(profile_path.read_bytes())
+    ElementTree.SubElement(root, "runtime_setting").text = "Jamulus persisted this"
+    replacement = profile_path.with_name(f".{profile_path.name}.replacement")
+    replacement.write_bytes(ElementTree.tostring(root, encoding="utf-8"))
+    replacement.chmod(0o644)
+    os.replace(replacement, profile_path)
+
+    with pytest.raises(Exception, match="cleanup could not be confirmed") as failure:
+        session.stop()
+    assert str(tmp_path) not in str(failure.value)
+    assert process.terminated == 1
+    assert profile_path.exists()
+    assert secret_path.exists() is False
+
+    profile_path.chmod(0o600)
+    session.stop()
+    assert not profile_path.exists()
 
 
 def test_unrelated_atomic_profile_replacement_is_retained_until_safe_retry(
@@ -1036,6 +1608,7 @@ def test_unrelated_atomic_profile_replacement_is_retained_until_safe_retry(
 
     recovery = profile_path.with_name(f".{profile_path.name}.recovery")
     recovery.write_bytes(original_profile)
+    recovery.chmod(0o600)
     os.replace(recovery, profile_path)
     session.stop()
     assert not profile_path.exists()
@@ -1266,6 +1839,10 @@ def test_exact_blackhole_uid_has_one_process_local_owner_until_clean_stop(
     first_ports = iter((34101, 34102))
     second_ports = iter((34201, 34202, 34203, 34204))
     second_launches = []
+    first_home = tmp_path / "first"
+    second_home = tmp_path / "second"
+    first_home.mkdir()
+    second_home.mkdir()
     first = MacOSBlackHoleReferenceBackend(
         platform="darwin",
         scanner=lambda: _scan(_device()),
@@ -1275,7 +1852,7 @@ def test_exact_blackhole_uid_has_one_process_local_owner_until_clean_stop(
         popen_factory=lambda *_args, **_kwargs: first_process,
         port_allocator=lambda _kind, _excluded: next(first_ports),
         rpc_factory=lambda port, secret: _Rpc(port, secret),
-        home=tmp_path / "first",
+        home=first_home,
         physical_route_certified=True,
     )
 
@@ -1292,7 +1869,7 @@ def test_exact_blackhole_uid_has_one_process_local_owner_until_clean_stop(
         popen_factory=launch_second,
         port_allocator=lambda _kind, _excluded: next(second_ports),
         rpc_factory=lambda port, secret: _Rpc(port, secret),
-        home=tmp_path / "second",
+        home=second_home,
         physical_route_certified=True,
     )
 
@@ -1354,6 +1931,10 @@ def test_close_failure_retains_stream_route_lease_and_supports_stop_retry(
     first_rpc: list[_Rpc] = []
     first_ports = iter((34401, 34402))
     second_ports = iter((34501, 34502, 34503, 34504))
+    first_home = tmp_path / "first"
+    second_home = tmp_path / "second"
+    first_home.mkdir()
+    second_home.mkdir()
     first = MacOSBlackHoleReferenceBackend(
         platform="darwin",
         scanner=lambda: _scan(_device()),
@@ -1365,7 +1946,7 @@ def test_close_failure_retains_stream_route_lease_and_supports_stop_retry(
         rpc_factory=lambda port, secret: (
             first_rpc.append(_Rpc(port, secret)) or first_rpc[-1]
         ),
-        home=tmp_path / "first",
+        home=first_home,
         physical_route_certified=True,
     )
     second = MacOSBlackHoleReferenceBackend(
@@ -1377,7 +1958,7 @@ def test_close_failure_retains_stream_route_lease_and_supports_stop_retry(
         popen_factory=lambda *_args, **_kwargs: second_process,
         port_allocator=lambda _kind, _excluded: next(second_ports),
         rpc_factory=lambda port, secret: _Rpc(port, secret),
-        home=tmp_path / "second",
+        home=second_home,
         physical_route_certified=True,
     )
     session = first.prepare(_context(binary))
@@ -1793,4 +2374,4 @@ def test_audience_bridge_conflict_fails_before_process_or_files(
     with pytest.raises(Exception, match="audience bridge"):
         backend.prepare(_context(binary, audience_bridge_active=True))
     assert not launches
-    assert not jamulus_macos_config_directory(tmp_path).exists()
+    assert not reference_track_runtime_directory(tmp_path).exists()

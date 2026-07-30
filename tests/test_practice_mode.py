@@ -9,6 +9,7 @@ Conductor entry point.  No real processes are spawned.
 """
 from __future__ import annotations
 
+import errno
 import os
 import unittest
 from unittest.mock import MagicMock, patch
@@ -130,14 +131,26 @@ class TestLaunchPracticeSession(unittest.TestCase):
 
     def test_server_spawn_failure_shows_error(self):
         bridge = _make_bridge()
-        with patch("services.bridge_service.subprocess.Popen",
-                   side_effect=OSError("blocked")):
-            self.assertFalse(bridge.launch_practice_session())
+        private_path = "/Users/private/Library/Application Support/WebJam/practice"
+        failure = FileNotFoundError(errno.ENOENT, "blocked", private_path)
+        with self.assertLogs(
+            "webjam.services.bridge",
+            level="ERROR",
+        ) as captured:
+            with patch(
+                "services.bridge_service.subprocess.Popen",
+                side_effect=failure,
+            ):
+                self.assertFalse(bridge.launch_practice_session())
         self.assertFalse(bridge.practice_mode)
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0],
             "Practice Server Failed",
         )
+        combined = "\n".join(captured.output)
+        self.assertNotIn(private_path, combined)
+        self.assertNotIn("blocked", combined)
+        self.assertIn("FileNotFoundError", combined)
 
     def test_rejected_client_launch_cleans_up_private_server(self):
         bridge = _make_bridge()

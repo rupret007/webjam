@@ -46,11 +46,6 @@ block_cipher = None
 _init_src = (ROOT / "webjam_qt" / "__init__.py").read_text(encoding="utf-8")
 _m = re.search(r'__version__\s*=\s*"([^"]+)"', _init_src)
 VERSION = _m.group(1) if _m else "0.0.0"
-MACOS_APP_DATA_USAGE_DESCRIPTION = (
-    "WebJam accesses Jamulus app data only for dedicated WebJam profiles and "
-    "private Reference Track audio-route and control files. It never reads or "
-    "changes your regular Jamulus profile."
-)
 
 # Capture one non-personal provenance value for privacy-safe support bundles.
 # CI can provide WEBJAM_BUILD_ID explicitly; local builds use the exact Git
@@ -392,7 +387,6 @@ if sys.platform == "darwin":
             "NSLocalNetworkUsageDescription":
                 "WebJam connects your iPhone Pocket Stage and band session "
                 "devices on your private local network when you choose.",
-            "NSAppDataUsageDescription": MACOS_APP_DATA_USAGE_DESCRIPTION,
             "NSHighResolutionCapable": True,
             # The bundled Jamulus 3.12.2 client/server declare macOS 13.
             # Match that real floor so Finder never offers a launch that the

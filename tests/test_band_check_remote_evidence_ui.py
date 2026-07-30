@@ -20,6 +20,10 @@ from core.band_check import (  # noqa: E402
     BandCheckStepKey,
 )
 from core.session_transport import ConnectionQuality, TransportPath  # noqa: E402
+from services.bridge_service import (  # noqa: E402
+    JamulusRecoverySnapshot,
+    JamulusRpcFreshness,
+)
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
@@ -155,6 +159,24 @@ def test_controller_maps_remote_snapshot_without_inventing_hearing() -> None:
     controller.participants = {1: SimpleNamespace(is_local=False, channel_id=1)}
     controller.settings = SimpleNamespace(host_server_enabled=False)
     controller.bridge = mock.Mock()
+    controller.bridge.jamulus_recovery_snapshot.return_value = (
+        JamulusRecoverySnapshot(
+            generation=1,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=4500,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.FRESH,
+            rpc_age_seconds=0.1,
+        )
+    )
     controller._local_audio_seen = True
     controller._remote_audio_seen = True
     controller._remote_session = SimpleNamespace(

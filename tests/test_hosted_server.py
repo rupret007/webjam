@@ -7,6 +7,7 @@ server/start_macos_pilot.sh Terminal step. No real processes are spawned.
 """
 from __future__ import annotations
 
+import errno
 import os
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from core.jamulus_compatibility import ComponentTarget
 from tests.support.component_store import isolated_component_store_root
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -49,6 +51,11 @@ def _make_bridge(tmp: str):
         },
         component_store_root=isolated_component_store_root(),
     )
+    # These process-supervision tests use a mocked generic installed runtime.
+    # Pin their compatibility seam to a platform where official installed
+    # binaries are executable; upstream macOS apps are source evidence only.
+    # Dedicated tests cover the release-integrated Mac fallback.
+    bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
     bridge.find_jamulus_server = MagicMock(
         return_value="/Applications/JamulusServer.app/Contents/MacOS/JamulusServer"
     )
@@ -260,6 +267,30 @@ class TestEnsureHostedServer(unittest.TestCase):
                        side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
                 bridge._restart_hosted_server_if_died()
             ensure.assert_called_once()
+            self.assertFalse(bridge._hosted_restart_inflight)
+
+    def test_queued_hosted_restart_cannot_resurrect_after_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bridge = _make_bridge(tmp)
+            dead = MagicMock()
+            dead.poll.return_value = 1
+            bridge.hosted_server_process = dead
+            bridge.jamulus_launch_intended = True
+            with patch.object(bridge, "ensure_hosted_server") as ensure, patch(
+                "services.bridge_service.threading.Thread"
+            ) as thread_class:
+                bridge._restart_hosted_server_if_died()
+                restart_worker = thread_class.call_args.kwargs["target"]
+
+                # End/Leave retires client intent and then the hosted owner.
+                self.assertTrue(bridge.stop_jamulus())
+                self.assertTrue(bridge.stop_hosted_server())
+                restart_worker()
+
+            ensure.assert_not_called()
+            self.assertFalse(bridge.jamulus_launch_intended)
+            self.assertIsNone(bridge.hosted_server_process)
+            self.assertIsNone(bridge._pending_hosted_restart_cancel)
             self.assertFalse(bridge._hosted_restart_inflight)
 
     def test_no_restart_when_hosting_disabled_or_not_intended(self):
@@ -491,19 +522,41 @@ class TestEnsureHostedServer(unittest.TestCase):
                 return 0
 
             fake_proc.wait.side_effect = stopped
+            private_path = Path(tmp) / "Recordings" / "private-recorder.path"
 
             def raise_after_spawn():
                 bridge.hosted_server_process = fake_proc
-                raise RuntimeError("boom after spawn")
+                raise FileNotFoundError(
+                    errno.ENOENT,
+                    "synthetic recorder failure",
+                    private_path,
+                )
 
-            with patch.object(
-                bridge, "ensure_hosted_server", side_effect=raise_after_spawn
-            ), patch.object(
-                bridge, "_wait_for_hosted_ports_release", return_value=True
-            ):
-                result = bridge.certify_hosted_server_lifecycle()
+            with self.assertLogs(
+                "webjam.services.bridge",
+                level="ERROR",
+            ) as captured:
+                with patch.object(
+                    bridge, "ensure_hosted_server", side_effect=raise_after_spawn
+                ), patch.object(
+                    bridge, "_wait_for_hosted_ports_release", return_value=True
+                ):
+                    result = bridge.certify_hosted_server_lifecycle()
             self.assertFalse(result.ok)
-            self.assertIn("boom after spawn", result.detail)
+            self.assertIn("failed before it could complete", result.detail)
+            combined = "\n".join(
+                (
+                    result.detail,
+                    *result.technical_details,
+                    *captured.output,
+                )
+            )
+            self.assertNotIn(str(private_path), combined)
+            self.assertNotIn("synthetic recorder failure", combined)
+            self.assertIn(
+                "certification_error_type=FileNotFoundError",
+                result.technical_details,
+            )
             fake_proc.terminate.assert_called_once()
             self.assertFalse(bridge.hosted_server_alive())
 
@@ -558,7 +611,11 @@ class _Immediate:
 class TestHostedSettings(unittest.TestCase):
     def test_hosting_derives_container_defaults_when_unset(self):
         import json
-        from core.settings import load_settings
+        from core.settings import (
+            hosted_server_recordings_dir,
+            hosted_server_secret_path,
+            load_settings,
+        )
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "config.json"
             cfg.write_text(json.dumps({
@@ -569,12 +626,22 @@ class TestHostedSettings(unittest.TestCase):
             s = load_settings(str(cfg))
             self.assertTrue(s.host_server_enabled)
             self.assertEqual(s.jamulus_server, "127.0.0.1")
-            self.assertIn("JamulusServer", s.server_rpc_secret_file)
-            self.assertIn("WebJam Recordings", s.takes_directory)
+            self.assertEqual(
+                Path(s.server_rpc_secret_file),
+                hosted_server_secret_path(),
+            )
+            self.assertEqual(
+                Path(s.takes_directory),
+                hosted_server_recordings_dir(),
+            )
 
     def test_hosting_replaces_incompatible_explicit_paths_with_container_paths(self):
         import json
-        from core.settings import load_settings
+        from core.settings import (
+            hosted_server_recordings_dir,
+            hosted_server_secret_path,
+            load_settings,
+        )
         with tempfile.TemporaryDirectory() as tmp:
             cfg = Path(tmp) / "config.json"
             cfg.write_text(json.dumps({
@@ -584,8 +651,14 @@ class TestHostedSettings(unittest.TestCase):
                 "takes_directory": "/custom/takes",
             }))
             s = load_settings(str(cfg))
-            self.assertIn("JamulusServer", s.server_rpc_secret_file)
-            self.assertIn("WebJam Recordings", s.takes_directory)
+            self.assertEqual(
+                Path(s.server_rpc_secret_file),
+                hosted_server_secret_path(),
+            )
+            self.assertEqual(
+                Path(s.takes_directory),
+                hosted_server_recordings_dir(),
+            )
             self.assertNotEqual(s.server_rpc_secret_file, "/custom/secret")
             self.assertNotEqual(s.takes_directory, "/custom/takes")
 

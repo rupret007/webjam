@@ -10,6 +10,7 @@ uses ``sudo``, a command shell, Gatekeeper bypasses, or quarantine removal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 import hashlib
 import json
 import os
@@ -46,6 +47,10 @@ from core.jamulus_compatibility import (
     SourceProvenance,
     official_jamulus_compatibility_registry,
 )
+from core.jamulus_child_environment import (
+    JamulusChildEnvironmentError,
+    sanitized_jamulus_child_environment as _core_child_environment,
+)
 from core.jamulus_profile import default_jamulus_version_probe
 from core.jamulus_component_resolver import (
     ExternalComponentCandidate,
@@ -56,6 +61,12 @@ from core.jamulus_component_resolver import (
 MACOS_JAMULUS_TEAM_ID = "V9ZZ6B9WH8"
 MACOS_CLIENT_BUNDLE_ID = "app.jamulussoftware.Jamulus"
 MACOS_SERVER_BUNDLE_ID = "app.jamulussoftware.JamulusServer"
+MACOS_INTEGRATED_RUNTIME_CAPABILITY = "webjam-integrated-runtime"
+MACOS_INTEGRATED_RUNTIME_VARIANT = "webjam-integrated"
+# A catalog shape is never enough to activate code. This single feature gate
+# remains off until the separate integrated store/verifier described by ADR
+# 0008 exists and has passed its physical release gates.
+MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED = False
 PLATFORM_STATE_SCHEMA = 1
 PLATFORM_DESCRIPTOR_SCHEMA = 1
 PLATFORM_INSTALLED_STATE_SCHEMA = 1
@@ -66,20 +77,6 @@ _LINUX_ELF_X86_64_MACHINE = 62
 _VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 _WINDOWS_REPARSE_POINT = 0x400
 _WINDOWS_LOADABLE_SUFFIXES = frozenset({".dll", ".ocx", ".ax"})
-_LOADER_ENVIRONMENT_PREFIXES = ("LD_",)
-_LOADER_ENVIRONMENT_NAMES = frozenset(
-    {
-        "DYLD_FRAMEWORK_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "DYLD_LIBRARY_PATH",
-        "QML2_IMPORT_PATH",
-        "QML_IMPORT_PATH",
-        "QT_PLUGIN_PATH",
-        "QT_QPA_PLATFORM_PLUGIN_PATH",
-    }
-)
-
-
 class JamulusPlatformError(RuntimeError):
     """A platform approval or installed-result proof failed closed."""
 
@@ -98,6 +95,264 @@ class JamulusPlatformInstallDeferred(JamulusPlatformError):
     def __init__(self, status: ComponentBusyStatus) -> None:
         super().__init__("Jamulus update is deferred until the session is idle")
         self.status = status
+
+
+class MacOSExecutionContractKind(str, Enum):
+    """How one verified macOS bundle may participate in WebJam.
+
+    An untouched upstream app is valuable download/publisher evidence, but it
+    is not a WebJam-managed runtime.  Only a separately cataloged,
+    CI-normalized asset may ever use ``WEBJAM_INTEGRATED``.
+    """
+
+    OFFICIAL_SOURCE = "official-source"
+    WEBJAM_INTEGRATED = "webjam-integrated"
+
+
+@dataclass(frozen=True, slots=True)
+class MacOSExecutionContract:
+    """Live, typed execution facts for one exact macOS Jamulus role."""
+
+    kind: MacOSExecutionContractKind
+    role: JamulusRole
+    target: ComponentTarget
+    source_app_sandbox_enabled: bool
+    source_entitlements_sha256: str
+    runtime_capabilities: frozenset[str]
+    activation_allowed: bool
+    reason_code: str
+
+    def __post_init__(self) -> None:
+        try:
+            kind = MacOSExecutionContractKind(self.kind)
+            role = JamulusRole(self.role)
+            target = ComponentTarget(self.target)
+        except (TypeError, ValueError) as exc:
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution contract is invalid"
+            ) from exc
+        if role not in {JamulusRole.CLIENT, JamulusRole.SERVER}:
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution role is unsupported"
+            )
+        if target not in {
+            ComponentTarget.MACOS_ARM64,
+            ComponentTarget.MACOS_X64,
+        }:
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution target is invalid"
+            )
+        digest = str(self.source_entitlements_sha256).lower()
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise JamulusPlatformError(
+                "the macOS Jamulus entitlement proof is invalid"
+            )
+        if isinstance(self.runtime_capabilities, (str, bytes)):
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution capabilities are invalid"
+            )
+        try:
+            capabilities = frozenset(self.runtime_capabilities)
+        except TypeError as exc:
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution capabilities are invalid"
+            ) from exc
+        if not capabilities or not all(
+            isinstance(value, str) and value
+            for value in capabilities
+        ):
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution capabilities are invalid"
+            )
+        if not isinstance(self.source_app_sandbox_enabled, bool) or not isinstance(
+            self.activation_allowed, bool
+        ):
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution decision is invalid"
+            )
+        if (
+            kind is MacOSExecutionContractKind.OFFICIAL_SOURCE
+            and self.activation_allowed
+        ):
+            raise JamulusPlatformError(
+                "an upstream macOS source bundle cannot be activated directly"
+            )
+        base_capabilities = (
+            frozenset({"audio-client", "json-rpc-client", "native-gui"})
+            if role is JamulusRole.CLIENT
+            else frozenset({"audio-server", "json-rpc-server"})
+        )
+        if (
+            kind is MacOSExecutionContractKind.OFFICIAL_SOURCE
+            and capabilities != base_capabilities
+        ):
+            raise JamulusPlatformError(
+                "an upstream macOS source bundle claims runtime-file capabilities"
+            )
+        integrated_capabilities = (
+            base_capabilities
+            | (
+                frozenset(
+                    {"webjam-route-profile", "webjam-integrated-runtime"}
+                )
+                if role is JamulusRole.CLIENT
+                else frozenset({"recording", "webjam-integrated-runtime"})
+            )
+        )
+        if (
+            kind is MacOSExecutionContractKind.WEBJAM_INTEGRATED
+            and self.activation_allowed
+            and not integrated_capabilities.issubset(capabilities)
+        ):
+            raise JamulusPlatformError(
+                "the integrated macOS Jamulus execution contract is incomplete"
+            )
+        if (
+            kind is MacOSExecutionContractKind.WEBJAM_INTEGRATED
+            and self.activation_allowed
+            and self.source_app_sandbox_enabled
+        ):
+            raise JamulusPlatformError(
+                "the integrated macOS Jamulus execution contract is sandboxed"
+            )
+        allowed_reasons = {
+            "official-source-app-sandboxed",
+            "webjam-integrated-runtime-required",
+            "verified-webjam-integrated-runtime",
+        }
+        if self.reason_code not in allowed_reasons:
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution reason is invalid"
+            )
+        if (
+            self.activation_allowed
+            and self.reason_code != "verified-webjam-integrated-runtime"
+        ):
+            raise JamulusPlatformError(
+                "the macOS Jamulus execution approval reason is invalid"
+            )
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "source_entitlements_sha256", digest)
+        object.__setattr__(self, "runtime_capabilities", capabilities)
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind.value,
+            "role": self.role.value,
+            "target": self.target.value,
+            "source_app_sandbox_enabled": self.source_app_sandbox_enabled,
+            "source_entitlements_sha256": self.source_entitlements_sha256,
+            "runtime_capabilities": sorted(self.runtime_capabilities),
+            "activation_allowed": self.activation_allowed,
+            "reason_code": self.reason_code,
+        }
+
+
+def macos_integrated_runtime_entry_is_eligible(
+    entry: JamulusCompatibility,
+    *,
+    verifier_enabled: bool | None = None,
+) -> bool:
+    """Recognize the one catalog shape a future Mac verifier may activate.
+
+    The shared feature gate is part of the predicate so updater selection and
+    Bridge execution cannot drift. Untouched ``official`` /
+    ``PLATFORM_APPROVAL`` entries never satisfy this contract, regardless of
+    capability strings supplied by a catalog.
+    """
+
+    enabled = (
+        MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED
+        if verifier_enabled is None
+        else verifier_enabled
+    )
+    if enabled is not True or not isinstance(entry, JamulusCompatibility):
+        return False
+    if entry.role is JamulusRole.CLIENT:
+        required = frozenset(
+            {
+                "audio-client",
+                "json-rpc-client",
+                "native-gui",
+                "webjam-route-profile",
+                MACOS_INTEGRATED_RUNTIME_CAPABILITY,
+            }
+        )
+    elif entry.role is JamulusRole.SERVER:
+        required = frozenset(
+            {
+                "audio-server",
+                "json-rpc-server",
+                "recording",
+                MACOS_INTEGRATED_RUNTIME_CAPABILITY,
+            }
+        )
+    else:
+        return False
+    return bool(
+        entry.component_id == "jamulus"
+        and entry.target
+        in {
+            ComponentTarget.MACOS_ARM64,
+            ComponentTarget.MACOS_X64,
+        }
+        and entry.variant == MACOS_INTEGRATED_RUNTIME_VARIANT
+        and entry.activation_mode is ActivationMode.MANAGED
+        and entry.source.provenance is SourceProvenance.OFFICIAL_RELEASE
+        and entry.artifact.kind
+        in {ArtifactKind.ARCHIVE, ArtifactKind.APP_BUNDLE}
+        and entry.runtime_files
+        and entry.executable_relative_path
+        and entry.capabilities.includes(required)
+    )
+
+
+def macos_integrated_runtime_contract_allows(
+    entry: JamulusCompatibility,
+    contract: MacOSExecutionContract,
+    *,
+    verifier_enabled: bool | None = None,
+) -> bool:
+    """Require matching live entitlement facts in addition to catalog shape."""
+
+    if not macos_integrated_runtime_entry_is_eligible(
+        entry,
+        verifier_enabled=verifier_enabled,
+    ) or not isinstance(contract, MacOSExecutionContract):
+        return False
+    required = (
+        frozenset(
+            {
+                "audio-client",
+                "json-rpc-client",
+                "native-gui",
+                "webjam-route-profile",
+                MACOS_INTEGRATED_RUNTIME_CAPABILITY,
+            }
+        )
+        if entry.role is JamulusRole.CLIENT
+        else frozenset(
+            {
+                "audio-server",
+                "json-rpc-server",
+                "recording",
+                MACOS_INTEGRATED_RUNTIME_CAPABILITY,
+            }
+        )
+    )
+    return bool(
+        contract.kind is MacOSExecutionContractKind.WEBJAM_INTEGRATED
+        and contract.role is entry.role
+        and contract.target is entry.target
+        and contract.source_app_sandbox_enabled is False
+        and contract.activation_allowed is True
+        and contract.reason_code == "verified-webjam-integrated-runtime"
+        and required.issubset(contract.runtime_capabilities)
+    )
 
 
 class CommandRunner(Protocol):
@@ -135,6 +390,8 @@ class VerifiedMacBundle:
     architectures: tuple[str, ...]
     team_identifier: str
     bundle_identifier: str
+    app_sandbox_enabled: bool
+    entitlements_sha256: str
 
 
 class MacOSBundleVerifier:
@@ -245,6 +502,33 @@ class MacOSBundleVerifier:
             not in details_text
         ):
             raise JamulusPlatformError("the Jamulus publisher identity is not approved")
+        entitlements_result = self._run(
+            [
+                "/usr/bin/codesign",
+                "-d",
+                "--xml",
+                "--entitlements",
+                "-",
+                str(path),
+            ],
+            timeout=30.0,
+        )
+        if entitlements_result.returncode != 0:
+            raise JamulusPlatformError(
+                "the Jamulus signed entitlements could not be verified"
+            )
+        entitlements = _codesign_entitlements(entitlements_result)
+        sandbox_value = entitlements.get("com.apple.security.app-sandbox", False)
+        if not isinstance(sandbox_value, bool):
+            raise JamulusPlatformError(
+                "the Jamulus App Sandbox entitlement is invalid"
+            )
+        canonical_entitlements = plistlib.dumps(
+            entitlements,
+            fmt=plistlib.FMT_BINARY,
+            sort_keys=True,
+        )
+        entitlements_sha256 = hashlib.sha256(canonical_entitlements).hexdigest()
         assessment = self._run(
             ["/usr/sbin/spctl", "-a", "-vv", "-t", "execute", str(path)],
             timeout=60.0,
@@ -279,7 +563,58 @@ class MacOSBundleVerifier:
             architectures=architectures,
             team_identifier=MACOS_JAMULUS_TEAM_ID,
             bundle_identifier=bundle_id,
+            app_sandbox_enabled=sandbox_value,
+            entitlements_sha256=entitlements_sha256,
         )
+
+
+def _official_source_execution_contract(
+    verified: VerifiedMacBundle,
+    *,
+    target: ComponentTarget,
+) -> MacOSExecutionContract:
+    """Describe why an untouched official app is evidence, not a runtime."""
+
+    if not isinstance(verified, VerifiedMacBundle):
+        raise JamulusPlatformError(
+            "the official macOS Jamulus verification result is invalid"
+        )
+    target = ComponentTarget(target)
+    required_architecture = (
+        "arm64"
+        if target is ComponentTarget.MACOS_ARM64
+        else "x86_64"
+        if target is ComponentTarget.MACOS_X64
+        else ""
+    )
+    if not required_architecture or required_architecture not in verified.architectures:
+        raise JamulusPlatformError(
+            "the official macOS Jamulus execution target is invalid"
+        )
+    if verified.role is JamulusRole.CLIENT:
+        capabilities = frozenset(
+            {"audio-client", "json-rpc-client", "native-gui"}
+        )
+    elif verified.role is JamulusRole.SERVER:
+        capabilities = frozenset({"audio-server", "json-rpc-server"})
+    else:
+        raise JamulusPlatformError(
+            "the official macOS Jamulus execution role is unsupported"
+        )
+    return MacOSExecutionContract(
+        kind=MacOSExecutionContractKind.OFFICIAL_SOURCE,
+        role=verified.role,
+        target=target,
+        source_app_sandbox_enabled=verified.app_sandbox_enabled,
+        source_entitlements_sha256=verified.entitlements_sha256,
+        runtime_capabilities=capabilities,
+        activation_allowed=False,
+        reason_code=(
+            "official-source-app-sandboxed"
+            if verified.app_sandbox_enabled
+            else "webjam-integrated-runtime-required"
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,14 +624,42 @@ class MacOSInstalledJamulus:
     artifact_sha256: str
     client_path: Path
     server_path: Path
+    client_execution_contract: MacOSExecutionContract
+    server_execution_contract: MacOSExecutionContract
     is_current: bool
     is_previous: bool
+
+    def execution_contract_for(
+        self, role: JamulusRole
+    ) -> MacOSExecutionContract:
+        selected = JamulusRole(role)
+        if selected is JamulusRole.CLIENT:
+            return self.client_execution_contract
+        if selected is JamulusRole.SERVER:
+            return self.server_execution_contract
+        raise JamulusPlatformError(
+            "the installed macOS Jamulus role is unsupported"
+        )
+
+    @property
+    def activation_allowed(self) -> bool:
+        return bool(
+            self.client_execution_contract.activation_allowed
+            and self.server_execution_contract.activation_allowed
+        )
 
     def to_public_dict(self) -> dict[str, object]:
         return {
             "version": self.version,
             "target": self.target.value,
             "artifact_sha256": self.artifact_sha256,
+            "activation_allowed": self.activation_allowed,
+            "client_execution_contract": (
+                self.client_execution_contract.to_public_dict()
+            ),
+            "server_execution_contract": (
+                self.server_execution_contract.to_public_dict()
+            ),
             "is_current": self.is_current,
             "is_previous": self.is_previous,
         }
@@ -356,7 +719,11 @@ class _MacPointer:
 
 
 class MacOSJamulusComponentStore:
-    """Versioned official app bundles with current/previous atomic pointers."""
+    """Versioned official source bundles with current/previous evidence pointers.
+
+    The untouched Developer-ID apps retained here are never an activatable
+    WebJam runtime.  See :class:`MacOSExecutionContract`.
+    """
 
     _VOLUME_INVENTORY = frozenset(
         {
@@ -465,6 +832,12 @@ class MacOSJamulusComponentStore:
                 artifact_sha256=installed.artifact_sha256,
                 client_path=installed.client_path,
                 server_path=installed.server_path,
+                client_execution_contract=(
+                    installed.client_execution_contract
+                ),
+                server_execution_contract=(
+                    installed.server_execution_contract
+                ),
                 is_current=True,
                 is_previous=False,
             )
@@ -520,51 +893,40 @@ class MacOSJamulusComponentStore:
         role: JamulusRole,
         target: ComponentTarget,
     ) -> ValidatedExternalComponent | None:
-        """Resolver adapter for versioned app bundles and embedded fallbacks."""
+        """Expose only a separately proven WebJam-integrated runtime.
+
+        The official DMG store deliberately retains verified upstream bundles
+        as source evidence.  Those untouched PLATFORM_APPROVAL apps are never
+        returned here, even when a stale signed catalog claimed broader
+        capabilities.
+        """
 
         role = JamulusRole(role)
         target = ComponentTarget(target)
         if role not in {JamulusRole.CLIENT, JamulusRole.SERVER}:
             return None
-        path = candidate.path
-        expected_executable = (
-            "Jamulus" if role is JamulusRole.CLIENT else "JamulusServer"
-        )
-        expected_bundle = (
-            "Jamulus.app" if role is JamulusRole.CLIENT else "JamulusServer.app"
-        )
-        if path.name == expected_executable:
-            bundle = path.parent.parent.parent
-        elif path.name == expected_bundle and path.is_dir():
-            bundle = path
-            path = bundle / "Contents" / "MacOS" / expected_executable
-        else:
-            return None
-        for entry in registry.compatible(
-            role=role,
-            target=target,
-            webjam_version=self.webjam_version,
-            required_capabilities=(
-                {"audio-client"} if role is JamulusRole.CLIENT else {"audio-server"}
-            ),
-        ):
-            try:
-                self.verifier.verify(
-                    bundle,
-                    role=role,
-                    version=entry.version,
-                    target=target,
+        try:
+            with InterProcessComponentLock(
+                self.lock_path, timeout=self.lock_timeout
+            ):
+                current_pointer, _previous_pointer = self._read_state()
+                if current_pointer is None:
+                    return None
+                installed = self._snapshot_for_pointer(
+                    current_pointer,
+                    current=True,
+                    previous=False,
                 )
-            except JamulusPlatformError:
-                continue
-            return ValidatedExternalComponent(
-                entry=entry,
-                executable_path=path,
-                content_verified=True,
-                version_verified=True,
-                architecture_verified=True,
-                publisher_verified=True,
-            )
+        except JamulusPlatformError:
+            return None
+        if installed.target is not target:
+            return None
+        contract = installed.execution_contract_for(role)
+        # This store owns only untouched upstream source bundles. A future
+        # integrated-runtime store/verifier must be a separate implementation;
+        # neither a caller-supplied path nor a catalog object can upgrade this
+        # source-only contract.
+        _ = (candidate, registry, contract)
         return None
 
     def _install_new(
@@ -770,16 +1132,24 @@ class MacOSJamulusComponentStore:
         self.registry.require_exact(described_server)
         client_bundle = destination / "Jamulus.app"
         server_bundle = destination / "JamulusServer.app"
-        self.verifier.verify(
+        verified_client = self.verifier.verify(
             client_bundle,
             role=JamulusRole.CLIENT,
             version=client.version,
             target=client.target,
         )
-        self.verifier.verify(
+        verified_server = self.verifier.verify(
             server_bundle,
             role=JamulusRole.SERVER,
             version=server.version,
+            target=server.target,
+        )
+        client_contract = _official_source_execution_contract(
+            verified_client,
+            target=client.target,
+        )
+        server_contract = _official_source_execution_contract(
+            verified_server,
             target=server.target,
         )
         return MacOSInstalledJamulus(
@@ -788,6 +1158,8 @@ class MacOSJamulusComponentStore:
             artifact_sha256=client.artifact.sha256,
             client_path=(client_bundle / "Contents" / "MacOS" / "Jamulus"),
             server_path=(server_bundle / "Contents" / "MacOS" / "JamulusServer"),
+            client_execution_contract=client_contract,
+            server_execution_contract=server_contract,
             is_current=False,
             is_previous=False,
         )
@@ -855,6 +1227,8 @@ class MacOSJamulusComponentStore:
             artifact_sha256=snapshot.artifact_sha256,
             client_path=snapshot.client_path,
             server_path=snapshot.server_path,
+            client_execution_contract=snapshot.client_execution_contract,
+            server_execution_contract=snapshot.server_execution_contract,
             is_current=current,
             is_previous=previous,
         )
@@ -1960,36 +2334,35 @@ def _sanitized_loader_environment(
     platform_name: str,
     executable: Path,
 ) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for key, value in environ.items():
-        normalized = str(key).upper()
-        if normalized in _LOADER_ENVIRONMENT_NAMES or any(
-            normalized.startswith(prefix)
-            for prefix in _LOADER_ENVIRONMENT_PREFIXES
-        ):
-            continue
-        result[str(key)] = str(value)
-    if platform_name == "win32":
-        windows_root = str(
-            next(
-                (
-                    value
-                    for key, value in result.items()
-                    if key.casefold() == "systemroot"
-                ),
-                r"C:\\Windows",
-            )
+    try:
+        return _core_child_environment(
+            environ,
+            platform_name=platform_name,
+            executable=executable,
         )
-        result["PATH"] = os.pathsep.join(
-            (
-                str(executable.parent),
-                str(Path(windows_root) / "System32"),
-                windows_root,
-            )
-        )
-    else:
-        result["PATH"] = "/usr/bin:/bin"
-    return result
+    except JamulusChildEnvironmentError as exc:
+        raise JamulusPlatformError(str(exc)) from None
+
+
+def sanitized_jamulus_child_environment(
+    environ: Mapping[str, str],
+    *,
+    platform_name: str,
+    executable: str | Path,
+) -> dict[str, str]:
+    """Return a bounded native-child environment with injection paths removed.
+
+    Every Jamulus role (client, server, practice, and Reference Track) must use
+    this same boundary. Callers may add one reviewed literal logging rule
+    afterwards; inherited DYLD/LD/QML/Qt loader and plugin controls never
+    survive.
+    """
+
+    return _sanitized_loader_environment(
+        environ,
+        platform_name=platform_name,
+        executable=Path(executable),
+    )
 
 
 def _windows_program_files_x64() -> Path:
@@ -2299,6 +2672,42 @@ def _bounded_output(
     return raw.decode("utf-8", errors="replace")
 
 
+def _codesign_entitlements(
+    result: subprocess.CompletedProcess[bytes],
+) -> dict[str, object]:
+    """Extract one bounded XML entitlement dictionary from ``codesign``."""
+
+    raw = bytes(result.stdout or b"") + b"\n" + bytes(result.stderr or b"")
+    if len(raw) > 64 * 1024:
+        raise JamulusPlatformError(
+            "the Jamulus signed entitlement output was too large"
+        )
+    starts = tuple(
+        index
+        for marker in (b"<?xml", b"<plist")
+        if (index := raw.find(marker)) >= 0
+    )
+    end = raw.rfind(b"</plist>")
+    if not starts or end < 0:
+        raise JamulusPlatformError(
+            "the Jamulus signed entitlements were unavailable"
+        )
+    payload = raw[min(starts) : end + len(b"</plist>")]
+    try:
+        value = plistlib.loads(payload)
+    except plistlib.InvalidFileException as exc:
+        raise JamulusPlatformError(
+            "the Jamulus signed entitlements were malformed"
+        ) from exc
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str) for key in value
+    ):
+        raise JamulusPlatformError(
+            "the Jamulus signed entitlements were invalid"
+        )
+    return value
+
+
 def _read_json(path: Path) -> object:
     try:
         details = path.lstat()
@@ -2370,7 +2779,12 @@ __all__ = [
     "JamulusPlatformInstallDeferred",
     "JamulusPlatformInstallationNotFound",
     "MACOS_JAMULUS_TEAM_ID",
+    "MACOS_INTEGRATED_RUNTIME_CAPABILITY",
+    "MACOS_INTEGRATED_RUNTIME_VARIANT",
+    "MACOS_INTEGRATED_RUNTIME_VERIFIER_ENABLED",
     "MacOSBundleVerifier",
+    "MacOSExecutionContract",
+    "MacOSExecutionContractKind",
     "MacOSInstallResult",
     "MacOSInstalledJamulus",
     "MacOSJamulusComponentStore",
@@ -2380,5 +2794,8 @@ __all__ = [
     "VerifiedMacBundle",
     "default_macos_target",
     "open_platform_jamulus_installer",
+    "macos_integrated_runtime_contract_allows",
+    "macos_integrated_runtime_entry_is_eligible",
     "platform_component_target",
+    "sanitized_jamulus_child_environment",
 ]

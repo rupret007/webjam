@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
@@ -695,8 +696,10 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         c = self.controller
         c.bridge.attempt_auto_reconnects = MagicMock()
         c._jamulus_connected = False
+        c.audio.recovering = False
         c._reconnect_banner_shown = False
         c._rpc_hang_banner_shown = False
+        c._clear_primary_local_roster_proof()
 
     def test_crash_detected_flashes_reconnect_banner(self):
         c = self.controller
@@ -724,13 +727,41 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
         self.assertFalse(any("auto-reconnecting" in m for m in msgs), msgs)
 
+    def test_dead_replacement_invalidates_truth_even_with_existing_banner(self):
+        c = self.controller
+        dead = MagicMock()
+        dead.poll.return_value = 1
+        c.bridge.jamulus_process = dead
+        c.bridge.jamulus_launch_intended = True
+        c.bridge.jamulus_state = "Running"
+        c._reconnect_banner_shown = True
+        c._jamulus_connected = True
+        c.window.flash_message.reset_mock()
+
+        with patch.object(
+            c,
+            "_stop_reference_track_for_session_end",
+        ) as stop_reference:
+            c._on_reconnect_tick()
+
+        self.assertFalse(c._jamulus_connected)
+        self.assertTrue(c.audio.recovering)
+        stop_reference.assert_called_once_with(background=True)
+        msgs = [call.args[0] for call in c.window.flash_message.call_args_list]
+        self.assertFalse(any("reconnected" in m for m in msgs), msgs)
+
     def test_process_restart_is_not_success_until_local_connection_is_proven(self):
         c = self.controller
         alive = MagicMock()
+        alive.pid = 4600
         alive.poll.return_value = None
         c.bridge.jamulus_process = alive
         c.bridge.jamulus_launch_intended = True
         c.bridge.jamulus_state = "Running"
+        c.jamulus.rpc_client = MagicMock()
+        c.jamulus.rpc_client.available = True
+        c.jamulus.rpc_client.last_activity_age.return_value = 0.0
+        bind_primary_rpc_monitor(c)
         c._reconnect_banner_shown = True
         c._on_reconnect_tick()
         self.assertTrue(c._reconnect_banner_shown)
@@ -740,7 +771,9 @@ class TestReconnectCrashBanner(_ControllerTestBase):
         # Process existence is implementation truth; the local participant /
         # RPC path is the musician-facing connection proof.
         c._jamulus_connected = True
-        c.jamulus.rpc_client.last_activity_age = MagicMock(return_value=0.0)
+        recovery = c._primary_jamulus_recovery_snapshot()
+        self.assertIsNotNone(recovery)
+        c._record_primary_local_roster_proof(recovery)
         c._on_reconnect_tick()
         self.assertFalse(c._reconnect_banner_shown)
         msgs = [call.args[0] for call in c.window.flash_message.call_args_list]

@@ -47,7 +47,6 @@ from core.audio_route_profile import (
 from core.component_lock import (
     ComponentLockError,
     ComponentLockTimeout,
-    InterProcessComponentLock,
 )
 from core.coreaudio_devices import CoreAudioScan
 from core.coreaudio_process_route import (
@@ -56,7 +55,10 @@ from core.coreaudio_process_route import (
     CoreAudioProcessRouteSnapshot,
 )
 from core.jamulus_endpoint import parse_jamulus_endpoint
-from core.macos_audio_route import jamulus_macos_config_directory
+from core.jamulus_child_environment import (
+    JamulusChildEnvironmentError,
+    sanitized_jamulus_child_environment,
+)
 from core.reference_track import (
     REFERENCE_BLOCK_FRAMES,
     REFERENCE_MAX_DIAGNOSTIC_COUNTER,
@@ -67,8 +69,10 @@ from core.reference_track import (
     ReferenceTrackError,
     ReferenceTrackLaunchContext,
 )
-
-
+from core.secure_runtime import (
+    SecureRuntimeDirectory,
+    SecureRuntimeError,
+)
 REFERENCE_PROFILE_FILENAME = "WebJam-reference-track-v1.ini"
 REFERENCE_SECRET_FILENAME = ".WebJam-reference-track-v1.rpc-secret"
 REFERENCE_PARTICIPANT_NAME = "WebJam Track"
@@ -98,6 +102,198 @@ _OFFICIAL_BLACKHOLE_ROUTES: dict[str, tuple[str, int]] = {
     "BlackHole16ch_UID": ("BlackHole 16ch", 16),
     "BlackHole64ch_UID": ("BlackHole 64ch", 64),
 }
+_REFERENCE_LIFECYCLE_LOCK_NAME = ".reference-track-v1.lifecycle.lock"
+_PRIVATE_LAUNCH_CHANGED = (
+    "Reference Track's private launch profile changed during startup."
+)
+
+
+def reference_track_runtime_directory(home: Path | None = None) -> Path:
+    """Return WebJam's private, permissionless second-client runtime.
+
+    The packaged ``JamulusHeadlessClient`` is a distinct, non-sandboxed
+    companion and accepts absolute ``--inifile``/``--jsonrpcsecretfile``
+    paths.  Keeping both files under WebJam's own Application Support tree
+    avoids macOS Other Application Data entirely; the interactive Jamulus
+    container and every regular Jamulus profile remain untouched.
+    """
+
+    root = Path.home() if home is None else Path(home)
+    return (
+        root
+        / "Library"
+        / "Application Support"
+        / "WebJam"
+        / "runtime"
+        / "reference-track"
+    )
+
+
+def _directory_owned_by_current_user(details: os.stat_result) -> bool:
+    """Whether a directory descriptor belongs to this effective user."""
+
+    geteuid = getattr(os, "geteuid", None)
+    return not callable(geteuid) or int(details.st_uid) == int(geteuid())
+
+
+def _open_webjam_runtime_directory(
+    home: Path,
+    *,
+    reference_track: bool,
+) -> SecureRuntimeDirectory:
+    """Open the shared, full-chain-verified WebJam runtime boundary."""
+
+    directory = reference_track_runtime_directory(home)
+    if not reference_track:
+        directory = directory.parent
+    try:
+        return SecureRuntimeDirectory.open(
+            home=Path(home),
+            directory=directory,
+            mode=0o700,
+        )
+    except SecureRuntimeError:
+        raise ReferenceTrackError(
+            "WebJam couldn't establish its private Reference Track directory."
+        ) from None
+
+
+class _ReferenceLifecycleLock:
+    """A no-follow advisory lock opened relative to a pinned runtime dirfd."""
+
+    def __init__(
+        self,
+        directory: SecureRuntimeDirectory,
+        *,
+        timeout: float = 0.0,
+        poll_interval: float = 0.05,
+    ) -> None:
+        self._directory = directory
+        self._timeout = float(timeout)
+        self._poll_interval = float(poll_interval)
+        self._descriptor: int | None = None
+
+    def __enter__(self) -> "_ReferenceLifecycleLock":
+        if self._descriptor is not None:
+            raise ComponentLockError("Reference Track lock is not re-entrant")
+        if not self._directory.path_matches():
+            raise ComponentLockError("Reference Track runtime directory changed")
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        if not nofollow:
+            raise ComponentLockError("Reference Track lock cannot reject links")
+        flags |= nofollow
+        try:
+            descriptor = os.open(
+                _REFERENCE_LIFECYCLE_LOCK_NAME,
+                flags,
+                0o600,
+                dir_fd=self._directory.descriptor,
+            )
+        except (NotImplementedError, OSError) as exc:
+            raise ComponentLockError(
+                "could not open the Reference Track lifecycle lock"
+            ) from exc
+        try:
+            details = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(details.st_mode)
+                or int(details.st_nlink) != 1
+                or not _directory_owned_by_current_user(details)
+            ):
+                raise ComponentLockError(
+                    "Reference Track lifecycle lock is unsafe"
+                )
+            entry = os.stat(
+                _REFERENCE_LIFECYCLE_LOCK_NAME,
+                dir_fd=self._directory.descriptor,
+                follow_symlinks=False,
+            )
+            if (
+                not stat.S_ISREG(entry.st_mode)
+                or int(entry.st_dev) != int(details.st_dev)
+                or int(entry.st_ino) != int(details.st_ino)
+            ):
+                raise ComponentLockError(
+                    "Reference Track lifecycle lock changed"
+                )
+            os.fchmod(descriptor, 0o600)
+            details = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(details.st_mode)
+                or int(details.st_nlink) != 1
+                or stat.S_IMODE(details.st_mode) != 0o600
+                or not _directory_owned_by_current_user(details)
+            ):
+                raise ComponentLockError(
+                    "Reference Track lifecycle lock is unsafe"
+                )
+            deadline = time.monotonic() + self._timeout
+            while True:
+                try:
+                    import fcntl
+
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                        raise ComponentLockError(
+                            "could not acquire the Reference Track lifecycle lock"
+                        ) from exc
+                    if time.monotonic() >= deadline:
+                        raise ComponentLockTimeout(
+                            "timed out waiting for the Reference Track lifecycle lock"
+                        ) from exc
+                    time.sleep(
+                        min(
+                            self._poll_interval,
+                            max(0.0, deadline - time.monotonic()),
+                        )
+                    )
+            if not self._directory.path_matches():
+                raise ComponentLockError(
+                    "Reference Track runtime directory changed"
+                )
+            current = os.stat(
+                _REFERENCE_LIFECYCLE_LOCK_NAME,
+                dir_fd=self._directory.descriptor,
+                follow_symlinks=False,
+            )
+            if (
+                int(current.st_dev) != int(details.st_dev)
+                or int(current.st_ino) != int(details.st_ino)
+                or not stat.S_ISREG(current.st_mode)
+                or int(current.st_nlink) != 1
+                or stat.S_IMODE(current.st_mode) != 0o600
+                or not _directory_owned_by_current_user(current)
+            ):
+                raise ComponentLockError(
+                    "Reference Track lifecycle lock changed"
+                )
+            self._descriptor = descriptor
+            return self
+        except Exception:
+            try:
+                import fcntl
+
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            except (ImportError, OSError):
+                pass
+            os.close(descriptor)
+            raise
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        del exc_type, exc_value, traceback
+        descriptor = self._descriptor
+        self._descriptor = None
+        if descriptor is None:
+            return
+        try:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 class _UnavailableReferenceBackend:
@@ -163,12 +359,14 @@ class _BlackHoleRouteLease:
     def __init__(
         self,
         token: object,
-        interprocess: InterProcessComponentLock,
+        interprocess: _ReferenceLifecycleLock,
         lifecycle_socket: socket.socket,
+        runtime_directory: SecureRuntimeDirectory,
     ) -> None:
         self._token = token
         self._interprocess = interprocess
         self._lifecycle_socket = lifecycle_socket
+        self._runtime_directory = runtime_directory
         self._released = False
 
     @property
@@ -185,14 +383,18 @@ class _BlackHoleRouteLease:
             try:
                 self._interprocess.__exit__(None, None, None)
             except OSError:
-                # The descriptor is closed in InterProcessComponentLock's
-                # finally block, which releases the kernel lease even when an
-                # explicit unlock reports an error.
+                # The descriptor is closed in the lock's finally block, which
+                # releases the kernel lease even when an explicit unlock
+                # reports an error.
                 pass
         finally:
             try:
                 self._lifecycle_socket.close()
             except OSError:
+                pass
+            try:
+                self._runtime_directory.close()
+            except (OSError, SecureRuntimeError):
                 pass
             with _ROUTE_OWNERS_LOCK:
                 if _ROUTE_OWNERS.get(_ROUTE_OWNER_KEY) is self._token:
@@ -204,13 +406,8 @@ def _reference_track_lock_path(home: Path) -> Path:
     # All eligible BlackHole routes share one Reference Track lifecycle. Keep
     # this lock global rather than UID-specific, and never unlink it while a
     # descriptor may still carry ownership.
-    return (
-        Path(home)
-        / "Library"
-        / "Application Support"
-        / "WebJam"
-        / "runtime"
-        / ".reference-track-v1.lifecycle.lock"
+    return reference_track_runtime_directory(home).parent / (
+        _REFERENCE_LIFECYCLE_LOCK_NAME
     )
 
 
@@ -223,12 +420,18 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
                 "Another WebJam Reference Track already owns this BlackHole route."
             )
         _ROUTE_OWNERS[_ROUTE_OWNER_KEY] = token
-    interprocess = InterProcessComponentLock(
-        _reference_track_lock_path(home),
-        timeout=0.0,
-    )
+    runtime_directory: SecureRuntimeDirectory | None = None
+    interprocess: _ReferenceLifecycleLock | None = None
     lifecycle_socket: socket.socket | None = None
     try:
+        runtime_directory = _open_webjam_runtime_directory(
+            Path(home),
+            reference_track=False,
+        )
+        interprocess = _ReferenceLifecycleLock(
+            runtime_directory,
+            timeout=0.0,
+        )
         lifecycle_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lifecycle_socket.set_inheritable(False)
         lifecycle_socket.bind(("127.0.0.1", _REFERENCE_LIFECYCLE_PORT))
@@ -239,6 +442,8 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         with _ROUTE_OWNERS_LOCK:
             if _ROUTE_OWNERS.get(_ROUTE_OWNER_KEY) is token:
                 del _ROUTE_OWNERS[_ROUTE_OWNER_KEY]
+        if runtime_directory is not None:
+            runtime_directory.close()
         raise ReferenceTrackError(
             "Another WebJam window is already using Reference Track."
         ) from None
@@ -248,6 +453,8 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         with _ROUTE_OWNERS_LOCK:
             if _ROUTE_OWNERS.get(_ROUTE_OWNER_KEY) is token:
                 del _ROUTE_OWNERS[_ROUTE_OWNER_KEY]
+        if runtime_directory is not None:
+            runtime_directory.close()
         if exc.errno == errno.EADDRINUSE:
             raise ReferenceTrackError(
                 "Another WebJam window is already using Reference Track."
@@ -261,6 +468,8 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         with _ROUTE_OWNERS_LOCK:
             if _ROUTE_OWNERS.get(_ROUTE_OWNER_KEY) is token:
                 del _ROUTE_OWNERS[_ROUTE_OWNER_KEY]
+        if runtime_directory is not None:
+            runtime_directory.close()
         raise ReferenceTrackError(
             "WebJam couldn't reserve the private Reference Track lifecycle."
         ) from None
@@ -270,11 +479,20 @@ def _claim_blackhole_route(uid: str, *, home: Path) -> _BlackHoleRouteLease:
         with _ROUTE_OWNERS_LOCK:
             if _ROUTE_OWNERS.get(_ROUTE_OWNER_KEY) is token:
                 del _ROUTE_OWNERS[_ROUTE_OWNER_KEY]
+        if runtime_directory is not None:
+            runtime_directory.close()
         raise ReferenceTrackError(
             "WebJam couldn't reserve the private Reference Track lifecycle."
         ) from None
     assert lifecycle_socket is not None
-    return _BlackHoleRouteLease(token, interprocess, lifecycle_socket)
+    assert interprocess is not None
+    assert runtime_directory is not None
+    return _BlackHoleRouteLease(
+        token,
+        interprocess,
+        lifecycle_socket,
+        runtime_directory,
+    )
 
 
 class _ReferencePrivateFiles:
@@ -287,18 +505,14 @@ class _ReferencePrivateFiles:
 
     def __init__(
         self,
-        directory_path: Path,
-        directory_fd: int,
+        runtime_directory: SecureRuntimeDirectory,
         *,
-        directory_device: int,
-        directory_inode: int,
         profile_name: str,
         secret_name: str,
     ) -> None:
-        self.directory_path = directory_path
-        self._directory_fd = directory_fd
-        self._directory_device = int(directory_device)
-        self._directory_inode = int(directory_inode)
+        self._runtime_directory = runtime_directory
+        self.directory_path = runtime_directory.path
+        self._directory_fd = runtime_directory.descriptor
         self.profile_name = profile_name
         self.secret_name = secret_name
         self._profile_device: int | None = None
@@ -314,39 +528,38 @@ class _ReferencePrivateFiles:
         self._closed = False
 
     @classmethod
-    def open(cls, directory_path: Path) -> "_ReferencePrivateFiles":
+    def open(
+        cls,
+        directory_path: Path,
+        *,
+        home: Path,
+    ) -> "_ReferencePrivateFiles":
         directory = Path(directory_path).expanduser()
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        try:
-            path_details = directory.lstat()
-        except OSError as exc:
+        expected = reference_track_runtime_directory(home)
+        if directory != expected:
             raise ReferenceTrackError(
-                "WebJam couldn't open its private Reference Track profile directory."
-            ) from exc
-        if not stat.S_ISDIR(path_details.st_mode) or directory.is_symlink():
-            raise ReferenceTrackError(
-                "WebJam refused an unsafe Reference Track profile directory."
+                "WebJam refused an unexpected Reference Track profile directory."
             )
-        flags = os.O_RDONLY
-        flags |= getattr(os, "O_CLOEXEC", 0)
-        flags |= getattr(os, "O_DIRECTORY", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
+        runtime_directory: SecureRuntimeDirectory | None = None
         try:
-            directory_fd = os.open(directory, flags)
-        except OSError as exc:
-            raise ReferenceTrackError(
-                "WebJam couldn't open its private Reference Track profile directory."
-            ) from exc
-        try:
+            runtime_directory = _open_webjam_runtime_directory(
+                Path(home),
+                reference_track=True,
+            )
+            if (
+                runtime_directory.path != directory
+                or not runtime_directory.path_matches()
+            ):
+                runtime_directory.close()
+                raise ReferenceTrackError(
+                    "WebJam refused a changed Reference Track profile directory."
+                )
+            directory_fd = runtime_directory.descriptor
             opened = os.fstat(directory_fd)
             if (
                 not stat.S_ISDIR(opened.st_mode)
-                or int(opened.st_dev) != int(path_details.st_dev)
-                or int(opened.st_ino) != int(path_details.st_ino)
-                or (
-                    hasattr(os, "geteuid")
-                    and int(opened.st_uid) != int(os.geteuid())
-                )
+                or stat.S_IMODE(opened.st_mode) != 0o700
+                or not _directory_owned_by_current_user(opened)
             ):
                 raise ReferenceTrackError(
                     "WebJam refused a changed Reference Track profile directory."
@@ -365,19 +578,29 @@ class _ReferencePrivateFiles:
                     directory_fd, secret_name
                 ):
                     return cls(
-                        directory,
-                        directory_fd,
-                        directory_device=int(opened.st_dev),
-                        directory_inode=int(opened.st_ino),
+                        runtime_directory,
                         profile_name=profile_name,
                         secret_name=secret_name,
                     )
             raise ReferenceTrackError(
                 "WebJam couldn't reserve unique private Reference Track files."
             )
-        except Exception:
-            os.close(directory_fd)
+        except ReferenceTrackError:
+            if runtime_directory is not None:
+                try:
+                    runtime_directory.close()
+                except SecureRuntimeError:
+                    pass
             raise
+        except (NotImplementedError, OSError, SecureRuntimeError):
+            if runtime_directory is not None:
+                try:
+                    runtime_directory.close()
+                except SecureRuntimeError:
+                    pass
+            raise ReferenceTrackError(
+                "WebJam couldn't establish its private Reference Track files."
+            ) from None
 
     @property
     def profile_path(self) -> Path:
@@ -420,21 +643,16 @@ class _ReferencePrivateFiles:
     def path_matches_directory(self) -> bool:
         if self._closed:
             return False
-        try:
-            details = self.directory_path.lstat()
-        except OSError:
-            return False
-        return (
-            stat.S_ISDIR(details.st_mode)
-            and not self.directory_path.is_symlink()
-            and int(details.st_dev) == self._directory_device
-            and int(details.st_ino) == self._directory_inode
-        )
+        return self._runtime_directory.path_matches()
 
     def launch_files_are_exact(self) -> bool:
         """Revalidate both immutable launch inputs immediately before Popen."""
 
-        if not self._provision_complete or self._closed:
+        if (
+            not self._provision_complete
+            or self._closed
+            or not self.path_matches_directory()
+        ):
             return False
         profile = self._read_regular(
             self.profile_name,
@@ -473,7 +691,10 @@ class _ReferencePrivateFiles:
             os.fsync(self._directory_fd)
         except OSError:
             return False
-        os.close(self._directory_fd)
+        try:
+            self._runtime_directory.close()
+        except SecureRuntimeError:
+            return False
         self._directory_fd = -1
         self._closed = True
         self._secret_sha256 = ""
@@ -738,9 +959,13 @@ class _ReferencePrivateFiles:
             os.fsync(descriptor)
             final = os.fstat(descriptor)
             if (
-                int(final.st_dev) != int(created.st_dev)
+                not stat.S_ISREG(final.st_mode)
+                or int(final.st_dev) != int(created.st_dev)
                 or int(final.st_ino) != int(created.st_ino)
                 or int(final.st_size) != len(payload)
+                or int(final.st_nlink) != 1
+                or stat.S_IMODE(final.st_mode) != 0o600
+                or not _directory_owned_by_current_user(final)
             ):
                 raise OSError("private-file verification failed")
         except Exception:
@@ -788,10 +1013,9 @@ class _ReferencePrivateFiles:
                 not stat.S_ISREG(details.st_mode)
                 or int(details.st_size) < 0
                 or int(details.st_size) > limit
-                or (
-                    hasattr(os, "geteuid")
-                    and int(details.st_uid) != int(os.geteuid())
-                )
+                or int(details.st_nlink) != 1
+                or stat.S_IMODE(details.st_mode) != 0o600
+                or not _directory_owned_by_current_user(details)
             ):
                 return None
             remaining = int(details.st_size) + 1
@@ -805,7 +1029,33 @@ class _ReferencePrivateFiles:
             payload = b"".join(chunks)
             if len(payload) != int(details.st_size):
                 return None
-            return details, payload
+            final = os.fstat(descriptor)
+            try:
+                visible = os.stat(
+                    name,
+                    dir_fd=self._directory_fd,
+                    follow_symlinks=False,
+                )
+            except OSError:
+                return None
+            if (
+                not stat.S_ISREG(final.st_mode)
+                or not stat.S_ISREG(visible.st_mode)
+                or int(final.st_dev) != int(details.st_dev)
+                or int(final.st_ino) != int(details.st_ino)
+                or int(final.st_size) != int(details.st_size)
+                or int(final.st_nlink) != 1
+                or stat.S_IMODE(final.st_mode) != 0o600
+                or not _directory_owned_by_current_user(final)
+                or int(visible.st_dev) != int(final.st_dev)
+                or int(visible.st_ino) != int(final.st_ino)
+                or int(visible.st_size) != int(final.st_size)
+                or int(visible.st_nlink) != 1
+                or stat.S_IMODE(visible.st_mode) != 0o600
+                or not _directory_owned_by_current_user(visible)
+            ):
+                return None
+            return final, payload
         finally:
             os.close(descriptor)
 
@@ -861,15 +1111,34 @@ class _PendingReferenceCleanup:
 
 
 def _default_version_probe(binary: str) -> str:
+    platform_name = (
+        "darwin"
+        if sys.platform.startswith("darwin")
+        else "win32"
+        if sys.platform.startswith("win")
+        else "linux"
+    )
     try:
+        environment = sanitized_jamulus_child_environment(
+            os.environ,
+            platform_name=platform_name,
+            executable=binary,
+        )
         result = subprocess.run(
             [binary, "--version"],
             capture_output=True,
             text=True,
             timeout=8.0,
             check=False,
+            shell=False,
+            env=environment,
+            cwd=str(Path(binary).parent if platform_name == "win32" else Path("/")),
         )
-    except (OSError, subprocess.SubprocessError):
+    except (
+        JamulusChildEnvironmentError,
+        OSError,
+        subprocess.SubprocessError,
+    ):
         return ""
     import re
 
@@ -894,14 +1163,26 @@ def _default_headless_client_probe(binary: str) -> bool:
     if not sys.platform.startswith("darwin"):
         return False
     try:
+        environment = sanitized_jamulus_child_environment(
+            os.environ,
+            platform_name="darwin",
+            executable="/usr/bin/otool",
+        )
         result = subprocess.run(
             ["/usr/bin/otool", "-L", binary],
             capture_output=True,
             text=True,
             timeout=8.0,
             check=False,
+            shell=False,
+            env=environment,
+            cwd="/",
         )
-    except (OSError, subprocess.SubprocessError):
+    except (
+        JamulusChildEnvironmentError,
+        OSError,
+        subprocess.SubprocessError,
+    ):
         return False
     return result.returncode == 0 and "QtWidgets.framework" not in result.stdout
 
@@ -1444,7 +1725,7 @@ class MacOSBlackHoleReferenceBackend:
         context: ReferenceTrackLaunchContext,
         primary_route: CoreAudioProcessRouteSnapshot,
     ) -> "_MacReferenceSession":
-        config_dir = jamulus_macos_config_directory(self._home)
+        config_dir = reference_track_runtime_directory(self._home)
         profile = AudioRouteProfile(
             platform=AudioRoutePlatform.MACOS_COREAUDIO,
             input_device_id=route.uid,
@@ -1469,7 +1750,10 @@ class MacOSBlackHoleReferenceBackend:
         rpc: _ReferenceRpcControl | None = None
         route_lease = _claim_blackhole_route(route.uid, home=self._home)
         try:
-            owned_files = _ReferencePrivateFiles.open(config_dir)
+            owned_files = _ReferencePrivateFiles.open(
+                config_dir,
+                home=self._home,
+            )
             secret_value = secrets.token_urlsafe(32)
             owned_files.provision(adapter, profile, secret=secret_value)
             sounddevice_module = self._load_sounddevice()
@@ -1479,7 +1763,7 @@ class MacOSBlackHoleReferenceBackend:
                 "--nogui",
                 "--mutemyown",
                 "--inifile",
-                owned_files.profile_name,
+                str(owned_files.profile_path),
                 "--clientname",
                 REFERENCE_PARTICIPANT_NAME,
                 "--connect",
@@ -1491,30 +1775,27 @@ class MacOSBlackHoleReferenceBackend:
                 "--jsonrpcport",
                 str(rpc_port),
                 "--jsonrpcsecretfile",
-                owned_files.secret_name,
+                str(owned_files.secret_path),
             ]
             if (
                 not owned_files.path_matches_directory()
                 or not owned_files.launch_files_are_exact()
             ):
-                raise ReferenceTrackError(
-                    "Reference Track's private launch profile changed during "
-                    "startup."
-                )
+                raise ReferenceTrackError(_PRIVATE_LAUNCH_CHANGED)
             process = self._popen_factory(
                 command,
                 cwd=str(config_dir),
-                env=self._child_environment(),
+                env=self._child_environment(binary),
                 pass_fds=route_lease.child_pass_fds,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            if not owned_files.path_matches_directory():
-                raise ReferenceTrackError(
-                    "Reference Track's private profile directory changed "
-                    "during startup."
-                )
+            if (
+                not owned_files.path_matches_directory()
+                or not owned_files.launch_files_are_exact()
+            ):
+                raise ReferenceTrackError(_PRIVATE_LAUNCH_CHANGED)
         except Exception as exc:
             pending = _PendingReferenceCleanup(
                 process=process,
@@ -1538,17 +1819,20 @@ class MacOSBlackHoleReferenceBackend:
                 raise ReferenceTrackError(
                     "Reference Track couldn't confirm that its owned Jamulus "
                     "client stopped after startup failed."
-                ) from exc
+                ) from None
             if not cleaned:
                 raise ReferenceTrackError(
                     "Reference Track stopped after startup failed, but its "
                     "private cleanup could not be confirmed."
-                ) from exc
-            if isinstance(exc, ReferenceTrackError):
-                raise
+                ) from None
+            if (
+                isinstance(exc, ReferenceTrackError)
+                and str(exc) == _PRIVATE_LAUNCH_CHANGED
+            ):
+                raise ReferenceTrackError(_PRIVATE_LAUNCH_CHANGED) from None
             raise ReferenceTrackError(
                 "WebJam couldn't prepare a safe Reference Track route."
-            ) from exc
+            ) from None
         secret_value = ""
         assert owned_files is not None
 
@@ -1699,14 +1983,15 @@ class MacOSBlackHoleReferenceBackend:
         ) from last_error
 
     @staticmethod
-    def _child_environment() -> dict[str, str]:
-        environment = os.environ.copy()
-        if environment.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen":
-            environment.pop("QT_QPA_PLATFORM", None)
-        rules = environment.get("QT_LOGGING_RULES", "").strip().rstrip(";")
-        environment["QT_LOGGING_RULES"] = (
-            f"{rules};default.warning=false" if rules else "default.warning=false"
+    def _child_environment(executable: str | Path) -> dict[str, str]:
+        environment = sanitized_jamulus_child_environment(
+            os.environ,
+            platform_name=sys.platform,
+            executable=executable,
         )
+        # Inherited Qt controls were removed by the shared native-child
+        # boundary. Add only this reviewed literal logging rule.
+        environment["QT_LOGGING_RULES"] = "default.warning=false"
         return environment
 
     @staticmethod
@@ -1722,8 +2007,15 @@ class MacOSBlackHoleReferenceBackend:
     def _terminate_process(process: subprocess.Popen | None) -> bool:
         if process is None:
             return True
+
+        def stopped() -> bool:
+            try:
+                return process.poll() is not None
+            except Exception:  # noqa: BLE001 - unknown state fails closed
+                return False
+
         try:
-            if process.poll() is not None:
+            if stopped():
                 return True
             process.terminate()
             try:
@@ -1732,8 +2024,8 @@ class MacOSBlackHoleReferenceBackend:
                 process.kill()
                 process.wait(timeout=2.0)
         except Exception:  # noqa: BLE001
-            return process.poll() is not None
-        return process.poll() is not None
+            return stopped()
+        return stopped()
 
     def _session_stopped(self, session: "_MacReferenceSession") -> None:
         with self._lock:
@@ -2176,4 +2468,5 @@ __all__ = [
     "REFERENCE_PROFILE_FILENAME",
     "REFERENCE_SECRET_FILENAME",
     "create_reference_audio_backend",
+    "reference_track_runtime_directory",
 ]

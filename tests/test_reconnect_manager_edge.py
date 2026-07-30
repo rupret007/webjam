@@ -9,9 +9,19 @@ from __future__ import annotations
 import subprocess
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from core.jamulus_rpc_client import (
+    JamulusRpcMonitorIdentity,
+    JamulusRpcMonitorSnapshot,
+)
 from tests.support.component_store import isolated_component_store_root
+
+
+_HOST_ABSOLUTE_JAMULUS = str(
+    Path(__file__).resolve().parent / "fixtures" / "Jamulus-test"
+)
 
 
 def _make_settings(
@@ -60,9 +70,36 @@ def _make_bridge(
         ui_callbacks=ui_callbacks,
         component_store_root=isolated_component_store_root(),
     )
+    bridge.jamulus_controller.rpc_monitor_snapshot_for.return_value = None
     for attr, val in overrides.items():
         setattr(bridge, attr, val)
     return bridge
+
+
+def _set_rpc_monitor(
+    bridge,
+    *,
+    process_generation: int,
+    process_id: int,
+    available: bool = True,
+    authenticated: bool = True,
+    activity_at: float = 99.0,
+    age_seconds: float = 1.0,
+) -> None:
+    bridge.jamulus_controller.rpc_monitor_snapshot_for.return_value = (
+        JamulusRpcMonitorSnapshot(
+            identity=JamulusRpcMonitorIdentity(
+                monitor_epoch=1,
+                process_generation=process_generation,
+                process_id=process_id,
+            ),
+            running=True,
+            available=available,
+            authenticated=authenticated,
+            last_activity_at=activity_at,
+            last_activity_age_seconds=age_seconds,
+        )
+    )
 
 
 class _ImmediateThread:
@@ -91,10 +128,12 @@ class TestReconnectManagerEdge(unittest.TestCase):
     # ------------------------------------------------------------------
     # attempt_auto_reconnects — top-level guard
     # ------------------------------------------------------------------
-    def test_auto_reconnect_disabled_skips_retries(self):
+    def test_legacy_auto_reconnect_disabled_cannot_strand_modern_recovery(self):
         bridge = _make_bridge()
         bridge.repository.get_setting.return_value = "0"  # disabled
         bridge.jamulus_launch_intended = True
+        bridge.jamulus_process = MagicMock(pid=200)
+        bridge.jamulus_process.poll.return_value = 1
         launch_j = MagicMock()
         launch_w = MagicMock()
         bridge.launch_jamulus = launch_j
@@ -102,8 +141,14 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         bridge.attempt_auto_reconnects()
 
-        bridge.metrics_service.increment.assert_not_called()
-        launch_j.assert_not_called()
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_jamulus_reconnect_attempt"
+        )
+        launch_j.assert_called_once_with(
+            manual=False,
+            reconnect=True,
+            force_restart=False,
+        )
         launch_w.assert_not_called()
 
     def test_auto_reconnect_skips_when_shutdown_requested(self):
@@ -119,6 +164,16 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.metrics_service.increment.assert_not_called()
         launch_j.assert_not_called()
         launch_w.assert_not_called()
+
+    def test_hosted_server_supervisor_is_independent_of_client_recovery(self):
+        bridge = _make_bridge()
+        bridge._restart_hosted_server_if_died = MagicMock()
+        bridge._attempt_auto_reconnect_jamulus = MagicMock()
+
+        bridge.attempt_hosted_server_recovery()
+
+        bridge._restart_hosted_server_if_died.assert_called_once_with()
+        bridge._attempt_auto_reconnect_jamulus.assert_not_called()
 
     # ------------------------------------------------------------------
     # Jamulus reconnect logic
@@ -145,10 +200,17 @@ class TestReconnectManagerEdge(unittest.TestCase):
     def test_auto_reconnect_jamulus_forces_restart_when_process_stalls(self):
         bridge = _make_bridge()
         bridge.jamulus_launch_intended = True
-        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process = MagicMock(pid=201)
         bridge.jamulus_process.poll.return_value = None
-        bridge.jamulus_controller.rpc_client = MagicMock()
-        bridge.jamulus_controller.rpc_client.last_activity_age.return_value = 30.0
+        bridge._jamulus_process_generation = 2
+        bridge._jamulus_process_started_at = 1.0
+        _set_rpc_monitor(
+            bridge,
+            process_generation=2,
+            process_id=201,
+            activity_at=70.0,
+            age_seconds=30.0,
+        )
         bridge.jamulus_reconnect_attempts = 2
         bridge.jamulus_next_reconnect_at = 0.0
         bridge.jamulus_reconnect_inflight = False
@@ -163,13 +225,20 @@ class TestReconnectManagerEdge(unittest.TestCase):
             manual=False, reconnect=True, force_restart=True
         )
 
-    def test_auto_reconnect_not_required_for_healthy_live_process(self):
+    def test_fresh_live_process_waits_for_authenticated_ack(self):
         bridge = _make_bridge()
         bridge.jamulus_launch_intended = True
-        bridge.jamulus_process = MagicMock()
+        bridge.jamulus_process = MagicMock(pid=202)
         bridge.jamulus_process.poll.return_value = None
-        bridge.jamulus_controller.rpc_client = MagicMock()
-        bridge.jamulus_controller.rpc_client.last_activity_age.return_value = 1.0
+        bridge._jamulus_process_generation = 3
+        bridge._jamulus_process_started_at = 50.0
+        _set_rpc_monitor(
+            bridge,
+            process_generation=3,
+            process_id=202,
+            activity_at=99.0,
+            age_seconds=1.0,
+        )
         bridge.jamulus_reconnect_attempts = 2
         bridge.jamulus_next_reconnect_at = 0.0
         bridge.jamulus_reconnect_inflight = False
@@ -178,12 +247,15 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         bridge._attempt_auto_reconnect_jamulus(now=100.0)
 
-        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
+        # Popen/liveness is not authenticated recovery. Preserve history until
+        # the application acknowledges fresh RPC + local roster for the
+        # current generation/PID.
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 2)
         self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
         self.assertFalse(bridge.jamulus_reconnect_inflight)
         launch_j.assert_not_called()
 
-    def test_auto_reconnect_jamulus_resets_when_process_running(self):
+    def test_running_process_never_resets_inflight_recovery_by_itself(self):
         bridge = _make_bridge()
         bridge.jamulus_launch_intended = True
         bridge.jamulus_process = MagicMock()
@@ -194,9 +266,9 @@ class TestReconnectManagerEdge(unittest.TestCase):
 
         bridge._attempt_auto_reconnect_jamulus(now=5.0)
 
-        self.assertEqual(bridge.jamulus_reconnect_attempts, 0)
-        self.assertEqual(bridge.jamulus_next_reconnect_at, 0.0)
-        self.assertFalse(bridge.jamulus_reconnect_inflight)
+        self.assertEqual(bridge.jamulus_reconnect_attempts, 3)
+        self.assertEqual(bridge.jamulus_next_reconnect_at, 999.0)
+        self.assertTrue(bridge.jamulus_reconnect_inflight)
 
     # ------------------------------------------------------------------
     # External Webex is never auto-reconnected
@@ -247,8 +319,10 @@ class TestReconnectManagerEdge(unittest.TestCase):
         fake_proc.poll.return_value = None
         popen_mock.return_value = fake_proc
         bridge = _make_bridge()
-        bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
-        bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        bridge.settings.jamulus_candidates = [_HOST_ABSOLUTE_JAMULUS]
+        bridge.find_jamulus = MagicMock(
+            return_value=_HOST_ABSOLUTE_JAMULUS
+        )
         bridge._is_rpc_port_in_use = MagicMock(return_value=False)
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_attempts = 1
@@ -277,8 +351,10 @@ class TestReconnectManagerEdge(unittest.TestCase):
         shutdown_flag = {"value": False}
         bridge = _make_bridge()
         bridge.shutdown_requested = lambda: shutdown_flag["value"]
-        bridge.settings.jamulus_candidates = ["C:/Jamulus.exe"]
-        bridge.find_jamulus = MagicMock(return_value="C:/Jamulus.exe")
+        bridge.settings.jamulus_candidates = [_HOST_ABSOLUTE_JAMULUS]
+        bridge.find_jamulus = MagicMock(
+            return_value=_HOST_ABSOLUTE_JAMULUS
+        )
         bridge._is_rpc_port_in_use = MagicMock(return_value=False)
         bridge.jamulus_process = None
         bridge.jamulus_reconnect_inflight = True
@@ -614,13 +690,29 @@ class TestStopJamulus(unittest.TestCase):
         proc = MagicMock()
         proc.poll.return_value = None
         proc.terminate.side_effect = OSError("not permitted")
+        proc.kill.side_effect = OSError("still not permitted")
         bridge.jamulus_process = proc
 
         result = bridge.stop_jamulus()
 
         self.assertFalse(result)
         self.assertIs(bridge.jamulus_process, proc)
+        proc.kill.assert_called_once()
         self.assertEqual(bridge.jamulus_state, "Stop failed")
+
+    def test_stop_jamulus_kill_fallback_reaps_after_terminate_failure(self):
+        bridge = _make_bridge()
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.terminate.side_effect = OSError("not permitted")
+        bridge.jamulus_process = proc
+
+        result = bridge.stop_jamulus()
+
+        self.assertTrue(result)
+        self.assertIsNone(bridge.jamulus_process)
+        proc.kill.assert_called_once()
+        proc.wait.assert_called_once_with(timeout=2.0)
 
     def test_stop_jamulus_calls_controller_stop_to_halt_monitoring(self):
         bridge = _make_bridge()

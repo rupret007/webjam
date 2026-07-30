@@ -17,7 +17,7 @@ import tempfile
 
 from core.component_catalog import CatalogSequenceStore, ComponentCatalogVerifier
 from core.component_download import DownloadCancellation
-from core.jamulus_compatibility import JamulusRole
+from core.jamulus_compatibility import ComponentTarget, JamulusRole
 from services.jamulus_component_platform import platform_component_target
 from services.jamulus_component_update import (
     DEFAULT_COMPONENT_CATALOG_URL,
@@ -120,6 +120,16 @@ def run_frozen_component_catalog_smoke(*, result_path: Path) -> int:
     )
     if client.artifact != server.artifact:
         raise RuntimeError("Catalog smoke client/server package identity differs.")
+    if target in {
+        ComponentTarget.MACOS_ARM64,
+        ComponentTarget.MACOS_X64,
+    } and (
+        client.capabilities.includes({"webjam-route-profile"})
+        or server.capabilities.includes({"recording"})
+    ):
+        raise RuntimeError(
+            "Catalog smoke found unsafe macOS runtime-file capability claims."
+        )
     transport = fetcher.security_diagnostics()
     if transport.get("trust_status") != "ready":
         raise RuntimeError("Catalog smoke did not establish packaged TLS trust.")

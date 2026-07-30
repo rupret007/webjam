@@ -15,6 +15,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+from core.jamulus_compatibility import ComponentTarget
 from tests.support.component_store import isolated_component_store_root
 
 
@@ -91,6 +92,7 @@ class TestLaunchJamulusNotFound(unittest.TestCase):
     def test_reconnect_launch_not_found_skips_dialog(self):
         bridge = _make_bridge()
         bridge.find_jamulus = MagicMock(return_value=None)
+        bridge.jamulus_launch_intended = True
         bridge.jamulus_reconnect_inflight = True
 
         bridge.launch_jamulus(manual=False, reconnect=True)
@@ -180,6 +182,7 @@ class TestLaunchJamulusAlreadyRunning(unittest.TestCase):
         bridge = _make_bridge()
         bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
         bridge.jamulus_process = old_proc
+        bridge.jamulus_launch_intended = True
         bridge._is_rpc_port_in_use = MagicMock(return_value=False)
 
         with patch("pathlib.Path.is_file", return_value=True):
@@ -235,6 +238,7 @@ class TestLaunchJamulusFailure(unittest.TestCase):
         self, popen_mock, _thread, _sleep
     ):
         bridge = self._bridge_with_binary()
+        bridge.jamulus_launch_intended = True
         bridge.launch_jamulus(manual=False, reconnect=True)
 
         self.assertEqual(bridge.jamulus_state, "Not running")
@@ -365,7 +369,7 @@ class TestLaunchCommandContract(unittest.TestCase):
         )
         bridge.show_actionable_error.assert_called_once()
 
-    def test_macos_child_uses_native_ui_and_suppresses_late_qt_warning(
+    def test_macos_child_scrubs_qt_controls_and_adds_literal_warning_rule(
         self, _thread
     ):
         bridge = _make_bridge()
@@ -388,10 +392,8 @@ class TestLaunchCommandContract(unittest.TestCase):
             captured = self._launch_and_capture_environment(bridge)
 
         assert "QT_QPA_PLATFORM" not in captured
-        assert captured["QT_LOGGING_RULES"] == (
-            "jamulus.rpc.debug=true;default.warning=true;default.warning=false"
-        )
-        assert captured["QT_FORCE_STDERR_LOGGING"] == "preserve-me"
+        assert captured["QT_LOGGING_RULES"] == "default.warning=false"
+        assert "QT_FORCE_STDERR_LOGGING" not in captured
 
     def test_macos_child_adds_qt_warning_rule_when_none_exists(self, _thread):
         bridge = _make_bridge()
@@ -409,7 +411,7 @@ class TestLaunchCommandContract(unittest.TestCase):
 
         assert captured["QT_LOGGING_RULES"] == "default.warning=false"
 
-    def test_non_macos_child_preserves_qt_logging_rules(self, _thread):
+    def test_non_macos_child_scrubs_inherited_qt_logging_rules(self, _thread):
         bridge = _make_bridge()
         bridge.settings.jamulus_server = "portable-log-probe.example.com"
         bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
@@ -424,7 +426,8 @@ class TestLaunchCommandContract(unittest.TestCase):
         ):
             captured = self._launch_and_capture_environment(bridge)
 
-        assert captured["QT_LOGGING_RULES"] == inherited
+        assert "QT_LOGGING_RULES" not in captured
+        assert captured["PATH"] == "/usr/bin:/bin"
 
     def test_secret_write_failure_fails_closed_without_launch(self, _thread):
         bridge = _make_bridge()
@@ -733,6 +736,7 @@ class TestFindJamulusFallback(unittest.TestCase):
         import tempfile
         from pathlib import Path
         bridge = _make_bridge()
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
         with tempfile.NamedTemporaryFile(suffix="-jamulus") as fake_binary:
             Path(fake_binary.name).chmod(0o700)
             bridge.settings.jamulus_candidates = [fake_binary.name]
@@ -749,6 +753,7 @@ class TestFindJamulusFallback(unittest.TestCase):
     def test_falls_back_to_default_candidates(self):
         import tempfile
         bridge = _make_bridge()
+        bridge._jamulus_component_target = ComponentTarget.WINDOWS_X64
         bridge.settings.jamulus_candidates = ["/nonexistent/custom/jamulus"]
         with tempfile.NamedTemporaryFile(suffix="-jamulus") as fake_binary:
             from pathlib import Path

@@ -17,6 +17,7 @@ from core.component_catalog import ComponentCatalogVerifier
 from core.component_catalog_signing import sign_component_catalog
 from core.file_io import atomic_write_bytes
 from core.jamulus_compatibility import (
+    ComponentTarget,
     JamulusRole,
     official_jamulus_compatibility_registry,
 )
@@ -54,6 +55,19 @@ def build_payload(
         raise ValueError(
             "the approved client/server component inventory is incomplete"
         )
+    for component in components:
+        if component.target in {
+            ComponentTarget.MACOS_ARM64,
+            ComponentTarget.MACOS_X64,
+        } and component.capabilities.includes(
+            {"webjam-route-profile"}
+            if component.role is JamulusRole.CLIENT
+            else {"recording"}
+        ):
+            raise ValueError(
+                "an upstream macOS source artifact claims WebJam runtime-file "
+                "capabilities"
+            )
     return {
         "schema": 1,
         "sequence": sequence,

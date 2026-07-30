@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from time import monotonic
 from typing import Optional
 
@@ -29,6 +30,17 @@ from core.reference_track import reference_track_file_filter
 from webjam_qt.theme.tokens import Space
 
 _BLACKHOLE_SETUP_URL = "https://existential.audio/blackhole/"
+
+
+class ReferenceTrackPrimaryGate(StrEnum):
+    """Finite application-owned readiness truth for Reference Track playback."""
+
+    READY = "ready"
+    NOT_CONNECTED = "not_connected"
+    RECOVERING = "recovering"
+    RECOVERY_FAILED = "recovery_failed"
+    HOST_REQUIRED = "host_required"
+    SESSION_CHANGING = "session_changing"
 
 
 def _clock_text(seconds: float) -> str:
@@ -68,6 +80,10 @@ class ReferenceTrackDialog(QDialog):
         self._rendered_state = "unavailable"
         self._route_checking = False
         self._source_load_queued = False
+        # The core Reference Track snapshot deliberately does not own the
+        # primary Jamulus/session lifecycle. Fail closed until the application
+        # controller proves one of the finite gate states below.
+        self._primary_gate = ReferenceTrackPrimaryGate.NOT_CONNECTED
         # Controller snapshots arrive every 250 ms.  Keep a just-committed
         # keyboard edit on screen until the controller echoes it back instead
         # of briefly replacing it with the preceding snapshot.
@@ -241,16 +257,16 @@ class ReferenceTrackDialog(QDialog):
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
         self._play.setAccessibleName("Play Reference Track through Jamulus")
-        self._play.clicked.connect(self.play_requested.emit)
+        self._play.clicked.connect(self._emit_play)
         self._pause = QPushButton("Pause")
         self._pause.setObjectName("GhostButton")
-        self._pause.clicked.connect(self.pause_requested.emit)
+        self._pause.clicked.connect(self._emit_pause)
         self._restart = QPushButton("Restart")
         self._restart.setObjectName("GhostButton")
-        self._restart.clicked.connect(self.restart_requested.emit)
+        self._restart.clicked.connect(self._emit_restart)
         self._stop = QPushButton("Stop")
         self._stop.setProperty("destructive", "true")
-        self._stop.clicked.connect(self.stop_requested.emit)
+        self._stop.clicked.connect(self._emit_stop)
         transport.addWidget(self._play)
         transport.addWidget(self._pause)
         transport.addWidget(self._restart)
@@ -361,9 +377,39 @@ class ReferenceTrackDialog(QDialog):
             "was downloaded or installed.",
         )
 
+    def _emit_play(self) -> None:
+        if (
+            self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and self._rendered_state in {"ready", "paused"}
+        ):
+            self.play_requested.emit()
+
+    def _emit_pause(self) -> None:
+        if (
+            self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and self._rendered_state == "playing"
+        ):
+            self.pause_requested.emit()
+
+    def _emit_restart(self) -> None:
+        if (
+            self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and self._rendered_state in {"playing", "paused"}
+        ):
+            self.restart_requested.emit()
+
+    def _emit_stop(self) -> None:
+        if (
+            self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and self._rendered_state
+            in {"routing", "playing", "paused", "failed"}
+        ):
+            self.stop_requested.emit()
+
     def _emit_seek(self) -> None:
         if (
             self._syncing
+            or self._primary_gate is not ReferenceTrackPrimaryGate.READY
             or self._rendered_state != "paused"
             or not self._seek.isEnabled()
         ):
@@ -468,7 +514,10 @@ class ReferenceTrackDialog(QDialog):
         self.count_in_requested.emit(beats, bpm)
 
     def _edits_allowed(self) -> bool:
-        return self._rendered_state in {"ready", "paused"}
+        return bool(
+            self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and self._rendered_state in {"ready", "paused"}
+        )
 
     @staticmethod
     def _matches(left: float, right: float, *, tolerance: float) -> bool:
@@ -610,6 +659,41 @@ class ReferenceTrackDialog(QDialog):
                     f"{source_format or 'Song'} loaded and decoded; Play is "
                     "locked in this downloaded candidate"
                 )
+        elif (
+            loaded
+            and state in {"ready", "playing", "paused"}
+            and capability_available
+        ):
+            ready_prefix = {
+                "ready": "Song loaded and ready to inspect",
+                "playing": "Reference Track reports playback active",
+                "paused": "Reference Track paused",
+            }[state]
+            if self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
+                status = (
+                    f"{ready_prefix}; waiting for the current session change "
+                    "to finish; controls are locked"
+                )
+            elif self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED:
+                status = (
+                    f"{ready_prefix}; playback is available only to the host; "
+                    "controls are locked"
+                )
+            elif self._primary_gate is ReferenceTrackPrimaryGate.NOT_CONNECTED:
+                status = (
+                    f"{ready_prefix}; waiting for a verified primary Jamulus "
+                    "control connection; controls are locked"
+                )
+            elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
+                status = (
+                    f"{ready_prefix}; waiting for band audio recovery to "
+                    "finish; controls are locked"
+                )
+            elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERY_FAILED:
+                status = (
+                    f"{ready_prefix}; start a clean band audio session before "
+                    "playback; controls are locked"
+                )
         if cleanup_pending:
             status = (
                 "Private Reference Track cleanup is still pending"
@@ -642,11 +726,69 @@ class ReferenceTrackDialog(QDialog):
                 "blackhole_unavailable",
             }
         )
-        if cleanup_pending:
+        if (
+            cleanup_pending
+            and self._primary_gate
+            is ReferenceTrackPrimaryGate.SESSION_CHANGING
+        ):
+            guidance = (
+                "Finish the current End, Leave, or session-switch cleanup from "
+                "WebJam's main session control. Reference Track's Stop stays "
+                "locked while that single cleanup owner is active."
+            )
+        elif cleanup_pending:
             guidance = (
                 "Choose Stop again. Loading, playback, and route rechecks stay "
                 "locked until WebJam confirms its private process, profile, "
                 "control, and audio-route cleanup."
+            )
+        elif (
+            capability_available
+            and self._primary_gate
+            is ReferenceTrackPrimaryGate.SESSION_CHANGING
+        ):
+            guidance = (
+                "WebJam is ending, leaving, or switching the current jam. Play "
+                "and Restart stay locked until that session change finishes; "
+                "loading and inspecting the song does not start another client."
+            )
+        elif (
+            capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED
+        ):
+            guidance = (
+                "Only the host can send a Reference Track to the band. This "
+                "song stays loaded for inspection, but connecting as a guest "
+                "will not unlock Play; start a hosted jam to use it."
+            )
+        elif (
+            capability_available
+            and self._primary_gate
+            is ReferenceTrackPrimaryGate.NOT_CONNECTED
+        ):
+            guidance = (
+                "Start or reconnect band audio, finish Jamulus sound setup, and "
+                "wait for WebJam to verify its authenticated control connection. "
+                "Play stays locked until that proof is current; "
+                "loading and inspecting the song does not start another client."
+            )
+        elif (
+            capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING
+        ):
+            guidance = (
+                "WebJam is recovering or safely retiring the primary Jamulus "
+                "client. Play and Restart stay locked until recovery finishes "
+                "and a fresh authenticated control heartbeat is verified."
+            )
+        elif (
+            capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.RECOVERY_FAILED
+        ):
+            guidance = (
+                "Automatic band-audio recovery finished without a usable "
+                "connection. Press Start Session in the main WebJam window to "
+                "launch a clean Jamulus client, then finish its sound setup."
             )
         elif capability_available:
             guidance = (
@@ -819,7 +961,7 @@ class ReferenceTrackDialog(QDialog):
             )
             and self.isVisible()
         ):
-            target = (
+            preferred_target = (
                 self._stop
                 if state in {"routing", "stopping"} or cleanup_pending
                 else self._pause
@@ -828,7 +970,18 @@ class ReferenceTrackDialog(QDialog):
                 if state in {"ready", "paused"}
                 else None
             )
-            if target is not None and target.isEnabled():
+            if self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
+                target = self._done
+            else:
+                target = (
+                    preferred_target
+                    if preferred_target is not None
+                    and preferred_target.isEnabled()
+                    else self._recheck_route
+                    if self._recheck_route.isEnabled()
+                    else self._done
+                )
+            if target.isEnabled():
                 target.setFocus(Qt.FocusReason.TabFocusReason)
 
     def set_route_checking(self, checking: bool) -> None:
@@ -867,6 +1020,16 @@ class ReferenceTrackDialog(QDialog):
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
 
+    def set_primary_gate(self, gate: ReferenceTrackPrimaryGate) -> None:
+        """Render the controller's finite primary-session readiness truth."""
+
+        value = ReferenceTrackPrimaryGate(gate)
+        if self._primary_gate is value:
+            return
+        self._primary_gate = value
+        if self._snapshot is not None:
+            self.set_snapshot(self._snapshot)
+
     @staticmethod
     def _set_dynamic_status(label: QLabel, text: str) -> None:
         """Update a changing status once and notify assistive technology."""
@@ -891,6 +1054,24 @@ class ReferenceTrackDialog(QDialog):
             pass
 
     @staticmethod
+    def _set_dynamic_description(widget: QWidget, text: str) -> None:
+        """Update an accessible control reason without periodic event spam."""
+
+        value = str(text or "")
+        if widget.accessibleDescription() == value:
+            return
+        widget.setAccessibleDescription(value)
+        try:
+            QAccessible.updateAccessibility(
+                QAccessibleEvent(
+                    widget,
+                    QAccessible.Event.DescriptionChanged,
+                )
+            )
+        except (RuntimeError, TypeError):
+            pass
+
+    @staticmethod
     def _spin_box_has_focus(control: QSpinBox | QDoubleSpinBox) -> bool:
         """Keep an in-progress keyboard edit across periodic snapshots."""
 
@@ -908,7 +1089,8 @@ class ReferenceTrackDialog(QDialog):
         cleanup_pending: bool = False,
     ) -> None:
         busy = state in {"loading", "routing", "stopping", "closed"}
-        editable = loaded and state in {"ready", "paused"}
+        primary_ready = self._primary_gate is ReferenceTrackPrimaryGate.READY
+        editable = loaded and primary_ready and state in {"ready", "paused"}
         self._load.setEnabled(
             not busy
             and not cleanup_pending
@@ -918,16 +1100,64 @@ class ReferenceTrackDialog(QDialog):
             not busy
             and not self._route_checking
             and not cleanup_pending
+            and self._primary_gate
+            is not ReferenceTrackPrimaryGate.SESSION_CHANGING
             and state not in {"playing", "paused"}
         )
         self._blackhole_setup.setEnabled(not busy and not cleanup_pending)
         self._play.setEnabled(
-            loaded and capability_available and state in {"ready", "paused"}
+            loaded
+            and capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.READY
+            and state in {"ready", "paused"}
         )
         capability = getattr(self._snapshot, "capability", None)
         reason = str(getattr(capability, "reason_code", "") or "").casefold()
         if self._play.isEnabled():
             play_tooltip = "Play the loaded song through the isolated Jamulus route."
+        elif (
+            loaded
+            and capability_available
+            and self._primary_gate
+            is ReferenceTrackPrimaryGate.SESSION_CHANGING
+        ):
+            play_tooltip = (
+                "Wait for the current session change to finish before playing."
+            )
+        elif (
+            loaded
+            and capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED
+        ):
+            play_tooltip = "Only the host can play a Reference Track for the band."
+        elif (
+            loaded
+            and capability_available
+            and self._primary_gate
+            is ReferenceTrackPrimaryGate.NOT_CONNECTED
+        ):
+            play_tooltip = (
+                "Finish Jamulus sound setup and wait for WebJam to confirm your "
+                "live music connection before playing."
+            )
+        elif (
+            loaded
+            and capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING
+        ):
+            play_tooltip = (
+                "Wait for band audio recovery and a fresh authenticated "
+                "Jamulus heartbeat before playing."
+            )
+        elif (
+            loaded
+            and capability_available
+            and self._primary_gate is ReferenceTrackPrimaryGate.RECOVERY_FAILED
+        ):
+            play_tooltip = (
+                "Press Start Session in WebJam to launch clean band audio "
+                "before playing."
+            )
         elif reason == "physical_certification_required":
             play_tooltip = (
                 "Play is locked in this downloaded candidate because physical "
@@ -940,15 +1170,97 @@ class ReferenceTrackDialog(QDialog):
         else:
             play_tooltip = "Load a supported song before playing."
         self._play.setToolTip(play_tooltip)
-        self._pause.setEnabled(state == "playing")
+        self._set_dynamic_description(self._play, play_tooltip)
+        self._pause.setEnabled(primary_ready and state == "playing")
+        if state != "playing":
+            pause_tooltip = (
+                "Pause becomes available while the Reference Track is playing."
+            )
+        elif primary_ready:
+            pause_tooltip = "Pause the Reference Track through Jamulus."
+        else:
+            pause_tooltip = (
+                "Pause is locked until the primary Jamulus session is ready."
+            )
+        self._pause.setToolTip(pause_tooltip)
+        self._set_dynamic_description(self._pause, pause_tooltip)
         self._restart.setEnabled(
-            capability_available and state in {"playing", "paused"}
+            capability_available
+            and primary_ready
+            and state in {"playing", "paused"}
         )
+        if state not in {"playing", "paused"}:
+            restart_tooltip = (
+                "Restart becomes available while the Reference Track is playing "
+                "or paused."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
+            restart_tooltip = (
+                "Wait for the current session change to finish before restarting."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED:
+            restart_tooltip = (
+                "Only the host can restart a Reference Track for the band."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.NOT_CONNECTED:
+            restart_tooltip = (
+                "Finish Jamulus sound setup and wait for WebJam to confirm your "
+                "live music connection before restarting."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
+            restart_tooltip = (
+                "Wait for band audio recovery and a fresh authenticated "
+                "Jamulus heartbeat before restarting."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERY_FAILED:
+            restart_tooltip = (
+                "Press Start Session in WebJam to launch clean band audio "
+                "before restarting."
+            )
+        elif self._restart.isEnabled():
+            restart_tooltip = "Restart the Reference Track from the beginning."
+        else:
+            restart_tooltip = "Restart is unavailable until the route is proven."
+        self._restart.setToolTip(restart_tooltip)
+        self._set_dynamic_description(self._restart, restart_tooltip)
         self._stop.setEnabled(
-            cleanup_pending
-            or state in {"routing", "playing", "paused", "failed"}
+            primary_ready
+            and (
+                cleanup_pending
+                or state in {"routing", "playing", "paused", "failed"}
+            )
         )
-        self._seek.setEnabled(state == "paused")
+        if self._primary_gate is ReferenceTrackPrimaryGate.SESSION_CHANGING:
+            stop_tooltip = (
+                "Wait for the current session change to finish; its single "
+                "cleanup owner is already stopping Reference Track safely."
+            )
+        elif self._primary_gate is ReferenceTrackPrimaryGate.RECOVERING:
+            stop_tooltip = (
+                "Band audio recovery already owns Reference Track cleanup. "
+                "Wait for recovery to finish."
+            )
+        elif not primary_ready:
+            stop_tooltip = (
+                "Stop is locked until the primary Jamulus session is ready. "
+                "End or Leave the session from WebJam's main control if cleanup "
+                "is required."
+            )
+        else:
+            stop_tooltip = (
+                "Stop the Reference Track and its isolated Jamulus participant."
+            )
+        self._stop.setToolTip(stop_tooltip)
+        self._set_dynamic_description(self._stop, stop_tooltip)
+        self._seek.setEnabled(primary_ready and state == "paused")
+        seek_tooltip = (
+            "Seek within the paused Reference Track."
+            if self._seek.isEnabled()
+            else "Seeking is locked until the track is paused and primary "
+            "Jamulus is ready."
+        )
+        self._seek.setToolTip(seek_tooltip)
+        self._set_dynamic_description(self._seek, seek_tooltip)
         for control in (
             self._loop,
             self._loop_start,
@@ -958,3 +1270,12 @@ class ReferenceTrackDialog(QDialog):
             self._count_bpm,
         ):
             control.setEnabled(editable)
+            edit_tooltip = (
+                "Edit this setting while the loaded Reference Track is ready "
+                "or paused."
+                if editable
+                else "This setting is locked until the loaded Reference Track "
+                "is ready or paused and primary Jamulus is ready."
+            )
+            control.setToolTip(edit_tooltip)
+            self._set_dynamic_description(control, edit_tooltip)

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
+from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
@@ -49,6 +50,22 @@ class TestFullSessionFlow(unittest.TestCase):
             initial_title="Integration",
         )
         self.controller = ApplicationController(self.window, settings=AppSettings())
+        process = mock.MagicMock()
+        process.pid = 4300
+        process.poll.return_value = None
+        self.controller.bridge.jamulus_process = process
+        self.controller.bridge.jamulus_launch_intended = True
+        rpc = mock.MagicMock()
+        rpc.available = True
+        rpc.last_activity_age.return_value = 0.1
+        self.controller.jamulus.rpc_client = rpc
+        self.source_identity = bind_primary_rpc_monitor(self.controller)
+
+    def _apply_participants(self, participants):
+        self.controller._apply_jamulus_participants(
+            participants,
+            source_identity=self.source_identity,
+        )
 
     def tearDown(self):
         try:
@@ -68,12 +85,12 @@ class TestFullSessionFlow(unittest.TestCase):
         c._refresh_readiness()
 
         # 2. First real participant arrives (the local user) — flips to "connected".
-        c._apply_jamulus_participants([_jp(0, "Me", "Bass", is_local=True)])
+        self._apply_participants([_jp(0, "Me", "Bass", is_local=True)])
         self.assertTrue(c._jamulus_connected)
         self.assertIn(0, c.participants)
 
         # 3. Bandmates join.
-        c._apply_jamulus_participants([
+        self._apply_participants([
             _jp(0, "Me", "Bass", is_local=True),
             _jp(1, "Alice", "Guitar"),
             _jp(2, "Bob", "Drums"),
@@ -110,7 +127,7 @@ class TestFullSessionFlow(unittest.TestCase):
         self.assertFalse(c._self_transmit_muted)
 
         # 7. A bandmate leaves.
-        c._apply_jamulus_participants([
+        self._apply_participants([
             _jp(0, "Me", "Bass", is_local=True),
             _jp(1, "Alice", "Guitar"),
         ])
@@ -138,12 +155,12 @@ class TestFullSessionFlow(unittest.TestCase):
     def test_participant_churn_does_not_leak_grid_cards(self):
         """Repeated join/leave cycles must not accumulate cards in the grid."""
         c = self.controller
-        c._apply_jamulus_participants([_jp(0, "Me", is_local=True)])
+        self._apply_participants([_jp(0, "Me", is_local=True)])
         for _ in range(25):
-            c._apply_jamulus_participants([
+            self._apply_participants([
                 _jp(0, "Me", is_local=True), _jp(1, "A"), _jp(2, "B"), _jp(3, "C"),
             ])
-            c._apply_jamulus_participants([_jp(0, "Me", is_local=True)])
+            self._apply_participants([_jp(0, "Me", is_local=True)])
         # Back to just the local user — grid should reflect exactly one.
         self.assertEqual(len(c.participants), 1)
         grid = c.window.participant_grid

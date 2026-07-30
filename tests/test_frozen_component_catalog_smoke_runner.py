@@ -186,6 +186,7 @@ def test_packaged_smoke_reports_exact_verified_catalog_identity(
         variant="standard",
         artifact="same-package",
         role=JamulusRole.CLIENT,
+        capabilities=SimpleNamespace(includes=lambda _required: False),
     )
     server = SimpleNamespace(
         component_id="jamulus-official",
@@ -193,6 +194,7 @@ def test_packaged_smoke_reports_exact_verified_catalog_identity(
         variant="standard",
         artifact="same-package",
         role=JamulusRole.SERVER,
+        capabilities=SimpleNamespace(includes=lambda _required: False),
     )
     components = tuple(client if index % 2 == 0 else server for index in range(8))
 

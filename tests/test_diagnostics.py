@@ -12,6 +12,10 @@ import zipfile
 
 from core.settings import AppSettings
 from core.session_lifecycle import SessionLifecycle, SessionLifecyclePhase
+from services.bridge_service import (
+    JamulusRecoverySnapshot,
+    JamulusRpcFreshness,
+)
 from webjam_qt import __version__
 from webjam_qt.controllers.diagnostics import DiagnosticsExporter
 
@@ -23,12 +27,14 @@ def _make_exporter(
     webex_state: str = "Not opened",
     rpc_available: bool = False,
     participants: list | None = None,
+    recovery: JamulusRecoverySnapshot | None = None,
 ) -> DiagnosticsExporter:
     settings = settings or AppSettings()
     bridge = MagicMock()
     bridge.jamulus_state = jamulus_state
     bridge.webex_state = webex_state
     bridge.find_jamulus.return_value = "/fake/path/Jamulus"
+    bridge.jamulus_recovery_snapshot.return_value = recovery
 
     rpc_client = SimpleNamespace(available=rpc_available, last_activity_age=lambda: 0.5)
     audio_engine = MagicMock()
@@ -108,7 +114,22 @@ class TestDiagnosticsExporter(unittest.TestCase):
         )
         bridge = SimpleNamespace(
             jamulus_state="Stopped",
-            jamulus_reconnect_attempts=3,
+            jamulus_recovery_snapshot=lambda: JamulusRecoverySnapshot(
+                generation=7,
+                recovery_generation=2,
+                launch_intended=True,
+                pending=False,
+                active=True,
+                attempts_started=3,
+                max_attempts=5,
+                inflight=False,
+                exhausted=False,
+                next_attempt_at=123.0,
+                process_id=456,
+                process_alive=True,
+                rpc_freshness=JamulusRpcFreshness.STALE,
+                rpc_age_seconds=17.25,
+            ),
             jamulus_process=None,
             hosted_server_process=None,
             _port_free=lambda _port, *, udp=False: True,
@@ -154,6 +175,29 @@ class TestDiagnosticsExporter(unittest.TestCase):
         ).artifact().structured_report
 
         self.assertEqual(report["versions"]["build"], "a" * 40)
+        self.assertEqual(
+            report["jamulus"]["recovery"],
+            {
+                "active": True,
+                "attempts_started": 3,
+                "exhausted": False,
+                "generation": 7,
+                "inflight": False,
+                "launch_intended": True,
+                "max_attempts": 5,
+                "pending": False,
+                "process_alive": True,
+                "process_id": 456,
+                "recovery_generation": 2,
+                "rpc_age_seconds": 17.25,
+                "rpc_freshness": "stale",
+            },
+        )
+        self.assertNotIn("next_attempt_at", report["jamulus"]["recovery"])
+        self.assertFalse(report["audio"]["engine"]["rpc_available"])
+        self.assertEqual(
+            report["audio"]["engine"]["rpc_last_activity_age_s"], 17.25
+        )
         self.assertEqual(report["session"]["reconnects"], {
             "attempts": 3,
             "failed": 1,
@@ -266,6 +310,66 @@ class TestDiagnosticsExporter(unittest.TestCase):
         self.assertFalse(report["webex_app"]["installed"])
         self.assertNotIn("private", json.dumps(report).lower())
         self.assertNotIn("meeting_url", json.dumps(report))
+
+    def test_recovery_snapshot_requires_the_immutable_contract(self):
+        exporter = _make_exporter()
+        exporter.bridge.jamulus_recovery_snapshot.return_value = SimpleNamespace(
+            generation=1,
+            recovery_generation=1,
+            launch_intended=True,
+            pending=False,
+            active=True,
+            attempts_started=1,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=123.0,
+            process_id=321,
+            process_alive=True,
+            rpc_freshness=SimpleNamespace(value="fresh"),
+            rpc_age_seconds=0.5,
+            private_path="/Users/alice/private/Jamulus",
+            rpc_secret="private-secret",
+        )
+
+        report = exporter.artifact().structured_report
+        self.assertNotIn("recovery", report["jamulus"])
+        encoded = json.dumps(report)
+        self.assertNotIn("/Users/alice", encoded)
+        self.assertNotIn("private-secret", encoded)
+
+    def test_recovery_snapshot_omits_nonfinite_rpc_age(self):
+        for age in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(age=age):
+                recovery = JamulusRecoverySnapshot(
+                    generation=9,
+                    recovery_generation=4,
+                    launch_intended=False,
+                    pending=False,
+                    active=False,
+                    attempts_started=5,
+                    max_attempts=5,
+                    inflight=False,
+                    exhausted=True,
+                    next_attempt_at=float("inf"),
+                    process_id=0,
+                    process_alive=False,
+                    rpc_freshness=JamulusRpcFreshness.NO_PROCESS,
+                    rpc_age_seconds=age,
+                )
+                report = _make_exporter(
+                    recovery=recovery
+                ).artifact().structured_report
+
+                self.assertNotIn(
+                    "rpc_age_seconds", report["jamulus"]["recovery"]
+                )
+                self.assertNotIn(
+                    "next_attempt_at", report["jamulus"]["recovery"]
+                )
+                encoded = json.dumps(report, allow_nan=False)
+                self.assertNotIn("NaN", encoded)
+                self.assertNotIn("Infinity", encoded)
 
 
 if __name__ == "__main__":

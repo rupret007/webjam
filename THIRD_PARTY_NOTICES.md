@@ -61,7 +61,8 @@ store after verifying a signed catalog and the exact downloaded bytes.
     nested inside `WebJam.app/Contents/Resources/Jamulus.app`. WebJam's build
     replaces the nested app's code signature with an ad-hoc signature that
     omits App Sandbox; this lets WebJam provision private, loopback-only
-    JSON-RPC credentials without asking musicians for Full Disk Access. The
+    JSON-RPC credentials in WebJam's own Application Support tree without
+    asking musicians for Full Disk Access or Other Application Data. The
     upstream executable and framework contents are otherwise unchanged.
     WebJam launches it as a separate OS process and talks to it only over
     its public JSON-RPC/UDP interfaces — it is never linked against or

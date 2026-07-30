@@ -8,7 +8,6 @@ CI yet crash for users if either drifts — these tests catch that.
 
 from __future__ import annotations
 
-import ast
 import re
 import unittest
 from pathlib import Path
@@ -193,29 +192,10 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertIn("iPhone Pocket Stage", SPEC)
         self.assertIn("private local network", SPEC)
 
-    def test_macos_bundle_explains_its_bounded_jamulus_app_data_access(self):
-        expected = (
-            "WebJam accesses Jamulus app data only for dedicated WebJam "
-            "profiles and private Reference Track audio-route and control "
-            "files. It never reads or changes your regular Jamulus profile."
-        )
-        tree = ast.parse(SPEC)
-        values = {
-            target.id: ast.literal_eval(node.value)
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance((target := node.targets[0]), ast.Name)
-            and target.id == "MACOS_APP_DATA_USAGE_DESCRIPTION"
-        }
-        self.assertEqual(
-            values.get("MACOS_APP_DATA_USAGE_DESCRIPTION"),
-            expected,
-        )
-        self.assertIn(
-            '"NSAppDataUsageDescription": MACOS_APP_DATA_USAGE_DESCRIPTION',
-            SPEC,
-        )
+    def test_macos_bundle_omits_other_application_data_declaration(self):
+        self.assertNotIn("NSAppDataUsageDescription", SPEC)
+        self.assertNotIn("MACOS_APP_DATA_USAGE_DESCRIPTION", SPEC)
+        self.assertNotIn("accesses Jamulus app data", SPEC)
 
     def test_spec_keeps_late_studio_modules_in_the_frozen_archive(self):
         self.assertIn('"core.take_export"', SPEC)
