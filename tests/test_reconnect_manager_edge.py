@@ -291,6 +291,8 @@ class TestReconnectManagerEdge(unittest.TestCase):
         bridge.jamulus_launch_intended = False
         bridge.jamulus_reconnect_attempts = 4
         bridge.jamulus_next_reconnect_at = 12.0
+        bridge.find_jamulus = MagicMock(return_value=_HOST_ABSOLUTE_JAMULUS)
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
 
         # Patch the internal thread to verify state before thread body runs.
         with patch("services.bridge_service.threading.Thread") as thread_cls:

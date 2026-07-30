@@ -165,6 +165,7 @@ class DiagnosticsExporter:
                 _plain_value(getattr(self.bridge, "jamulus_state", "")) or "unknown"
             ),
             jamulus_recovery=recovery,
+            jamulus_foreground=self._jamulus_foreground(),
             jamulus_update=_public_mapping(self.jamulus_update),
             webex_app=_public_mapping(self.webex_app),
             reference_track=_public_mapping(self.reference_track),
@@ -212,6 +213,11 @@ class DiagnosticsExporter:
             "process_id": snapshot.process_id,
             "process_alive": snapshot.process_alive,
             "rpc_freshness": snapshot.rpc_freshness.value,
+            "launch_request_generation": snapshot.launch_request_generation,
+            "native_setup_grace_configured": (
+                snapshot.native_setup_grace_configured
+            ),
+            "native_setup_grace_active": snapshot.native_setup_grace_active,
         }
         age = snapshot.rpc_age_seconds
         if (
@@ -222,6 +228,19 @@ class DiagnosticsExporter:
         ):
             recovery["rpc_age_seconds"] = float(age)
         return recovery
+
+    def _jamulus_foreground(self) -> dict[str, str]:
+        """Expose only the bounded result of the latest foreground request."""
+
+        try:
+            reason = getattr(
+                self.bridge,
+                "jamulus_foreground_reason_code",
+                "",
+            )
+        except Exception:  # noqa: BLE001 - support evidence remains optional
+            return {}
+        return {"reason_code": reason} if isinstance(reason, str) else {}
 
     def _session_transitions(self) -> tuple[dict[str, str], ...]:
         """Return only the lifecycle's explicit, allowlisted timeline."""

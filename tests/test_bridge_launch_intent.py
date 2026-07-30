@@ -71,38 +71,38 @@ def test_reconnect_port_conflict_keeps_established_session_intent() -> None:
     assert bridge.jamulus_launch_intended is True
     assert bridge.jamulus_reconnect_inflight is False
     assert bridge._pending_jamulus_launch_cancel is None
+    recovery = bridge.jamulus_recovery_snapshot()
+    assert recovery.active is True
+    assert recovery.exhausted is False
     bridge.metrics_service.increment.assert_any_call(
         "metric_jamulus_reconnect_failed"
     )
 
 
-def test_superseded_port_preflight_cannot_clear_newer_launch_intent() -> None:
+def test_duplicate_manual_launch_during_port_preflight_reuses_request() -> None:
     bridge = _bridge()
     port_probes = 0
+    duplicate_results: list[bool] = []
 
     def probe_port() -> bool:
         nonlocal port_probes
         port_probes += 1
-        if port_probes == 1:
-            # Supersede the outer request while its synchronous probe is in
-            # flight. The newer request passes preflight and owns the token.
-            assert bridge.launch_jamulus(manual=True) is True
-            return True
-        return False
+        duplicate_results.append(bridge.launch_jamulus(manual=True))
+        return True
 
     bridge._is_rpc_port_in_use = probe_port
     with patch("services.bridge_service.threading.Thread") as thread_class:
-        thread_class.return_value = MagicMock()
         assert bridge.launch_jamulus(manual=True) is False
 
-    assert thread_class.call_count == 1
-    assert bridge.jamulus_launch_intended is True
-    assert bridge._pending_jamulus_launch_cancel is not None
-    assert bridge.jamulus_state != "Port in use"
-    bridge.show_actionable_error.assert_not_called()
-    assert not any(
-        item.args == ("metric_jamulus_port_conflict",)
-        for item in bridge.metrics_service.increment.call_args_list
+    thread_class.assert_not_called()
+    assert port_probes == 1
+    assert duplicate_results == [True]
+    assert bridge.jamulus_launch_intended is False
+    assert bridge._pending_jamulus_launch_cancel is None
+    assert bridge.jamulus_state == "Port in use"
+    bridge.show_actionable_error.assert_called_once()
+    bridge.metrics_service.increment.assert_any_call(
+        "metric_jamulus_port_conflict"
     )
 
 

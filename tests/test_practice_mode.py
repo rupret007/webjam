@@ -168,13 +168,65 @@ class TestLaunchPracticeSession(unittest.TestCase):
         bridge.metrics_service.increment.assert_any_call(
             "metric_practice_launch_failed"
         )
+        bridge.launch_jamulus.assert_called_once_with(
+            manual=True,
+            reconnect=False,
+            practice_request=True,
+        )
+
+    def test_pending_band_launch_refuses_practice_before_server_spawn(self):
+        bridge = _make_bridge()
+        with patch("services.bridge_service.threading.Thread") as thread_class:
+            thread_class.return_value = MagicMock()
+            self.assertTrue(bridge.launch_jamulus(manual=True))
+            pending = bridge._pending_jamulus_launch_cancel
+
+            with patch("services.bridge_service.subprocess.Popen") as popen:
+                self.assertFalse(bridge.launch_practice_session())
+
+        popen.assert_not_called()
+        self.assertIs(bridge._pending_jamulus_launch_cancel, pending)
+        self.assertFalse(pending.is_set())
+        self.assertFalse(bridge.practice_mode)
+        bridge.metrics_service.increment.assert_any_call(
+            "metric_practice_launch_failed"
+        )
+        self.assertTrue(bridge.stop_jamulus())
+        bridge._retire_jamulus_launch_request(pending)
+
+    def test_pending_practice_launch_cannot_be_reused_for_band_session(self):
+        bridge = _make_bridge()
+        practice_server = MagicMock()
+        practice_server.poll.return_value = None
+
+        with patch("services.bridge_service.threading.Thread") as thread_class, patch(
+            "services.bridge_service.subprocess.Popen",
+            return_value=practice_server,
+        ) as popen:
+            thread_class.return_value = MagicMock()
+            self.assertTrue(bridge.launch_practice_session())
+            pending = bridge._pending_jamulus_launch_cancel
+            self.assertFalse(bridge.launch_jamulus(manual=True))
+
+        self.assertEqual(popen.call_count, 1)
+        self.assertIs(bridge._pending_jamulus_launch_cancel, pending)
+        self.assertFalse(pending.is_set())
+        self.assertTrue(bridge.practice_mode)
+        self.assertEqual(thread_class.call_count, 1)
+        self.assertTrue(bridge.stop_jamulus())
+        bridge._retire_jamulus_launch_request(pending)
 
     def test_practice_client_error_never_retries_the_band_session(self):
         bridge = _make_bridge()
         bridge.practice_mode = True
         bridge._is_rpc_port_in_use.return_value = True
 
-        self.assertFalse(bridge.launch_jamulus(manual=True))
+        self.assertFalse(
+            bridge.launch_jamulus(
+                manual=True,
+                practice_request=True,
+            )
+        )
 
         kwargs = bridge.show_actionable_error.call_args.kwargs
         self.assertIsNone(kwargs["retry_callback"])

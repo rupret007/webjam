@@ -7,6 +7,8 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.settings import AppSettings
@@ -19,6 +21,11 @@ from core.session_conductor import (
     SessionConductorToken,
     SessionPrimaryAction,
     SessionRole,
+)
+from services.bridge_service import (
+    JamulusRecoverySnapshot,
+    JamulusRpcFreshness,
+    NATIVE_SOUND_SETUP_GRACE_SECONDS,
 )
 from webjam_qt.controllers.application_controller import ApplicationController
 
@@ -475,6 +482,585 @@ def test_starting_state_cannot_fail_a_queued_native_restart() -> None:
     assert controller._startup_attempt["phase"] == "verifying_music"
 
 
+def test_native_launch_requests_the_bounded_human_setup_window() -> None:
+    controller = _controller(hosting=False)
+    controller._startup_attempt = {
+        "generation": 1,
+        "role": "guest",
+        "phase": "launching_client",
+        "cancel_event": threading.Event(),
+        "explicit_launch_authorization_generation": 0,
+    }
+    controller._is_jamulus_running = mock.Mock(return_value=False)
+    controller._accept_explicit_primary_launch = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+
+    with (
+        mock.patch(
+            "webjam_qt.controllers.application_controller.time.monotonic",
+            return_value=100.0,
+        ),
+        mock.patch(
+            "webjam_qt.controllers.application_controller.sys.platform",
+            "darwin",
+        ),
+    ):
+        controller._launch_native_jamulus_for_startup(1)
+
+    controller.bridge.launch_jamulus.assert_called_once_with(
+        manual=True,
+        native_setup_timeout_seconds=NATIVE_SOUND_SETUP_GRACE_SECONDS,
+    )
+    assert controller._startup_attempt["native_setup_deadline"] == (
+        100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
+    )
+    controller._connection_timer.start.assert_called_once_with()
+
+
+def test_non_macos_native_launch_keeps_ordinary_connection_timeout() -> None:
+    controller = _controller(hosting=False)
+    controller._startup_attempt = {
+        "generation": 2,
+        "role": "guest",
+        "phase": "launching_client",
+        "cancel_event": threading.Event(),
+        "explicit_launch_authorization_generation": 0,
+    }
+    controller._is_jamulus_running = mock.Mock(return_value=False)
+    controller._accept_explicit_primary_launch = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.sys.platform",
+        "linux",
+    ):
+        controller._launch_native_jamulus_for_startup(2)
+
+    controller.bridge.launch_jamulus.assert_called_once_with(manual=True)
+    assert "native_setup_deadline" not in controller._startup_attempt
+
+
+def test_ordinary_connection_timeout_defers_to_active_native_setup() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_launch_intended = True
+    controller._startup_attempt = {
+        "generation": 4,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+    controller._poll_startup_connection = mock.Mock()
+    controller.bridge.stop_jamulus = mock.Mock()
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=4,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=4444,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.STARTING,
+            rpc_age_seconds=None,
+            native_setup_grace_configured=True,
+            native_setup_grace_active=True,
+        )
+    )
+
+    controller._on_connection_timeout()
+
+    controller._poll_startup_connection.assert_called_once_with(4)
+    controller.bridge.stop_jamulus.assert_not_called()
+    assert controller.audio.connection_timed_out is False
+
+
+def test_late_connection_timeout_during_cancel_never_starts_second_stop() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.stop_jamulus = mock.Mock()
+    controller._startup_attempt = {
+        "generation": 4,
+        "role": "guest",
+        "phase": "cancelling",
+        "cancel_event": threading.Event(),
+    }
+
+    controller._on_connection_timeout()
+
+    controller.bridge.stop_jamulus.assert_not_called()
+    assert controller.audio.connection_timed_out is False
+
+
+def test_late_connection_timeout_during_shutdown_is_a_noop() -> None:
+    controller = _controller(hosting=False)
+    controller._shutdown = True
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.stop_jamulus = mock.Mock()
+
+    controller._on_connection_timeout()
+
+    controller.bridge.stop_jamulus.assert_not_called()
+    assert controller.audio.connection_timed_out is False
+
+
+def test_expired_native_setup_stops_exact_attempt_before_retry() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.stop_jamulus = mock.Mock(return_value=True)
+    controller._startup_attempt = {
+        "generation": 5,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 100.0,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=False)
+    controller._fail_startup_journey = mock.Mock()
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=14,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=5432,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.STARTING,
+            rpc_age_seconds=None,
+        )
+    )
+
+    with (
+        mock.patch(
+            "webjam_qt.controllers.application_controller.time.monotonic",
+            return_value=100.0,
+        ),
+        mock.patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            _ImmediateThread,
+        ),
+    ):
+        controller._poll_startup_connection(5)
+
+    controller.bridge.stop_jamulus.assert_called_once_with(
+        expected_generation=14,
+        expected_process_id=5432,
+    )
+    controller._fail_startup_journey.assert_called_once_with(
+        5,
+        "Jamulus sound setup waited 10 minutes without a verified music "
+        "connection. Check your interface, then try again.",
+    )
+
+
+def test_existing_profile_retires_first_run_allowance_immediately() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.native_profile_plan = SimpleNamespace(
+        profile_exists=True,
+        profile_fingerprint="a" * 64,
+    )
+    controller._startup_attempt = {
+        "generation": 7,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=False)
+    controller._render_startup_journey = mock.Mock()
+    controller._schedule_startup_poll = mock.Mock()
+
+    controller._poll_startup_connection(7)
+
+    assert "native_setup_deadline" not in controller._startup_attempt
+    controller._schedule_startup_poll.assert_called_once_with(7)
+
+
+def test_duplicate_timeout_callback_starts_exactly_one_cleanup() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.stop_jamulus = mock.Mock(return_value=True)
+    controller._startup_attempt = {
+        "generation": 8,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 100.0,
+    }
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=15,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=6543,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.STARTING,
+            rpc_age_seconds=None,
+        )
+    )
+    queued: list[object] = []
+
+    class _QueuedThread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            queued.append(self.target)
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.threading.Thread",
+        _QueuedThread,
+    ):
+        controller._expire_native_sound_setup(8)
+        controller._expire_native_sound_setup(8)
+
+    assert len(queued) == 1
+    queued[0]()
+    controller.bridge.stop_jamulus.assert_called_once_with(
+        expected_generation=15,
+        expected_process_id=6543,
+    )
+
+
+def test_timeout_callback_for_replaced_startup_generation_is_a_noop() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.stop_jamulus = mock.Mock()
+    controller._startup_attempt = {
+        "generation": 10,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+
+    controller._expire_native_sound_setup(9)
+
+    controller.bridge.stop_jamulus.assert_not_called()
+    assert controller._startup_attempt["phase"] == "native_sound_setup"
+
+
+def test_authenticated_setup_advances_only_after_exact_bridge_generation() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_state = "Running"
+    controller._startup_attempt = {
+        "generation": 6,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=True)
+    controller._is_jamulus_running = mock.Mock(return_value=True)
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=12,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=4321,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.FRESH,
+            rpc_age_seconds=0.1,
+            native_setup_grace_configured=True,
+            native_setup_grace_active=True,
+        )
+    )
+    controller.bridge.finish_native_sound_setup = mock.Mock(side_effect=[False, True])
+    controller._schedule_startup_poll = mock.Mock()
+    controller._show_startup_invite_ready = mock.Mock()
+
+    controller._poll_startup_connection(6)
+
+    controller._schedule_startup_poll.assert_called_once_with(6)
+    controller._show_startup_invite_ready.assert_not_called()
+
+    controller._poll_startup_connection(6)
+
+    assert controller.bridge.finish_native_sound_setup.call_args_list == [
+        mock.call(generation=12, process_id=4321),
+        mock.call(generation=12, process_id=4321),
+    ]
+    controller._show_startup_invite_ready.assert_called_once_with(6)
+    assert "native_setup_deadline" not in controller._startup_attempt
+
+
+def test_startup_proof_and_finish_use_one_immutable_process_snapshot() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_state = "Running"
+    controller._startup_attempt = {
+        "generation": 16,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 1_000_000_000_000.0,
+    }
+    proven = JamulusRecoverySnapshot(
+        generation=31,
+        recovery_generation=0,
+        launch_intended=True,
+        pending=False,
+        active=False,
+        attempts_started=0,
+        max_attempts=5,
+        inflight=False,
+        exhausted=False,
+        next_attempt_at=0.0,
+        process_id=3131,
+        process_alive=True,
+        rpc_freshness=JamulusRpcFreshness.FRESH,
+        rpc_age_seconds=0.0,
+        native_setup_grace_configured=True,
+        native_setup_grace_active=True,
+    )
+    replacement = replace(proven, generation=32, process_id=3232)
+    controller._startup_music_is_proven = mock.Mock(return_value=True)
+    controller._is_jamulus_running = mock.Mock(return_value=True)
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        side_effect=[proven, replacement]
+    )
+    controller.bridge.finish_native_sound_setup = mock.Mock(return_value=False)
+    controller._schedule_startup_poll = mock.Mock()
+    controller._show_startup_invite_ready = mock.Mock()
+
+    controller._poll_startup_connection(16)
+
+    controller._primary_jamulus_recovery_snapshot.assert_called_once_with()
+    controller.bridge.finish_native_sound_setup.assert_called_once_with(
+        generation=31,
+        process_id=3131,
+    )
+    controller._schedule_startup_poll.assert_called_once_with(16)
+    controller._show_startup_invite_ready.assert_not_called()
+
+
+def test_authenticated_setup_at_hard_deadline_expires_before_advancing() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_state = "Running"
+    controller._startup_attempt = {
+        "generation": 17,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 100.0,
+    }
+    controller._startup_music_is_proven = mock.Mock(return_value=True)
+    controller._is_jamulus_running = mock.Mock(return_value=True)
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=33,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=False,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=3333,
+            process_alive=True,
+            rpc_freshness=JamulusRpcFreshness.FRESH,
+            rpc_age_seconds=0.0,
+            native_setup_grace_configured=True,
+            native_setup_grace_active=True,
+        )
+    )
+    controller._expire_native_sound_setup = mock.Mock()
+    controller._show_startup_invite_ready = mock.Mock()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.time.monotonic",
+        return_value=100.0,
+    ):
+        controller._poll_startup_connection(17)
+
+    controller._expire_native_sound_setup.assert_called_once_with(17)
+    controller._show_startup_invite_ready.assert_not_called()
+
+
+@pytest.mark.parametrize("pending", [True, False])
+def test_ordinary_connection_timeout_uses_exact_launch_lineage(
+    pending: bool,
+) -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.stop_jamulus = mock.Mock(return_value=True)
+    controller._startup_attempt = None
+    controller._reconnect_banner_shown = False
+    controller._rpc_hang_banner_shown = False
+    controller._primary_recovery_retire_inflight = False
+    controller.window.participant_grid = SimpleNamespace(
+        set_session_state=mock.Mock()
+    )
+    controller.window.session_hud = SimpleNamespace(set_state=mock.Mock())
+    controller.window.session_strip.set_tools_enabled = mock.Mock()
+    controller._connection_failure_state = mock.Mock(return_value=object())
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=0 if pending else 34,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=pending,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=0 if pending else 3434,
+            process_alive=not pending,
+            rpc_freshness=(
+                JamulusRpcFreshness.NO_PROCESS
+                if pending
+                else JamulusRpcFreshness.STARTING
+            ),
+            rpc_age_seconds=None,
+            launch_request_generation=41,
+        )
+    )
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.threading.Thread",
+        _ImmediateThread,
+    ):
+        controller._on_connection_timeout()
+
+    controller.bridge.stop_jamulus.assert_called_once_with(
+        expected_launch_request_generation=41,
+    )
+    assert controller.audio.connection_timed_out is True
+
+
+def test_pending_native_setup_expiry_uses_bound_launch_lineage() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.stop_jamulus = mock.Mock(return_value=True)
+    controller._startup_attempt = {
+        "generation": 18,
+        "role": "guest",
+        "phase": "native_sound_setup",
+        "cancel_event": threading.Event(),
+        "native_setup_deadline": 100.0,
+        "bridge_launch_request_generation": 42,
+    }
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=JamulusRecoverySnapshot(
+            generation=0,
+            recovery_generation=0,
+            launch_intended=True,
+            pending=True,
+            active=False,
+            attempts_started=0,
+            max_attempts=5,
+            inflight=False,
+            exhausted=False,
+            next_attempt_at=0.0,
+            process_id=0,
+            process_alive=False,
+            rpc_freshness=JamulusRpcFreshness.NO_PROCESS,
+            rpc_age_seconds=None,
+            launch_request_generation=42,
+            native_setup_grace_configured=True,
+        )
+    )
+    controller._fail_startup_journey = mock.Mock()
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.threading.Thread",
+        _ImmediateThread,
+    ):
+        controller._expire_native_sound_setup(18)
+
+    controller.bridge.stop_jamulus.assert_called_once_with(
+        expected_launch_request_generation=42,
+    )
+    controller._fail_startup_journey.assert_called_once()
+
+
+def test_existing_profile_timeout_cancels_poll_before_late_roster_can_advance() -> None:
+    controller = _controller(hosting=False)
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.stop_jamulus = mock.Mock(return_value=True)
+    controller._startup_attempt = {
+        "generation": 19,
+        "role": "guest",
+        "phase": "verifying_music",
+        "cancel_event": threading.Event(),
+        "bridge_launch_request_generation": 51,
+    }
+    recovery = JamulusRecoverySnapshot(
+        generation=35,
+        recovery_generation=0,
+        launch_intended=True,
+        pending=False,
+        active=False,
+        attempts_started=0,
+        max_attempts=5,
+        inflight=False,
+        exhausted=False,
+        next_attempt_at=0.0,
+        process_id=3535,
+        process_alive=True,
+        rpc_freshness=JamulusRpcFreshness.FRESH,
+        rpc_age_seconds=0.0,
+        launch_request_generation=51,
+    )
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=recovery
+    )
+    controller._startup_music_is_proven = mock.Mock(return_value=True)
+    controller._show_startup_invite_ready = mock.Mock()
+    controller._reconnect_banner_shown = False
+    controller._rpc_hang_banner_shown = False
+    controller._primary_recovery_retire_inflight = False
+    queued = []
+
+    class _QueuedThread:
+        def __init__(self, *, target, **_kwargs):
+            self._target = target
+
+        def start(self):
+            queued.append(self._target)
+
+    with mock.patch(
+        "webjam_qt.controllers.application_controller.threading.Thread",
+        _QueuedThread,
+    ):
+        controller._on_connection_timeout()
+
+    assert controller._startup_attempt["phase"] == "cancelling"
+    assert len(queued) == 1
+    controller._poll_startup_connection(19)
+    controller._show_startup_invite_ready.assert_not_called()
+
+    queued[0]()
+    controller.bridge.stop_jamulus.assert_called_once_with(
+        expected_launch_request_generation=51,
+    )
+
+
 def test_terminal_native_launch_failure_offers_retry() -> None:
     controller = _controller(hosting=True)
     controller.bridge.jamulus_state = "Launch failed"
@@ -612,6 +1198,26 @@ def test_music_readiness_requires_authenticated_connection_and_one_local_identit
         3: SimpleNamespace(channel_id=3, is_local=True),
     }
     attempt = {"role": "host"}
+    recovery = JamulusRecoverySnapshot(
+        generation=9,
+        recovery_generation=0,
+        launch_intended=True,
+        pending=False,
+        active=False,
+        attempts_started=0,
+        max_attempts=5,
+        inflight=False,
+        exhausted=False,
+        next_attempt_at=0.0,
+        process_id=9090,
+        process_alive=True,
+        rpc_freshness=JamulusRpcFreshness.FRESH,
+        rpc_age_seconds=0.0,
+    )
+    controller._primary_jamulus_recovery_snapshot = mock.Mock(
+        return_value=recovery
+    )
+    controller._primary_local_roster_matches = mock.Mock(return_value=True)
 
     assert controller._startup_music_is_proven(attempt) is True
 

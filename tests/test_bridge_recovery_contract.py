@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from core.jamulus_rpc_client import (
 from services.bridge_service import (
     JamulusRecoverySnapshot,
     JamulusRpcFreshness,
+    NATIVE_SOUND_SETUP_GRACE_SECONDS,
     RECONNECT_LOCAL_ROSTER_GRACE_SECONDS,
     RECONNECT_MAX_ATTEMPTS,
     RECONNECT_RPC_STARTUP_GRACE_SECONDS,
@@ -224,6 +226,325 @@ def test_unknown_rpc_gets_one_bounded_startup_grace() -> None:
 
     assert within.rpc_freshness is JamulusRpcFreshness.STARTING
     assert boundary.rpc_freshness is JamulusRpcFreshness.STALE
+
+
+def test_exact_generation_gets_longer_native_sound_setup_grace() -> None:
+    bridge = _bridge()
+    process = _process(111)
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=7,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 7
+    bridge._jamulus_native_setup_deadline = 100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
+
+    ordinary_boundary = bridge.jamulus_recovery_snapshot(
+        now=100.0 + RECONNECT_RPC_STARTUP_GRACE_SECONDS
+    )
+    setup_boundary = bridge.jamulus_recovery_snapshot(
+        now=100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
+    )
+
+    assert ordinary_boundary.rpc_freshness is JamulusRpcFreshness.STARTING
+    assert ordinary_boundary.native_setup_grace_active is True
+    assert setup_boundary.rpc_freshness is JamulusRpcFreshness.STALE
+    assert setup_boundary.native_setup_grace_active is False
+
+
+def test_native_setup_grace_never_covers_a_replaced_generation() -> None:
+    bridge = _bridge()
+    process = _process(112)
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=8,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 7
+    bridge._jamulus_native_setup_deadline = 100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
+
+    snapshot = bridge.jamulus_recovery_snapshot(
+        now=100.0 + RECONNECT_RPC_STARTUP_GRACE_SECONDS
+    )
+
+    assert snapshot.rpc_freshness is JamulusRpcFreshness.STALE
+    assert snapshot.native_setup_grace_configured is True
+    assert snapshot.native_setup_grace_active is False
+
+
+def test_configured_native_setup_grace_survives_a_dead_recovery_gap() -> None:
+    bridge = _bridge()
+    dead = _process(116, return_code=1)
+    _publish_recovery_process(
+        bridge,
+        dead,
+        process_generation=12,
+        recovery_generation=3,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 12
+    bridge._jamulus_native_setup_deadline = 700.0
+
+    snapshot = bridge.jamulus_recovery_snapshot(now=200.0)
+
+    assert snapshot.process_alive is False
+    assert snapshot.native_setup_grace_configured is True
+    assert snapshot.native_setup_grace_active is False
+
+
+def test_native_setup_window_prevents_premature_force_restart() -> None:
+    bridge = _bridge()
+    process = _process(113)
+    bridge.jamulus_launch_intended = True
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=9,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 9
+    bridge._jamulus_native_setup_deadline = 100.0 + NATIVE_SOUND_SETUP_GRACE_SECONDS
+    bridge.launch_jamulus = MagicMock(return_value=True)
+
+    bridge._attempt_auto_reconnect_jamulus(
+        now=100.0 + RECONNECT_RPC_STARTUP_GRACE_SECONDS
+    )
+
+    bridge.launch_jamulus.assert_not_called()
+    assert bridge._jamulus_recovery_active is False
+    process.terminate.assert_not_called()
+
+
+def test_native_setup_window_suppresses_recovery_roster_timeout() -> None:
+    bridge = _bridge()
+    process = _process(117)
+    bridge.jamulus_launch_intended = True
+    _prime_recovery(bridge, attempts=1, generation=4)
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=13,
+        recovery_generation=4,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 13
+    bridge._jamulus_native_setup_deadline = 700.0
+    _set_rpc_monitor(
+        bridge,
+        process_generation=13,
+        process_id=117,
+        last_activity_at=140.0,
+        last_activity_age_seconds=0.0,
+    )
+    bridge.launch_jamulus = MagicMock(return_value=True)
+
+    bridge._attempt_auto_reconnect_jamulus(now=140.0)
+
+    bridge.launch_jamulus.assert_not_called()
+    process.terminate.assert_not_called()
+
+
+def test_only_current_generation_and_pid_can_finish_native_setup() -> None:
+    bridge = _bridge()
+    process = _process(114)
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=10,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 10
+    bridge._jamulus_native_setup_deadline = (
+        time.monotonic() + NATIVE_SOUND_SETUP_GRACE_SECONDS
+    )
+
+    assert not bridge.finish_native_sound_setup(
+        generation=9,
+        process_id=114,
+    )
+    assert not bridge.finish_native_sound_setup(
+        generation=10,
+        process_id=999,
+    )
+    assert bridge._jamulus_native_setup_deadline > 0.0
+
+    assert bridge.finish_native_sound_setup(
+        generation=10,
+        process_id=114,
+    )
+    assert bridge._jamulus_native_setup_deadline == 0.0
+    assert bridge._jamulus_native_setup_process_generation == 0
+
+
+@pytest.mark.parametrize(
+    ("observed_at", "expected"),
+    [(199.999, True), (200.0, False), (200.001, False)],
+)
+def test_native_setup_finish_respects_absolute_deadline(
+    observed_at: float,
+    expected: bool,
+) -> None:
+    bridge = _bridge()
+    process = _process(120)
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=16,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge._jamulus_native_setup_process_generation = 16
+    bridge._jamulus_native_setup_deadline = 200.0
+
+    with patch(
+        "services.bridge_service.time.monotonic",
+        return_value=observed_at,
+    ):
+        result = bridge.finish_native_sound_setup(
+            generation=16,
+            process_id=120,
+        )
+
+    assert result is expected
+    assert (bridge._jamulus_native_setup_deadline == 0.0) is expected
+
+
+def test_identity_bound_stop_does_not_mutate_or_stop_a_replacement() -> None:
+    bridge = _bridge()
+    replacement = _process(115)
+    bridge.jamulus_launch_intended = True
+    _publish_recovery_process(
+        bridge,
+        replacement,
+        process_generation=11,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+
+    assert not bridge.stop_jamulus(
+        expected_generation=10,
+        expected_process_id=114,
+    )
+
+    assert bridge.jamulus_launch_intended is True
+    assert bridge.jamulus_process is replacement
+    replacement.terminate.assert_not_called()
+    bridge.jamulus_controller.stop.assert_not_called()
+
+
+def test_identity_bound_stop_validates_after_lifecycle_ownership() -> None:
+    bridge = _bridge()
+    old = _process(118)
+    replacement = _process(119)
+    _publish_recovery_process(
+        bridge,
+        old,
+        process_generation=14,
+        recovery_generation=0,
+        started_at=100.0,
+    )
+    bridge.jamulus_launch_intended = True
+    old_token = threading.Event()
+    bridge._pending_jamulus_launch_cancel = old_token
+    bridge._jamulus_launch_request_generation = 8
+    started = threading.Event()
+    result: list[bool] = []
+
+    def stop_old() -> None:
+        started.set()
+        result.append(
+            bridge.stop_jamulus(
+                expected_generation=14,
+                expected_process_id=118,
+            )
+        )
+
+    bridge._jamulus_lifecycle_lock.acquire()
+    worker = threading.Thread(target=stop_old)
+    worker.start()
+    assert started.wait(timeout=1.0)
+    with bridge._jamulus_launch_control_lock:
+        replacement_token = threading.Event()
+        bridge._pending_jamulus_launch_cancel = replacement_token
+        bridge._jamulus_launch_request_generation = 9
+        with bridge._reconnect_lock:
+            bridge.jamulus_process = replacement
+            bridge._jamulus_process_generation = 15
+            bridge._jamulus_process_started_at = 101.0
+    bridge._jamulus_lifecycle_lock.release()
+    worker.join(timeout=1.0)
+
+    assert result == [False]
+    assert bridge.jamulus_launch_intended is True
+    assert bridge._pending_jamulus_launch_cancel is replacement_token
+    assert not replacement_token.is_set()
+    replacement.terminate.assert_not_called()
+
+
+def test_lineage_bound_stop_never_cancels_a_newer_request() -> None:
+    bridge = _bridge()
+    bridge.jamulus_launch_intended = True
+    bridge._jamulus_launch_request_generation = 21
+    old_token = threading.Event()
+    bridge._pending_jamulus_launch_cancel = old_token
+    started = threading.Event()
+    result: list[bool] = []
+
+    def stop_old_request() -> None:
+        started.set()
+        result.append(
+            bridge.stop_jamulus(
+                expected_launch_request_generation=21,
+            )
+        )
+
+    bridge._jamulus_lifecycle_lock.acquire()
+    worker = threading.Thread(target=stop_old_request)
+    worker.start()
+    assert started.wait(timeout=1.0)
+    with bridge._jamulus_launch_control_lock:
+        new_token = threading.Event()
+        bridge._pending_jamulus_launch_cancel = new_token
+        bridge._jamulus_launch_request_generation = 22
+    bridge._jamulus_lifecycle_lock.release()
+    worker.join(timeout=1.0)
+
+    assert result == [False]
+    assert bridge.jamulus_launch_intended is True
+    assert bridge._pending_jamulus_launch_cancel is new_token
+    assert not new_token.is_set()
+
+
+def test_stop_invalidates_queued_launch_ui_but_new_failure_ui_can_render() -> None:
+    bridge = _bridge()
+    queued_callbacks = []
+    bridge.schedule_ui_callback = queued_callbacks.append
+    old_success = MagicMock()
+    bridge._jamulus_launch_request_generation_counter = 7
+    bridge._jamulus_launch_request_generation = 7
+    bridge._schedule_jamulus_launch_ui_if_current(7, old_success)
+
+    assert bridge.stop_jamulus() is True
+    tombstone_generation = bridge._jamulus_launch_request_generation
+    assert tombstone_generation > 7
+
+    queued_callbacks.pop(0)()
+    old_success.assert_not_called()
+
+    bridge.find_jamulus = MagicMock(return_value=None)
+    assert bridge.launch_jamulus(manual=True, reconnect=False) is False
+    assert bridge._jamulus_launch_request_generation > tombstone_generation
+    assert queued_callbacks
+
+    for callback in queued_callbacks:
+        callback()
+    bridge.show_actionable_error.assert_called_once()
 
 
 @pytest.mark.parametrize(

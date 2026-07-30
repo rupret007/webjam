@@ -80,8 +80,10 @@ from services.bridge_service import (
     BridgeService,
     JamulusRecoverySnapshot,
     JamulusRpcFreshness,
+    NATIVE_SOUND_SETUP_GRACE_SECONDS,
     RECONNECT_HANG_THRESHOLD_SECONDS,
 )
+from services.macos_process_activation import JamulusForegroundReason
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
 
@@ -3665,6 +3667,12 @@ class ApplicationController(QObject):
         ):
             return
         attempt["phase"] = "native_sound_setup"
+        if sys.platform == "darwin":
+            attempt["native_setup_deadline"] = (
+                time.monotonic() + NATIVE_SOUND_SETUP_GRACE_SECONDS
+            )
+        else:
+            attempt.pop("native_setup_deadline", None)
         self._transition_lifecycle(
             (
                 SessionLifecyclePhase.STARTING_HOST
@@ -3678,14 +3686,28 @@ class ApplicationController(QObject):
             self.audio.ended_by_user = False
             self._local_audio_seen = False
             self._remote_audio_seen = False
-            accepted = bool(self.bridge.launch_jamulus(manual=True))
+            launch_kwargs: dict[str, object] = {"manual": True}
+            if sys.platform == "darwin":
+                launch_kwargs["native_setup_timeout_seconds"] = (
+                    NATIVE_SOUND_SETUP_GRACE_SECONDS
+                )
+            accepted = bool(self.bridge.launch_jamulus(**launch_kwargs))
             if not accepted:
+                attempt.pop("native_setup_deadline", None)
                 self._fail_startup_journey(
                     generation,
                     "WebJam couldn't open Jamulus. Reinstall this WebJam "
                     "build, then try again.",
                 )
                 return
+            launch_snapshot = self._primary_jamulus_recovery_snapshot()
+            if (
+                isinstance(launch_snapshot, JamulusRecoverySnapshot)
+                and launch_snapshot.launch_request_generation > 0
+            ):
+                attempt["bridge_launch_request_generation"] = (
+                    launch_snapshot.launch_request_generation
+                )
             self._accept_explicit_primary_launch(
                 int(
                     attempt.get(
@@ -3742,8 +3764,31 @@ class ApplicationController(QObject):
             if fast_path:
                 attempt["setup_finished"] = True
                 attempt["human_confirmed"] = True
+            setup_snapshot = self._primary_jamulus_recovery_snapshot()
+            if bool(getattr(plan, "profile_exists", False)) and not (
+                isinstance(setup_snapshot, JamulusRecoverySnapshot)
+                and setup_snapshot.native_setup_grace_configured
+            ):
+                # An existing dedicated profile is not first-run device
+                # setup. Bridge retains ordinary 30-second RPC supervision,
+                # so the controller must not suppress its timer either.
+                attempt.pop("native_setup_deadline", None)
 
-        if not self._is_jamulus_running() or not self._startup_music_is_proven(attempt):
+        observed_at = time.monotonic()
+        music_recovery = self._primary_jamulus_recovery_snapshot()
+        music_proven = bool(
+            self._is_jamulus_running()
+            and self._startup_music_is_proven(
+                attempt,
+                recovery_snapshot=music_recovery,
+            )
+        )
+        deadline = float(attempt.get("native_setup_deadline", 0.0) or 0.0)
+        if deadline > 0.0 and observed_at >= deadline:
+            self._expire_native_sound_setup(generation)
+            return
+
+        if not music_proven:
             if bool(attempt.get("setup_finished", False)):
                 attempt["phase"] = "verifying_music"
             else:
@@ -3752,6 +3797,34 @@ class ApplicationController(QObject):
             self._schedule_startup_poll(generation)
             return
 
+        recovery = music_recovery
+        native_setup_was_bounded = bool(
+            deadline > 0.0
+            and isinstance(recovery, JamulusRecoverySnapshot)
+            and recovery.native_setup_grace_configured
+        )
+        finish_setup = getattr(
+            self.bridge,
+            "finish_native_sound_setup",
+            None,
+        )
+        if (
+            native_setup_was_bounded
+            and callable(finish_setup)
+            and isinstance(recovery, JamulusRecoverySnapshot)
+        ):
+            if not bool(
+                finish_setup(
+                    generation=recovery.generation,
+                    process_id=recovery.process_id,
+                )
+            ):
+                # An authenticated callback for a replaced generation cannot
+                # advance this journey. Wait for the current process's own
+                # monitor/roster proof.
+                self._schedule_startup_poll(generation)
+                return
+        attempt.pop("native_setup_deadline", None)
         # A v2 invitation's authenticated peer plane carries only enrollment,
         # durable presence, and opt-in Local Originals. Start it only after
         # this exact native Jamulus connection is proven—never at app boot or
@@ -3770,6 +3843,92 @@ class ApplicationController(QObject):
         attempt["setup_finished"] = True
         attempt["webex_decision"] = "skipped"
         self._show_startup_invite_ready(generation)
+
+    def _expire_native_sound_setup(
+        self,
+        generation: int,
+        *,
+        opening_timeout: bool = False,
+    ) -> None:
+        """Retire a bounded first-run setup before offering a clean retry."""
+
+        attempt = self._startup_attempt_for(generation)
+        if attempt is None or str(attempt.get("phase", "")) in {
+            "failed",
+            "cancelling",
+            "invite_ready",
+            "live",
+        }:
+            return
+        attempt["phase"] = "cancelling"
+        attempt.pop("native_setup_deadline", None)
+        self._render_startup_journey()
+        recovery = self._primary_jamulus_recovery_snapshot()
+        request_generation = int(
+            attempt.get("bridge_launch_request_generation", 0) or 0
+        )
+
+        def worker() -> None:
+            if request_generation > 0:
+                try:
+                    stopped = bool(
+                        self.bridge.stop_jamulus(
+                            expected_launch_request_generation=(
+                                request_generation
+                            ),
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - cleanup truth stays bounded
+                    stopped = False
+            elif not isinstance(recovery, JamulusRecoverySnapshot):
+                stopped = False
+            else:
+                try:
+                    stopped = bool(
+                        self.bridge.stop_jamulus(
+                            expected_generation=recovery.generation,
+                            expected_process_id=recovery.process_id,
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - cleanup truth stays bounded
+                    stopped = False
+
+            def deliver() -> None:
+                current = self._startup_attempt_for(generation)
+                if current is None:
+                    return
+                if stopped:
+                    if opening_timeout:
+                        self._fail_startup_journey(
+                            generation,
+                            "Jamulus did not finish opening in time. Check "
+                            "your audio setup, then try again.",
+                        )
+                        return
+                    self._fail_startup_journey(
+                        generation,
+                        "Jamulus sound setup waited 10 minutes without a "
+                        "verified music connection. Check your interface, "
+                        "then try again.",
+                    )
+                    return
+                self._fail_startup_journey(
+                    generation,
+                    "WebJam couldn't safely close the timed-out Jamulus "
+                    "setup. Quit and reopen WebJam before trying again.",
+                    retryable=False,
+                )
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                LOGGER.debug("Native sound setup cleanup finished after Qt shutdown")
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-native-setup-timeout",
+        ).start()
 
     def _start_guest_peer_for_native_startup(self, attempt: dict[str, object]) -> None:
         """Start a v2 recording peer after Jamulus identity is proven.
@@ -3868,14 +4027,33 @@ class ApplicationController(QObject):
         except Exception:  # noqa: BLE001 - a stale private prompt is harmless
             LOGGER.debug("Could not clear completed startup recovery", exc_info=True)
 
-    def _startup_music_is_proven(self, attempt: dict[str, object]) -> bool:
+    def _startup_music_is_proven(
+        self,
+        attempt: dict[str, object],
+        *,
+        recovery_snapshot: JamulusRecoverySnapshot | None = None,
+    ) -> bool:
         """Return only software facts WebJam can honestly verify."""
 
         rpc = getattr(self.jamulus, "rpc_client", None)
+        recovery = (
+            recovery_snapshot
+            if isinstance(recovery_snapshot, JamulusRecoverySnapshot)
+            else self._primary_jamulus_recovery_snapshot()
+        )
         if not (
             self._is_jamulus_running()
             and bool(getattr(rpc, "available", False))
             and bool(self._jamulus_connected)
+            and isinstance(recovery, JamulusRecoverySnapshot)
+            and recovery.launch_intended
+            and recovery.process_alive
+            and recovery.generation > 0
+            and recovery.process_id > 0
+            and not recovery.pending
+            and not recovery.inflight
+            and recovery.rpc_freshness is JamulusRpcFreshness.FRESH
+            and self._primary_local_roster_matches(recovery)
         ):
             return False
         if attempt.get("role") == "host" and not self.bridge.hosted_server_alive():
@@ -4134,11 +4312,26 @@ class ApplicationController(QObject):
         ).start()
 
     def _bring_jamulus_forward(self) -> None:
-        brought_forward = bool(self.bridge.bring_jamulus_forward())
-        if brought_forward:
+        outcome = self.bridge.bring_jamulus_forward_outcome()
+        if outcome.reason is JamulusForegroundReason.PLATFORM_NOT_MANAGED:
+            self.window.flash_message(
+                "Jamulus is open. Select its window, then open Settings → "
+                "Audio/Network Settings.",
+                ms=7_000,
+            )
+            return
+        if bool(outcome):
             self.window.flash_message(
                 "Jamulus is in front. In Jamulus, choose Settings → Audio/Network Settings.",
                 ms=7000,
+            )
+            return
+        if outcome.reason is not JamulusForegroundReason.NOT_RUNNING:
+            self.window.flash_message(
+                "Jamulus is open, but WebJam couldn’t bring its window forward. "
+                "Choose Jamulus in the Dock, then open Settings → Audio/Network "
+                "Settings.",
+                ms=7_000,
             )
             return
         self.window.flash_message(
@@ -4276,13 +4469,18 @@ class ApplicationController(QObject):
                 action_visible=False,
             )
         elif phase in {"launching_client", "native_sound_setup"}:
+            setup_wait = (
+                "WebJam will wait up to 10 minutes and continue automatically "
+                "when the music connection is ready."
+                if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
+                else "WebJam will continue automatically when the music "
+                "connection is ready."
+            )
             self.window.session_hud.set_state(
                 "Set up your sound in Jamulus",
                 "Choose your interface, input channels, headphones, and buffer "
                 "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched. "
-                "WebJam will continue automatically when the music connection "
-                "is ready.",
+                "app and leaves your regular Jamulus settings untouched. " + setup_wait,
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
@@ -4461,7 +4659,12 @@ class ApplicationController(QObject):
                 "Set up your sound in Jamulus",
                 "Choose your interface, input channels, headphones, and buffer "
                 "in Jamulus. WebJam uses a dedicated Jamulus profile for this "
-                "app and leaves your regular Jamulus settings untouched.",
+                "app and leaves your regular Jamulus settings untouched."
+                + (
+                    " WebJam waits up to 10 minutes."
+                    if float(attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
+                    else ""
+                ),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
@@ -6195,9 +6398,122 @@ class ApplicationController(QObject):
 
     def _on_connection_timeout(self) -> None:
         """Turn an endless spinner into one plain recovery action."""
+        if (
+            getattr(self, "_shutdown", False)
+            or getattr(self, "_shutdown_in_progress", False)
+            or getattr(self, "_shutdown_cleanup_pending", False)
+        ):
+            return
         if self._jamulus_connected or not self.bridge.jamulus_launch_intended:
             return
+        startup_attempt = getattr(self, "_startup_attempt", None)
+        if (
+            isinstance(startup_attempt, dict)
+            and str(startup_attempt.get("phase", "")) == "cancelling"
+        ):
+            # Cancel/End and native-setup expiry already own one ordered stop
+            # worker. A late generic timer must never create a second owner.
+            return
         recovery = self._primary_jamulus_recovery_snapshot()
+        if (
+            isinstance(startup_attempt, dict)
+            and str(startup_attempt.get("phase", ""))
+            in {"launching_client", "native_sound_setup", "verifying_music"}
+            and float(startup_attempt.get("native_setup_deadline", 0.0) or 0.0) > 0.0
+        ):
+            if (
+                isinstance(recovery, JamulusRecoverySnapshot)
+                and recovery.native_setup_grace_configured
+            ):
+                # The worker proved the dedicated profile was missing. Its
+                # generation-bound startup poll owns the separate 10-minute
+                # human setup deadline and exact cleanup.
+                self._poll_startup_connection(
+                    int(startup_attempt.get("generation", 0) or 0)
+                )
+                return
+            if (
+                isinstance(recovery, JamulusRecoverySnapshot)
+                and recovery.pending
+            ):
+                # A slow, still-unclassified profile preflight does not earn
+                # first-run grace. Cancel only this startup's monotonic Bridge
+                # request generation at the ordinary connection boundary.
+                self._expire_native_sound_setup(
+                    int(startup_attempt.get("generation", 0) or 0),
+                    opening_timeout=True,
+                )
+                return
+        if (
+            isinstance(startup_attempt, dict)
+            and str(startup_attempt.get("phase", ""))
+            in {"launching_client", "native_sound_setup", "verifying_music"}
+            and not (
+                isinstance(recovery, JamulusRecoverySnapshot)
+                and (
+                    recovery.active
+                    or recovery.inflight
+                    or recovery.native_setup_grace_configured
+                )
+            )
+        ):
+            # Returning-profile startup still owns a 350ms poll. Mark the
+            # journey cancelling before its ordinary 30-second exact cleanup
+            # so a late roster cannot advance to Invite/Live while Stop wins.
+            self._expire_native_sound_setup(
+                int(startup_attempt.get("generation", 0) or 0),
+                opening_timeout=True,
+            )
+            return
+        if (
+            isinstance(recovery, JamulusRecoverySnapshot)
+            and recovery.pending
+            and not recovery.active
+            and not recovery.inflight
+            and not recovery.native_setup_grace_configured
+            and recovery.launch_request_generation > 0
+        ):
+            request_generation = recovery.launch_request_generation
+
+            def stop_timed_out_request() -> None:
+                try:
+                    self.bridge.stop_jamulus(
+                        expected_launch_request_generation=request_generation,
+                    )
+                except Exception as exc:  # noqa: BLE001 - failure stays truthful
+                    LOGGER.warning(
+                        "Timed-out Jamulus request cleanup failed (%s).",
+                        type(exc).__name__,
+                    )
+
+            self.audio.connection_timed_out = True
+            self._transition_lifecycle(
+                SessionLifecyclePhase.FAILED_RECOVERABLE,
+                "The music engine did not establish a verified connection in time",
+            )
+            self.window.participant_grid.set_session_state(
+                self._connection_failure_state()
+            )
+            self.window.session_hud.set_state(
+                "Something needs attention",
+                "WebJam is getting ready to try again.",
+            )
+            self.window.session_strip.set_tools_enabled(True)
+            threading.Thread(
+                target=stop_timed_out_request,
+                daemon=True,
+                name="webjam-jamulus-opening-timeout",
+            ).start()
+            return
+        if (
+            isinstance(recovery, JamulusRecoverySnapshot)
+            and recovery.native_setup_grace_configured
+        ):
+            # Practice, Band Check, and legacy manual launch paths use the
+            # same bounded first-run profile contract even when there is no
+            # visible startup journey. Bridge owns their exact process/retry
+            # supervision until authenticated roster proof retires the grace.
+            return
         if (
             getattr(self, "_primary_recovery_retire_inflight", False)
             or self.audio.recovering
@@ -6227,11 +6543,35 @@ class ApplicationController(QObject):
             "WebJam is getting ready to try again.",
         )
         self.window.session_strip.set_tools_enabled(True)
-        threading.Thread(
-            target=self.bridge.stop_jamulus,
-            daemon=True,
-            name="webjam-connect-timeout",
-        ).start()
+        if isinstance(recovery, JamulusRecoverySnapshot):
+            request_generation = recovery.launch_request_generation
+            process_generation = recovery.generation
+            process_id = recovery.process_id
+
+            def stop_timed_out_process() -> None:
+                try:
+                    if request_generation > 0:
+                        self.bridge.stop_jamulus(
+                            expected_launch_request_generation=(
+                                request_generation
+                            ),
+                        )
+                    elif process_generation > 0 and process_id > 0:
+                        self.bridge.stop_jamulus(
+                            expected_generation=process_generation,
+                            expected_process_id=process_id,
+                        )
+                except Exception as exc:  # noqa: BLE001 - failure stays truthful
+                    LOGGER.warning(
+                        "Timed-out Jamulus process cleanup failed (%s).",
+                        type(exc).__name__,
+                    )
+
+            threading.Thread(
+                target=stop_timed_out_process,
+                daemon=True,
+                name="webjam-connect-timeout",
+            ).start()
 
     def _connection_failure_state(self) -> SessionUiState:
         if bool(getattr(self.settings, "host_server_enabled", False)):

@@ -698,6 +698,24 @@ class AudioCoordinator:
                     exc_info=True,
                 )
                 local_session_proven = False
+        if (
+            local_session_proven
+            and recovery is not None
+            and recovery.native_setup_grace_configured
+        ):
+            try:
+                local_session_proven = bool(
+                    self._c.bridge.finish_native_sound_setup(
+                        generation=recovery.generation,
+                        process_id=recovery.process_id,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 - setup ownership fails closed
+                LOGGER.warning(
+                    "Native Jamulus sound-setup acknowledgement failed (%s).",
+                    type(exc).__name__,
+                )
+                local_session_proven = False
         if local_session_proven and recovery is not None:
             self._c._record_primary_local_roster_proof(recovery)
         elif not self.connected:

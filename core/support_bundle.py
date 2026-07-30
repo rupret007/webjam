@@ -91,6 +91,19 @@ _EXPORT_COUNT_FIELDS = frozenset({"attempts", "succeeded", "failed"})
 _JAMULUS_RPC_FRESHNESS = frozenset(
     {"no_process", "starting", "fresh", "stale"}
 )
+_JAMULUS_FOREGROUND_REASON_CODES = frozenset(
+    {
+        "not-requested",
+        "foregrounded",
+        "not-running",
+        "identity-unverified",
+        "native-activation-unavailable",
+        "activation-refused",
+        "frontmost-unconfirmed",
+        "process-changed",
+        "platform-not-managed",
+    }
+)
 _GUIDANCE_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 )
@@ -250,6 +263,7 @@ class SupportFacts:
     jamulus_version: str = ""
     jamulus_state: str = ""
     jamulus_recovery: Mapping[str, Any] = field(default_factory=dict)
+    jamulus_foreground: Mapping[str, Any] = field(default_factory=dict)
     jamulus_update: Mapping[str, Any] = field(default_factory=dict)
     webex_app: Mapping[str, Any] = field(default_factory=dict)
     reference_track: Mapping[str, Any] = field(default_factory=dict)
@@ -400,6 +414,9 @@ def build_support_bundle(
                 "recovery": _sanitize_jamulus_recovery(
                     facts.jamulus_recovery
                 ),
+                "foreground": _sanitize_jamulus_foreground(
+                    facts.jamulus_foreground
+                ),
             },
             "jamulus_update": _sanitize_jamulus_update(facts.jamulus_update),
             "webex_app": _sanitize_webex_app(facts.webex_app),
@@ -494,6 +511,7 @@ def _sanitize_jamulus_recovery(
         "attempts_started",
         "max_attempts",
         "process_id",
+        "launch_request_generation",
     )
     for key in integer_fields:
         item = value.get(key)
@@ -517,6 +535,8 @@ def _sanitize_jamulus_recovery(
         "inflight",
         "exhausted",
         "process_alive",
+        "native_setup_grace_configured",
+        "native_setup_grace_active",
     ):
         item = value.get(key)
         if not isinstance(item, bool):
@@ -532,6 +552,22 @@ def _sanitize_jamulus_recovery(
     if age is not None and age >= 0:
         result["rpc_age_seconds"] = age
     return result
+
+
+def _sanitize_jamulus_foreground(
+    value: Mapping[str, Any] | Any,
+) -> dict[str, str]:
+    """Accept only one bounded outcome code, never native identity."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    reason = value.get("reason_code")
+    if (
+        not isinstance(reason, str)
+        or reason not in _JAMULUS_FOREGROUND_REASON_CODES
+    ):
+        return {}
+    return {"reason_code": reason}
 
 
 def _sanitize_jamulus_update(value: Mapping[str, Any] | Any) -> dict[str, Any]:

@@ -23,6 +23,10 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 from core.settings import AppSettings  # noqa: E402
+from services.macos_process_activation import (  # noqa: E402
+    JamulusForegroundOutcome,
+    JamulusForegroundReason,
+)
 from tests.support.jamulus_monitor import bind_primary_rpc_monitor  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
@@ -572,7 +576,12 @@ class TestNativeWebexControls(_ControllerTestBase):
 class TestJamulusForegroundGuidance(_ControllerTestBase):
     def test_unavailable_jamulus_never_claims_it_is_opening(self):
         c = self.controller
-        c.bridge.bring_jamulus_forward = MagicMock(return_value=False)
+        c.bridge.bring_jamulus_forward_outcome = MagicMock(
+            return_value=JamulusForegroundOutcome(
+                False,
+                JamulusForegroundReason.NOT_RUNNING,
+            )
+        )
 
         c._bring_jamulus_forward()
 
@@ -580,6 +589,39 @@ class TestJamulusForegroundGuidance(_ControllerTestBase):
         self.assertIn("isn’t open yet", message)
         self.assertIn("Start or retry", message)
         self.assertNotIn("still opening", message)
+
+    def test_live_activation_failure_never_claims_jamulus_is_closed(self):
+        c = self.controller
+        c.bridge.bring_jamulus_forward_outcome = MagicMock(
+            return_value=JamulusForegroundOutcome(
+                False,
+                JamulusForegroundReason.FRONTMOST_UNCONFIRMED,
+            )
+        )
+
+        c._bring_jamulus_forward()
+
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("Jamulus is open", message)
+        self.assertIn("couldn’t bring its window forward", message)
+        self.assertIn("Dock", message)
+        self.assertNotIn("isn’t open", message)
+
+    def test_unmanaged_platform_never_claims_it_foregrounded_the_window(self):
+        c = self.controller
+        c.bridge.bring_jamulus_forward_outcome = MagicMock(
+            return_value=JamulusForegroundOutcome(
+                True,
+                JamulusForegroundReason.PLATFORM_NOT_MANAGED,
+            )
+        )
+
+        c._bring_jamulus_forward()
+
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn("Jamulus is open", message)
+        self.assertIn("Select its window", message)
+        self.assertNotIn("is in front", message)
 
 
 class TestTruthfulWebexState(_ControllerTestBase):

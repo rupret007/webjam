@@ -80,6 +80,11 @@ class TestLaunchJamulusNotFound(unittest.TestCase):
 
         self.assertEqual(bridge.jamulus_state, "Not found")
         self.assertFalse(bridge.jamulus_reconnect_inflight)
+        self.assertFalse(bridge.jamulus_launch_intended)
+        self.assertIsNone(bridge._pending_jamulus_launch_cancel)
+        self.assertFalse(
+            bridge.jamulus_recovery_snapshot().native_setup_grace_configured
+        )
         bridge.show_actionable_error.assert_called_once()
         self.assertEqual(
             bridge.show_actionable_error.call_args.args[0],
@@ -468,18 +473,130 @@ class TestLaunchCommandContract(unittest.TestCase):
         ), patch(
             "core.file_io.atomic_write_text"
         ):
-            bridge.launch_jamulus(manual=True)
-            bridge.launch_jamulus(manual=True)
+            assert bridge.launch_jamulus(manual=True) is True
+            pending = bridge._pending_jamulus_launch_cancel
+            assert bridge.launch_jamulus(manual=True) is True
             launch_workers = list(queued)
-            self.assertEqual(len(launch_workers), 2)
+            self.assertEqual(len(launch_workers), 1)
+            self.assertIs(bridge._pending_jamulus_launch_cancel, pending)
+            self.assertFalse(pending.is_set())
             launch_workers[0]()
-            launch_workers[1]()
 
         own_calls = [
             call for call in popen.call_args_list
             if "double-launch.example.com:22124" in call.args[0]
         ]
         self.assertEqual(len(own_calls), 1)
+
+    def test_duplicate_launch_during_popen_keeps_worker_and_runtime_lease(
+        self, _thread
+    ):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "popen-single-flight.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        queued = []
+
+        class _QueuedThread:
+            def __init__(self, *args, target=None, **kwargs):
+                self._target = target
+
+            def start(self):
+                queued.append(self._target)
+
+        process = MagicMock()
+        process.poll.return_value = None
+        duplicate_results = []
+        observed_token = []
+
+        def popen_during_duplicate(*args, **kwargs):
+            token = bridge._pending_jamulus_launch_cancel
+            observed_token.append(token)
+            self.assertIsNone(bridge.jamulus_process)
+            self.assertTrue(bridge.runtime_component_lease_active)
+            duplicate_results.append(bridge.launch_jamulus(manual=True))
+            self.assertIs(bridge._pending_jamulus_launch_cancel, token)
+            self.assertFalse(token.is_set())
+            self.assertTrue(bridge.runtime_component_lease_active)
+            return process
+
+        with patch(
+            "services.bridge_service.threading.Thread", _QueuedThread
+        ), patch(
+            "services.bridge_service.subprocess.Popen",
+            side_effect=popen_during_duplicate,
+        ) as popen, patch(
+            "services.bridge_service.time.sleep"
+        ), patch(
+            "core.file_io.atomic_write_text"
+        ):
+            self.assertTrue(bridge.launch_jamulus(manual=True))
+            self.assertEqual(len(queued), 1)
+            queued[0]()
+
+        self.assertEqual(duplicate_results, [True])
+        self.assertEqual(len(observed_token), 1)
+        self.assertEqual(popen.call_count, 1)
+        self.assertIs(bridge.jamulus_process, process)
+        self.assertTrue(bridge.runtime_component_lease_active)
+        self.assertTrue(bridge.stop_jamulus())
+
+    def test_duplicate_launch_after_publication_preserves_rpc_monitor(
+        self, _thread
+    ):
+        bridge = _make_bridge()
+        bridge.settings.jamulus_server = "monitor-single-flight.example.com"
+        bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+        bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+        queued = []
+
+        class _QueuedThread:
+            def __init__(self, *args, target=None, **kwargs):
+                self._target = target
+
+            def start(self):
+                queued.append(self._target)
+
+        process = MagicMock()
+        process.pid = 4321
+        process.poll.return_value = None
+        duplicate_results = []
+        observed_token = []
+
+        def metric_side_effect(metric):
+            if metric != "metric_jamulus_launch_success":
+                return
+            token = bridge._pending_jamulus_launch_cancel
+            observed_token.append(token)
+            self.assertIs(bridge.jamulus_process, process)
+            duplicate_results.append(bridge.launch_jamulus(manual=True))
+            self.assertIs(bridge._pending_jamulus_launch_cancel, token)
+            self.assertFalse(token.is_set())
+
+        bridge.metrics_service.increment.side_effect = metric_side_effect
+        with patch(
+            "services.bridge_service.threading.Thread", _QueuedThread
+        ), patch(
+            "services.bridge_service.subprocess.Popen", return_value=process
+        ) as popen, patch(
+            "services.bridge_service.time.sleep"
+        ), patch(
+            "core.file_io.atomic_write_text"
+        ):
+            self.assertTrue(bridge.launch_jamulus(manual=True))
+            self.assertEqual(len(queued), 1)
+            queued[0]()
+            self.assertEqual(len(queued), 2)
+            queued[1]()
+
+        self.assertEqual(duplicate_results, [True])
+        self.assertEqual(len(observed_token), 1)
+        self.assertEqual(popen.call_count, 1)
+        bridge.jamulus_controller.start.assert_called_once_with(
+            process_generation=1,
+            process_id=4321,
+        )
+        self.assertTrue(bridge.stop_jamulus())
 
     def test_stop_before_queued_worker_prevents_any_client_process(self, _thread):
         bridge = _make_bridge()

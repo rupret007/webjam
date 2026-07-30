@@ -129,6 +129,9 @@ class TestDiagnosticsExporter(unittest.TestCase):
                 process_alive=True,
                 rpc_freshness=JamulusRpcFreshness.STALE,
                 rpc_age_seconds=17.25,
+                launch_request_generation=11,
+                native_setup_grace_configured=True,
+                native_setup_grace_active=True,
             ),
             jamulus_process=None,
             hosted_server_process=None,
@@ -184,7 +187,10 @@ class TestDiagnosticsExporter(unittest.TestCase):
                 "generation": 7,
                 "inflight": False,
                 "launch_intended": True,
+                "launch_request_generation": 11,
                 "max_attempts": 5,
+                "native_setup_grace_active": True,
+                "native_setup_grace_configured": True,
                 "pending": False,
                 "process_alive": True,
                 "process_id": 456,
@@ -370,6 +376,36 @@ class TestDiagnosticsExporter(unittest.TestCase):
                 encoded = json.dumps(report, allow_nan=False)
                 self.assertNotIn("NaN", encoded)
                 self.assertNotIn("Infinity", encoded)
+
+    def test_jamulus_foreground_exposes_only_bounded_reason_code(self):
+        exporter = _make_exporter()
+        exporter.bridge.jamulus_foreground_reason_code = (
+            "frontmost-unconfirmed"
+        )
+        exporter.bridge.jamulus_foreground_pid = 4321
+        exporter.bridge.jamulus_foreground_bundle = (
+            "/Users/private/Pilot/Jamulus.app"
+        )
+
+        report = exporter.artifact().structured_report
+
+        self.assertEqual(
+            report["jamulus"]["foreground"],
+            {"reason_code": "frontmost-unconfirmed"},
+        )
+        encoded = json.dumps(report)
+        self.assertNotIn("foreground_pid", encoded)
+        self.assertNotIn("foreground_bundle", encoded)
+        self.assertNotIn("/Users/private", encoded)
+
+        exporter = _make_exporter()
+        exporter.bridge.jamulus_foreground_reason_code = (
+            "/Users/private/reason"
+        )
+        self.assertNotIn(
+            "foreground",
+            exporter.artifact().structured_report["jamulus"],
+        )
 
 
 if __name__ == "__main__":

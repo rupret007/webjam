@@ -238,7 +238,12 @@ class TestSupportArtifact(unittest.TestCase):
             "process_alive": True,
             "rpc_freshness": "fresh",
             "rpc_age_seconds": 0.125,
+            "launch_request_generation": 17,
+            "native_setup_grace_configured": True,
+            "native_setup_grace_active": True,
             "next_attempt_at": float("inf"),
+            "native_setup_deadline": 987654.0,
+            "bundle_path": "/Applications/Private Pilot/Jamulus.app",
             "profile_path": "/Users/alice/private/WebJam.ini",
             "rpc_secret": "private-secret",
         }
@@ -257,7 +262,10 @@ class TestSupportArtifact(unittest.TestCase):
                 "generation": 12,
                 "inflight": True,
                 "launch_intended": True,
+                "launch_request_generation": 17,
                 "max_attempts": 5,
+                "native_setup_grace_active": True,
+                "native_setup_grace_configured": True,
                 "pending": False,
                 "process_alive": True,
                 "process_id": 456,
@@ -269,6 +277,9 @@ class TestSupportArtifact(unittest.TestCase):
         encoded = json.dumps(artifact.structured_report, allow_nan=False)
         for forbidden in (
             "next_attempt_at",
+            "native_setup_deadline",
+            "bundle_path",
+            "Private Pilot",
             "profile_path",
             "/Users/alice",
             "rpc_secret",
@@ -292,11 +303,19 @@ class TestSupportArtifact(unittest.TestCase):
             "process_id": 456,
             "process_alive": True,
             "rpc_freshness": "fresh",
+            "launch_request_generation": 17,
+            "native_setup_grace_configured": True,
+            "native_setup_grace_active": True,
         }
         invalid_values = (
             {key: value for key, value in base.items() if key != "process_id"},
             {**base, "attempts_started": 6},
             {**base, "rpc_freshness": "/Users/alice/private"},
+            {**base, "launch_request_generation": -1},
+            {**base, "launch_request_generation": True},
+            {**base, "launch_request_generation": 2**63},
+            {**base, "native_setup_grace_configured": "yes"},
+            {**base, "native_setup_grace_active": 1},
         )
 
         for recovery in invalid_values:
@@ -306,6 +325,43 @@ class TestSupportArtifact(unittest.TestCase):
                     created_at=CREATED_AT,
                 ).structured_report
                 self.assertNotIn("recovery", report.get("jamulus", {}))
+
+    def test_jamulus_foreground_keeps_only_bounded_reason_code(self):
+        artifact = build_support_bundle(
+            SupportFacts(
+                jamulus_foreground={
+                    "reason_code": "activation-refused",
+                    "process_id": 4321,
+                    "bundle_path": "/Users/alice/private/Jamulus.app",
+                    "exception": "token=private",
+                    "native_handle": 9876,
+                }
+            ),
+            created_at=CREATED_AT,
+        )
+
+        safe = artifact.structured_report["jamulus"]["foreground"]
+        self.assertEqual(safe, {"reason_code": "activation-refused"})
+        encoded = json.dumps(artifact.structured_report)
+        for forbidden in (
+            "process_id",
+            "bundle_path",
+            "/Users/alice",
+            "exception",
+            "native_handle",
+            "token=private",
+        ):
+            self.assertNotIn(forbidden, encoded)
+
+        invalid = build_support_bundle(
+            SupportFacts(
+                jamulus_foreground={
+                    "reason_code": "/Users/alice/private",
+                }
+            ),
+            created_at=CREATED_AT,
+        ).structured_report
+        self.assertNotIn("foreground", invalid.get("jamulus", {}))
 
     def test_component_sections_keep_only_bounded_path_free_trust_facts(self):
         artifact = build_support_bundle(

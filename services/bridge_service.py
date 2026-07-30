@@ -54,6 +54,11 @@ from services.jamulus_component_platform import (
     platform_component_target,
     sanitized_jamulus_child_environment,
 )
+from services.macos_process_activation import (
+    JamulusForegroundOutcome,
+    JamulusForegroundReason,
+    activate_running_macos_application_outcome,
+)
 
 LOGGER = logging.getLogger("webjam.services.bridge")
 
@@ -373,6 +378,7 @@ PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
 RECONNECT_MAX_ATTEMPTS = 5
 RECONNECT_HANG_THRESHOLD_SECONDS = 15.0
 RECONNECT_RPC_STARTUP_GRACE_SECONDS = 30.0
+NATIVE_SOUND_SETUP_GRACE_SECONDS = 10 * 60.0
 # A replacement is not recovered merely because its JSON-RPC socket answers.
 # The application must also receive this exact process generation's local
 # roster row.  Bound that second proof so a fresh-but-wrong/stuck client cannot
@@ -407,7 +413,10 @@ class JamulusRecoverySnapshot:
     process_alive: bool
     rpc_freshness: JamulusRpcFreshness
     rpc_age_seconds: float | None
+    launch_request_generation: int = 0
     rpc_monitor_epoch: int = 0
+    native_setup_grace_configured: bool = False
+    native_setup_grace_active: bool = False
 
 
 @dataclass(frozen=True)
@@ -492,6 +501,9 @@ class BridgeService:
         # State
         self.jamulus_process: Optional[subprocess.Popen] = None
         self.jamulus_state: str = JamulusState.NOT_LAUNCHED.value
+        self._jamulus_foreground_reason = (
+            JamulusForegroundReason.NOT_REQUESTED
+        )
         self.webex_state = WebexLaunchState.NOT_OPENED.value
         # External Webex handoff is asynchronous. A settings change or a
         # newer Open request invalidates every older worker so its eventual
@@ -504,11 +516,17 @@ class BridgeService:
         # A launch is intentionally asynchronous, while Stop/Leave is allowed
         # immediately.  Keep a cancellable request token so a queued worker
         # can never open Jamulus after its originating startup was cancelled.
-        # The control lock is never held while acquiring a lifecycle lock:
-        # cancellation first marks the request, then waits for any in-flight
-        # worker to release the process lifecycle lock for normal cleanup.
-        self._jamulus_launch_control_lock = threading.Lock()
+        # Ordinary Stop is signal-first (control, release, then lifecycle).
+        # Workers and identity-bound cleanup already own lifecycle before
+        # taking control, then reconnect. No path may hold control while
+        # waiting to acquire lifecycle.
+        self._jamulus_launch_control_lock = threading.RLock()
         self._pending_jamulus_launch_cancel: threading.Event | None = None
+        self._pending_jamulus_launch_identity: (
+            tuple[str, str, bool, bool, float] | None
+        ) = None
+        self._jamulus_launch_request_generation_counter = 0
+        self._jamulus_launch_request_generation = 0
         
         self.jamulus_reconnect_attempts = 0
         self.jamulus_next_reconnect_at = 0.0
@@ -526,6 +544,13 @@ class BridgeService:
         self._jamulus_process_generation_counter = 0
         self._jamulus_process_generation = 0
         self._jamulus_process_recovery_generation = 0
+        # A first-run native profile may need a human to choose an interface,
+        # channels, headphones, and buffer before RPC can authenticate.  This
+        # absolute deadline is attached to an exact published process
+        # generation; it never turns a stale callback or a different PID into
+        # live evidence.
+        self._jamulus_native_setup_deadline = 0.0
+        self._jamulus_native_setup_process_generation = 0
         # Serialises stop_jamulus() vs launch _do_launch() so a rapid Stop→Launch
         # cannot race the old process's port release.
         self._jamulus_lifecycle_lock = threading.RLock()
@@ -1083,6 +1108,69 @@ class BridgeService:
         with self._jamulus_launch_control_lock:
             if self._pending_jamulus_launch_cancel is launch_cancel:
                 self._pending_jamulus_launch_cancel = None
+                self._pending_jamulus_launch_identity = None
+
+    def _schedule_jamulus_launch_ui_if_current(
+        self,
+        launch_request_generation: int,
+        callback: Callable[[], None],
+    ) -> None:
+        """Deliver launch UI only while its monotonic request still owns it."""
+
+        def guarded() -> None:
+            with self._jamulus_launch_control_lock:
+                still_current = (
+                    self._jamulus_launch_request_generation
+                    == launch_request_generation
+                )
+            if still_current:
+                callback()
+
+        self.schedule_ui_callback(guarded)
+
+    def _invalidate_jamulus_launch_callbacks_locked(self) -> None:
+        """Tombstone queued launch UI while the caller holds launch control."""
+
+        self._jamulus_launch_request_generation_counter = max(
+            self._jamulus_launch_request_generation_counter,
+            self._jamulus_launch_request_generation,
+        ) + 1
+        self._jamulus_launch_request_generation = (
+            self._jamulus_launch_request_generation_counter
+        )
+
+    def _clear_native_setup_grace_for_request(
+        self,
+        launch_cancel: threading.Event,
+        deadline: float,
+    ) -> None:
+        """Clear only this request's optimistic first-run setup ownership."""
+
+        if deadline <= 0.0:
+            return
+        with self._jamulus_launch_control_lock:
+            self._clear_native_setup_grace_for_request_locked(
+                launch_cancel,
+                deadline,
+            )
+
+    def _clear_native_setup_grace_for_request_locked(
+        self,
+        launch_cancel: threading.Event,
+        deadline: float,
+    ) -> None:
+        """Clear request grace while the caller holds launch control."""
+
+        if deadline <= 0.0:
+            return
+        if self._pending_jamulus_launch_cancel is not launch_cancel:
+            return
+        with self._reconnect_lock:
+            if (
+                self._jamulus_native_setup_deadline == deadline
+                and self._jamulus_native_setup_process_generation == 0
+            ):
+                self._jamulus_native_setup_deadline = 0.0
 
     @property
     def runtime_component_lease_active(self) -> bool:
@@ -1647,38 +1735,139 @@ class BridgeService:
         self._active_native_profile = refreshed
         return refreshed
 
-    def bring_jamulus_forward(self) -> bool:
-        """Best-effort normal app activation after direct owned launch.
+    @property
+    def jamulus_foreground_reason_code(self) -> str:
+        """Return the last bounded foreground result without process identity."""
 
-        This deliberately does not launch a second client, click controls, or
-        scrape Jamulus UI.  The musician chooses Audio/Network Settings inside
-        the real Jamulus window.
+        with self._reconnect_lock:
+            reason = getattr(
+                self,
+                "_jamulus_foreground_reason",
+                JamulusForegroundReason.NOT_REQUESTED,
+            )
+        try:
+            return JamulusForegroundReason(reason).value
+        except (TypeError, ValueError):
+            return JamulusForegroundReason.NOT_REQUESTED.value
+
+    def _remember_jamulus_foreground_outcome(
+        self,
+        outcome: JamulusForegroundOutcome,
+    ) -> JamulusForegroundOutcome:
+        if not isinstance(outcome, JamulusForegroundOutcome):
+            outcome = JamulusForegroundOutcome(
+                False,
+                JamulusForegroundReason.NATIVE_ACTIVATION_UNAVAILABLE,
+            )
+        with self._reconnect_lock:
+            self._jamulus_foreground_reason = outcome.reason
+        return outcome
+
+    def bring_jamulus_forward_outcome(self) -> JamulusForegroundOutcome:
+        """Activate the exact owned Jamulus child without launching another.
+
+        Multiple installed WebJam builds contain Jamulus bundles with the same
+        bundle identifier.  Bundle-ID AppleScript activation can therefore
+        select a different copy.  Bind AppKit activation to this Popen's exact
+        PID and the pinned runtime bundle instead.  The musician still chooses
+        Audio/Network Settings inside the real Jamulus window.
         """
 
-        proc = self.jamulus_process
-        if proc is None or proc.poll() is not None:
-            return False
-        if sys.platform != "darwin":
-            return True
-        try:
-            subprocess.Popen(
-                [
-                    "/usr/bin/osascript",
-                    "-e",
-                    'tell application id "app.jamulussoftware.Jamulus" to activate',
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+        with self._reconnect_lock:
+            proc = self.jamulus_process
+            process_generation = self._jamulus_process_generation
+            process_identifier = self._jamulus_process_id(proc)
+            component = self._active_client_component
+            process_running = self._jamulus_process_poll_evidence(proc)
+        if proc is None or process_running is False:
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    False,
+                    JamulusForegroundReason.NOT_RUNNING,
+                )
             )
-        except OSError:
-            return False
-        return True
+        if (
+            process_running is not True
+            or process_generation <= 0
+            or process_identifier <= 0
+        ):
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    False,
+                    JamulusForegroundReason.IDENTITY_UNVERIFIED,
+                )
+            )
+        if sys.platform != "darwin":
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    True,
+                    JamulusForegroundReason.PLATFORM_NOT_MANAGED,
+                )
+            )
+        if component is None:
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    False,
+                    JamulusForegroundReason.IDENTITY_UNVERIFIED,
+                )
+            )
+        try:
+            executable = Path(component.executable_path)
+        except (AttributeError, TypeError, ValueError):
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    False,
+                    JamulusForegroundReason.IDENTITY_UNVERIFIED,
+                )
+            )
+        bundle = next(
+            (
+                candidate
+                for candidate in (executable, *executable.parents)
+                if candidate.suffix.casefold() == ".app"
+            ),
+            None,
+        )
+        if bundle is None or process_identifier <= 0:
+            return self._remember_jamulus_foreground_outcome(
+                JamulusForegroundOutcome(
+                    False,
+                    JamulusForegroundReason.IDENTITY_UNVERIFIED,
+                )
+            )
+        outcome = activate_running_macos_application_outcome(
+            process_identifier,
+            bundle,
+        )
+        if not outcome:
+            return self._remember_jamulus_foreground_outcome(outcome)
+        with self._reconnect_lock:
+            current_process = self.jamulus_process
+            identity_current = bool(
+                current_process is proc
+                and self._jamulus_process_generation == process_generation
+                and self._jamulus_process_id(current_process) == process_identifier
+                and self._jamulus_process_poll_evidence(current_process) is True
+            )
+        if not identity_current:
+            outcome = JamulusForegroundOutcome(
+                False,
+                JamulusForegroundReason.PROCESS_CHANGED,
+            )
+        return self._remember_jamulus_foreground_outcome(outcome)
+
+    def bring_jamulus_forward(self) -> bool:
+        """Boolean compatibility wrapper for existing UI integrations."""
+
+        return bool(self.bring_jamulus_forward_outcome())
 
     def launch_jamulus(
         self,
         manual: bool = True,
         reconnect: bool = False,
         force_restart: bool = False,
+        native_setup_timeout_seconds: float | None = None,
+        practice_request: bool = False,
     ) -> bool:
         """Accept a Jamulus launch and connect to the band's server.
 
@@ -1697,6 +1886,14 @@ class BridgeService:
             force_restart: True when an alive process should be replaced, used
                 for hung-process recovery where restart requires a restart of a
                 live-but-unresponsive Jamulus process.
+            native_setup_timeout_seconds: Optional first-run sound-setup
+                allowance. macOS manual launches apply the same bounded
+                allowance automatically; the worker retains it only when the
+                dedicated profile was genuinely missing before launch.
+            practice_request: True only for the private Practice client. The
+                accepted role and target are pinned for single-flight reuse so
+                a rapid mode switch cannot connect Practice to a band server
+                or a normal session to the private loopback server.
 
         Side effects:
             - Resolves the Jamulus binary via `find_jamulus()` and shows
@@ -1715,10 +1912,54 @@ class BridgeService:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
             return False
+        if not isinstance(practice_request, bool):
+            return False
+
+        requested_native_setup_deadline = 0.0
+        requested_native_setup_seconds = 0.0
+        if native_setup_timeout_seconds is not None:
+            try:
+                native_setup_seconds = float(native_setup_timeout_seconds)
+            except (TypeError, ValueError):
+                return False
+            if (
+                isinstance(native_setup_timeout_seconds, bool)
+                or not math.isfinite(native_setup_seconds)
+                or native_setup_seconds <= 0.0
+                or not manual
+                or reconnect
+            ):
+                return False
+            requested_native_setup_seconds = native_setup_seconds
+            requested_native_setup_deadline = time.monotonic() + native_setup_seconds
+        elif (
+            manual
+            and not reconnect
+            and sys.platform == "darwin"
+            and self._native_profile_manager is not None
+        ):
+            requested_native_setup_seconds = NATIVE_SOUND_SETUP_GRACE_SECONDS
+            requested_native_setup_deadline = (
+                time.monotonic() + NATIVE_SOUND_SETUP_GRACE_SECONDS
+            )
+        requested_server = self._effective_server_for_mode(practice_request)
+        requested_launch_identity = (
+            "practice" if practice_request else "session",
+            requested_server,
+            bool(reconnect),
+            bool(force_restart),
+            requested_native_setup_seconds,
+        )
 
         reconnect_deferred = False
         reconnect_retired = False
+        manual_launch_already_pending = False
+        manual_launch_cleanup_pending = False
+        manual_launch_role_mismatch = False
         launch_cancel: threading.Event | None = None
+        launch_request_generation = 0
+        prior_native_setup_deadline = 0.0
+        prior_native_setup_generation = 0
         with self._jamulus_launch_control_lock:
             if reconnect and not self.jamulus_launch_intended:
                 # A reconnect tick deliberately releases its state lock before
@@ -1737,13 +1978,58 @@ class BridgeService:
                     # request and replace it with a profile-less reconnect.
                     reconnect_deferred = True
                     launch_cancel = previous_launch
+                elif manual and previous_launch is not None:
+                    # Manual launch is single-flight. Cancelling an accepted
+                    # worker here creates two unsafe windows: its child may
+                    # exist before publication while a replacement preflight
+                    # releases the updater lease, or it may be published just
+                    # before the replacement prevents its RPC monitor from
+                    # starting. Reuse the active request instead. A token that
+                    # is already cancelled still owns cleanup and must finish
+                    # before another launch can be accepted.
+                    launch_cancel = previous_launch
+                    if previous_launch.is_set():
+                        manual_launch_cleanup_pending = True
+                    elif (
+                        self._pending_jamulus_launch_identity
+                        != requested_launch_identity
+                    ):
+                        manual_launch_role_mismatch = True
+                    else:
+                        manual_launch_already_pending = True
                 else:
                     if previous_launch is not None:
                         previous_launch.set()
                     launch_cancel = threading.Event()
                     self._pending_jamulus_launch_cancel = launch_cancel
+                    self._pending_jamulus_launch_identity = (
+                        requested_launch_identity
+                    )
                     if manual:
+                        self._jamulus_launch_request_generation_counter += 1
+                        self._jamulus_launch_request_generation = (
+                            self._jamulus_launch_request_generation_counter
+                        )
+                        launch_request_generation = (
+                            self._jamulus_launch_request_generation
+                        )
                         self.jamulus_launch_intended = True
+                        with self._reconnect_lock:
+                            prior_native_setup_deadline = (
+                                self._jamulus_native_setup_deadline
+                            )
+                            prior_native_setup_generation = (
+                                self._jamulus_native_setup_process_generation
+                            )
+                            self._reset_jamulus_recovery_locked()
+                            # First-run grace is not configured until the
+                            # worker proves the pre-launch profile is missing.
+                            self._jamulus_native_setup_deadline = 0.0
+                            self._jamulus_native_setup_process_generation = 0
+                    else:
+                        launch_request_generation = (
+                            self._jamulus_launch_request_generation
+                        )
         if reconnect_retired:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
@@ -1766,16 +2052,100 @@ class BridgeService:
                 "Jamulus reconnect deferred while an accepted launch is pending."
             )
             return False
+        if manual_launch_cleanup_pending:
+            LOGGER.debug(
+                "Jamulus launch deferred while the previous request cleans up."
+            )
+            return False
+        if manual_launch_role_mismatch:
+            self.schedule_ui_callback(
+                lambda: self.set_status_banner(
+                    "Another audio mode is already starting. Wait for it to "
+                    "finish or choose End before switching modes."
+                )
+            )
+            return False
+        if manual_launch_already_pending:
+            LOGGER.debug("Jamulus launch reused the accepted pending request.")
+            return True
         launch_recovery_generation = 0
+        launch_native_setup_deadline = requested_native_setup_deadline
         if manual:
-            with self._reconnect_lock:
-                self._reset_jamulus_recovery_locked()
             self.metrics_service.increment("metric_jamulus_launch_attempt")
         elif reconnect:
             with self._reconnect_lock:
                 launch_recovery_generation = (
                     self._begin_jamulus_recovery_locked()
                 )
+                launch_native_setup_deadline = (
+                    self._jamulus_native_setup_deadline
+                )
+
+        def publish_preflight_failure(
+            *,
+            state: JamulusState,
+            metric: str,
+            ui_callback: Callable[[], None] | None = None,
+            release_client_lease: bool = False,
+            terminal_reconnect: bool = True,
+        ) -> bool:
+            """Retire one exact pre-worker request without stale publication."""
+
+            with self._jamulus_launch_control_lock:
+                if (
+                    self._pending_jamulus_launch_cancel is not launch_cancel
+                ):
+                    return False
+                if launch_cancel.is_set() or self.shutdown_requested():
+                    # Stop/shutdown may tombstone the request generation while
+                    # a synchronous preflight probe is in flight. Clear only
+                    # this exact cancelled token; a superseding request owns a
+                    # different token and is left untouched.
+                    self._pending_jamulus_launch_cancel = None
+                    self._pending_jamulus_launch_identity = None
+                    if release_client_lease:
+                        self._release_unestablished_client_lease()
+                    return False
+                if (
+                    self._jamulus_launch_request_generation
+                    != launch_request_generation
+                ):
+                    return False
+                launch_cancel.set()
+                self._pending_jamulus_launch_cancel = None
+                self._pending_jamulus_launch_identity = None
+                if not reconnect or terminal_reconnect:
+                    self.jamulus_launch_intended = False
+                with self._reconnect_lock:
+                    self._jamulus_native_setup_deadline = 0.0
+                    self._jamulus_native_setup_process_generation = 0
+                    if reconnect:
+                        if terminal_reconnect:
+                            self._begin_jamulus_recovery_locked()
+                            self.jamulus_reconnect_inflight = False
+                            self._jamulus_recovery_exhausted = True
+                        else:
+                            self._finish_jamulus_reconnect_attempt_locked(
+                                failed=True
+                            )
+                    else:
+                        self._finish_jamulus_reconnect_attempt_locked(
+                            failed=False
+                        )
+                self._set_jamulus_state(state)
+                self.metrics_service.increment(metric)
+                if release_client_lease:
+                    self._release_unestablished_client_lease()
+            self._schedule_jamulus_launch_ui_if_current(
+                launch_request_generation,
+                self.refresh_readiness,
+            )
+            if ui_callback is not None:
+                self._schedule_jamulus_launch_ui_if_current(
+                    launch_request_generation,
+                    ui_callback,
+                )
+            return True
 
         # No server configured (fresh install where the wizard was skipped,
         # or a hand-edited config).  Without this guard we'd launch Jamulus
@@ -1783,104 +2153,92 @@ class BridgeService:
         # Practice mode is exempt — it supplies its own local target, so a
         # fresh install can practice before the band server even exists.
         server_host = str(self.settings.jamulus_server or "").strip()
-        if not server_host and not self.practice_mode:
-            self._retire_jamulus_launch_request(launch_cancel)
-            # Don't keep auto-reconnecting into a missing config.
-            if reconnect:
-                self._terminalize_jamulus_recovery()
-            else:
-                with self._jamulus_launch_control_lock:
-                    self.jamulus_launch_intended = False
-                with self._reconnect_lock:
-                    self._finish_jamulus_reconnect_attempt_locked(failed=False)
-            self._set_jamulus_state(JamulusState.NOT_RUNNING)
-            self.schedule_ui_callback(self.refresh_readiness)
-            if reconnect:
-                self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                LOGGER.warning("Jamulus reconnect skipped: no server configured.")
-                return False
-            self.metrics_service.increment("metric_jamulus_launch_failed")
-            self.show_actionable_error(
-                "This jam needs a new invite",
-                what_failed="WebJam doesn’t have a band session to join.",
-                likely_cause="The saved invitation is missing or incomplete.",
-                next_action=(
-                    "Close WebJam, open it again, and choose Host a Jam or paste "
-                    "a fresh invitation from your host."
+        if not server_host and not practice_request:
+            published = publish_preflight_failure(
+                state=JamulusState.NOT_RUNNING,
+                metric=(
+                    "metric_jamulus_reconnect_failed"
+                    if reconnect
+                    else "metric_jamulus_launch_failed"
                 ),
-                retry_callback=None,
+                ui_callback=(
+                    None
+                    if reconnect
+                    else lambda: self.show_actionable_error(
+                        "This jam needs a new invite",
+                        what_failed="WebJam doesn’t have a band session to join.",
+                        likely_cause="The saved invitation is missing or incomplete.",
+                        next_action=(
+                            "Close WebJam, open it again, and choose Host a Jam or paste "
+                            "a fresh invitation from your host."
+                        ),
+                        retry_callback=None,
+                    )
+                ),
             )
+            if reconnect and published:
+                LOGGER.warning("Jamulus reconnect skipped: no server configured.")
             return False
 
         lease_acquired, lease_detail = self._acquire_runtime_component_lease(
             "client"
         )
         if not lease_acquired:
-            with self._jamulus_launch_control_lock:
-                if self._pending_jamulus_launch_cancel is launch_cancel:
-                    launch_cancel.set()
-                    self._pending_jamulus_launch_cancel = None
-            if reconnect:
-                self._terminalize_jamulus_recovery()
-            else:
-                with self._jamulus_launch_control_lock:
-                    self.jamulus_launch_intended = False
-                with self._reconnect_lock:
-                    self._finish_jamulus_reconnect_attempt_locked(failed=False)
-            self._set_jamulus_state(JamulusState.NOT_RUNNING)
-            self.schedule_ui_callback(self.refresh_readiness)
-            self.metrics_service.increment(
-                "metric_jamulus_reconnect_failed"
-                if reconnect
-                else "metric_jamulus_launch_failed"
+            publish_preflight_failure(
+                state=JamulusState.NOT_RUNNING,
+                metric=(
+                    "metric_jamulus_reconnect_failed"
+                    if reconnect
+                    else "metric_jamulus_launch_failed"
+                ),
+                ui_callback=(
+                    None
+                    if reconnect
+                    else lambda: self.show_actionable_error(
+                        "Band audio is busy",
+                        what_failed=lease_detail,
+                        likely_cause=(
+                            "Another WebJam window may be playing, or a verified "
+                            "Jamulus update may still be installing."
+                        ),
+                        next_action=(
+                            "Finish or close the other operation, then press Start "
+                            "Audio again."
+                        ),
+                        retry_callback=None,
+                    )
+                ),
             )
-            if not reconnect:
-                self.show_actionable_error(
-                    "Band audio is busy",
-                    what_failed=lease_detail,
-                    likely_cause=(
-                        "Another WebJam window may be playing, or a verified "
-                        "Jamulus update may still be installing."
-                    ),
-                    next_action=(
-                        "Finish or close the other operation, then press Start "
-                        "Audio again."
-                    ),
-                    retry_callback=None,
-                )
             return False
 
         jamulus_path = self.find_jamulus()
         if not jamulus_path:
-            self._retire_jamulus_launch_request(launch_cancel)
-            if reconnect:
-                self._terminalize_jamulus_recovery()
-                self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                self._set_jamulus_state(JamulusState.NOT_RUNNING)
-                self.schedule_ui_callback(self.refresh_readiness)
-                LOGGER.warning("Jamulus reconnect skipped: executable not found.")
-                self._release_unestablished_client_lease()
-                return False
-
-            # Audit-found bug: previously this manual-launch failure path didn't
-            # clear `jamulus_reconnect_inflight`, leaving a stale True flag from
-            # any earlier reconnect attempt. The QTimer-driven reconnect tick
-            # would then skip the retry indefinitely.
-            with self._reconnect_lock:
-                self._finish_jamulus_reconnect_attempt_locked(
-                    failed=reconnect
-                )
-            self.metrics_service.increment("metric_jamulus_launch_failed")
-            self._set_jamulus_state(JamulusState.NOT_FOUND)
-            self.schedule_ui_callback(self.refresh_readiness)
-            self.show_actionable_error(
-                "A music component is missing",
-                what_failed="WebJam couldn’t start the band audio on this Mac.",
-                likely_cause="The WebJam installation is incomplete.",
-                next_action="Reinstall the latest WebJam build, then try again.",
-                retry_callback=None,
+            published = publish_preflight_failure(
+                state=(
+                    JamulusState.NOT_RUNNING
+                    if reconnect
+                    else JamulusState.NOT_FOUND
+                ),
+                metric=(
+                    "metric_jamulus_reconnect_failed"
+                    if reconnect
+                    else "metric_jamulus_launch_failed"
+                ),
+                ui_callback=(
+                    None
+                    if reconnect
+                    else lambda: self.show_actionable_error(
+                        "A music component is missing",
+                        what_failed="WebJam couldn’t start the band audio on this Mac.",
+                        likely_cause="The WebJam installation is incomplete.",
+                        next_action="Reinstall the latest WebJam build, then try again.",
+                        retry_callback=None,
+                    )
+                ),
+                release_client_lease=True,
             )
-            self._release_unestablished_client_lease()
+            if reconnect and published:
+                LOGGER.warning("Jamulus reconnect skipped: executable not found.")
             return False
         resolved_client_component = self._last_resolved_client_component
         if (
@@ -1905,17 +2263,46 @@ class BridgeService:
             force_restart_process
         )
         if owned_live_process and not force_restart:
-            self._set_jamulus_state(JamulusState.ALREADY)
-            with self._reconnect_lock:
-                self.jamulus_reconnect_inflight = False
-            self.schedule_ui_callback(self.refresh_readiness)
-            if manual:
-                # Non-blocking flash instead of a modal dialog
-                self.schedule_ui_callback(
-                    lambda: self.set_status_banner("Jamulus is already running.")
+            already_published = False
+            with self._jamulus_launch_control_lock:
+                if (
+                    self._pending_jamulus_launch_cancel is not launch_cancel
+                    or self._jamulus_launch_request_generation
+                    != launch_request_generation
+                    or launch_cancel.is_set()
+                    or self.shutdown_requested()
+                ):
+                    return False
+                with self._reconnect_lock:
+                    current_process = self.jamulus_process
+                    if (
+                        current_process is observed_process
+                        and self._jamulus_process_generation
+                        == observed_process_generation
+                        and self._jamulus_process_alive(current_process)
+                    ):
+                        self.jamulus_state = JamulusState.ALREADY.value
+                        self.jamulus_reconnect_inflight = False
+                        self._jamulus_native_setup_deadline = (
+                            prior_native_setup_deadline
+                        )
+                        self._jamulus_native_setup_process_generation = (
+                            prior_native_setup_generation
+                        )
+                        self._pending_jamulus_launch_cancel = None
+                        self._pending_jamulus_launch_identity = None
+                        already_published = True
+            if already_published:
+                self._schedule_jamulus_launch_ui_if_current(
+                    launch_request_generation,
+                    self.refresh_readiness,
                 )
-            self._retire_jamulus_launch_request(launch_cancel)
-            return True
+                if manual:
+                    self._schedule_jamulus_launch_ui_if_current(
+                        launch_request_generation,
+                        lambda: self.set_status_banner("Jamulus is already running."),
+                    )
+                return True
 
         # Detect port conflict before launching Jamulus.  If the JSON-RPC port
         # is already in use (typically: another WebJam instance, or a previous
@@ -1928,55 +2315,37 @@ class BridgeService:
         # retire it, so probing here would either reject our own port or force
         # a synchronous UI-thread termination.
         if not (force_restart and owned_live_process) and self._is_rpc_port_in_use():
-            # A synchronous manual preflight rejection never established a
-            # Jamulus process (or, on macOS, an active native profile), so it
-            # must not leave crash-recovery intent behind.  Retire only this
-            # request generation: a newer Launch click may have superseded us
-            # while the port probe was running, and this stale result must not
-            # clear that newer request's intent or publish its own failure.
-            with self._jamulus_launch_control_lock:
-                if self._pending_jamulus_launch_cancel is not launch_cancel:
-                    return False
-                # Stop/shutdown can cancel this same request without replacing
-                # its generation token.  In that case cancellation won the
-                # race, so preserve the stopped state and do not surface a
-                # stale port-conflict error after the user has left.
-                if launch_cancel.is_set() or self.shutdown_requested():
-                    self._pending_jamulus_launch_cancel = None
-                    self._release_unestablished_client_lease()
-                    return False
-                launch_cancel.set()
-                self._pending_jamulus_launch_cancel = None
-                if manual:
-                    self.jamulus_launch_intended = False
-            with self._reconnect_lock:
-                self._finish_jamulus_reconnect_attempt_locked(
-                    failed=reconnect
-                )
-            self._set_jamulus_state(JamulusState.PORT_IN_USE)
             port = self.settings.jamulus_rpc_port
-            if manual:
-                self.metrics_service.increment("metric_jamulus_port_conflict")
-                self.schedule_ui_callback(self.refresh_readiness)
-                self.show_actionable_error(
-                    "Another audio session is open",
-                    what_failed="WebJam can’t start a second music connection on this Mac.",
-                    likely_cause=(
-                        "Another WebJam window is open, or the last session is "
-                        "still finishing."
-                    ),
-                    next_action="Close the other WebJam window, wait a moment, then try again.",
-                    retry_callback=(
-                        None if self.practice_mode else self.retry_audio_launch
-                    ),
-                )
-            else:
-                self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                self.schedule_ui_callback(self.refresh_readiness)
+            published = publish_preflight_failure(
+                state=JamulusState.PORT_IN_USE,
+                metric=(
+                    "metric_jamulus_port_conflict"
+                    if manual
+                    else "metric_jamulus_reconnect_failed"
+                ),
+                ui_callback=(
+                    None
+                    if reconnect
+                    else lambda: self.show_actionable_error(
+                        "Another audio session is open",
+                        what_failed="WebJam can’t start a second music connection on this Mac.",
+                        likely_cause=(
+                            "Another WebJam window is open, or the last session is "
+                            "still finishing."
+                        ),
+                        next_action="Close the other WebJam window, wait a moment, then try again.",
+                        retry_callback=(
+                            None if practice_request else self.retry_audio_launch
+                        ),
+                    )
+                ),
+                release_client_lease=True,
+                terminal_reconnect=False,
+            )
+            if reconnect and published:
                 LOGGER.warning(
                     "Jamulus reconnect skipped: JSON-RPC port %s already in use.", port
                 )
-            self._release_unestablished_client_lease()
             return False
 
         # A previous clean End/Leave intentionally publishes ``Stopped``.
@@ -1991,20 +2360,28 @@ class BridgeService:
         # concurrent Stop or superseding launch wins without this older
         # request overwriting its state.
         with self._jamulus_launch_control_lock:
-            if self._pending_jamulus_launch_cancel is not launch_cancel:
+            if (
+                self._pending_jamulus_launch_cancel is not launch_cancel
+                or self._jamulus_launch_request_generation
+                != launch_request_generation
+            ):
                 return False
             if launch_cancel.is_set() or self.shutdown_requested():
                 self._pending_jamulus_launch_cancel = None
+                self._pending_jamulus_launch_identity = None
                 self._release_unestablished_client_lease()
                 return False
             self._set_jamulus_state(JamulusState.STARTING)
 
         banner_text = "Starting your band audio…" if not reconnect else "Reconnecting band audio…"
-        if self.practice_mode:
+        if practice_request:
             banner_text = "Starting practice session..."
-        self.set_status_banner(banner_text, color="#BF5700")
+        self._schedule_jamulus_launch_ui_if_current(
+            launch_request_generation,
+            lambda: self.set_status_banner(banner_text, color="#BF5700"),
+        )
 
-        server = self.effective_server()
+        server = requested_server
 
         def _do_launch() -> None:
             with self._jamulus_lifecycle_lock:
@@ -2067,6 +2444,12 @@ class BridgeService:
                             current_recovery_active = (
                                 self._jamulus_recovery_active
                             )
+                            current_native_setup_generation = (
+                                self._jamulus_native_setup_process_generation
+                            )
+                            current_native_setup_deadline = (
+                                self._jamulus_native_setup_deadline
+                            )
                         current_process_id = self._jamulus_process_id(
                             current_process
                         )
@@ -2099,15 +2482,25 @@ class BridgeService:
                                 now=time.monotonic(),
                             )
                         )
+                        current_observed_at = time.monotonic()
+                        current_native_setup_active = bool(
+                            current_process_alive
+                            and current_generation > 0
+                            and current_generation
+                            == current_native_setup_generation
+                            and current_observed_at
+                            < current_native_setup_deadline
+                        )
                         current_auth_timed_out = bool(
                             current_process_alive
+                            and not current_native_setup_active
                             and current_recovery_active
                             and current_process_recovery_generation > 0
                             and current_process_recovery_generation
                             == current_recovery_generation
                             and current_started_at > 0.0
                             and (
-                                time.monotonic() - current_started_at
+                                current_observed_at - current_started_at
                                 >= RECONNECT_LOCAL_ROSTER_GRACE_SECONDS
                             )
                         )
@@ -2154,10 +2547,25 @@ class BridgeService:
                                 self._jamulus_process_generation = 0
                                 self._jamulus_process_recovery_generation = 0
                         else:
-                            self._set_jamulus_state(JamulusState.ALREADY)
-                            with self._reconnect_lock:
-                                self.jamulus_reconnect_inflight = False
-                            self.schedule_ui_callback(self.refresh_readiness)
+                            with self._jamulus_launch_control_lock:
+                                if (
+                                    self._pending_jamulus_launch_cancel
+                                    is not launch_cancel
+                                    or self._jamulus_launch_request_generation
+                                    != launch_request_generation
+                                    or launch_cancel.is_set()
+                                    or self.shutdown_requested()
+                                ):
+                                    launch_cancel.set()
+                                    cancelled()
+                                    return
+                                self._set_jamulus_state(JamulusState.ALREADY)
+                                with self._reconnect_lock:
+                                    self.jamulus_reconnect_inflight = False
+                            self._schedule_jamulus_launch_ui_if_current(
+                                launch_request_generation,
+                                self.refresh_readiness,
+                            )
                             return
                     if cancelled():
                         return
@@ -2176,6 +2584,7 @@ class BridgeService:
                         verified_client_component = current_component
 
                     native_profile = None
+                    native_setup_required = False
                     if self._native_profile_manager is not None:
                         if reconnect:
                             native_profile = self._active_native_profile
@@ -2200,6 +2609,9 @@ class BridgeService:
                                 )
                             )
                             self._active_native_profile = native_profile
+                            native_setup_required = bool(
+                                launch_native_setup_deadline > time.monotonic()
+                            )
                         else:
                             if verified_client_component is None:
                                 native_profile = self._native_profile_manager.prepare(
@@ -2233,7 +2645,37 @@ class BridgeService:
                                         verified_client_component.version
                                     ),
                                 )
+                            # Capture the pre-launch fact. Jamulus may create
+                            # the INI during Popen before the final path
+                            # revalidation, but that does not mean a human has
+                            # selected an interface or completed first-run
+                            # sound setup.
+                            native_setup_required = not bool(
+                                getattr(
+                                    native_profile,
+                                    "profile_exists",
+                                    True,
+                                )
+                            )
                             self._active_native_profile = native_profile
+                            if (
+                                native_setup_required
+                                and launch_native_setup_deadline
+                                > time.monotonic()
+                            ):
+                                with self._jamulus_launch_control_lock:
+                                    if (
+                                        self._pending_jamulus_launch_cancel
+                                        is launch_cancel
+                                        and self._jamulus_launch_request_generation
+                                        == launch_request_generation
+                                        and not launch_cancel.is_set()
+                                    ):
+                                        with self._reconnect_lock:
+                                            self._jamulus_native_setup_deadline = (
+                                                launch_native_setup_deadline
+                                            )
+                                            self._jamulus_native_setup_process_generation = 0
                     # A live Jamulus client owns the hardware route on every
                     # supported platform. WebJam's optional PortAudio meter
                     # must not contend with the musician's native setup.
@@ -2241,33 +2683,60 @@ class BridgeService:
 
                     if (
                         self._hosting_enabled()
-                        and not self.practice_mode
+                        and not practice_request
                     ):
                         hosted_ok, hosted_detail = self.ensure_hosted_server()
                         if not hosted_ok:
                             LOGGER.error("Hosted server could not start: %s", hosted_detail)
-                            self._active_native_profile = None
-                            self._set_live_audio_route_owned(False)
-                            self._set_jamulus_state(JamulusState.STOPPED)
-                            with self._reconnect_lock:
-                                self.jamulus_reconnect_inflight = False
-                            self.schedule_ui_callback(
-                                lambda: self.show_actionable_error(
-                                    "This jam couldn’t start",
-                                    what_failed="This Mac couldn’t create the band session.",
-                                    likely_cause=(
-                                        "Another session may still be open, or a required "
-                                        "audio component may be unavailable."
-                                    ),
-                                    next_action=(
-                                        "Close any other WebJam window, wait a moment, "
-                                        "then try hosting again."
-                                    ),
-                                    retry_callback=None,
+                            host_failure_callbacks: list[Callable[[], None]] = []
+                            with self._jamulus_launch_control_lock:
+                                failure_is_current = bool(
+                                    self._pending_jamulus_launch_cancel
+                                    is launch_cancel
+                                    and self._jamulus_launch_request_generation
+                                    == launch_request_generation
+                                    and not launch_cancel.is_set()
+                                    and not self.shutdown_requested()
                                 )
-                            )
-                            self.schedule_ui_callback(self.refresh_readiness)
-                            self._release_unestablished_client_lease()
+                                self._active_native_profile = None
+                                self._set_live_audio_route_owned(False)
+                                if not failure_is_current:
+                                    if runtime_paths_prepared:
+                                        self._release_client_runtime_paths(
+                                            confirmed_stopped=True
+                                        )
+                                    return
+                                launch_cancel.set()
+                                self.jamulus_launch_intended = False
+                                with self._reconnect_lock:
+                                    self._jamulus_native_setup_deadline = 0.0
+                                    self._jamulus_native_setup_process_generation = 0
+                                    self.jamulus_reconnect_inflight = False
+                                self._set_jamulus_state(JamulusState.STOPPED)
+                                host_failure_callbacks.extend(
+                                    (
+                                        lambda: self.show_actionable_error(
+                                            "This jam couldn’t start",
+                                            what_failed="This Mac couldn’t create the band session.",
+                                            likely_cause=(
+                                                "Another session may still be open, or a required "
+                                                "audio component may be unavailable."
+                                            ),
+                                            next_action=(
+                                                "Close any other WebJam window, wait a moment, "
+                                                "then try hosting again."
+                                            ),
+                                            retry_callback=None,
+                                        ),
+                                        self.refresh_readiness,
+                                    )
+                                )
+                                self._release_unestablished_client_lease()
+                            for callback in host_failure_callbacks:
+                                self._schedule_jamulus_launch_ui_if_current(
+                                    launch_request_generation,
+                                    callback,
+                                )
                             return
 
                     # Cancellation may have arrived while profile/server
@@ -2465,23 +2934,51 @@ class BridgeService:
                             f"(code {return_code}); see ~/.webjam_jamulus.log"
                         )
 
-                    if cancelled(proc):
-                        return
-
-                    with self._reconnect_lock:
-                        self._jamulus_process_generation_counter += 1
-                        self.jamulus_process = proc
-                        self.jamulus_state = JamulusState.RUNNING.value
-                        self.jamulus_reconnect_inflight = False
-                        self._jamulus_process_started_at = time.monotonic()
-                        self._jamulus_process_generation = (
-                            self._jamulus_process_generation_counter
-                        )
-                        self._jamulus_process_recovery_generation = (
-                            launch_recovery_generation if reconnect else 0
-                        )
-                        published_generation = self._jamulus_process_generation
-                        published_process_id = self._jamulus_process_id(proc)
+                    with self._jamulus_launch_control_lock:
+                        if (
+                            self._pending_jamulus_launch_cancel is not launch_cancel
+                            or self._jamulus_launch_request_generation
+                            != launch_request_generation
+                            or launch_cancel.is_set()
+                            or self.shutdown_requested()
+                        ):
+                            launch_cancel.set()
+                            cancelled(proc)
+                            return
+                        with self._reconnect_lock:
+                            if manual:
+                                # A reconnect tick may have sampled the empty
+                                # pending state just before this manual request
+                                # installed its token. Manual publication is
+                                # the final owner and retires any late recovery
+                                # mutation before binding the new process.
+                                self._reset_jamulus_recovery_locked()
+                            self._jamulus_process_generation_counter += 1
+                            self.jamulus_process = proc
+                            self.jamulus_state = JamulusState.RUNNING.value
+                            self.jamulus_reconnect_inflight = False
+                            self._jamulus_process_started_at = time.monotonic()
+                            self._jamulus_process_generation = (
+                                self._jamulus_process_generation_counter
+                            )
+                            self._jamulus_process_recovery_generation = (
+                                launch_recovery_generation if reconnect else 0
+                            )
+                            published_generation = self._jamulus_process_generation
+                            if (
+                                native_setup_required
+                                and launch_native_setup_deadline > time.monotonic()
+                            ):
+                                self._jamulus_native_setup_deadline = (
+                                    launch_native_setup_deadline
+                                )
+                                self._jamulus_native_setup_process_generation = (
+                                    published_generation
+                                )
+                            else:
+                                self._jamulus_native_setup_deadline = 0.0
+                                self._jamulus_native_setup_process_generation = 0
+                            published_process_id = self._jamulus_process_id(proc)
                     if verified_client_component is not None:
                         self._active_client_component = verified_client_component
 
@@ -2527,188 +3024,243 @@ class BridgeService:
 
                     threading.Thread(target=_start_monitoring, daemon=True).start()
 
-                    self.schedule_ui_callback(self.refresh_readiness)
+                    self._schedule_jamulus_launch_ui_if_current(
+                        launch_request_generation,
+                        self.refresh_readiness,
+                    )
                     if manual:
                         msg = "Band audio started — connecting everyone now."
-                        self.schedule_ui_callback(
-                            lambda m=msg: self.set_status_banner(m)
+                        self._schedule_jamulus_launch_ui_if_current(
+                            launch_request_generation,
+                            lambda m=msg: self.set_status_banner(m),
                         )
 
                 except JamulusNativeProfileError as exc:
-                    was_practice = self.practice_mode
-                    # Stop, shutdown, or a superseding launch may win while
-                    # native-profile validation is running. Treat that worker
-                    # as stale instead of publishing its failure over the
-                    # current lifecycle.
-                    if cancelled():
-                        return
-                    LOGGER.info(
-                        "Jamulus native-profile preflight failed (%s).",
-                        type(exc).__name__,
-                    )
-                    if proc is None and runtime_paths_prepared:
-                        self._release_client_runtime_paths(
-                            confirmed_stopped=True
+                    was_practice = practice_request
+                    native_failure_callbacks: list[Callable[[], None]] = []
+                    with self._jamulus_launch_control_lock:
+                        failure_is_current = bool(
+                            self._pending_jamulus_launch_cancel is launch_cancel
+                            and self._jamulus_launch_request_generation
+                            == launch_request_generation
+                            and not launch_cancel.is_set()
+                            and not self.shutdown_requested()
                         )
-                    self._close_jamulus_log_file()
-                    self._set_live_audio_route_owned(False)
-                    self._active_native_profile = None
-                    self._set_jamulus_state(
-                        JamulusState.LAUNCH_FAILED
-                        if not reconnect
-                        else JamulusState.NOT_RUNNING
-                    )
-                    if reconnect:
-                        # A reconnect must never rewrite a musician's native
-                        # Jamulus setup behind their back.
-                        self._terminalize_jamulus_recovery()
-                        self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                    else:
-                        with self._reconnect_lock:
-                            self._finish_jamulus_reconnect_attempt_locked(
-                                failed=False
+                        if not failure_is_current:
+                            launch_cancel.set()
+                            cancelled(proc)
+                            return
+                        if not reconnect:
+                            self._clear_native_setup_grace_for_request_locked(
+                                launch_cancel,
+                                launch_native_setup_deadline,
                             )
-                        self.metrics_service.increment("metric_jamulus_launch_failed")
-                    if was_practice:
-                        self._terminate_practice_server()
-                        self.practice_mode = False
-                    self.schedule_ui_callback(self.refresh_readiness)
-
-                    def show_native_profile_error(
-                        message: str = str(exc),
-                        practice: bool = was_practice,
-                    ) -> None:
-                        self.show_actionable_error(
-                            "Band audio needs attention",
-                            what_failed=message,
-                            likely_cause=(
-                                "Jamulus could not open its native sound profile."
-                            ),
-                            next_action=(
-                                "Open Jamulus Audio Settings, check your "
-                                "interface, then try again."
-                            ),
-                            retry_callback=(
-                                None if practice else self.retry_audio_launch
-                            ),
+                        LOGGER.info(
+                            "Jamulus native-profile preflight failed (%s).",
+                            type(exc).__name__,
                         )
-
-                    self.schedule_ui_callback(show_native_profile_error)
-                    self._release_unestablished_client_lease()
-                except Exception as exc:
-                    was_practice = self.practice_mode
-                    LOGGER.error(
-                        "Failed to launch Jamulus (%s).",
-                        type(exc).__name__,
-                    )
-                    child_stopped = self._terminate_jamulus_child(proc)
-                    if proc is not None and not child_stopped:
-                        with self._reconnect_lock:
-                            if self.jamulus_process is not proc:
-                                self._jamulus_process_generation_counter += 1
-                                self.jamulus_process = proc
-                                self._jamulus_process_started_at = time.monotonic()
-                                self._jamulus_process_generation = (
-                                    self._jamulus_process_generation_counter
-                                )
-                                self._jamulus_process_recovery_generation = (
-                                    launch_recovery_generation if reconnect else 0
-                                )
-                            self.jamulus_state = "Stop failed"
-                            self.jamulus_reconnect_inflight = False
+                        if proc is None and runtime_paths_prepared:
+                            self._release_client_runtime_paths(
+                                confirmed_stopped=True
+                            )
+                        self._close_jamulus_log_file()
+                        self._set_live_audio_route_owned(False)
+                        self._active_native_profile = None
+                        self._set_jamulus_state(
+                            JamulusState.LAUNCH_FAILED
+                            if not reconnect
+                            else JamulusState.NOT_RUNNING
+                        )
                         if reconnect:
-                            self._terminalize_jamulus_recovery()
+                            # A reconnect must never rewrite a musician's
+                            # native setup behind their back.
+                            self._terminalize_jamulus_recovery_locked()
+                            self.metrics_service.increment(
+                                "metric_jamulus_reconnect_failed"
+                            )
                         else:
-                            with self._jamulus_launch_control_lock:
-                                self.jamulus_launch_intended = False
-                        self.metrics_service.increment(
-                            "metric_jamulus_reconnect_failed"
-                            if reconnect
-                            else "metric_jamulus_launch_failed"
-                        )
-                        self.schedule_ui_callback(self.refresh_readiness)
-                        self.schedule_ui_callback(
-                            lambda: self.show_actionable_error(
-                                "Band audio cleanup needs attention",
-                                what_failed=(
-                                    "WebJam could not confirm that the interrupted "
-                                    "music engine stopped."
-                                ),
+                            self.jamulus_launch_intended = False
+                            with self._reconnect_lock:
+                                self._finish_jamulus_reconnect_attempt_locked(
+                                    failed=False
+                                )
+                            self.metrics_service.increment(
+                                "metric_jamulus_launch_failed"
+                            )
+                        if was_practice:
+                            self._terminate_practice_server()
+                            self.practice_mode = False
+                        native_failure_callbacks.append(self.refresh_readiness)
+
+                        def show_native_profile_error(
+                            message: str = str(exc),
+                            practice: bool = was_practice,
+                        ) -> None:
+                            self.show_actionable_error(
+                                "Band audio needs attention",
+                                what_failed=message,
                                 likely_cause=(
-                                    "The native audio process did not answer the "
-                                    "bounded stop request."
+                                    "Jamulus could not open its native sound profile."
                                 ),
                                 next_action=(
-                                    "Choose End or Leave again to finish cleanup "
-                                    "before starting another session."
+                                    "Open Jamulus Audio Settings, check your "
+                                    "interface, then try again."
                                 ),
-                                retry_callback=None,
+                                retry_callback=(
+                                    None if practice else self.retry_audio_launch
+                                ),
                             )
-                        )
-                        return
-                    if proc is not None:
-                        with self._reconnect_lock:
-                            if self.jamulus_process is proc:
-                                self.jamulus_process = None
-                                self._jamulus_process_started_at = 0.0
-                                self._jamulus_process_generation = 0
-                                self._jamulus_process_recovery_generation = 0
-                    if child_stopped and runtime_paths_prepared:
-                        self._release_client_runtime_paths(
-                            confirmed_stopped=True
-                        )
-                    # Close the log file we opened before Popen — Jamulus never
-                    # started, nothing's writing to it.
-                    self._close_jamulus_log_file()
-                    if not reconnect:
-                        self._active_native_profile = None
-                        self._set_live_audio_route_owned(False)
-                    self._set_jamulus_state(
-                        JamulusState.LAUNCH_FAILED if not reconnect else JamulusState.NOT_RUNNING
-                    )
-                    with self._reconnect_lock:
-                        self._finish_jamulus_reconnect_attempt_locked(
-                            failed=reconnect
-                        )
 
-                    if reconnect:
-                        self.metrics_service.increment("metric_jamulus_reconnect_failed")
-                        self.schedule_ui_callback(self.refresh_readiness)
+                        native_failure_callbacks.append(show_native_profile_error)
                         self._release_unestablished_client_lease()
-                        return
-
-                    self.metrics_service.increment("metric_jamulus_launch_failed")
-                    # If this launch was the client half of a practice session,
-                    # the private local server is now orphaned — kill it and exit
-                    # practice mode so it doesn't linger until app close.
-                    if self.practice_mode:
-                        self._terminate_practice_server()
-                        self.practice_mode = False
-                    self.schedule_ui_callback(self.refresh_readiness)
-                    LOGGER.debug(
-                        "Music connection launch failed (%s).",
-                        type(exc).__name__,
-                    )
-                    self.schedule_ui_callback(
-                        lambda: self.show_actionable_error(
-                            "Band audio couldn’t start",
-                            what_failed="WebJam couldn’t open the music connection.",
-                            likely_cause=(
-                                "A required component may be blocked, incomplete, or "
-                                "still closing from the last session."
-                            ),
-                            next_action=(
-                                "Close this message, then choose Practice Solo "
-                                "again."
-                                if was_practice
-                                else "Wait a moment, then choose Try Again."
-                            ),
-                            retry_callback=(
-                                None if was_practice else self.retry_audio_launch
-                            ),
+                    for callback in native_failure_callbacks:
+                        self._schedule_jamulus_launch_ui_if_current(
+                            launch_request_generation,
+                            callback,
                         )
-                    )
-                    self._release_unestablished_client_lease()
+                except Exception as exc:
+                    was_practice = practice_request
+                    generic_failure_callbacks: list[Callable[[], None]] = []
+                    with self._jamulus_launch_control_lock:
+                        stale_worker = bool(
+                            self._pending_jamulus_launch_cancel is not launch_cancel
+                            or self._jamulus_launch_request_generation
+                            != launch_request_generation
+                            or launch_cancel.is_set()
+                            or self.shutdown_requested()
+                        )
+                        if stale_worker:
+                            launch_cancel.set()
+                            cancelled(proc)
+                            return
+                        LOGGER.error(
+                            "Failed to launch Jamulus (%s).",
+                            type(exc).__name__,
+                        )
+                        child_stopped = self._terminate_jamulus_child(proc)
+                        if not reconnect and child_stopped:
+                            self._clear_native_setup_grace_for_request_locked(
+                                launch_cancel,
+                                launch_native_setup_deadline,
+                            )
+                        if proc is not None and not child_stopped:
+                            with self._reconnect_lock:
+                                if self.jamulus_process is not proc:
+                                    self._jamulus_process_generation_counter += 1
+                                    self.jamulus_process = proc
+                                    self._jamulus_process_started_at = time.monotonic()
+                                    self._jamulus_process_generation = (
+                                        self._jamulus_process_generation_counter
+                                    )
+                                    self._jamulus_process_recovery_generation = (
+                                        launch_recovery_generation if reconnect else 0
+                                    )
+                                self.jamulus_state = "Stop failed"
+                                self.jamulus_reconnect_inflight = False
+                            if reconnect:
+                                self._terminalize_jamulus_recovery_locked()
+                            else:
+                                self.jamulus_launch_intended = False
+                            self.metrics_service.increment(
+                                "metric_jamulus_reconnect_failed"
+                                if reconnect
+                                else "metric_jamulus_launch_failed"
+                            )
+                            generic_failure_callbacks.append(
+                                self.refresh_readiness
+                            )
+                            generic_failure_callbacks.append(
+                                lambda: self.show_actionable_error(
+                                    "Band audio cleanup needs attention",
+                                    what_failed=(
+                                        "WebJam could not confirm that the interrupted "
+                                        "music engine stopped."
+                                    ),
+                                    likely_cause=(
+                                        "The native audio process did not answer the "
+                                        "bounded stop request."
+                                    ),
+                                    next_action=(
+                                        "Choose End or Leave again to finish cleanup "
+                                        "before starting another session."
+                                    ),
+                                    retry_callback=None,
+                                )
+                            )
+                        else:
+                            if proc is not None:
+                                with self._reconnect_lock:
+                                    if self.jamulus_process is proc:
+                                        self.jamulus_process = None
+                                        self._jamulus_process_started_at = 0.0
+                                        self._jamulus_process_generation = 0
+                                        self._jamulus_process_recovery_generation = 0
+                            if child_stopped and runtime_paths_prepared:
+                                self._release_client_runtime_paths(
+                                    confirmed_stopped=True
+                                )
+                            self._close_jamulus_log_file()
+                            if not reconnect:
+                                self._active_native_profile = None
+                                self._set_live_audio_route_owned(False)
+                                self.jamulus_launch_intended = False
+                            self._set_jamulus_state(
+                                JamulusState.LAUNCH_FAILED
+                                if not reconnect
+                                else JamulusState.NOT_RUNNING
+                            )
+                            with self._reconnect_lock:
+                                self._finish_jamulus_reconnect_attempt_locked(
+                                    failed=reconnect
+                                )
+
+                            if reconnect:
+                                self.metrics_service.increment(
+                                    "metric_jamulus_reconnect_failed"
+                                )
+                                self._release_unestablished_client_lease()
+                                generic_failure_callbacks.append(
+                                    self.refresh_readiness
+                                )
+                            else:
+                                self.metrics_service.increment(
+                                    "metric_jamulus_launch_failed"
+                                )
+                                if practice_request:
+                                    self._terminate_practice_server()
+                                    self.practice_mode = False
+                                self._release_unestablished_client_lease()
+                                generic_failure_callbacks.append(
+                                    self.refresh_readiness
+                                )
+                                LOGGER.debug(
+                                    "Music connection launch failed (%s).",
+                                    type(exc).__name__,
+                                )
+                                generic_failure_callbacks.append(
+                                    lambda: self.show_actionable_error(
+                                        "Band audio couldn’t start",
+                                        what_failed="WebJam couldn’t open the music connection.",
+                                        likely_cause=(
+                                            "A required component may be blocked, incomplete, or "
+                                            "still closing from the last session."
+                                        ),
+                                        next_action=(
+                                            "Close this message, then choose Practice Solo "
+                                            "again."
+                                            if was_practice
+                                            else "Wait a moment, then choose Try Again."
+                                        ),
+                                        retry_callback=(
+                                            None if was_practice else self.retry_audio_launch
+                                        ),
+                                    )
+                                ),
+                    for callback in generic_failure_callbacks:
+                        self._schedule_jamulus_launch_ui_if_current(
+                            launch_request_generation,
+                            callback,
+                        )
                 finally:
                     self._retire_jamulus_launch_request(launch_cancel)
 
@@ -2727,7 +3279,12 @@ class BridgeService:
     def effective_server(self) -> str:
         """The host:port Jamulus is (or would be) connected to right now —
         the local practice server when practicing, the band server otherwise."""
-        if self.practice_mode:
+        return self._effective_server_for_mode(self.practice_mode)
+
+    def _effective_server_for_mode(self, practice: bool) -> str:
+        """Resolve one immutable launch target for the requested audio role."""
+
+        if practice:
             return f"127.0.0.1:{PRACTICE_PORT}"
         if self._hosting_enabled():
             # The hosting Mac must use loopback. A stale public/LAN address in
@@ -2749,6 +3306,17 @@ class BridgeService:
         the practice server spawned and the client launch was kicked off.
         """
         if self.shutdown_requested():
+            return False
+        with self._jamulus_launch_control_lock:
+            launch_pending = self._pending_jamulus_launch_cancel is not None
+        if launch_pending:
+            self.metrics_service.increment("metric_practice_launch_failed")
+            self.schedule_ui_callback(
+                lambda: self.set_status_banner(
+                    "Band audio is already starting or closing. Wait for it "
+                    "to finish, then start Practice Solo."
+                )
+            )
             return False
         if self.jamulus_process is not None and self.jamulus_process.poll() is None:
             self.schedule_ui_callback(
@@ -2848,7 +3416,11 @@ class BridgeService:
 
         self.practice_mode = True
         # Connect the regular client to the local server.
-        accepted = self.launch_jamulus(manual=True, reconnect=False)
+        accepted = self.launch_jamulus(
+            manual=True,
+            reconnect=False,
+            practice_request=True,
+        )
         if not accepted:
             self._terminate_practice_server()
             self.practice_mode = False
@@ -3749,70 +4321,135 @@ class BridgeService:
             target=_restart, daemon=True, name="hosted-server-restart",
         ).start()
 
-    def stop_jamulus(self) -> bool:
+    def stop_jamulus(
+        self,
+        *,
+        expected_generation: int | None = None,
+        expected_process_id: int | None = None,
+        expected_launch_request_generation: int | None = None,
+    ) -> bool:
         """Terminate the Jamulus process, stop monitoring, and clear reconnect state.
 
         Returns True only when monitoring and the subprocess are confirmed
         stopped (including an already-stopped subprocess). A failed process
         remains owned so the UI cannot claim cleanup succeeded.
+
+        Supplying an expected generation and PID makes cleanup conditional on
+        that exact owned process. A stale timeout then fails closed before it
+        can cancel or stop a newer retry.
         """
-        # Signal first so a queued worker that has not acquired the lifecycle
-        # lock yet exits before Popen.  Release the control lock before taking
-        # the lifecycle lock so an in-flight worker can observe the signal and
-        # finish its cleanup without a lock-order cycle.
+        expected_identity: tuple[int, int] | None = None
+        request_identity = 0
+        if expected_launch_request_generation is not None:
+            if expected_generation is not None or expected_process_id is not None:
+                return False
+            try:
+                request_identity = int(expected_launch_request_generation)
+            except (TypeError, ValueError):
+                return False
+            if request_identity <= 0:
+                return False
+        if expected_generation is not None or expected_process_id is not None:
+            try:
+                generation_value = int(expected_generation)
+                process_id_value = int(expected_process_id)
+            except (TypeError, ValueError):
+                return False
+            if generation_value <= 0 or process_id_value <= 0:
+                return False
+            expected_identity = (generation_value, process_id_value)
+        if expected_identity is not None or request_identity > 0:
+            # A timeout is allowed to stop only one exact published child.
+            # Own the lifecycle before touching intent or a pending token so a
+            # replacement cannot publish between validation and cancellation.
+            with self._jamulus_lifecycle_lock:
+                with self._jamulus_launch_control_lock:
+                    pending_launch = self._pending_jamulus_launch_cancel
+                    if request_identity > 0:
+                        if (
+                            self._jamulus_launch_request_generation
+                            != request_identity
+                        ):
+                            return False
+                    else:
+                        with self._reconnect_lock:
+                            current_process = self.jamulus_process
+                            if expected_identity != (
+                                self._jamulus_process_generation,
+                                self._jamulus_process_id(current_process),
+                            ):
+                                return False
+                    self._invalidate_jamulus_launch_callbacks_locked()
+                    self.jamulus_launch_intended = False
+                    if pending_launch is not None:
+                        pending_launch.set()
+                    # Keep request ownership locked through every shared-state
+                    # mutation. A new manual/Practice request cannot install
+                    # its lineage or server while this exact old request is
+                    # still being retired.
+                    self._cancel_pending_hosted_restart()
+                    return self._stop_jamulus_under_lifecycle()
+
+        # An unconditional user Stop remains signal-first so a queued worker
+        # exits before Popen, then waits for any in-flight lifecycle owner.
         with self._jamulus_launch_control_lock:
+            self._invalidate_jamulus_launch_callbacks_locked()
             self.jamulus_launch_intended = False
             pending_launch = self._pending_jamulus_launch_cancel
             if pending_launch is not None:
                 pending_launch.set()
         self._cancel_pending_hosted_restart()
-
         with self._jamulus_lifecycle_lock:
-            # Disable any pending reconnect attempts — user explicitly asked to stop
-            with self._reconnect_lock:
-                self._reset_jamulus_recovery_locked()
+            return self._stop_jamulus_under_lifecycle()
 
-            # Stop transport monitoring so we don't keep polling a dead process.
-            monitoring_stopped = True
-            try:
-                self.jamulus_controller.stop()
-            except Exception as exc:
-                LOGGER.warning(
-                    "JamulusController.stop() failed (%s).",
-                    type(exc).__name__,
-                )
-                monitoring_stopped = False
+    def _stop_jamulus_under_lifecycle(self) -> bool:
+        """Stop the currently owned client while lifecycle ownership is held."""
 
-            proc = self.jamulus_process
-            process_stopped = self._terminate_jamulus_child(proc)
+        with self._reconnect_lock:
+            self._reset_jamulus_recovery_locked()
 
-            with self._reconnect_lock:
-                if process_stopped:
-                    self.jamulus_process = None
-                    self._jamulus_process_started_at = 0.0
-                    self._jamulus_process_generation = 0
-                    self._jamulus_process_recovery_generation = 0
+        monitoring_stopped = True
+        try:
+            self.jamulus_controller.stop()
+        except Exception as exc:
+            LOGGER.warning(
+                "JamulusController.stop() failed (%s).",
+                type(exc).__name__,
+            )
+            monitoring_stopped = False
 
-            if self.jamulus_process is None:
-                self._close_jamulus_log_file()
-            practice_stopped = self._terminate_practice_server()
-            self.practice_mode = False
-            stopped = monitoring_stopped and process_stopped and practice_stopped
-            if stopped:
-                self._release_client_runtime_paths(confirmed_stopped=True)
-                self._active_native_profile = None
-                self._active_client_component = None
-                self._last_resolved_client_component = None
-                self._set_live_audio_route_owned(False)
-                self._release_runtime_component_lease("client")
-            with self._reconnect_lock:
-                self.jamulus_state = (
-                    JamulusState.STOPPED.value if stopped else "Stop failed"
-                )
+        proc = self.jamulus_process
+        process_stopped = self._terminate_jamulus_child(proc)
 
-            self.metrics_service.increment("metric_jamulus_stop")
-            self.schedule_ui_callback(self.refresh_readiness)
-            return stopped
+        with self._reconnect_lock:
+            if process_stopped:
+                self.jamulus_process = None
+                self._jamulus_process_started_at = 0.0
+                self._jamulus_process_generation = 0
+                self._jamulus_process_recovery_generation = 0
+                self._jamulus_native_setup_deadline = 0.0
+                self._jamulus_native_setup_process_generation = 0
+
+        if self.jamulus_process is None:
+            self._close_jamulus_log_file()
+        practice_stopped = self._terminate_practice_server()
+        self.practice_mode = False
+        stopped = monitoring_stopped and process_stopped and practice_stopped
+        if stopped:
+            self._release_client_runtime_paths(confirmed_stopped=True)
+            self._active_native_profile = None
+            self._active_client_component = None
+            self._last_resolved_client_component = None
+            self._set_live_audio_route_owned(False)
+            self._release_runtime_component_lease("client")
+        with self._reconnect_lock:
+            self.jamulus_state = (
+                JamulusState.STOPPED.value if stopped else "Stop failed"
+            )
+
+        self.metrics_service.increment("metric_jamulus_stop")
+        self.schedule_ui_callback(self.refresh_readiness)
+        return stopped
 
     def invalidate_webex_launch(self) -> None:
         """Retire any in-flight external handoff without owning its browser."""
@@ -4021,6 +4658,28 @@ class BridgeService:
             return True
 
     @staticmethod
+    def _jamulus_process_poll_evidence(
+        process: object | None,
+    ) -> bool | None:
+        """Return positive process evidence for user-visible activation.
+
+        Lifecycle ownership deliberately treats a failed ``poll()`` as
+        live/unknown so WebJam cannot launch a second client beside an
+        untracked child. Foregrounding has a stricter trust boundary: an
+        exception is not proof that the stored PID still belongs to this
+        process, so callers must refuse AppKit activation.
+        """
+
+        if process is None:
+            return False
+        try:
+            return process.poll() is None
+        except AttributeError:
+            return False
+        except Exception:  # noqa: BLE001 - missing proof fails closed
+            return None
+
+    @staticmethod
     def _jamulus_process_id(process: object | None) -> int:
         if process is None:
             return 0
@@ -4115,11 +4774,16 @@ class BridgeService:
         """
 
         with self._jamulus_launch_control_lock:
-            self.jamulus_launch_intended = False
-            with self._reconnect_lock:
-                self._begin_jamulus_recovery_locked()
-                self.jamulus_reconnect_inflight = False
-                self._jamulus_recovery_exhausted = True
+            self._terminalize_jamulus_recovery_locked()
+
+    def _terminalize_jamulus_recovery_locked(self) -> None:
+        """Publish terminal recovery while the caller holds launch control."""
+
+        self.jamulus_launch_intended = False
+        with self._reconnect_lock:
+            self._begin_jamulus_recovery_locked()
+            self.jamulus_reconnect_inflight = False
+            self._jamulus_recovery_exhausted = True
 
     def _begin_jamulus_recovery_locked(self) -> int:
         """Open or return one bounded recovery generation under the lock."""
@@ -4195,12 +4859,25 @@ class BridgeService:
             process_generation=process_generation,
             process_id=process_id,
         )
-        return self._classify_jamulus_rpc_observation(
+        freshness, age = self._classify_jamulus_rpc_observation(
             process_alive=process_alive,
             process_started_at=process_started_at,
             monitor=monitor,
             now=now,
         )
+        if (
+            freshness is JamulusRpcFreshness.STALE
+            and process_alive
+            and process_generation > 0
+            and process_generation == self._jamulus_native_setup_process_generation
+            and now < self._jamulus_native_setup_deadline
+        ):
+            # Native device setup can legitimately precede the first
+            # authenticated RPC interaction.  This remains STARTING—not
+            # healthy—and is bound to one exact process generation plus an
+            # absolute deadline.
+            freshness = JamulusRpcFreshness.STARTING
+        return freshness, age
 
     @staticmethod
     def _classify_jamulus_rpc_observation(
@@ -4290,7 +4967,11 @@ class BridgeService:
 
         observed_at = time.monotonic() if now is None else float(now)
         with self._jamulus_launch_control_lock:
-            pending = self._pending_jamulus_launch_cancel is not None
+            pending_request = self._pending_jamulus_launch_cancel
+            pending = pending_request is not None
+            launch_request_generation = (
+                self._jamulus_launch_request_generation
+            )
             launch_intended = self.jamulus_launch_intended
             with self._reconnect_lock:
                 process = self.jamulus_process
@@ -4302,6 +4983,10 @@ class BridgeService:
                 inflight = self.jamulus_reconnect_inflight
                 exhausted = self._jamulus_recovery_exhausted
                 next_attempt_at = self.jamulus_next_reconnect_at
+                native_setup_generation = (
+                    self._jamulus_native_setup_process_generation
+                )
+                native_setup_deadline = self._jamulus_native_setup_deadline
         process_alive = self._jamulus_process_alive(process)
         process_id = self._jamulus_process_id(process)
         monitor = self._jamulus_rpc_monitor_snapshot(
@@ -4314,10 +4999,28 @@ class BridgeService:
             monitor=monitor,
             now=observed_at,
         )
+        if (
+            freshness is JamulusRpcFreshness.STALE
+            and process_alive
+            and generation > 0
+            and generation == native_setup_generation
+            and observed_at < native_setup_deadline
+        ):
+            freshness = JamulusRpcFreshness.STARTING
         monitor_epoch = (
             int(monitor.identity.monitor_epoch)
             if monitor is not None
             else 0
+        )
+        native_setup_grace_configured = bool(
+            native_setup_deadline > 0.0
+            and observed_at < native_setup_deadline
+        )
+        native_setup_grace_active = bool(
+            process_alive
+            and generation > 0
+            and generation == native_setup_generation
+            and observed_at < native_setup_deadline
         )
         return JamulusRecoverySnapshot(
             generation=generation,
@@ -4334,7 +5037,10 @@ class BridgeService:
             process_alive=process_alive,
             rpc_freshness=freshness,
             rpc_age_seconds=age,
+            launch_request_generation=launch_request_generation,
             rpc_monitor_epoch=monitor_epoch,
+            native_setup_grace_configured=native_setup_grace_configured,
+            native_setup_grace_active=native_setup_grace_active,
         )
 
     def mark_jamulus_reconnect_authenticated(
@@ -4379,6 +5085,41 @@ class BridgeService:
                     return False
                 self._reset_jamulus_recovery_locked()
         self.metrics_service.increment("metric_jamulus_reconnect_success")
+        return True
+
+    def finish_native_sound_setup(
+        self,
+        *,
+        generation: int,
+        process_id: int,
+    ) -> bool:
+        """Retire first-run grace only for the exact current process identity.
+
+        The controller calls this after authenticated client RPC and the local
+        roster row are both proven.  It does not itself establish connection
+        truth; it only restores ordinary hung-process supervision.
+        """
+
+        try:
+            expected_generation = int(generation)
+            expected_process_id = int(process_id)
+        except (TypeError, ValueError):
+            return False
+        if expected_generation <= 0 or expected_process_id <= 0:
+            return False
+        observed_at = time.monotonic()
+        with self._reconnect_lock:
+            process = self.jamulus_process
+            if (
+                expected_generation != self._jamulus_process_generation
+                or expected_generation != self._jamulus_native_setup_process_generation
+                or expected_process_id != self._jamulus_process_id(process)
+                or not self._jamulus_process_alive(process)
+                or self._jamulus_native_setup_deadline <= observed_at
+            ):
+                return False
+            self._jamulus_native_setup_deadline = 0.0
+            self._jamulus_native_setup_process_generation = 0
         return True
 
     def attempt_auto_reconnects(self):
@@ -4438,6 +5179,10 @@ class BridgeService:
             )
             recovery_generation = self._jamulus_recovery_generation
             recovery_active = self._jamulus_recovery_active
+            native_setup_generation = (
+                self._jamulus_native_setup_process_generation
+            )
+            native_setup_deadline = self._jamulus_native_setup_deadline
 
         process_alive = self._jamulus_process_alive(process)
         process_id = self._jamulus_process_id(process)
@@ -4448,8 +5193,15 @@ class BridgeService:
             process_id=process_id,
             now=now,
         )
+        native_setup_active = bool(
+            process_alive
+            and process_generation > 0
+            and process_generation == native_setup_generation
+            and now < native_setup_deadline
+        )
         local_roster_auth_timed_out = bool(
             process_alive
+            and not native_setup_active
             and recovery_active
             and process_recovery_generation > 0
             and process_recovery_generation == recovery_generation
@@ -4515,11 +5267,14 @@ class BridgeService:
             )
         self.metrics_service.increment("metric_jamulus_reconnect_attempt")
         try:
-            self.launch_jamulus(
-                manual=False,
-                reconnect=True,
-                force_restart=force_restart,
-            )
+            reconnect_kwargs: dict[str, bool] = {
+                "manual": False,
+                "reconnect": True,
+                "force_restart": force_restart,
+            }
+            if self.practice_mode:
+                reconnect_kwargs["practice_request"] = True
+            self.launch_jamulus(**reconnect_kwargs)
         except Exception as exc:  # noqa: BLE001 - keep bounded retry owner live
             LOGGER.error(
                 "Jamulus reconnect generation %s could not schedule attempt "

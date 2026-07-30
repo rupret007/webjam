@@ -8,6 +8,7 @@ real controller entry points while replacing only native process boundaries.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -343,6 +344,84 @@ def test_guest_requires_its_own_roster_row_before_connected(
         assert controller._jamulus_local_roster_process_id == snapshot.process_id
 
 
+def test_authenticated_manual_launch_retires_native_setup_grace(
+    tmp_path: Path,
+) -> None:
+    snapshot = replace(
+        _recovery_snapshot(),
+        native_setup_grace_configured=True,
+        native_setup_grace_active=True,
+    )
+    with _controller(tmp_path, host=False) as controller:
+        controller.bridge.jamulus_launch_intended = True
+        controller.bridge.finish_native_sound_setup = MagicMock(
+            return_value=True
+        )
+        _install_fresh_rpc(controller)
+
+        with patch.object(
+            controller,
+            "_primary_jamulus_recovery_snapshot",
+            return_value=snapshot,
+        ):
+            controller._apply_jamulus_participants(
+                [
+                    JamulusParticipant(
+                        channel_id=4,
+                        name="Local Musician",
+                        is_local=True,
+                    )
+                ],
+                source_identity=_source_identity(snapshot),
+            )
+
+        controller.bridge.finish_native_sound_setup.assert_called_once_with(
+            generation=snapshot.generation,
+            process_id=snapshot.process_id,
+        )
+        assert controller.audio.connected is True
+
+
+def test_failed_native_setup_retirement_cannot_record_live_proof(
+    tmp_path: Path,
+) -> None:
+    snapshot = replace(
+        _recovery_snapshot(),
+        native_setup_grace_configured=True,
+        native_setup_grace_active=True,
+    )
+    with _controller(tmp_path, host=False) as controller:
+        controller.bridge.jamulus_launch_intended = True
+        controller.bridge.finish_native_sound_setup = MagicMock(
+            return_value=False
+        )
+        _install_fresh_rpc(controller)
+
+        with patch.object(
+            controller,
+            "_primary_jamulus_recovery_snapshot",
+            return_value=snapshot,
+        ):
+            controller._apply_jamulus_participants(
+                [
+                    JamulusParticipant(
+                        channel_id=4,
+                        name="Local Musician",
+                        is_local=True,
+                    )
+                ],
+                source_identity=_source_identity(snapshot),
+            )
+
+        controller.bridge.finish_native_sound_setup.assert_called_once_with(
+            generation=snapshot.generation,
+            process_id=snapshot.process_id,
+        )
+        assert controller.audio.connected is False
+        assert controller._jamulus_local_roster_generation == 0
+        assert controller._jamulus_local_roster_process_id == 0
+
+
 @pytest.mark.parametrize(
     "source_identity",
     (
@@ -615,7 +694,10 @@ def test_explicit_start_clears_terminal_recovery_only_after_launch_acceptance(
 
         controller._on_session_audio_requested()
 
-        controller.bridge.launch_jamulus.assert_called_once_with(manual=True)
+        controller.bridge.launch_jamulus.assert_called_once_with(
+            manual=True,
+            native_setup_timeout_seconds=600.0,
+        )
         assert controller._reconnect_gave_up is (not accepted)
         assert controller._reconnect_banner_shown is (not accepted)
         assert controller._rpc_hang_banner_shown is (not accepted)
@@ -652,7 +734,10 @@ def test_remote_start_continuation_is_bound_to_its_exact_runtime(
         assert controller._reconnect_gave_up is True
 
         assert controller._continue_startup_from_remote(authorized_source) is True
-        controller.bridge.launch_jamulus.assert_called_once_with(manual=True)
+        controller.bridge.launch_jamulus.assert_called_once_with(
+            manual=True,
+            native_setup_timeout_seconds=600.0,
+        )
         assert controller._reconnect_gave_up is False
 
 

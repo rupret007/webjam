@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 from unittest import mock
 
@@ -75,20 +76,34 @@ def _primary_launch(
     *,
     secret_path: Path,
     popen,
+    native_setup_timeout_seconds: float | None = None,
+    sleep_side_effect=None,
+    manual: bool = True,
+    reconnect: bool = False,
 ) -> None:
-    with mock.patch(
-        "services.bridge_service.threading.Thread",
-        _ImmediateThread,
-    ), mock.patch(
-        "services.bridge_service.DEFAULT_SECRET_PATH",
-        secret_path,
-    ), mock.patch(
-        "services.bridge_service.subprocess.Popen",
-        side_effect=popen,
-    ), mock.patch(
-        "services.bridge_service.time.sleep",
+    with (
+        mock.patch(
+            "services.bridge_service.threading.Thread",
+            _ImmediateThread,
+        ),
+        mock.patch(
+            "services.bridge_service.DEFAULT_SECRET_PATH",
+            secret_path,
+        ),
+        mock.patch(
+            "services.bridge_service.subprocess.Popen",
+            side_effect=popen,
+        ),
+        mock.patch(
+            "services.bridge_service.time.sleep",
+            side_effect=sleep_side_effect,
+        ),
     ):
-        bridge.launch_jamulus(manual=True, reconnect=False)
+        bridge.launch_jamulus(
+            manual=manual,
+            reconnect=reconnect,
+            native_setup_timeout_seconds=native_setup_timeout_seconds,
+        )
 
 
 def _live_process() -> mock.MagicMock:
@@ -96,6 +111,30 @@ def _live_process() -> mock.MagicMock:
     process.poll.return_value = None
     process.pid = 4312
     return process
+
+
+def _primary_launch_with_non_reentrant_control_lock(
+    bridge,
+    **launch_kwargs,
+) -> None:
+    """Prove launch failure paths do not depend on recursive lock entry."""
+
+    bridge._jamulus_launch_control_lock = threading.Lock()
+    failures: list[BaseException] = []
+
+    def launch() -> None:
+        try:
+            _primary_launch(bridge, **launch_kwargs)
+        except BaseException as exc:  # noqa: BLE001 - surface worker failure
+            failures.append(exc)
+
+    worker = threading.Thread(target=launch, daemon=True)
+    worker.start()
+    worker.join(timeout=2.0)
+
+    assert not worker.is_alive(), "Jamulus failure handling deadlocked"
+    if failures:
+        raise failures[0]
 
 
 def test_primary_secret_path_with_spaces_is_retained_and_removed_on_stop(
@@ -276,6 +315,124 @@ def test_primary_profile_replacement_after_popen_stops_child(
     assert not secret.exists()
 
 
+def test_missing_profile_failure_clears_grace_without_recursive_lock(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.side_effect = JamulusNativeProfileError(
+        "The Jamulus profile changed."
+    )
+    bridge._native_profile_manager = manager
+    popen = mock.MagicMock()
+
+    _primary_launch_with_non_reentrant_control_lock(
+        bridge,
+        secret_path=secret,
+        popen=popen,
+        native_setup_timeout_seconds=600.0,
+    )
+
+    popen.assert_not_called()
+    assert bridge.jamulus_state == "Launch failed"
+    assert bridge.jamulus_launch_intended is False
+    assert bridge._jamulus_native_setup_deadline == 0.0
+
+
+def test_missing_profile_spawn_failure_clears_grace_without_recursive_lock(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.return_value = plan
+    bridge._native_profile_manager = manager
+
+    _primary_launch_with_non_reentrant_control_lock(
+        bridge,
+        secret_path=secret,
+        popen=OSError("spawn failed"),
+        native_setup_timeout_seconds=600.0,
+    )
+
+    assert bridge.jamulus_state == "Launch failed"
+    assert bridge.jamulus_launch_intended is False
+    assert bridge._jamulus_native_setup_deadline == 0.0
+
+
+def test_reconnect_cleanup_failure_terminalizes_without_recursive_lock(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.return_value = plan
+    bridge._native_profile_manager = manager
+    original = _live_process()
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: original,
+        native_setup_timeout_seconds=600.0,
+    )
+    deadline = bridge._jamulus_native_setup_deadline
+    original.poll.return_value = 1
+
+    replacement = _live_process()
+    replacement.pid = 5313
+    replacement.terminate.side_effect = OSError("terminate refused")
+    replacement.kill.side_effect = OSError("kill refused")
+    manager.validate_active.side_effect = [
+        plan,
+        plan,
+        RuntimeError("post-launch validation failed"),
+    ]
+
+    _primary_launch_with_non_reentrant_control_lock(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: replacement,
+        manual=False,
+        reconnect=True,
+    )
+
+    snapshot = bridge.jamulus_recovery_snapshot(now=deadline - 1.0)
+    assert bridge.jamulus_process is replacement
+    assert bridge.jamulus_state == "Stop failed"
+    assert snapshot.exhausted is True
+    assert snapshot.native_setup_grace_configured is True
+
+    replacement.terminate.side_effect = None
+    replacement.kill.side_effect = None
+    assert bridge.stop_jamulus() is True
+
+
 def test_primary_publishes_refreshed_profile_from_both_launch_checkpoints(
     tmp_path: Path,
 ) -> None:
@@ -308,6 +465,226 @@ def test_primary_publishes_refreshed_profile_from_both_launch_checkpoints(
     ]
     assert bridge._active_native_profile is after
     assert bridge.stop_jamulus() is True
+
+
+@pytest.mark.parametrize(
+    ("profile_exists", "setup_generation_expected"),
+    [(False, True), (True, False)],
+)
+def test_native_setup_grace_is_published_only_for_a_missing_profile(
+    tmp_path: Path,
+    profile_exists: bool,
+    setup_generation_expected: bool,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=profile_exists,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.side_effect = [plan, plan]
+    bridge._native_profile_manager = manager
+    process = _live_process()
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: process,
+        native_setup_timeout_seconds=600.0,
+    )
+
+    assert (
+        bridge._jamulus_native_setup_process_generation > 0
+    ) is setup_generation_expected
+    assert (bridge._jamulus_native_setup_deadline > 0.0) is setup_generation_expected
+    assert bridge.stop_jamulus() is True
+
+
+def test_profile_created_during_popen_keeps_first_run_setup_grace(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+
+    def plan(profile_exists: bool):
+        return SimpleNamespace(
+            arguments=("--inifile", "WebJam.ini"),
+            working_directory=home,
+            jamulus_version="3.12.2",
+            profile_exists=profile_exists,
+        )
+
+    missing = plan(False)
+    created = plan(True)
+    manager = mock.MagicMock()
+    manager.prepare.return_value = missing
+    manager.validate_active.side_effect = [missing, created]
+    bridge._native_profile_manager = manager
+    process = _live_process()
+    prepublication_snapshots = []
+
+    def observe_prepublication(seconds: float) -> None:
+        if seconds == 0.4:
+            prepublication_snapshots.append(
+                bridge.jamulus_recovery_snapshot()
+            )
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: process,
+        native_setup_timeout_seconds=600.0,
+        sleep_side_effect=observe_prepublication,
+    )
+
+    assert len(prepublication_snapshots) == 1
+    assert prepublication_snapshots[0].pending is True
+    assert prepublication_snapshots[0].generation == 0
+    assert prepublication_snapshots[0].native_setup_grace_configured is True
+    assert bridge._active_native_profile is created
+    assert bridge._jamulus_native_setup_process_generation > 0
+    assert bridge._jamulus_native_setup_deadline > 0.0
+    assert bridge.stop_jamulus() is True
+
+
+@pytest.mark.parametrize(
+    ("profile_exists", "configured"),
+    [(False, True), (True, False)],
+)
+def test_every_macos_manual_launch_uses_missing_profile_grace_contract(
+    tmp_path: Path,
+    profile_exists: bool,
+    configured: bool,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=profile_exists,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.side_effect = [plan, plan]
+    bridge._native_profile_manager = manager
+    process = _live_process()
+
+    with mock.patch("services.bridge_service.sys.platform", "darwin"):
+        _primary_launch(
+            bridge,
+            secret_path=secret,
+            popen=lambda *_a, **_k: process,
+        )
+
+    snapshot = bridge.jamulus_recovery_snapshot()
+    assert snapshot.native_setup_grace_configured is configured
+    assert snapshot.native_setup_grace_active is configured
+    supervised = bridge.jamulus_recovery_snapshot(
+        now=bridge._jamulus_process_started_at + 31.0
+    )
+    assert supervised.rpc_freshness.value == (
+        "starting" if configured else "stale"
+    )
+    assert bridge.stop_jamulus() is True
+
+
+def test_reconnect_rebinds_same_native_setup_deadline_to_replacement(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.side_effect = lambda active: active
+    bridge._native_profile_manager = manager
+    original = _live_process()
+    replacement = _live_process()
+    replacement.pid = 5313
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: original,
+        native_setup_timeout_seconds=600.0,
+    )
+    original_generation = bridge._jamulus_process_generation
+    deadline = bridge._jamulus_native_setup_deadline
+    original.poll.return_value = 1
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: replacement,
+        manual=False,
+        reconnect=True,
+    )
+
+    assert bridge.jamulus_process is replacement
+    assert bridge._jamulus_process_generation > original_generation
+    assert bridge._jamulus_native_setup_deadline == deadline
+    assert (
+        bridge._jamulus_native_setup_process_generation
+        == bridge._jamulus_process_generation
+    )
+    expired = bridge.jamulus_recovery_snapshot(now=deadline)
+    assert expired.native_setup_grace_configured is False
+    assert expired.native_setup_grace_active is False
+    assert expired.rpc_freshness.value == "stale"
+    assert bridge.stop_jamulus() is True
+
+
+def test_host_failure_after_missing_profile_retires_exact_setup_request(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    bridge.settings.host_server_enabled = True
+    bridge.ensure_hosted_server = mock.MagicMock(
+        return_value=(False, "unavailable")
+    )
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.return_value = plan
+    bridge._native_profile_manager = manager
+    popen = mock.MagicMock()
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=popen,
+        native_setup_timeout_seconds=600.0,
+    )
+
+    popen.assert_not_called()
+    snapshot = bridge.jamulus_recovery_snapshot()
+    assert snapshot.pending is False
+    assert snapshot.launch_intended is False
+    assert snapshot.process_alive is False
+    assert snapshot.native_setup_grace_configured is False
+    assert bridge.jamulus_state == "Stopped"
+    assert bridge.runtime_component_lease_active is False
 
 
 def _prepare_hosted_bridge(
