@@ -32,6 +32,16 @@ All notable improvements and features for the WebJam music collaboration platfor
   mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
   physical gates.
 
+### macOS Jamulus profile permission clarity
+
+- Added a truthful outer-app purpose string and typed recovery for macOS Other
+  Application Data access. **Allow** continues normal Host/Join with the
+  Jamulus-owned profile dedicated to WebJam; **Don't Allow** starts no Jamulus
+  client and requires a complete quit/reopen instead of an in-process retry.
+  The regular `Jamulus.ini` remains untouched, Reference Track must cause no
+  second or generic permission prompt, and macOS may ask again after WebJam
+  quits.
+
 ### Webex native-show reliability
 
 - **Show Webex App** now validates a retained Core Foundation file-reference

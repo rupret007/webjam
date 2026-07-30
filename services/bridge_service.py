@@ -33,6 +33,7 @@ from core.jamulus_compatibility import (
 from core.jamulus_component_resolver import ValidatedExternalComponent
 from core.jamulus_name import validate_jamulus_name
 from core.jamulus_profile import (
+    JamulusAppDataPermissionError,
     JamulusNativeProfileError,
     JamulusNativeProfileManager,
     default_jamulus_version_probe,
@@ -315,6 +316,26 @@ class JamulusState(str, Enum):
     STOPPED        = "Stopped"
 
 
+class JamulusLaunchFailureKind(str, Enum):
+    """Finite, memory-only reason that can constrain safe launch recovery."""
+
+    NONE = "none"
+    APP_DATA_PERMISSION_DENIED = "app_data_permission_denied"
+
+
+_APP_DATA_PERMISSION_WHAT_FAILED = (
+    "macOS didn't allow WebJam to use the Jamulus-owned profile dedicated to "
+    "WebJam."
+)
+_APP_DATA_PERMISSION_LIKELY_CAUSE = (
+    "macOS did not grant Other Application Data access for this WebJam launch."
+)
+_APP_DATA_PERMISSION_NEXT_ACTION = (
+    "Quit WebJam completely, reopen it, start Host or Join again, then choose "
+    "Allow when macOS asks about other app data."
+)
+
+
 PRACTICE_PORT = 22135  # local practice-server port (avoids the 22124 default)
 RECONNECT_MAX_ATTEMPTS = 5
 RECONNECT_HANG_THRESHOLD_SECONDS = 15.0
@@ -409,6 +430,10 @@ class BridgeService:
         self._webex_launch_inflight = False
         
         self.jamulus_launch_intended = False
+        # A TCC denial cannot recover within the same WebJam process. Keep a
+        # finite memory-only latch so every launch entry point refuses a
+        # misleading in-process retry. A full app relaunch constructs NONE.
+        self.last_jamulus_launch_failure = JamulusLaunchFailureKind.NONE
         # A launch is intentionally asynchronous, while Stop/Leave is allowed
         # immediately.  Keep a cancellable request token so a queued worker
         # can never open Jamulus after its originating startup was cancelled.
@@ -1343,24 +1368,63 @@ class BridgeService:
             self.jamulus_reconnect_inflight = False
             return False
 
+        denial_latched = False
         reconnect_deferred = False
+        launch_cancel: threading.Event | None = None
         with self._jamulus_launch_control_lock:
-            previous_launch = self._pending_jamulus_launch_cancel
-            if reconnect and previous_launch is not None:
-                # Automatic recovery is lower priority than an accepted launch
-                # request. In particular, a hosted startup can spend longer
-                # than one reconnect-timer interval preparing the server. The
-                # timer must not cancel that manual request and replace it with
-                # a profile-less reconnect.
-                reconnect_deferred = True
-                launch_cancel = previous_launch
+            if (
+                self.last_jamulus_launch_failure
+                is JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
+            ):
+                # This check and request-token creation share one lock with
+                # the denial publisher below. A concurrent launch therefore
+                # cannot slip through after the process-lifetime latch is set.
+                denial_latched = True
             else:
-                if previous_launch is not None:
-                    previous_launch.set()
-                launch_cancel = threading.Event()
-                self._pending_jamulus_launch_cancel = launch_cancel
-                if manual:
-                    self.jamulus_launch_intended = True
+                previous_launch = self._pending_jamulus_launch_cancel
+                if reconnect and previous_launch is not None:
+                    # Automatic recovery is lower priority than an accepted
+                    # launch request. In particular, a hosted startup can
+                    # spend longer than one reconnect-timer interval preparing
+                    # the server. The timer must not cancel that manual
+                    # request and replace it with a profile-less reconnect.
+                    reconnect_deferred = True
+                    launch_cancel = previous_launch
+                else:
+                    if previous_launch is not None:
+                        previous_launch.set()
+                    launch_cancel = threading.Event()
+                    self._pending_jamulus_launch_cancel = launch_cancel
+                    if manual:
+                        self.jamulus_launch_intended = True
+        if denial_latched:
+            self.jamulus_launch_intended = False
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            self._set_jamulus_state(JamulusState.LAUNCH_FAILED)
+            self.schedule_ui_callback(self.refresh_readiness)
+            self.metrics_service.increment(
+                "metric_jamulus_reconnect_failed"
+                if reconnect
+                else "metric_jamulus_launch_failed"
+            )
+            if manual:
+                self.metrics_service.increment("metric_jamulus_launch_attempt")
+                self.show_actionable_error(
+                    "Band audio needs attention",
+                    what_failed=_APP_DATA_PERMISSION_WHAT_FAILED,
+                    likely_cause=_APP_DATA_PERMISSION_LIKELY_CAUSE,
+                    next_action=_APP_DATA_PERMISSION_NEXT_ACTION,
+                    retry_callback=None,
+                )
+            return False
+        if launch_cancel is None:
+            # Defensive fail-closed guard for any future request-state branch.
+            self.jamulus_launch_intended = False
+            with self._reconnect_lock:
+                self.jamulus_reconnect_inflight = False
+            LOGGER.error("Jamulus launch request was not created.")
+            return False
         if reconnect_deferred:
             with self._reconnect_lock:
                 self.jamulus_reconnect_inflight = False
@@ -1922,13 +1986,35 @@ class BridgeService:
 
                 except JamulusNativeProfileError as exc:
                     was_practice = self.practice_mode
+                    app_data_denied = isinstance(
+                        exc,
+                        JamulusAppDataPermissionError,
+                    )
+                    if app_data_denied:
+                        with self._jamulus_launch_control_lock:
+                            if (
+                                self._pending_jamulus_launch_cancel
+                                is not launch_cancel
+                            ):
+                                return
+                            if launch_cancel.is_set() or self.shutdown_requested():
+                                self._pending_jamulus_launch_cancel = None
+                                self.jamulus_launch_intended = False
+                                self._release_unestablished_client_lease()
+                                return
+                            launch_cancel.set()
+                            self._pending_jamulus_launch_cancel = None
+                            self.jamulus_launch_intended = False
+                            self.last_jamulus_launch_failure = (
+                                JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
+                            )
                     LOGGER.info("Jamulus native-profile preflight failed: %s", exc)
                     self._close_jamulus_log_file()
                     self._set_live_audio_route_owned(False)
                     self._active_native_profile = None
                     self._set_jamulus_state(
                         JamulusState.LAUNCH_FAILED
-                        if not reconnect
+                        if app_data_denied or not reconnect
                         else JamulusState.NOT_RUNNING
                     )
                     with self._reconnect_lock:
@@ -1944,22 +2030,36 @@ class BridgeService:
                         self._terminate_practice_server()
                         self.practice_mode = False
                     self.schedule_ui_callback(self.refresh_readiness)
-                    self.schedule_ui_callback(
-                        lambda message=str(exc): self.show_actionable_error(
+
+                    def show_native_profile_error(
+                        message: str = str(exc),
+                        denied: bool = app_data_denied,
+                        practice: bool = was_practice,
+                    ) -> None:
+                        self.show_actionable_error(
                             "Band audio needs attention",
                             what_failed=message,
                             likely_cause=(
-                                "Jamulus could not open its native sound profile."
+                                _APP_DATA_PERMISSION_LIKELY_CAUSE
+                                if denied
+                                else "Jamulus could not open its native sound profile."
                             ),
                             next_action=(
-                                "Open Jamulus Audio Settings, check your interface, "
-                                "then try again."
+                                _APP_DATA_PERMISSION_NEXT_ACTION
+                                if denied
+                                else (
+                                    "Open Jamulus Audio Settings, check your "
+                                    "interface, then try again."
+                                )
                             ),
                             retry_callback=(
-                                None if was_practice else self.retry_audio_launch
+                                None
+                                if denied or practice
+                                else self.retry_audio_launch
                             ),
                         )
-                    )
+
+                    self.schedule_ui_callback(show_native_profile_error)
                     self._release_unestablished_client_lease()
                 except Exception as exc:
                     was_practice = self.practice_mode

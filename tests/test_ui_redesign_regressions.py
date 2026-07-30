@@ -420,6 +420,40 @@ def test_main_meeting_controls_fit_without_overlap(styled_qapp, width, height):
         _destroy(window)
 
 
+def test_native_jamulus_permission_guidance_fits_at_760_by_600(styled_qapp):
+    window = _window()
+    window.resize(760, 600)
+    detail = (
+        "Choose your interface, input channels, headphones, and buffer in "
+        "Jamulus. On macOS, choose Allow if asked about other app data. "
+        "WebJam uses only the Jamulus-owned profile dedicated to WebJam and "
+        "leaves your regular Jamulus profile untouched. WebJam will continue "
+        "automatically when the music connection is ready."
+    )
+    window.session_hud.set_state(
+        "Set up your sound in Jamulus",
+        detail,
+        action_text="Bring Jamulus Forward",
+        action_visible=True,
+        action_kind="bring_jamulus",
+    )
+    window.show()
+    styled_qapp.processEvents()
+    try:
+        hud = window.session_hud
+        detail_rect = _rect_in(hud._detail, hud)
+        action_rect = _rect_in(hud._action, hud)
+        assert hud._detail.text() == detail
+        assert hud._detail.isVisibleTo(window)
+        assert hud._action.isVisibleTo(window)
+        assert hud.rect().contains(detail_rect)
+        assert hud.rect().contains(action_rect)
+        assert detail_rect.right() < action_rect.left()
+        assert hud._detail.height() >= hud._detail.minimumSizeHint().height()
+    finally:
+        _destroy(window)
+
+
 @pytest.mark.parametrize("width", [760, 800])
 def test_participant_grid_wraps_without_horizontal_clipping(styled_qapp, width):
     window = _window()

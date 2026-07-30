@@ -198,8 +198,9 @@ Review at minimum:
    immutable offline fallback exactly as `.github/workflows/ci.yml` does.
    Separately verify the approved Jamulus 3.12.3 updater inputs without adding
    them to the desktop release inventory or accepting the macOS DMG SLA in CI.
-4. Sign nested apps, sidecar, and outer app; verify transport, Info.plist,
-   signatures, fresh extraction, and archive SHA-256.
+4. Sign nested apps, sidecar, and outer app; verify transport, the exact outer
+   `NSAppDataUsageDescription` required below, signatures, fresh extraction,
+   and archive SHA-256.
 5. Launch the fresh app and inspect Host, Join, Jamulus Updates, direct
    Webex/Track/Studio actions, Webex installed/missing/focus/open behavior,
    Recording Setup, Reference Track load/route separation, Studio
@@ -210,6 +211,47 @@ Review at minimum:
    separately labelled aligned-originals/reference-mix boundary above.
 6. Preserve the current rollback package before installing any freshly verified
    candidate app.
+
+## v0.22.3 macOS Other Application Data gate
+
+Run this gate against each exact Intel and Apple-silicon DMG and portable ZIP,
+not an adjacent source build. Record the package name, SHA-256, app build ID,
+Mac model, architecture, and macOS version.
+
+1. Parse the installed outer `WebJam.app/Contents/Info.plist`. Its
+   `NSAppDataUsageDescription` value must match `webjam.spec` exactly:
+
+   > WebJam accesses Jamulus app data only for dedicated WebJam profiles and
+   > private Reference Track audio-route and control files. It never reads or
+   > changes your regular Jamulus profile.
+
+   Missing, empty, generic, or alternate text is a package failure. This is an
+   outer WebJam declaration; do not infer it from a nested Jamulus app or
+   helper.
+2. Before starting the package, record a checksum and metadata for the user's
+   regular `Jamulus.ini`. Start Host or Join in a fresh WebJam process and
+   choose **Allow** when macOS asks about other application data. Normal
+   Host/Join must continue, launch the visible musician Jamulus client with the
+   dedicated `WebJam-native-v0.16.ini`, and reach its ordinary connection
+   evidence.
+3. On a fresh permission presentation, choose **Don't Allow**. No musician
+   Jamulus client may start. WebJam must explain that access was not granted,
+   direct the musician to quit WebJam completely, reopen it, start Host/Join
+   again, and choose **Allow**. It must not offer or perform an in-process
+   retry.
+4. Quit WebJam completely, reopen the same installed package, start Host/Join,
+   and choose **Allow** if prompted. The normal musician client and connection
+   path must recover without manual profile repair.
+5. In the same allowed launch, exercise the capability-unlocked controlled
+   Reference Track pilot. Starting its separately owned Jamulus client must not
+   trigger a second permission dialog or a generic/default purpose prompt.
+6. Recheck the regular `Jamulus.ini` checksum and metadata after Allow, denial,
+   recovery, and Reference Track. They must be unchanged. WebJam may use only
+   the Jamulus-owned profile dedicated to WebJam and WebJam-owned private
+   Reference Track route/control files.
+7. Completely quitting WebJam can cause macOS to ask again on a later launch.
+   Record any repeated prompt and repeat the decision gate; do not report the
+   permission as a durable install-level grant.
 
 ## Historical v0.16.3 package evidence
 

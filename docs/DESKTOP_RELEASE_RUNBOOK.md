@@ -60,6 +60,12 @@ as appropriate:
 - expected native application and transport architecture;
 - transport SHA-256, embedded build ID, protocol hello, and clean shutdown;
 - required QSS, Jamulus 3.12.2 payload, and license files;
+- the source, mounted-DMG copy, and portable-ZIP copy of the outer Mac bundle
+  must each contain this exact `NSAppDataUsageDescription` value from
+  `webjam.spec`: “WebJam accesses Jamulus app data only for dedicated WebJam
+  profiles and private Reference Track audio-route and control files. It never
+  reads or changes your regular Jamulus profile.” Missing, empty, generic, or
+  alternate text fails packaging;
 - absence of the retired Qt WebEngine/Webex-widget runtime;
 - a real frozen Host/Join-dialog launch with an isolated home directory;
 - no startup exception or owned-process residue.
@@ -242,6 +248,17 @@ Before publishing, record the exact artifact SHA-256 and complete:
    verify exact checksums plus absence of partial outputs. On supported physical
    hardware, separately record input mapping, count-in, punch/cycle recording,
    latency compensation, dropout/recovery behavior, and audible playback.
+6. On each Mac architecture, run the installed app's Other Application Data
+   decision and recovery gate while hashing the user's regular `Jamulus.ini`
+   before and after. **Allow** must continue normal Host/Join through the
+   dedicated `WebJam-native-v0.16.ini`. **Don't Allow** must start no musician
+   Jamulus client and must give explicit quit-WebJam-completely, reopen, and
+   choose-Allow guidance, with no in-process retry. After that full relaunch,
+   **Allow** must recover normal Host/Join. In the same allowed controlled-pilot
+   launch, Reference Track must not cause a second dialog or a generic/default
+   purpose prompt. The regular `Jamulus.ini` must remain unchanged throughout.
+   Because macOS can ask again after WebJam quits, record and retest a repeated
+   prompt rather than claiming durable install-level permission.
 
 If any gate is not run, report it as **NOT RUN**. A process launch, synthetic
 JACK graph, or connected roster is not evidence that a person heard audio.

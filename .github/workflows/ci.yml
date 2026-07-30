@@ -1489,6 +1489,18 @@ jobs:
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
+            app_data_purpose="$(/usr/libexec/PlistBuddy \
+              -c 'Print :NSAppDataUsageDescription' \
+              dist/WebJam.app/Contents/Info.plist)"
+            expected_app_data_purpose='WebJam accesses Jamulus app data only for dedicated WebJam profiles and private Reference Track audio-route and control files. It never reads or changes your regular Jamulus profile.'
+            test "$app_data_purpose" = "$expected_app_data_purpose"
+            for nested_name in \
+              Jamulus.app JamulusServer.app JamulusHeadlessClient.app; do
+              ! /usr/libexec/PlistBuddy \
+                -c 'Print :NSAppDataUsageDescription' \
+                "dist/WebJam.app/Contents/Resources/$nested_name/Contents/Info.plist" \
+                >/dev/null 2>&1
+            done
             # This is the final nested-code boundary for the ad-hoc candidate.
             # Refresh the companion manifest immediately before sealing the
             # outer app, even if a preceding signer preserved its bytes.
@@ -1592,6 +1604,17 @@ jobs:
             mkdir -p "$fresh_dir"
             ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
             codesign --verify --deep --strict "$fresh_dir/WebJam.app"
+            test "$(/usr/libexec/PlistBuddy \
+              -c 'Print :NSAppDataUsageDescription' \
+              "$fresh_dir/WebJam.app/Contents/Info.plist")" = \
+              'WebJam accesses Jamulus app data only for dedicated WebJam profiles and private Reference Track audio-route and control files. It never reads or changes your regular Jamulus profile.'
+            for nested_name in \
+              Jamulus.app JamulusServer.app JamulusHeadlessClient.app; do
+              ! /usr/libexec/PlistBuddy \
+                -c 'Print :NSAppDataUsageDescription' \
+                "$fresh_dir/WebJam.app/Contents/Resources/$nested_name/Contents/Info.plist" \
+                >/dev/null 2>&1
+            done
             test -x "$fresh_dir/Install WebJam.command"
             test -x "$fresh_dir/Install WebJam - Remove Quarantine.command"
             test -f "$fresh_dir/READ ME FIRST.txt"
@@ -1735,6 +1758,17 @@ jobs:
 
           copied_app="$copy_dir/WebJam.app"
           codesign --verify --deep --strict "$copied_app"
+          test "$(/usr/libexec/PlistBuddy \
+            -c 'Print :NSAppDataUsageDescription' \
+            "$copied_app/Contents/Info.plist")" = \
+            'WebJam accesses Jamulus app data only for dedicated WebJam profiles and private Reference Track audio-route and control files. It never reads or changes your regular Jamulus profile.'
+          for nested_name in \
+            Jamulus.app JamulusServer.app JamulusHeadlessClient.app; do
+            ! /usr/libexec/PlistBuddy \
+              -c 'Print :NSAppDataUsageDescription' \
+              "$copied_app/Contents/Resources/$nested_name/Contents/Info.plist" \
+              >/dev/null 2>&1
+          done
           file "$copied_app/Contents/MacOS/WebJam" \
             | grep -q "$expected_machine"
           test "$(/usr/libexec/PlistBuddy \
@@ -2967,6 +3001,17 @@ jobs:
           file "$app/Contents/MacOS/WebJam" | grep -q "$expected_machine"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$app/Contents/Info.plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy \
+            -c 'Print :NSAppDataUsageDescription' \
+            "$app/Contents/Info.plist")" = \
+            'WebJam accesses Jamulus app data only for dedicated WebJam profiles and private Reference Track audio-route and control files. It never reads or changes your regular Jamulus profile.'
+          for nested_name in \
+            Jamulus.app JamulusServer.app JamulusHeadlessClient.app; do
+            ! /usr/libexec/PlistBuddy \
+              -c 'Print :NSAppDataUsageDescription' \
+              "$app/Contents/Resources/$nested_name/Contents/Info.plist" \
+              >/dev/null 2>&1
+          done
           test "$(tr -d '\r\n' \
             < "$app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
           fabric="$app/Contents/MacOS/webjam-fabric"

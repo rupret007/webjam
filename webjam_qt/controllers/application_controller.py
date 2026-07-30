@@ -74,7 +74,7 @@ from core.session_transfer_runtime import (
     HostPeerSession,
     default_installation_identity_path,
 )
-from services.bridge_service import BridgeService
+from services.bridge_service import BridgeService, JamulusLaunchFailureKind
 from storage.repository import WebJamRepository
 from ui.services import MetricsService
 
@@ -3464,10 +3464,20 @@ class ApplicationController(QObject):
             self._remote_audio_seen = False
             accepted = bool(self.bridge.launch_jamulus(manual=True))
             if not accepted:
-                self._fail_startup_journey(
-                    generation,
-                    "WebJam couldn't open Jamulus. Reinstall this WebJam build, then try again.",
-                )
+                if self._jamulus_app_data_permission_denied():
+                    self._fail_startup_journey(
+                        generation,
+                        "macOS didn't allow WebJam to use the Jamulus-owned "
+                        "profile dedicated to WebJam. Quit WebJam completely, "
+                        "reopen it, start Host or Join again, then choose Allow.",
+                        retryable=False,
+                    )
+                else:
+                    self._fail_startup_journey(
+                        generation,
+                        "WebJam couldn't open Jamulus. Reinstall this WebJam "
+                        "build, then try again.",
+                    )
                 return
             self._connection_timer.start()
         self._schedule_startup_poll(generation)
@@ -3492,10 +3502,20 @@ class ApplicationController(QObject):
         terminal = {"Stopped", "Launch failed", "Not found", "Port in use"}
         state = str(getattr(self.bridge, "jamulus_state", "") or "")
         if state in terminal:
-            self._fail_startup_journey(
-                generation,
-                "Jamulus couldn't open the music connection. Check Jamulus, then try again.",
-            )
+            if self._jamulus_app_data_permission_denied():
+                self._fail_startup_journey(
+                    generation,
+                    "macOS didn't allow WebJam to use the Jamulus-owned "
+                    "profile dedicated to WebJam. Quit WebJam completely, "
+                    "reopen it, start Host or Join again, then choose Allow.",
+                    retryable=False,
+                )
+            else:
+                self._fail_startup_journey(
+                    generation,
+                    "Jamulus couldn't open the music connection. Check "
+                    "Jamulus, then try again.",
+                )
             return
 
         plan = getattr(self.bridge, "native_profile_plan", None)
@@ -3804,12 +3824,31 @@ class ApplicationController(QObject):
         self._clear_startup_recovery()
         self._update_session_hud()
 
-    def _fail_startup_journey(self, generation: int, message: str) -> None:
+    def _jamulus_app_data_permission_denied(self) -> bool:
+        return (
+            getattr(
+                self.bridge,
+                "last_jamulus_launch_failure",
+                JamulusLaunchFailureKind.NONE,
+            )
+            == JamulusLaunchFailureKind.APP_DATA_PERMISSION_DENIED
+        )
+
+    def _fail_startup_journey(
+        self,
+        generation: int,
+        message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
         attempt = self._startup_attempt_for(generation)
         if attempt is None:
             return
         attempt["phase"] = "failed"
         attempt["failure"] = str(message)
+        attempt["retryable"] = bool(
+            retryable and not self._jamulus_app_data_permission_denied()
+        )
         self._transition_lifecycle(
             SessionLifecyclePhase.FAILED_RECOVERABLE,
             "Jamulus-native startup needs attention",
@@ -3874,11 +3913,21 @@ class ApplicationController(QObject):
                 if self._startup_attempt_for(generation) is None:
                     return
                 if not cleanup_ok:
-                    self._fail_startup_journey(
-                        generation,
-                        "WebJam couldn't finish closing this startup attempt. "
-                        "Try again after the music connection has stopped.",
-                    )
+                    if self._jamulus_app_data_permission_denied():
+                        self._fail_startup_journey(
+                            generation,
+                            "WebJam couldn't finish closing this private "
+                            "setup. Quit WebJam completely, reopen it, and "
+                            "choose Allow when macOS asks about other app data.",
+                            retryable=False,
+                        )
+                    else:
+                        self._fail_startup_journey(
+                            generation,
+                            "WebJam couldn't finish closing this startup "
+                            "attempt. Try again after the music connection has "
+                            "stopped.",
+                        )
                     return
                 self._clear_startup_recovery()
                 self.audio.ended_by_user = False
@@ -3970,7 +4019,11 @@ class ApplicationController(QObject):
                     if role is StartupRole.HOST
                     else StartupNextAction.ENTER_JAM
                 ),
-                "failed": StartupNextAction.RETRY,
+                "failed": (
+                    StartupNextAction.RETRY
+                    if bool(attempt.get("retryable", True))
+                    else StartupNextAction.NONE
+                ),
             }.get(phase, StartupNextAction.NONE)
             decision = attempt.get("webex_decision")
             webex_decision = (
@@ -4036,7 +4089,12 @@ class ApplicationController(QObject):
         elif phase in {"launching_client", "native_sound_setup"}:
             self.window.session_hud.set_state(
                 "Set up your sound in Jamulus",
-                "Choose your interface, input channels, headphones, and buffer in Jamulus. WebJam will continue automatically when the music connection is ready.",
+                "Choose your interface, input channels, headphones, and buffer "
+                "in Jamulus. On macOS, choose Allow if asked about other app "
+                "data. WebJam uses only the Jamulus-owned profile dedicated to "
+                "WebJam and leaves your regular Jamulus profile untouched. "
+                "WebJam will continue automatically when the music connection "
+                "is ready.",
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
@@ -4122,6 +4180,21 @@ class ApplicationController(QObject):
                 "WebJam is safely releasing the private music session.",
                 action_visible=False,
             )
+        elif phase == "failed" and not bool(attempt.get("retryable", True)):
+            self.window.session_hud.set_state(
+                "Quit and reopen WebJam",
+                str(
+                    attempt.get(
+                        "failure",
+                        "Quit WebJam completely, reopen it, then choose Allow "
+                        "when macOS asks about other app data.",
+                    )
+                ),
+                action_visible=False,
+                secondary_action_text="Close Setup",
+                secondary_action_visible=True,
+                secondary_action_kind="cancel_startup",
+            )
         else:
             self.window.session_hud.set_state(
                 "Music setup needs attention",
@@ -4175,6 +4248,14 @@ class ApplicationController(QObject):
 
         phase = str(attempt.get("phase", ""))
         role = str(attempt.get("role", "guest"))
+        if phase == "failed" and not bool(attempt.get("retryable", True)):
+            return GuidanceDisplayOverride(
+                "Quit and reopen WebJam",
+                "macOS did not allow this WebJam launch to use the "
+                "Jamulus-owned profile dedicated to WebJam. Close this setup, "
+                "quit WebJam completely, reopen it, and choose Allow.",
+                SessionPrimaryAction.NONE,
+            )
         values = {
             "starting_server": GuidanceDisplayOverride(
                 "Starting your private jam",
@@ -4183,13 +4264,19 @@ class ApplicationController(QObject):
             ),
             "launching_client": GuidanceDisplayOverride(
                 "Set up your sound in Jamulus",
-                "Choose your interface, input channels, headphones, and buffer in Jamulus.",
+                "Choose your interface, input channels, headphones, and buffer "
+                "in Jamulus. On macOS, choose Allow if asked about other app "
+                "data. WebJam uses only the Jamulus-owned profile dedicated to "
+                "WebJam and leaves your regular Jamulus profile untouched.",
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
                 "Set up your sound in Jamulus",
-                "Choose your interface, input channels, headphones, and buffer in Jamulus.",
+                "Choose your interface, input channels, headphones, and buffer "
+                "in Jamulus. On macOS, choose Allow if asked about other app "
+                "data. WebJam uses only the Jamulus-owned profile dedicated to "
+                "WebJam and leaves your regular Jamulus profile untouched.",
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
@@ -6393,7 +6480,9 @@ class ApplicationController(QObject):
             band_check = EvidenceState.NOT_REQUIRED
 
         failure = FailureDisposition.NONE
-        if (
+        if self._jamulus_app_data_permission_denied():
+            failure = FailureDisposition.BLOCKED
+        elif (
             bool(getattr(audio, "connection_timed_out", False))
             or self._remote_join_retry_pending()
         ):

@@ -164,7 +164,13 @@ if actual_apps != expected_apps:
     raise SystemExit(f"nested app policy mismatch; unexpected={unexpected}, missing={missing}")
 
 for bundle, keys in (
-    (root, ("NSMicrophoneUsageDescription",)),
+    (
+        root,
+        (
+            "NSMicrophoneUsageDescription",
+            "NSAppDataUsageDescription",
+        ),
+    ),
     (pathlib.Path(sys.argv[2]), ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[3]), ("NSMicrophoneUsageDescription",)),
     (pathlib.Path(sys.argv[4]), ("NSMicrophoneUsageDescription",)),
@@ -174,6 +180,21 @@ for bundle, keys in (
     missing = [key for key in keys if not info.get(key)]
     if missing:
         raise SystemExit(f"{bundle} is missing privacy strings: {missing}")
+    if bundle == root:
+        expected = (
+            "WebJam accesses Jamulus app data only for dedicated WebJam "
+            "profiles and private Reference Track audio-route and control "
+            "files. It never reads or changes your regular Jamulus profile."
+        )
+        actual = info.get("NSAppDataUsageDescription")
+        if actual != expected:
+            raise SystemExit(
+                "outer app has an unexpected NSAppDataUsageDescription"
+            )
+    elif "NSAppDataUsageDescription" in info:
+        raise SystemExit(
+            f"nested app must not declare NSAppDataUsageDescription: {bundle}"
+        )
 PY
 
   OUTER_EXECUTABLE="$app/Contents/MacOS/$(plist_executable "$app/Contents/Info.plist")"
@@ -536,8 +557,8 @@ release_app() {
   local final_zip="$2"
   local evidence_dir="$3"
   local temp_dir submission_zip fresh_dir
-  require_signing_environment
   validate_component_policy "$app"
+  require_signing_environment
   mkdir -p "$evidence_dir" "$(dirname "$final_zip")"
   temp_dir="$(mktemp -d "$RUNNER_TEMP_DIR/webjam-release-trust.XXXXXX")"
   temporary_paths+=("$temp_dir")

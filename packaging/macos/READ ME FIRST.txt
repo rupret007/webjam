@@ -36,6 +36,17 @@ than Apple's Open Anyway flow.
 Neither helper uses sudo. It installs into /Applications when that folder is
 writable and otherwise falls back to your personal ~/Applications folder.
 
+First Jamulus sound setup
+--------------------------
+When you first host or join during a WebJam launch, macOS may ask whether
+WebJam can access data from other apps. Choose Allow so WebJam can prepare the
+dedicated profile location that Jamulus uses for WebJam and verify that profile
+for safe restarts. Jamulus owns the profile settings; WebJam does not read or
+change your regular Jamulus profile. Reference Track uses separate private
+files under the same bounded permission. macOS may ask again after you quit the
+app. If you choose Don't Allow, no music client starts; quit WebJam completely,
+reopen it, and try Host or Join again.
+
 Optional Webex conversation
 ---------------------------
 Webex is not bundled with WebJam. After WebJam opens, choose Webex Controls

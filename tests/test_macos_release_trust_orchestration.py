@@ -14,6 +14,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_SCRIPT = ROOT / "packaging" / "macos" / "release-trust.sh"
 TEAM_ID = "TEAMID1234"
+APP_DATA_PURPOSE = (
+    "WebJam accesses Jamulus app data only for dedicated WebJam profiles and "
+    "private Reference Track audio-route and control files. It never reads or "
+    "changes your regular Jamulus profile."
+)
 
 
 def _write_plist(path: Path, values: dict[str, object]) -> None:
@@ -35,6 +40,7 @@ def _make_app(root: Path) -> Path:
         {
             "CFBundleExecutable": "WebJam",
             "NSMicrophoneUsageDescription": "Record a rehearsal.",
+            "NSAppDataUsageDescription": APP_DATA_PURPOSE,
         },
     )
     _write_executable(app / "Contents" / "MacOS" / "WebJam")
@@ -369,6 +375,83 @@ def test_retired_webengine_runtime_is_rejected_before_signing(
 
     assert result.returncode != 0
     assert "retired Qt WebEngine runtime is present" in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="release trust orchestration is Bash")
+@pytest.mark.parametrize("purpose", (None, "", "Generic access is required."))
+def test_invalid_outer_app_data_purpose_is_rejected_before_signing(
+    tmp_path: Path,
+    trust_rehearsal: tuple[Path, dict[str, str], Path],
+    purpose: str | None,
+) -> None:
+    app, env, log = trust_rehearsal
+    info_path = app / "Contents" / "Info.plist"
+    with info_path.open("rb") as stream:
+        info = plistlib.load(stream)
+    if purpose is None:
+        del info["NSAppDataUsageDescription"]
+    else:
+        info["NSAppDataUsageDescription"] = purpose
+    _write_plist(info_path, info)
+
+    result = _run(
+        tmp_path,
+        env,
+        "app",
+        str(app.relative_to(tmp_path)),
+        "WebJam-macos-x64.zip",
+        "evidence",
+    )
+
+    assert result.returncode != 0
+    assert "NSAppDataUsageDescription" in result.stderr
+    if purpose:
+        assert "unexpected" in result.stderr
+    else:
+        assert "missing privacy strings" in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="release trust orchestration is Bash")
+@pytest.mark.parametrize(
+    "nested_name",
+    (
+        "Jamulus.app",
+        "JamulusServer.app",
+        "JamulusHeadlessClient.app",
+    ),
+)
+def test_nested_app_data_purpose_is_rejected_before_signing(
+    tmp_path: Path,
+    trust_rehearsal: tuple[Path, dict[str, str], Path],
+    nested_name: str,
+) -> None:
+    app, env, log = trust_rehearsal
+    info_path = (
+        app
+        / "Contents"
+        / "Resources"
+        / nested_name
+        / "Contents"
+        / "Info.plist"
+    )
+    with info_path.open("rb") as stream:
+        info = plistlib.load(stream)
+    info["NSAppDataUsageDescription"] = APP_DATA_PURPOSE
+    _write_plist(info_path, info)
+
+    result = _run(
+        tmp_path,
+        env,
+        "app",
+        str(app.relative_to(tmp_path)),
+        "WebJam-macos-x64.zip",
+        "evidence",
+    )
+
+    assert result.returncode != 0
+    assert "nested app must not declare NSAppDataUsageDescription" in result.stderr
     assert not log.exists()
 
 

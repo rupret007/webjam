@@ -41,6 +41,13 @@ def _workflow_job(name: str) -> str:
     return match.group(0)
 
 
+def _workflow_step(name: str) -> str:
+    marker = f"      - name: {name}\n"
+    start = WORKFLOW.index(marker)
+    end = WORKFLOW.find("\n      - name:", start + len(marker))
+    return WORKFLOW[start : end if end >= 0 else len(WORKFLOW)]
+
+
 def test_current_candidate_identity_cannot_be_confused_with_latest_old_release() -> None:
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
@@ -77,6 +84,9 @@ def test_macos_readme_uses_the_working_app_bundle_approval_path() -> None:
     assert "Webex on the main session rail" in MACOS_README
     assert "only Join / Open hands off the saved link" in MACOS_README
     assert "Webex is not bundled with WebJam" in MACOS_README
+    assert re.search(r"quit WebJam completely,\s+reopen it", MACOS_README)
+    assert "macOS may ask again after you quit" in MACOS_README
+    assert "Apple grants this access only" not in MACOS_README
 
 
 def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
@@ -90,6 +100,17 @@ def test_macos_dmg_builder_refuses_ambiguous_or_destructive_outputs() -> None:
 
 
 def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None:
+    expected_app_data_purpose = (
+        "WebJam accesses Jamulus app data only for dedicated WebJam profiles "
+        "and private Reference Track audio-route and control files. It never "
+        "reads or changes your regular Jamulus profile."
+    )
+    build_step = _workflow_step("Build desktop artifact")
+    fresh_zip_step = build_step.split(
+        'ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"',
+        1,
+    )[1]
+    mounted_step = _workflow_step("Verify mounted macOS disk image")
     assert "Build macOS disk image" in WORKFLOW
     assert "Build, sign, notarize, and staple protected macOS disk image" in WORKFLOW
     assert "Verify mounted macOS disk image" in WORKFLOW
@@ -109,7 +130,22 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     )
     assert "stat -f '%Lp' \"$mount_dir\"" in WORKFLOW
     assert 'ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"' in WORKFLOW
-    assert 'codesign --verify --deep --strict "$copied_app"' in WORKFLOW
+    assert 'codesign --verify --deep --strict "$copied_app"' in mounted_step
+    assert "'Print :NSAppDataUsageDescription'" in mounted_step
+    assert expected_app_data_purpose in mounted_step
+    assert (
+        '"$copied_app/Contents/Resources/$nested_name/Contents/Info.plist"'
+        in mounted_step
+    )
+    assert 'codesign --verify --deep --strict "$fresh_dir/WebJam.app"' in (
+        fresh_zip_step
+    )
+    assert "'Print :NSAppDataUsageDescription'" in fresh_zip_step
+    assert expected_app_data_purpose in fresh_zip_step
+    assert (
+        '"$fresh_dir/WebJam.app/Contents/Resources/'
+        '$nested_name/Contents/Info.plist"' in fresh_zip_step
+    )
     assert '--build-id "$build_id"' in WORKFLOW
     assert 'webjam-build-id.txt")" = "$build_id"' in WORKFLOW
     assert '-verify_arch "$expected_machine"' in WORKFLOW

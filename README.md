@@ -26,13 +26,18 @@ trust.
 
 1. Open WebJam and choose **Host a Jam** or **Join a Jam**.
 2. WebJam starts the private session or consumes the invitation.
-3. Jamulus opens normally. Choose the interface, channels, headphones, and
+3. On macOS, the first live setup in a WebJam launch may ask whether WebJam can
+   access data from other apps. Choose **Allow** so WebJam can prepare and
+   verify the dedicated profile that Jamulus uses for WebJam. Jamulus creates
+   and owns its settings; WebJam does not read or change the musician's normal
+   Jamulus settings. macOS may ask again after WebJam is quit.
+4. Jamulus opens normally. Choose the interface, channels, headphones, and
    buffer in **Jamulus → Settings → Audio/Network Settings**.
-4. When WebJam sees the authenticated music connection, it opens the session
+5. When WebJam sees the authenticated music connection, it opens the session
    automatically; the host then copies the invitation.
-5. Play a note and make sure you can hear each other. Use **More → Band Check
+6. Play a note and make sure you can hear each other. Use **More → Band Check
    / Verify Sound** if you need help.
-6. Choose the direct **Webex Controls** action if your band wants conversation
+7. Choose the direct **Webex Controls** action if your band wants conversation
    or video. It shows WebJam's Conversation controls without opening a meeting;
    music remains in Jamulus.
 
@@ -318,11 +323,17 @@ On macOS WebJam launches Jamulus with the supported filename-only argument:
 --inifile WebJam-native-v0.16.ini
 ```
 
-Jamulus creates and owns that profile. WebJam never writes its device,
-channel, buffer, jitter, quality, or mix values, and it never overwrites the
-musician's normal `Jamulus.ini`. WebJam’s private restart records contain only
-allowlisted profile and phase hashes—never invitation URLs, Webex URLs,
-credentials, device identifiers, raw paths, or notes.
+Jamulus creates and owns that profile. WebJam opens Jamulus's protected
+app-data container to prepare the dedicated location, verify the profile
+fingerprint for safe restarts, and read only its active audio-device selector
+when Reference Track validates an isolated route. Reference Track separately
+uses WebJam-owned route and private-control files in the same container. macOS
+therefore asks for Other Application Data permission; the packaged purpose
+text names that bounded reason. WebJam never writes device, channel, buffer,
+jitter, quality, or mix values to the native profile, and it never reads or
+overwrites the musician's normal `Jamulus.ini`. WebJam’s private restart
+records contain only allowlisted profile and phase hashes—never invitation
+URLs, Webex URLs, credentials, device identifiers, raw paths, or notes.
 
 ## Published source and candidate state
 

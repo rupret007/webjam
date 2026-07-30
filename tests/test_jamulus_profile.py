@@ -13,6 +13,7 @@ from core.jamulus_profile import (
     JAMULUS_CONTAINER_ID,
     PINNED_JAMULUS_VERSION,
     WEBJAM_NATIVE_PROFILE_FILENAME,
+    JamulusAppDataPermissionError,
     JamulusNativeProfileError,
     JamulusNativeProfileManager,
     StartupAttemptRecord,
@@ -67,6 +68,99 @@ def test_first_plan_creates_no_profile_or_webjam_audio_settings(
 
     assert plan.profile_exists is False
     assert plan.profile_path.exists() is False
+
+
+def test_macos_app_data_denial_has_typed_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_container_access(
+        _path: Path,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        del args, kwargs
+        raise PermissionError("denied by TCC")
+
+    monkeypatch.setattr(Path, "mkdir", deny_container_access)
+
+    with pytest.raises(
+        JamulusAppDataPermissionError,
+        match=(
+            "macOS didn't allow WebJam to use the Jamulus-owned profile "
+            "dedicated to WebJam"
+        ),
+    ):
+        _manager(tmp_path).plan(jamulus_version=PINNED_JAMULUS_VERSION)
+
+
+@pytest.mark.parametrize("operation", ("plan", "validate"))
+def test_macos_existing_profile_lstat_denial_has_typed_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    manager = _manager(tmp_path)
+    baseline = manager.plan(jamulus_version=PINNED_JAMULUS_VERSION)
+    baseline.profile_path.write_text("<client/>", encoding="utf-8")
+    original_lstat = Path.lstat
+
+    def deny_dedicated_profile(path: Path, *args: object, **kwargs: object):
+        if path == baseline.profile_path:
+            raise PermissionError("denied by TCC")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", deny_dedicated_profile)
+
+    with pytest.raises(JamulusAppDataPermissionError):
+        if operation == "plan":
+            manager.plan(jamulus_version=PINNED_JAMULUS_VERSION)
+        else:
+            manager.validate_active(baseline)
+
+
+def test_macos_existing_profile_read_denial_has_typed_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _manager(tmp_path)
+    baseline = manager.plan(jamulus_version=PINNED_JAMULUS_VERSION)
+    baseline.profile_path.write_text("<client/>", encoding="utf-8")
+    original_read_bytes = Path.read_bytes
+
+    def deny_dedicated_profile(path: Path) -> bytes:
+        if path == baseline.profile_path:
+            raise PermissionError("denied by TCC")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", deny_dedicated_profile)
+
+    with pytest.raises(JamulusAppDataPermissionError):
+        manager.plan(jamulus_version=PINNED_JAMULUS_VERSION)
+
+
+def test_non_macos_profile_permission_error_keeps_portable_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_profile_access(
+        _path: Path,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        del args, kwargs
+        raise PermissionError("denied by filesystem")
+
+    monkeypatch.setattr(Path, "mkdir", deny_profile_access)
+    manager = JamulusNativeProfileManager(home=tmp_path, platform="linux")
+
+    with pytest.raises(JamulusNativeProfileError) as raised:
+        manager.plan(jamulus_version=PINNED_JAMULUS_VERSION)
+
+    assert type(raised.value) is JamulusNativeProfileError
+    assert str(raised.value) == (
+        "WebJam couldn't prepare its Jamulus profile. Reopen WebJam and try again."
+    )
 
 
 def test_existing_native_profile_is_never_rewritten_and_normal_profile_is_untouched(

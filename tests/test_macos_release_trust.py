@@ -204,10 +204,20 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     artifact = _workflow_step("Upload protected macOS release artifact")
     evidence = _workflow_step("Upload protected macOS notarization evidence")
     cleanup = _workflow_step("Remove protected macOS credentials and keychain")
+    release_app = _bash_function(TRUST, "release_app")
     assert not any(f"secrets.{name}" in source for name in MACOS_SECRETS)
     assert "WebJam-${target}-ADHOC-TEST-ONLY.zip" in source
     assert "ADHOC-TEST-ONLY.dmg" in source
     assert "codesign --verify --deep --strict" in source
+    assert "'Print :NSAppDataUsageDescription'" in source
+    assert (
+        "WebJam accesses Jamulus app data only for dedicated WebJam profiles "
+        "and private Reference Track audio-route and control files. It never "
+        "reads or changes your regular Jamulus profile."
+    ) in source
+    assert (
+        '"$app/Contents/Resources/$nested_name/Contents/Info.plist"' in source
+    )
     assert "verify_packaged_transport" not in source
     assert "/usr/bin/shasum -a 256" in source
     assert "/usr/bin/file" in source
@@ -216,6 +226,9 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     assert '"$GITHUB_REF_NAME" != "v${version}"' in source
     assert "WEBJAM_SMOKE_LAUNCH_ONLY" not in source
     assert "packaging/macos/release-keychain.sh prepare" in prepare
+    assert release_app.index('validate_component_policy "$app"') < (
+        release_app.index("require_signing_environment")
+    )
     assert "packaging/macos/release-trust.sh app" in app
     assert dmg.index("packaging/macos/create-dmg.sh") < dmg.index(
         "packaging/macos/release-trust.sh dmg"

@@ -32,7 +32,7 @@ import secrets
 import stat
 import subprocess
 import sys
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable, Mapping, NoReturn
 from xml.etree import ElementTree
 
 from core.file_io import atomic_write_text
@@ -52,6 +52,10 @@ _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 
 class JamulusNativeProfileError(RuntimeError):
     """A musician-safe failure preparing the native Jamulus profile."""
+
+
+class JamulusAppDataPermissionError(JamulusNativeProfileError):
+    """macOS denied this launch access to Jamulus's protected app data."""
 
 
 class StartupRole(str, Enum):
@@ -424,11 +428,17 @@ class JamulusNativeProfileManager:
         version = _normalize_version(jamulus_version)
         directory = self._safe_profile_directory()
         profile_path = directory / self._profile_filename
-        profile_exists = self._profile_exists(profile_path)
+        try:
+            profile_exists = self._profile_exists(profile_path)
+            profile_bytes = (
+                self._read_profile(profile_path) if profile_exists else b""
+            )
+        except PermissionError as exc:
+            self._raise_profile_permission_error(exc)
         fingerprint = native_profile_fingerprint(
             profile_filename=self._profile_filename,
             jamulus_version=version,
-            profile_bytes=(self._read_profile(profile_path) if profile_exists else b""),
+            profile_bytes=profile_bytes,
             profile_exists=profile_exists,
         )
         return JamulusNativeProfilePlan(
@@ -521,22 +531,48 @@ class JamulusNativeProfileManager:
             raise JamulusNativeProfileError(
                 "WebJam couldn't restore its Jamulus profile. Start the jam again."
             )
-        _require_regular_file(expected_path, allow_missing=True)
+        try:
+            _require_regular_file(expected_path, allow_missing=True)
+        except PermissionError as exc:
+            self._raise_profile_permission_error(exc)
 
     def _safe_profile_directory(self) -> Path:
         candidate = self.profile_directory()
+        app_data_denied = self._platform.startswith("darwin")
         return _ensure_managed_directory(
             home=self._home,
             directory=candidate,
             private=False,
             error_type=JamulusNativeProfileError,
             error_message="WebJam couldn't prepare its Jamulus profile. Reopen WebJam and try again.",
+            permission_error_type=(
+                JamulusAppDataPermissionError if app_data_denied else None
+            ),
+            permission_error_message=(
+                "macOS didn't allow WebJam to use the Jamulus-owned profile "
+                "dedicated to WebJam."
+                if app_data_denied
+                else None
+            ),
         )
+
+    def _raise_profile_permission_error(
+        self,
+        exc: PermissionError,
+    ) -> NoReturn:
+        if self._platform.startswith("darwin"):
+            raise JamulusAppDataPermissionError(
+                "macOS didn't allow WebJam to use the Jamulus-owned profile "
+                "dedicated to WebJam."
+            ) from exc
+        raise JamulusNativeProfileError(
+            "WebJam couldn't access its Jamulus profile. Reopen WebJam and try "
+            "again."
+        ) from exc
 
     @staticmethod
     def _profile_exists(profile_path: Path) -> bool:
-        _require_regular_file(profile_path, allow_missing=True)
-        return profile_path.exists()
+        return _require_regular_file(profile_path, allow_missing=True)
 
     @staticmethod
     def _read_profile(profile_path: Path) -> bytes:
@@ -546,6 +582,8 @@ class JamulusNativeProfileManager:
             if size < 0 or size > _MAX_PROFILE_BYTES:
                 raise ValueError("profile is too large")
             return profile_path.read_bytes()
+        except PermissionError:
+            raise
         except (OSError, ValueError) as exc:
             raise JamulusNativeProfileError(
                 "WebJam couldn't read its Jamulus profile. Reopen WebJam and try again."
@@ -916,6 +954,8 @@ def _ensure_managed_directory(
     private: bool,
     error_type: type[Exception],
     error_message: str,
+    permission_error_type: type[Exception] | None = None,
+    permission_error_message: str | None = None,
 ) -> Path:
     """Create and validate an app-owned descendant without accepting links."""
 
@@ -936,19 +976,24 @@ def _ensure_managed_directory(
         return resolved
     except error_type:
         raise
+    except PermissionError as exc:
+        denied_type = permission_error_type or error_type
+        denied_message = permission_error_message or error_message
+        raise denied_type(denied_message) from exc
     except (OSError, ValueError) as exc:
         raise error_type(error_message) from exc
 
 
-def _require_regular_file(path: Path, *, allow_missing: bool) -> None:
+def _require_regular_file(path: Path, *, allow_missing: bool) -> bool:
     try:
         status = path.lstat()
     except FileNotFoundError:
         if allow_missing:
-            return
+            return False
         raise
     if stat.S_ISLNK(status.st_mode) or not stat.S_ISREG(status.st_mode):
         raise JamulusNativeProfileError("WebJam couldn't safely access its startup files.")
+    return True
 
 
 def _fsync_directory(directory: Path) -> None:
