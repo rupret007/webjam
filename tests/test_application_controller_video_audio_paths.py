@@ -319,6 +319,54 @@ class TestNativeWebexControls(_ControllerTestBase):
             {"action": "mute-guidance", "result": "activated-running"},
         )
 
+    def test_mute_guidance_handles_verified_stopped_app_launch_truthfully(self):
+        from services.webex_app import (
+            WebexActivationResult,
+            WebexActivationState,
+            WebexAppInfo,
+            WebexAppState,
+        )
+
+        c = self.controller
+        c._webex_app_info = WebexAppInfo(
+            state=WebexAppState.INSTALLED,
+            version="46.7.0",
+            publisher_verified=True,
+            path=Path("/Applications/Webex.app"),
+        )
+        c.bridge.launch_webex = MagicMock()
+        c.jamulus.set_mute = MagicMock()
+        c.jamulus.set_self_muted = MagicMock()
+        with patch(
+            "services.webex_app.show_webex_app",
+            return_value=WebexActivationResult(
+                WebexActivationState.LAUNCHED_APP
+            ),
+        ) as activate:
+            c._focus_webex_mute()
+            self.assertTrue(
+                _wait_until(
+                    lambda: activate.called
+                    and not c._webex_activation_inflight
+                )
+            )
+
+        c.bridge.launch_webex.assert_not_called()
+        c.jamulus.set_mute.assert_not_called()
+        c.jamulus.set_self_muted.assert_not_called()
+        message = c.window.flash_message.call_args.args[0]
+        self.assertIn(
+            "verified Webex app was launched without a meeting link",
+            message,
+        )
+        self.assertIn("Use Webex’s own Mute control after joining", message)
+        self.assertIn("did not open a browser", message)
+        self.assertIn("affect Jamulus audio", message)
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "mute-guidance", "result": "launched-app"},
+        )
+
     def test_unavailable_app_does_not_launch_a_meeting_as_fallback(self):
         from services.webex_app import WebexAppInfo, WebexAppState
 
@@ -385,7 +433,7 @@ class TestNativeWebexControls(_ControllerTestBase):
             },
         )
 
-    def test_stopped_app_is_never_launched_and_has_manual_guidance(self):
+    def test_stopped_app_launches_verified_app_without_meeting_handoff(self):
         from services.webex_app import (
             WebexActivationResult,
             WebexActivationState,
@@ -402,8 +450,7 @@ class TestNativeWebexControls(_ControllerTestBase):
         with patch(
             "services.webex_app.show_webex_app",
             return_value=WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "app-not-running",
+                WebexActivationState.LAUNCHED_APP,
             ),
         ), patch.object(
             c,
@@ -416,9 +463,16 @@ class TestNativeWebexControls(_ControllerTestBase):
 
         rescan.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        self.assertIn("not running", message)
-        self.assertIn("Open Webex manually", message)
-        self.assertIn("Join / Open Meeting", message)
+        self.assertIn(
+            "launched without a meeting link or browser",
+            message,
+        )
+        self.assertIn("Webex decides which of its own screens", message)
+        c.bridge.launch_webex.assert_not_called()
+        self.assertEqual(
+            c._webex_events[-1],
+            {"action": "show-webex-app", "result": "launched-app"},
+        )
 
     def test_shutdown_during_disk_reverification_never_enters_appkit(self):
         from services.webex_app import WebexAppInfo, WebexAppState

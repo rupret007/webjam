@@ -82,12 +82,16 @@ allowing Jamulus to silently shorten an identity.
 WebJam still stores only a musician's Meeting or Personal Room link. The direct
 **Webex Controls** action and **More → Webex Controls** reveal the Conversation
 panel and never launch or rejoin a meeting. On macOS, **Show Webex App** works
-only when Webex is already running: each click locates the exact running Cisco
-process, re-verifies that PID, and asks macOS to activate that same app. It does
-not hand off the saved meeting link, launch Webex, open a browser, or prove that
-a minimized Webex window was restored. If Webex is stopped, open it manually or
-choose **Join / Open Meeting**. That is the only meeting-link handoff and opens
-it once per explicit click; **Change Link** returns to Settings.
+without a meeting handoff: each click re-verifies the exact Cisco bundle. If
+Webex is running, WebJam verifies its exact PID and asks macOS to activate it.
+If Webex is stopped, WebJam launches that verified app itself with no URL or
+document argument, then re-verifies its path, PID, publisher, and foreground
+state. Verification and launch use one filesystem-object-bound file reference,
+so replacing the pathname cannot redirect the request. Webex decides which of
+its own screens appears. WebJam never passes the saved link to this action,
+invokes a browser, or treats native request acceptance as foreground proof.
+**Join / Open Meeting** is the only meeting-link handoff and opens it once per
+explicit click; **Change Link** returns to Settings.
 
 Direct native activation stays disabled when WebJam cannot prove the app's
 publisher on that platform. The current Windows and Linux packages can detect

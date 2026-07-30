@@ -101,14 +101,17 @@ Review at minimum:
   Jamulus audio.
 - Direct **Webex Controls** and **More → Webex Controls** reveal the same panel
   without URL handoff. Repeated navigation, Settings changes, Studio return,
-  and **Show Webex App** do not create a meeting window; only **Join / Open
-  Meeting** hands off one validated URL per explicit click.
-- On macOS, **Show Webex App** requires Webex already running, dynamically
-  re-verifies the exact Cisco PID, and returns a typed activation result after
-  requesting activation of that same app. It never launches Webex, passes a URL,
-  opens a browser, or claims a minimized window was restored. A stopped app
-  remains stopped; the user opens it manually or uses **Join / Open Meeting**.
-  Windows/Linux native activation remains disabled without publisher proof.
+  and **Show Webex App** never hand off a meeting URL; only **Join / Open
+  Meeting** hands off one validated URL per explicit click. Webex may restore
+  whichever of its own windows or screens it already owns.
+- On macOS, **Show Webex App** re-verifies any pre-running Cisco PID, validates
+  a retained Core Foundation file-reference URL against Cisco's designated
+  requirement, and passes that same bound object directly to `NSWorkspace`.
+  If stopped, this launches the app itself with no URL or document argument.
+  Fresh post-action snapshots must prove exact object identity, PID, publisher,
+  and foreground state; request acceptance alone is not success. Webex chooses
+  its own screen. Windows/Linux native activation remains disabled without
+  publisher proof.
 - **Mute in Webex** shows the verified external app for its own control and
   never sends a blind shortcut, reports mute success, or changes Jamulus.
 - The Jamulus updater verifies the catalog signature, exact WebJam version,

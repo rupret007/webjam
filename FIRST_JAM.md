@@ -18,9 +18,9 @@
 7. Add Webex only if your band wants it: choose **Webex Controls** on the main
    session rail, then use **Join / Open Meeting**. Merely showing Conversation
    does not open or rejoin a meeting. On macOS, **Show Webex App** re-verifies
-   and activates the exact Cisco process only if Webex is already running. If
-   it is stopped, open Webex manually or use **Join / Open Meeting**. Jamulus
-   remains the music path.
+   and activates the exact Cisco process when running; if stopped, it launches
+   the verified app itself without a URL. Only **Join / Open Meeting** hands off
+   the meeting link. Jamulus remains the music path.
 8. Follow the single next action in the Session HUD. Open **Notes** when you
    want the same status plus output results, recent events, and your Creative
    Pulse in one session record.
@@ -40,9 +40,9 @@
 
 - Do not select Jamulus music devices in WebJam; Jamulus owns them.
 - Do not expect Webex to carry the music; it is optional conversation/video.
-- **Show Webex App** does not launch Webex, join again, open a browser, or prove
-  that a minimized window was restored. **Mute in Webex** shows the running
-  verified app for its own Mute control; WebJam does not claim to change or
+- **Show Webex App** activates or launches the verified app itself without a
+  meeting link or browser; Webex chooses its own screen. **Mute in Webex** shows
+  the verified app for its own Mute control; WebJam does not claim to change or
   verify Webex mute. Those focus actions are currently macOS-only; Windows and
   Linux use **Join / Open Meeting**.
 - Do not configure Local Originals before joining. The host’s first **Record**

@@ -106,11 +106,12 @@ validation, and proof that disconnecting the companion cannot interrupt
 Jamulus, recording, or the desktop session.
 
 The current desktop implements native-app detection, official Cisco installer
-handoff, side-effect-free **Webex Controls** navigation, running-only
-exact-PID-verified **Show Webex App**, explicit **Join / Open Meeting**,
+handoff, side-effect-free **Webex Controls** navigation, exact-PID-verified
+**Show Webex App** with verified no-URL launch when stopped, explicit **Join /
+Open Meeting**,
 truthful Mute-in-Webex focus guidance, validated external meeting launch, and
-privacy-safe diagnostics. It does not launch Webex through Show, prove that a
-minimized Webex window was restored, or control or verify external Webex mute.
+privacy-safe diagnostics. Show passes no URL and never opens a browser or
+meeting; it cannot control or verify external Webex mute.
 None of the hosted, OAuth, relay, embedded, or minimize-to-agent phases above
 are represented as shipped.
 

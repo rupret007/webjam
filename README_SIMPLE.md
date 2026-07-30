@@ -55,12 +55,11 @@ does not start, stop, configure, or feed Jamulus.
 - **Sound needs attention:** choose **More → Audio Settings in Jamulus**.
 - **Talking/video:** choose the direct **Webex Controls** action (or **More →
   Webex Controls**). It only shows Conversation. On macOS, **Show Webex App**
-  re-verifies and activates the exact Cisco process only when Webex is already
-  running; it does not launch Webex, open a browser, hand off a meeting link, or
-  prove that a minimized window was restored. If Webex is stopped, open it
-  manually or use **Join / Open Meeting** for the one explicit meeting-link
-  handoff. **Mute in Webex** shows the verified app so you can use its own Mute
-  control; WebJam never claims it changed Webex or Jamulus.
+  re-verifies and activates the exact Cisco process when running. If stopped,
+  it launches the verified app itself with no URL or browser; Webex chooses its
+  own screen. Only **Join / Open Meeting** performs the one explicit
+  meeting-link handoff. **Mute in Webex** shows the verified app so you can use
+  its own Mute control; WebJam never claims it changed Webex or Jamulus.
   Windows and Linux use **Join / Open Meeting** because their current packages
   do not verify the native app publisher. If the app is missing, WebJam can
   open Cisco's official installer page after you confirm; it does not save a

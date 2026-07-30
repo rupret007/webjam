@@ -13,15 +13,18 @@ hostname and offers **Open in Webex** to test the draft link. It saves only the
 link and opens it externally only after an explicit user action.
 
 In Conversation on macOS, **Show Webex App** re-verifies Cisco's exact bundle.
-It works only when Webex is already running: every click dynamically finds the
-exact Cisco process, verifies that PID, and asks macOS to activate that same
-app. It never launches Webex, passes the saved link, opens a browser, joins a
-meeting, or proves that a minimized window was restored. If Webex is stopped,
-open it manually or use **Join / Open Meeting** for the one explicit
-meeting-link handoff. **Change Link** returns to Settings. **Mute in Webex**
-shows the running verified native app for its own Mute control. WebJam cannot
-verify or change mute in an externally owned meeting, so it never sends a blind
-shortcut or reports Webex—or Jamulus—as muted.
+When Webex is running, every click dynamically finds and verifies the exact
+Cisco PID. WebJam validates a retained Core Foundation file-reference URL
+against Cisco's designated requirement and passes that same filesystem object
+directly to `NSWorkspace`. If stopped, the same request launches the app itself
+with no URL or document argument. Fresh observations then prove exact object
+identity, PID, publisher, and foreground state; request acceptance alone is not
+success. Webex chooses its own screen.
+Only **Join / Open Meeting** performs the one explicit meeting-link handoff.
+**Change Link** returns to Settings. **Mute in Webex** shows the verified native
+app for its own Mute control. WebJam cannot verify or change mute in an
+externally owned meeting, so it never sends a blind shortcut or reports
+Webex—or Jamulus—as muted.
 
 The current Windows and Linux packages can locate Webex but do not prove its
 publisher identity, so **Show Webex App** and the focus-based mute guidance

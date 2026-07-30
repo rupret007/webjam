@@ -8,7 +8,7 @@
 | “I can’t find my interface.” | Open **More → Audio Settings in Jamulus**. Choose it in Jamulus, not WebJam. |
 | “I need to change buffer or channels.” | Use Jamulus Audio/Network Settings. |
 | “Where is the Start Session button?” | Host or Join already starts the required session work. Set up Jamulus; WebJam moves into the session automatically after it sees the connection. |
-| “Why did Webex open a browser?” | Only **Join / Open Meeting** hands off the saved link. On macOS, **Show Webex App** requires Webex already running, re-verifies its exact Cisco PID, and requests activation without opening a meeting or browser. |
+| “Why did Webex open a browser?” | Only **Join / Open Meeting** hands off the saved link. On macOS, **Show Webex App** re-verifies Cisco's app, then activates or launches that exact app with no URL or browser; Webex chooses its own screen. |
 | “Can WebJam mute Webex?” | No. On macOS, **Mute in Webex** shows the verified app so the musician can use Webex's own Mute control. WebJam never claims mute success or touches Jamulus. |
 | “Why is Show Webex App unavailable?” | Direct native activation requires verified publisher identity. Current Windows/Linux packages use **Join / Open Meeting** because that proof is unavailable there. |
 | “Where is Studio?” | Use the direct **Studio** action. Its More-menu alias reaches the same editor. |

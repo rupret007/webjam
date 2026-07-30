@@ -80,17 +80,20 @@ The main session rail keeps the everyday destinations visible:
 | Support | Creates a sanitized bundle only when you ask |
 
 In Conversation on macOS, **Show Webex App** re-verifies Cisco's installed app.
-It requires Webex already running, dynamically verifies the exact Cisco PID,
-and asks macOS to activate that same app. It never launches Webex, opens a
-browser, hands off the meeting link, joins a meeting, or proves that a minimized
-window was restored. If Webex is stopped, open it manually or choose **Join /
-Open Meeting**. That is the only action that hands the saved link to the
-operating system, once per click. **Change Link** opens Settings. **Mute in
-Webex** shows the running verified external app so you can use its own Mute
-control; WebJam cannot verify or change Webex mute and does not send a blind
-shortcut or touch Jamulus. Windows and Linux keep these native-focus actions
-unavailable because their current packages do not verify the installed app's
-publisher; use **Join / Open Meeting** there.
+If Webex is running, it dynamically verifies the exact Cisco PID and asks macOS
+to activate that same app. If Webex is stopped, it launches the verified app
+itself with no URL or document argument, then proves the exact path, PID,
+publisher, and foreground state. Verification and native launch share one
+filesystem-object-bound reference, so a replaced pathname cannot redirect the
+request. Webex chooses which of its screens appears. This action never opens a
+browser, hands off the meeting link, joins a meeting, or treats native request
+acceptance as success. **Join / Open Meeting** is the only action that
+hands the saved link to the operating system, once per click. **Change Link**
+opens Settings. **Mute in Webex** shows the verified external app so you can
+use its own Mute control; WebJam cannot verify or change Webex mute and does
+not send a blind shortcut or touch Jamulus. Windows and Linux keep these
+native-focus actions unavailable because their current packages do not verify
+the installed app's publisher; use **Join / Open Meeting** there.
 
 ## Jamulus Updates
 

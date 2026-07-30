@@ -113,6 +113,7 @@ class ApplicationController(QObject):
             "unavailable",
             "busy",
             "activated-running",
+            "launched-app",
             "refused",
             "failed",
             "missing-link",
@@ -129,13 +130,17 @@ class ApplicationController(QObject):
             "activation-exception",
             "ambiguous-running-instances",
             "app-not-running",
+            "application-reference-unverified",
             "application-path-unverified",
             "invalid-activation-result",
             "native-activation-failed",
             "native-activation-unavailable",
+            "native-launch-failed",
+            "native-launch-unconfirmed",
             "process-publisher-unverified",
             "reverification-failed",
             "reverification-refused",
+            "running-target-changed",
             "running-target-mismatch",
             "target-invalid",
             "verified-app-unavailable",
@@ -1925,7 +1930,7 @@ class ApplicationController(QObject):
         self._webex_activation_inflight = True
         self.window.webex_embed.set_native_action_busy(True)
         self.window.flash_message(
-            "Verifying the installed Webex app…",
+            "Verifying and showing the installed Webex app…",
             ms=4000,
         )
 
@@ -2006,18 +2011,39 @@ class ApplicationController(QObject):
                 return
             self._start_webex_app_detection()
             self.window.flash_message(
-                "WebJam couldn't verify and activate the exact running Webex "
-                "app. Choose Check Again, use Join / Open Meeting, or switch "
-                "to Webex manually.",
+                "WebJam couldn't verify and show the exact Webex app. Choose "
+                "Check Again, use Join / Open Meeting, or switch to Webex "
+                "manually.",
                 ms=8000,
             )
             return
+        launched_app = (
+            result.state is WebexActivationState.LAUNCHED_APP
+        )
         if mute_guidance:
+            if launched_app:
+                self.window.flash_message(
+                    "The verified Webex app was launched without a meeting "
+                    "link. "
+                    "Use Webex’s own Mute control after joining a meeting. "
+                    "WebJam did not open a browser or meeting link, change "
+                    "Webex mute, or affect Jamulus audio.",
+                    ms=9000,
+                )
+                return
             self.window.flash_message(
                 "The verified running Webex app is active. If its window "
                 "remains minimized, restore it from the Dock, then use "
                 "Webex’s own Mute control. WebJam did not change Webex mute "
                 "or any Jamulus audio.",
+                ms=8000,
+            )
+            return
+        if launched_app:
+            self.window.flash_message(
+                "The verified Webex app was launched without a meeting link "
+                "or browser. Webex decides which of its own screens to show; "
+                "meeting and mute state remain managed in Webex.",
                 ms=8000,
             )
             return

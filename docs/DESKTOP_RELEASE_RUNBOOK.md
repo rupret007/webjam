@@ -469,8 +469,9 @@ target, Jamulus version, and packaged Certifi trust state. In the real packaged
 UI, verify:
 
 - direct **Webex** and its More entry show Conversation without launching;
-- **Bring Forward** does not reopen the meeting and **Join / Open** performs
-  only one explicit URL handoff;
+- **Show Webex App** activates verified running Webex or launches the verified
+  app itself when stopped, with no URL/document, browser, or meeting handoff;
+- **Join / Open Meeting** performs only one explicit URL handoff;
 - **Mute in Webex** focuses Webex for its own control without claiming mute or
   changing Jamulus;
 - direct **Studio** reaches the existing live/offline Studio route;

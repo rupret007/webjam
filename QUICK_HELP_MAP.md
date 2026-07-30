@@ -11,7 +11,7 @@
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a bandmate | Host setup → **Copy Invite** |
 | Show conversation controls | Direct **Webex Controls** or **More → Webex Controls**; this does not open a meeting |
-| Activate Webex on Mac | Start Webex manually, then Conversation → **Show Webex App**; activation does not guarantee a minimized window is restored |
+| Show Webex on Mac | Conversation → **Show Webex App**; this activates or launches the verified app itself without a meeting link, while Webex chooses its own screen |
 | Open the saved meeting | Conversation → **Join / Open Meeting** |
 | Change the Webex meeting link | Conversation → **Change Link** |
 | Update Jamulus | **More → Jamulus Updates…** |

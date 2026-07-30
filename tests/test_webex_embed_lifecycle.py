@@ -220,10 +220,12 @@ def test_conversation_actions_are_distinct_and_truthful():
     assert "without opening the meeting link or a browser" in (
         embed.bring_forward_button().accessibleDescription()
     )
-    assert "never starts Webex" in (
+    assert "launches the app itself" in (
         embed.bring_forward_button().accessibleDescription()
     )
-    assert "already running" in embed.bring_forward_button().toolTip()
+    assert "launches Webex itself without a URL" in (
+        embed.bring_forward_button().toolTip()
+    )
     mute_description = embed.mute_button().accessibleDescription()
     assert "cannot verify or change mute" in mute_description
     assert "Jamulus" not in embed.mute_button().text()

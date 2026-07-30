@@ -13,9 +13,9 @@ standalone Reference Studio experience:
 3. Play a note and have musicians verify that they hear each other.
 4. Optional Webex through the direct **Webex Controls** action. Showing
    Conversation must not open a meeting; use **Join / Open Meeting** explicitly.
-   On macOS, **Show Webex App** must activate only an already-running,
-   exact-PID-verified Cisco app—never launch Webex, hand off the meeting link, or
-   open a browser.
+   On macOS, **Show Webex App** must activate or launch only the exact
+   publisher-verified Cisco app with no meeting link, document argument, or
+   browser; a fresh exact PID must own the foreground before success is shown.
 5. Invite/play/record/review.
 6. Arrange, move a named song section, audition/comp a repeated take, and test
    cycle playback through a real output.

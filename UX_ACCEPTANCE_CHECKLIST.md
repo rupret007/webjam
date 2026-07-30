@@ -62,14 +62,16 @@
 - [ ] Direct **Webex Controls** and **More → Webex Controls** reveal and focus
       the same panel without opening a URL; repeated navigation remains
       side-effect free.
-- [ ] On macOS, **Show Webex App** requires Webex already running, dynamically
-      re-verifies the exact Cisco PID, requests activation of that same app, and
-      never launches Webex, opens a browser, or hands off a meeting; a stopped
-      app remains stopped and only **Join / Open Meeting** hands off the URL,
-      once per click.
-- [ ] The UI does not claim that **Show Webex App** proved a minimized window
-      was restored; it tells the musician to open Webex manually or use **Join /
-      Open Meeting** when the app is stopped.
+- [ ] On macOS, **Show Webex App** re-verifies the Cisco bundle and, when
+      running, the exact PID before activation. When stopped, it launches the
+      verified app itself with no URL or document argument, then proves the
+      exact path, PID, publisher, and foreground state. Webex chooses its own
+      screen. It never passes a URL, opens a browser, or hands off a meeting;
+      only **Join / Open Meeting** does so, once per click.
+- [ ] The UI distinguishes activated-running and launched-app outcomes, never
+      treats native request acceptance as foreground proof, survives a
+      pathname-replacement test through one identity-bound file reference, and
+      never claims that it joined a meeting or changed mute.
 - [ ] Windows/Linux keep native focus unavailable without publisher proof and
       still provide the truthful **Join / Open Meeting** handoff.
 - [ ] **Mute in Webex** shows the verified app for its own Mute control and

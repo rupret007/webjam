@@ -264,6 +264,20 @@ class TestSupportArtifact(unittest.TestCase):
                             "result": "activated-running",
                         },
                         {
+                            "action": "show-webex-app",
+                            "result": "launched-app",
+                        },
+                        {
+                            "action": "show-webex-app",
+                            "result": "failed",
+                            "reason_code": "native-launch-unconfirmed",
+                        },
+                        {
+                            "action": "show-webex-app",
+                            "result": "refused",
+                            "reason_code": "application-reference-unverified",
+                        },
+                        {
                             "action": "meeting-handoff",
                             "result": "open-failed",
                             "reason_code": "native-activation-failed",
@@ -340,6 +354,20 @@ class TestSupportArtifact(unittest.TestCase):
                     {
                         "action": "show-webex-app",
                         "result": "activated-running",
+                    },
+                    {
+                        "action": "show-webex-app",
+                        "result": "launched-app",
+                    },
+                    {
+                        "action": "show-webex-app",
+                        "reason_code": "native-launch-unconfirmed",
+                        "result": "failed",
+                    },
+                    {
+                        "action": "show-webex-app",
+                        "reason_code": "application-reference-unverified",
+                        "result": "refused",
                     },
                     {
                         "action": "meeting-handoff",

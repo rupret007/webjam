@@ -48,7 +48,7 @@ the derived `*.webex.com` site hostname.
 | Direct **Webex Controls** and **More → Webex Controls** show the same Conversation panel without a launch | NOT RUN | |
 | On macOS, **Show Webex App** dynamically re-verifies the exact running Cisco PID and requests activation without opening a browser or meeting | NOT RUN | |
 | A minimized-window check records what the musician sees without claiming WebJam can prove restoration | NOT RUN | |
-| On macOS with Webex stopped, **Show Webex App** refuses without launching; guidance says to open Webex manually or use Join/Open | NOT RUN | |
+| On macOS with Webex stopped, **Show Webex App** launches the verified app itself with no URL/document argument, then proves the exact path, PID, publisher, and foreground state; Webex chooses its own screen | NOT RUN | |
 | Windows/Linux native focus stays unavailable without publisher proof | NOT RUN | |
 | **Join / Open Meeting** opens the intended native Webex app or browser destination exactly once | NOT RUN | |
 | WebJam says “Opened externally—finish joining in Webex” and never claims it joined | NOT RUN | |

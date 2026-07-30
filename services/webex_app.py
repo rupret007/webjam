@@ -1,8 +1,10 @@
-"""Detect the native Webex app and hand users to Cisco's official installer.
+"""Detect, safely show, or hand off installation of the native Webex app.
 
 WebJam does not redistribute, silently install, authenticate, or update Webex.
 Cisco owns the proprietary application and its automatic updater.  This module
-only verifies a locally installed Mac copy or opens an architecture-correct
+verifies a locally installed Mac copy, asks NSWorkspace to show an
+identity-bound reference without a URL/document argument, or opens an
+architecture-correct
 official Cisco HTTPS installer URL after an explicit user action.
 """
 
@@ -54,6 +56,7 @@ class WebexActivationState(str, Enum):
     """Finite, privacy-safe outcomes for the explicit Show Webex App action."""
 
     ACTIVATED_RUNNING = "activated-running"
+    LAUNCHED_APP = "launched-app"
     REFUSED = "refused"
     FAILED = "failed"
 
@@ -65,13 +68,17 @@ _WEBEX_ACTIVATION_REASON_CODES = frozenset(
         "activation-exception",
         "ambiguous-running-instances",
         "app-not-running",
+        "application-reference-unverified",
         "application-path-unverified",
         "invalid-activation-result",
         "native-activation-failed",
         "native-activation-unavailable",
+        "native-launch-failed",
+        "native-launch-unconfirmed",
         "process-publisher-unverified",
         "reverification-failed",
         "reverification-refused",
+        "running-target-changed",
         "running-target-mismatch",
         "target-invalid",
         "verified-app-unavailable",
@@ -113,7 +120,10 @@ class WebexActivationResult:
 
     @property
     def succeeded(self) -> bool:
-        return self.state is WebexActivationState.ACTIVATED_RUNNING
+        return self.state in {
+            WebexActivationState.ACTIVATED_RUNNING,
+            WebexActivationState.LAUNCHED_APP,
+        }
 
     def __bool__(self) -> bool:
         """Retain safe truthiness for one-cycle compatibility callers."""
@@ -135,6 +145,11 @@ CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 WebexDetector = Callable[..., WebexAppInfo]
 MacApplicationRuntimeFactory = Callable[[], "_MacOSApplicationRuntime"]
 CancellationPredicate = Callable[[], bool]
+MacPathMatcher = Callable[[Path], bool]
+
+_WEBEX_LAUNCH_CONFIRM_TIMEOUT_SECONDS = 15.0
+_WEBEX_LAUNCH_POLL_INTERVAL_SECONDS = 0.1
+_MAX_COMMAND_OUTPUT_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +159,13 @@ class _MacRunningApplication:
     native_handle: int
     process_identifier: int
     path: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class _MacApplicationReference:
+    """One retained Core Foundation URL bound to a filesystem object."""
+
+    native_url: int
 
 
 def _run_command(
@@ -162,26 +184,39 @@ def _run_command(
 
 
 class _MacOSApplicationRuntime:
-    """Small AppKit bridge that activates one exact bundle without Apple Events.
+    """Small AppKit bridge for fresh exact-process foreground observations.
 
     PyObjC is intentionally not a runtime dependency.  These calls use public
-    ``NSRunningApplication`` APIs directly, so showing Webex neither launches
-    an application nor sends a URL/open-document event nor requests Automation
-    permission. Every activation session owns one autorelease pool so the
-    process identifier, path, and activation all refer to the same AppKit
-    object.
+    ``NSRunningApplication`` and ``NSWorkspace`` APIs directly without Apple
+    Events or Automation permission. Every observation owns one autorelease
+    pool so the process identifier, path, and frontmost state come from a fresh
+    AppKit snapshot.
     """
 
     _ID = ctypes.c_void_p
     _SEL = ctypes.c_void_p
-    _ACTIVATE_ALL_WINDOWS = 1
-    _ACTIVATE_IGNORING_OTHER_APPS = 2
+    _CF_STRING_ENCODING_UTF8 = 0x08000100
+    _SEC_STATIC_VALIDATION_FLAGS = (
+        (1 << 0)  # kSecCSCheckAllArchitectures
+        | (1 << 3)  # kSecCSCheckNestedCode
+        | (1 << 4)  # kSecCSStrictValidate
+        | (1 << 7)  # kSecCSRestrictSymlinks
+        | (1 << 8)  # kSecCSRestrictToAppLike
+        | (1 << 9)  # kSecCSRestrictSidebandData
+    )
 
     def __init__(self) -> None:
         if sys.platform != "darwin":
             raise WebexAppError("native Webex activation is unavailable")
         try:
             self._objc = ctypes.cdll.LoadLibrary("/usr/lib/libobjc.A.dylib")
+            self._core_foundation = ctypes.cdll.LoadLibrary(
+                "/System/Library/Frameworks/"
+                "CoreFoundation.framework/CoreFoundation"
+            )
+            self._security = ctypes.cdll.LoadLibrary(
+                "/System/Library/Frameworks/Security.framework/Security"
+            )
             ctypes.cdll.LoadLibrary(
                 "/System/Library/Frameworks/AppKit.framework/AppKit"
             )
@@ -195,6 +230,55 @@ class _MacOSApplicationRuntime:
             ).value
             if not address:
                 raise OSError("objc_msgSend is unavailable")
+
+            self._core_foundation.CFURLCreateFromFileSystemRepresentation.restype = (
+                self._ID
+            )
+            self._core_foundation.CFURLCreateFromFileSystemRepresentation.argtypes = [
+                self._ID,
+                ctypes.c_char_p,
+                ctypes.c_long,
+                ctypes.c_bool,
+            ]
+            self._core_foundation.CFURLCreateFileReferenceURL.restype = self._ID
+            self._core_foundation.CFURLCreateFileReferenceURL.argtypes = [
+                self._ID,
+                self._ID,
+                ctypes.POINTER(self._ID),
+            ]
+            self._core_foundation.CFURLIsFileReferenceURL.restype = ctypes.c_bool
+            self._core_foundation.CFURLIsFileReferenceURL.argtypes = [self._ID]
+            self._core_foundation.CFEqual.restype = ctypes.c_bool
+            self._core_foundation.CFEqual.argtypes = [self._ID, self._ID]
+            self._core_foundation.CFStringCreateWithCString.restype = self._ID
+            self._core_foundation.CFStringCreateWithCString.argtypes = [
+                self._ID,
+                ctypes.c_char_p,
+                ctypes.c_uint32,
+            ]
+            self._core_foundation.CFRelease.restype = None
+            self._core_foundation.CFRelease.argtypes = [self._ID]
+
+            self._security.SecStaticCodeCreateWithPath.restype = ctypes.c_int32
+            self._security.SecStaticCodeCreateWithPath.argtypes = [
+                self._ID,
+                ctypes.c_uint32,
+                ctypes.POINTER(self._ID),
+            ]
+            self._security.SecRequirementCreateWithString.restype = (
+                ctypes.c_int32
+            )
+            self._security.SecRequirementCreateWithString.argtypes = [
+                self._ID,
+                ctypes.c_uint32,
+                ctypes.POINTER(self._ID),
+            ]
+            self._security.SecStaticCodeCheckValidity.restype = ctypes.c_int32
+            self._security.SecStaticCodeCheckValidity.argtypes = [
+                self._ID,
+                ctypes.c_uint32,
+                self._ID,
+            ]
         except (OSError, AttributeError) as exc:
             raise WebexAppError("native Webex activation is unavailable") from exc
 
@@ -219,19 +303,19 @@ class _MacOSApplicationRuntime:
                 ctypes.c_ulong,
             )
         )
-        self._send_ulong = send(
-            ctypes.CFUNCTYPE(ctypes.c_ulong, self._ID, self._SEL)
-        )
-        self._send_bool_ulong = send(
+        self._send_id_id_ulong_id_ptr = send(
             ctypes.CFUNCTYPE(
-                ctypes.c_bool,
+                self._ID,
                 self._ID,
                 self._SEL,
+                self._ID,
                 ctypes.c_ulong,
+                self._ID,
+                ctypes.POINTER(self._ID),
             )
         )
-        self._send_bool = send(
-            ctypes.CFUNCTYPE(ctypes.c_bool, self._ID, self._SEL)
+        self._send_ulong = send(
+            ctypes.CFUNCTYPE(ctypes.c_ulong, self._ID, self._SEL)
         )
         self._send_int = send(
             ctypes.CFUNCTYPE(ctypes.c_int, self._ID, self._SEL)
@@ -321,7 +405,7 @@ class _MacOSApplicationRuntime:
 
     @contextmanager
     def activation_session(self):
-        """Keep enumerated NSRunningApplication objects valid through activation."""
+        """Keep one fresh AppKit observation valid inside its pool."""
 
         with self._pool():
             yield self
@@ -352,37 +436,186 @@ class _MacOSApplicationRuntime:
                 if application.path is not None
             )
 
-    def activate(self, application: _MacRunningApplication) -> bool:
-        """Activate the same running object that passed PID verification."""
+    def is_frontmost(self, application: _MacRunningApplication) -> bool:
+        """Prove that a fresh exact Webex snapshot owns the foreground."""
 
-        return self._activate(application.native_handle)
-
-    def _activate(self, application: int) -> bool:
-        # Unhide and activation are conservative app-level requests. AppKit can
-        # prove that the exact process became active, but it cannot prove that
-        # a minimized Webex window became visible.
-        self._send_void(application, self._selector("unhide"))
-        options = (
-            self._ACTIVATE_ALL_WINDOWS
-            | self._ACTIVATE_IGNORING_OTHER_APPS
+        workspace = self._send_id(
+            self._class("NSWorkspace"),
+            self._selector("sharedWorkspace"),
         )
-        accepted = bool(
-            self._send_bool_ulong(
-                application,
-                self._selector("activateWithOptions:"),
-                options,
+        if not workspace:
+            return False
+        frontmost = self._send_id(
+            workspace,
+            self._selector("frontmostApplication"),
+        )
+        if not frontmost:
+            return False
+        frontmost_pid = int(
+            self._send_int(
+                frontmost,
+                self._selector("processIdentifier"),
             )
         )
-        if not accepted:
+        return frontmost_pid == application.process_identifier
+
+    def _create_file_reference(self, path: Path) -> _MacApplicationReference:
+        encoded = os.fsencode(path)
+        path_url = self._core_foundation.CFURLCreateFromFileSystemRepresentation(
+            None,
+            encoded,
+            len(encoded),
+            True,
+        )
+        if not path_url:
+            raise WebexAppError("native Webex target reference is unavailable")
+        error = self._ID()
+        try:
+            reference_url = (
+                self._core_foundation.CFURLCreateFileReferenceURL(
+                    None,
+                    path_url,
+                    ctypes.byref(error),
+                )
+            )
+        finally:
+            self._core_foundation.CFRelease(path_url)
+        if error:
+            self._core_foundation.CFRelease(error)
+        if (
+            not reference_url
+            or not self._core_foundation.CFURLIsFileReferenceURL(
+                reference_url
+            )
+        ):
+            if reference_url:
+                self._core_foundation.CFRelease(reference_url)
+            raise WebexAppError("native Webex target reference is unavailable")
+        return _MacApplicationReference(native_url=reference_url)
+
+    @contextmanager
+    def application_reference(self, path: Path):
+        """Retain an identity-bound URL through verification and launch."""
+
+        reference = self._create_file_reference(path)
+        try:
+            yield reference
+        finally:
+            self._core_foundation.CFRelease(reference.native_url)
+
+    def application_reference_matches_path(
+        self,
+        reference: _MacApplicationReference,
+        path: Path,
+    ) -> bool:
+        """Compare a live app path with the retained filesystem object."""
+
+        try:
+            other = self._create_file_reference(path)
+        except Exception:
             return False
-        # AppKit documents the return value as request acceptance rather than
-        # proof of foreground state. Confirm the exact running application
-        # became active before reporting ACTIVATED_RUNNING to the controller.
-        for _attempt in range(20):
-            if self._send_bool(application, self._selector("isActive")):
-                return True
-            time.sleep(0.05)
-        return False
+        try:
+            return bool(
+                self._core_foundation.CFEqual(
+                    reference.native_url,
+                    other.native_url,
+                )
+            )
+        finally:
+            self._core_foundation.CFRelease(other.native_url)
+
+    def verify_application_reference(
+        self,
+        reference: _MacApplicationReference,
+    ) -> bool:
+        """Validate the identity-bound bundle against Cisco's requirement."""
+
+        static_code = self._ID()
+        requirement = self._ID()
+        requirement_text = (
+            self._core_foundation.CFStringCreateWithCString(
+                None,
+                WEBEX_MAC_PROCESS_REQUIREMENT.encode("utf-8"),
+                self._CF_STRING_ENCODING_UTF8,
+            )
+        )
+        if not requirement_text:
+            return False
+        try:
+            if (
+                self._security.SecStaticCodeCreateWithPath(
+                    reference.native_url,
+                    0,
+                    ctypes.byref(static_code),
+                )
+                != 0
+                or not static_code
+            ):
+                return False
+            if (
+                self._security.SecRequirementCreateWithString(
+                    requirement_text,
+                    0,
+                    ctypes.byref(requirement),
+                )
+                != 0
+                or not requirement
+            ):
+                return False
+            return (
+                self._security.SecStaticCodeCheckValidity(
+                    static_code,
+                    self._SEC_STATIC_VALIDATION_FLAGS,
+                    requirement,
+                )
+                == 0
+            )
+        finally:
+            if requirement:
+                self._core_foundation.CFRelease(requirement)
+            if static_code:
+                self._core_foundation.CFRelease(static_code)
+            self._core_foundation.CFRelease(requirement_text)
+
+    def launch_application(
+        self,
+        reference: _MacApplicationReference,
+    ) -> int | None:
+        """Launch or reopen the bound app URL with no document or URL input."""
+
+        with self._pool():
+            workspace = self._send_id(
+                self._class("NSWorkspace"),
+                self._selector("sharedWorkspace"),
+            )
+            configuration = self._send_id(
+                self._class("NSDictionary"),
+                self._selector("dictionary"),
+            )
+            if not workspace or not configuration:
+                return None
+            error = self._ID()
+            application = self._send_id_id_ulong_id_ptr(
+                workspace,
+                self._selector(
+                    "launchApplicationAtURL:options:configuration:error:"
+                ),
+                reference.native_url,
+                0,
+                configuration,
+                ctypes.byref(error),
+            )
+            if not application or error:
+                return None
+            process_identifier = int(
+                self._send_int(
+                    application,
+                    self._selector("processIdentifier"),
+                )
+            )
+            if not 1 <= process_identifier <= 2**31 - 1:
+                return None
+            return process_identifier
 
 
 def _same_application_path(left: Path, right: Path) -> bool:
@@ -435,78 +668,243 @@ def _verify_running_webex_process(
     output_size = len(bytes(result.stdout or b"")) + len(
         bytes(result.stderr or b"")
     )
-    return result.returncode == 0 and output_size <= 64 * 1024
+    return result.returncode == 0 and output_size <= _MAX_COMMAND_OUTPUT_BYTES
 
 
-def _show_verified_running_macos_app(
+def _select_exact_running_macos_app(
+    applications: tuple[_MacRunningApplication, ...],
+    path_matches: MacPathMatcher,
+) -> tuple[_MacRunningApplication | None, WebexActivationResult | None]:
+    """Select one running app whose path resolves to the bound object."""
+
+    if not applications:
+        return None, None
+    if len(applications) != 1:
+        return None, WebexActivationResult(
+            WebexActivationState.REFUSED,
+            "ambiguous-running-instances",
+        )
+    application = applications[0]
+    if application.path is None:
+        return None, WebexActivationResult(
+            WebexActivationState.REFUSED,
+            "application-path-unverified",
+        )
+    try:
+        same_path = bool(path_matches(application.path))
+    except Exception:
+        return None, WebexActivationResult(
+            WebexActivationState.REFUSED,
+            "application-path-unverified",
+        )
+    if not same_path:
+        return None, WebexActivationResult(
+            WebexActivationState.REFUSED,
+            "running-target-mismatch",
+        )
+    return application, None
+
+
+def _show_or_launch_verified_macos_app(
     candidate: Path,
     *,
     runtime_factory: MacApplicationRuntimeFactory | None = None,
     command_runner: CommandRunner = _run_command,
     cancelled: CancellationPredicate | None = None,
 ) -> WebexActivationResult:
+    """Launch the bound Cisco object, then prove its foreground process.
+
+    A retained Core Foundation file-reference URL survives path replacement
+    and is both code-validated and passed directly to NSWorkspace. This binds
+    verification and launch to one filesystem object rather than a mutable
+    pathname. NSWorkspace's returned process is only request acceptance; fresh
+    exact-path, PID-publisher, and foreground postconditions still decide
+    success.
+    """
+
     runtime = (
         runtime_factory()
         if runtime_factory is not None
         else _MacOSApplicationRuntime()
     )
-    with runtime.activation_session() as active_runtime:
-        applications = active_runtime.running_applications(
-            WEBEX_MAC_BUNDLE_ID
+    with runtime.application_reference(candidate) as reference:
+        if _activation_cancelled(cancelled):
+            return WebexActivationResult(
+                WebexActivationState.REFUSED,
+                "activation-cancelled",
+            )
+        if not runtime.verify_application_reference(reference):
+            return WebexActivationResult(
+                WebexActivationState.REFUSED,
+                "application-reference-unverified",
+            )
+
+        path_matches = lambda path: (  # noqa: E731
+            runtime.application_reference_matches_path(reference, path)
         )
-        if not applications:
-            return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "app-not-running",
+        initial_pid: int | None = None
+        with runtime.activation_session() as active_runtime:
+            applications = active_runtime.running_applications(
+                WEBEX_MAC_BUNDLE_ID
             )
-        if len(applications) != 1:
-            return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "ambiguous-running-instances",
+            application, failure = _select_exact_running_macos_app(
+                applications,
+                path_matches,
             )
-        application = applications[0]
-        if application.path is None:
+            if failure is not None:
+                return failure
+            was_stopped = application is None
+            if application is not None:
+                if _activation_cancelled(cancelled):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "activation-cancelled",
+                    )
+                if not _verify_running_webex_process(
+                    application.process_identifier,
+                    command_runner=command_runner,
+                ):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "process-publisher-unverified",
+                    )
+                initial_pid = application.process_identifier
+
+        if _activation_cancelled(cancelled):
             return WebexActivationResult(
                 WebexActivationState.REFUSED,
-                "application-path-unverified",
+                "activation-cancelled",
             )
-        try:
-            same_path = _same_application_path(application.path, candidate)
-        except OSError:
+        launched_pid = runtime.launch_application(reference)
+        if launched_pid is None:
             return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "application-path-unverified",
+                WebexActivationState.FAILED,
+                "native-launch-failed",
             )
-        if not same_path:
+        if initial_pid is not None and launched_pid != initial_pid:
             return WebexActivationResult(
                 WebexActivationState.REFUSED,
-                "running-target-mismatch",
+                "running-target-changed",
             )
         if _activation_cancelled(cancelled):
             return WebexActivationResult(
                 WebexActivationState.REFUSED,
                 "activation-cancelled",
             )
-        if not _verify_running_webex_process(
-            application.process_identifier,
-            command_runner=command_runner,
-        ):
-            return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "process-publisher-unverified",
+
+        verified_post_pid: int | None = None
+        deadline = (
+            time.monotonic() + _WEBEX_LAUNCH_CONFIRM_TIMEOUT_SECONDS
+        )
+        while True:
+            if _activation_cancelled(cancelled):
+                return WebexActivationResult(
+                    WebexActivationState.REFUSED,
+                    "activation-cancelled",
+                )
+            with runtime.activation_session() as active_runtime:
+                applications = active_runtime.running_applications(
+                    WEBEX_MAC_BUNDLE_ID
+                )
+                application, failure = _select_exact_running_macos_app(
+                    applications,
+                    path_matches,
+                )
+                if failure is not None:
+                    return failure
+                if application is not None:
+                    process_identifier = application.process_identifier
+                    if process_identifier != launched_pid:
+                        return WebexActivationResult(
+                            WebexActivationState.REFUSED,
+                            "running-target-changed",
+                        )
+                    if verified_post_pid != process_identifier:
+                        if _activation_cancelled(cancelled):
+                            return WebexActivationResult(
+                                WebexActivationState.REFUSED,
+                                "activation-cancelled",
+                            )
+                        if not _verify_running_webex_process(
+                            process_identifier,
+                            command_runner=command_runner,
+                        ):
+                            return WebexActivationResult(
+                                WebexActivationState.REFUSED,
+                                "process-publisher-unverified",
+                            )
+                        verified_post_pid = process_identifier
+                    if active_runtime.is_frontmost(application):
+                        foreground_pid = process_identifier
+                    else:
+                        foreground_pid = None
+                else:
+                    foreground_pid = None
+            if foreground_pid is not None:
+                if _activation_cancelled(cancelled):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "activation-cancelled",
+                    )
+                if not _verify_running_webex_process(
+                    foreground_pid,
+                    command_runner=command_runner,
+                ):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "process-publisher-unverified",
+                    )
+                if _activation_cancelled(cancelled):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "activation-cancelled",
+                    )
+                with runtime.activation_session() as final_runtime:
+                    final_applications = final_runtime.running_applications(
+                        WEBEX_MAC_BUNDLE_ID
+                    )
+                    final_application, failure = (
+                        _select_exact_running_macos_app(
+                            final_applications,
+                            path_matches,
+                        )
+                    )
+                    if failure is not None:
+                        return failure
+                    if final_application is None:
+                        return WebexActivationResult(
+                            WebexActivationState.FAILED,
+                            "native-launch-unconfirmed",
+                        )
+                    if (
+                        final_application.process_identifier
+                        != foreground_pid
+                    ):
+                        return WebexActivationResult(
+                            WebexActivationState.REFUSED,
+                            "running-target-changed",
+                        )
+                    if not final_runtime.is_frontmost(final_application):
+                        return WebexActivationResult(
+                            WebexActivationState.FAILED,
+                            "native-launch-unconfirmed",
+                        )
+                state = (
+                    WebexActivationState.LAUNCHED_APP
+                    if was_stopped
+                    else WebexActivationState.ACTIVATED_RUNNING
+                )
+                return WebexActivationResult(state)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(
+                min(_WEBEX_LAUNCH_POLL_INTERVAL_SECONDS, remaining)
             )
-        if _activation_cancelled(cancelled):
-            return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "activation-cancelled",
-            )
-        if active_runtime.activate(application):
-            return WebexActivationResult(
-                WebexActivationState.ACTIVATED_RUNNING
-            )
+
         return WebexActivationResult(
             WebexActivationState.FAILED,
-            "native-activation-failed",
+            "native-launch-unconfirmed",
         )
 
 
@@ -523,8 +921,10 @@ def show_webex_app(
 
     The caller must supply the result of :func:`detect_webex_app`; missing,
     invalid, stale, or unverified macOS applications fail closed. Paths are
-    never sent to a shell. On macOS only one already-running exact bundle can
-    be activated. A stopped application is never launched by this action.
+    never sent to a shell. On macOS, one exact running bundle is activated; if
+    Webex is stopped, NSWorkspace launches that identity-bound app reference
+    without a URL and WebJam then verifies the exact running publisher and
+    foreground state.
     """
 
     platform_value = (platform_name or sys.platform).strip().lower()
@@ -602,14 +1002,17 @@ def show_webex_app(
             "activation-cancelled",
         )
     try:
-        return _show_verified_running_macos_app(
+        return _show_or_launch_verified_macos_app(
             candidate,
             runtime_factory=mac_runtime_factory,
             command_runner=command_runner,
             cancelled=cancelled,
         )
-    except Exception as exc:  # noqa: BLE001 - activation is best effort
-        raise WebexAppError("the installed Webex app could not be activated") from exc
+    except Exception:  # noqa: BLE001 - external app showing is best effort
+        return WebexActivationResult(
+            WebexActivationState.FAILED,
+            "activation-exception",
+        )
 
 
 def bring_webex_forward(

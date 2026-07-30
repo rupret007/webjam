@@ -32,6 +32,20 @@ All notable improvements and features for the WebJam music collaboration platfor
   mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
   physical gates.
 
+### Webex native-show reliability
+
+- **Show Webex App** now validates a retained Core Foundation file-reference
+  URL against Cisco's designated requirement and passes that same
+  filesystem-object identity directly to `NSWorkspace` for both running and
+  stopped states. Path replacement cannot redirect the request. It contains no
+  meeting URL or document argument; **Join / Open Meeting** remains the only
+  meeting-link handoff.
+- A running instance is verified before the request. Success then requires a
+  fresh exact path/PID match, repeated Cisco process verification, a fresh
+  foreground observation, and one final verification/observation pass. Command
+  acceptance alone is never reported as success. A stopped launch has its own
+  typed result, and Webex remains responsible for the screen it displays.
+
 ## [0.22.2] — 2026-07-29 demo-navigation and source-first Track candidate
 
 ### Direct musician workflows

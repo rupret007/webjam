@@ -16,7 +16,7 @@ The boundary is deliberate:
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
 | `core/jamulus_compatibility.py`, `core/component_*` | Exact approved Jamulus identities, signed-catalog verification, bounded downloads, per-user component storage, atomic pointers, and rollback |
 | `services/jamulus_component_update.py`, `services/jamulus_component_platform.py` | Async update orchestration, idle proof, explicit OS approval, macOS upstream trust verification, and path-free presentation/diagnostics |
-| `services/webex_app.py` | macOS running-process discovery, exact-PID publisher re-verification, and typed activation request; cross-platform native-app detection; and explicit official Cisco installer-browser handoff; no app launch, meeting URL on activation, credentials, redistribution, or silent installation |
+| `services/webex_app.py` | macOS exact-bundle launch/reopen, fresh foreground observation, exact-PID publisher re-verification, and typed result; cross-platform native-app detection; and explicit official Cisco installer-browser handoff; no meeting URL in Show, credentials, redistribution, or silent installation |
 | `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
 | `services/pocket_stage_gateway.py` / `services/pocket_stage_tls.py` | Explicit private-Wi-Fi WSS listener and ephemeral pinned TLS identity, separate from the Local API |
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
@@ -98,16 +98,21 @@ approved Cisco HTTPS URL and does not download or execute a package itself.
 
 The direct Live **Webex Controls** action and **More → Webex Controls** are
 navigation only. They reveal the Conversation panel without opening the link.
-On macOS, **Show Webex App** requires Webex to be running. It dynamically finds
-the exact Cisco process, re-verifies that PID, and asks macOS to activate that
-same application. It does not launch Webex, pass a meeting URL, open a browser,
-or prove that a minimized window was restored. If Webex is stopped, the user
-opens it manually or chooses **Join / Open Meeting**, which performs the one
-explicit URL handoff. **Mute in Webex** can only show the running verified app
-for its own Mute control because this external-app integration cannot verify
-mute state. Windows and Linux currently detect only an executable location,
-not a verified publisher identity, so native focus and focus-based mute
-guidance fail closed there. None of those actions alter Jamulus. The direct
+On macOS, **Show Webex App** dynamically finds the exact Cisco process when
+running and re-verifies that PID. It creates a retained Core Foundation
+file-reference URL, validates that bound filesystem object against Cisco's
+designated requirement, and passes the same reference directly to
+`NSWorkspace`. If stopped, the same no-document request launches that object.
+WebJam then proves the exact path identity, PID, Cisco publisher, and foreground
+state; pathname replacement cannot redirect launch, and native request
+acceptance is not success. Webex decides which of its screens appears. This
+action passes no meeting URL and opens no browser; **Join / Open Meeting**
+performs the sole explicit URL handoff. **Mute in Webex** can
+only show the verified app for its own Mute control because this external-app
+integration cannot verify mute state.
+Windows and Linux currently detect only an executable location, not a verified
+publisher identity, so native focus and focus-based mute guidance fail closed
+there. None of those actions alter Jamulus. The direct
 **Studio** action reuses the existing session/offline Studio route rather than
 creating another editor lifecycle.
 

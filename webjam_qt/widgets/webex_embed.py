@@ -90,12 +90,13 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setObjectName("GhostButton")
         self._bring_forward_btn.setAccessibleName("Show the Webex app")
         self._bring_forward_btn.setAccessibleDescription(
-            "Activate the verified running Webex app without opening the "
-            "meeting link or a browser. This action never starts Webex."
+            "Show the verified Webex app without opening the meeting link or "
+            "a browser. If Webex is stopped, this launches the app itself "
+            "without a URL; Webex chooses which of its screens to show."
         )
         self._bring_forward_btn.setToolTip(
-            "Activate Webex only if it is already running.\n"
-            "If it is closed, open it manually or use Join / Open Meeting."
+            "Show the verified Webex app without opening a meeting link.\n"
+            "If it is closed, this launches Webex itself without a URL."
         )
         self._bring_forward_btn.clicked.connect(
             self.bring_forward_requested.emit
@@ -106,11 +107,11 @@ class WebexEmbed(QFrame):
         self._mute_btn.setObjectName("GhostButton")
         self._mute_btn.setAccessibleName("Mute in Webex")
         self._mute_btn.setAccessibleDescription(
-            "Activate the running Webex app so you can use its Mute control. "
+            "Show the verified Webex app so you can use its Mute control. "
             "WebJam cannot verify or change mute in the external Webex app."
         )
         self._mute_btn.setToolTip(
-            "Activate the running Webex app and use its own Mute control.\n"
+            "Show the Webex app and use its own Mute control.\n"
             "WebJam will not change Jamulus or claim Webex is muted."
         )
         self._mute_btn.clicked.connect(self.mute_in_webex_requested.emit)
@@ -270,8 +271,9 @@ class WebexEmbed(QFrame):
                 + (f" • {clean_version}" if clean_version else ""),
                 (
                     "Cisco Webex is installed and its publisher is verified. "
-                    "Show Webex App activates it only while it is already "
-                    "running; opening a meeting still happens externally."
+                    "Show Webex App activates or launches the app itself "
+                    "without a URL; opening a meeting still requires Join / "
+                    "Open Meeting."
                 ),
             )
             if publisher_verified
