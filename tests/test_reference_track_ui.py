@@ -151,30 +151,42 @@ def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
     snapshot.source_format = "MP3"
     snapshot.capability.reason_code = "physical_certification_required"
     snapshot.capability.detail = (
-        "The Reference Track engine is included, but playback is locked until "
-        "the physical macOS pilot passes."
+        "Reference Track needs the official BlackHole 16ch or 64ch device at "
+        "48 kHz."
     )
     try:
         dialog.set_snapshot(snapshot)
 
+        # Certification is earned per machine, so a blocked musician is told
+        # the prerequisite they can satisfy -- not that nothing can unlock it.
         assert dialog._route.text() == (
-            "Playback locked in this downloaded candidate. Installing BlackHole "
-            "or choosing Recheck Route cannot unlock it."
+            f"Playback route locked. {snapshot.capability.detail}"
         )
         assert dialog._route.toolTip() == snapshot.capability.detail
         assert "MP3 loaded and its first bounded audio block decoded" in (
             dialog._route_guidance.text()
         )
         assert dialog._status.text() == (
-            "MP3 loaded and decoded; Play is locked in this downloaded candidate"
+            "MP3 loaded and decoded; Play needs the isolated audio device set "
+            "up first"
         )
-        assert "will not enable Play" in dialog._route_guidance.text()
-        assert "future certified pilot/build" in dialog._route_guidance.text()
+        assert "then choose Recheck Route" in dialog._route_guidance.text()
         assert "BlackHole 2ch" in dialog._route_guidance.text()
         assert "WebJam Bridge" in dialog._route_guidance.text()
+        # Nothing may promise playback is permanently impossible.
+        for surface in (
+            dialog._route.text(),
+            dialog._route_guidance.text(),
+            dialog._status.text(),
+            dialog._blackhole_setup.toolTip(),
+            dialog._play.toolTip(),
+        ):
+            assert "downloaded candidate" not in surface
+            assert "cannot unlock" not in surface
+            assert "will not enable Play" not in surface
         assert dialog._blackhole_setup.isHidden() is False
-        assert "will not download" in dialog._blackhole_setup.toolTip()
-        assert "cannot unlock" in dialog._blackhole_setup.toolTip()
+        assert dialog._blackhole_setup.text() == "Set Up Reference Track…"
+        assert "never downloads or installs" in dialog._blackhole_setup.toolTip()
         with patch(
             "webjam_qt.windows.reference_track.QDesktopServices.openUrl",
             return_value=True,
@@ -186,7 +198,7 @@ def test_loaded_mp3_is_distinguished_from_physical_route_blocker() -> None:
         assert opened.path() == "/blackhole/"
         assert dialog._load.isEnabled() is True
         assert dialog._play.isEnabled() is False
-        assert "locked in this downloaded candidate" in dialog._play.toolTip()
+        assert "Set Up Reference Track" in dialog._play.toolTip()
         dialog._play.click()
         assert plays == []
     finally:

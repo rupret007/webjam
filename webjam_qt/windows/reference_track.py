@@ -193,15 +193,15 @@ class ReferenceTrackDialog(QDialog):
         )
         self._recheck_route.clicked.connect(self.recheck_route_requested.emit)
         route_actions.addWidget(self._recheck_route)
-        self._blackhole_setup = QPushButton("BlackHole Setup…")
+        self._blackhole_setup = QPushButton("Set Up Reference Track…")
         self._blackhole_setup.setObjectName("GhostButton")
         self._blackhole_setup.setAccessibleName(
-            "Open the official BlackHole setup page"
+            "Open the official setup page for Reference Track audio routing"
         )
         self._blackhole_setup.setToolTip(
-            "Open the official HTTPS setup page for a future certified pilot. "
-            "WebJam will not download or install a driver, and setup cannot "
-            "unlock this downloaded candidate."
+            "Open the official setup page. WebJam never downloads or installs "
+            "a driver for you; once the device is installed, choose Recheck "
+            "Route."
         )
         self._blackhole_setup.clicked.connect(self._open_blackhole_setup)
         self._blackhole_setup.setVisible(False)
@@ -656,8 +656,8 @@ class ReferenceTrackDialog(QDialog):
             )
             if capability_reason == "physical_certification_required":
                 status = (
-                    f"{source_format or 'Song'} loaded and decoded; Play is "
-                    "locked in this downloaded candidate"
+                    f"{source_format or 'Song'} loaded and decoded; Play needs "
+                    "the isolated audio device set up first"
                 )
         elif (
             loaded
@@ -710,12 +710,10 @@ class ReferenceTrackDialog(QDialog):
                 else "Playback route locked. "
             )
         )
+        # Certification is earned per machine, so the honest message is the
+        # real prerequisite from the route probe -- which the musician can act
+        # on -- not a blanket claim that nothing can unlock playback.
         route_message = f"{route_prefix}{route_detail or capability_detail}".strip()
-        if capability_reason == "physical_certification_required":
-            route_message = (
-                "Playback locked in this downloaded candidate. Installing "
-                "BlackHole or choosing Recheck Route cannot unlock it."
-            )
         self._set_dynamic_status(self._route, route_message)
         self._route.setToolTip(capability_detail)
         self._route.setVisible(bool(self._route.text()))
@@ -803,11 +801,10 @@ class ReferenceTrackDialog(QDialog):
                 else "You can still load and inspect a song. "
             )
             setup = (
-                "Official BlackHole 16ch or 64ch at 48 kHz is only a prerequisite "
-                "for a future certified pilot/build. Installing it or choosing "
-                "Recheck Route will not enable Play in this downloaded candidate. "
-                "BlackHole 2ch and WebJam Bridge cannot safely isolate the return "
-                "mix."
+                "Reference Track needs an official BlackHole 16ch or 64ch "
+                "device at 48 kHz. Install it, then choose Recheck Route. "
+                "BlackHole 2ch and WebJam Bridge cannot safely isolate the "
+                "return mix."
             )
             guidance = source_truth + setup
         elif capability_reason == "blackhole_unavailable":
@@ -1160,8 +1157,8 @@ class ReferenceTrackDialog(QDialog):
             )
         elif reason == "physical_certification_required":
             play_tooltip = (
-                "Play is locked in this downloaded candidate because physical "
-                "BlackHole/Jamulus isolation has not been certified."
+                "Play needs an isolated audio route on this Mac. Choose Set Up "
+                "Reference Track, then Recheck Route."
             )
         elif loaded and not capability_available:
             play_tooltip = (
