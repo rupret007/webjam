@@ -134,9 +134,8 @@ class ReferenceTrackDialog(QDialog):
         root.addWidget(title)
 
         intro = QLabel(
-            "The host can send a song through a separate “WebJam Track” "
-            "Jamulus participant. Every musician controls that participant in "
-            "their own mix."
+            "Play a song into the jam. Everyone hears it and sets its level "
+            "in their own mix."
         )
         intro.setObjectName("SimpleSettingsSubtitle")
         intro.setWordWrap(True)
@@ -328,11 +327,9 @@ class ReferenceTrackDialog(QDialog):
         root.addLayout(controls)
 
         self._safety = QLabel(
-            "Jamulus-routed—not latency eliminated. The track uses Jamulus’s "
-            "normal buffers, jitter handling, and network delay. The host hears "
-            "it only through the primary Jamulus mix; WebJam refuses playback "
-            "if route isolation or backing-client control is not proven. A "
-            "server recording captures the track as its own stem."
+            "The song travels the same path as the band, so it carries the "
+            "same delay. It is not a click track. A recording captures it as "
+            "its own track."
         )
         self._safety.setObjectName("DialogHint")
         self._safety.setWordWrap(True)

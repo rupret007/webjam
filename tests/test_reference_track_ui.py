@@ -74,7 +74,12 @@ def test_reference_track_dialog_fits_supported_compact_screen() -> None:
         # Leave room for the native macOS title bar inside a 600-pixel screen.
         assert dialog.minimumHeight() <= 540
         assert dialog.height() <= 540
-        assert "Jamulus-routed" in dialog.findChildren(type(dialog._status))[-1].text()
+        # The safety note tells the musician what the delay means for them
+        # rather than naming the transport that causes it.
+        safety = dialog.findChildren(type(dialog._status))[-1].text()
+        assert "same delay" in safety
+        assert "not a click track" in safety
+        assert "Jamulus" not in safety
     finally:
         dialog.close()
 
