@@ -115,6 +115,15 @@ class _FlowLayout(QLayout):
             max_width, max_height = 400, 260
 
         available_width = max(1, effective.width())
+        # The ceilings above stop a lone musician becoming a billboard on a
+        # small window. On a large one they did the opposite: a fixed 780x440
+        # card sat marooned in a field of black once WebJam started filling
+        # the display. Let the ceiling follow the space that actually exists;
+        # cell_width and cell_height below still bound the result, so this
+        # can only stop the cap from binding before the viewport does.
+        max_width = max(max_width, int(available_width * 0.66))
+        if effective.height() > 0:
+            max_height = max(max_height, int(effective.height() * 0.62))
         # Never force a 3-column meeting layout into a window that can only
         # show two complete people.  Horizontal scrolling is deliberately
         # disabled, so the column count must follow the actual viewport.
