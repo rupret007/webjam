@@ -306,6 +306,25 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
                 "Packaged Reference Track MP3 validation is invalid."
             )
         stream.play()
+        warmup_deadline = time.monotonic() + 2.0
+        warmup_frames = 0
+        while time.monotonic() < warmup_deadline and warmup_frames < 4_096:
+            delivered = stream.pull_into(output)
+            if delivered:
+                warmup_frames += delivered
+            else:
+                time.sleep(0.001)
+        if warmup_frames < 4_096 or stream.position_s <= 0.0:
+            raise RuntimeError(
+                "Packaged Reference Track MP3 did not begin playback."
+            )
+
+        stream.restart(count_in=False)
+        if stream.position_s != 0.0 or stream.finished:
+            raise RuntimeError(
+                "Packaged Reference Track MP3 did not restart from the beginning."
+            )
+
         deadline = time.monotonic() + 5.0
         delivered_total = 0
         final_delivery = 0

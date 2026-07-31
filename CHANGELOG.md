@@ -46,6 +46,10 @@ All notable improvements and features for the WebJam music collaboration platfor
 - A short decoder block is zeroed and rejected before it reaches the real-time
   ring. The final partial block is committed exactly once, reaches the song's
   validated duration, and only then reports normal end of song.
+- Fixed **Restart** during live Reference Track playback so its explicit
+  beginning-of-song seek cannot be replaced by the prior callback position.
+  Source and frozen-runtime tests now advance a track, restart it at 0:00, and
+  then verify exact normal end-of-song playback.
 
 ### Permissionless macOS Jamulus profiles
 

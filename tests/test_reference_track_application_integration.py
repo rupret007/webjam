@@ -144,6 +144,7 @@ class _FakeReferenceTrack:
         self.refreshes = []
         self.loaded = []
         self.stops = 0
+        self.restarts = 0
         self.closed = 0
         self.play_entered = threading.Event()
         self.release_play = threading.Event()
@@ -181,6 +182,7 @@ class _FakeReferenceTrack:
         return self.snapshot
 
     def restart(self):
+        self.restarts += 1
         self.snapshot = _snapshot(ReferenceTrackState.PLAYING)
         return self.snapshot
 
@@ -281,6 +283,36 @@ def test_host_panel_renders_controller_snapshot_without_starting_audio() -> None
 
         dialog._recheck_route.click()
         assert _wait_until(lambda: fake.refreshes == [False, False])
+    finally:
+        controller.bridge.jamulus_process = None
+        controller.shutdown()
+
+
+def test_enabled_restart_button_invokes_controller_once() -> None:
+    controller = _controller(host=True)
+    fake = _FakeReferenceTrack(ReferenceTrackState.PLAYING)
+    controller._reference_track = fake
+    controller._jamulus_connected = True
+    primary_process = MagicMock()
+    primary_process.pid = 4247
+    primary_process.poll.return_value = None
+    controller.bridge.jamulus_process = primary_process
+    _set_primary_rpc(controller)
+    try:
+        controller._open_reference_track()
+        dialog = controller._reference_track_dialog
+        assert dialog is not None
+        controller._render_reference_track_snapshot(fake.snapshot)
+        assert dialog._primary_gate is ReferenceTrackPrimaryGate.READY
+        assert dialog._restart.isEnabled() is True
+
+        dialog._restart.click()
+
+        assert _wait_until(lambda: fake.restarts == 1)
+        assert _wait_until(
+            lambda: not controller._reference_track_operation_inflight
+        )
+        assert fake.restarts == 1
     finally:
         controller.bridge.jamulus_process = None
         controller.shutdown()

@@ -491,6 +491,69 @@ def test_bounded_stream_play_pause_seek_loop_trim_and_count_in(
         stream.close()
 
 
+def test_restart_while_playing_honors_the_beginning_of_the_song(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(
+            tmp_path / "restart-while-playing.wav",
+            samplerate=48_000,
+            seconds=1.0,
+        )
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    try:
+        stream.play()
+        deadline = time.monotonic() + 2.0
+        while stream.position_s <= 0.10 and time.monotonic() < deadline:
+            stream.pull(512)
+            time.sleep(0.001)
+        assert stream.position_s > 0.10
+        previous_generation = stream._generation  # type: ignore[attr-defined]
+
+        stream.restart(count_in=False)
+
+        assert stream._generation > previous_generation  # type: ignore[attr-defined]
+        assert stream.position_s == 0.0
+        assert stream.finished is False
+        restarted = _await_nonzero(stream)
+        assert np.max(np.abs(restarted)) > 0.001
+        assert 0.0 < stream.position_s <= 512 / REFERENCE_SAMPLE_RATE
+    finally:
+        stream.close()
+
+
+def test_restart_publishes_count_in_before_new_song_frames(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(
+            tmp_path / "restart-with-count-in.wav",
+            samplerate=48_000,
+            seconds=1.0,
+        )
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=8)
+    try:
+        stream.play()
+        deadline = time.monotonic() + 2.0
+        while stream.position_s <= 0.05 and time.monotonic() < deadline:
+            stream.pull(512)
+            time.sleep(0.001)
+        assert stream.position_s > 0.05
+
+        stream.configure_count_in(1, 120.0)
+        stream.restart(count_in=True)
+
+        assert stream.position_s == 0.0
+        count_in = _await_nonzero(stream)
+        assert np.max(np.abs(count_in)) > 0.001
+        assert stream.position_s == 0.0
+        assert stream.finished is False
+    finally:
+        stream.close()
+
+
 def test_stream_underrun_is_bounded_silence_and_recovers(
     tmp_path: Path,
 ) -> None:
@@ -863,6 +926,41 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     closed = controller.close()
     assert closed.state is ReferenceTrackState.CLOSED
     assert not closed.loaded
+
+
+def test_controller_restart_reuses_session_and_resets_live_position(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    controller.load(
+        _audio_file(
+            tmp_path / "controller-restart.wav",
+            samplerate=48_000,
+            seconds=1.0,
+        )
+    )
+    controller.play(_context())
+    session = backend.sessions[-1]
+    output = np.empty((256, 2), dtype=np.float32)
+    deadline = time.monotonic() + 2.0
+    snapshot = controller.snapshot
+    while snapshot.position_s <= 0.05 and time.monotonic() < deadline:
+        assert session.pull is not None
+        delivered = session.pull(output)
+        if not delivered:
+            time.sleep(0.001)
+        snapshot = controller.refresh_health()
+    assert snapshot.position_s > 0.05
+
+    restarted = controller.restart()
+
+    assert restarted.state is ReferenceTrackState.PLAYING
+    assert restarted.position_s == 0.0
+    assert backend.sessions == [session]
+    assert session.started == 1
+    assert session.stopped == 0
+    controller.close()
 
 
 def test_controller_route_failure_stops_only_owned_reference_session(

@@ -875,11 +875,36 @@ class ReferenceTrackStream:
             self._error = ""
             self._count_in_total = 0
             self._count_in_cursor = 0
-            self._reset_producer_locked()
+            # An explicit seek is authoritative.  In particular, Restart
+            # seeks while playback is live, when the callback may still have
+            # a committed position for the current generation.  Reconciling
+            # that stale position here would silently replace the requested
+            # frame and turn Restart into a no-op.
+            self._reset_producer_locked(reconcile_callback_position=False)
 
     def restart(self, *, count_in: bool = True) -> None:
-        self.seek(0.0)
-        self.play(count_in=count_in)
+        with self._condition:
+            if self._closed:
+                raise ReferenceTrackError("The selected song was already closed.")
+            # Quiesce the callback before publishing one atomic beginning-of-
+            # song generation.  A separate seek()/play() pair would leave a
+            # window where the callback could consume song frames before the
+            # restart count-in and advance the new cursor away from 0:00.
+            self._realtime_generation = 0
+            self._playing = False
+            self._consumer_position = 0
+            self._finished = False
+            self._error = ""
+            if count_in and self._count_in_beats:
+                frames_per_beat = round(
+                    REFERENCE_SAMPLE_RATE * 60.0 / self._count_in_bpm
+                )
+                self._count_in_total = frames_per_beat * self._count_in_beats
+            else:
+                self._count_in_total = 0
+            self._count_in_cursor = 0
+            self._playing = True
+            self._reset_producer_locked(reconcile_callback_position=False)
 
     def pull(self, frames: int) -> np.ndarray:
         """Allocate a convenience result outside the real-time callback."""
@@ -920,8 +945,15 @@ class ReferenceTrackStream:
         self._thread.join(timeout=2.0)
         self._decoder.close()
 
-    def _reset_producer_locked(self) -> None:
-        if self._ring.position_generation == self._generation:
+    def _reset_producer_locked(
+        self,
+        *,
+        reconcile_callback_position: bool = True,
+    ) -> None:
+        if (
+            reconcile_callback_position
+            and self._ring.position_generation == self._generation
+        ):
             self._consumer_position = self._ring.position_frame
         self._generation += 1
         self._realtime_generation = self._generation if self._playing else 0
