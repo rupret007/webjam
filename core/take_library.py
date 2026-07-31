@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import json
 import hashlib
+import ipaddress
 import math
 import re
 import time
@@ -24,7 +25,7 @@ import uuid
 import wave
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Mapping, Optional
 
 if TYPE_CHECKING:
     from core.take_project import SessionEvidence
@@ -32,6 +33,9 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("webjam.take_library")
 
 _AUDIO_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif"}
+_RECORDER_MAX_CLIENTS = 64
+_RECORDER_MAX_TEXT = 512
+_RECORDER_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
 
 EVIDENCE_ONLY_EXPORT_BLOCK_REASON = (
     "No audio media was preserved. This recovery project is review-only and "
@@ -178,6 +182,269 @@ class TakeValidationResult:
             f"{self.take.track_count} track{'s' if self.take.track_count != 1 else ''}"
             f" · {duration // 60}:{duration % 60:02d} · {rate}"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class JamulusRecordingFilename:
+    """Version-locked, privacy-safe identity parsed from a Jamulus 3.12.2 WAV.
+
+    Jamulus records ``<client-key>-<startFrame>-<channels>.wav``.  The numeric
+    ``startFrame`` is recorder timing metadata, never a participant/channel
+    ID.  Only a SHA-256 digest of the client key leaves this parser so the
+    masked address embedded in the filename cannot accidentally enter logs or
+    diagnostics through a helper object.
+    """
+
+    recorder_key_sha256: str
+    start_frame: int
+    channels: int
+    collision_index: int = 0
+
+    def __post_init__(self) -> None:
+        digest = str(self.recorder_key_sha256 or "").strip().lower()
+        if not _RECORDER_KEY_RE.fullmatch(digest):
+            raise ValueError("recorder_key_sha256 must be a SHA-256 digest")
+        if (
+            isinstance(self.start_frame, bool)
+            or not 0 <= int(self.start_frame) <= (2**63 - 1)
+        ):
+            raise ValueError("start_frame is out of range")
+        if isinstance(self.channels, bool) or int(self.channels) not in {1, 2}:
+            raise ValueError("channels must be one or two")
+        if (
+            isinstance(self.collision_index, bool)
+            or not 0 <= int(self.collision_index) <= 1_000_000
+        ):
+            raise ValueError("collision_index is out of range")
+        object.__setattr__(self, "recorder_key_sha256", digest)
+        object.__setattr__(self, "start_frame", int(self.start_frame))
+        object.__setattr__(self, "channels", int(self.channels))
+        object.__setattr__(self, "collision_index", int(self.collision_index))
+
+
+@dataclass(frozen=True, slots=True)
+class RecorderClientObservation:
+    """One authenticated server-roster row with its address already erased."""
+
+    server_channel_id: int
+    display_name: str
+    recorder_key_sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.server_channel_id, bool)
+            or not 0 <= int(self.server_channel_id) <= (2**31 - 1)
+        ):
+            raise ValueError("server_channel_id is out of range")
+        name = " ".join(str(self.display_name or "").split())[:120] or "Musician"
+        digest = str(self.recorder_key_sha256 or "").strip().lower()
+        if not _RECORDER_KEY_RE.fullmatch(digest):
+            raise ValueError("recorder_key_sha256 must be a SHA-256 digest")
+        object.__setattr__(self, "server_channel_id", int(self.server_channel_id))
+        object.__setattr__(self, "display_name", name)
+        object.__setattr__(self, "recorder_key_sha256", digest)
+
+
+@dataclass(frozen=True, slots=True)
+class RecorderClientReceipt:
+    """Take-scoped binding from a recorder key to one durable project source.
+
+    Raw network addresses are deliberately absent.  The receipt is safe to
+    retain in memory while a take is active, but is consumed rather than
+    serialized into the project manifest.
+    """
+
+    server_channel_id: int
+    display_name: str
+    participant_id: str
+    recorder_key_sha256: str
+    source_kind: str = "musician"
+
+    def __post_init__(self) -> None:
+        observation = RecorderClientObservation(
+            self.server_channel_id,
+            self.display_name,
+            self.recorder_key_sha256,
+        )
+        try:
+            participant_id = str(uuid.UUID(str(self.participant_id)))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("participant_id must be a UUID") from exc
+        source_kind = str(self.source_kind or "").strip()
+        if source_kind not in {"musician", "reference_track"}:
+            raise ValueError("source_kind is unsupported")
+        object.__setattr__(self, "server_channel_id", observation.server_channel_id)
+        object.__setattr__(self, "display_name", observation.display_name)
+        object.__setattr__(
+            self, "recorder_key_sha256", observation.recorder_key_sha256
+        )
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "source_kind", source_kind)
+
+
+def _jamulus_translate_recorder_text(value: str) -> str:
+    """Reproduce Jamulus 3.12.2 ``CJamClient::TranslateChars`` exactly."""
+
+    charmap = ["_"] * 256
+    for character in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
+        charmap[ord(character)] = character
+    charmap_updates = {
+        0x8A: "S", 0x8C: "O", 0x8E: "Z",
+        0x9A: "s", 0x9C: "o", 0x9E: "z", 0x9F: "Y",
+        0xB2: "2", 0xB3: "3", 0xB5: "u", 0xB9: "1",
+        0xC0: "A", 0xC1: "A", 0xC2: "A", 0xC3: "A",
+        0xC4: "A", 0xC5: "A", 0xC6: "A", 0xC7: "C",
+        0xC8: "E", 0xC9: "E", 0xCA: "E", 0xCB: "E",
+        0xCC: "I", 0xCD: "I", 0xCE: "I", 0xCF: "I",
+        0xD0: "D", 0xD1: "N",
+        0xD2: "O", 0xD3: "O", 0xD4: "O", 0xD5: "O",
+        0xD6: "O", 0xD7: "x", 0xD8: "O",
+        0xD9: "U", 0xDA: "U", 0xDB: "U", 0xDC: "U",
+        0xDD: "Y", 0xDE: "P", 0xDF: "S",
+        0xE0: "a", 0xE1: "a", 0xE2: "a", 0xE3: "a",
+        0xE4: "a", 0xE5: "a", 0xE6: "a", 0xE7: "c",
+        0xE8: "e", 0xE9: "e", 0xEA: "e", 0xEB: "e",
+        0xEC: "i", 0xED: "i", 0xEE: "i", 0xEF: "i",
+        0xF0: "d", 0xF1: "n",
+        0xF2: "o", 0xF3: "o", 0xF4: "o", 0xF5: "o",
+        0xF6: "o", 0xF8: "o",
+        0xF9: "u", 0xFA: "u", 0xFB: "u", 0xFC: "u",
+        0xFD: "y", 0xFE: "p", 0xFF: "y",
+    }
+    for index, character in charmap_updates.items():
+        charmap[index] = character
+    latin1 = str(value).encode("latin-1", errors="replace")
+    return "".join(charmap[byte] for byte in latin1)
+
+
+def _jamulus_mask_recorder_address(value: str) -> str:
+    """Return Jamulus's ``SM_IP_NO_LAST_BYTE_PORT`` address representation."""
+
+    text = str(value or "").strip()
+    if (
+        not text
+        or len(text) > _RECORDER_MAX_TEXT
+        or any(character in text for character in ("\0", "\r", "\n"))
+    ):
+        raise ValueError("server address is invalid")
+    if text.startswith("["):
+        match = re.fullmatch(r"\[([^\]]+)\]:(\d+)", text)
+        if match is None:
+            raise ValueError("server address is invalid")
+        host_text, port_text = match.groups()
+    else:
+        if ":" not in text:
+            raise ValueError("server address is invalid")
+        host_text, port_text = text.rsplit(":", 1)
+    try:
+        address = ipaddress.ip_address(host_text)
+        port = int(port_text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("server address is invalid") from exc
+    if not 1 <= port <= 65_535:
+        raise ValueError("server port is invalid")
+    host = str(address)
+    local = host in {"127.0.0.1", "::1"}
+    if isinstance(address, ipaddress.IPv4Address):
+        if not local:
+            host = host.rsplit(".", 1)[0] + ".x"
+        return f"{host}:{port}"
+    if not local:
+        host = host.rsplit(":", 1)[0] + ":x"
+    return f"[{host}]:{port}"
+
+
+def _jamulus_recorder_key_digest(name: str, address: str) -> str:
+    translated_name = _jamulus_translate_recorder_text(name)
+    if len(translated_name) < 4:
+        translated_name = translated_name.ljust(4, "_")
+    translated_address = _jamulus_translate_recorder_text(
+        _jamulus_mask_recorder_address(address)
+    )
+    recorder_key = f"{translated_name}-{translated_address}"
+    return hashlib.sha256(recorder_key.encode("ascii")).hexdigest()
+
+
+def recorder_client_observations(
+    payload: Mapping[str, object],
+) -> tuple[RecorderClientObservation, ...]:
+    """Erase addresses from one authenticated ``getClients`` response.
+
+    Malformed or ambiguous rosters are rejected as a whole.  A partial roster
+    could otherwise make a real source appear authoritatively absent.
+    """
+
+    raw_clients = payload.get("clients")
+    if not isinstance(raw_clients, list) or len(raw_clients) > _RECORDER_MAX_CLIENTS:
+        raise ValueError("server roster is invalid")
+    observations: list[RecorderClientObservation] = []
+    seen_channels: set[int] = set()
+    seen_keys: set[str] = set()
+    for raw in raw_clients:
+        if not isinstance(raw, Mapping):
+            raise ValueError("server roster is invalid")
+        channel_id = raw.get("id")
+        name = raw.get("name")
+        address = raw.get("address")
+        if (
+            isinstance(channel_id, bool)
+            or not isinstance(channel_id, int)
+            or not 0 <= channel_id <= (2**31 - 1)
+            or not isinstance(name, str)
+            or len(name) > _RECORDER_MAX_TEXT
+            or any(character in name for character in ("\0", "\r", "\n"))
+            or not isinstance(address, str)
+        ):
+            raise ValueError("server roster is invalid")
+        digest = _jamulus_recorder_key_digest(name, address)
+        if channel_id in seen_channels or digest in seen_keys:
+            raise ValueError("server roster is ambiguous")
+        seen_channels.add(channel_id)
+        seen_keys.add(digest)
+        observations.append(
+            RecorderClientObservation(channel_id, name, digest)
+        )
+    return tuple(observations)
+
+
+_JAMULUS_RECORDING_FILENAME_RE = re.compile(
+    r"^(?P<key>[^/\\\0]{1,768})-"
+    r"(?P<start>0|[1-9]\d*)-"
+    r"(?P<channels>[12])"
+    r"(?:_(?P<collision>[1-9]\d*))?\.wav$",
+    re.IGNORECASE,
+)
+
+
+def parse_jamulus_recording_filename(
+    filename: str,
+) -> JamulusRecordingFilename | None:
+    """Parse the pinned recorder suffix without inventing participant identity."""
+
+    text = str(filename or "")
+    if len(text) > 1_024 or Path(text).name != text:
+        return None
+    match = _JAMULUS_RECORDING_FILENAME_RE.fullmatch(text)
+    if match is None:
+        return None
+    recorder_key = match.group("key")
+    # TranslateChars replaces every literal hyphen inside the name/address;
+    # exactly one remains as Jamulus's structural separator.
+    if recorder_key.count("-") != 1:
+        return None
+    try:
+        start_frame = int(match.group("start"))
+        collision_index = int(match.group("collision") or 0)
+        return JamulusRecordingFilename(
+            recorder_key_sha256=hashlib.sha256(
+                recorder_key.encode("ascii")
+            ).hexdigest(),
+            start_frame=start_frame,
+            channels=int(match.group("channels")),
+            collision_index=collision_index,
+        )
+    except (UnicodeEncodeError, ValueError):
+        return None
 
 
 def snapshot_take_directories(root: str | Path) -> dict[Path, int]:
@@ -339,12 +606,6 @@ def is_local_stem_name(name: str) -> bool:
     return lowered.endswith(".wav") and lowered.startswith(_LOCAL_STEM_PREFIXES)
 
 
-def server_track_channel_id(filename: str) -> Optional[int]:
-    """Extract Jamulus's channel id from its ``...-id-channels.wav`` name."""
-    match = re.search(r"-(\d+)-\d+\.[A-Za-z0-9]+$", str(filename))
-    return int(match.group(1)) if match else None
-
-
 def _envelope_100hz(signal):
     """Rectified block-mean envelope, mean-subtracted for correlation.
 
@@ -466,6 +727,7 @@ def write_take_manifest(
     local_total_frames: int = 0,
     local_durable_frames: int | None = None,
     session_evidence: "SessionEvidence | None" = None,
+    recording_receipts: tuple[RecorderClientReceipt, ...] | None = None,
 ) -> TakeValidationResult:
     """Validate a take and atomically publish schema-v2 project truth.
 
@@ -496,6 +758,35 @@ def write_take_manifest(
 
     path = Path(take_dir)
     offset_s, confidence = estimate_local_alignment(path)
+    # ``participant_names``/``participant_ids`` remain accepted for source
+    # compatibility, but they are intentionally not used for server media.
+    # Their integer keys came from the local live roster; a recorder filename
+    # contains a startFrame in the same numeric position, not that key.
+    del participant_names, participant_ids
+    strict_recording_identity = recording_receipts is not None
+    receipts_by_key: dict[str, RecorderClientReceipt] = {}
+    identity_errors: list[str] = []
+    for receipt in tuple(recording_receipts or ()):
+        if not isinstance(receipt, RecorderClientReceipt):
+            raise TypeError(
+                "recording_receipts must contain RecorderClientReceipt values."
+            )
+        existing = receipts_by_key.get(receipt.recorder_key_sha256)
+        if existing is not None and existing != receipt:
+            identity_errors.append(
+                "Authenticated recording identity evidence conflicted for a "
+                "Jamulus source."
+            )
+            receipts_by_key.pop(receipt.recorder_key_sha256, None)
+            continue
+        receipts_by_key[receipt.recorder_key_sha256] = receipt
+
+    def _receipt_for_filename(filename: str) -> RecorderClientReceipt | None:
+        parsed = parse_jamulus_recording_filename(filename)
+        if parsed is None:
+            return None
+        return receipts_by_key.get(parsed.recorder_key_sha256)
+
     if session_evidence is None:
         final_session_evidence = SessionEvidence()
     elif isinstance(session_evidence, SessionEvidence):
@@ -614,8 +905,13 @@ def write_take_manifest(
         "tracks": [
             {"filename": p.name,
              "name": (
-                 (participant_names or {}).get(server_track_channel_id(p.name))
-                 if not is_local_stem_name(p.name) else None
+                 (
+                     _receipt_for_filename(p.name).display_name
+                     if _receipt_for_filename(p.name) is not None
+                     else None
+                 )
+                 if not is_local_stem_name(p.name)
+                 else None
              ),
              "source": "local_ssl" if is_local_stem_name(p.name) else "jamulus_server",
              "offset_s": round(offset_s, 6) if is_local_stem_name(p.name) else None}
