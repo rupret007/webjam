@@ -309,21 +309,23 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         action.setEnabled(True)
         action.trigger()
 
+    # Grouped by intent: sound, then meeting, then this session, then the
+    # app itself. "tool:takes" is absent because Studio is a first-class
+    # button on the session bar rather than a duplicated menu entry.
     assert events == [
         "tool:audio_settings",
-        "tool:jamulus_updates",
-            "tool:conversation",
+        "tool:diagnostics",
+        "tool:conversation",
         "tool:recording_setup",
         "tool:reference_track",
-        "tool:takes",
         "tool:canvas",
         "tool:pocket_stage",
-        "tool:diagnostics",
+        "reset_invite",
+        "tool:settings",
+        "tool:jamulus_updates",
         "tool:help",
         "tool:support",
         "tool:about",
-        "reset_invite",
-        "tool:settings",
     ]
 
 

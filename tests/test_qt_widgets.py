@@ -297,19 +297,21 @@ class TestSessionStrip(unittest.TestCase):
         s.tool_requested.connect(tools.append)
         s.join_video_requested.connect(lambda: video.append(True))
         expected_tools = {
-            "Audio Settings in Jamulus": "audio_settings",
-            "Jamulus Updates…": "jamulus_updates",
+            # Labels name the musician's goal, not the component that
+            # implements it. Studio is deliberately absent: it is a
+            # first-class button on the session bar, not a menu duplicate.
+            "Sound Settings…": "audio_settings",
+            "Check for Updates…": "jamulus_updates",
             "Webex Controls": "conversation",
-            "Recording Setup": "recording_setup",
+            "Recording Setup…": "recording_setup",
             "Reference Track…": "reference_track",
-            "Studio": "takes",
             "Notes": "canvas",
             "Use iPhone as Pocket Stage…": "pocket_stage",
             "Band Check / Verify Sound\tF2": "diagnostics",
             "Help": "help",
             "Support": "support",
             "About WebJam": "about",
-            "WebJam Settings": "settings",
+            "Settings…": "settings",
         }
         actions = {
             action.text(): action

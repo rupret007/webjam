@@ -877,13 +877,13 @@ class TestRailViewChanges(_ControllerTestBase):
     def test_visible_more_actions_reach_their_controller_owners(self):
         c = self.controller
         routes = (
-            ("Audio Settings in Jamulus", "_bring_jamulus_forward"),
-            ("Recording Setup", "_open_recording_setup"),
+            ("Sound Settings…", "_bring_jamulus_forward"),
+            ("Recording Setup…", "_open_recording_setup"),
             ("Reference Track…", "_open_reference_track"),
             ("Use iPhone as Pocket Stage…", "_open_pocket_stage"),
             ("Band Check / Verify Sound\tF2", "_on_ready_check"),
             ("Support", "_on_save_support_bundle"),
-            ("WebJam Settings", "_open_settings_wizard"),
+            ("Settings…", "_open_settings_wizard"),
         )
         for label, handler_name in routes:
             with self.subTest(label=label), patch.object(

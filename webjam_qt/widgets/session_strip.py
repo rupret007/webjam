@@ -218,14 +218,14 @@ class SessionStrip(QFrame):
             QToolButton.ToolButtonPopupMode.InstantPopup
         )
         tools_menu = QMenu(self._tools_button)
-        audio_action = QAction("Audio Settings in Jamulus", tools_menu)
+        audio_action = QAction("Sound Settings…", tools_menu)
         audio_action.setToolTip(
             "Bring Jamulus forward. Jamulus owns your instrument, headphones, and buffer."
         )
         audio_action.triggered.connect(
             lambda: self.tool_requested.emit("audio_settings")
         )
-        jamulus_updates_action = QAction("Jamulus Updates…", tools_menu)
+        jamulus_updates_action = QAction("Check for Updates…", tools_menu)
         jamulus_updates_action.setToolTip(
             "Check for a WebJam-approved Jamulus component without interrupting "
             "the current session."
@@ -240,7 +240,7 @@ class SessionStrip(QFrame):
         conversation_action.triggered.connect(
             lambda: self.tool_requested.emit("conversation")
         )
-        recording_action = QAction("Recording Setup", tools_menu)
+        recording_action = QAction("Recording Setup…", tools_menu)
         recording_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
         )
@@ -251,8 +251,6 @@ class SessionStrip(QFrame):
         self._reference_track_action.triggered.connect(
             lambda: self.tool_requested.emit("reference_track")
         )
-        studio_action = QAction("Studio", tools_menu)
-        studio_action.triggered.connect(lambda: self.tool_requested.emit("takes"))
         notes_action = QAction("Notes", tools_menu)
         notes_action.triggered.connect(lambda: self.tool_requested.emit("canvas"))
         self._pocket_stage_action = QAction("Use iPhone as Pocket Stage…", tools_menu)
@@ -273,19 +271,23 @@ class SessionStrip(QFrame):
         about_action = QAction("About WebJam", tools_menu)
         about_action.triggered.connect(lambda: self.tool_requested.emit("about"))
 
+        # Grouped by what the musician is trying to do, not by which
+        # component implements it. Studio is not repeated here because it is
+        # already a first-class button on the session bar.
+        # Sound
         tools_menu.addAction(audio_action)
-        tools_menu.addAction(jamulus_updates_action)
+        tools_menu.addAction(diagnostics_action)
+        tools_menu.addSeparator()
+        # Meeting
         tools_menu.addAction(conversation_action)
+        tools_menu.addSeparator()
+        # This session
         tools_menu.addAction(recording_action)
         tools_menu.addAction(self._reference_track_action)
-        tools_menu.addAction(studio_action)
         tools_menu.addAction(notes_action)
         tools_menu.addAction(self._pocket_stage_action)
-        tools_menu.addSeparator()
-        tools_menu.addAction(diagnostics_action)
-        tools_menu.addAction(help_action)
-        tools_menu.addAction(support_action)
-        tools_menu.addAction(about_action)
+        # Resetting the invite acts on this session, so it belongs with the
+        # session group rather than trailing the About item.
         self._reset_invite_action = QAction("Reset Invite", tools_menu)
         self._reset_invite_action.setToolTip(
             "Revoke the current private invitation and create a new one."
@@ -295,9 +297,15 @@ class SessionStrip(QFrame):
             self.reset_invite_requested.emit
         )
         tools_menu.addAction(self._reset_invite_action)
-        settings_action = QAction("WebJam Settings", tools_menu)
+        tools_menu.addSeparator()
+        # WebJam itself
+        settings_action = QAction("Settings…", tools_menu)
         settings_action.triggered.connect(lambda: self.tool_requested.emit("settings"))
         tools_menu.addAction(settings_action)
+        tools_menu.addAction(jamulus_updates_action)
+        tools_menu.addAction(help_action)
+        tools_menu.addAction(support_action)
+        tools_menu.addAction(about_action)
         # Backward-compatible reference used by set_video_state(). Both this
         # menu item and the direct Webex button navigate through the same
         # side-effect-free Conversation route.
