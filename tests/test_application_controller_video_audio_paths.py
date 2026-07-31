@@ -267,11 +267,11 @@ class TestNativeWebexControls(_ControllerTestBase):
         self.assertTrue(callable(activate.call_args.kwargs["cancelled"]))
         c.bridge.launch_webex.assert_not_called()
         self.assertIn(
-            "verified running Webex app is active",
+            "Webex is in front",
             c.window.flash_message.call_args.args[0],
         )
         self.assertIn(
-            "No browser or meeting link was opened",
+            "open it from the Dock",
             c.window.flash_message.call_args.args[0],
         )
         self.assertEqual(
@@ -315,10 +315,11 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_mute.assert_not_called()
         c.jamulus.set_self_muted.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        self.assertIn("verified running Webex app is active", message)
-        self.assertIn("use Webex’s own Mute control", message)
-        self.assertIn("restore it from the Dock", message)
-        self.assertIn("did not change", message)
+        # Short and specific: WebJam still never touches Webex mute, but it
+        # says so by staying silent about it rather than disclaiming at length.
+        self.assertIn("Webex is in front", message)
+        self.assertIn("Use its own Mute control", message)
+        self.assertLessEqual(len(message.split()), 12)
         self.assertEqual(
             c._webex_events[-1],
             {"action": "mute-guidance", "result": "activated-running"},
@@ -360,13 +361,11 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_mute.assert_not_called()
         c.jamulus.set_self_muted.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        self.assertIn(
-            "verified Webex app was launched without a meeting link",
-            message,
-        )
-        self.assertIn("Use Webex’s own Mute control after joining", message)
-        self.assertIn("did not open a browser", message)
-        self.assertIn("affect Jamulus audio", message)
+        self.assertIn("Webex is open", message)
+        self.assertIn("mute in Webex", message)
+        self.assertLessEqual(len(message.split()), 12)
+        # The message no longer disclaims touching Jamulus audio; the calls
+        # asserted above are the real proof that it does not.
         self.assertEqual(
             c._webex_events[-1],
             {"action": "mute-guidance", "result": "launched-app"},
@@ -468,11 +467,9 @@ class TestNativeWebexControls(_ControllerTestBase):
 
         rescan.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        self.assertIn(
-            "launched without a meeting link or browser",
-            message,
-        )
-        self.assertIn("Webex decides which of its own screens", message)
+        self.assertIn("Webex is open", message)
+        self.assertIn("Join your meeting there", message)
+        self.assertLessEqual(len(message.split()), 12)
         c.bridge.launch_webex.assert_not_called()
         self.assertEqual(
             c._webex_events[-1],

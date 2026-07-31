@@ -2064,35 +2064,24 @@ class ApplicationController(QObject):
         if mute_guidance:
             if launched_app:
                 self.window.flash_message(
-                    "The verified Webex app was launched without a meeting "
-                    "link. "
-                    "Use Webex’s own Mute control after joining a meeting. "
-                    "WebJam did not open a browser or meeting link, change "
-                    "Webex mute, or affect Jamulus audio.",
-                    ms=9000,
+                    "Webex is open. Join the meeting, then mute in Webex.",
+                    ms=7000,
                 )
                 return
             self.window.flash_message(
-                "The verified running Webex app is active. If its window "
-                "remains minimized, restore it from the Dock, then use "
-                "Webex’s own Mute control. WebJam did not change Webex mute "
-                "or any Jamulus audio.",
-                ms=8000,
+                "Webex is in front. Use its own Mute control.",
+                ms=6000,
             )
             return
         if launched_app:
             self.window.flash_message(
-                "The verified Webex app was launched without a meeting link "
-                "or browser. Webex decides which of its own screens to show; "
-                "meeting and mute state remain managed in Webex.",
-                ms=8000,
+                "Webex is open. Join your meeting there.",
+                ms=6000,
             )
             return
         self.window.flash_message(
-            "The verified running Webex app is active. If its window remains "
-            "minimized, restore it from the Dock. No browser or meeting link "
-            "was opened; meeting and mute state remain managed in Webex.",
-            ms=7000,
+            "Webex is in front. If it stayed minimized, open it from the Dock.",
+            ms=6000,
         )
 
     def _bring_webex_forward(self, *, mute_guidance: bool = False) -> None:

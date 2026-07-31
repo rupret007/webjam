@@ -1061,7 +1061,7 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("review completed session takes", body)
         self.assertIn("Choose <b>Webex Controls</b> to show Conversation", body)
         self.assertIn(
-            "<b>Show Webex App</b> activates or launches the verified app",
+            "<b>Show Meeting</b> brings the running Webex forward",
             body,
         )
         self.assertIn("only <b>Join / Open Meeting</b> opens", body)

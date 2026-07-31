@@ -308,7 +308,7 @@ class _FakeMacRuntime:
         self.queries.append(bundle_identifier)
         return self._applications
 
-    def activate(self, application):
+    def activate_application(self, application):
         self.activations.append(application)
         if callable(self.activate_result):
             return self.activate_result(application)
@@ -437,16 +437,22 @@ def test_show_app_reopens_one_pid_verified_running_bundle_without_handoff(
 
     assert result.state is WebexActivationState.ACTIVATED_RUNNING
     assert result.succeeded
+    # Four lookups: initial detection, the activation session, and the two
+    # confirmation passes. Each runs in its own autorelease-pool session, so
+    # the AppKit handle has to be re-fetched rather than carried across.
     assert runtime.queries == [
         WEBEX_MAC_BUNDLE_ID,
         WEBEX_MAC_BUNDLE_ID,
         WEBEX_MAC_BUNDLE_ID,
+        WEBEX_MAC_BUNDLE_ID,
     ]
-    assert runtime.activations == []
+    # A running Webex is activated in place. Reopening it through
+    # LaunchServices is what surfaced the Messaging window over the meeting.
+    assert runtime.activations == [running]
+    assert runtime.launches == []
     assert runtime.frontmost_checks == [running, running]
     assert [reference.path for reference in runtime.references] == [app]
     assert runtime.reference_verifications == runtime.references
-    assert runtime.launches == runtime.references
     assert process_calls == [
         (
             [
@@ -561,9 +567,20 @@ def test_show_app_launches_verified_stopped_app_without_url(tmp_path):
     assert result.to_public_dict() == {"state": "launched-app"}
 
 
-def test_show_app_running_uses_launchservices_and_fresh_frontmost_proof(
+def test_show_app_running_activates_in_place_with_fresh_frontmost_proof(
     tmp_path,
 ):
+    """A running Webex is raised as it stands, never reopened.
+
+    This replaces a test that required the LaunchServices reopen path for an
+    already-running Webex. That path is what musicians hit during a jam: a
+    reopen makes Webex present its main Messaging window, so pressing the
+    button surfaced the roster instead of the meeting. Activating the exact
+    verified process leaves Webex's own window order alone.
+
+    The publisher and frontmost proofs around it are unchanged.
+    """
+
     app = _mac_app(tmp_path / "Running")
     running = _running_application(app)
     runtime = _FakeMacRuntime(applications=(running,))
@@ -584,14 +601,15 @@ def test_show_app_running_uses_launchservices_and_fresh_frontmost_proof(
 
     assert result.state is WebexActivationState.ACTIVATED_RUNNING
     assert result.succeeded
-    assert runtime.activations == []
+    assert runtime.activations == [running]
     assert runtime.frontmost_checks == [running, running]
     assert [arguments[0] for arguments, _timeout in command_calls] == [
         "/usr/bin/codesign",
         "/usr/bin/codesign",
         "/usr/bin/codesign",
     ]
-    assert runtime.launches == runtime.references
+    # No reopen: LaunchServices is only for launching a stopped Webex.
+    assert runtime.launches == []
 
 def test_show_app_never_trusts_native_launch_without_exact_active_process(
     tmp_path,
@@ -826,7 +844,14 @@ def test_show_app_refuses_post_launch_publisher_failure(tmp_path):
     assert runtime.frontmost_checks == []
 
 
-def test_show_app_refuses_running_pid_change_after_reopen_request(tmp_path):
+def test_show_app_refuses_running_pid_change_before_activation(tmp_path):
+    """Webex restarting mid-request must never be activated blind.
+
+    Previously this raced the LaunchServices reopen. A running Webex is now
+    activated in place, so the race moved to the window between detecting the
+    process and activating it -- the refusal still has to hold there.
+    """
+
     app = _mac_app(tmp_path / "Verified")
     original = _running_application(app, pid=7001)
     replacement = _running_application(app, pid=7002)
@@ -837,11 +862,15 @@ def test_show_app_refuses_running_pid_change_after_reopen_request(tmp_path):
         path=app,
     )
 
-    def launch(_reference):
-        runtime._applications = (replacement,)
-        return original.process_identifier
+    # Swap the process out immediately after WebJam first sees it.
+    detected = runtime.running_applications
 
-    runtime.on_launch = launch
+    def swap_after_detection(bundle_identifier):
+        found = detected(bundle_identifier)
+        runtime._applications = (replacement,)
+        return found
+
+    runtime.running_applications = swap_after_detection
 
     result = show_webex_app(
         info,
@@ -1372,3 +1401,53 @@ def test_cancellation_after_pid_validation_never_activates(tmp_path):
     assert len(process_calls) == 1
     assert runtime.activations == []
     assert runtime.launches == []
+
+
+def test_activation_mask_never_raises_every_webex_window():
+    """The option mask is the whole difference between meeting and roster.
+
+    NSApplicationActivateAllWindows (bit 0) raises *every* window the app
+    owns. For Webex that lifts the Messaging window on top of the meeting --
+    exactly the behaviour musicians reported. Only
+    NSApplicationActivateIgnoringOtherApps (bit 1) may be set, so Webex's own
+    window order decides what ends up in front, and during a call that is the
+    meeting.
+    """
+
+    mask = webex_app._MacOSApplicationRuntime._ACTIVATE_IGNORING_OTHER_APPS
+
+    assert mask == 1 << 1
+    assert mask & (1 << 0) == 0
+
+
+def test_stopped_webex_is_still_launched_rather_than_activated(tmp_path):
+    """Activation in place must not break starting a closed Webex."""
+
+    app = _mac_app(tmp_path / "Stopped")
+    launched = _running_application(app, pid=8123)
+    runtime = _FakeMacRuntime(applications=())
+    info = WebexAppInfo(
+        state=WebexAppState.INSTALLED,
+        publisher_verified=True,
+        path=app,
+    )
+
+    def launch(_reference):
+        runtime._applications = (launched,)
+        return launched.process_identifier
+
+    runtime.on_launch = launch
+
+    result = show_webex_app(
+        info,
+        platform_name="darwin",
+        detector=lambda **_kwargs: info,
+        mac_runtime_factory=lambda: runtime,
+        command_runner=_verified_process_runner([]),
+    )
+
+    assert result.state is WebexActivationState.LAUNCHED_APP
+    assert result.succeeded
+    # Nothing was running, so there was no process to activate in place.
+    assert runtime.activations == []
+    assert runtime.launches == runtime.references

@@ -314,6 +314,14 @@ class _MacOSApplicationRuntime:
                 ctypes.POINTER(self._ID),
             )
         )
+        self._send_bool_ulong = send(
+            ctypes.CFUNCTYPE(
+                ctypes.c_bool,
+                self._ID,
+                self._SEL,
+                ctypes.c_ulong,
+            )
+        )
         self._send_ulong = send(
             ctypes.CFUNCTYPE(ctypes.c_ulong, self._ID, self._SEL)
         )
@@ -435,6 +443,32 @@ class _MacOSApplicationRuntime:
                 for application in self.running_applications(bundle_identifier)
                 if application.path is not None
             )
+
+    # Raise Webex as it already stands.  NSApplicationActivateAllWindows is
+    # deliberately NOT set: it would raise every Webex window, so the
+    # Messaging window would come forward on top of the meeting -- which is
+    # the behaviour musicians reported.  Without it, only the app's own
+    # frontmost window rises, and during a call that is the meeting.
+    _ACTIVATE_IGNORING_OTHER_APPS = 1 << 1
+
+    def activate_application(
+        self, application: _MacRunningApplication
+    ) -> bool:
+        """Foreground an already-running Webex without a LaunchServices reopen.
+
+        ``NSWorkspace.openApplicationAtURL`` re-opens an app that is already
+        running, and a reopen is what makes Webex present its main Messaging
+        window.  Activating the exact running process instead leaves Webex's
+        own window order alone.
+        """
+
+        return bool(
+            self._send_bool_ulong(
+                application.native_handle,
+                self._selector("activateWithOptions:"),
+                self._ACTIVATE_IGNORING_OTHER_APPS,
+            )
+        )
 
     def is_frontmost(self, application: _MacRunningApplication) -> bool:
         """Prove that a fresh exact Webex snapshot owns the foreground."""
@@ -775,17 +809,44 @@ def _show_or_launch_verified_macos_app(
                 WebexActivationState.REFUSED,
                 "activation-cancelled",
             )
-        launched_pid = runtime.launch_application(reference)
-        if launched_pid is None:
-            return WebexActivationResult(
-                WebexActivationState.FAILED,
-                "native-launch-failed",
-            )
-        if initial_pid is not None and launched_pid != initial_pid:
-            return WebexActivationResult(
-                WebexActivationState.REFUSED,
-                "running-target-changed",
-            )
+        if initial_pid is not None:
+            # Webex is already running, which is the case during a jam. Going
+            # through launch_application here would ask LaunchServices to
+            # *reopen* it, and a reopen is what makes Webex present its main
+            # Messaging window over the meeting. Activate the exact verified
+            # process instead so Webex's own window order is left alone and
+            # the meeting stays on top.
+            with runtime.activation_session() as active_runtime:
+                applications = active_runtime.running_applications(
+                    WEBEX_MAC_BUNDLE_ID
+                )
+                application, failure = _select_exact_running_macos_app(
+                    applications,
+                    path_matches,
+                )
+                if failure is not None:
+                    return failure
+                if (
+                    application is None
+                    or application.process_identifier != initial_pid
+                ):
+                    return WebexActivationResult(
+                        WebexActivationState.REFUSED,
+                        "running-target-changed",
+                    )
+                if not active_runtime.activate_application(application):
+                    return WebexActivationResult(
+                        WebexActivationState.FAILED,
+                        "native-activation-failed",
+                    )
+            launched_pid = initial_pid
+        else:
+            launched_pid = runtime.launch_application(reference)
+            if launched_pid is None:
+                return WebexActivationResult(
+                    WebexActivationState.FAILED,
+                    "native-launch-failed",
+                )
         if _activation_cancelled(cancelled):
             return WebexActivationResult(
                 WebexActivationState.REFUSED,

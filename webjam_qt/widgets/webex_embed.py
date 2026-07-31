@@ -384,6 +384,8 @@ class WebexEmbed(QFrame):
             )
         )
         self._sync_meeting_action()
+        # "Show Meeting" vs "Show Webex" depends on this same state.
+        self._sync_native_actions()
 
     def set_launch_status(self, status: str) -> None:
         """Show external-launch truth without implying meeting membership."""
@@ -456,13 +458,26 @@ class WebexEmbed(QFrame):
             self._meeting_configured and not self._launch_busy
         )
 
+    def _show_webex_label(self) -> str:
+        """Name what the musician gets, which depends on the meeting state.
+
+        With a meeting set up, raising Webex puts the call in front, so the
+        button says so. With no meeting yet there is nothing to show but the
+        app itself, and claiming otherwise would be a promise WebJam cannot
+        keep.
+        """
+
+        return "Show Meeting" if self._meeting_configured else "Show Webex"
+
     def _sync_native_actions(self) -> None:
         enabled = self._native_app_available and not self._native_action_busy
         self._bring_forward_btn.setEnabled(enabled)
         self._mute_btn.setEnabled(enabled)
         self._recheck_btn.setEnabled(not self._native_action_busy)
         self._bring_forward_btn.setText(
-            "Verifying…" if self._native_action_busy else "Show Webex App"
+            "Verifying…"
+            if self._native_action_busy
+            else self._show_webex_label()
         )
 
     def _set_native_busy(self, busy: bool) -> None:

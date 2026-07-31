@@ -108,7 +108,8 @@ def test_native_app_rescan_and_activation_busy_states_are_truthful():
     )
     assert embed.recheck_button().isHidden()
     assert embed.bring_forward_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Show Webex App"
+    # No meeting link saved yet, so only the app itself can be promised.
+    assert embed.bring_forward_button().text() == "Show Webex"
 
     embed.set_native_action_busy(True)
     assert not embed.bring_forward_button().isEnabled()
@@ -242,7 +243,8 @@ def test_join_open_requires_a_configured_link_and_is_single_flight():
 
     embed.set_launch_status("Opening…")
     assert not embed.fallback_button().isEnabled()
-    assert embed.bring_forward_button().text() == "Show Webex App"
+    # A meeting is configured above, so the button names the meeting.
+    assert embed.bring_forward_button().text() == "Show Meeting"
 
     embed.set_launch_status("Opened externally")
     assert embed.fallback_button().isEnabled()
