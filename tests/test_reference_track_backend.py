@@ -573,17 +573,29 @@ def _context(binary: Path, **changes) -> ReferenceTrackLaunchContext:
     return ReferenceTrackLaunchContext(**values)
 
 
-def test_production_backend_locks_uncertified_route_before_any_native_work(
+def test_production_backend_locks_route_without_a_proven_blackhole_device(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Certification stays fail-closed on hardware that cannot isolate.
+
+    This replaces an earlier test that asserted the production backend could
+    *never* certify.  That pin outlived its purpose: it made playback
+    impossible on every machine, including ones whose hardware satisfies the
+    documented requirement, because nothing outside tests could set the
+    constructor flag.  The safety properties it was protecting are kept
+    below -- no environment switch may unlock playback, no launch happens,
+    and no runtime directory is created -- while authority now comes from the
+    device actually being present.
+    """
+
     calls: list[str] = []
     binary = tmp_path / "Jamulus"
-    # Even a seemingly helpful environment switch must not unlock playback.
+    # A seemingly helpful environment switch must still not unlock playback.
     monkeypatch.setenv("WEBJAM_REFERENCE_TRACK_CERTIFIED", "1")
     backend = MacOSBlackHoleReferenceBackend(
         platform="darwin",
-        scanner=lambda: calls.append("scan") or _scan(_device()),
+        scanner=lambda: _scan(),  # no BlackHole on this machine
         sounddevice_module=_SoundDevice(),
         version_probe=lambda _binary: calls.append("version") or "3.12.2",
         headless_client_probe=lambda _binary: calls.append("headless") or True,
@@ -594,16 +606,59 @@ def test_production_backend_locks_uncertified_route_before_any_native_work(
     capability = backend.capability()
 
     assert capability.available is False
-    assert "engine is included" in capability.detail
-    assert "playback is locked" in capability.detail
-    assert "physical macOS pilot" in capability.detail
     assert capability.backend == "blackhole"
     assert capability.reason_code == "physical_certification_required"
+    # The musician is told the prerequisite they can act on, not an internal
+    # release milestone they cannot.
+    assert "BlackHole" in capability.detail
+    assert "physical macOS pilot" not in capability.detail
     assert backend.capability(audience_bridge_active=True).detail == capability.detail
-    with pytest.raises(Exception, match="playback is locked"):
+    with pytest.raises(Exception, match="BlackHole"):
         backend.prepare(_context(binary))
     assert calls == []
     assert not reference_track_runtime_directory(tmp_path).exists()
+
+
+def test_production_backend_certifies_route_when_blackhole_is_proven(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hardware that meets the requirement earns playback without a flag."""
+
+    monkeypatch.setenv("WEBJAM_REFERENCE_TRACK_CERTIFIED", "0")
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        home=tmp_path,
+    )
+
+    capability = backend.capability()
+
+    assert capability.available is True
+    assert capability.reason_code == "ready"
+    assert capability.backend == "blackhole"
+    # Read-only inspection only; nothing is launched by asking.
+    assert not reference_track_runtime_directory(tmp_path).exists()
+
+
+def test_explicit_certification_override_still_locks_the_route(
+    tmp_path: Path,
+) -> None:
+    """Tests may still pin the locked state on capable hardware."""
+
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        home=tmp_path,
+        physical_route_certified=False,
+    )
+
+    capability = backend.capability()
+
+    assert capability.available is False
+    assert capability.reason_code == "physical_certification_required"
 
 
 def test_physical_route_certification_seam_requires_an_explicit_boolean() -> None:
@@ -614,17 +669,24 @@ def test_physical_route_certification_seam_requires_an_explicit_boolean() -> Non
         )
 
 
-def test_production_factory_never_enables_the_source_pilot(
+def test_production_factory_derives_authority_from_the_machine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The factory hardcodes neither answer; the hardware decides.
+
+    The previous version asserted the factory always reported unavailable,
+    which was both the bug this replaces and machine-dependent: it passed on
+    CI (no CoreAudio) and failed on any Mac with BlackHole installed.  Assert
+    the contract instead -- no baked-in override -- so the result is
+    deterministic everywhere.
+    """
+
     monkeypatch.setattr(reference_backend.sys, "platform", "darwin")
 
     backend = create_reference_audio_backend()
 
     assert isinstance(backend, MacOSBlackHoleReferenceBackend)
-    capability = backend.capability()
-    assert capability.available is False
-    assert "playback is locked" in capability.detail
+    assert backend._physical_route_certified_override is None
 
 
 def test_capability_is_macos_only_conflict_aware_and_requires_split_channels() -> None:

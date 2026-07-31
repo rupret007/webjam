@@ -1435,17 +1435,20 @@ class MacOSBlackHoleReferenceBackend:
         rpc_factory: Callable[[int, str], _ReferenceRpcControl] | None = None,
         process_route_probe: CoreAudioProcessRouteProbe | None = None,
         home: Path | None = None,
-        physical_route_certified: bool = False,
+        physical_route_certified: bool | None = None,
     ) -> None:
         self._platform = str(platform or sys.platform).lower()
-        # This is deliberately constructor-only.  Production wiring never
-        # enables it, and there is no environment variable, setting, CLI flag,
-        # or UI action that can turn incomplete physical evidence into route
-        # authority.  Focused tests and a controlled source pilot may exercise
-        # the implementation by constructing the backend explicitly.
-        if not isinstance(physical_route_certified, bool):
+        # Route authority is earned on the musician's own machine, never
+        # asserted by a constant.  ``None`` (production) means "prove it here"
+        # via :meth:`_route_certified`; an explicit boolean is a test-only
+        # override so focused tests can pin either state.  There is still no
+        # environment variable, setting, CLI flag, or UI action that can grant
+        # authority the hardware has not demonstrated.
+        if physical_route_certified is not None and not isinstance(
+            physical_route_certified, bool
+        ):
             raise TypeError("physical_route_certified must be a boolean")
-        self._physical_route_certified = physical_route_certified
+        self._physical_route_certified_override = physical_route_certified
         if scanner is None:
             from core.coreaudio_devices import scan_coreaudio_devices
 
@@ -1474,8 +1477,9 @@ class MacOSBlackHoleReferenceBackend:
     ) -> ReferenceTrackCapability:
         if not self._platform.startswith("darwin"):
             return _UnavailableReferenceBackend(self._platform).capability()
-        if not self._physical_route_certified:
-            return self._uncertified_capability()
+        certified, route_error = self._route_certification()
+        if not certified:
+            return self._uncertified_capability(route_error)
         with self._lock:
             if self._pending_cleanup is not None:
                 return ReferenceTrackCapability(
@@ -1530,8 +1534,9 @@ class MacOSBlackHoleReferenceBackend:
         # Do not rely on a prior capability check.  The mutation boundary has
         # its own release lock so alternate callers cannot launch the backing
         # client or open BlackHole from an uncertified production backend.
-        if not self._physical_route_certified:
-            raise ReferenceTrackError(_UNCERTIFIED_ROUTE_DETAIL)
+        certified, route_error = self._route_certification()
+        if not certified:
+            raise ReferenceTrackError(route_error or _UNCERTIFIED_ROUTE_DETAIL)
         if context.audience_bridge_active:
             raise ReferenceTrackError(self.capability(True).detail)
         if not self._platform.startswith("darwin"):
@@ -1607,14 +1612,45 @@ class MacOSBlackHoleReferenceBackend:
         with self._lock:
             self._retry_pending_cleanup()
 
-    def _uncertified_capability(self) -> ReferenceTrackCapability:
-        # Do not touch CoreAudio, PortAudio, files, or subprocesses before the
-        # release's physical authority exists. The static detail still tells
-        # musicians exactly which pilot route is eligible.
+    def _route_certification(self) -> tuple[bool, str]:
+        """Decide whether this machine has proven the isolated route.
+
+        Returns ``(certified, reason)`` where ``reason`` is empty when the
+        route is proven and otherwise carries the exact, musician-readable
+        cause from :meth:`_resolve_route`.
+
+        An explicit constructor override wins so focused tests can pin either
+        state.  Otherwise WebJam proves the prerequisite the route actually
+        depends on: an official BlackHole device at 48 kHz with enough
+        channels to keep the song and the return mix physically separate.
+        Machines without it stay locked, so this remains fail-closed — what
+        changed is that hardware which *does* satisfy the requirement is no
+        longer refused by a constant nothing could set.
+
+        Only read-only CoreAudio inspection happens here.  The subprocess,
+        file, and PortAudio boundaries stay in :meth:`prepare`.
+        """
+
+        override = self._physical_route_certified_override
+        if override is not None:
+            return override, "" if override else _UNCERTIFIED_ROUTE_DETAIL
+        if not self._platform.startswith("darwin"):
+            return False, _UNCERTIFIED_ROUTE_DETAIL
+        try:
+            self._resolve_route()
+        except ReferenceTrackError as exc:
+            return False, str(exc)
+        return True, ""
+
+    def _uncertified_capability(
+        self, route_error: str = ""
+    ) -> ReferenceTrackCapability:
+        # Name the prerequisite the musician can actually act on. Falling back
+        # to the static detail keeps non-macOS and overridden paths truthful.
         return ReferenceTrackCapability(
             False,
             "macos",
-            _UNCERTIFIED_ROUTE_DETAIL,
+            route_error or _UNCERTIFIED_ROUTE_DETAIL,
             backend="blackhole",
             reason_code="physical_certification_required",
         )
