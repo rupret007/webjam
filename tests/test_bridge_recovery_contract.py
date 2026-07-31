@@ -989,6 +989,89 @@ def test_stale_force_restart_worker_cannot_kill_newer_process(
 
 
 @patch("services.bridge_service.subprocess.Popen")
+@patch("services.bridge_service.threading.Thread", _ImmediateThread)
+@patch("services.bridge_service.time.sleep")
+def test_dead_replacement_monitor_stop_failure_retains_retryable_owner(
+    _sleep,
+    popen,
+) -> None:
+    bridge = _bridge()
+    dead_process = _process(126, return_code=11)
+    replacement = _process(127)
+    _prime_recovery(bridge, attempts=2, generation=6)
+    _publish_recovery_process(
+        bridge,
+        dead_process,
+        process_generation=13,
+        recovery_generation=6,
+    )
+    bridge._jamulus_native_setup_process_generation = 13
+    bridge._jamulus_native_setup_deadline = 700.0
+    bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+    bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+    bridge.jamulus_controller.stop.side_effect = RuntimeError("thread stuck")
+
+    assert bridge.launch_jamulus(manual=False, reconnect=True)
+
+    popen.assert_not_called()
+    assert bridge.jamulus_process is dead_process
+    assert bridge._jamulus_process_generation == 13
+    assert bridge._jamulus_native_setup_process_generation == 13
+    assert bridge._jamulus_native_setup_deadline == 700.0
+    assert bridge.jamulus_reconnect_inflight is False
+
+    bridge.jamulus_controller.stop.side_effect = None
+    popen.return_value = replacement
+
+    assert bridge.launch_jamulus(manual=False, reconnect=True)
+    popen.assert_called_once()
+    assert bridge.jamulus_process is replacement
+
+
+@patch("services.bridge_service.subprocess.Popen")
+@patch("services.bridge_service.time.sleep")
+def test_stale_dead_replacement_worker_preserves_newer_process(
+    _sleep,
+    popen,
+) -> None:
+    _QueuedThread.targets = []
+    bridge = _bridge()
+    dead_process = _process(128, return_code=11)
+    newer_process = _process(129)
+    _prime_recovery(bridge, attempts=1, generation=7)
+    _publish_recovery_process(
+        bridge,
+        dead_process,
+        process_generation=14,
+        recovery_generation=7,
+    )
+    bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
+    bridge._is_rpc_port_in_use = MagicMock(return_value=False)
+
+    with patch("services.bridge_service.threading.Thread", _QueuedThread):
+        assert bridge.launch_jamulus(manual=False, reconnect=True)
+
+    with bridge._reconnect_lock:
+        bridge.jamulus_process = newer_process
+        bridge._jamulus_process_generation_counter = 15
+        bridge._jamulus_process_generation = 15
+        bridge._jamulus_process_started_at = 500.0
+        bridge._jamulus_native_setup_process_generation = 15
+        bridge._jamulus_native_setup_deadline = 900.0
+
+    _QueuedThread.targets.pop(0)()
+
+    bridge.jamulus_controller.stop.assert_not_called()
+    popen.assert_not_called()
+    assert bridge.jamulus_process is newer_process
+    assert bridge._jamulus_process_generation == 15
+    assert bridge._jamulus_process_started_at == 500.0
+    assert bridge._jamulus_native_setup_process_generation == 15
+    assert bridge._jamulus_native_setup_deadline == 900.0
+    assert bridge.jamulus_reconnect_inflight is False
+
+
+@patch("services.bridge_service.subprocess.Popen")
 @patch("services.bridge_service.time.sleep")
 def test_queued_force_restart_does_not_kill_exact_process_that_recovers(
     _sleep,

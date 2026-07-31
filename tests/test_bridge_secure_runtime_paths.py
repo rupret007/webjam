@@ -648,6 +648,84 @@ def test_reconnect_rebinds_same_native_setup_deadline_to_replacement(
     assert bridge.stop_jamulus() is True
 
 
+def test_dead_client_replacement_retires_monitor_before_rebinding(
+    tmp_path: Path,
+) -> None:
+    home = _private_directory(tmp_path / "home")
+    secret = home / "Library" / "Application Support" / "WebJam" / "rpc.secret"
+    bridge = _bridge(home=home)
+    plan = SimpleNamespace(
+        arguments=("--inifile", "WebJam.ini"),
+        working_directory=home,
+        jamulus_version="3.12.2",
+        profile_exists=False,
+    )
+    manager = mock.MagicMock()
+    manager.prepare.return_value = plan
+    manager.validate_active.side_effect = lambda active: active
+    bridge._native_profile_manager = manager
+    original = _live_process()
+    replacement = _live_process()
+    replacement.pid = 5314
+    monitored: dict[str, tuple[int, int] | None] = {"identity": None}
+
+    def start_monitor(
+        *,
+        process_generation: int,
+        process_id: int,
+    ) -> None:
+        identity = (process_generation, process_id)
+        if monitored["identity"] not in {None, identity}:
+            raise RuntimeError("monitor still owns the crashed process")
+        monitored["identity"] = identity
+
+    def stop_monitor() -> None:
+        monitored["identity"] = None
+
+    bridge.jamulus_controller.start.side_effect = start_monitor
+    bridge.jamulus_controller.stop.side_effect = stop_monitor
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: original,
+        native_setup_timeout_seconds=600.0,
+    )
+    original_generation = bridge._jamulus_process_generation
+    original.poll.return_value = 11
+
+    _primary_launch(
+        bridge,
+        secret_path=secret,
+        popen=lambda *_a, **_k: replacement,
+        manual=False,
+        reconnect=True,
+    )
+
+    assert monitored["identity"] == (
+        bridge._jamulus_process_generation,
+        replacement.pid,
+    )
+    assert bridge._jamulus_process_generation > original_generation
+    lifecycle_calls = [
+        item
+        for item in bridge.jamulus_controller.method_calls
+        if item[0] in {"start", "stop"}
+    ]
+    assert lifecycle_calls == [
+        mock.call.start(
+            process_generation=original_generation,
+            process_id=original.pid,
+        ),
+        mock.call.stop(),
+        mock.call.start(
+            process_generation=bridge._jamulus_process_generation,
+            process_id=replacement.pid,
+        ),
+    ]
+    assert bridge.stop_jamulus() is True
+
+
 def test_host_failure_after_missing_profile_retires_exact_setup_request(
     tmp_path: Path,
 ) -> None:

@@ -42,6 +42,10 @@ from core.jamulus_profile import (
     JamulusNativeProfileManager,
     default_jamulus_version_probe,
 )
+from core.private_log import (
+    open_private_append_text_log,
+    open_private_text_log,
+)
 from core.secure_runtime import (
     RuntimePathProof,
     SecureRuntimeDirectory,
@@ -2519,6 +2523,46 @@ class BridgeService:
                             with self._reconnect_lock:
                                 self.jamulus_reconnect_inflight = False
                             return
+                    dead_process_replacement = False
+                    with self._reconnect_lock:
+                        current_process = self.jamulus_process
+                        dead_process_replacement = bool(
+                            observed_process is not None
+                            and current_process is observed_process
+                            and self._jamulus_process_generation
+                            == observed_process_generation
+                            and not self._jamulus_process_alive(current_process)
+                        )
+                    if dead_process_replacement:
+                        # A crashed child cannot be terminated below, but its
+                        # RPC reader may still be running and bound to that
+                        # dead generation/PID. Retire the monitor before a
+                        # replacement is published; otherwise
+                        # JamulusController.start() correctly refuses to
+                        # relabel the stale reader and the new client can
+                        # never provide process-authenticating roster proof.
+                        try:
+                            self.jamulus_controller.stop()
+                        except Exception as exc:  # noqa: BLE001 - defensive recovery
+                            raise RuntimeError(
+                                "Could not stop the old Jamulus monitor."
+                            ) from exc
+                        with self._reconnect_lock:
+                            if (
+                                self.jamulus_process is not observed_process
+                                or self._jamulus_process_generation
+                                != observed_process_generation
+                                or self._jamulus_process_alive(
+                                    self.jamulus_process
+                                )
+                            ):
+                                raise RuntimeError(
+                                    "Jamulus changed during dead-process recovery."
+                                )
+                            self.jamulus_process = None
+                            self._jamulus_process_started_at = 0.0
+                            self._jamulus_process_generation = 0
+                            self._jamulus_process_recovery_generation = 0
                     if (
                         self.jamulus_process is not None
                         and self.jamulus_process.poll() is None
@@ -2831,12 +2875,8 @@ class BridgeService:
                     stdout_dest = subprocess.DEVNULL
                     try:
                         log_path = Path.home() / ".webjam_jamulus.log"
-                        log_file = open(log_path, "w", buffering=1)
-                        if self._jamulus_log_file is not None:
-                            try:
-                                self._jamulus_log_file.close()
-                            except Exception:
-                                pass
+                        self._close_jamulus_log_file()
+                        log_file = open_private_text_log(log_path)
                         self._jamulus_log_file = log_file
                         stdout_dest = log_file
                     except OSError as exc:
@@ -3370,9 +3410,9 @@ class BridgeService:
         practice_log = None
         try:
             log_path = Path.home() / ".webjam_practice_server.log"
-            practice_log = open(log_path, "w", buffering=1)
-            stdout_dest = practice_log
             self._close_practice_log_file()
+            practice_log = open_private_text_log(log_path)
+            stdout_dest = practice_log
             self._practice_log_file = practice_log
         except OSError:
             pass
@@ -4037,16 +4077,33 @@ class BridgeService:
                 "--welcomemessage", "WebJam private band server",
             ])
             stdout_dest = subprocess.DEVNULL
+            hosted_log = None
             try:
                 log_dir = Path.home() / "Library" / "Logs" / "WebJam"
-                log_dir.mkdir(parents=True, exist_ok=True)
                 self._close_hosted_log_file()
-                self._hosted_log_file = open(
-                    log_dir / "jamulus-server.log", "a", buffering=1,
-                )
-                stdout_dest = self._hosted_log_file
-            except OSError:
-                pass
+                if os.name == "posix":
+                    with SecureRuntimeDirectory.open(
+                        home=Path.home(),
+                        directory=log_dir,
+                    ) as private_log_directory:
+                        hosted_log = open_private_append_text_log(
+                            private_log_directory,
+                            "jamulus-server.log",
+                        )
+                else:
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    hosted_log = open_private_text_log(
+                        log_dir / "jamulus-server.log",
+                        append=True,
+                    )
+                self._hosted_log_file = hosted_log
+                stdout_dest = hosted_log
+            except (OSError, SecureRuntimeError):
+                if hosted_log is not None:
+                    try:
+                        hosted_log.close()
+                    except OSError:
+                        pass
             if cancelled():
                 self._release_hosted_runtime_paths(confirmed_stopped=True)
                 self._release_unestablished_server_lease()
