@@ -31,6 +31,11 @@ from core.project_audio import (
 )
 
 
+# The Jamulus display name of the dedicated backing participant. It lives in
+# core because the take builder has to recognise that stem when a recording is
+# assembled, and core must not import from services to do it.
+REFERENCE_PARTICIPANT_NAME = "WebJam Track"
+
 REFERENCE_SAMPLE_RATE = 48_000
 REFERENCE_BLOCK_FRAMES = 1_024
 REFERENCE_QUEUE_BLOCKS = 12

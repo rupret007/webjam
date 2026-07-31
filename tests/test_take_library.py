@@ -254,6 +254,52 @@ class TestTakeValidation(unittest.TestCase):
         self.assertEqual(result.take.session_title, "Sunday Rehearsal")
         self.assertEqual(result.take.display_name, "Sunday Rehearsal")
 
+    def test_manifest_marks_the_backing_song_as_a_live_reference(self):
+        """The host's reference song must not look like another musician.
+
+        It reaches the server as an ordinary Jamulus client, so without an
+        explicit source type the take treats the song as a performance and
+        Studio comps and mixes it like one.
+        """
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "____-127_0_0_1_50000-0-1.wav", seconds=0.1)
+            _write_wav(take / "____-127_0_0_1_50001-1-1.wav", seconds=0.1)
+            result = write_take_manifest(
+                take,
+                expected_tracks=2,
+                required_local_stems=0,
+                participant_names={0: "Jeff — Guitar", 1: "WebJam Track"},
+                session_title="Sunday Rehearsal",
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+        by_name = {track["name"]: track for track in payload["tracks"]}
+
+        self.assertEqual(by_name["Jeff — Guitar"]["source"], "jamulus_server")
+        self.assertEqual(by_name["WebJam Track"]["source"], "live_reference")
+        self.assertIsNotNone(result.take)
+
+    def test_a_musician_named_like_the_reference_is_still_a_musician(self):
+        """Only the exact participant name marks a reference track."""
+
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            _write_wav(take / "____-127_0_0_1_50000-0-1.wav", seconds=0.1)
+            write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                participant_names={0: "WebJam Tracks"},
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+        self.assertEqual(payload["tracks"][0]["source"], "jamulus_server")
+
+
     def test_reports_expected_track_shortfall_and_silence(self):
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "take"

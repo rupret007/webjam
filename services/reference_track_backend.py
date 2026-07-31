@@ -63,6 +63,7 @@ from core.reference_track import (
     REFERENCE_BLOCK_FRAMES,
     REFERENCE_MAX_DIAGNOSTIC_COUNTER,
     REFERENCE_MAX_DECODE_FRAMES,
+    REFERENCE_PARTICIPANT_NAME as _CORE_REFERENCE_PARTICIPANT_NAME,
     REFERENCE_SAMPLE_RATE,
     ReferenceAudioBridgeSession,
     ReferenceTrackCapability,
@@ -75,7 +76,8 @@ from core.secure_runtime import (
 )
 REFERENCE_PROFILE_FILENAME = "WebJam-reference-track-v1.ini"
 REFERENCE_SECRET_FILENAME = ".WebJam-reference-track-v1.rpc-secret"
-REFERENCE_PARTICIPANT_NAME = "WebJam Track"
+# Defined in core so the take builder can recognise the stem without services.
+REFERENCE_PARTICIPANT_NAME = _CORE_REFERENCE_PARTICIPANT_NAME
 _PINNED_JAMULUS_VERSION = "3.12.2"
 _RPC_MAX_LINE_BYTES = 1024 * 1024
 _RPC_READY_TIMEOUT_S = 12.0

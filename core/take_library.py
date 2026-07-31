@@ -26,6 +26,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
+from core.reference_track import REFERENCE_PARTICIPANT_NAME
+
 if TYPE_CHECKING:
     from core.take_project import SessionEvidence
 
@@ -331,6 +333,20 @@ _ENVELOPE_BLOCK = 480  # 10 ms at 48 kHz → a true 100 Hz amplitude envelope
 # value.
 ALIGNMENT_CONFIDENCE_MIN = 0.15
 ALIGNMENT_METHOD = "envelope+refine-v2"
+
+
+def _is_reference_participant(name: object) -> bool:
+    """True for the dedicated backing-song participant, not a musician.
+
+    Jamulus reports it as an ordinary client, so the display name is the only
+    signal available at take-build time. Matching is case-insensitive and
+    whitespace-tolerant because the name survives a round trip through the
+    roster before it reaches here.
+    """
+
+    return " ".join(str(name or "").split()).casefold() == (
+        REFERENCE_PARTICIPANT_NAME.casefold()
+    )
 
 
 def is_local_stem_name(name: str) -> bool:
@@ -683,7 +699,15 @@ def write_take_manifest(
                     uuid.UUID(stable_session_id), f"participant:{participant_key}"
                 ))
             participant_name = track.name
-            source_type = SourceType.JAMULUS_SERVER
+            # The host's backing song arrives as an ordinary Jamulus client,
+            # so without this it lands in the take as just another musician
+            # and Studio comps and mixes it like a performance. Mark it so a
+            # take can tell the song apart from the people playing to it.
+            source_type = (
+                SourceType.LIVE_REFERENCE
+                if _is_reference_participant(participant_name)
+                else SourceType.JAMULUS_SERVER
+            )
             quality = SourceQuality.NETWORK_TRACK
             local_channel = -1
         participants_by_id.setdefault(
