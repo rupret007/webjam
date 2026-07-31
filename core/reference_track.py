@@ -1016,7 +1016,16 @@ class ReferenceTrackStream:
                 finish_after = False
             else:
                 try:
-                    self._decoder.read_48k_into(song_start, target[:amount])
+                    decoded_frames = self._decoder.read_48k_into(
+                        song_start,
+                        target[:amount],
+                    )
+                    if decoded_frames != amount:
+                        target[:amount].fill(0.0)
+                        raise ReferenceTrackError(
+                            "WebJam couldn't decode the complete song block. "
+                            "Load the song again."
+                        )
                 except ReferenceTrackError as exc:
                     with self._condition:
                         if generation == self._generation:

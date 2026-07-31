@@ -19,6 +19,12 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from core.mp3_scan import Mp3GaplessDeclaration, Mp3Scan, scan_mp3_descriptor
+from core.project_audio import (
+    PROJECT_AUDIO_MAX_DURATION_SECONDS,
+    PROJECT_AUDIO_MAX_MP3_FILE_BYTES,
+    PROJECT_AUDIO_MAX_SOURCE_FRAMES,
+)
 from core.project_recording_commit import inspect_project_recording_recovery
 from core.reference_track import ReferenceTrackDecoder, ReferenceTrackStream
 from core.song_bounce import (
@@ -104,8 +110,165 @@ def _write_backing(path: Path) -> None:
     )
 
 
+def _file_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    mtime_ns = getattr(info, "st_mtime_ns", None)
+    ctime_ns = getattr(info, "st_ctime_ns", None)
+    return (
+        int(info.st_dev),
+        int(info.st_ino),
+        int(info.st_size),
+        int(
+            round(info.st_mtime * 1_000_000_000)
+            if mtime_ns is None
+            else mtime_ns
+        ),
+        int(
+            round(info.st_ctime * 1_000_000_000)
+            if ctime_ns is None
+            else ctime_ns
+        ),
+    )
+
+
+def _scan_mp3(path: Path) -> Mp3Scan:
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_BINARY", 0),
+    )
+    try:
+        info = os.fstat(descriptor)
+        return scan_mp3_descriptor(
+            descriptor,
+            expected_identity=_file_identity(info),
+            max_source_frames=PROJECT_AUDIO_MAX_SOURCE_FRAMES,
+            max_duration_seconds=PROJECT_AUDIO_MAX_DURATION_SECONDS,
+            max_file_bytes=PROJECT_AUDIO_MAX_MP3_FILE_BYTES,
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _itunsmpb_text(declaration: Mp3GaplessDeclaration) -> str:
+    values = (
+        0,
+        declaration.delay_frames,
+        declaration.padding_frames,
+        declaration.content_frames,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    return " ".join(
+        f"{value:016X}" if index == 3 else f"{value:08X}"
+        for index, value in enumerate(values)
+    )
+
+
+def _synchsafe_u32(value: int) -> bytes:
+    if not 0 <= value <= 0x0FFFFFFF:
+        raise RuntimeError("Packaged MP3 smoke metadata size is invalid.")
+    return bytes(
+        (
+            (value >> 21) & 0x7F,
+            (value >> 14) & 0x7F,
+            (value >> 7) & 0x7F,
+            value & 0x7F,
+        )
+    )
+
+
+def _replace_lame_header_with_itunsmpb(path: Path) -> int:
+    """Create a sanitized no-Xing gapless file from locked libsndfile output."""
+
+    scanned = _scan_mp3(path)
+    declaration = scanned.gapless
+    if (
+        scanned.xing_kind not in {"Xing", "Info"}
+        or declaration is None
+        or scanned.physical_frames < 2
+    ):
+        raise RuntimeError("Packaged MP3 smoke encoder inventory is invalid.")
+
+    encoded = path.read_bytes()
+    header = int.from_bytes(encoded[:4], "big")
+    version_bits = (header >> 19) & 0x3
+    layer_bits = (header >> 17) & 0x3
+    bitrate_index = (header >> 12) & 0xF
+    sample_rate_index = (header >> 10) & 0x3
+    if (
+        header >> 21 != 0x7FF
+        or version_bits != 3
+        or layer_bits != 1
+        or bitrate_index in (0, 15)
+        or sample_rate_index == 3
+    ):
+        raise RuntimeError("Packaged MP3 smoke first frame is unsupported.")
+    bitrate = (
+        0,
+        32,
+        40,
+        48,
+        56,
+        64,
+        80,
+        96,
+        112,
+        128,
+        160,
+        192,
+        224,
+        256,
+        320,
+        0,
+    )[bitrate_index]
+    sample_rate = (44_100, 48_000, 32_000)[sample_rate_index]
+    first_frame_bytes = (
+        (144_000 * bitrate) // sample_rate + ((header >> 9) & 1)
+    )
+    if not 4 <= first_frame_bytes < len(encoded):
+        raise RuntimeError("Packaged MP3 smoke first frame is incomplete.")
+
+    value = _itunsmpb_text(declaration).encode("ascii")
+    payload = b"\x00eng" + b"iTunSMPB\0" + value
+    frame = b"COM" + len(payload).to_bytes(3, "big") + payload
+    # This unrelated, structurally valid text field is deliberately binary.
+    # On Windows, losing O_BINARY would translate CRLF or stop at Ctrl-Z and
+    # make the packaged fallback scanner fail this exact inventory.
+    sentinel_payload = (
+        b"\x00BinaryModeSentinel\0"
+        b"preserve\r\nbytes\x1aexactly"
+    )
+    sentinel_frame = (
+        b"TXX"
+        + len(sentinel_payload).to_bytes(3, "big")
+        + sentinel_payload
+    )
+    body = sentinel_frame + frame + b"\0" * 32
+    id3_header = b"ID3" + bytes((2, 0, 0)) + _synchsafe_u32(len(body))
+    path.write_bytes(id3_header + body + encoded[first_frame_bytes:])
+
+    no_xing = _scan_mp3(path)
+    if (
+        no_xing.xing_kind
+        or no_xing.gapless != declaration
+        or no_xing.raw_frames != declaration.raw_frames
+    ):
+        raise RuntimeError("Packaged no-Xing MP3 inventory is invalid.")
+    reported_frames = int(sf.info(path).frames)
+    if reported_frames <= no_xing.raw_frames:
+        raise RuntimeError(
+            "Packaged MP3 smoke did not create an overstated decoder boundary."
+        )
+    return declaration.content_frames
+
+
 def _exercise_packaged_reference_track_mp3(root: Path) -> None:
-    """Prove the frozen runtime can decode a real 44.1-kHz stereo MP3."""
+    """Prove exact frozen no-Xing/gapless MP3 playback through normal EOF."""
 
     if "MP3" not in sf.available_formats() or not sf.check_format("MP3"):
         raise RuntimeError(
@@ -122,7 +285,10 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
         sample_rate,
         format="MP3",
         subtype="MPEG_LAYER_III",
+        compression_level=0.0,
+        bitrate_mode="CONSTANT",
     )
+    source_frames = _replace_lame_header_with_itunsmpb(source)
 
     decoder = ReferenceTrackDecoder(source)
     stream = ReferenceTrackStream(decoder)
@@ -133,25 +299,40 @@ def _exercise_packaged_reference_track_mp3(root: Path) -> None:
             or decoder.info.source_samplerate != sample_rate
             or decoder.info.channels != 2
             or not 0 < decoder.info.initial_decode_frames <= 1_024
+            or decoder.info.output_frames != 2 * _SAMPLE_RATE
+            or source_frames != 2 * sample_rate
         ):
             raise RuntimeError(
                 "Packaged Reference Track MP3 validation is invalid."
             )
         stream.play()
-        deadline = time.monotonic() + 3.0
-        delivered = 0
-        while time.monotonic() < deadline:
+        deadline = time.monotonic() + 5.0
+        delivered_total = 0
+        final_delivery = 0
+        peak = 0.0
+        while time.monotonic() < deadline and not stream.finished:
             delivered = stream.pull_into(output)
-            if delivered and float(np.max(np.abs(output))) > 0.001:
-                break
-            time.sleep(0.01)
+            if delivered:
+                delivered_total += delivered
+                final_delivery = delivered
+                peak = max(peak, float(np.max(np.abs(output[:delivered]))))
+                if np.count_nonzero(output[delivered:]):
+                    raise RuntimeError(
+                        "Packaged Reference Track MP3 final block was not zeroed."
+                    )
+            else:
+                time.sleep(0.001)
         if (
-            delivered <= 0
+            stream.error
+            or not stream.finished
+            or delivered_total != decoder.output_frames
+            or final_delivery != decoder.output_frames % len(output)
+            or stream.position_s != stream.duration_s
             or not np.all(np.isfinite(output))
-            or float(np.max(np.abs(output))) <= 0.001
+            or peak <= 0.001
         ):
             raise RuntimeError(
-                "Packaged Reference Track MP3 produced no bounded audio."
+                "Packaged Reference Track MP3 did not reach exact normal EOF."
             )
     finally:
         stream.close()

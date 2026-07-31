@@ -251,9 +251,10 @@ session the direct **Reference Track** action opens it; **More → Reference Tra
 to the same panel. Loading is deliberately separate from routing: a host can
 load and inspect WAV/WAVE, AIFF, or FLAC even while playback is locked.
 MP3 appears in the picker only when the packaged decoder proves support.
-Loading decodes the first bounded audio block so malformed or unusable input
-fails before playback is considered. **Recheck Route** refreshes route evidence
-without starting playback.
+Loading decodes the first bounded audio block; MP3 sources also receive a
+bounded structural frame and duration check. Malformed, truncated,
+metadata-conflicting, or unusable input fails before playback is considered.
+**Recheck Route** refreshes route evidence without starting playback.
 
 Its intended route sends the decoded source through a separately owned
 `WebJam Track` Jamulus client, so the song becomes one participant with an

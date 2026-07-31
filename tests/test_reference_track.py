@@ -532,6 +532,64 @@ def test_stream_latches_a_path_free_decode_failure(tmp_path: Path) -> None:
         stream.close()
 
 
+def test_stream_never_commits_a_short_decode_block(tmp_path: Path) -> None:
+    decoder = ReferenceTrackDecoder(_audio_file(tmp_path / "short-read.wav"))
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=2)
+
+    def short_decode(_start: int, output: np.ndarray) -> int:
+        output.fill(0.75)
+        return max(0, int(output.shape[0]) - 1)
+
+    decoder.read_48k_into = short_decode  # type: ignore[method-assign]
+    try:
+        stream.play()
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not stream.error:
+            time.sleep(0.01)
+        assert "complete song block" in stream.error
+        assert stream._ring._write_sequence == 0  # type: ignore[attr-defined]
+        output = stream.pull(256)
+        assert np.count_nonzero(output) == 0
+        assert stream.position_s == 0.0
+    finally:
+        stream.close()
+
+
+def test_stream_final_partial_block_reaches_exact_normal_eof(
+    tmp_path: Path,
+) -> None:
+    decoder = ReferenceTrackDecoder(
+        _audio_file(
+            tmp_path / "partial-eof.wav",
+            samplerate=48_000,
+            seconds=600 / 48_000,
+        )
+    )
+    stream = ReferenceTrackStream(decoder, block_frames=256, queue_blocks=4)
+    output = np.empty((256, 2), dtype=np.float32)
+    delivered_total = 0
+    final_delivery = -1
+    try:
+        stream.play()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not stream.finished:
+            delivered = stream.pull_into(output)
+            if delivered:
+                delivered_total += delivered
+                final_delivery = delivered
+                assert np.count_nonzero(output[delivered:]) == 0
+            else:
+                time.sleep(0.001)
+
+        assert stream.error == ""
+        assert stream.finished
+        assert delivered_total == decoder.output_frames == 600
+        assert final_delivery == 88
+        assert stream.position_s == pytest.approx(stream.duration_s)
+    finally:
+        stream.close()
+
+
 def test_realtime_pull_never_waits_for_control_lock_or_allocates_audio_buffer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -81,9 +81,12 @@ runtime licenses, and proves the checked-in human notice and CycloneDX SBOM are
 deterministic. After PyInstaller runs, `--verify-bundle` requires the generated
 notice/SBOM plus checksum-pinned NumPy, SoundFile, and libsndfile license
 evidence inside the actual target bundle. MP3 import remains capability-gated
-by `soundfile.check_format("MP3")`; no package may claim MP3 import merely
-because SoundFile is installed. MP3 bounce is a separate, disabled-by-default
-adapter capability, and no default encoder adapter ships in this release.
+by `soundfile.check_format("MP3")` and the descriptor-bound structural
+frame/duration checks; no package may claim MP3 import merely because
+SoundFile is installed. Each frozen target must also prove an exact final
+partial block and normal end-of-song transition. MP3 bounce is a separate,
+disabled-by-default adapter capability, and no default encoder adapter ships
+in this release.
 
 Linux additionally launches the extracted app with the packaged Jamulus client
 against a private dummy JACK graph. The gate requires authenticated loopback

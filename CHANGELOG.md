@@ -32,6 +32,21 @@ All notable improvements and features for the WebJam music collaboration platfor
   mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
   physical gates.
 
+### Exact MP3 duration and end-of-song playback
+
+- Replaced trust in an MP3 decoder's advertised duration with a bounded,
+  descriptor-bound MPEG Layer III frame inventory. WebJam now verifies the
+  complete frame chain, Xing/Info counts, supported LAME or structured
+  iTunSMPB gapless metadata, source identity, and exact decoder boundaries
+  before Reference Track playback.
+- Reconciled raw and gapless-trimmed decoder models so encoder delay and
+  padding are excluded without mistaking a valid codec tail for a missing
+  song. Damaged, truncated, conflicting, or changing files still fail closed
+  with path-free guidance.
+- A short decoder block is zeroed and rejected before it reaches the real-time
+  ring. The final partial block is committed exactly once, reaches the song's
+  validated duration, and only then reports normal end of song.
+
 ### Permissionless macOS Jamulus profiles
 
 - Host and Join now give the verified non-sandboxed integrated Jamulus

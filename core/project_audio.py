@@ -29,6 +29,12 @@ from typing import Final
 
 import numpy as np
 
+from core.mp3_scan import (
+    MP3_MAX_TRAILING_REPORT_FRAMES,
+    Mp3Scan,
+    scan_mp3_descriptor,
+)
+
 
 PROJECT_AUDIO_SAMPLE_RATE: Final = 48_000
 PROJECT_AUDIO_MAX_DECODE_FRAMES: Final = 4_096
@@ -40,6 +46,11 @@ PROJECT_AUDIO_MAX_OUTPUT_FRAMES: Final = (
 )
 PROJECT_AUDIO_MAX_SOURCE_FRAMES: Final = (
     PROJECT_AUDIO_MAX_SOURCE_RATE * PROJECT_AUDIO_MAX_DURATION_SECONDS
+)
+PROJECT_AUDIO_MAX_MP3_FILE_BYTES: Final = (
+    PROJECT_AUDIO_MAX_DURATION_SECONDS * 320_000 // 8
+    + 4 * 1_024 * 1_024
+    + 128
 )
 
 _FORMAT_BY_SUFFIX: Final[dict[str, frozenset[str]]] = {
@@ -179,6 +190,73 @@ def _rounded_output_frames(source_frames: int, source_rate: int) -> int:
     )
 
 
+def _reconcile_mp3_source_frames(
+    reader: object,
+    reported_frames: int,
+    channels: int,
+    scan: Mp3Scan,
+) -> tuple[int, int]:
+    """Reconcile libsndfile behavior with an authoritative physical scan."""
+
+    sample = np.empty((1, channels), dtype=np.float32)
+    tail = np.empty((576, channels), dtype=np.float32)
+
+    def exact_seek(position: int) -> None:
+        try:
+            landed = reader.seek(position)  # type: ignore[attr-defined]
+        except Exception:
+            raise ValueError("MP3 decoder seek failed") from None
+        if int(landed) != position:
+            raise ValueError("MP3 decoder seek was not exact")
+
+    def require_exact_boundary(boundary: int) -> None:
+        tail_frames = min(576, boundary)
+        tail_start = boundary - tail_frames
+        exact_seek(tail_start)
+        try:
+            decoded_tail = reader.read(  # type: ignore[attr-defined]
+                out=tail[:tail_frames]
+            )
+        except Exception:
+            raise ValueError("MP3 decoder tail read failed") from None
+        if len(decoded_tail) != tail_frames:
+            raise ValueError("MP3 decoder ended before the scanned boundary")
+        exact_seek(boundary)
+        try:
+            decoded_after = reader.read(  # type: ignore[attr-defined]
+                out=sample
+            )
+        except Exception:
+            raise ValueError("MP3 decoder EOF probe failed") from None
+        if len(decoded_after) != 0:
+            raise ValueError("MP3 decoder continued beyond the scanned boundary")
+
+    try:
+        gapless = scan.gapless
+        if gapless is not None and reported_frames == gapless.content_frames:
+            require_exact_boundary(gapless.content_frames)
+            return 0, gapless.content_frames
+
+        raw_frames = scan.raw_frames
+        if (
+            reported_frames < raw_frames
+            or reported_frames - raw_frames
+            > MP3_MAX_TRAILING_REPORT_FRAMES
+        ):
+            raise ValueError("MP3 decoder duration disagrees with the frame scan")
+        require_exact_boundary(raw_frames)
+        if gapless is None:
+            return 0, raw_frames
+        return gapless.delay_frames, gapless.content_frames
+    finally:
+        try:
+            reset = reader.seek(0)  # type: ignore[attr-defined]
+        except Exception:
+            raise ValueError("MP3 decoder could not reset after validation") from None
+        if int(reset) != 0:
+            raise ValueError("MP3 decoder reset was not exact")
+
+
 def _bounded_int(
     value: object,
     name: str,
@@ -238,11 +316,16 @@ class ProjectAudioDecoder:
         descriptor = -1
         source_file = None
         reader = None
+        mp3_scan: Mp3Scan | None = None
         try:
             before = candidate.lstat()
             if not stat.S_ISREG(before.st_mode) or stat.S_ISLNK(before.st_mode):
                 raise OSError("source is not a regular file")
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            flags = (
+                os.O_RDONLY
+                | getattr(os, "O_BINARY", 0)
+                | getattr(os, "O_CLOEXEC", 0)
+            )
             flags |= getattr(os, "O_NOFOLLOW", 0)
             descriptor = os.open(candidate, flags)
             opened = os.fstat(descriptor)
@@ -250,6 +333,14 @@ class ProjectAudioDecoder:
                 before
             ):
                 raise OSError("source changed during open")
+            if suffix == ".mp3":
+                mp3_scan = scan_mp3_descriptor(
+                    descriptor,
+                    expected_identity=_identity(opened),
+                    max_source_frames=PROJECT_AUDIO_MAX_SOURCE_FRAMES,
+                    max_duration_seconds=PROJECT_AUDIO_MAX_DURATION_SECONDS,
+                    max_file_bytes=PROJECT_AUDIO_MAX_MP3_FILE_BYTES,
+                )
             source_file = os.fdopen(descriptor, "rb", closefd=True)
             descriptor = -1
             reader = sf.SoundFile(source_file, mode="r")
@@ -259,17 +350,50 @@ class ProjectAudioDecoder:
                 raise ValueError("container does not match extension")
             source_rate = int(reader.samplerate)
             channels = int(reader.channels)
-            source_frames = int(reader.frames)
+            reported_source_frames = int(reader.frames)
             if not 1 <= source_rate <= PROJECT_AUDIO_MAX_SOURCE_RATE:
                 raise ValueError("source sample rate is out of range")
             if not 1 <= channels <= PROJECT_AUDIO_MAX_SOURCE_CHANNELS:
                 raise ValueError("source channel count is out of range")
-            if not 1 <= source_frames <= PROJECT_AUDIO_MAX_SOURCE_FRAMES:
+            if not (
+                1
+                <= reported_source_frames
+                <= PROJECT_AUDIO_MAX_SOURCE_FRAMES
+            ):
                 raise ValueError("source frame count is out of range")
+            source_start_frame = 0
+            source_frames = reported_source_frames
+            if container == "MP3":
+                if (
+                    mp3_scan is None
+                    or mp3_scan.source_sample_rate != source_rate
+                    or mp3_scan.channels != channels
+                ):
+                    raise ValueError(
+                        "MP3 decoder format disagrees with the frame scan"
+                    )
+                (
+                    source_start_frame,
+                    source_frames,
+                ) = _reconcile_mp3_source_frames(
+                    reader,
+                    reported_source_frames,
+                    channels,
+                    mp3_scan,
+                )
             output_frames = _rounded_output_frames(source_frames, source_rate)
             if output_frames > PROJECT_AUDIO_MAX_OUTPUT_FRAMES:
                 raise ValueError("decoded duration is out of range")
             subtype = str(reader.subtype or "").upper()
+            current_path = candidate.lstat()
+            current_descriptor = os.fstat(source_file.fileno())
+            if (
+                stat.S_ISLNK(current_path.st_mode)
+                or not stat.S_ISREG(current_path.st_mode)
+                or _identity(current_path) != _identity(opened)
+                or _identity(current_descriptor) != _identity(opened)
+            ):
+                raise OSError("source changed during decoder validation")
         except ProjectAudioError:
             raise
         except Exception:
@@ -299,6 +423,7 @@ class ProjectAudioDecoder:
         self._bound_identity = _identity(opened)
         self._source_rate = source_rate
         self._channels = channels
+        self._source_start_frame = source_start_frame
         self._source_frames = source_frames
         self._output_frames = output_frames
         self._closed = False
@@ -425,12 +550,14 @@ class ProjectAudioDecoder:
             positions = self._positions[:usable]
             np.multiply(self._indices[:usable], ratio, out=positions)
             positions += start_frame * ratio
+            positions += self._source_start_frame
             # Half-up duration rounding can leave the final 48-kHz frame a
             # fraction beyond the final source frame while upsampling. Holding
             # the final sample keeps the descriptor read bounded.
+            source_end = self._source_start_frame + self._source_frames
             np.minimum(
                 positions,
-                float(self._source_frames - 1),
+                float(source_end - 1),
                 out=positions,
             )
             floors = self._floors[:usable]
@@ -438,14 +565,16 @@ class ProjectAudioDecoder:
             lower = self._lower[:usable]
             np.copyto(lower, floors, casting="unsafe")
             first = int(lower[0])
-            last = min(self._source_frames - 1, int(lower[-1]) + 1)
+            last = min(source_end - 1, int(lower[-1]) + 1)
             read_count = max(1, last - first + 1)
             source = self._source_scratch[:read_count]
             if token is not None:
                 token.require_current()
             self._require_current()
             try:
-                self._reader.seek(first)
+                landed = self._reader.seek(first)
+                if int(landed) != first:
+                    raise OSError("decoder seek was not exact")
                 decoded = self._reader.read(out=source)
             except Exception:
                 raise ProjectAudioError(
