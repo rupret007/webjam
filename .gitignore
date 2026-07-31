@@ -34,3 +34,9 @@ webjam_launch_session.exe
 .coverage
 .coverage.*
 htmlcov/
+
+# macOS Finder metadata
+.DS_Store
+
+# Local audit evidence dirs (regenerate per release; not source)
+audit-v*/
