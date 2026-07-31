@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -54,6 +54,8 @@ class ConductorWindow(QMainWindow):
     close_requested = Signal()
     test_night_requested = Signal()
 
+    # Fallback only.  A real session sizes itself from the display through
+    # fit_to_screen(); this is what a screenless/headless host gets.
     DEFAULT_WIDTH = 1440
     DEFAULT_HEIGHT = 900
     OFFLINE_INVITATION_GUIDANCE = (
@@ -278,6 +280,10 @@ class ConductorWindow(QMainWindow):
         # Cmd/Ctrl+L — focus session title
         self._title_shortcut = QShortcut(
             QKeySequence("Ctrl+L"), self, lambda: self.session_strip.focus_title()
+        )
+        # Cmd/Ctrl+Shift+F — retile WebJam onto its share of the screen
+        self._fit_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+F"), self, self.fit_to_screen
         )
         # F2 — Band Check (signal consumed by controller)
         self._ready_check_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self)
@@ -535,6 +541,45 @@ class ConductorWindow(QMainWindow):
 
         box.setIconPixmap(render_brand_pixmap(64))
         box.exec()
+
+    def fit_to_screen(self):
+        """Snap WebJam onto its share of the usable screen.
+
+        Returns the :class:`SessionLayout` that was applied, or ``None`` when
+        there is no screen to fit (headless hosts) or the display is too
+        small to tile.  The Webex rectangle in the returned layout is where
+        the meeting window belongs; placing it needs macOS Accessibility and
+        is wired separately.
+
+        The frame -- not the client area -- is what lands on the target, so
+        the title bar does not push the window off the bottom of the screen.
+        """
+
+        from webjam_qt.controllers.window_layout import split_screen
+
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return None
+        layout = split_screen(screen.availableGeometry())
+        target = layout.webjam
+        if target.isEmpty():
+            return None
+
+        # Convert the frame-space target into the client-space geometry Qt
+        # sets.  On a window that has never been shown these are equal, which
+        # simply makes the correction a no-op.
+        frame = self.frameGeometry()
+        inner = self.geometry()
+        self.setGeometry(
+            target.x() + (inner.x() - frame.x()),
+            target.y() + (inner.y() - frame.y()),
+            max(target.width() - (frame.width() - inner.width()), self.minimumWidth()),
+            max(
+                target.height() - (frame.height() - inner.height()),
+                self.minimumHeight(),
+            ),
+        )
+        return layout
 
     def _toggle_fullscreen(self) -> None:
         if self.isFullScreen():

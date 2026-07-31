@@ -406,6 +406,9 @@ def _run_app() -> int:
                 lambda invitation=late_invitation: _deliver_live_invite(invitation),
             )
     window.show()
+    # Open on the display's own terms instead of a fixed 1440x900 that leaves
+    # the desktop showing around a floating window. Cmd+Shift+F re-snaps.
+    window.fit_to_screen()
     controller.start_desktop_integrations(
         enable_update_check=not smoke_autostart,
     )
