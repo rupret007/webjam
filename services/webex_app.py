@@ -810,12 +810,18 @@ def _show_or_launch_verified_macos_app(
                 "activation-cancelled",
             )
         if initial_pid is not None:
-            # Webex is already running, which is the case during a jam. Going
-            # through launch_application here would ask LaunchServices to
-            # *reopen* it, and a reopen is what makes Webex present its main
-            # Messaging window over the meeting. Activate the exact verified
-            # process instead so Webex's own window order is left alone and
-            # the meeting stays on top.
+            # Webex is already running, which is the case during a jam.
+            # Activate the exact verified process rather than asking
+            # LaunchServices to reopen it: a reopen can re-present app state,
+            # while activation leaves Webex's own window order alone.
+            #
+            # Measured limitation, not a fix for the reported symptom: both
+            # paths raise the *application*, so whichever window Webex has in
+            # front is what the musician sees. With Messaging in front they
+            # still get Messaging. Raising the meeting window specifically
+            # needs macOS Accessibility to enumerate Webex's windows and
+            # AXRaise the meeting; until that exists this button cannot
+            # promise the meeting.
             with runtime.activation_session() as active_runtime:
                 applications = active_runtime.running_applications(
                     WEBEX_MAC_BUNDLE_ID
