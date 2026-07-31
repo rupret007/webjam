@@ -105,8 +105,6 @@ def expected_server_argv(tmp_path: Path, *, remote: bool) -> list[str]:
             "22240",
             "--jsonrpcsecretfile",
             str(tmp_path / "rpc.secret"),
-            "--welcomemessage",
-            "WebJam private band server",
         )
     )
     return argv
@@ -373,3 +371,19 @@ def test_legacy_invite_replaces_armed_v3_owner_and_clears_loopback_mode(
     assert controller.settings.host_server_enabled is False
     controller.shutdown()
     assert app is not None
+
+
+def test_hosted_server_sets_no_welcome_message(tmp_path: Path) -> None:
+    """A server welcome pops the musician's Jamulus Chat window open.
+
+    Jamulus delivers the welcome as a chat message, and an arriving chat
+    message raises the client's Chat window over whatever is in front --
+    which meant a stray Jamulus window landed on top of WebJam every time
+    anyone joined the jam.
+    """
+
+    for remote in (False, True):
+        argv = expected_server_argv(tmp_path, remote=remote)
+
+        assert "--welcomemessage" not in argv
+        assert not any("private band server" in str(item) for item in argv)

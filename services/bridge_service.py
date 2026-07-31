@@ -4069,12 +4069,17 @@ class BridgeService:
             ]
             if remote_host_mode:
                 cmd.extend(("--serverbindip", "127.0.0.1"))
+            # No --welcomemessage on purpose. Jamulus delivers a server
+            # welcome as a chat message, and an arriving chat message makes
+            # the musician's Jamulus client pop its Chat window open on top
+            # of WebJam every time anyone joins. The banner said nothing the
+            # session surface does not already show, so the cost was a
+            # stray window and no benefit.
             cmd.extend([
                 "--recording", str(recordings), "--norecord",
                 "--jsonrpcbindip", "127.0.0.1",
                 "--jsonrpcport", str(rpc_port),
                 "--jsonrpcsecretfile", str(secret_path),
-                "--welcomemessage", "WebJam private band server",
             ])
             stdout_dest = subprocess.DEVNULL
             hosted_log = None
