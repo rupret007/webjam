@@ -29,6 +29,11 @@ class SessionPersistence:
         self._strip = session_strip
         self._canvas = session_canvas
         self._log = logger or logging.getLogger(__name__)
+        # A joined session shows the name whoever sent the invitation chose.
+        # That is not the musician's own title, so it must never overwrite
+        # the one on disk -- otherwise a guest session's name follows them
+        # into every later jam, including one they host themselves.
+        self._borrowed_title: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -42,6 +47,16 @@ class SessionPersistence:
         """Persist notes + session metadata to disk (best-effort)."""
         self._save_notes_only()
         self._save_session_metadata()
+
+    def mark_title_borrowed(self, title: str) -> None:
+        """Note that the visible title came from an invitation, not the user."""
+
+        self._borrowed_title = " ".join(str(title or "").split()) or None
+
+    def clear_borrowed_title(self) -> None:
+        """The musician has made the visible title their own."""
+
+        self._borrowed_title = None
 
     def save_title_and_mode(self) -> None:
         """Persist only the session metadata (title + mode)."""
@@ -92,9 +107,28 @@ class SessionPersistence:
         except Exception:  # noqa: BLE001
             self._log.debug("Could not load session metadata", exc_info=True)
 
+    def _stored_title(self) -> str:
+        """The title already on disk, so a borrowed one can be left alone."""
+
+        try:
+            data = json.loads(
+                (Path.home() / _SESSION_FILE).read_text(encoding="utf-8")
+            )
+        except Exception:  # noqa: BLE001 - absent or unreadable is fine
+            return ""
+        title = data.get("title") if isinstance(data, dict) else None
+        return title if isinstance(title, str) else ""
+
     def _save_session_metadata(self) -> None:
         try:
             title = self._strip.current_title()
+            if (
+                self._borrowed_title
+                and " ".join(title.split()) == self._borrowed_title
+            ):
+                # Keep the musician's own title rather than adopting the
+                # invitation's name as their default.
+                title = self._stored_title()
             mode_key = self._strip.current_mode_key()
             payload: dict = {}
             if title:

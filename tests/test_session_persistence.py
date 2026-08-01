@@ -153,3 +153,62 @@ class TestSessionPersistence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBorrowedInvitationTitle(unittest.TestCase):
+    """A joined session's name must not become the musician's own default.
+
+    Joining a jam sets the visible title from the invitation. Persisting that
+    made it the startup title for every later session, so a name chosen by
+    whoever sent the invite followed the musician into jams they hosted
+    themselves -- which is how a hosted session came to be labelled
+    "Legacy Join".
+    """
+
+    def test_invitation_title_never_overwrites_the_saved_title(self):
+        with _TempHome() as home:
+            window, persistence = _make_window_and_persistence(home)
+            try:
+                window.session_strip._title_input.setText("Rad Dad Rehearsal")
+                persistence.save_title_and_mode()
+
+                # Now join a session someone else named.
+                window.session_strip.set_session_title("Legacy Join")
+                persistence.mark_title_borrowed("Legacy Join")
+                persistence.save_title_and_mode()
+
+                window2, persistence2 = _make_window_and_persistence(home)
+                try:
+                    persistence2.load()
+                    self.assertEqual(
+                        window2.session_strip.current_title(),
+                        "Rad Dad Rehearsal",
+                    )
+                finally:
+                    window2.close()
+            finally:
+                window.close()
+
+    def test_typing_over_a_borrowed_title_makes_it_the_musicians_own(self):
+        with _TempHome() as home:
+            window, persistence = _make_window_and_persistence(home)
+            try:
+                window.session_strip.set_session_title("Legacy Join")
+                persistence.mark_title_borrowed("Legacy Join")
+
+                # The musician renames the session themselves.
+                persistence.clear_borrowed_title()
+                window.session_strip._title_input.setText("Tonight's Jam")
+                persistence.save_title_and_mode()
+
+                window2, persistence2 = _make_window_and_persistence(home)
+                try:
+                    persistence2.load()
+                    self.assertEqual(
+                        window2.session_strip.current_title(),
+                        "Tonight's Jam",
+                    )
+                finally:
+                    window2.close()
+            finally:
+                window.close()

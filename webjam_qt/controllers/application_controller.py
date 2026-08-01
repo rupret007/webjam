@@ -5163,6 +5163,9 @@ class ApplicationController(QObject):
         # Session titles are user content. Persist them locally, but never put
         # them into logs that may later be included in a support bundle.
         LOGGER.info("Session title updated")
+        # Typing over an invitation's name makes the title the musician's own,
+        # so it may be persisted again from here on.
+        self._persistence.clear_borrowed_title()
         # Persist immediately so a crash before clean shutdown doesn't lose it
         self._save_session_title()
         self._refresh_session_pulse()
@@ -5774,7 +5777,12 @@ class ApplicationController(QObject):
             self._reconfigure_services_after_settings(old_settings)
             if bool(getattr(invitation, "peer_enabled", False)):
                 self._configure_guest_peer(invitation)
+            # The invitation's name labels this session, but it belongs to
+            # whoever sent it. Marking it borrowed keeps it out of the
+            # musician's persisted default, so a joined session's name cannot
+            # follow them into a jam they host later.
             self.window.session_strip.set_session_title(invitation.session_name)
+            self._persistence.mark_title_borrowed(invitation.session_name)
             self._save_session_title()
             self.window.recording_studio.set_takes_directory(
                 self.settings.takes_directory

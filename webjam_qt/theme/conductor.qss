@@ -1140,7 +1140,15 @@ QCommandLinkButton#SimpleRoleCard:focus {
     border: 2px solid ${COLOR_BORDER_FOCUS};
 }
 
-QWizard QPushButton:default, QMessageBox QPushButton:default {
+/* A wizard's default button is genuinely the action the page is about, so
+ * it earns the accent. A QMessageBox default is not: on a confirmation the
+ * safe answer is correctly the default, and accenting it painted "No" as
+ * the recommended action on "End this jam for everyone?". The accent is
+ * WebJam's signal for the action a screen is asking you to take, so a
+ * message box keeps neutral buttons and lets the words carry the meaning.
+ * The default still holds focus and Return, which is the part that matters.
+ */
+QWizard QPushButton:default {
     background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};
     border-color: ${COLOR_ACCENT_PRIMARY};
