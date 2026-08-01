@@ -138,3 +138,38 @@ class TestBundledFonts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMessageBoxDefaultButtonIsNeutral(unittest.TestCase):
+    """A confirmation's safe answer must not look like the recommended one.
+
+    WebJam paints the burnt-orange accent on the action a screen is asking
+    you to take. QMessageBox defaults are chosen for safety, not intent, so
+    on "End this jam for everyone?" the accent landed on "No" -- making the
+    cautious answer read as the recommended action. Message boxes keep
+    neutral buttons; the default still holds focus and Return.
+    """
+
+    def test_accent_default_rule_does_not_select_message_boxes(self) -> None:
+        # Strip block comments first; prose about QMessageBox is not a rule.
+        stylesheet = re.sub(r"/\*.*?\*/", "", load_stylesheet(), flags=re.S)
+
+        accent_default_rules = [
+            block
+            for block in stylesheet.split("}")
+            if ":default" in block and "background-color" in block
+        ]
+
+        self.assertTrue(
+            accent_default_rules,
+            "expected at least one styled :default rule to guard",
+        )
+        for block in accent_default_rules:
+            selector = block.split("{")[0]
+            self.assertNotIn(
+                "QMessageBox",
+                selector,
+                "QMessageBox default buttons must stay neutral so a "
+                "confirmation's safe answer is not styled as the "
+                "recommended action",
+            )
