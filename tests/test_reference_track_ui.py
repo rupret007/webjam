@@ -366,7 +366,9 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
         assert plays == [True]
 
         dialog.set_snapshot(_snapshot(_State.PLAYING))
-        assert "through Jamulus" in dialog._status.text()
+        # Mid-jam status names the song, not the transport carrying it.
+        assert dialog._status.text() == "Playing to the band"
+        assert "Jamulus" not in dialog._status.text()
         assert dialog._play.isEnabled() is False
         assert dialog._pause.isEnabled() is True
         assert dialog._trim.isEnabled() is False

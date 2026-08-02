@@ -88,15 +88,16 @@ class WebexEmbed(QFrame):
 
         self._bring_forward_btn = QPushButton("Show Webex App")
         self._bring_forward_btn.setObjectName("GhostButton")
-        self._bring_forward_btn.setAccessibleName("Show the Webex app")
+        # Name and description are refreshed with the label in
+        # _sync_native_actions; a screen reader must announce the same thing
+        # the button says, and the label depends on the meeting state.
+        self._bring_forward_btn.setAccessibleName("Show Webex")
         self._bring_forward_btn.setAccessibleDescription(
-            "Show the verified Webex app without opening the meeting link or "
-            "a browser. If Webex is stopped, this launches the app itself "
-            "without a URL; Webex chooses which of its screens to show."
+            "Brings Webex forward. No meeting link or browser is opened."
         )
         self._bring_forward_btn.setToolTip(
-            "Show the verified Webex app without opening a meeting link.\n"
-            "If it is closed, this launches Webex itself without a URL."
+            "Bring Webex forward. No meeting link or browser is opened.\n"
+            "If Webex is closed, this starts it."
         )
         self._bring_forward_btn.clicked.connect(
             self.bring_forward_requested.emit
@@ -111,8 +112,7 @@ class WebexEmbed(QFrame):
             "WebJam cannot verify or change mute in the external Webex app."
         )
         self._mute_btn.setToolTip(
-            "Show the Webex app and use its own Mute control.\n"
-            "WebJam will not change Jamulus or claim Webex is muted."
+            "Brings Webex forward so you can use its own Mute control."
         )
         self._mute_btn.clicked.connect(self.mute_in_webex_requested.emit)
         self._mute_btn.setEnabled(False)
@@ -125,7 +125,7 @@ class WebexEmbed(QFrame):
         )
         self._fallback_btn.setToolTip(
             "Open the configured meeting link once in Webex or your browser.\n"
-            "Use Show Webex App when the meeting is already open."
+            "Use Show Meeting when it is already open."
         )
         self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
         self._fallback_btn.setEnabled(False)
@@ -474,11 +474,14 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setEnabled(enabled)
         self._mute_btn.setEnabled(enabled)
         self._recheck_btn.setEnabled(not self._native_action_busy)
-        self._bring_forward_btn.setText(
+        label = (
             "Verifying…"
             if self._native_action_busy
             else self._show_webex_label()
         )
+        self._bring_forward_btn.setText(label)
+        # Keep the announced name identical to the visible label.
+        self._bring_forward_btn.setAccessibleName(label)
 
     def _set_native_busy(self, busy: bool) -> None:
         busy = bool(busy)

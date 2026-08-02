@@ -259,7 +259,7 @@ class ReferenceTrackDialog(QDialog):
         transport = QHBoxLayout()
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
-        self._play.setAccessibleName("Play Reference Track through Jamulus")
+        self._play.setAccessibleName("Play the reference track to the band")
         self._play.clicked.connect(self._emit_play)
         self._pause = QPushButton("Pause")
         self._pause.setObjectName("GhostButton")
@@ -642,10 +642,14 @@ class ReferenceTrackDialog(QDialog):
             "idle": "Ready to load a song",
             "loading": "Checking and decoding the song…",
             "ready": "Song loaded and ready to inspect",
-            "routing": "Starting the isolated Jamulus track participant…",
-            "playing": "Playing through Jamulus",
-            "paused": "Paused in Jamulus",
-            "stopping": "Stopping the backing participant safely…",
+            # Read mid-jam, so these describe the song rather than the
+            # plumbing carrying it. "Jamulus" and "participant" belong in
+            # setup and diagnostics, not in a status line a host glances at
+            # while playing.
+            "routing": "Starting the song…",
+            "playing": "Playing to the band",
+            "paused": "Paused",
+            "stopping": "Stopping the song…",
             "failed": "Reference Track needs attention",
             "closed": "Reference Track is closed",
         }

@@ -10083,9 +10083,7 @@ class ApplicationController(QObject):
         ):
             self._sync_reference_track_primary_gate()
             self.window.flash_message(
-                "Reference Track controls are locked until the primary Jamulus "
-                "session is ready. Use WebJam's main End or Leave control if "
-                "session cleanup is required.",
+                "Reference Track needs the band audio running first.",
                 ms=4000,
             )
             return

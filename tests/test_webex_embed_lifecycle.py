@@ -218,13 +218,16 @@ def test_conversation_actions_are_distinct_and_truthful():
     embed.change_link_button().click()
 
     assert events == ["bring", "mute", "open", "settings"]
-    assert "without opening the meeting link or a browser" in (
+    assert "No meeting link or browser is opened" in (
         embed.bring_forward_button().accessibleDescription()
     )
-    assert "launches the app itself" in (
-        embed.bring_forward_button().accessibleDescription()
+    # The copy no longer explains WebJam's restraint at length; it states
+    # what happens. The promise that matters -- no link, no browser -- is
+    # asserted above and repeated in the tooltip.
+    assert "If Webex is closed, this starts it." in (
+        embed.bring_forward_button().toolTip()
     )
-    assert "launches Webex itself without a URL" in (
+    assert "No meeting link or browser is opened" in (
         embed.bring_forward_button().toolTip()
     )
     mute_description = embed.mute_button().accessibleDescription()
@@ -371,3 +374,35 @@ def test_app_status_rejects_unknown_state_and_drops_unsafe_version_copy():
         publisher_verified=True,
     )
     assert embed._app_status_label.text() == "Webex app verified"
+
+
+def test_show_webex_button_announces_what_it_displays() -> None:
+    """A screen reader must say the same thing the button says.
+
+    The label became state-dependent -- "Show Meeting" once a meeting link
+    is saved, "Show Webex" when there is none -- while the accessible name
+    stayed a fixed string, so assistive tech announced a different action
+    from the one on screen.
+    """
+
+    embed = WebexEmbed()
+    try:
+        embed.set_app_status(
+            WebexAppState.INSTALLED,
+            version="46.7.0",
+            publisher_verified=True,
+        )
+        button = embed.bring_forward_button()
+
+        assert button.text() == "Show Webex"
+        assert button.accessibleName() == button.text()
+
+        embed.set_meeting_configured(True)
+        assert button.text() == "Show Meeting"
+        assert button.accessibleName() == button.text()
+
+        embed.set_native_action_busy(True)
+        assert button.text() == "Verifying…"
+        assert button.accessibleName() == button.text()
+    finally:
+        embed.deleteLater()
