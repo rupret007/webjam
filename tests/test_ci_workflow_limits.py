@@ -16,7 +16,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,14 +29,52 @@ SAFE_MAX = 20_500
 
 
 def _run_blocks():
+    """Measure each `run: |` block from the raw text.
+
+    Deliberately not PyYAML: CI installs only requirements.txt plus pytest,
+    ruff, and pip-audit, so importing yaml here fails collection on the
+    runner. The repository's other workflow tests read ci.yml as text for
+    the same reason.
+    """
+
     for path in WORKFLOWS:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
-        for job_id, job in (document.get("jobs") or {}).items():
-            for index, step in enumerate(job.get("steps") or []):
-                body = step.get("run")
-                if isinstance(body, str):
-                    name = step.get("name") or f"step {index}"
-                    yield path.name, job_id, name, body
+        lines = path.read_text(encoding="utf-8").splitlines()
+        index = 0
+        name = "unnamed step"
+        while index < len(lines):
+            line = lines[index]
+            stripped = line.strip()
+            if stripped.startswith("- name:"):
+                name = stripped[len("- name:") :].strip()
+            if stripped in {"run: |", "run: |-"}:
+                indent = len(line) - len(line.lstrip())
+                body: list[str] = []
+                index += 1
+                while index < len(lines):
+                    candidate = lines[index]
+                    if candidate.strip() and (
+                        len(candidate) - len(candidate.lstrip())
+                    ) <= indent:
+                        break
+                    body.append(candidate)
+                    index += 1
+                # YAML strips the block's own indentation; match it, or
+                # every measurement is inflated by the nesting depth.
+                margin = min(
+                    (
+                        len(entry) - len(entry.lstrip())
+                        for entry in body
+                        if entry.strip()
+                    ),
+                    default=0,
+                )
+                yield (
+                    path.name,
+                    name,
+                    "\n".join(entry[margin:] for entry in body),
+                )
+                continue
+            index += 1
 
 
 def test_workflows_exist_to_check() -> None:
@@ -47,8 +84,8 @@ def test_workflows_exist_to_check() -> None:
 @pytest.mark.parametrize("limit", [GITHUB_MAX_EXPRESSION, SAFE_MAX])
 def test_no_run_block_approaches_github_expression_limit(limit: int) -> None:
     offenders = [
-        f"{fname}: {job}/{name} is {len(body)} chars"
-        for fname, job, name, body in _run_blocks()
+        f"{fname}: {name} is {len(body)} chars"
+        for fname, name, body in _run_blocks()
         if len(body) > limit
     ]
 
