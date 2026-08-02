@@ -899,3 +899,44 @@ def test_unchanged_snapshot_does_not_repeat_accessibility_announcement() -> None
         assert announce.call_count == first_count
     finally:
         dialog.close()
+
+
+def test_dialog_opens_clear_of_the_stage_then_respects_the_host() -> None:
+    """A parented dialog centres itself, landing on top of the musicians.
+
+    The Reference Track controls opened directly over the participant grid.
+    They now anchor to the session window's leading edge on first open, and
+    stay wherever the host drags them afterwards.
+    """
+
+    from PySide6.QtWidgets import QWidget
+
+    parent = QWidget()
+    parent.resize(1587, 1330)
+    parent.move(0, 25)
+    parent.show()
+    _app.processEvents()
+
+    dialog = ReferenceTrackDialog(parent=parent)
+    try:
+        dialog.show()
+        _app.processEvents()
+
+        frame = parent.frameGeometry()
+        dialog_centre = dialog.x() + dialog.width() // 2
+        parent_centre = frame.left() + frame.width() // 2
+        assert abs(dialog_centre - parent_centre) > 60, (
+            "the dialog still opens centred on the stage"
+        )
+        assert dialog.x() >= frame.left()
+        assert dialog.y() + dialog.height() <= frame.bottom() + 1
+
+        # Once the host places it, reopening must not move it back.
+        dialog.move(400, 400)
+        dialog.hide()
+        dialog.show()
+        _app.processEvents()
+        assert (dialog.x(), dialog.y()) == (400, 400)
+    finally:
+        dialog.close()
+        parent.close()

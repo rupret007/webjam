@@ -102,6 +102,10 @@ class ReferenceTrackDialog(QDialog):
         # floor after the macOS title bar is added.
         self.setMinimumSize(500, 500)
         self.resize(620, 540)
+        # Qt centres a parented dialog, which drops it straight onto the
+        # musicians. Place it once against the window's leading edge instead,
+        # then leave it wherever the host puts it.
+        self._placed = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -1013,6 +1017,30 @@ class ReferenceTrackDialog(QDialog):
         )
         if self._snapshot is not None:
             self.set_snapshot(self._snapshot)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        """Open clear of the stage the first time, then respect the host.
+
+        A dialog parented to the session window opens centred on it, which
+        put the Reference Track controls directly over the musicians. Anchor
+        it to the window's leading edge on first open so the stage stays
+        readable, and never move it again -- once the host drags it
+        somewhere, that is where they want it.
+        """
+
+        super().showEvent(event)
+        if self._placed:
+            return
+        self._placed = True
+        parent = self.parentWidget()
+        if parent is None or not parent.isVisible():
+            return
+        frame = parent.frameGeometry()
+        margin = Space.LG
+        self.move(
+            frame.left() + margin,
+            max(frame.top() + margin, frame.bottom() - self.height() - margin),
+        )
 
     def set_primary_gate(self, gate: ReferenceTrackPrimaryGate) -> None:
         """Render the controller's finite primary-session readiness truth."""
