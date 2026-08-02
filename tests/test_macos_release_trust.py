@@ -16,6 +16,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+_APPDATA_SCRIPT = (
+    ROOT / ".github" / "scripts" / "assert-no-appdata-usage.sh"
+).read_text(encoding="utf-8")
+
 SPEC = (ROOT / "webjam.spec").read_text(encoding="utf-8")
 KEYCHAIN_PATH = ROOT / "packaging" / "macos" / "release-keychain.sh"
 TRUST_PATH = ROOT / "packaging" / "macos" / "release-trust.sh"
@@ -209,12 +213,17 @@ def test_release_trust_workflow_order_and_unconditional_cleanup() -> None:
     assert "WebJam-${target}-ADHOC-TEST-ONLY.zip" in source
     assert "ADHOC-TEST-ONLY.dmg" in source
     assert "codesign --verify --deep --strict" in source
-    assert "'Print :NSAppDataUsageDescription'" in source
-    assert "! /usr/libexec/PlistBuddy" in source
-    assert '"$app"' in source
-    assert (
-        '"$app/Contents/Resources/JamulusHeadlessClient.app"' in source
+    # The check moved into .github/scripts/assert-no-appdata-usage.sh so the step stayed under GitHub's
+    # 21,000-character expression limit; assert the step still runs it.
+    assert "assert-no-appdata-usage.sh" in source
+    assert "'Print :NSAppDataUsageDescription'" in (
+        Path(".github/scripts/assert-no-appdata-usage.sh").read_text(encoding="utf-8")
     )
+    assert "! /usr/libexec/PlistBuddy" in _APPDATA_SCRIPT
+    assert 'assert-no-appdata-usage.sh "$app"' in source
+    # The bundle list moved into the script with the check, so assert the
+    # script covers the nested components rather than the step inlining them.
+    assert "JamulusHeadlessClient.app" in _APPDATA_SCRIPT
     assert "WebJam accesses Jamulus app data" not in source
     assert "verify_packaged_transport" not in source
     assert "/usr/bin/shasum -a 256" in source

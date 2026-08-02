@@ -9,6 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+_APPDATA_SCRIPT = (
+    ROOT / ".github" / "scripts" / "assert-no-appdata-usage.sh"
+).read_text(encoding="utf-8")
+
 DMG_SCRIPT_PATH = ROOT / "packaging" / "macos" / "create-dmg.sh"
 DMG_SCRIPT = DMG_SCRIPT_PATH.read_text(encoding="utf-8")
 POCKET_STAGE_KIT_PATH = ROOT / "packaging" / "ios" / "prepare-pocket-stage-kit.sh"
@@ -149,23 +153,27 @@ def test_macos_ci_verifies_the_mounted_deliverable_not_only_the_source() -> None
     assert "stat -f '%Lp' \"$mount_dir\"" in WORKFLOW
     assert 'ditto "$mount_dir/WebJam.app" "$copy_dir/WebJam.app"' in WORKFLOW
     assert 'codesign --verify --deep --strict "$copied_app"' in mounted_step
-    assert "'Print :NSAppDataUsageDescription'" in mounted_step
-    assert "! /usr/libexec/PlistBuddy" in mounted_step
-    assert '"$copied_app"' in mounted_step
-    assert (
-        '"$copied_app/Contents/Resources/JamulusHeadlessClient.app"'
-        in mounted_step
-    )
+    # The check moved into .github/scripts/assert-no-appdata-usage.sh so the step stayed under GitHub's
+    # 21,000-character expression limit; assert the step still runs it.
+    assert "assert-no-appdata-usage.sh" in mounted_step
+    assert "'Print :NSAppDataUsageDescription'" in _APPDATA_SCRIPT
+    assert "! /usr/libexec/PlistBuddy" in _APPDATA_SCRIPT
+    assert 'assert-no-appdata-usage.sh "$copied_app"' in mounted_step
+    # The bundle list moved into the script with the check, so assert the
+    # script covers the nested components rather than the step inlining them.
+    assert "JamulusHeadlessClient.app" in _APPDATA_SCRIPT
     assert 'codesign --verify --deep --strict "$fresh_dir/WebJam.app"' in (
         fresh_zip_step
     )
-    assert "'Print :NSAppDataUsageDescription'" in fresh_zip_step
-    assert "! /usr/libexec/PlistBuddy" in fresh_zip_step
-    assert '"$fresh_dir/WebJam.app"' in fresh_zip_step
+    # The check moved into .github/scripts/assert-no-appdata-usage.sh so the step stayed under GitHub's
+    # 21,000-character expression limit; assert the step still runs it.
+    assert "assert-no-appdata-usage.sh" in fresh_zip_step
+    assert "'Print :NSAppDataUsageDescription'" in _APPDATA_SCRIPT
+    assert "! /usr/libexec/PlistBuddy" in _APPDATA_SCRIPT
     assert (
-        '"$fresh_dir/WebJam.app/Contents/Resources/'
-        'JamulusHeadlessClient.app"' in fresh_zip_step
+        'assert-no-appdata-usage.sh "$fresh_dir/WebJam.app"' in fresh_zip_step
     )
+    assert "JamulusHeadlessClient.app" in _APPDATA_SCRIPT
     assert "WebJam accesses Jamulus app data" not in WORKFLOW
     assert '--build-id "$build_id"' in WORKFLOW
     assert 'webjam-build-id.txt")" = "$build_id"' in WORKFLOW
