@@ -1489,16 +1489,7 @@ jobs:
             packaged_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
               dist/WebJam.app/Contents/Info.plist)"
             test "$packaged_version" = "$expected_version"
-            for bundle in \
-              dist/WebJam.app \
-              dist/WebJam.app/Contents/Resources/Jamulus.app \
-              dist/WebJam.app/Contents/Resources/JamulusServer.app \
-              dist/WebJam.app/Contents/Resources/JamulusHeadlessClient.app; do
-              ! /usr/libexec/PlistBuddy \
-                -c 'Print :NSAppDataUsageDescription' \
-                "$bundle/Contents/Info.plist" \
-                >/dev/null 2>&1
-            done
+            .github/scripts/assert-no-appdata-usage.sh dist/WebJam.app
             # This is the final nested-code boundary for the ad-hoc candidate.
             # Refresh the companion manifest immediately before sealing the
             # outer app, even if a preceding signer preserved its bytes.
@@ -1602,16 +1593,7 @@ jobs:
             mkdir -p "$fresh_dir"
             ditto -x -k "out/WebJam-${{ matrix.target }}.zip" "$fresh_dir"
             codesign --verify --deep --strict "$fresh_dir/WebJam.app"
-            for bundle in \
-              "$fresh_dir/WebJam.app" \
-              "$fresh_dir/WebJam.app/Contents/Resources/Jamulus.app" \
-              "$fresh_dir/WebJam.app/Contents/Resources/JamulusServer.app" \
-              "$fresh_dir/WebJam.app/Contents/Resources/JamulusHeadlessClient.app"; do
-              ! /usr/libexec/PlistBuddy \
-                -c 'Print :NSAppDataUsageDescription' \
-                "$bundle/Contents/Info.plist" \
-                >/dev/null 2>&1
-            done
+            .github/scripts/assert-no-appdata-usage.sh "$fresh_dir/WebJam.app"
             test -x "$fresh_dir/Install WebJam.command"
             test -x "$fresh_dir/Install WebJam - Remove Quarantine.command"
             test -f "$fresh_dir/READ ME FIRST.txt"
@@ -1755,16 +1737,7 @@ jobs:
 
           copied_app="$copy_dir/WebJam.app"
           codesign --verify --deep --strict "$copied_app"
-          for bundle in \
-            "$copied_app" \
-            "$copied_app/Contents/Resources/Jamulus.app" \
-            "$copied_app/Contents/Resources/JamulusServer.app" \
-            "$copied_app/Contents/Resources/JamulusHeadlessClient.app"; do
-            ! /usr/libexec/PlistBuddy \
-              -c 'Print :NSAppDataUsageDescription' \
-              "$bundle/Contents/Info.plist" \
-              >/dev/null 2>&1
-          done
+          .github/scripts/assert-no-appdata-usage.sh "$copied_app"
           file "$copied_app/Contents/MacOS/WebJam" \
             | grep -q "$expected_machine"
           test "$(/usr/libexec/PlistBuddy \
@@ -2997,16 +2970,7 @@ jobs:
           file "$app/Contents/MacOS/WebJam" | grep -q "$expected_machine"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$app/Contents/Info.plist")" = "$version"
-          for bundle in \
-            "$app" \
-            "$app/Contents/Resources/Jamulus.app" \
-            "$app/Contents/Resources/JamulusServer.app" \
-            "$app/Contents/Resources/JamulusHeadlessClient.app"; do
-            ! /usr/libexec/PlistBuddy \
-              -c 'Print :NSAppDataUsageDescription' \
-              "$bundle/Contents/Info.plist" \
-              >/dev/null 2>&1
-          done
+          .github/scripts/assert-no-appdata-usage.sh "$app"
           test "$(tr -d '\r\n' \
             < "$app/Contents/Resources/webjam-build-id.txt")" = "$build_id"
           fabric="$app/Contents/MacOS/webjam-fabric"
