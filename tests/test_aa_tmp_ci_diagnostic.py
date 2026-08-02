@@ -12,6 +12,7 @@ prints the captured values.
 
 from __future__ import annotations
 
+import logging
 import platform
 import sys
 from unittest.mock import MagicMock, patch
@@ -26,6 +27,18 @@ from tests.test_bridge_recovery_contract import (
 
 
 def test_tmp_report_launch_path_facts() -> None:
+    records: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            records.append(f"{record.name}:{record.getMessage()[:90]}")
+
+    handler = _Capture()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    previous_level = root.level
+    root.setLevel(logging.DEBUG)
+
     facts = {
         "python": sys.version.split()[0],
         "sys.platform": sys.platform,
@@ -71,6 +84,12 @@ def test_tmp_report_launch_path_facts() -> None:
         )
         facts["shutdown_requested"] = bridge.shutdown_requested()
 
-    assert False, "CI DIAGNOSTIC: " + "; ".join(
-        f"{k}={v}" for k, v in facts.items()
+    root.removeHandler(handler)
+    root.setLevel(previous_level)
+
+    assert False, (
+        "CI DIAGNOSTIC: "
+        + "; ".join(f"{k}={v}" for k, v in facts.items())
+        + " || LOGS: "
+        + " | ".join(records[-14:])
     )
