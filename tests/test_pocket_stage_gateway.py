@@ -251,6 +251,12 @@ def _assert_pairing_rejected(harness: _GatewayHarness, raw: str) -> WebSocketDis
     return caught.value
 
 
+# Guards against a hang, not a latency requirement. Three seconds was
+# short enough that a loaded machine could miss the TLS handshake and
+# fail a test about pairing and identity teardown.
+_LIVE_WSS_TIMEOUT_S = 20
+
+
 def test_gateway_exposes_only_the_websocket_route(harness: _GatewayHarness) -> None:
     for path in (
         "/",
@@ -897,10 +903,10 @@ def test_stop_cancels_start_before_listener_is_published(
 
     worker = threading.Thread(target=start_gateway)
     worker.start()
-    assert entered.wait(timeout=2)
+    assert entered.wait(timeout=_LIVE_WSS_TIMEOUT_S)
     gateway.stop()
     release.set()
-    worker.join(timeout=3)
+    worker.join(timeout=_LIVE_WSS_TIMEOUT_S)
 
     assert worker.is_alive() is False
     assert "started" not in result
@@ -970,7 +976,7 @@ def test_live_wss_text_pairing_and_stop_destroy_runtime_identity(
             offer.endpoint,
             ssl=context,
             proxy=None,
-            open_timeout=3,
+            open_timeout=_LIVE_WSS_TIMEOUT_S,
         )
         peer_der = connection.socket.getpeercert(binary_form=True)
         assert hashlib.sha256(peer_der).hexdigest() == (
@@ -989,9 +995,9 @@ def test_live_wss_text_pairing_and_stop_destroy_runtime_identity(
             body=claim,
         )
         connection.send(pair.to_json())
-        snapshot = PocketStageEnvelope.from_json(connection.recv(timeout=3))
+        snapshot = PocketStageEnvelope.from_json(connection.recv(timeout=_LIVE_WSS_TIMEOUT_S))
         assert snapshot.kind is PocketStageMessageKind.SNAPSHOT
-        heartbeat = PocketStageEnvelope.from_json(connection.recv(timeout=3))
+        heartbeat = PocketStageEnvelope.from_json(connection.recv(timeout=_LIVE_WSS_TIMEOUT_S))
         assert heartbeat.kind is PocketStageMessageKind.SNAPSHOT
         assert heartbeat.sequence == snapshot.sequence + 1
         assert heartbeat.body == snapshot.body

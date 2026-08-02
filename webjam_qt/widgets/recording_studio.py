@@ -69,6 +69,7 @@ from webjam_qt.widgets.studio_arrangement_workflow import (
     _selectable_track_export_track_ids,
 )
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.accessible import set_labeled_action
 from webjam_qt.widgets.studio_arrange import StudioArrange
 from webjam_qt.widgets.studio_editing import StudioEditingToolbar
 from webjam_qt.widgets.studio_review import (
@@ -1730,7 +1731,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._studio_arrange.set_document(None)
         self._reveal_path = None
         self._reveal_btn.setEnabled(False)
-        self._reveal_btn.setText("Show Take")
+        set_labeled_action(self._reveal_btn, "Show Take")
         self._export_btn.setEnabled(False)
         self._viewing_live = True
         if changed_take:
@@ -1942,7 +1943,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         verified = take.validation_status == "complete" and not take.manifest_errors
         self._refresh_export_button()
         self._reveal_path = take.path
-        self._reveal_btn.setText("Show Take")
+        set_labeled_action(self._reveal_btn, "Show Take")
         self._reveal_btn.setEnabled(True)
         self._scrub.setValue(0)
         self._position.setText(f"0:00 / {_fmt_time(self._player.duration_s)}")
@@ -2276,7 +2277,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             LOGGER.error("Track export did not complete: %s", error or "unknown error")
             if published_folder is not None:
                 self._reveal_path = published_folder
-                self._reveal_btn.setText("Show Unverified Export")
+                set_labeled_action(self._reveal_btn, "Show Unverified Export")
                 self._reveal_btn.setEnabled(True)
                 self._hint.setText(
                     "Studio created the export folder, but storage durability could "
@@ -2295,7 +2296,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._reveal_path = result.folder
         self._reveal_btn.setEnabled(True)
         if isinstance(result, StudioExportResult):
-            self._reveal_btn.setText("Show Studio Export")
+            set_labeled_action(self._reveal_btn, "Show Studio Export")
             self._hint.setText(
                 f"Studio export ready · {len(result.edited_stems)} edited stems, "
                 f"{len(result.original_stems)} aligned originals, and a rough mix · "
@@ -2304,7 +2305,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             )
         else:
             if aligned_originals_only:
-                self._reveal_btn.setText("Show Aligned Originals")
+                set_labeled_action(self._reveal_btn, "Show Aligned Originals")
                 self._hint.setText(
                     f"Aligned originals ready · {len(result.stems)} unity 24-bit "
                     f"stems · {result.samplerate / 1000:g} kHz. The reference "
@@ -2314,7 +2315,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                     "from their own take."
                 )
             else:
-                self._reveal_btn.setText("Show Track Export")
+                set_labeled_action(self._reveal_btn, "Show Track Export")
                 self._hint.setText(
                     f"Track export ready · {len(result.stems)} aligned 24-bit "
                     f"stems · {result.samplerate / 1000:g} kHz. Import the "
@@ -2380,7 +2381,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         self._playback_preparing = False
         self._playback_prepare_autoplay = False
         if was_preparing:
-            self._play_btn.setText("▶ Play")
+            set_labeled_action(self._play_btn, "▶ Play")
         if restore_controls and was_preparing:
             self._play_btn.setEnabled(
                 self._current is not None
@@ -2404,7 +2405,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         take_path = take.path.expanduser().resolve()
         self._playback_preparing = True
         self._playback_prepare_autoplay = bool(autoplay)
-        self._play_btn.setText("Preparing…")
+        set_labeled_action(self._play_btn, "Preparing…")
         self._play_btn.setEnabled(False)
         self._hint.setText(
             "Preparing verified source media for playback. The original take "
@@ -2469,7 +2470,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._playback_prepare_future = None
             self._playback_preparing = False
             self._playback_prepare_autoplay = False
-            self._play_btn.setText("▶ Play")
+            set_labeled_action(self._play_btn, "▶ Play")
             self._play_btn.setEnabled(
                 self._current is not None
                 and bool(self._player.tracks)
@@ -2496,7 +2497,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
                 continue
             try:
                 self._player.play()
-                self._play_btn.setText("⏸ Pause")
+                set_labeled_action(self._play_btn, "⏸ Pause")
                 self._hint.setText(
                     "Playing the verified Studio arrangement. Every source "
                     "recording remains unchanged."
@@ -2512,7 +2513,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         if self._player.is_playing:
             self._player.pause()
             self._clear_playback_meters()
-            self._play_btn.setText("▶ Play")
+            set_labeled_action(self._play_btn, "▶ Play")
             return
         if (
             self._player.has_studio_arrangement
@@ -2522,7 +2523,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             return
         try:
             self._player.play()
-            self._play_btn.setText("⏸ Pause")
+            set_labeled_action(self._play_btn, "⏸ Pause")
         except PlaybackError as exc:
             self._handle_playback_error(exc)
 
@@ -2535,7 +2536,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
         """Return transport and meters to their stopped presentation."""
 
         self._clear_playback_meters()
-        self._play_btn.setText("▶ Play")
+        set_labeled_action(self._play_btn, "▶ Play")
         self._scrub.setValue(0)
         if hasattr(self, "_studio_arrange"):
             self._studio_arrange.set_playhead(0)
@@ -2779,7 +2780,7 @@ class RecordingStudio(StudioArrangementWorkflowMixin, QWidget):
             self._handle_playback_error(playback_error[1])
         elif finished_epoch == terminal_epoch:
             self._player.stop()
-            self._play_btn.setText("▶ Play")
+            set_labeled_action(self._play_btn, "▶ Play")
             self._scrub.setValue(0)
             if not self._viewing_live:
                 self._timeline_ruler.set_timeline(

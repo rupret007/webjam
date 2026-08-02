@@ -50,6 +50,7 @@ from core.band_check_audio import (
 )
 from core.redaction import redact_text
 from webjam_qt.platform_permissions import microphone_permission_status
+from webjam_qt.widgets.accessible import set_labeled_action
 
 
 LOGGER = logging.getLogger("webjam.qt.band_check")
@@ -258,7 +259,7 @@ class BandCheckDialog(QDialog):
         self._summary.setProperty("result", "checking")
         self._next.setText("Next: checking the setup.")
         self._primary.setEnabled(False)
-        self._primary.setText("Checking…")
+        set_labeled_action(self._primary, "Checking…")
         self._secondary.setVisible(False)
         self._clear_rows()
         self._items = []
@@ -408,8 +409,7 @@ class BandCheckDialog(QDialog):
                 label = "Record 5 Seconds"
             self._secondary.setText("Record Again")
             self._secondary.setVisible(True)
-        self._primary.setText(label)
-        self._primary.setAccessibleName(label)
+        set_labeled_action(self._primary, label)
         self._primary.setEnabled(True)
 
     def _find_action_step(self) -> BandCheckStepKey | None:
@@ -649,7 +649,7 @@ class BandCheckDialog(QDialog):
     def _play_headphone_test(self) -> None:
         settings = deepcopy(self._settings_provider())
         self._primary.setEnabled(False)
-        self._primary.setText("Playing Left, then Right…")
+        set_labeled_action(self._primary, "Playing Left, then Right…")
         try:
             evidence = self._tone.play(
                 output_device_name=str(
@@ -765,7 +765,7 @@ class BandCheckDialog(QDialog):
             detail="Recording now — play or sing for five seconds.",
             next_action="Keep playing",
         )
-        self._primary.setText("Recording 5 Seconds…")
+        set_labeled_action(self._primary, "Recording 5 Seconds…")
         self._primary.setEnabled(False)
         self._secondary.setVisible(False)
         QTimer.singleShot(5_000, self._finish_scratch_recording)
@@ -776,7 +776,7 @@ class BandCheckDialog(QDialog):
         recorder = self._scratch
         if recorder is None:
             return
-        self._primary.setText("Checking the Recording…")
+        set_labeled_action(self._primary, "Checking the Recording…")
         self._primary.setEnabled(False)
 
         def worker() -> None:
@@ -845,7 +845,7 @@ class BandCheckDialog(QDialog):
             return
         settings = self._settings_provider()
         self._primary.setEnabled(False)
-        self._primary.setText("Playing Quietly…")
+        set_labeled_action(self._primary, "Playing Quietly…")
         try:
             duration = self._scratch.play(
                 output_device_name=str(
@@ -1024,7 +1024,7 @@ class BandCheckDialog(QDialog):
         technical.setTextFormat(Qt.TextFormat.PlainText)
         technical.setWordWrap(True)
         self._report_layout.addWidget(technical)
-        self._primary.setText("Try Again")
+        set_labeled_action(self._primary, "Try Again")
         self._primary.setEnabled(True)
         self._action_step = None
 
@@ -1046,7 +1046,7 @@ class BandCheckDialog(QDialog):
             fallback.setWordWrap(True)
             self._report_layout.addWidget(fallback)
         self._report_layout.addStretch(1)
-        self._primary.setText("Run Again")
+        set_labeled_action(self._primary, "Run Again")
         self._primary.setEnabled(True)
 
     def _update_legacy_summary(self) -> None:
