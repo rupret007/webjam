@@ -361,6 +361,10 @@ class TestRecordButtonWiring(unittest.TestCase):
                 ),
             ):
                 context = c.recording._roster_observation_context()
+                rendered_context = repr(context)
+                self.assertNotIn("Alice", rendered_context)
+                self.assertNotIn("51042", rendered_context)
+                self.assertNotIn(musician_id, rendered_context)
                 c.recording._consume_authenticated_roster(payload, context)
             receipts, errors = c.recording._recording_receipt_snapshot()
 
@@ -468,7 +472,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording._take_id = ""
             c.participants = {}
 
-    def test_disappeared_authenticated_presence_cannot_follow_channel_reuse(self):
+    def test_legacy_client_local_presence_is_never_recorder_authority(self):
         from core.session_transfer import EnrollmentRegistry, SessionCredentials
         from core.take_project import new_project_id
 
@@ -511,15 +515,17 @@ class TestRecordButtonWiring(unittest.TestCase):
                 context = c.recording._roster_observation_context()
                 c.recording._consume_authenticated_roster(payload, context)
                 receipts, errors = c.recording._recording_receipt_snapshot()
+                self.assertEqual(receipts, ())
                 self.assertEqual(errors, ())
-                self.assertEqual(receipts[0].participant_id, first.participant_id)
+                self.assertTrue(c.recording._recording_presence_retry_pending)
 
                 registry.reconcile_presence_channels(())
                 stale_context = c.recording._roster_observation_context()
                 c.recording._consume_authenticated_roster(payload, stale_context)
                 receipts, errors = c.recording._recording_receipt_snapshot()
                 self.assertEqual(receipts, ())
-                self.assertTrue(any("conflicted" in item for item in errors))
+                self.assertEqual(errors, ())
+                self.assertTrue(c.recording._recording_presence_retry_pending)
 
                 # A fresh take can prove the replacement only after that
                 # enrolled participant publishes a newer signed generation.
@@ -534,12 +540,541 @@ class TestRecordButtonWiring(unittest.TestCase):
                 fresh_context = c.recording._roster_observation_context()
                 c.recording._consume_authenticated_roster(payload, fresh_context)
                 receipts, errors = c.recording._recording_receipt_snapshot()
+                self.assertEqual(receipts, ())
                 self.assertEqual(errors, ())
-                self.assertEqual(receipts[0].participant_id, second.participant_id)
+                self.assertTrue(c.recording._recording_presence_retry_pending)
             finally:
                 c.recording._take_id = ""
                 c.participants = {}
                 c.host_peer = old_host_peer
+
+    def test_v2_ordered_presence_maps_sparse_server_ids_by_ordinal(self):
+        from core.jamulus_roster_identity import (
+            JamulusCommonProfile,
+            ordered_client_local_roster_fingerprint,
+            ordered_common_roster_digest,
+        )
+        from core.jamulus_rpc_client import (
+            JamulusOrderedRosterProof,
+            JamulusOrderedRosterRow,
+            JamulusRpcMonitorIdentity,
+        )
+        from core.take_project import new_project_id
+
+        c = self.controller
+        identity = JamulusRpcMonitorIdentity(8, 21, 3456)
+        profiles = (
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("Alex", 5, "Chicago", 2),
+            JamulusCommonProfile("Alex", 6, "Chicago", 2),
+        )
+        roster = JamulusOrderedRosterProof(
+            identity=identity,
+            rpc_connection_generation=2,
+            audio_connection_generation=4,
+            roster_revision=7,
+            observed_at=123.0,
+            rows=tuple(
+                JamulusOrderedRosterRow(index, local_id, profiles[index])
+                for index, local_id in enumerate((1, 0, 2))
+            ),
+            own_ordinal=1,
+            common_digest=ordered_common_roster_digest(profiles),
+            host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+                (1, 0, 2),
+                own_ordinal=1,
+            ),
+        )
+        participant_ids = tuple(new_project_id() for _ in profiles)
+        proofs = tuple(
+            SimpleNamespace(
+                participant_id=participant_ids[index],
+                display_name=profile.name,
+                ordered_roster_digest=roster.common_digest,
+                roster_count=roster.roster_size,
+                self_ordinal=index,
+                process_generation=(21 if index == 1 else index + 1),
+                rpc_connection_generation=(2 if index == 1 else 1),
+                audio_connection_generation=(4 if index == 1 else 1),
+                topology_epoch=1,
+                challenge="old-lease",
+                challenge_epoch=1,
+                presence_generation=index + 1,
+                capture_enabled=True,
+                recorder_eligible=True,
+            )
+            for index, profile in enumerate(profiles)
+        )
+        proof_holder = [proofs]
+        host_peer = SimpleNamespace(
+            active=True,
+            host_enrollment=SimpleNamespace(participant_id=participant_ids[1]),
+            recording_presence_snapshot=lambda **_kwargs: proof_holder[0],
+        )
+        payload = {
+            "connections": 3,
+            "clients": [
+                {
+                    "id": server_id,
+                    "name": profile.name,
+                    "instrumentCode": profile.instrument_code,
+                    "city": profile.city,
+                    "skillLevelCode": profile.skill_level_code,
+                    "address": f"127.0.0.1:{50_000 + index}",
+                    "channels": 1,
+                }
+                for index, (server_id, profile) in enumerate(
+                    zip((0, 4, 11), profiles)
+                )
+            ],
+        }
+        old_host_peer = c.host_peer
+        old_proof = getattr(c, "_primary_ordered_roster_proof", None)
+        c.host_peer = host_peer
+        c._primary_ordered_roster_proof = roster
+        try:
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(payload, context)
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(errors, ())
+            self.assertEqual(
+                {item.server_channel_id: item.participant_id for item in receipts},
+                dict(zip((0, 4, 11), participant_ids)),
+            )
+
+            # Join/reconnect timing may expose the native row before that
+            # enrolled peer has renewed Presence v2. The provisional snapshot
+            # keeps all prior receipts intact and a later complete retry clears
+            # the pending state without creating conflicts.
+            proof_holder[0] = proofs[:2]
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                provisional_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    payload, provisional_context
+                )
+            provisional_receipts, errors = (
+                c.recording._recording_receipt_snapshot()
+            )
+            self.assertEqual(provisional_receipts, receipts)
+            self.assertEqual(errors, ())
+            self.assertTrue(c.recording._recording_presence_retry_pending)
+            proof_holder[0] = proofs
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                retry_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    payload, retry_context
+                )
+            self.assertFalse(c.recording._recording_presence_retry_pending)
+            self.assertEqual(
+                c.recording._recording_receipt_snapshot()[0], receipts
+            )
+
+            # The same enrolled guest reconnects with a new client/audio
+            # lifecycle and recorder UDP key. The host-private layout rotates
+            # topology, so both media segments retain the same durable owner.
+            reconnect_roster = JamulusOrderedRosterProof(
+                identity=identity,
+                rpc_connection_generation=2,
+                audio_connection_generation=4,
+                roster_revision=8,
+                observed_at=130.0,
+                rows=tuple(
+                    JamulusOrderedRosterRow(index, local_id, profiles[index])
+                    for index, local_id in enumerate((2, 0, 1))
+                ),
+                own_ordinal=1,
+                common_digest=roster.common_digest,
+                host_roster_fingerprint=(
+                    ordered_client_local_roster_fingerprint(
+                        (2, 0, 1), own_ordinal=1
+                    )
+                ),
+            )
+            reconnect_claims = []
+            for index, old_claim in enumerate(proofs):
+                claim = SimpleNamespace(**vars(old_claim))
+                claim.topology_epoch = 2
+                claim.challenge = "reconnect-topology"
+                claim.challenge_epoch = 2
+                claim.presence_generation += 10
+                if index == 2:
+                    claim.audio_connection_generation += 1
+                reconnect_claims.append(claim)
+            reconnect_payload = {
+                "connections": 3,
+                "clients": [dict(row) for row in payload["clients"]],
+            }
+            reconnect_payload["clients"][2]["address"] = "127.0.0.1:51002"
+            c._primary_ordered_roster_proof = reconnect_roster
+            proof_holder[0] = tuple(reconnect_claims)
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=reconnect_roster,
+            ):
+                reconnect_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    reconnect_payload, reconnect_context
+                )
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(errors, ())
+            self.assertEqual(len(receipts), 4)
+            self.assertEqual(
+                sum(
+                    item.participant_id == participant_ids[2]
+                    for item in receipts
+                ),
+                2,
+            )
+            c._primary_ordered_roster_proof = roster
+            proof_holder[0] = proofs
+
+            # An atomic lease rollover changes challenge/presence generation,
+            # not semantic owner, ordinal, or native lifecycle generations.
+            # A server RPC spanning that promotion remains attributable.
+            promoted = []
+            for old_claim in proofs:
+                claim = SimpleNamespace(**vars(old_claim))
+                claim.challenge = "new-lease"
+                claim.challenge_epoch = 2
+                claim.presence_generation += 100
+                promoted.append(claim)
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            proof_holder[0] = proofs
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                rollover_context = c.recording._roster_observation_context()
+                proof_holder[0] = tuple(promoted)
+                c.recording._consume_authenticated_roster(
+                    payload, rollover_context
+                )
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(errors, ())
+            self.assertEqual(len(receipts), 3)
+            proof_holder[0] = proofs
+
+            # A periodic identical client-list refresh updates freshness only.
+            # It may overtake an in-flight server RPC without becoming a
+            # topology transition or invalidating the take.
+            from dataclasses import replace
+
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                refresh_context = c.recording._roster_observation_context()
+            refreshed_roster = replace(roster, observed_at=789.0)
+            c._primary_ordered_roster_proof = refreshed_roster
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=refreshed_roster,
+            ):
+                c.recording._consume_authenticated_roster(
+                    payload, refresh_context
+                )
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(errors, ())
+            self.assertEqual(len(receipts), 3)
+            c._primary_ordered_roster_proof = roster
+
+            # A guest/common-profile match cannot stand in for the exact host
+            # process at the host's self ordinal.
+            stale_host = SimpleNamespace(**vars(proofs[1]))
+            stale_host.process_generation = 20
+            proof_holder[0] = (proofs[0], stale_host, proofs[2])
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                stale_host_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    payload, stale_host_context
+                )
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(receipts, ())
+            self.assertEqual(errors, ())
+            self.assertTrue(c.recording._recording_presence_retry_pending)
+            proof_holder[0] = proofs
+
+            # Even an identical roster digest cannot authorize across a newer
+            # exact observation while the server RPC is in flight.
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                stale_context = c.recording._roster_observation_context()
+            newer = JamulusOrderedRosterProof(
+                identity=identity,
+                rpc_connection_generation=2,
+                audio_connection_generation=4,
+                roster_revision=8,
+                observed_at=124.0,
+                rows=roster.rows,
+                own_ordinal=roster.own_ordinal,
+                common_digest=roster.common_digest,
+                host_roster_fingerprint=roster.host_roster_fingerprint,
+            )
+            c._primary_ordered_roster_proof = newer
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=newer,
+            ):
+                c.recording._consume_authenticated_roster(payload, stale_context)
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(receipts, ())
+            self.assertEqual(errors, ())
+            self.assertTrue(c.recording._recording_presence_retry_pending)
+        finally:
+            c.recording._take_id = ""
+            c._primary_ordered_roster_proof = old_proof
+            c.host_peer = old_host_peer
+
+    def test_v2_reference_restart_keeps_both_proven_segments(self):
+        from core.jamulus_roster_identity import (
+            JamulusCommonProfile,
+            ordered_client_local_roster_fingerprint,
+            ordered_common_roster_digest,
+        )
+        from core.jamulus_rpc_client import (
+            JamulusOrderedRosterProof,
+            JamulusOrderedRosterRow,
+            JamulusRpcMonitorIdentity,
+        )
+        from core.reference_track import ReferenceTrackOwnershipClaim
+        from core.take_project import new_project_id
+
+        c = self.controller
+        identity = JamulusRpcMonitorIdentity(9, 31, 4567)
+        profiles = (
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("WebJam Track", 0, "", 0),
+        )
+        roster = JamulusOrderedRosterProof(
+            identity=identity,
+            rpc_connection_generation=2,
+            audio_connection_generation=4,
+            roster_revision=7,
+            observed_at=123.0,
+            rows=tuple(
+                JamulusOrderedRosterRow(index, index, profile)
+                for index, profile in enumerate(profiles)
+            ),
+            own_ordinal=0,
+            common_digest=ordered_common_roster_digest(profiles),
+            host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+                (0, 1), own_ordinal=0
+            ),
+        )
+        host_participant_id = new_project_id()
+        host_presence = SimpleNamespace(
+            participant_id=host_participant_id,
+            display_name="Host",
+            ordered_roster_digest=roster.common_digest,
+            roster_count=roster.roster_size,
+            self_ordinal=0,
+            process_generation=identity.process_generation,
+            rpc_connection_generation=roster.rpc_connection_generation,
+            audio_connection_generation=roster.audio_connection_generation,
+            topology_epoch=1,
+            challenge="lease",
+            challenge_epoch=1,
+            presence_generation=1,
+            capture_enabled=True,
+            recorder_eligible=True,
+        )
+        host_peer = SimpleNamespace(
+            active=True,
+            host_enrollment=SimpleNamespace(
+                participant_id=host_participant_id
+            ),
+            recording_presence_snapshot=lambda **_kwargs: (host_presence,),
+        )
+        claims = [
+            ReferenceTrackOwnershipClaim(
+                udp_port=51042,
+                process_id=1234,
+                generation="1" * 32,
+            )
+        ]
+
+        def payload(port: int) -> dict[str, object]:
+            return {
+                "connections": 2,
+                "clients": [
+                    {
+                        "id": 0,
+                        "name": "Host",
+                        "instrumentCode": 3,
+                        "city": "Chicago",
+                        "skillLevelCode": 2,
+                        "address": "127.0.0.1:50000",
+                        "channels": 1,
+                    },
+                    {
+                        "id": 7,
+                        "name": "WebJam Track",
+                        "instrumentCode": 0,
+                        "city": "",
+                        "skillLevelCode": 0,
+                        "address": f"127.0.0.1:{port}",
+                        "channels": 1,
+                    },
+                ],
+            }
+
+        old_host_peer = c.host_peer
+        old_proof = getattr(c, "_primary_ordered_roster_proof", None)
+        old_reference = getattr(c, "_reference_track", None)
+        c.host_peer = host_peer
+        c._primary_ordered_roster_proof = roster
+        c._reference_track = SimpleNamespace(
+            recording_ownership_claim=lambda: claims[0]
+        )
+        try:
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=roster,
+            ):
+                context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    payload(51042), context
+                )
+                claims[0] = ReferenceTrackOwnershipClaim(
+                    udp_port=51043,
+                    process_id=5678,
+                    generation="2" * 32,
+                )
+                restart_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    payload(51043), restart_context
+                )
+            receipts, errors = c.recording._recording_receipt_snapshot()
+
+            self.assertEqual(errors, ())
+            reference_receipts = tuple(
+                receipt
+                for receipt in receipts
+                if receipt.source_kind == "reference_track"
+            )
+            self.assertEqual(len(receipts), 3)
+            self.assertEqual(len(reference_receipts), 2)
+            self.assertEqual(
+                {receipt.participant_id for receipt in reference_receipts},
+                {c.recording._reference_participant_id},
+            )
+            self.assertNotIn("51042", repr(receipts))
+            self.assertNotIn("51043", repr(receipts))
+            self.assertNotIn("5678", repr(receipts))
+        finally:
+            c.recording._take_id = ""
+            c._reference_track = old_reference
+            c._primary_ordered_roster_proof = old_proof
+            c.host_peer = old_host_peer
+
+    def test_exact_owned_reference_can_join_after_recording_started(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.reference_track import ReferenceTrackOwnershipClaim
+        from core.take_project import new_project_id
+
+        c = self.controller
+        host_profile = JamulusCommonProfile("Host", 3, "Chicago", 2)
+        initial = _hosted_readiness_fixture((host_profile,))
+        joined = _hosted_readiness_fixture((
+            host_profile,
+            JamulusCommonProfile("WebJam Track", 0, "", 0),
+        ))
+        joined.claims[0].participant_id = initial.participant_ids[0]
+        joined.host_peer.host_enrollment.participant_id = initial.participant_ids[0]
+        joined.claims_holder[0] = (joined.claims[0],)
+        joined.payload["clients"][1]["address"] = "127.0.0.1:51042"
+        claim = ReferenceTrackOwnershipClaim(
+            udp_port=51042,
+            process_id=2468,
+            generation="a" * 32,
+        )
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        old_reference = getattr(c, "_reference_track", None)
+        try:
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            c.host_peer = initial.host_peer
+            c._primary_ordered_roster_proof = initial.proof
+            c.participants = initial.participants
+            c._reference_track = None
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                side_effect=lambda _identity: c._primary_ordered_roster_proof,
+            ):
+                first_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    initial.payload, first_context
+                )
+                self.assertEqual(
+                    len(c.recording._recording_receipt_snapshot()[0]), 1
+                )
+
+                c.host_peer = joined.host_peer
+                c._primary_ordered_roster_proof = joined.proof
+                c.participants = joined.participants
+                c._reference_track = SimpleNamespace(
+                    recording_ownership_claim=lambda: claim
+                )
+                joined_context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    joined.payload, joined_context
+                )
+
+            receipts, errors = c.recording._recording_receipt_snapshot()
+            self.assertEqual(errors, ())
+            self.assertFalse(c.recording._recording_presence_retry_pending)
+            self.assertEqual(len(receipts), 2)
+            self.assertEqual(
+                {receipt.source_kind for receipt in receipts},
+                {"musician", "reference_track"},
+            )
+            self.assertNotIn("51042", repr(receipts))
+            self.assertNotIn("2468", repr(receipts))
+        finally:
+            c.recording._take_id = ""
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c._reference_track = old_reference
+            c.participants = {}
 
     def test_recorder_digest_change_on_same_channel_conflicts_both_sources(self):
         from core.take_project import new_project_id
@@ -820,6 +1355,73 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording._take_id = ""
             c.participants = {}
 
+    def test_final_freeze_fails_closed_when_presence_retry_never_completes(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.take_project import new_project_id
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("Guest", 5, "Austin", 2),
+        ))
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.get_clients.return_value = fixture.payload
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.recording._take_id = new_project_id()
+            c.recording._reset_session_evidence()
+            fixture.claims_holder[0] = (fixture.claims[0],)
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=fixture.proof,
+            ):
+                context = c.recording._roster_observation_context()
+                c.recording._consume_authenticated_roster(
+                    fixture.payload, context
+                )
+            self.assertTrue(c.recording._recording_presence_retry_pending)
+            self.assertEqual(c.recording._recording_receipt_snapshot(), ((), ()))
+
+            with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.JamulusServerRpc",
+                    return_value=fake_rpc,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.read_secret_file",
+                    return_value="s3cret",
+                ),
+            ):
+                receipts, errors = (
+                    c.recording._final_recording_receipt_snapshot()
+                )
+
+            self.assertEqual(receipts, ())
+            self.assertTrue(
+                any("complete current WebJam musician roster" in error for error in errors)
+            )
+            self.assertEqual(
+                c.recording._recording_receipts_frozen_take_id,
+                c.recording._take_id,
+            )
+        finally:
+            c.recording._take_id = ""
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+
     def test_final_roster_drain_timeout_clears_and_freezes_receipts(self):
         from core.take_project import new_project_id
 
@@ -995,24 +1597,580 @@ class TestRecordButtonWiring(unittest.TestCase):
 
     def test_configured_spawns_worker_toward_armed(self):
         c = self.controller
-        c.settings.server_rpc_secret_file = "/tmp/secret"
-        c._jamulus_connected = True
-        c.participants = {1: SimpleNamespace(role="Guitar")}
-        with patch(
-            "webjam_qt.controllers.recording_coordinator.check_recording_storage"
-        ) as storage, patch.object(c, "_record_toggle_worker") as worker, \
-             patch.object(c.recording, "_create_evidence_journal", return_value=True) as journal, \
-             patch("webjam_qt.controllers.application_controller.threading.Thread",
-                   side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
-            storage.return_value = SimpleNamespace(
-                can_start=True,
-                status="ready",
-            )
-            c._on_record_requested()
-        journal.assert_called_once()
-        worker.assert_called_once_with(True, "/tmp/secret")
+        with TemporaryDirectory() as directory:
+            secret_path = Path(directory) / "jsonrpc.secret"
+            secret_path.write_text("s3cret\n", encoding="utf-8")
+            c.settings.server_rpc_secret_file = str(secret_path)
+            c._jamulus_connected = True
+            c.participants = {1: SimpleNamespace(role="Guitar")}
+            with patch(
+                "webjam_qt.controllers.recording_coordinator.check_recording_storage"
+            ) as storage, patch.object(c, "_record_toggle_worker") as worker, \
+                 patch.object(c.recording, "_create_evidence_journal", return_value=True) as journal, \
+                 patch("webjam_qt.controllers.application_controller.threading.Thread",
+                       side_effect=lambda *a, **kw: _Immediate(*a, **kw)):
+                storage.return_value = SimpleNamespace(
+                    can_start=True,
+                    status="ready",
+                )
+                c._on_record_requested()
+            journal.assert_called_once()
+            worker.assert_called_once_with(True, str(secret_path))
         c._jamulus_connected = False
         c.participants = {}
+
+    def test_hosted_preflight_waits_for_join_then_accepts_complete_retry(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("Guest", 5, "Austin", 2),
+        ))
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.get_clients.return_value = fixture.payload
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        secret_dir = TemporaryDirectory()
+        secret_path = Path(secret_dir.name) / "jsonrpc.secret"
+        secret_path.write_text("s3cret\n", encoding="utf-8")
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            c._jamulus_connected = True
+            # The native guest row arrived first; its enrolled Presence-v2
+            # claim has not. This is both ordinary join timing and the safe
+            # handling for an unsupported direct-Jamulus participant.
+            fixture.claims_holder[0] = (fixture.claims[0],)
+            with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
+                patch.object(
+                    c.jamulus,
+                    "request_ordered_roster_refresh",
+                    return_value=True,
+                ) as refresh,
+                patch(
+                    "core.jamulus_server_rpc.JamulusServerRpc",
+                    return_value=fake_rpc,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.read_secret_file",
+                    return_value="s3cret",
+                ),
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _Immediate(
+                        *args, **kwargs
+                    ),
+                ),
+                patch.object(
+                    c.recording,
+                    "_begin_recording_start",
+                ) as begin,
+            ):
+                c._on_record_requested()
+                self.assertEqual(c.recording.phase.value, "error")
+                self.assertEqual(c.recording._take_id, "")
+                self.assertIsNone(c.recording._local_capture)
+                begin.assert_not_called()
+                refresh.assert_called_with(fixture.proof.identity)
+                guidance = c._show_actionable_error.call_args.kwargs
+                self.assertIn("join through", guidance["next_action"])
+                self.assertIn("full profiles", guidance["next_action"])
+
+                fixture.claims_holder[0] = tuple(fixture.claims)
+                c.recording.phase = c.recording.phase.__class__.IDLE
+                c._show_actionable_error.reset_mock()
+                c._on_record_requested()
+
+            begin.assert_called_once()
+            readiness = begin.call_args.kwargs["hosted_readiness"]
+            self.assertEqual(
+                dict(readiness.musician_ids_by_channel),
+                dict(enumerate(fixture.participant_ids)),
+            )
+            self.assertEqual(readiness.reference_channels, ())
+            rendered = repr(readiness) + repr(readiness.context)
+            self.assertNotIn("Guest", rendered)
+            self.assertNotIn("Chicago", rendered)
+            self.assertNotIn(str(secret_path), rendered)
+            self.assertNotIn(fixture.participant_ids[0], rendered)
+            c._show_actionable_error.assert_not_called()
+
+            ready_storage = SimpleNamespace(can_start=True, status="ready")
+            with (
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "check_recording_storage",
+                    return_value=ready_storage,
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator."
+                    "snapshot_take_directories",
+                    return_value={},
+                ),
+                patch.object(
+                    c.recording,
+                    "request_authenticated_roster_observation",
+                ),
+                patch.object(
+                    c.recording,
+                    "_start_local_capture",
+                    return_value=True,
+                ),
+                patch.object(
+                    c.recording,
+                    "_create_evidence_journal",
+                    return_value=True,
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread"
+                ) as toggle_thread,
+            ):
+                c.recording._begin_recording_start(
+                    list(fixture.participants.values()),
+                    str(secret_path),
+                    hosted_readiness=readiness,
+                )
+            self.assertEqual(
+                c.recording._participant_ids,
+                dict(enumerate(fixture.participant_ids)),
+            )
+            self.assertTrue(c.recording._take_id)
+            toggle_thread.assert_called_once()
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+            c.settings.server_rpc_secret_file = ""
+            c._jamulus_connected = False
+            c.recording._take_id = ""
+            c.recording.phase = c.recording.phase.__class__.IDLE
+            secret_dir.cleanup()
+
+    def test_hosted_preflight_rejects_indistinguishable_remote_profiles(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+
+        c = self.controller
+        duplicate = JamulusCommonProfile("Alex", 5, "Austin", 2)
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            duplicate,
+            duplicate,
+        ))
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.get_clients.return_value = fixture.payload
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        secret_dir = TemporaryDirectory()
+        secret_path = Path(secret_dir.name) / "jsonrpc.secret"
+        secret_path.write_text("s3cret\n", encoding="utf-8")
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            c._jamulus_connected = True
+            with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
+                patch.object(
+                    c.jamulus,
+                    "request_ordered_roster_refresh",
+                    return_value=True,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.JamulusServerRpc",
+                    return_value=fake_rpc,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.read_secret_file",
+                    return_value="s3cret",
+                ),
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=lambda callback: callback(),
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _Immediate(
+                        *args, **kwargs
+                    ),
+                ),
+                patch.object(c.recording, "_begin_recording_start") as begin,
+            ):
+                c._on_record_requested()
+
+            begin.assert_not_called()
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(c.recording.phase.value, "error")
+            self.assertIn(
+                "identical full Jamulus profiles",
+                c._show_actionable_error.call_args.kwargs["likely_cause"],
+            )
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+            c.settings.server_rpc_secret_file = ""
+            c._jamulus_connected = False
+            c.recording.phase = c.recording.phase.__class__.IDLE
+            secret_dir.cleanup()
+
+    def test_hosted_preflight_rejects_unsupported_direct_jamulus_peer(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("Direct Client", 8, "Denver", 1),
+        ))
+        fixture.claims_holder[0] = (fixture.claims[0],)
+        secret_dir = TemporaryDirectory()
+        secret_path = Path(secret_dir.name) / "jsonrpc.secret"
+        secret_path.write_text("s3cret\n", encoding="utf-8")
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=fixture.proof,
+            ):
+                context = c.recording._hosted_recording_readiness_context(
+                    list(fixture.participants.values())
+                )
+                self.assertIsNotNone(context)
+                readiness = c.recording._evaluate_hosted_recording_readiness(
+                    fixture.payload,
+                    context,
+                    reference_before=None,
+                    reference_after=None,
+                )
+            self.assertIsNone(readiness)
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+            c.settings.server_rpc_secret_file = ""
+            secret_dir.cleanup()
+
+    def test_hosted_preflight_allows_only_exact_owned_reference_without_presence(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+        from core.reference_track import ReferenceTrackOwnershipClaim
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+            JamulusCommonProfile("WebJam Track", 0, "", 0),
+        ))
+        fixture.claims_holder[0] = (fixture.claims[0],)
+        fixture.payload["clients"][1]["address"] = "127.0.0.1:51042"
+        claim = ReferenceTrackOwnershipClaim(51042, 2468, "b" * 32)
+        secret_dir = TemporaryDirectory()
+        secret_path = Path(secret_dir.name) / "jsonrpc.secret"
+        secret_path.write_text("s3cret\n", encoding="utf-8")
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            with patch.object(
+                c.jamulus,
+                "ordered_roster_proof_for",
+                return_value=fixture.proof,
+            ):
+                context = c.recording._hosted_recording_readiness_context(
+                    list(fixture.participants.values())
+                )
+                self.assertIsNotNone(context)
+                readiness = c.recording._evaluate_hosted_recording_readiness(
+                    fixture.payload,
+                    context,
+                    reference_before=claim,
+                    reference_after=claim,
+                )
+            self.assertIsNotNone(readiness)
+            self.assertEqual(
+                readiness.musician_ids_by_channel,
+                ((0, fixture.participant_ids[0]),),
+            )
+            self.assertEqual(readiness.reference_channels, (1,))
+            self.assertNotIn("51042", repr(readiness))
+            self.assertNotIn("2468", repr(readiness))
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+            c.settings.server_rpc_secret_file = ""
+            secret_dir.cleanup()
+
+    def test_hosted_preflight_rejects_rpc_config_changed_before_apply(self):
+        from core.jamulus_roster_identity import JamulusCommonProfile
+
+        c = self.controller
+        fixture = _hosted_readiness_fixture((
+            JamulusCommonProfile("Host", 3, "Chicago", 2),
+        ))
+        fake_rpc = MagicMock()
+        fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+        fake_rpc.__exit__ = MagicMock(return_value=None)
+        fake_rpc.get_clients.return_value = fixture.payload
+        secret_dir = TemporaryDirectory()
+        secret_path = Path(secret_dir.name) / "jsonrpc.secret"
+        secret_path.write_text("s3cret\n", encoding="utf-8")
+        callbacks = []
+        old_host = c.host_peer
+        old_proof = c._primary_ordered_roster_proof
+        old_port = c.settings.server_rpc_port
+        try:
+            c.host_peer = fixture.host_peer
+            c._primary_ordered_roster_proof = fixture.proof
+            c.participants = fixture.participants
+            c.settings.server_rpc_secret_file = str(secret_path)
+            c._jamulus_connected = True
+            with (
+                patch.object(
+                    c.jamulus,
+                    "ordered_roster_proof_for",
+                    return_value=fixture.proof,
+                ),
+                patch.object(
+                    c.jamulus,
+                    "request_ordered_roster_refresh",
+                    return_value=True,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.JamulusServerRpc",
+                    return_value=fake_rpc,
+                ),
+                patch(
+                    "core.jamulus_server_rpc.read_secret_file",
+                    return_value="s3cret",
+                ),
+                patch.object(
+                    c._ui_invoker,
+                    "invoke",
+                    side_effect=callbacks.append,
+                ),
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                    side_effect=lambda *args, **kwargs: _Immediate(
+                        *args, **kwargs
+                    ),
+                ),
+                patch.object(c.recording, "_begin_recording_start") as begin,
+            ):
+                c._on_record_requested()
+                self.assertEqual(len(callbacks), 1)
+                c.settings.server_rpc_port = old_port + 1
+                callbacks.pop()()
+
+            begin.assert_not_called()
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(c.recording.phase.value, "error")
+        finally:
+            c.host_peer = old_host
+            c._primary_ordered_roster_proof = old_proof
+            c.participants = {}
+            c.settings.server_rpc_secret_file = ""
+            c.settings.server_rpc_port = old_port
+            c._jamulus_connected = False
+            c.recording.phase = c.recording.phase.__class__.IDLE
+            secret_dir.cleanup()
+
+    def test_toggle_worker_uses_take_captured_rpc_port(self):
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import (
+            _ToggleAttempt,
+            _private_secret_file_identity,
+        )
+
+        c = self.controller
+        old_port = c.settings.server_rpc_port
+        old_secret_file = c.settings.server_rpc_secret_file
+        with TemporaryDirectory() as directory:
+            secret_path = Path(directory) / "jsonrpc.secret"
+            secret_path.write_text("captured-secret\n", encoding="utf-8")
+            take_id = new_project_id()
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            identity = _private_secret_file_identity(secret_path)
+            c.recording._bind_recording_rpc_configuration(
+                take_id,
+                41_234,
+                str(secret_path),
+                identity,
+            )
+            attempt = _ToggleAttempt(
+                take_id,
+                target_armed=True,
+                server_rpc_port=41_234,
+                server_rpc_secret_file=str(secret_path),
+                server_rpc_secret_identity=identity,
+            )
+            fake_rpc = MagicMock()
+            fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+            fake_rpc.__exit__ = MagicMock(return_value=None)
+            fake_rpc.get_clients.return_value = {"clients": []}
+            fake_rpc.start_recording.return_value = True
+            fake_rpc.get_recorder_status.return_value = {"enabled": True}
+            c.settings.server_rpc_port = 49_999
+            c.settings.server_rpc_secret_file = "/private/changed/secret"
+            try:
+                with (
+                    patch(
+                        "core.jamulus_server_rpc.JamulusServerRpc",
+                        return_value=fake_rpc,
+                    ) as rpc_factory,
+                    patch.object(c.recording, "_consume_authenticated_roster"),
+                    patch.object(c._ui_invoker, "invoke"),
+                ):
+                    c.recording._run_toggle_attempt(attempt)
+                rpc_factory.assert_called_once_with(
+                    port=41_234,
+                    secret="captured-secret",
+                )
+                self.assertNotIn(str(secret_path), repr(attempt))
+            finally:
+                c.settings.server_rpc_port = old_port
+                c.settings.server_rpc_secret_file = old_secret_file
+                c.recording._retire_active_take(take_id)
+
+    def test_toggle_worker_rejects_replaced_take_secret_without_path_leak(self):
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import (
+            _ToggleAttempt,
+            _private_secret_file_identity,
+        )
+
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            secret_path = Path(directory) / "jsonrpc.secret"
+            secret_path.write_text("original-secret\n", encoding="utf-8")
+            take_id = new_project_id()
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            identity = _private_secret_file_identity(secret_path)
+            c.recording._bind_recording_rpc_configuration(
+                take_id,
+                41_235,
+                str(secret_path),
+                identity,
+            )
+            attempt = _ToggleAttempt(
+                take_id,
+                target_armed=True,
+                server_rpc_port=41_235,
+                server_rpc_secret_file=str(secret_path),
+                server_rpc_secret_identity=identity,
+            )
+            secret_path.write_text(
+                "replacement-secret-with-different-size\n",
+                encoding="utf-8",
+            )
+            try:
+                with (
+                    patch("core.jamulus_server_rpc.JamulusServerRpc") as rpc_factory,
+                    patch.object(
+                        c._ui_invoker,
+                        "invoke",
+                        side_effect=lambda callback: callback(),
+                    ),
+                    patch.object(c.recording, "apply_toggle_failure") as failure,
+                ):
+                    c.recording._run_toggle_attempt(attempt)
+                rpc_factory.assert_not_called()
+                message = failure.call_args.args[0]
+                self.assertIn("captured recorder configuration", message)
+                self.assertNotIn(str(secret_path), message)
+            finally:
+                c.recording._retire_active_take(take_id)
+
+    def test_active_and_final_roster_reads_use_take_captured_rpc_binding(self):
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import (
+            _private_secret_file_identity,
+        )
+
+        c = self.controller
+        old_port = c.settings.server_rpc_port
+        old_secret_file = c.settings.server_rpc_secret_file
+        with TemporaryDirectory() as directory:
+            secret_path = Path(directory) / "jsonrpc.secret"
+            secret_path.write_text("captured-secret\n", encoding="utf-8")
+            take_id = new_project_id()
+            c.recording._take_id = take_id
+            c.recording._reset_session_evidence()
+            c.recording._bind_recording_rpc_configuration(
+                take_id,
+                41_236,
+                str(secret_path),
+                _private_secret_file_identity(secret_path),
+            )
+            context = c.recording._roster_observation_context()
+            self.assertIsNotNone(context)
+            fake_rpc = MagicMock()
+            fake_rpc.__enter__ = MagicMock(return_value=fake_rpc)
+            fake_rpc.__exit__ = MagicMock(return_value=None)
+            fake_rpc.get_clients.return_value = {"clients": []}
+            c.settings.server_rpc_port = 49_999
+            c.settings.server_rpc_secret_file = "/private/changed/secret"
+            try:
+                with (
+                    patch(
+                        "core.jamulus_server_rpc.JamulusServerRpc",
+                        return_value=fake_rpc,
+                    ) as rpc_factory,
+                    patch.object(c.recording, "_consume_authenticated_roster"),
+                    patch.object(
+                        c.recording,
+                        "_consume_authenticated_roster_serial",
+                    ),
+                ):
+                    with c.recording._receipt_lock:
+                        c.recording._roster_poll_pending = context
+                        c.recording._roster_poll_inflight = True
+                    c.recording._roster_observation_worker()
+                    c.recording._final_recording_receipt_snapshot()
+                self.assertEqual(rpc_factory.call_count, 2)
+                self.assertTrue(all(
+                    call.kwargs == {
+                        "port": 41_236,
+                        "secret": "captured-secret",
+                    }
+                    for call in rpc_factory.call_args_list
+                ))
+                self.assertNotIn(str(secret_path), repr(context))
+            finally:
+                c.settings.server_rpc_port = old_port
+                c.settings.server_rpc_secret_file = old_secret_file
+                c.recording._retire_active_take(take_id)
 
     def test_private_evidence_journal_tracks_confirmed_start_stop_and_retires(self):
         from core.recording_manifest_journal import RecordingManifestJournal
@@ -1061,6 +2219,9 @@ class TestRecordButtonWiring(unittest.TestCase):
         with patch(
             "webjam_qt.controllers.recording_coordinator.check_recording_storage",
             return_value=ready,
+        ), patch(
+            "webjam_qt.controllers.recording_coordinator._private_secret_file_identity",
+            return_value=(1, 2, 3, 4),
         ), patch.object(c.recording, "_create_evidence_journal", return_value=False), \
                 patch.object(c, "_record_toggle_worker") as worker:
             c._on_record_requested()
@@ -1913,6 +3074,9 @@ class TestRecordButtonWiring(unittest.TestCase):
         with patch(
             "webjam_qt.controllers.recording_coordinator.check_recording_storage",
             return_value=blocked,
+        ), patch(
+            "webjam_qt.controllers.recording_coordinator._private_secret_file_identity",
+            return_value=(1, 2, 3, 4),
         ), patch.object(c, "_record_toggle_worker") as worker:
             c._on_record_requested()
 
@@ -2581,15 +3745,21 @@ class TestRecordButtonWiring(unittest.TestCase):
         c.recording.phase = RecorderPhase.RECORDING
         c._recorder_armed = True
         c._server_recording = True
-        attempt = _ToggleAttempt(retired_take_id, target_armed=False)
+        attempt = _ToggleAttempt(
+            retired_take_id,
+            target_armed=False,
+            server_rpc_port=22_122,
+            server_rpc_secret_file="/tmp/secret",
+            server_rpc_secret_identity=(1, 2, 3, 4),
+        )
         with patch(
-            "core.jamulus_server_rpc.read_secret_file",
-            side_effect=ServerRpcError("late stop timeout"),
-        ), patch.object(
+            "core.jamulus_server_rpc.JamulusServerRpc"
+        ) as rpc_factory, patch.object(
             c._ui_invoker, "invoke", side_effect=lambda callback: callback()
         ):
             c.recording._run_toggle_attempt(attempt, "/tmp/secret")
 
+        rpc_factory.assert_not_called()
         self.assertEqual(c.recording.phase, RecorderPhase.RECORDING)
         self.assertTrue(c._recorder_armed)
         c._show_actionable_error.assert_not_called()
@@ -3024,6 +4194,108 @@ class _Immediate:
     def start(self):
         if self._target is not None:
             self._target(*self._args)
+
+
+def _hosted_readiness_fixture(profiles):
+    """Build exact client/server/Presence-v2 facts for hosted preflight tests."""
+
+    from core.jamulus_roster_identity import (
+        ordered_client_local_roster_fingerprint,
+        ordered_common_roster_digest,
+    )
+    from core.jamulus_rpc_client import (
+        JamulusOrderedRosterProof,
+        JamulusOrderedRosterRow,
+        JamulusRpcMonitorIdentity,
+    )
+    from core.take_project import new_project_id
+
+    identity = JamulusRpcMonitorIdentity(31, 41, 5432)
+    local_ids = tuple(range(len(profiles)))
+    proof = JamulusOrderedRosterProof(
+        identity=identity,
+        rpc_connection_generation=3,
+        audio_connection_generation=5,
+        roster_revision=7,
+        observed_at=time.monotonic(),
+        rows=tuple(
+            JamulusOrderedRosterRow(index, local_ids[index], profile)
+            for index, profile in enumerate(profiles)
+        ),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest(tuple(profiles)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            local_ids,
+            own_ordinal=0,
+        ),
+    )
+    participant_ids = tuple(new_project_id() for _profile in profiles)
+    claims = [
+        SimpleNamespace(
+            participant_id=participant_ids[index],
+            display_name=profile.name,
+            ordered_roster_digest=proof.common_digest,
+            roster_count=proof.roster_size,
+            self_ordinal=index,
+            process_generation=(
+                identity.process_generation if index == 0 else index + 1
+            ),
+            rpc_connection_generation=(
+                proof.rpc_connection_generation if index == 0 else 1
+            ),
+            audio_connection_generation=(
+                proof.audio_connection_generation if index == 0 else 1
+            ),
+            topology_epoch=1,
+            challenge="lease",
+            challenge_epoch=1,
+            presence_generation=index + 1,
+            capture_enabled=True,
+            recorder_eligible=True,
+        )
+        for index, profile in enumerate(profiles)
+    ]
+    claims_holder = [tuple(claims)]
+    host_peer = SimpleNamespace(
+        active=True,
+        session_id=new_project_id(),
+        host_enrollment=SimpleNamespace(participant_id=participant_ids[0]),
+        recording_presence_snapshot=lambda **_kwargs: claims_holder[0],
+    )
+    participants = {
+        local_id: SimpleNamespace(
+            channel_id=local_id,
+            name=profile.name,
+            role="Guitar",
+            is_local=index == 0,
+            participant_id="",
+        )
+        for index, (local_id, profile) in enumerate(zip(local_ids, profiles))
+    }
+    payload = {
+        "connections": len(profiles),
+        "clients": [
+            {
+                "id": index * 4,
+                "name": profile.name,
+                "instrumentCode": profile.instrument_code,
+                "city": profile.city,
+                "skillLevelCode": profile.skill_level_code,
+                "address": f"127.0.0.1:{50_000 + index}",
+                "channels": 1,
+            }
+            for index, profile in enumerate(profiles)
+        ],
+    }
+    return SimpleNamespace(
+        proof=proof,
+        participant_ids=participant_ids,
+        claims=claims,
+        claims_holder=claims_holder,
+        host_peer=host_peer,
+        participants=participants,
+        payload=payload,
+    )
 
 
 if __name__ == "__main__":

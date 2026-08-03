@@ -210,7 +210,7 @@ class ReferenceTrackLaunchContext:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class ReferenceTrackOwnershipClaim:
     """Ephemeral process proof used only while finalizing a recording.
 
@@ -235,6 +235,9 @@ class ReferenceTrackOwnershipClaim:
         object.__setattr__(self, "udp_port", int(self.udp_port))
         object.__setattr__(self, "process_id", int(self.process_id))
         object.__setattr__(self, "generation", generation)
+
+    def __repr__(self) -> str:
+        return "ReferenceTrackOwnershipClaim(<redacted>)"
 
 
 @dataclass(frozen=True, slots=True)

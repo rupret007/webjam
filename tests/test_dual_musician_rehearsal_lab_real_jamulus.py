@@ -36,6 +36,24 @@ def test_dual_musician_lab_real_jamulus_transport_recorder_reconnect_and_cleanup
     harness = JamulusJackHarness.from_environment()
     evidence: dict[str, object] = {}
     with harness:
+        initial_identity = harness.certify_owned_client_roster_identity()
+        assert initial_identity.roster_size == 2
+        assert {
+            client.local_self_channel_id
+            for client in initial_identity.owned_clients
+        } == {0}
+        assert {
+            client.self_ordinal for client in initial_identity.owned_clients
+        } == {0, 1}
+        assert {
+            client.server_channel_id for client in initial_identity.owned_clients
+        } == set(initial_identity.server_channel_ids_by_ordinal)
+        assert all(
+            client.server_channel_id
+            == initial_identity.server_channel_ids_by_ordinal[client.self_ordinal]
+            for client in initial_identity.owned_clients
+        )
+
         started = harness.set_recording(True)
         assert started["enabled"] is True
 
@@ -54,6 +72,26 @@ def test_dual_musician_lab_real_jamulus_transport_recorder_reconnect_and_cleanup
             harness.CLIENT_A_NAME,
             harness.CLIENT_B_NAME,
         }
+        recovered_identity = harness.certify_owned_client_roster_identity()
+        assert recovered_identity.roster_size == 2
+        assert {
+            client.local_self_channel_id
+            for client in recovered_identity.owned_clients
+        } == {0}
+        assert {
+            client.self_ordinal for client in recovered_identity.owned_clients
+        } == {0, 1}
+        assert len(
+            {
+                client.server_channel_id
+                for client in recovered_identity.owned_clients
+            }
+        ) == 2
+        assert all(
+            client.server_channel_id
+            == recovered_identity.server_channel_ids_by_ordinal[client.self_ordinal]
+            for client in recovered_identity.owned_clients
+        )
 
         second_pass = harness.run_transport(duration_s=5.0, tail_s=1.5)
         assert {entry["name"] for entry in second_pass.server_clients} == {
@@ -82,6 +120,11 @@ def test_dual_musician_lab_real_jamulus_transport_recorder_reconnect_and_cleanup
             "recorder_started_once": True,
             "recorder_stopped_once": True,
             "guest_recovered_with_same_two_identities": True,
+            "owned_rpc_self_ordinals_certified": tuple(
+                client.self_ordinal
+                for client in recovered_identity.owned_clients
+            ),
+            "ordered_roster_digest": recovered_identity.common_roster_digest,
             "recorded_wav_count": len(wavs),
             "human_audibility": "not run",
             "physical_audio_hardware": "not run",

@@ -652,6 +652,44 @@ class TestTakeValidation(unittest.TestCase):
                 self.assertNotIn("51000", persisted)
                 self.assertNotIn("127_0_0_1", persisted)
 
+    def test_proven_musician_reconnect_keys_group_as_ordered_segments(self):
+        with tempfile.TemporaryDirectory() as d:
+            take = Path(d) / "take"
+            take.mkdir()
+            first = "Alex-127_0_0_1_52000-0-1.wav"
+            second = "Alex-127_0_0_1_52001-100-1.wav"
+            _write_wav(take / first, seconds=0.1)
+            _write_wav(take / second, seconds=0.1)
+            _write_lof(take / "take.lof", (first, 0.0), (second, 1.0))
+            participant_id = str(uuid.uuid4())
+
+            result = write_take_manifest(
+                take,
+                expected_tracks=1,
+                required_local_stems=0,
+                recording_receipts=(
+                    _receipt(
+                        "Alex", 52000, participant_id=participant_id
+                    ),
+                    _receipt(
+                        "Alex", 52001, participant_id=participant_id
+                    ),
+                ),
+            )
+            payload = json.loads((take / "webjam-take.json").read_text())
+
+            self.assertTrue(result.ok, result.errors)
+            self.assertEqual(len(payload["tracks"]), 1)
+            self.assertEqual(payload["tracks"][0]["participant_id"], participant_id)
+            self.assertEqual(
+                [segment["project_start_frame"] for segment in payload["tracks"][0]["segments"]],
+                [0, 48_000],
+            )
+            self.assertEqual(
+                [segment["path"] for segment in payload["tracks"][0]["segments"]],
+                ["server-media-001.wav", "server-media-002.wav"],
+            )
+
     def test_missing_or_conflicting_receipt_preserves_audio_needs_attention(self):
         with tempfile.TemporaryDirectory() as d:
             take = Path(d) / "take"

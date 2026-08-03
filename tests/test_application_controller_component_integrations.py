@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -13,6 +14,16 @@ import pytest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from core.component_store import ComponentBusyReason  # noqa: E402
+from core.jamulus_roster_identity import (  # noqa: E402
+    JamulusCommonProfile,
+    ordered_client_local_roster_fingerprint,
+    ordered_common_roster_digest,
+)
+from core.jamulus_rpc_client import (  # noqa: E402
+    JamulusOrderedRosterProof,
+    JamulusOrderedRosterRow,
+    JamulusRpcMonitorIdentity,
+)
 from core.settings import AppSettings  # noqa: E402
 from services.webex_app import (  # noqa: E402
     WebexAppInfo,
@@ -21,6 +32,7 @@ from services.webex_app import (  # noqa: E402
 from webjam_qt.controllers.application_controller import (  # noqa: E402
     ApplicationController,
 )
+from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 
 
@@ -167,6 +179,473 @@ def test_ready_update_message_points_to_the_visible_more_menu(controller):
     message = controller.window.flash_message.call_args.args[0]
     assert "More → Jamulus Updates" in message
     assert "Session Tools" not in message
+
+
+def test_host_presence_delegates_lease_renewal_without_double_bind(
+    controller,
+):
+    profile = JamulusCommonProfile("Host", 3, "Chicago", 2)
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(2, 7, 4321),
+        rpc_connection_generation=3,
+        audio_connection_generation=5,
+        roster_revision=11,
+        observed_at=123.0,
+        rows=(JamulusOrderedRosterRow(0, 0, profile),),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest((profile,)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0,),
+            own_ordinal=0,
+        ),
+    )
+    challenges = [
+        SimpleNamespace(challenge="first", challenge_epoch=1, topology_epoch=1),
+        SimpleNamespace(challenge="first", challenge_epoch=1, topology_epoch=1),
+        SimpleNamespace(challenge="renewed", challenge_epoch=2, topology_epoch=1),
+    ]
+    fake_host = SimpleNamespace(
+        active=True,
+        install_recording_presence_roster=MagicMock(side_effect=challenges),
+        bind_host_recording_presence=MagicMock(return_value=object()),
+        invalidate_recording_presence=MagicMock(),
+    )
+    person = SimpleNamespace(channel_id=0, name="Host", is_local=True)
+    old_host = controller.host_peer
+    old_capture = controller.settings.local_capture_enabled
+    try:
+        controller.host_peer = fake_host
+        controller.settings.local_capture_enabled = True
+        controller._host_recording_presence_generation = 0
+        controller._host_recording_presence_bound_key = None
+
+        controller._publish_ordered_recording_presence(
+            person, proof, capture_enabled=True, publish_guest=False
+        )
+        first_generation = (
+            fake_host.bind_host_recording_presence.call_args.kwargs[
+                "presence_generation"
+            ]
+        )
+        assert (
+            fake_host.install_recording_presence_roster.call_args.kwargs[
+                "ambiguous_ordinals"
+            ]
+            == ()
+        )
+        assert (
+            fake_host.bind_host_recording_presence.call_args.kwargs[
+                "ambiguous_ordinals"
+            ]
+            == ()
+        )
+        controller._publish_ordered_recording_presence(
+            person, proof, capture_enabled=True, publish_guest=False
+        )
+        assert fake_host.bind_host_recording_presence.call_count == 1
+
+        controller._primary_ordered_roster_proof = proof
+        controller.participants = {0: person}
+        with (
+            patch.object(
+                controller.jamulus,
+                "request_ordered_roster_refresh",
+                return_value=True,
+            ),
+            patch.object(
+                controller.jamulus,
+                "ordered_roster_proof_for",
+                return_value=proof,
+            ),
+            patch.object(
+                controller.recording,
+                "retry_pending_authenticated_roster_observation",
+            ) as retry_pending,
+        ):
+            controller._renew_ordered_recording_presence()
+        # HostPeerSession.install_recording_presence_roster owns the atomic
+        # challenge renewal. ApplicationController must not immediately bind
+        # the same host a second time merely because the challenge changed.
+        assert fake_host.install_recording_presence_roster.call_count == 3
+        assert fake_host.bind_host_recording_presence.call_count == 1
+        retry_pending.assert_called_once_with()
+        assert first_generation > 0
+    finally:
+        controller.host_peer = old_host
+        controller.settings.local_capture_enabled = old_capture
+        controller._primary_ordered_roster_proof = None
+        controller._primary_ordered_roster_refresh_identity = None
+        controller._primary_ordered_roster_refresh_key = None
+        controller._host_recording_presence_bound_key = None
+        controller.participants = {}
+
+
+def test_host_cards_use_v2_ordinals_when_every_guest_calls_itself_local_zero(
+    controller,
+):
+    profiles = (
+        JamulusCommonProfile("Alex", 3, "Chicago", 2),
+        JamulusCommonProfile("Alex", 4, "Chicago", 2),
+        JamulusCommonProfile("Alex", 5, "Chicago", 2),
+    )
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(5, 9, 8765),
+        rpc_connection_generation=2,
+        audio_connection_generation=3,
+        roster_revision=4,
+        observed_at=456.0,
+        rows=tuple(
+            JamulusOrderedRosterRow(index, index, profile)
+            for index, profile in enumerate(profiles)
+        ),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest(profiles),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0, 1, 2),
+            own_ordinal=0,
+        ),
+    )
+    durable_ids = tuple(str(uuid.uuid4()) for _ in range(3))
+    claims = tuple(
+        SimpleNamespace(
+            self_ordinal=index,
+            participant_id=participant_id,
+            recorder_eligible=True,
+            topology_epoch=1,
+            process_generation=(9 if index == 0 else index + 1),
+            rpc_connection_generation=(2 if index == 0 else 1),
+            audio_connection_generation=(3 if index == 0 else 1),
+            roster_count=3,
+            ordered_roster_digest=proof.common_digest,
+        )
+        for index, participant_id in enumerate(durable_ids)
+    )
+    fake_host = SimpleNamespace(
+        active=True,
+        host_enrollment=SimpleNamespace(participant_id=durable_ids[0]),
+        recording_presence_snapshot=MagicMock(return_value=claims),
+        # A legacy private-local-ID lookup would collapse both guests onto the
+        # same zero. Production mapping must never call it.
+        participant_id_for_channel=MagicMock(return_value="wrong-v1-owner"),
+    )
+    old_host = controller.host_peer
+    old_guest = controller.guest_peer
+    old_proof = controller._primary_ordered_roster_proof
+    try:
+        controller.host_peer = fake_host
+        controller._primary_ordered_roster_proof = proof
+        controller.participants = {
+            index: ParticipantPresentation(
+                channel_id=index,
+                name="Alex",
+                roster_ordinal=index,
+            )
+            for index in range(3)
+        }
+        with patch.object(
+            controller.jamulus,
+            "ordered_roster_proof_for",
+            return_value=proof,
+        ):
+            assert [
+                controller.peer_participant_id_for_channel(index)
+                for index in range(3)
+            ] == list(durable_ids)
+        fake_host.participant_id_for_channel.assert_not_called()
+    finally:
+        controller.host_peer = old_host
+        controller.guest_peer = old_guest
+        controller._primary_ordered_roster_proof = old_proof
+        controller.participants = {}
+
+
+def test_expired_ordered_presence_requests_epoch_refresh_before_invalidation(
+    controller,
+):
+    profile = JamulusCommonProfile("Host", 3, "Chicago", 2)
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(3, 8, 6789),
+        rpc_connection_generation=2,
+        audio_connection_generation=4,
+        roster_revision=1,
+        observed_at=1.0,
+        rows=(JamulusOrderedRosterRow(0, 0, profile),),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest((profile,)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0,), own_ordinal=0
+        ),
+    )
+    fake_host = SimpleNamespace(
+        active=True,
+        invalidate_recording_presence=MagicMock(),
+    )
+    old_host = controller.host_peer
+    try:
+        controller.host_peer = fake_host
+        controller._primary_ordered_roster_proof = proof
+        controller.participants = {
+            0: ParticipantPresentation(
+                channel_id=0,
+                name="Host",
+                is_local=True,
+                roster_ordinal=0,
+            )
+        }
+        refreshed = JamulusOrderedRosterProof(
+            identity=proof.identity,
+            rpc_connection_generation=proof.rpc_connection_generation,
+            audio_connection_generation=proof.audio_connection_generation,
+            roster_revision=proof.roster_revision,
+            observed_at=9.0,
+            rows=proof.rows,
+            own_ordinal=proof.own_ordinal,
+            common_digest=proof.common_digest,
+            host_roster_fingerprint=proof.host_roster_fingerprint,
+        )
+        with (
+            patch.object(
+                controller.jamulus,
+                "request_ordered_roster_refresh",
+                return_value=True,
+            ) as refresh,
+            patch.object(
+                controller.jamulus,
+                "ordered_roster_proof_for",
+                side_effect=(None, refreshed),
+            ),
+            patch.object(
+                controller,
+                "_publish_ordered_recording_presence",
+            ) as publish,
+        ):
+            controller._renew_ordered_recording_presence()
+            assert controller._primary_ordered_roster_proof is None
+            assert (
+                controller._primary_ordered_roster_refresh_identity
+                == proof.identity
+            )
+            assert (
+                controller._primary_ordered_roster_refresh_key
+                == proof.authority_key
+            )
+            controller._renew_ordered_recording_presence()
+        assert refresh.call_count == 2
+        assert all(
+            item.args == (proof.identity,) for item in refresh.call_args_list
+        )
+        assert controller._primary_ordered_roster_proof == refreshed
+        fake_host.invalidate_recording_presence.assert_called_once_with()
+        publish.assert_called_once_with(
+            controller.participants[0],
+            refreshed,
+            capture_enabled=False,
+            publish_guest=True,
+        )
+    finally:
+        controller.host_peer = old_host
+        controller._primary_ordered_roster_proof = None
+        controller._primary_ordered_roster_refresh_identity = None
+        controller._primary_ordered_roster_refresh_key = None
+        controller.participants = {}
+
+
+def test_ordered_presence_refresh_send_failure_retires_authority(controller):
+    profile = JamulusCommonProfile("Host", 3, "Chicago", 2)
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(3, 8, 6789),
+        rpc_connection_generation=2,
+        audio_connection_generation=4,
+        roster_revision=1,
+        observed_at=1.0,
+        rows=(JamulusOrderedRosterRow(0, 0, profile),),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest((profile,)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0,), own_ordinal=0
+        ),
+    )
+    fake_host = SimpleNamespace(
+        active=True,
+        invalidate_recording_presence=MagicMock(),
+    )
+    old_host = controller.host_peer
+    try:
+        controller.host_peer = fake_host
+        controller._primary_ordered_roster_proof = proof
+        with (
+            patch.object(
+                controller.jamulus,
+                "request_ordered_roster_refresh",
+                return_value=False,
+            ),
+            patch.object(
+                controller.jamulus,
+                "ordered_roster_proof_for",
+            ) as read_proof,
+        ):
+            controller._renew_ordered_recording_presence()
+        assert controller._primary_ordered_roster_proof is None
+        assert controller._primary_ordered_roster_refresh_identity == proof.identity
+        assert controller._primary_ordered_roster_refresh_key == proof.authority_key
+        fake_host.invalidate_recording_presence.assert_called_once_with()
+        read_proof.assert_not_called()
+    finally:
+        controller.host_peer = old_host
+        controller._primary_ordered_roster_proof = None
+        controller._primary_ordered_roster_refresh_identity = None
+        controller._primary_ordered_roster_refresh_key = None
+
+
+def test_guest_seed_recovery_republishes_invalidated_v2_observation(controller):
+    profile = JamulusCommonProfile("Guest", 5, "Chicago", 2)
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(4, 9, 7890),
+        rpc_connection_generation=3,
+        audio_connection_generation=5,
+        roster_revision=2,
+        observed_at=1.0,
+        rows=(JamulusOrderedRosterRow(0, 0, profile),),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest((profile,)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0,), own_ordinal=0
+        ),
+    )
+    refreshed = JamulusOrderedRosterProof(
+        identity=proof.identity,
+        rpc_connection_generation=proof.rpc_connection_generation,
+        audio_connection_generation=proof.audio_connection_generation,
+        roster_revision=proof.roster_revision,
+        observed_at=9.0,
+        rows=proof.rows,
+        own_ordinal=proof.own_ordinal,
+        common_digest=proof.common_digest,
+        host_roster_fingerprint=proof.host_roster_fingerprint,
+    )
+    guest = SimpleNamespace(
+        invalidate_recording_presence=MagicMock(),
+        observe_presence_v2=MagicMock(),
+    )
+    inactive_host = SimpleNamespace(active=False)
+    old_host = controller.host_peer
+    old_guest = controller.guest_peer
+    try:
+        controller.host_peer = inactive_host
+        controller.guest_peer = guest
+        controller._primary_ordered_roster_proof = proof
+        controller.participants = {
+            0: ParticipantPresentation(
+                channel_id=0,
+                name="Guest",
+                is_local=True,
+                roster_ordinal=0,
+            )
+        }
+        with (
+            patch.object(
+                controller.jamulus,
+                "request_ordered_roster_refresh",
+                return_value=True,
+            ),
+            patch.object(
+                controller.jamulus,
+                "ordered_roster_proof_for",
+                side_effect=(None, refreshed),
+            ),
+        ):
+            controller._renew_ordered_recording_presence()
+            controller._renew_ordered_recording_presence()
+
+        guest.invalidate_recording_presence.assert_called_once_with()
+        guest.observe_presence_v2.assert_called_once()
+        args = guest.observe_presence_v2.call_args.args
+        kwargs = guest.observe_presence_v2.call_args.kwargs
+        assert args == ("Guest",)
+        assert kwargs["ordered_roster_digest"] == proof.common_digest
+        assert kwargs["self_ordinal"] == 0
+        assert kwargs["process_generation"] == 9
+        assert kwargs["rpc_connection_generation"] == 3
+        assert kwargs["audio_connection_generation"] == 5
+    finally:
+        controller.host_peer = old_host
+        controller.guest_peer = old_guest
+        controller._primary_ordered_roster_proof = None
+        controller._primary_ordered_roster_refresh_identity = None
+        controller._primary_ordered_roster_refresh_key = None
+        controller.participants = {}
+
+
+def test_settings_capture_save_never_publishes_stale_ordered_proof(controller):
+    profile = JamulusCommonProfile("Host", 3, "Chicago", 2)
+    proof = JamulusOrderedRosterProof(
+        identity=JamulusRpcMonitorIdentity(7, 12, 9876),
+        rpc_connection_generation=3,
+        audio_connection_generation=5,
+        roster_revision=2,
+        observed_at=1.0,
+        rows=(JamulusOrderedRosterRow(0, 0, profile),),
+        own_ordinal=0,
+        common_digest=ordered_common_roster_digest((profile,)),
+        host_roster_fingerprint=ordered_client_local_roster_fingerprint(
+            (0,), own_ordinal=0
+        ),
+    )
+    fake_host = SimpleNamespace(
+        active=True,
+        invalidate_recording_presence=MagicMock(),
+        bind_host_presence=MagicMock(),
+    )
+    old_host = controller.host_peer
+    old_guest = controller.guest_peer
+    try:
+        controller.host_peer = fake_host
+        controller.guest_peer = None
+        controller._primary_ordered_roster_proof = proof
+        controller.participants = {
+            0: ParticipantPresentation(
+                channel_id=0,
+                name="Host",
+                is_local=True,
+                roster_ordinal=0,
+            )
+        }
+        with (
+            patch.object(
+                controller.jamulus,
+                "ordered_roster_proof_for",
+                return_value=None,
+            ),
+            patch.object(
+                controller.jamulus,
+                "request_ordered_roster_refresh",
+                return_value=True,
+            ) as refresh,
+            patch.object(
+                controller,
+                "_publish_ordered_recording_presence",
+            ) as publish,
+        ):
+            controller._refresh_local_recording_presence_after_settings(True)
+
+        publish.assert_not_called()
+        refresh.assert_called_once_with(proof.identity)
+        assert controller._primary_ordered_roster_proof is None
+        assert controller._primary_ordered_roster_refresh_identity == proof.identity
+        assert controller._primary_ordered_roster_refresh_key == proof.authority_key
+        fake_host.invalidate_recording_presence.assert_called_once_with()
+        fake_host.bind_host_presence.assert_called_once_with(
+            0,
+            "Host",
+            capture_enabled=True,
+        )
+    finally:
+        controller.host_peer = old_host
+        controller.guest_peer = old_guest
+        controller._primary_ordered_roster_proof = None
+        controller._primary_ordered_roster_refresh_identity = None
+        controller._primary_ordered_roster_refresh_key = None
+        controller.participants = {}
 
 
 def test_controller_registers_catalog_verified_component_providers(controller):

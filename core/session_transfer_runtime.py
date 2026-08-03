@@ -21,10 +21,13 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from core.network_invite import BandInvite, create_invite_link
+from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.session_transfer import (
     EnrollmentRegistry,
     ParticipantEnrollment,
     PresenceBinding,
+    PresenceV2Challenge,
+    PresenceV2Proof,
     RecordingSignal,
     SessionControlState,
     SessionCredentials,
@@ -32,12 +35,17 @@ from core.session_transfer import (
     SessionPeerServer,
     SessionStateSnapshot,
     SessionTransferError,
+    TransferConflictError,
     TransferDescriptor,
     TransferGap,
     TransferIntegrityError,
     TransferStore,
     _sha256_file,
     _write_json_secure,
+    _presence_digest_text,
+    _presence_fingerprint_text,
+    _presence_int,
+    _presence_ordinal_tuple,
     derive_participant_id,
     load_or_create_installation_id,
 )
@@ -263,6 +271,65 @@ class PendingLocalSegment:
     error: str = ""
 
 
+@dataclass(frozen=True, repr=False)
+class _DesiredPresenceV2:
+    display_name: str
+    ordered_roster_digest: str
+    roster_count: int
+    self_ordinal: int
+    process_generation: int
+    rpc_connection_generation: int
+    audio_connection_generation: int
+    capture_enabled: bool
+
+    def __post_init__(self) -> None:
+        digest = _presence_digest_text(self.ordered_roster_digest)
+        count = _presence_int(self.roster_count, "roster_count", positive=True)
+        if count > MAX_JAMULUS_ROSTER_ROWS:
+            raise ValueError("roster_count exceeds the supported limit.")
+        ordinal = _presence_int(self.self_ordinal, "self_ordinal")
+        if ordinal >= count:
+            raise ValueError("self_ordinal must identify a roster row.")
+        object.__setattr__(
+            self,
+            "display_name",
+            " ".join(str(self.display_name).split())[:80] or "Musician",
+        )
+        object.__setattr__(self, "ordered_roster_digest", digest)
+        object.__setattr__(self, "roster_count", count)
+        object.__setattr__(self, "self_ordinal", ordinal)
+        object.__setattr__(
+            self,
+            "process_generation",
+            _presence_int(
+                self.process_generation, "process_generation", positive=True
+            ),
+        )
+        object.__setattr__(
+            self,
+            "rpc_connection_generation",
+            _presence_int(
+                self.rpc_connection_generation,
+                "rpc_connection_generation",
+                positive=True,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "audio_connection_generation",
+            _presence_int(
+                self.audio_connection_generation,
+                "audio_connection_generation",
+                positive=True,
+            ),
+        )
+        if type(self.capture_enabled) is not bool:
+            raise ValueError("capture_enabled must be a boolean.")
+
+    def __repr__(self) -> str:
+        return "_DesiredPresenceV2(private=[redacted])"
+
+
 class HostPeerSession:
     """Own one credential-rotated, private-LAN host peer service."""
 
@@ -284,6 +351,8 @@ class HostPeerSession:
         self._root: Path | None = None
         self._registered_takes: dict[str, Path] = {}
         self._expected_by_take: dict[str, tuple[str, ...]] = {}
+        self._capture_cursor_by_take: dict[str, int] = {}
+        self._presence_readiness_issue_by_take: dict[str, str] = {}
         # One take can be registered directly while the maintenance worker is
         # also reconciling it.  Keep their slow checksum/copy/alignment work
         # serial without holding the host lifecycle lock or blocking another
@@ -302,6 +371,11 @@ class HostPeerSession:
         self._stop_retry_thread: threading.Thread | None = None
         self._stop_retry_generation: int | None = None
         self._stop_requested_generation: int | None = None
+        self._host_presence_v2_desired: _DesiredPresenceV2 | None = None
+        self._host_presence_v2_desired_fingerprint = ""
+        self._host_presence_v2_desired_ambiguous_ordinals: tuple[int, ...] = ()
+        self._host_presence_v2_generation = 0
+        self._recording_roster_key: tuple[object, ...] | None = None
         # A maintenance pass may be in a long checksum/copy when the user
         # leaves.  Give each start its own identity so that old work cannot
         # publish a manifest or UI update after a stop (or a rapid restart).
@@ -383,7 +457,14 @@ class HostPeerSession:
             self._root = root
             self._registered_takes.clear()
             self._expected_by_take.clear()
+            self._capture_cursor_by_take.clear()
+            self._presence_readiness_issue_by_take.clear()
             self._take_reconcile_locks.clear()
+            self._host_presence_v2_desired = None
+            self._host_presence_v2_desired_fingerprint = ""
+            self._host_presence_v2_desired_ambiguous_ordinals = ()
+            self._host_presence_v2_generation = 0
+            self._recording_roster_key = None
             self._thread = threading.Thread(
                 target=self._maintenance_loop,
                 args=(generation, stop_event, wake_event),
@@ -457,7 +538,14 @@ class HostPeerSession:
                 self._root = None
                 self._registered_takes.clear()
                 self._expected_by_take.clear()
+                self._capture_cursor_by_take.clear()
+                self._presence_readiness_issue_by_take.clear()
                 self._take_reconcile_locks.clear()
+                self._host_presence_v2_desired = None
+                self._host_presence_v2_desired_fingerprint = ""
+                self._host_presence_v2_desired_ambiguous_ordinals = ()
+                self._host_presence_v2_generation = 0
+                self._recording_roster_key = None
                 if self._stop_requested_generation == generation:
                     self._stop_requested_generation = None
         return True
@@ -479,6 +567,12 @@ class HostPeerSession:
             generation = self._lifecycle_generation
             self._stop_requested_generation = generation
             self._lifecycle_generation += 1
+            if self.registry is not None:
+                self.registry.invalidate_presence_v2()
+            self._host_presence_v2_desired = None
+            self._host_presence_v2_desired_fingerprint = ""
+            self._host_presence_v2_desired_ambiguous_ordinals = ()
+            self._recording_roster_key = None
         self._stop_event.set()
         self._maintenance_wake.set()
         return generation
@@ -576,28 +670,341 @@ class HostPeerSession:
             return 0
         return self.registry.reconcile_presence_channels(active_channel_ids)
 
+    def install_recording_presence_roster(
+        self,
+        ordered_roster_digest: str,
+        roster_count: int,
+        *,
+        self_ordinal: int,
+        host_roster_fingerprint: str,
+        ambiguous_ordinals: tuple[int, ...],
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        force_rotate: bool = False,
+    ) -> PresenceV2Challenge | None:
+        """Bind the v2 challenge to one exact primary-server roster proof."""
+
+        if self.registry is None:
+            return None
+        ordinal = _presence_int(self_ordinal, "self_ordinal")
+        count = _presence_int(roster_count, "roster_count", positive=True)
+        if ordinal >= count:
+            raise ValueError("self_ordinal must identify a roster row.")
+        fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
+        ambiguous = _presence_ordinal_tuple(
+            ambiguous_ordinals, roster_count=count
+        )
+        challenge = self.registry.install_presence_v2_roster(
+            ordered_roster_digest,
+            roster_count,
+            host_roster_fingerprint=fingerprint,
+            ambiguous_ordinals=ambiguous,
+            process_generation=process_generation,
+            rpc_connection_generation=rpc_connection_generation,
+            audio_connection_generation=audio_connection_generation,
+            force_rotate=force_rotate,
+        )
+        key = (
+            challenge.ordered_roster_digest,
+            challenge.roster_count,
+            ordinal,
+            _presence_int(
+                process_generation, "process_generation", positive=True
+            ),
+            _presence_int(
+                rpc_connection_generation,
+                "rpc_connection_generation",
+                positive=True,
+            ),
+            _presence_int(
+                audio_connection_generation,
+                "audio_connection_generation",
+                positive=True,
+            ),
+            fingerprint,
+            ambiguous,
+        )
+        with self._lock:
+            self._recording_roster_key = key
+        self._refresh_host_recording_presence()
+        return challenge
+
+    def bind_host_recording_presence(
+        self,
+        display_name: str,
+        *,
+        ordered_roster_digest: str,
+        roster_count: int,
+        self_ordinal: int,
+        host_roster_fingerprint: str,
+        ambiguous_ordinals: tuple[int, ...],
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        challenge: str,
+        challenge_epoch: int,
+        topology_epoch: int,
+        presence_generation: int,
+        capture_enabled: bool,
+    ) -> PresenceV2Proof | None:
+        """Publish the enrolled host's challenge-scoped roster ordinal."""
+
+        if self.registry is None or self.host_enrollment is None:
+            return None
+        desired = _DesiredPresenceV2(
+            display_name=display_name,
+            ordered_roster_digest=ordered_roster_digest,
+            roster_count=roster_count,
+            self_ordinal=self_ordinal,
+            process_generation=process_generation,
+            rpc_connection_generation=rpc_connection_generation,
+            audio_connection_generation=audio_connection_generation,
+            capture_enabled=capture_enabled,
+        )
+        fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
+        ambiguous = _presence_ordinal_tuple(
+            ambiguous_ordinals, roster_count=desired.roster_count
+        )
+        supplied_generation = _presence_int(
+            presence_generation, "presence_generation", positive=True
+        )
+        expected_key = (
+            desired.ordered_roster_digest,
+            desired.roster_count,
+            desired.self_ordinal,
+            desired.process_generation,
+            desired.rpc_connection_generation,
+            desired.audio_connection_generation,
+            fingerprint,
+            ambiguous,
+        )
+        with self._lock:
+            if expected_key != self._recording_roster_key:
+                raise TransferConflictError(
+                    "The host recorder presence does not match its proven roster."
+                )
+            generation = max(
+                time.time_ns(),
+                self._host_presence_v2_generation + 1,
+                supplied_generation,
+            )
+            proof = self.registry.bind_presence_v2(
+                self.host_enrollment.participant_id,
+                desired.display_name,
+                ordered_roster_digest=desired.ordered_roster_digest,
+                roster_count=desired.roster_count,
+                self_ordinal=desired.self_ordinal,
+                process_generation=desired.process_generation,
+                rpc_connection_generation=desired.rpc_connection_generation,
+                audio_connection_generation=desired.audio_connection_generation,
+                challenge=challenge,
+                challenge_epoch=challenge_epoch,
+                topology_epoch=topology_epoch,
+                presence_generation=generation,
+                capture_enabled=desired.capture_enabled,
+                _allow_ambiguous_ordinal=(
+                    desired.self_ordinal in ambiguous
+                ),
+            )
+            self._host_presence_v2_generation = generation
+            self._host_presence_v2_desired = desired
+            self._host_presence_v2_desired_fingerprint = fingerprint
+            self._host_presence_v2_desired_ambiguous_ordinals = ambiguous
+            return proof
+
+    def _refresh_host_recording_presence(self) -> PresenceV2Proof | None:
+        """Renew the host claim after a lease rotation with a fresh generation."""
+
+        with self._lock:
+            registry = self.registry
+            enrollment = self.host_enrollment
+            desired = self._host_presence_v2_desired
+            desired_fingerprint = self._host_presence_v2_desired_fingerprint
+            desired_ambiguous = (
+                self._host_presence_v2_desired_ambiguous_ordinals
+            )
+            key = self._recording_roster_key
+            if registry is None or enrollment is None or desired is None:
+                return None
+            desired_key = (
+                desired.ordered_roster_digest,
+                desired.roster_count,
+                desired.self_ordinal,
+                desired.process_generation,
+                desired.rpc_connection_generation,
+                desired.audio_connection_generation,
+                desired_fingerprint,
+                desired_ambiguous,
+            )
+            if key != desired_key:
+                return None
+            try:
+                challenge = registry.current_presence_v2_challenge()
+            except TransferConflictError:
+                return None
+            current = registry.recording_presence_snapshot(
+                ordered_roster_digest=challenge.ordered_roster_digest,
+                roster_count=challenge.roster_count,
+                challenge=challenge.challenge,
+                challenge_epoch=challenge.challenge_epoch,
+            )
+            for proof in current:
+                if (
+                    proof.participant_id == enrollment.participant_id
+                    and proof.display_name == desired.display_name
+                    and proof.self_ordinal == desired.self_ordinal
+                    and proof.process_generation == desired.process_generation
+                    and proof.rpc_connection_generation
+                    == desired.rpc_connection_generation
+                    and proof.audio_connection_generation
+                    == desired.audio_connection_generation
+                    and proof.capture_enabled == desired.capture_enabled
+                ):
+                    return proof
+            generation = max(
+                time.time_ns(), self._host_presence_v2_generation + 1
+            )
+            try:
+                proof = registry.bind_presence_v2(
+                    enrollment.participant_id,
+                    desired.display_name,
+                    ordered_roster_digest=desired.ordered_roster_digest,
+                    roster_count=desired.roster_count,
+                    self_ordinal=desired.self_ordinal,
+                    process_generation=desired.process_generation,
+                    rpc_connection_generation=desired.rpc_connection_generation,
+                    audio_connection_generation=desired.audio_connection_generation,
+                    challenge=challenge.challenge,
+                    challenge_epoch=challenge.challenge_epoch,
+                    topology_epoch=challenge.topology_epoch,
+                    presence_generation=generation,
+                    capture_enabled=desired.capture_enabled,
+                    _allow_ambiguous_ordinal=(
+                        desired.self_ordinal in desired_ambiguous
+                    ),
+                )
+            except TransferConflictError:
+                # A concurrent peer challenge fetch can rotate the lease
+                # between the read and bind. The next bounded maintenance pass
+                # retries against the new exact epoch.
+                return None
+            self._host_presence_v2_generation = generation
+            return proof
+
+    def recording_presence_snapshot(
+        self,
+        *,
+        ordered_roster_digest: str | None = None,
+        roster_count: int | None = None,
+        challenge: str | None = None,
+        challenge_epoch: int | None = None,
+    ) -> tuple[PresenceV2Proof, ...]:
+        """Return fresh v2 recorder proofs; legacy bindings never appear."""
+
+        if self.registry is None:
+            return ()
+        self._refresh_host_recording_presence()
+        return self.registry.recording_presence_snapshot(
+            ordered_roster_digest=ordered_roster_digest,
+            roster_count=roster_count,
+            challenge=challenge,
+            challenge_epoch=challenge_epoch,
+        )
+
+    def invalidate_recording_presence(self) -> None:
+        with self._lock:
+            registry = self.registry
+            self._host_presence_v2_desired = None
+            self._host_presence_v2_desired_fingerprint = ""
+            self._host_presence_v2_desired_ambiguous_ordinals = ()
+            self._recording_roster_key = None
+        if registry is not None:
+            registry.invalidate_presence_v2()
+
+    def _update_expected_capture_participants(self, take_id: str) -> None:
+        """Union enrolled-peer Local Original obligations for one take."""
+
+        registry = self.registry
+        if registry is None:
+            return
+        host_id = self.host_enrollment.participant_id if self.host_enrollment else ""
+        expected = set(self._expected_by_take.get(take_id, ()))
+        if registry.presence_v2_configured():
+            cursor = self._capture_cursor_by_take.setdefault(
+                take_id, registry.presence_v2_capture_cursor()
+            )
+            proofs = self.recording_presence_snapshot()
+            fresh_ids = {proof.participant_id for proof in proofs}
+            expected.update(
+                proof.participant_id
+                for proof in proofs
+                if proof.participant_id != host_id and proof.capture_enabled
+            )
+            expected.update(
+                participant_id
+                for participant_id in (
+                    registry.current_capture_enabled_participant_ids()
+                )
+                if participant_id != host_id
+            )
+            expected.update(
+                participant_id
+                for participant_id in (
+                    registry.recording_presence_missing_participant_ids(
+                        capture_enabled_only=True
+                    )
+                )
+                if participant_id != host_id
+            )
+            expected.update(
+                participant_id
+                for participant_id in registry.capture_enabled_participant_ids_since(
+                    cursor
+                )
+                if participant_id != host_id
+            )
+            unproven_legacy_capture = {
+                participant_id
+                for participant_id in registry.legacy_capture_enabled_participant_ids()
+                if participant_id != host_id and participant_id not in fresh_ids
+            }
+            expected.update(unproven_legacy_capture)
+            missing = registry.recording_presence_missing_participant_ids()
+            if (
+                (host_id and host_id not in fresh_ids)
+                or missing
+                or unproven_legacy_capture
+            ):
+                self._presence_readiness_issue_by_take.setdefault(
+                    take_id,
+                    "Recorder participant readiness was incomplete.",
+                )
+        else:
+            # Legacy presence remains valid only for Local Original delivery;
+            # it never enters the recorder-ownership snapshot.
+            for enrollment in registry.participants():
+                if enrollment.participant_id == host_id:
+                    continue
+                binding = registry.presence_for_participant(
+                    enrollment.participant_id
+                )
+                if binding is not None and binding.capture_enabled:
+                    expected.add(enrollment.participant_id)
+        self._expected_by_take[take_id] = tuple(sorted(expected))
+
     def begin_take(
         self, take_id: str, *, started_utc: str
     ) -> SessionStateSnapshot | None:
         if self.control is None:
             return None
-        snapshot = self.control.begin(take_id, started_utc=started_utc)
-        if take_id in self._expected_by_take:
-            return snapshot
-        expected: list[str] = []
-        if self.registry is not None:
-            host_id = (
-                self.host_enrollment.participant_id if self.host_enrollment else ""
+        registry = self.registry
+        if registry is not None:
+            self._capture_cursor_by_take.setdefault(
+                take_id, registry.presence_v2_capture_cursor()
             )
-            for enrollment in self.registry.participants():
-                if enrollment.participant_id == host_id:
-                    continue
-                binding = self.registry.presence_for_participant(
-                    enrollment.participant_id
-                )
-                if binding is not None and binding.capture_enabled:
-                    expected.append(enrollment.participant_id)
-        self._expected_by_take[take_id] = tuple(sorted(expected))
+        snapshot = self.control.begin(take_id, started_utc=started_utc)
+        self._update_expected_capture_participants(take_id)
         return snapshot
 
     def finish_take(
@@ -610,6 +1017,7 @@ class HostPeerSession:
     ) -> SessionStateSnapshot | None:
         if self.control is None:
             return None
+        self._update_expected_capture_participants(take_id)
         return self.control.finish(
             take_id,
             stopped_utc=stopped_utc,
@@ -710,6 +1118,12 @@ class HostPeerSession:
                 if not self._lifecycle_is_current_locked(generation, stop_event):
                     return
                 registered = tuple(self._registered_takes.items())
+            try:
+                self._refresh_host_recording_presence()
+            except Exception:  # noqa: BLE001
+                # Recorder proof renewal is fail-closed and independent of
+                # media-transfer maintenance. Never let it end the worker.
+                LOGGER.exception("Could not renew recorder-correlation presence")
             for take_id, take_dir in registered:
                 if not self._lifecycle_is_current(generation, stop_event):
                     return
@@ -790,6 +1204,7 @@ class HostPeerSession:
             transfers = self.transfers
             registry = self.registry
             expected_ids = self._expected_by_take.get(take_id, ())
+            readiness_issue = self._presence_readiness_issue_by_take.get(take_id, "")
         from core.take_project import (
             AlignmentState,
             MediaSegment,
@@ -844,6 +1259,8 @@ class HostPeerSession:
         attached_dir = folder / "transferred-isolated"
         attached_dir.mkdir(exist_ok=True)
         transfer_errors: list[str] = []
+        if readiness_issue:
+            transfer_errors.append(f"{_TRANSFER_ERROR_PREFIX}{readiness_issue}")
         transfer_summary: list[dict] = []
         next_order = max((item.order for item in project.tracks), default=-1) + 1
         attached_new_media = False
@@ -1398,10 +1815,19 @@ class GuestPeerSession:
         self.enrollment: ParticipantEnrollment | None = None
         self.last_state: SessionStateSnapshot | None = None
         self.last_error = ""
+        self.last_presence_v2_error = ""
         self._desired_presence: tuple[int, str, bool] | None = None
         self._bound_presence: tuple[int, str, bool] | None = None
         self._presence_generation = 0
         self._presence_observation_epoch = 0
+        self._desired_presence_v2: _DesiredPresenceV2 | None = None
+        self._bound_presence_v2: (
+            tuple[_DesiredPresenceV2, str, int, int] | None
+        ) = None
+        self._presence_v2_generation = 0
+        self._presence_v2_observation_epoch = 0
+        self._presence_v2_topology_epoch = 0
+        self._desired_presence_v2_topology_epoch = 0
         self._capture = None
         self._active_take_id = ""
         self._capture_started_config: tuple[int, int, int] | None = None
@@ -1486,6 +1912,7 @@ class GuestPeerSession:
                 self._upload_pending()
             except SessionTransferError:
                 pass
+            self.invalidate_recording_presence()
             return True
 
     def observe_presence(self, channel_id: int, display_name: str) -> None:
@@ -1503,6 +1930,66 @@ class GuestPeerSession:
             # generation even when Jamulus happens to reuse the same channel,
             # name, and capture preference.
             self._bound_presence = None
+
+    def observe_presence_v2(
+        self,
+        display_name: str,
+        *,
+        ordered_roster_digest: str,
+        roster_count: int,
+        self_ordinal: int,
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        capture_enabled: bool | None = None,
+    ) -> None:
+        """Observe this owned client in one ordered process-bound RPC roster.
+
+        No client-local channel number is accepted.  Calling the legacy
+        :meth:`observe_presence` does not synthesize or upgrade this proof.
+        The host authenticates this enrolled WebJam peer, but the ordinal is a
+        cooperative claim and invitations are intended for trusted bandmates.
+        """
+
+        enabled = bool(self.capture_enabled()) if capture_enabled is None else capture_enabled
+        desired = _DesiredPresenceV2(
+            display_name=display_name,
+            ordered_roster_digest=ordered_roster_digest,
+            roster_count=roster_count,
+            self_ordinal=self_ordinal,
+            process_generation=process_generation,
+            rpc_connection_generation=rpc_connection_generation,
+            audio_connection_generation=audio_connection_generation,
+            capture_enabled=enabled,
+        )
+        with self._lock:
+            if (
+                self._desired_presence_v2 == desired
+                and self._desired_presence_v2_topology_epoch
+                == self._presence_v2_topology_epoch
+            ):
+                return
+            self._desired_presence_v2 = desired
+            self._desired_presence_v2_topology_epoch = (
+                self._presence_v2_topology_epoch
+            )
+            self._presence_v2_observation_epoch += 1
+            self._bound_presence_v2 = None
+
+    def invalidate_recording_presence(self) -> None:
+        """Retire local v2 proof material after RPC/audio/process proof loss."""
+
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            # A constructor/teardown failure can leave a partial lifecycle
+            # owner with no v2 state to retire. Cleanup must remain idempotent.
+            return
+        with lock:
+            self._desired_presence_v2 = None
+            self._desired_presence_v2_topology_epoch = 0
+            self._bound_presence_v2 = None
+            self._presence_v2_observation_epoch += 1
+            self.last_presence_v2_error = ""
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -1550,26 +2037,114 @@ class GuestPeerSession:
             desired = self._desired_presence
             bound = self._bound_presence
             observation_epoch = self._presence_observation_epoch
-        if desired is None or desired == bound:
+        if desired is not None and desired != bound:
+            self._presence_generation = max(
+                time.time_ns(), self._presence_generation + 1
+            )
+            self.client.bind_presence(
+                self.enrollment,
+                channel_id=desired[0],
+                display_name=desired[1],
+                generation=self._presence_generation,
+                capture_enabled=desired[2],
+            )
+            with self._lock:
+                # A newer process-authenticated roster observation may have
+                # arrived while the signed request was in flight. In that case the
+                # completed request cannot satisfy the newer proof obligation;
+                # leave it pending so the next poll publishes another generation.
+                if (
+                    self._presence_observation_epoch == observation_epoch
+                    and self._desired_presence == desired
+                ):
+                    self._bound_presence = desired
+        try:
+            self._publish_presence_v2_if_needed()
+        except SessionTransferError as exc:
+            # Recorder attribution is optional evidence around the independent
+            # recording-control and media-transfer plane. Keep it fail-closed
+            # without starving state polling, capture finalization, or upload.
+            self.last_presence_v2_error = str(exc)
+        else:
+            self.last_presence_v2_error = ""
+
+    def _publish_presence_v2_if_needed(self) -> None:
+        if self.enrollment is None:
             return
-        self._presence_generation = max(time.time_ns(), self._presence_generation + 1)
-        self.client.bind_presence(
+        challenge = self.client.presence_v2_challenge(self.enrollment)
+        with self._lock:
+            known_topology = self._presence_v2_topology_epoch
+            if known_topology == 0:
+                self._presence_v2_topology_epoch = challenge.topology_epoch
+                if self._desired_presence_v2 is not None:
+                    # The first session challenge follows the first local RPC
+                    # observation; there is no older topology to replay.
+                    self._desired_presence_v2_topology_epoch = (
+                        challenge.topology_epoch
+                    )
+            elif known_topology != challenge.topology_epoch:
+                had_desired = self._desired_presence_v2 is not None
+                self._presence_v2_topology_epoch = challenge.topology_epoch
+                self._desired_presence_v2 = None
+                self._desired_presence_v2_topology_epoch = 0
+                self._bound_presence_v2 = None
+                self._presence_v2_observation_epoch += 1
+                if had_desired:
+                    raise TransferConflictError(
+                        "A fresh local recorder-roster observation is required."
+                    )
+                return
+            desired = self._desired_presence_v2
+            bound = self._bound_presence_v2
+            observation_epoch = self._presence_v2_observation_epoch
+            desired_topology = self._desired_presence_v2_topology_epoch
+        if desired is None:
+            return
+        if desired_topology != challenge.topology_epoch:
+            raise TransferConflictError(
+                "A fresh local recorder-roster observation is required."
+            )
+        if (
+            challenge.ordered_roster_digest != desired.ordered_roster_digest
+            or challenge.roster_count != desired.roster_count
+        ):
+            raise TransferConflictError(
+                "The guest and host recorder rosters do not match."
+            )
+        expected_bound = (
+            desired,
+            challenge.challenge,
+            challenge.challenge_epoch,
+            challenge.topology_epoch,
+        )
+        if bound == expected_bound:
+            return
+        self._presence_v2_generation = max(
+            time.time_ns(), self._presence_v2_generation + 1
+        )
+        self.client.bind_presence_v2(
             self.enrollment,
-            channel_id=desired[0],
-            display_name=desired[1],
-            generation=self._presence_generation,
-            capture_enabled=desired[2],
+            display_name=desired.display_name,
+            ordered_roster_digest=desired.ordered_roster_digest,
+            roster_count=desired.roster_count,
+            self_ordinal=desired.self_ordinal,
+            process_generation=desired.process_generation,
+            rpc_connection_generation=desired.rpc_connection_generation,
+            audio_connection_generation=desired.audio_connection_generation,
+            challenge=challenge.challenge,
+            challenge_epoch=challenge.challenge_epoch,
+            topology_epoch=challenge.topology_epoch,
+            presence_generation=self._presence_v2_generation,
+            capture_enabled=desired.capture_enabled,
         )
         with self._lock:
-            # A newer process-authenticated roster observation may have
-            # arrived while the signed request was in flight. In that case the
-            # completed request cannot satisfy the newer proof obligation;
-            # leave it pending so the next poll publishes another generation.
             if (
-                self._presence_observation_epoch == observation_epoch
-                and self._desired_presence == desired
+                self._presence_v2_observation_epoch == observation_epoch
+                and self._desired_presence_v2 == desired
+                and self._desired_presence_v2_topology_epoch
+                == challenge.topology_epoch
             ):
-                self._bound_presence = desired
+                self._bound_presence_v2 = expected_bound
 
     def _new_capture(
         self,

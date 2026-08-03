@@ -486,6 +486,7 @@ promote a package or claim audibility.
 - [Reference Studio musician guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)
 - [Reference Studio architecture and migration](docs/adr/0006-standalone-reference-studio-projects.md)
 - [Recording and Studio](RECORDING_AND_STUDIO.md)
+- [Presence v2 recorder-correlation architecture](docs/adr/0009-presence-v2-recorder-correlation.md)
 - [Pocket Stage developer-preview plan](docs/plans/webjam-pocket-stage-v1.md)
 - [Pocket Stage threat model](docs/security/pocket-stage-mobile-threat-model.md)
 - [Reference Track architecture](docs/adr/0005-reference-track-jamulus-participant.md)

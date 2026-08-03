@@ -262,9 +262,38 @@ Before publishing, record the exact artifact SHA-256 and complete:
    prompt for another application's data. The regular `Jamulus.ini` must
    remain unchanged throughout. Any App Data prompt is a package failure; do
    not grant it or add WebJam to Full Disk Access.
+7. For Presence v2 recorder correlation, use the exact packaged hash with a
+   hosted server and at least two independent musician clients. Record that
+   each client sees its own client-local channel zero while the host correlates
+   distinct server ordinals and recorder stems. Repeat with the same visible
+   name but distinct complete profiles, then with identical complete profiles:
+   distinct profiles must remain separate, while an indistinguishable remote
+   row must fail closed with truthful readiness and no guessed stem. Let the
+   unchanged roster pass through two lease rotations during a take. Exercise a
+   capture opt-in during rollover followed by opt-out, then disconnect and
+   reconnect one musician while producing identifiable audio before and after.
+   Verify one durable participant owns separate immutable media segments, the
+   opted-in Local Original remains expected, server stems are not crossed, and
+   missing/ambiguous evidence stays visible. Inspect logs, participant-registry
+   files, take evidence, diagnostics, and the support bundle for challenges,
+   private roster fingerprints, raw profiles/local channel lists, process IDs,
+   tokens, addresses, and paths. Do not describe the remote ordinal as
+   cryptographic Jamulus identity; this gate uses private invites shared only
+   with trusted collaborators.
 
 If any gate is not run, report it as **NOT RUN**. A process launch, synthetic
 JACK graph, or connected roster is not evidence that a person heard audio.
+
+Presence v2 physical evidence currently remains:
+
+| Gate | Status |
+| --- | --- |
+| Two independent musician machines with distinct recorder stems | **NOT RUN** |
+| Same-name/distinct-profile and identical-full-profile behavior | **NOT RUN** |
+| Two live lease rotations during one take | **NOT RUN** |
+| Capture opt-in/opt-out and delivered Local Original | **NOT RUN** |
+| Audible reconnect represented by separate `MediaSegment` records | **NOT RUN** |
+| Exact-package disk/log/diagnostics/support privacy inspection | **NOT RUN** |
 
 ## Version and publication rule
 

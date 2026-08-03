@@ -916,6 +916,10 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     assert "separate stem" in playing.warning
     session.claim = ReferenceTrackOwnershipClaim(51000, 4321, "a" * 32)
     assert controller.recording_ownership_claim() == session.claim
+    rendered_claim = repr(session.claim)
+    assert "51000" not in rendered_claim
+    assert "4321" not in rendered_claim
+    assert "a" * 32 not in rendered_claim
 
     paused = controller.pause()
     assert paused.state is ReferenceTrackState.PAUSED

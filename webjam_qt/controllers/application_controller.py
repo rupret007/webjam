@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 import unicodedata
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -28,7 +29,10 @@ from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from core.creative_modes import CREATIVE_MODES, get_mode_by_key_or_default
-from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
+from core.jamulus_rpc_client import (
+    JamulusOrderedRosterProof,
+    JamulusRpcMonitorIdentity,
+)
 from core.network_invite import BandInvite
 from core.pocket_stage import (
     MobileParticipant,
@@ -332,6 +336,18 @@ class ApplicationController(QObject):
         # callback from an old process can never authenticate its replacement.
         self._jamulus_local_roster_generation = 0
         self._jamulus_local_roster_process_id = 0
+        self._primary_ordered_roster_proof: JamulusOrderedRosterProof | None = None
+        # A stale roster proof must stop being recording authority immediately,
+        # but its exact process identity and semantic authority key are still
+        # safe to retain as a non-authoritative refresh seed.  This lets the
+        # periodic recovery tick request the same RPC epoch again even if the
+        # first refresh response/callback was lost.
+        self._primary_ordered_roster_refresh_identity: (
+            JamulusRpcMonitorIdentity | None
+        ) = None
+        self._primary_ordered_roster_refresh_key: tuple[object, ...] | None = None
+        self._host_recording_presence_generation = 0
+        self._host_recording_presence_bound_key: tuple[object, ...] | None = None
         # Recovery exhaustion retires the owned primary client on a worker
         # before "Start Session" can truthfully mean a fresh launch.
         self._primary_recovery_retire_inflight = False
@@ -1345,13 +1361,98 @@ class ApplicationController(QObject):
 
     def peer_participant_id_for_channel(self, channel_id: int) -> str:
         if self.host_peer.active:
-            return self.host_peer.participant_id_for_channel(channel_id) or ""
+            participant = self.participants.get(int(channel_id))
+            ordinal = getattr(participant, "roster_ordinal", None)
+            if isinstance(ordinal, int):
+                return self._v2_participant_ids_by_ordinal().get(ordinal, "")
+            return ""
         if self.guest_peer is not None:
             local = self.guest_peer.participant_id
             participant = self.participants.get(int(channel_id))
             if local and participant is not None and participant.is_local:
                 return local
         return ""
+
+    def _v2_participant_ids_by_ordinal(self) -> dict[int, str]:
+        """Return current host recorder identities; v1 channel IDs excluded."""
+
+        if not self.host_peer.active:
+            return {}
+        proof = getattr(self, "_primary_ordered_roster_proof", None)
+        if not isinstance(proof, JamulusOrderedRosterProof):
+            return {}
+        try:
+            current = self.jamulus.ordered_roster_proof_for(proof.identity)
+            if (
+                not isinstance(current, JamulusOrderedRosterProof)
+                or current.authority_key != proof.authority_key
+            ):
+                return {}
+            proof = current
+            self._primary_ordered_roster_proof = current
+            claims = self.host_peer.recording_presence_snapshot(
+                ordered_roster_digest=proof.common_digest,
+                roster_count=proof.roster_size,
+            )
+        except Exception:  # noqa: BLE001 - evidence fails absent
+            return {}
+        result: dict[int, str] = {}
+        participants: set[str] = set()
+        topology_epochs: set[int] = set()
+        for claim in claims:
+            try:
+                ordinal = int(claim.self_ordinal)
+                participant_id = str(uuid.UUID(str(claim.participant_id)))
+                topology_epoch = int(claim.topology_epoch)
+                process_generation = int(claim.process_generation)
+                rpc_generation = int(claim.rpc_connection_generation)
+                audio_generation = int(claim.audio_connection_generation)
+                roster_count = int(claim.roster_count)
+            except (AttributeError, TypeError, ValueError):
+                return {}
+            if (
+                getattr(claim, "recorder_eligible", False) is True
+                and 0 <= ordinal < proof.roster_size
+                and (
+                    ordinal not in proof.ambiguous_ordinals
+                    or ordinal == proof.own_ordinal
+                )
+                and ordinal not in result
+                and participant_id not in participants
+                and topology_epoch > 0
+                and process_generation > 0
+                and rpc_generation > 0
+                and audio_generation > 0
+                and roster_count == proof.roster_size
+                and claim.ordered_roster_digest == proof.common_digest
+            ):
+                result[ordinal] = participant_id
+                participants.add(participant_id)
+                topology_epochs.add(topology_epoch)
+            else:
+                return {}
+        enrollment = getattr(self.host_peer, "host_enrollment", None)
+        try:
+            host_id = str(uuid.UUID(str(enrollment.participant_id)))
+            host_claim = next(
+                claim
+                for claim in claims
+                if int(claim.self_ordinal) == proof.own_ordinal
+            )
+        except (AttributeError, StopIteration, TypeError, ValueError):
+            return {}
+        if (
+            len(topology_epochs) != 1
+            or result.get(proof.own_ordinal) != host_id
+            or host_claim.process_generation
+            != proof.identity.process_generation
+            or host_claim.rpc_connection_generation
+            != proof.rpc_connection_generation
+            or host_claim.audio_connection_generation
+            != proof.audio_connection_generation
+        ):
+            return {}
+        return result
 
     def signal_peer_recording_started(
         self, take_id: str, *, started_utc: str = ""
@@ -3134,11 +3235,17 @@ class ApplicationController(QObject):
         """Queue one detached, process-bound RPC roster for the UI thread."""
 
         detached_participants = list(jamulus_participants)
+        try:
+            roster_proof = self.jamulus.ordered_roster_proof_for(source_identity)
+        except Exception:  # noqa: BLE001 - identity evidence fails absent
+            roster_proof = None
         self._ui_invoker.invoke(
-            lambda participants=detached_participants, identity=source_identity: (
+            lambda participants=detached_participants, identity=source_identity,
+            proof=roster_proof: (
                 self._apply_jamulus_participants(
                     participants,
                     source_identity=identity,
+                    roster_proof=proof,
                 )
             )
         )
@@ -5025,17 +5132,170 @@ class ApplicationController(QObject):
             )
         )
 
+    def _publish_ordered_recording_presence(
+        self,
+        person,
+        proof: JamulusOrderedRosterProof,
+        *,
+        capture_enabled: bool,
+        publish_guest: bool = True,
+    ) -> None:
+        """Bind this trusted local-zero row to a fresh host challenge."""
+
+        if (
+            proof.own_ordinal < 0
+            or proof.own_ordinal >= proof.roster_size
+            or proof.rows[proof.own_ordinal].client_local_channel_id
+            != int(person.channel_id)
+        ):
+            return
+        common = {
+            "ordered_roster_digest": proof.common_digest,
+            "roster_count": proof.roster_size,
+            "self_ordinal": proof.own_ordinal,
+            "process_generation": proof.identity.process_generation,
+            "rpc_connection_generation": proof.rpc_connection_generation,
+            "audio_connection_generation": proof.audio_connection_generation,
+        }
+        display_name = str(person.name or self.settings.musician_name)
+        if self.host_peer.active:
+            try:
+                challenge = self.host_peer.install_recording_presence_roster(
+                    common["ordered_roster_digest"],
+                    common["roster_count"],
+                    self_ordinal=common["self_ordinal"],
+                    host_roster_fingerprint=proof.host_roster_fingerprint,
+                    ambiguous_ordinals=proof.ambiguous_ordinals,
+                    process_generation=common["process_generation"],
+                    rpc_connection_generation=common[
+                        "rpc_connection_generation"
+                    ],
+                    audio_connection_generation=common[
+                        "audio_connection_generation"
+                    ],
+                )
+                if challenge is None:
+                    raise RuntimeError("recording presence is unavailable")
+                bound_key = (
+                    id(self.host_peer),
+                    common["ordered_roster_digest"],
+                    common["roster_count"],
+                    common["self_ordinal"],
+                    proof.host_roster_fingerprint,
+                    proof.ambiguous_ordinals,
+                    common["process_generation"],
+                    common["rpc_connection_generation"],
+                    common["audio_connection_generation"],
+                    display_name,
+                    bool(capture_enabled),
+                )
+                if bound_key != self._host_recording_presence_bound_key:
+                    self._host_recording_presence_generation = max(
+                        time.time_ns(),
+                        self._host_recording_presence_generation + 1,
+                    )
+                    bound = self.host_peer.bind_host_recording_presence(
+                        display_name,
+                        **common,
+                        host_roster_fingerprint=proof.host_roster_fingerprint,
+                        ambiguous_ordinals=proof.ambiguous_ordinals,
+                        challenge=challenge.challenge,
+                        challenge_epoch=challenge.challenge_epoch,
+                        topology_epoch=challenge.topology_epoch,
+                        presence_generation=(
+                            self._host_recording_presence_generation
+                        ),
+                        capture_enabled=bool(capture_enabled),
+                    )
+                    if bound is not None:
+                        self._host_recording_presence_bound_key = bound_key
+            except Exception:  # noqa: BLE001 - identity evidence fails absent
+                LOGGER.error("Could not bind host recording presence")
+        if publish_guest and self.guest_peer is not None:
+            try:
+                self.guest_peer.observe_presence_v2(
+                    display_name,
+                    **common,
+                    capture_enabled=bool(capture_enabled),
+                )
+            except Exception:  # noqa: BLE001 - identity evidence fails absent
+                LOGGER.error("Could not publish guest recording presence")
+
     def _apply_jamulus_participants(
         self,
         jamulus_participants: list,
         *,
         source_identity: JamulusRpcMonitorIdentity | None = None,
+        roster_proof: JamulusOrderedRosterProof | None = None,
     ) -> None:
         """Update the participant grid on the UI thread from real Jamulus data."""
         local_session_proven = self.audio.apply_participants(
             jamulus_participants,
             source_identity=source_identity,
         )
+        previous_ordered_proof = getattr(
+            self,
+            "_primary_ordered_roster_proof",
+            None,
+        )
+        current_roster_proof = None
+        if (
+            local_session_proven
+            and source_identity is not None
+            and isinstance(roster_proof, JamulusOrderedRosterProof)
+        ):
+            try:
+                current = self.jamulus.ordered_roster_proof_for(source_identity)
+            except Exception:  # noqa: BLE001 - identity evidence fails absent
+                current = None
+            if (
+                isinstance(current, JamulusOrderedRosterProof)
+                and current.authority_key == roster_proof.authority_key
+                and roster_proof.identity == source_identity
+            ):
+                # Prefer the newest freshness observation when an identical
+                # refresh overtook its queued UI callback.
+                current_roster_proof = current
+        ordered_topology_changed = bool(
+            current_roster_proof is not None
+            and (
+                not isinstance(previous_ordered_proof, JamulusOrderedRosterProof)
+                or previous_ordered_proof.authority_key
+                != current_roster_proof.authority_key
+            )
+        )
+        if current_roster_proof is None:
+            self._invalidate_ordered_recording_presence(
+                refresh_proof=(
+                    roster_proof
+                    if (
+                        local_session_proven
+                        and isinstance(roster_proof, JamulusOrderedRosterProof)
+                        and roster_proof.identity == source_identity
+                    )
+                    else None
+                )
+            )
+        else:
+            self._primary_ordered_roster_proof = current_roster_proof
+            self._primary_ordered_roster_refresh_identity = (
+                current_roster_proof.identity
+            )
+            self._primary_ordered_roster_refresh_key = (
+                current_roster_proof.authority_key
+            )
+        ordinal_by_local_id = (
+            {
+                row.client_local_channel_id: row.ordinal
+                for row in current_roster_proof.rows
+            }
+            if current_roster_proof is not None
+            else {}
+        )
+        for presentation in self.participants.values():
+            presentation.roster_ordinal = ordinal_by_local_id.get(
+                presentation.channel_id
+            )
         if local_session_proven and self.host_peer.active:
             try:
                 self.host_peer.reconcile_presence_channels(
@@ -5049,9 +5309,26 @@ class ApplicationController(QObject):
         # Bind only this process's authenticated local participant. The host
         # resolves remote channels from each joiner's signed presence update,
         # so duplicate or renamed display names never become identity keys.
+        exact_local_row_seen = current_roster_proof is None
         for person in jamulus_participants if local_session_proven else ():
             if not self._is_local_participant(person):
                 continue
+            if current_roster_proof is not None:
+                matches_exact_self = bool(
+                    current_roster_proof.rows[
+                        current_roster_proof.own_ordinal
+                    ].client_local_channel_id
+                    == int(person.channel_id)
+                )
+                exact_local_row_seen = exact_local_row_seen or matches_exact_self
+                if matches_exact_self:
+                    self._publish_ordered_recording_presence(
+                        person,
+                        current_roster_proof,
+                        capture_enabled=bool(
+                            self.settings.local_capture_enabled
+                        ),
+                    )
             if self.host_peer.active:
                 try:
                     self.host_peer.bind_host_presence(
@@ -5066,9 +5343,26 @@ class ApplicationController(QObject):
                     int(person.channel_id),
                     str(person.name or self.settings.musician_name),
                 )
-        for channel_id, presentation in self.participants.items():
-            durable = self.peer_participant_id_for_channel(channel_id)
-            if durable:
+        if not exact_local_row_seen:
+            current_roster_proof = None
+            self._invalidate_ordered_recording_presence(
+                refresh_proof=roster_proof
+                if isinstance(roster_proof, JamulusOrderedRosterProof)
+                else None
+            )
+        if self.host_peer.active:
+            durable_by_ordinal = self._v2_participant_ids_by_ordinal()
+            for presentation in self.participants.values():
+                # Never retain a v1/private-local channel assignment on a host
+                # card. Only the challenge-bound ordinal proof can populate it.
+                presentation.participant_id = (
+                    durable_by_ordinal.get(presentation.roster_ordinal, "")
+                    if presentation.roster_ordinal is not None
+                    else ""
+                )
+        else:
+            for channel_id, presentation in self.participants.items():
+                durable = self.peer_participant_id_for_channel(channel_id)
                 presentation.participant_id = durable
         # A process-authenticated primary roster change is the signal that a
         # musician or the separately owned Reference Track may have joined.
@@ -5076,7 +5370,7 @@ class ApplicationController(QObject):
         # authenticated getClients row to an address-free recorder receipt.
         if local_session_proven:
             self.recording.request_authenticated_roster_observation(
-                exact_process_update=True
+                exact_process_update=ordered_topology_changed
             )
         self._update_pocket_roster_binding_epoch()
         self.window.recording_studio.set_live_participants(self.participants.values())
@@ -9048,6 +9342,8 @@ class ApplicationController(QObject):
             and self._jamulus_connected
             and local_roster_current
         )
+        if authenticated_current_process:
+            self._renew_ordered_recording_presence()
         if (
             recovery.active
             and recovery.exhausted
@@ -9758,9 +10054,51 @@ class ApplicationController(QObject):
                 "server track, but local originals are unavailable."
             )
         self.window.flash_message(message, ms=7000)
+        self._refresh_local_recording_presence_after_settings(capture)
+
+    def _refresh_local_recording_presence_after_settings(
+        self,
+        capture: bool,
+    ) -> None:
+        """Publish a saved capture preference only with fresh roster authority."""
+
         for participant in self.participants.values():
             if not participant.is_local:
                 continue
+            proof = getattr(self, "_primary_ordered_roster_proof", None)
+            if isinstance(proof, JamulusOrderedRosterProof):
+                try:
+                    current = self.jamulus.ordered_roster_proof_for(
+                        proof.identity
+                    )
+                except Exception:  # noqa: BLE001 - authority fails absent
+                    current = None
+                if (
+                    isinstance(current, JamulusOrderedRosterProof)
+                    and current.authority_key == proof.authority_key
+                ):
+                    self._primary_ordered_roster_proof = current
+                    self._primary_ordered_roster_refresh_identity = (
+                        current.identity
+                    )
+                    self._primary_ordered_roster_refresh_key = (
+                        current.authority_key
+                    )
+                    self._publish_ordered_recording_presence(
+                        participant,
+                        current,
+                        capture_enabled=capture,
+                    )
+                else:
+                    try:
+                        self.jamulus.request_ordered_roster_refresh(
+                            proof.identity
+                        )
+                    except Exception:  # noqa: BLE001 - remains fail closed
+                        pass
+                    self._invalidate_ordered_recording_presence(
+                        refresh_proof=proof
+                    )
             if self.guest_peer is not None:
                 self.guest_peer.observe_presence(
                     participant.channel_id, participant.name
@@ -10319,9 +10657,145 @@ class ApplicationController(QObject):
         self._jamulus_local_roster_generation = generation
         self._jamulus_local_roster_process_id = process_id
 
+    def _invalidate_ordered_recording_presence(
+        self,
+        *,
+        refresh_proof: JamulusOrderedRosterProof | None = None,
+    ) -> None:
+        """Retire recorder authority without disturbing mixer presentation."""
+
+        if isinstance(refresh_proof, JamulusOrderedRosterProof):
+            self._primary_ordered_roster_refresh_identity = (
+                refresh_proof.identity
+            )
+            self._primary_ordered_roster_refresh_key = refresh_proof.authority_key
+        else:
+            self._primary_ordered_roster_refresh_identity = None
+            self._primary_ordered_roster_refresh_key = None
+        self._primary_ordered_roster_proof = None
+        self._host_recording_presence_bound_key = None
+        host_peer = getattr(self, "host_peer", None)
+        invalidate = getattr(host_peer, "invalidate_recording_presence", None)
+        if callable(invalidate) and getattr(host_peer, "active", False):
+            try:
+                invalidate()
+            except Exception:  # noqa: BLE001 - evidence already fails absent
+                LOGGER.error("Could not invalidate host recording presence")
+        guest_peer = getattr(self, "guest_peer", None)
+        invalidate_guest = getattr(
+            guest_peer,
+            "invalidate_recording_presence",
+            None,
+        )
+        if callable(invalidate_guest):
+            try:
+                invalidate_guest()
+            except Exception:  # noqa: BLE001 - evidence already fails absent
+                LOGGER.error("Could not invalidate guest recording presence")
+
+    def _renew_ordered_recording_presence(self) -> None:
+        """Refresh and renew exact recording presence without a UI callback."""
+
+        proof = getattr(self, "_primary_ordered_roster_proof", None)
+        if isinstance(proof, JamulusOrderedRosterProof):
+            refresh_identity = proof.identity
+            expected_authority_key = proof.authority_key
+        else:
+            refresh_identity = getattr(
+                self,
+                "_primary_ordered_roster_refresh_identity",
+                None,
+            )
+            expected_authority_key = getattr(
+                self,
+                "_primary_ordered_roster_refresh_key",
+                None,
+            )
+        if (
+            not isinstance(refresh_identity, JamulusRpcMonitorIdentity)
+            or not isinstance(expected_authority_key, tuple)
+        ):
+            return
+        try:
+            # Send the exact epoch-bound refresh even when the cached proof is
+            # about to age out. Its asynchronous callback is the recovery path
+            # after authority is invalidated below.
+            refresh_sent = self.jamulus.request_ordered_roster_refresh(
+                refresh_identity
+            )
+            if refresh_sent is not True:
+                self._invalidate_ordered_recording_presence(
+                    refresh_proof=proof
+                    if isinstance(proof, JamulusOrderedRosterProof)
+                    else None
+                )
+                if not isinstance(proof, JamulusOrderedRosterProof):
+                    self._primary_ordered_roster_refresh_identity = (
+                        refresh_identity
+                    )
+                    self._primary_ordered_roster_refresh_key = (
+                        expected_authority_key
+                    )
+                return
+            current = self.jamulus.ordered_roster_proof_for(refresh_identity)
+            if (
+                not isinstance(current, JamulusOrderedRosterProof)
+                or current.authority_key != expected_authority_key
+            ):
+                self._invalidate_ordered_recording_presence(
+                    refresh_proof=proof
+                    if isinstance(proof, JamulusOrderedRosterProof)
+                    else None
+                )
+                if not isinstance(proof, JamulusOrderedRosterProof):
+                    self._primary_ordered_roster_refresh_identity = (
+                        refresh_identity
+                    )
+                    self._primary_ordered_roster_refresh_key = (
+                        expected_authority_key
+                    )
+                return
+            proof = current
+            self._primary_ordered_roster_proof = current
+            self._primary_ordered_roster_refresh_identity = current.identity
+            self._primary_ordered_roster_refresh_key = current.authority_key
+        except Exception:  # noqa: BLE001 - evidence fails absent
+            self._invalidate_ordered_recording_presence(
+                refresh_proof=proof
+                if isinstance(proof, JamulusOrderedRosterProof)
+                else None
+            )
+            if not isinstance(proof, JamulusOrderedRosterProof):
+                self._primary_ordered_roster_refresh_identity = refresh_identity
+                self._primary_ordered_roster_refresh_key = expected_authority_key
+            return
+        own_local_id = proof.rows[proof.own_ordinal].client_local_channel_id
+        person = next(
+            (
+                item
+                for item in self.participants.values()
+                if item.is_local and item.channel_id == own_local_id
+            ),
+            None,
+        )
+        if person is None:
+            self._invalidate_ordered_recording_presence(refresh_proof=proof)
+            return
+        self._publish_ordered_recording_presence(
+            person,
+            proof,
+            capture_enabled=bool(self.settings.local_capture_enabled),
+            # Invalidating a stale roster also clears GuestPeerSession's
+            # desired v2 observation. Re-observe after exact seed recovery;
+            # GuestPeerSession treats an unchanged observation idempotently.
+            publish_guest=True,
+        )
+        self.recording.retry_pending_authenticated_roster_observation()
+
     def _clear_primary_local_roster_proof(self) -> None:
         self._jamulus_local_roster_generation = 0
         self._jamulus_local_roster_process_id = 0
+        self._invalidate_ordered_recording_presence()
 
     def _primary_local_roster_matches(
         self,

@@ -194,8 +194,10 @@ The five physical items above remain gates; the native pass does not fill them.
 - [x] Gaps and reconnect media intervals are explicit schema-v2 segments.
 - [x] A private installation UUID derives a stable session participant UUID;
   authenticated generation-bound presence survives channel/name changes.
-- [x] The host and active-v2 opted-in guests can retain local isolated
-  originals; v1 guests cannot use WebJam-orchestrated local capture.
+- [x] The host and opted-in guests can retain local isolated originals.
+  Presence v2 is required only for recorder-stem correlation; legacy presence
+  remains a conservative Local Original delivery obligation and readiness
+  warning, never recorder identity.
 - [x] Uploads are resumable, idempotent, size/SHA/PCM verified, and published
   atomically without moving or deleting the guest's original.
 - [x] Partial files remain visible; missing, receiving, partial, damaged, and
@@ -299,7 +301,7 @@ server tracks, not an independently captured acoustic/live-output feed.
 | --- | --- | --- |
 | Band Check | Implemented; focused suites and lifecycle/adversarial cases pass | Manual input/output/acoustic confirmation **NOT RUN** |
 | Two-client audio | Real Jamulus 3.12.2 + two JACK clients exchange distinct measured signals; short rehearsal passes | Two-Mac audibility **NOT RUN** |
-| Isolated recording | Host/active-v2-guest opt-in local capture, explicit gaps/recovery, resumable verified delivery implemented and deterministically tested; v1 guest capture is unavailable | Real two-interface originals/outage delivery **NOT RUN** |
+| Isolated recording | Host/guest opt-in local capture, explicit gaps/recovery, resumable verified delivery, and Presence v2 recorder correlation are deterministically tested; legacy presence remains recorder-ineligible | Real two-interface originals/outage delivery and physical Presence v2 correlation **NOT RUN** |
 | Reconnect | Stable session identity, generation binding, continued capture, resumable upload, truthful segment inventory tested | Physical Wi-Fi interruption **NOT RUN** |
 | Studio | Schema-v2 multi-segment/mixed-rate/gap playback, seek, waveform, mixer, and media truth pass focused tests | Packaged and long-take physical review pending |
 | Alignment | Offset/drift/rate/gap fixtures and non-destructive transforms pass focused tests | Real musician material pending |
@@ -316,7 +318,7 @@ server tracks, not an independently captured acoustic/live-output feed.
 | CERT-001 | High | Resolved | Old artifact provenance and SHA mismatch resolved without overwriting either file. |
 | AUD-001 | Critical | Open physical boundary | WebJam's meter/local writer opens PortAudio separately from Jamulus. It cannot prove Jamulus selected the same device or that a virtual interface excludes Webex/system audio. Band Check copy now preserves this distinction. |
 | AUD-002 | Critical | Resolved deterministically | Local queue/write loss keeps absolute frame time, inserts silence, and records gaps. |
-| AUD-003 | Critical | Resolved in source | Active-v2 opted-in guests retain local originals and upload verified copies; v1 guests have no WebJam capture path. Physical guest capture/transfer remains **NOT RUN**. |
+| AUD-003 | Critical | Resolved in source | Opted-in guests retain local originals and upload verified copies. Presence v2 alone may identify a recorder ordinal; legacy presence contributes only a conservative upload/readiness obligation. Physical guest capture/transfer and recorder correlation remain **NOT RUN**. |
 | AUD-004 | Critical | Resolved deterministically | Durable installation/session/participant/take/track/segment identities replace mutable name/channel identity. |
 | AUD-005 | High | Resolved for harness | Real two-client Jamulus/JACK boundary harness measures exchange, recorder stems, Studio core, export, and cleanup. It does not replace the macOS gate. |
 | AUD-006 | High | Resolved deterministically | Writer timeout retains ownership and schedules visible recovery; abandoned captures are safely adopted on startup. |

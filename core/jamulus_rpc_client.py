@@ -45,6 +45,14 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
+from core.jamulus_roster_identity import (
+    MAX_JAMULUS_ROSTER_ROWS,
+    JamulusCommonProfile,
+    JamulusRosterIdentityError,
+    client_common_profile,
+    ordered_client_local_roster_fingerprint,
+    ordered_common_roster_digest,
+)
 from core.settings import jamulus_client_rpc_secret_path
 
 _logger = logging.getLogger("webjam.jamulus_rpc")
@@ -80,6 +88,7 @@ PINNED_REQUEST_METHODS = PINNED_CLIENT_REQUEST_METHODS | {
     "jamulus/getMode",
 }
 LIVE_SEND_MUTE = False
+ORDERED_ROSTER_PROOF_MAX_AGE_S = 8.0
 
 
 @dataclass
@@ -93,7 +102,7 @@ class ChannelInfo:
     is_local: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class JamulusRpcMonitorIdentity:
     """Exact native-process identity owned by one RPC reader epoch.
 
@@ -115,6 +124,9 @@ class JamulusRpcMonitorIdentity:
     def is_process_bound(self) -> bool:
         return self.process_generation > 0 and self.process_id > 0
 
+    def __repr__(self) -> str:
+        return "JamulusRpcMonitorIdentity(<redacted>)"
+
 
 @dataclass(frozen=True, slots=True)
 class JamulusRpcMonitorSnapshot:
@@ -126,6 +138,85 @@ class JamulusRpcMonitorSnapshot:
     authenticated: bool
     last_activity_at: float | None
     last_activity_age_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class JamulusOrderedRosterRow:
+    """One client-local mixer row at its server-order ordinal."""
+
+    ordinal: int
+    client_local_channel_id: int
+    profile: JamulusCommonProfile
+
+    def __repr__(self) -> str:
+        return "JamulusOrderedRosterRow(<redacted>)"
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class JamulusOrderedRosterProof:
+    """Exact, process-bound proof for translating Jamulus ID namespaces.
+
+    ``client_local_channel_id`` values are valid only in this client's mixer.
+    Pinned Jamulus rewrites this client's own server ID to local mixer ID zero
+    while preserving server row order, so ``own_ordinal`` is exact for this
+    process. Across peers, however, a remote self ordinal remains a cooperative
+    claim by an enrolled WebJam collaborator. A fresh host challenge, matching
+    server digest, and a unique public profile are all required; ambiguous
+    remote profile rows fail closed.
+    """
+
+    identity: JamulusRpcMonitorIdentity
+    rpc_connection_generation: int
+    audio_connection_generation: int
+    roster_revision: int
+    observed_at: float
+    rows: tuple[JamulusOrderedRosterRow, ...]
+    own_ordinal: int
+    common_digest: str
+    host_roster_fingerprint: str
+
+    @property
+    def roster_size(self) -> int:
+        return len(self.rows)
+
+    @property
+    def ambiguous_ordinals(self) -> tuple[int, ...]:
+        """Ordinals whose public cross-RPC profiles are not unique.
+
+        The local-zero row proves this process's own ordinal, but a host
+        cannot safely assign two remote participants to otherwise identical
+        public Jamulus profile rows.  Presence v2 uses this derived set to
+        reject those guest claims rather than treating display names as keys.
+        This is a conservative exact-correlation policy, not adversarial
+        identity proof; session invites still belong only with trusted peers.
+        """
+
+        profile_counts: dict[JamulusCommonProfile, int] = {}
+        for row in self.rows:
+            profile_counts[row.profile] = profile_counts.get(row.profile, 0) + 1
+        return tuple(
+            row.ordinal
+            for row in self.rows
+            if profile_counts.get(row.profile, 0) > 1
+        )
+
+    @property
+    def authority_key(self) -> tuple[object, ...]:
+        """Semantic identity topology, excluding freshness-only timestamps."""
+
+        return (
+            self.identity,
+            self.rpc_connection_generation,
+            self.audio_connection_generation,
+            self.roster_revision,
+            self.rows,
+            self.own_ordinal,
+            self.common_digest,
+            self.host_roster_fingerprint,
+        )
+
+    def __repr__(self) -> str:
+        return "JamulusOrderedRosterProof(<redacted>)"
 
 
 class JamulusRpcClient:
@@ -205,6 +296,14 @@ class JamulusRpcClient:
         # but does not include its server-assigned channel id.  Keep the
         # profile so we can identify the one matching getClientList row.
         self._local_profile: dict[str, str] = {}
+        # These generations bind an ordered roster to the exact native
+        # process, authenticated RPC socket, and Jamulus audio connection
+        # which produced it.  None of the values below is a server channel ID.
+        self._rpc_connection_generation = 0
+        self._audio_connection_generation = 0
+        self._audio_connected = False
+        self._roster_revision = 0
+        self._ordered_roster_proof: JamulusOrderedRosterProof | None = None
         # Heartbeat: monotonic time of the last successful RPC interaction.
         # Stays 0.0 until the first success; reset on (re)start.
         self._last_activity_at: float = 0.0
@@ -290,6 +389,11 @@ class JamulusRpcClient:
                 self._local_channel_id = -1
                 self._local_profile = {}
                 self._clients = []
+                self._rpc_connection_generation = 0
+                self._audio_connection_generation = 0
+                self._audio_connected = False
+                self._roster_revision = 0
+                self._ordered_roster_proof = None
             if old_sock is not None:
                 try:
                     old_sock.close()
@@ -329,6 +433,11 @@ class JamulusRpcClient:
                 self._local_channel_id = -1
                 self._local_profile = {}
                 self._clients = []
+                self._rpc_connection_generation = 0
+                self._audio_connection_generation = 0
+                self._audio_connected = False
+                self._roster_revision = 0
+                self._ordered_roster_proof = None
                 stop_event = self._stop_event
                 stop_event.set()
                 sock = self._sock
@@ -532,6 +641,70 @@ class JamulusRpcClient:
         with self._state_lock:
             return self._local_channel_id
 
+    def ordered_roster_proof_for(
+        self,
+        identity: JamulusRpcMonitorIdentity,
+    ) -> JamulusOrderedRosterProof | None:
+        """Return current exact roster evidence for ``identity`` only.
+
+        Callers must still bind this evidence to the host's fresh presence
+        challenge and compare it with the server RPC roster.  This accessor
+        merely prevents a delayed callback or an RPC/audio reconnect from
+        borrowing a newer observation.
+        """
+
+        observed_at = time.monotonic()
+        with self._state_lock:
+            proof = self._ordered_roster_proof
+            proof_age = (
+                observed_at - proof.observed_at
+                if proof is not None
+                else float("inf")
+            )
+            if (
+                proof is None
+                or not self._running
+                or not self._available
+                or not self._authed
+                or not self._audio_connected
+                or identity != self._monitor_identity
+                or proof.identity != identity
+                or proof.rpc_connection_generation
+                != self._rpc_connection_generation
+                or proof.audio_connection_generation
+                != self._audio_connection_generation
+                or not 0.0 <= proof_age <= ORDERED_ROSTER_PROOF_MAX_AGE_S
+            ):
+                return None
+            return proof
+
+    def request_ordered_roster_refresh(
+        self,
+        identity: JamulusRpcMonitorIdentity,
+    ) -> bool:
+        """Request fresh audio/roster observations for this exact RPC epoch."""
+
+        with self._state_lock:
+            if (
+                not self._running
+                or not self._available
+                or not self._authed
+                or identity != self._monitor_identity
+            ):
+                return False
+            epoch = identity.monitor_epoch
+        info_request = self._send(
+            "jamulusclient/getClientInfo",
+            {},
+            epoch=epoch,
+        )
+        roster_request = self._send(
+            "jamulusclient/getClientList",
+            {},
+            epoch=epoch,
+        )
+        return info_request is not None and roster_request is not None
+
     # ------------------------------------------------------------------
     # Connection / reader loop
     # ------------------------------------------------------------------
@@ -555,6 +728,8 @@ class JamulusRpcClient:
                     return
                 self._available = False
                 self._authed = False
+                self._audio_connected = False
+                self._ordered_roster_proof = None
             if self._epoch_is_current(epoch) and not stop_event.wait(wait):
                 wait = min(wait * 1.5, 30.0)
 
@@ -634,8 +809,15 @@ class JamulusRpcClient:
                     return
                 self._authed = True
                 self._available = True
+                self._rpc_connection_generation += 1
+                self._audio_connected = False
+                self._ordered_roster_proof = None
             self._stamp(epoch)
 
+            # Establish audio-connection state before accepting a roster as
+            # identity evidence. Responses can arrive in either order; a list
+            # received first remains UI data but is intentionally unproven.
+            self._send("jamulusclient/getClientInfo", {}, epoch=epoch)
             self._send("jamulusclient/getChannelInfo", {}, epoch=epoch)
             self._send("jamulusclient/getClientList", {}, epoch=epoch)
 
@@ -800,7 +982,7 @@ class JamulusRpcClient:
         if method and obj.get("id") is None:
             self._handle_notification(
                 method,
-                obj.get("params") or {},
+                obj.get("params") if "params" in obj else {},
                 epoch=epoch,
             )
             return
@@ -809,6 +991,8 @@ class JamulusRpcClient:
             req_method = self._pop_inflight(request_id, epoch=epoch)
             if "result" in obj:
                 self._handle_response(req_method, obj["result"], epoch=epoch)
+            else:
+                self._handle_error(req_method, epoch=epoch)
 
     # ------------------------------------------------------------------
     # Response + notification handling
@@ -820,27 +1004,68 @@ class JamulusRpcClient:
         *,
         epoch: int | None = None,
     ) -> None:
-        if method == "jamulusclient/getChannelInfo" and isinstance(result, dict):
+        if method == "jamulusclient/getClientInfo":
+            if not isinstance(result, dict):
+                self._set_audio_connected(False, epoch=epoch)
+                return
+            connected = result.get("connected")
+            if isinstance(connected, bool):
+                with self._state_lock:
+                    was_connected = self._audio_connected
+                self._set_audio_connected(connected, epoch=epoch)
+            else:
+                self._set_audio_connected(False, epoch=epoch)
+                return
+            if connected is True and not was_connected:
+                # If getClientList raced ahead of getClientInfo, request an
+                # observation made after the connection state was proven.
+                self._send("jamulusclient/getClientList", {}, epoch=epoch)
+        elif method == "jamulusclient/getChannelInfo" and isinstance(result, dict):
             self._set_local_channel_info(result, epoch=epoch)
-        elif method == "jamulusclient/getClientList" and isinstance(result, dict):
+        elif method == "jamulusclient/getClientList":
+            if not isinstance(result, dict):
+                self._invalidate_ordered_roster_proof(epoch=epoch)
+                return
             self._update_clients(result.get("clients"), epoch=epoch)
+
+    def _handle_error(
+        self,
+        method: str | None,
+        *,
+        epoch: int | None,
+    ) -> None:
+        """Retire authority when an authoritative request is refused."""
+
+        if method == "jamulusclient/getClientInfo":
+            self._set_audio_connected(False, epoch=epoch)
+        elif method == "jamulusclient/getClientList":
+            self._invalidate_ordered_roster_proof(epoch=epoch)
 
     def _handle_notification(
         self,
         method: str,
-        params: dict,
+        params: object,
         *,
         epoch: int | None = None,
     ) -> None:
         if epoch is not None and not self._epoch_is_current(epoch):
             return
         if method == "jamulusclient/clientListReceived":
+            if not isinstance(params, dict):
+                self._invalidate_ordered_roster_proof(epoch=epoch)
+                return
             self._update_clients(params.get("clients"), epoch=epoch)
         elif method == "jamulusclient/channelLevelListReceived":
-            self._emit_levels(params.get("channelLevelList"), epoch=epoch)
+            if isinstance(params, dict):
+                self._emit_levels(params.get("channelLevelList"), epoch=epoch)
         elif method == "jamulusclient/chatTextReceived":
-            self._emit_chat(params.get("chatText"), epoch=epoch)
+            if isinstance(params, dict):
+                self._emit_chat(params.get("chatText"), epoch=epoch)
         elif method == "jamulusclient/connected":
+            if not isinstance(params, dict):
+                self._set_audio_connected(False, epoch=epoch)
+                return
+            self._set_audio_connected(True, epoch=epoch)
             self._set_local_id(params.get("id"), epoch=epoch)
             # Jamulus 3.12.2 does not include an id in getChannelInfo or in
             # every connected notification.  Refresh both halves so profile
@@ -848,19 +1073,53 @@ class JamulusRpcClient:
             self._send("jamulusclient/getChannelInfo", {}, epoch=epoch)
             self._send("jamulusclient/getClientList", {}, epoch=epoch)
         elif method == "jamulusclient/disconnected":
-            with self._state_lock:
-                if epoch is not None and (
-                    not self._running or self._monitor_epoch != epoch
-                ):
-                    return
-                self._local_channel_id = -1
+            self._set_audio_connected(False, epoch=epoch)
             self._update_clients([], epoch=epoch)
         elif method == "jamulusclient/recorderState":
-            self._emit_recorder_state(params.get("state"), epoch=epoch)
+            if isinstance(params, dict):
+                self._emit_recorder_state(params.get("state"), epoch=epoch)
 
     @staticmethod
     def _identity_value(value) -> str:
         return str(value or "").strip().casefold()
+
+    def _set_audio_connected(
+        self,
+        connected: bool,
+        *,
+        epoch: int | None,
+    ) -> None:
+        """Advance the audio epoch on a real connect/disconnect boundary."""
+
+        with self._state_lock:
+            if epoch is not None and (
+                not self._running or self._monitor_epoch != epoch
+            ):
+                return
+            state_changed = self._audio_connected != bool(connected)
+            if state_changed:
+                self._audio_connection_generation += 1
+                self._ordered_roster_proof = None
+            self._audio_connected = bool(connected)
+            if not connected:
+                self._local_channel_id = -1
+                self._ordered_roster_proof = None
+
+    def _invalidate_ordered_roster_proof(
+        self,
+        *,
+        epoch: int | None,
+    ) -> None:
+        """Retire authority on every malformed authoritative roster shape."""
+
+        with self._state_lock:
+            if epoch is not None and (
+                not self._running or self._monitor_epoch != epoch
+            ):
+                return
+            if self._ordered_roster_proof is not None:
+                self._roster_revision += 1
+            self._ordered_roster_proof = None
 
     def _set_local_channel_info(
         self,
@@ -976,6 +1235,7 @@ class JamulusRpcClient:
         epoch: int | None = None,
     ) -> None:
         if not isinstance(raw_clients, list):
+            self._invalidate_ordered_roster_proof(epoch=epoch)
             return
         with self._state_lock:
             if epoch is not None and (
@@ -1000,15 +1260,124 @@ class JamulusRpcClient:
                 city=str(entry.get("city") or ""),
                 is_local=(cid == local_channel_id),
             ))
+
+        # Build the authorization-grade view independently from the lenient
+        # presentation parser above. One omitted/repaired/reordered row makes
+        # the entire identity proof unusable, while the mixer UI may continue
+        # to show whatever well-formed rows it received.
+        exact_rows: tuple[JamulusOrderedRosterRow, ...] | None = None
+        exact_own_ordinal = -1
+        exact_digest = ""
+        exact_host_fingerprint = ""
+        try:
+            if not 0 < len(raw_clients) <= MAX_JAMULUS_ROSTER_ROWS:
+                raise JamulusRosterIdentityError("roster size is invalid")
+            parsed_rows: list[JamulusOrderedRosterRow] = []
+            seen_ids: set[int] = set()
+            own_ordinals: list[int] = []
+            for ordinal, entry in enumerate(raw_clients):
+                if not isinstance(entry, dict):
+                    raise JamulusRosterIdentityError("roster row is invalid")
+                local_id = entry.get("id")
+                if (
+                    isinstance(local_id, bool)
+                    or not isinstance(local_id, int)
+                    or local_id < 0
+                    or local_id in seen_ids
+                ):
+                    raise JamulusRosterIdentityError(
+                        "client-local roster id is invalid"
+                    )
+                seen_ids.add(local_id)
+                if local_id == 0:
+                    own_ordinals.append(ordinal)
+                parsed_rows.append(
+                    JamulusOrderedRosterRow(
+                        ordinal=ordinal,
+                        client_local_channel_id=local_id,
+                        profile=client_common_profile(entry),
+                    )
+                )
+            if len(own_ordinals) != 1:
+                raise JamulusRosterIdentityError(
+                    "roster does not contain exactly one self row"
+                )
+            exact_rows = tuple(parsed_rows)
+            exact_own_ordinal = own_ordinals[0]
+            exact_digest = ordered_common_roster_digest(
+                tuple(row.profile for row in parsed_rows)
+            )
+            exact_host_fingerprint = ordered_client_local_roster_fingerprint(
+                tuple(row.client_local_channel_id for row in parsed_rows),
+                own_ordinal=exact_own_ordinal,
+            )
+        except JamulusRosterIdentityError:
+            exact_rows = None
+
         with self._state_lock:
             if epoch is not None and (
                 not self._running or self._monitor_epoch != epoch
             ):
                 return
             self._clients = clients
+            previous_proof = self._ordered_roster_proof
+            self._ordered_roster_proof = None
+            if (
+                exact_rows is not None
+                and self._monitor_identity.is_process_bound
+                and self._available
+                and self._authed
+                and self._audio_connected
+                and self._rpc_connection_generation > 0
+                and self._audio_connection_generation > 0
+            ):
+                candidate_topology = (
+                    self._monitor_identity,
+                    self._rpc_connection_generation,
+                    self._audio_connection_generation,
+                    exact_rows,
+                    exact_own_ordinal,
+                    exact_digest,
+                    exact_host_fingerprint,
+                )
+                previous_topology = (
+                    (
+                        previous_proof.identity,
+                        previous_proof.rpc_connection_generation,
+                        previous_proof.audio_connection_generation,
+                        previous_proof.rows,
+                        previous_proof.own_ordinal,
+                        previous_proof.common_digest,
+                        previous_proof.host_roster_fingerprint,
+                    )
+                    if previous_proof is not None
+                    else None
+                )
+                if previous_topology != candidate_topology:
+                    self._roster_revision += 1
+                self._ordered_roster_proof = JamulusOrderedRosterProof(
+                    identity=self._monitor_identity,
+                    rpc_connection_generation=self._rpc_connection_generation,
+                    audio_connection_generation=(
+                        self._audio_connection_generation
+                    ),
+                    roster_revision=self._roster_revision,
+                    observed_at=time.monotonic(),
+                    rows=exact_rows,
+                    own_ordinal=exact_own_ordinal,
+                    common_digest=exact_digest,
+                    host_roster_fingerprint=exact_host_fingerprint,
+                )
             local_channel_id = self._local_channel_id
         if local_channel_id < 0:
-            inferred = self._infer_local_channel_id(epoch=epoch)
+            # Pinned Jamulus rewrites this client's own server ID to mixer row
+            # zero. Prefer that documented local identity for presentation;
+            # profile matching below remains compatibility-only for older
+            # fixtures/clients and can never create an ordered proof.
+            zero_ids = [client.channel_id for client in clients if client.channel_id == 0]
+            inferred = zero_ids[0] if len(zero_ids) == 1 else None
+            if inferred is None:
+                inferred = self._infer_local_channel_id(epoch=epoch)
             if inferred is not None:
                 self._set_local_id(inferred, notify=False, epoch=epoch)
         self._invoke_participant_callbacks(clients, epoch=epoch)

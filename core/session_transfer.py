@@ -34,6 +34,7 @@ import secrets
 import socket
 import tempfile
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -41,9 +42,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import parse_qs, quote, urlsplit
 
+from core.jamulus_roster_identity import MAX_JAMULUS_ROSTER_ROWS
 from core.redaction import redact_text
 
 
@@ -56,6 +58,10 @@ _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _MAX_DESCRIPTOR_GAPS = 128
 _MAX_DESCRIPTOR_GAP_REASON = 120
 _PEER_REQUEST_READ_TIMEOUT_S = 30.0
+PRESENCE_V2_DEFAULT_LEASE_S = 15.0
+PRESENCE_V2_MIN_LEASE_S = 1.0
+PRESENCE_V2_MAX_LEASE_S = 60.0
+PRESENCE_V2_MIN_REMAINING_LEASE_MS = 1
 
 
 class SessionTransferError(RuntimeError):
@@ -94,6 +100,53 @@ def _token_text(value: str, label: str) -> str:
     if not _TOKEN_PATTERN.fullmatch(text):
         raise ValueError(f"{label} is not a valid WebJam credential.")
     return text
+
+
+def _presence_digest_text(value: str) -> str:
+    if type(value) is not str:
+        raise ValueError("ordered_roster_digest must be lowercase SHA-256.")
+    text = value
+    if not _SHA256_PATTERN.fullmatch(text):
+        raise ValueError("ordered_roster_digest must be lowercase SHA-256.")
+    return text
+
+
+def _presence_challenge_text(value: str) -> str:
+    if type(value) is not str:
+        raise ValueError("challenge is malformed.")
+    text = value
+    if not _TOKEN_PATTERN.fullmatch(text):
+        raise ValueError("challenge is malformed.")
+    return text
+
+
+def _presence_fingerprint_text(value: str) -> str:
+    if type(value) is not str or not _SHA256_PATTERN.fullmatch(value):
+        raise ValueError("host_roster_fingerprint must be lowercase SHA-256.")
+    return value
+
+
+def _presence_int(value: object, label: str, *, positive: bool = False) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{label} must be an integer.")
+    parsed = value
+    if parsed < (1 if positive else 0):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{label} must be {qualifier}.")
+    return parsed
+
+
+def _presence_ordinal_tuple(
+    value: object, *, roster_count: int, label: str = "ambiguous_ordinals"
+) -> tuple[int, ...]:
+    if type(value) is not tuple:
+        raise ValueError(f"{label} must be a tuple of roster ordinals.")
+    ordinals = tuple(_presence_int(item, label) for item in value)
+    if len(set(ordinals)) != len(ordinals) or tuple(sorted(ordinals)) != ordinals:
+        raise ValueError(f"{label} must be unique and ordered.")
+    if any(ordinal >= roster_count for ordinal in ordinals):
+        raise ValueError(f"{label} contains an unavailable roster ordinal.")
+    return ordinals
 
 
 def _clean_name(value: str) -> str:
@@ -252,9 +305,14 @@ class ParticipantEnrollment:
         return "ParticipantEnrollment(private=[redacted])"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class PresenceBinding:
-    """Authenticated mapping from a durable participant to a live channel."""
+    """Legacy authenticated mapping to one client-local Jamulus channel.
+
+    Jamulus client RPC channel numbers are local namespaces.  This v1 binding
+    therefore remains useful for UI continuity and Local Original delivery,
+    but it is never evidence that identifies a server recorder file.
+    """
 
     participant_id: str
     channel_id: int
@@ -277,16 +335,199 @@ class PresenceBinding:
         object.__setattr__(self, "display_name", _clean_name(self.display_name))
         object.__setattr__(self, "capture_enabled", bool(self.capture_enabled))
 
+    @property
+    def protocol_version(self) -> int:
+        return 1
+
+    @property
+    def recorder_eligible(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "PresenceBinding(private=[redacted])"
+
+
+@dataclass(frozen=True, repr=False)
+class PresenceV2Challenge:
+    """Short-lived host challenge for one exact ordered server roster."""
+
+    ordered_roster_digest: str
+    roster_count: int
+    challenge: str
+    challenge_epoch: int
+    topology_epoch: int
+    lease_ms: int
+    protocol_version: int = 2
+
+    def __post_init__(self) -> None:
+        if type(self.protocol_version) is not int or self.protocol_version != 2:
+            raise ValueError("protocol_version must be 2.")
+        digest = _presence_digest_text(self.ordered_roster_digest)
+        count = _presence_int(self.roster_count, "roster_count", positive=True)
+        if count > MAX_JAMULUS_ROSTER_ROWS:
+            raise ValueError("roster_count exceeds the supported limit.")
+        challenge = _presence_challenge_text(self.challenge)
+        epoch = _presence_int(self.challenge_epoch, "challenge_epoch", positive=True)
+        topology_epoch = _presence_int(
+            self.topology_epoch, "topology_epoch", positive=True
+        )
+        lease_ms = _presence_int(self.lease_ms, "lease_ms", positive=True)
+        if not PRESENCE_V2_MIN_REMAINING_LEASE_MS <= lease_ms <= int(
+            PRESENCE_V2_MAX_LEASE_S * 1000
+        ):
+            raise ValueError("lease_ms is outside the supported limits.")
+        object.__setattr__(self, "ordered_roster_digest", digest)
+        object.__setattr__(self, "roster_count", count)
+        object.__setattr__(self, "challenge", challenge)
+        object.__setattr__(self, "challenge_epoch", epoch)
+        object.__setattr__(self, "topology_epoch", topology_epoch)
+        object.__setattr__(self, "lease_ms", lease_ms)
+
+    def __repr__(self) -> str:
+        return "PresenceV2Challenge(private=[redacted])"
+
+
+@dataclass(frozen=True, repr=False)
+class PresenceV2Proof:
+    """Fresh, challenge-scoped recorder-presence claim from an enrolled peer.
+
+    WebJam authenticates the enrolled peer that submits this object and binds
+    it to a short-lived host challenge.  A remote ``self_ordinal`` is still a
+    cooperative claim, not cryptographic Jamulus identity: indistinguishable
+    public profiles and detected ordinal collisions fail closed, and session
+    invitations are intended only for trusted collaborators.  Raw Jamulus
+    profiles, network addresses, operating-system process IDs, and credentials
+    are not accepted by this type and never enter the durable registry.
+    """
+
+    participant_id: str
+    display_name: str
+    ordered_roster_digest: str
+    roster_count: int
+    self_ordinal: int
+    process_generation: int
+    rpc_connection_generation: int
+    audio_connection_generation: int
+    challenge: str
+    challenge_epoch: int
+    topology_epoch: int
+    presence_generation: int
+    capture_enabled: bool
+    protocol_version: int = 2
+
+    def __post_init__(self) -> None:
+        if type(self.protocol_version) is not int or self.protocol_version != 2:
+            raise ValueError("protocol_version must be 2.")
+        participant_id = _uuid_text(self.participant_id, "participant_id")
+        digest = _presence_digest_text(self.ordered_roster_digest)
+        count = _presence_int(self.roster_count, "roster_count", positive=True)
+        if count > MAX_JAMULUS_ROSTER_ROWS:
+            raise ValueError("roster_count exceeds the supported limit.")
+        ordinal = _presence_int(self.self_ordinal, "self_ordinal")
+        if ordinal >= count:
+            raise ValueError("self_ordinal must identify a roster row.")
+        process_generation = _presence_int(
+            self.process_generation, "process_generation", positive=True
+        )
+        rpc_generation = _presence_int(
+            self.rpc_connection_generation,
+            "rpc_connection_generation",
+            positive=True,
+        )
+        audio_generation = _presence_int(
+            self.audio_connection_generation,
+            "audio_connection_generation",
+            positive=True,
+        )
+        challenge = _presence_challenge_text(self.challenge)
+        challenge_epoch = _presence_int(
+            self.challenge_epoch, "challenge_epoch", positive=True
+        )
+        topology_epoch = _presence_int(
+            self.topology_epoch, "topology_epoch", positive=True
+        )
+        presence_generation = _presence_int(
+            self.presence_generation, "presence_generation", positive=True
+        )
+        if type(self.capture_enabled) is not bool:
+            raise ValueError("capture_enabled must be a boolean.")
+        object.__setattr__(self, "participant_id", participant_id)
+        object.__setattr__(self, "display_name", _clean_name(self.display_name))
+        object.__setattr__(self, "ordered_roster_digest", digest)
+        object.__setattr__(self, "roster_count", count)
+        object.__setattr__(self, "self_ordinal", ordinal)
+        object.__setattr__(self, "process_generation", process_generation)
+        object.__setattr__(self, "rpc_connection_generation", rpc_generation)
+        object.__setattr__(self, "audio_connection_generation", audio_generation)
+        object.__setattr__(self, "challenge", challenge)
+        object.__setattr__(self, "challenge_epoch", challenge_epoch)
+        object.__setattr__(self, "topology_epoch", topology_epoch)
+        object.__setattr__(self, "presence_generation", presence_generation)
+
+    @property
+    def recorder_eligible(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return "PresenceV2Proof(private=[redacted])"
+
+
+@dataclass(repr=False)
+class _PresenceV2Epoch:
+    """One memory-only challenge epoch and its enrolled-peer claims."""
+
+    challenge: str
+    challenge_epoch: int
+    topology_epoch: int
+    expires_at: float
+    required_ordinals: dict[str, int]
+    required_capture_participants: set[str]
+    by_ordinal: dict[int, PresenceV2Proof]
+    by_participant: dict[str, PresenceV2Proof]
+
 
 class EnrollmentRegistry:
     """Durable per-session mapping from installation UUID to participant UUID."""
 
-    def __init__(self, root: str | Path, credentials: SessionCredentials) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        credentials: SessionCredentials,
+        *,
+        presence_clock: Callable[[], float] | None = None,
+        presence_v2_lease_s: float = PRESENCE_V2_DEFAULT_LEASE_S,
+    ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.credentials = credentials
         self.path = self.root / "webjam-participants.json"
         self._lock = threading.RLock()
-        self._participants: dict[str, dict[str, str]] = {}
+        self._participants: dict[str, dict[str, Any]] = {}
+        if isinstance(presence_v2_lease_s, bool):
+            raise ValueError("presence_v2_lease_s must be a finite number.")
+        lease_s = float(presence_v2_lease_s)
+        if (
+            not math.isfinite(lease_s)
+            or not PRESENCE_V2_MIN_LEASE_S <= lease_s <= PRESENCE_V2_MAX_LEASE_S
+        ):
+            raise ValueError("presence_v2_lease_s is outside the supported limits.")
+        self._presence_clock = presence_clock or time.monotonic
+        self._presence_v2_lease_s = lease_s
+        # Presence v2 is deliberately memory-only.  These fields are never
+        # included in webjam-participants.json or a support bundle.
+        self._presence_v2_digest: str | None = None
+        self._presence_v2_roster_count: int | None = None
+        self._presence_v2_host_generations: tuple[int, int, int] | None = None
+        self._presence_v2_host_roster_fingerprint: str | None = None
+        self._presence_v2_ambiguous_ordinals: tuple[int, ...] | None = None
+        self._presence_v2_challenge_epoch = 0
+        self._presence_v2_topology_epoch = 0
+        self._presence_v2_active: _PresenceV2Epoch | None = None
+        self._presence_v2_pending: _PresenceV2Epoch | None = None
+        self._presence_v2_generation_highwater: dict[str, int] = {}
+        self._presence_v2_conflicted_ordinals: set[int] = set()
+        self._presence_v2_conflicted_participants: set[str] = set()
+        self._presence_v2_acceptance_sequence = 0
+        self._presence_v2_last_capture_sequence: dict[str, int] = {}
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
         self._load()
@@ -560,6 +801,695 @@ class EnrollmentRegistry:
     def participant_id_for_channel(self, channel_id: int) -> str | None:
         binding = self.presence_for_channel(channel_id)
         return binding.participant_id if binding is not None else None
+
+    def _presence_v2_now_locked(self) -> float:
+        try:
+            now = float(self._presence_clock())
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise SessionTransferError(
+                "The recorder-presence freshness clock is unavailable."
+            ) from exc
+        if not math.isfinite(now):
+            raise SessionTransferError(
+                "The recorder-presence freshness clock is unavailable."
+            )
+        return now
+
+    def _new_presence_v2_epoch_locked(
+        self,
+        now: float,
+        *,
+        required_ordinals: Mapping[str, int] | None = None,
+        required_capture_participants: Iterable[str] = (),
+    ) -> _PresenceV2Epoch:
+        self._presence_v2_challenge_epoch += 1
+        return _PresenceV2Epoch(
+            challenge=secrets.token_urlsafe(32),
+            challenge_epoch=self._presence_v2_challenge_epoch,
+            topology_epoch=self._presence_v2_topology_epoch,
+            expires_at=now + self._presence_v2_lease_s,
+            required_ordinals=dict(required_ordinals or {}),
+            required_capture_participants=set(required_capture_participants),
+            by_ordinal={},
+            by_participant={},
+        )
+
+    def _pending_presence_v2_complete_locked(self) -> bool:
+        active = self._presence_v2_active
+        pending = self._presence_v2_pending
+        if active is None or pending is None:
+            return False
+        return all(
+            (
+                proof := pending.by_participant.get(participant_id)
+            ) is not None
+            and proof.self_ordinal == ordinal
+            for participant_id, ordinal in pending.required_ordinals.items()
+        )
+
+    def _poison_presence_v2_conflict_locked(
+        self,
+        *,
+        participant_ids: Iterable[str],
+        ordinals: Iterable[int],
+    ) -> None:
+        """Remove every related claim and tombstone this topology fail-closed."""
+
+        poisoned_participants = set(participant_ids)
+        poisoned_ordinals = set(ordinals)
+        epochs = tuple(
+            epoch
+            for epoch in (self._presence_v2_active, self._presence_v2_pending)
+            if epoch is not None
+        )
+        changed = True
+        while changed:
+            changed = False
+            for epoch in epochs:
+                for participant_id, ordinal in epoch.required_ordinals.items():
+                    if (
+                        participant_id in poisoned_participants
+                        or ordinal in poisoned_ordinals
+                    ):
+                        before = (
+                            len(poisoned_participants),
+                            len(poisoned_ordinals),
+                        )
+                        poisoned_participants.add(participant_id)
+                        poisoned_ordinals.add(ordinal)
+                        changed = changed or before != (
+                            len(poisoned_participants),
+                            len(poisoned_ordinals),
+                        )
+                for proof in tuple(epoch.by_participant.values()):
+                    if (
+                        proof.participant_id in poisoned_participants
+                        or proof.self_ordinal in poisoned_ordinals
+                    ):
+                        before = (
+                            len(poisoned_participants),
+                            len(poisoned_ordinals),
+                        )
+                        poisoned_participants.add(proof.participant_id)
+                        poisoned_ordinals.add(proof.self_ordinal)
+                        changed = changed or before != (
+                            len(poisoned_participants),
+                            len(poisoned_ordinals),
+                        )
+        self._presence_v2_conflicted_participants.update(poisoned_participants)
+        self._presence_v2_conflicted_ordinals.update(poisoned_ordinals)
+        for epoch in epochs:
+            for participant_id in poisoned_participants:
+                proof = epoch.by_participant.pop(participant_id, None)
+                if proof is not None:
+                    epoch.by_ordinal.pop(proof.self_ordinal, None)
+            for ordinal in poisoned_ordinals:
+                proof = epoch.by_ordinal.pop(ordinal, None)
+                if proof is not None:
+                    epoch.by_participant.pop(proof.participant_id, None)
+
+    def _promote_pending_presence_v2_locked(self, *, complete: bool) -> None:
+        if self._presence_v2_pending is None:
+            return
+        if complete:
+            self._presence_v2_pending.required_ordinals = {
+                participant_id: proof.self_ordinal
+                for participant_id, proof in (
+                    self._presence_v2_pending.by_participant.items()
+                )
+            }
+            self._presence_v2_pending.required_capture_participants = {
+                participant_id
+                for participant_id, proof in (
+                    self._presence_v2_pending.by_participant.items()
+                )
+                if proof.capture_enabled
+            }
+        self._presence_v2_active = self._presence_v2_pending
+        self._presence_v2_pending = None
+
+    def _advance_presence_v2_epochs_locked(self, now: float) -> None:
+        """Roll challenges without exposing a partial unchanged-roster gap."""
+
+        active = self._presence_v2_active
+        if active is None:
+            self._presence_v2_active = self._new_presence_v2_epoch_locked(now)
+            return
+        if self._pending_presence_v2_complete_locked():
+            self._promote_pending_presence_v2_locked(complete=True)
+            active = self._presence_v2_active
+        if active is not None and now >= active.expires_at:
+            # The old snapshot is now strictly stale. Promote whatever fresh
+            # claims exist; a disconnected participant therefore disappears
+            # instead of receiving an unbounded grace period.
+            if self._presence_v2_pending is not None:
+                self._promote_pending_presence_v2_locked(complete=False)
+            else:
+                self._presence_v2_active = self._new_presence_v2_epoch_locked(now)
+            active = self._presence_v2_active
+        if active is None:
+            return
+        if self._presence_v2_pending is None and (
+            active.expires_at - now <= self._presence_v2_lease_s / 2.0
+        ):
+            required = dict(active.required_ordinals) or {
+                participant_id: proof.self_ordinal
+                for participant_id, proof in active.by_participant.items()
+            }
+            required_capture = (
+                set(active.required_capture_participants)
+                if active.required_ordinals
+                else {
+                    participant_id
+                    for participant_id, proof in active.by_participant.items()
+                    if proof.capture_enabled
+                }
+            )
+            pending = self._new_presence_v2_epoch_locked(
+                now,
+                required_ordinals=required,
+                required_capture_participants=required_capture,
+            )
+            if not required:
+                self._presence_v2_active = pending
+            else:
+                self._presence_v2_pending = pending
+
+    def _presence_v2_challenge_snapshot_locked(
+        self, now: float
+    ) -> PresenceV2Challenge:
+        self._advance_presence_v2_epochs_locked(now)
+        epoch = self._presence_v2_pending or self._presence_v2_active
+        if epoch is None:
+            raise TransferConflictError(
+                "Recorder presence requires a proven host roster."
+            )
+        remaining_ms = min(
+            int(PRESENCE_V2_MAX_LEASE_S * 1000),
+            max(
+                PRESENCE_V2_MIN_REMAINING_LEASE_MS,
+                math.ceil((epoch.expires_at - now) * 1000),
+            ),
+        )
+        assert self._presence_v2_digest is not None
+        assert self._presence_v2_roster_count is not None
+        return PresenceV2Challenge(
+            ordered_roster_digest=self._presence_v2_digest,
+            roster_count=self._presence_v2_roster_count,
+            challenge=epoch.challenge,
+            challenge_epoch=epoch.challenge_epoch,
+            topology_epoch=epoch.topology_epoch,
+            lease_ms=remaining_ms,
+        )
+
+    def install_presence_v2_roster(
+        self,
+        ordered_roster_digest: str,
+        roster_count: int,
+        *,
+        host_roster_fingerprint: str,
+        ambiguous_ordinals: tuple[int, ...] = (),
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        force_rotate: bool = False,
+    ) -> PresenceV2Challenge:
+        """Install one exact host-proven roster and issue its challenge.
+
+        The host's connection generations are correlation epochs, not process
+        IDs.  Any exact roster or lifecycle change invalidates all prior
+        claims. Repeated observations of the same proof are idempotent.
+        """
+
+        digest = _presence_digest_text(ordered_roster_digest)
+        fingerprint = _presence_fingerprint_text(host_roster_fingerprint)
+        count = _presence_int(roster_count, "roster_count", positive=True)
+        if count > MAX_JAMULUS_ROSTER_ROWS:
+            raise ValueError("roster_count exceeds the supported limit.")
+        ambiguous = _presence_ordinal_tuple(
+            ambiguous_ordinals, roster_count=count
+        )
+        generations = (
+            _presence_int(
+                process_generation, "process_generation", positive=True
+            ),
+            _presence_int(
+                rpc_connection_generation,
+                "rpc_connection_generation",
+                positive=True,
+            ),
+            _presence_int(
+                audio_connection_generation,
+                "audio_connection_generation",
+                positive=True,
+            ),
+        )
+        if type(force_rotate) is not bool:
+            raise ValueError("force_rotate must be a boolean.")
+        with self._lock:
+            now = self._presence_v2_now_locked()
+            changed = (
+                self._presence_v2_digest != digest
+                or self._presence_v2_roster_count != count
+                or self._presence_v2_host_generations != generations
+                or self._presence_v2_host_roster_fingerprint != fingerprint
+                or self._presence_v2_ambiguous_ordinals != ambiguous
+            )
+            self._presence_v2_digest = digest
+            self._presence_v2_roster_count = count
+            self._presence_v2_host_generations = generations
+            self._presence_v2_host_roster_fingerprint = fingerprint
+            self._presence_v2_ambiguous_ordinals = ambiguous
+            if changed:
+                # A different server proof has no safe overlap. Every old
+                # claim is invalid immediately and the new epoch starts empty.
+                self._presence_v2_topology_epoch += 1
+                self._presence_v2_conflicted_ordinals.clear()
+                self._presence_v2_conflicted_participants.clear()
+                self._presence_v2_active = self._new_presence_v2_epoch_locked(now)
+                self._presence_v2_pending = None
+            elif force_rotate:
+                active = self._presence_v2_active
+                required = (
+                    dict(active.required_ordinals)
+                    or {
+                        participant_id: proof.self_ordinal
+                        for participant_id, proof in active.by_participant.items()
+                    }
+                    if active is not None
+                    else {}
+                )
+                required_capture = (
+                    (
+                        set(active.required_capture_participants)
+                        if active.required_ordinals
+                        else {
+                            participant_id
+                            for participant_id, proof in active.by_participant.items()
+                            if proof.capture_enabled
+                        }
+                    )
+                    if active is not None
+                    else set()
+                )
+                pending = self._new_presence_v2_epoch_locked(
+                    now,
+                    required_ordinals=required,
+                    required_capture_participants=required_capture,
+                )
+                if required:
+                    self._presence_v2_pending = pending
+                else:
+                    self._presence_v2_active = pending
+                    self._presence_v2_pending = None
+            return self._presence_v2_challenge_snapshot_locked(now)
+
+    def current_presence_v2_challenge(self) -> PresenceV2Challenge:
+        """Return a fresh challenge for the currently proven host roster."""
+
+        with self._lock:
+            if (
+                self._presence_v2_digest is None
+                or self._presence_v2_roster_count is None
+                or self._presence_v2_host_generations is None
+                or self._presence_v2_host_roster_fingerprint is None
+                or self._presence_v2_ambiguous_ordinals is None
+            ):
+                raise TransferConflictError(
+                    "Recorder presence requires a proven host roster."
+                )
+            now = self._presence_v2_now_locked()
+            return self._presence_v2_challenge_snapshot_locked(now)
+
+    def invalidate_presence_v2(self) -> None:
+        """Forget every recorder claim and challenge without writing to disk."""
+
+        with self._lock:
+            self._presence_v2_digest = None
+            self._presence_v2_roster_count = None
+            self._presence_v2_host_generations = None
+            self._presence_v2_host_roster_fingerprint = None
+            self._presence_v2_ambiguous_ordinals = None
+            self._presence_v2_active = None
+            self._presence_v2_pending = None
+            self._presence_v2_conflicted_ordinals.clear()
+            self._presence_v2_conflicted_participants.clear()
+
+    def bind_presence_v2(
+        self,
+        participant_id: str,
+        display_name: str,
+        *,
+        ordered_roster_digest: str,
+        roster_count: int,
+        self_ordinal: int,
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        challenge: str,
+        challenge_epoch: int,
+        topology_epoch: int,
+        presence_generation: int,
+        capture_enabled: bool,
+        _allow_ambiguous_ordinal: bool = False,
+    ) -> PresenceV2Proof:
+        """Accept one fresh cooperative claim from an authenticated WebJam peer.
+
+        The host can prove its own local-zero ordinal from the process-bound
+        Jamulus RPC source, so the private override is reserved for that local
+        call path.  Remote peers cannot use it through the wire API.
+        """
+
+        if type(_allow_ambiguous_ordinal) is not bool:
+            raise ValueError("_allow_ambiguous_ordinal must be a boolean.")
+
+        candidate = PresenceV2Proof(
+            participant_id=participant_id,
+            display_name=display_name,
+            ordered_roster_digest=ordered_roster_digest,
+            roster_count=roster_count,
+            self_ordinal=self_ordinal,
+            process_generation=process_generation,
+            rpc_connection_generation=rpc_connection_generation,
+            audio_connection_generation=audio_connection_generation,
+            challenge=challenge,
+            challenge_epoch=challenge_epoch,
+            topology_epoch=topology_epoch,
+            presence_generation=presence_generation,
+            capture_enabled=capture_enabled,
+        )
+        with self._lock:
+            record = next(
+                (
+                    item
+                    for item in self._participants.values()
+                    if item["participant_id"] == candidate.participant_id
+                ),
+                None,
+            )
+            if record is None:
+                raise TransferAuthenticationError(
+                    "Participant enrollment was not found."
+                )
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            target = next(
+                (
+                    epoch
+                    for epoch in (
+                        self._presence_v2_active,
+                        self._presence_v2_pending,
+                    )
+                    if epoch is not None
+                    and now < epoch.expires_at
+                    and candidate.challenge_epoch == epoch.challenge_epoch
+                    and hmac.compare_digest(candidate.challenge, epoch.challenge)
+                ),
+                None,
+            )
+            if target is None:
+                raise TransferConflictError(
+                    "The recorder-presence challenge is stale."
+                )
+            if (
+                candidate.ordered_roster_digest != self._presence_v2_digest
+                or candidate.roster_count != self._presence_v2_roster_count
+                or candidate.topology_epoch != self._presence_v2_topology_epoch
+            ):
+                raise TransferConflictError(
+                    "The recorder-presence roster does not match the host."
+                )
+            ambiguous_ordinals = self._presence_v2_ambiguous_ordinals
+            if ambiguous_ordinals is None:
+                raise TransferConflictError(
+                    "Recorder presence requires a proven host roster."
+                )
+            if (
+                candidate.self_ordinal in ambiguous_ordinals
+                and not _allow_ambiguous_ordinal
+            ):
+                raise TransferConflictError(
+                    "The recorder-presence roster ordinal is ambiguous."
+                )
+            if (
+                candidate.participant_id
+                in self._presence_v2_conflicted_participants
+                or candidate.self_ordinal in self._presence_v2_conflicted_ordinals
+            ):
+                raise TransferConflictError(
+                    "The recorder-presence identity has a topology conflict."
+                )
+            prior_generation = self._presence_v2_generation_highwater.get(
+                candidate.participant_id, 0
+            )
+            if candidate.presence_generation <= prior_generation:
+                raise TransferConflictError(
+                    "The recorder-presence generation is stale or replayed."
+                )
+            epochs = tuple(
+                epoch
+                for epoch in (self._presence_v2_active, self._presence_v2_pending)
+                if epoch is not None
+            )
+            participant_ordinals = {
+                proof.self_ordinal
+                for epoch in epochs
+                if (
+                    proof := epoch.by_participant.get(candidate.participant_id)
+                )
+                is not None
+            }
+            participant_ordinals.update(
+                epoch.required_ordinals[candidate.participant_id]
+                for epoch in epochs
+                if candidate.participant_id in epoch.required_ordinals
+            )
+            conflicting_participant_ordinals = participant_ordinals - {
+                candidate.self_ordinal
+            }
+            if conflicting_participant_ordinals:
+                self._poison_presence_v2_conflict_locked(
+                    participant_ids=(candidate.participant_id,),
+                    ordinals=(
+                        candidate.self_ordinal,
+                        *sorted(conflicting_participant_ordinals),
+                    ),
+                )
+                raise TransferConflictError(
+                    "The participant claimed a conflicting roster ordinal."
+                )
+
+            ordinal_owners = {
+                proof.participant_id
+                for epoch in epochs
+                if (
+                    proof := epoch.by_ordinal.get(candidate.self_ordinal)
+                )
+                is not None
+            }
+            ordinal_owners.update(
+                participant_id
+                for epoch in epochs
+                for participant_id, ordinal in epoch.required_ordinals.items()
+                if ordinal == candidate.self_ordinal
+            )
+            conflicting_owners = ordinal_owners - {candidate.participant_id}
+            if conflicting_owners:
+                self._poison_presence_v2_conflict_locked(
+                    participant_ids=(
+                        candidate.participant_id,
+                        *sorted(conflicting_owners),
+                    ),
+                    ordinals=(candidate.self_ordinal,),
+                )
+                raise TransferConflictError(
+                    "That roster ordinal has conflicting enrolled claimants."
+                )
+            self._presence_v2_generation_highwater[candidate.participant_id] = (
+                candidate.presence_generation
+            )
+            self._presence_v2_acceptance_sequence += 1
+            if candidate.capture_enabled:
+                self._presence_v2_last_capture_sequence[candidate.participant_id] = (
+                    self._presence_v2_acceptance_sequence
+                )
+            target.by_participant[candidate.participant_id] = candidate
+            target.by_ordinal[candidate.self_ordinal] = candidate
+            if target is self._presence_v2_pending and (
+                self._pending_presence_v2_complete_locked()
+            ):
+                self._promote_pending_presence_v2_locked(complete=True)
+            return candidate
+
+    def recording_presence_snapshot(
+        self,
+        *,
+        ordered_roster_digest: str | None = None,
+        roster_count: int | None = None,
+        challenge: str | None = None,
+        challenge_epoch: int | None = None,
+    ) -> tuple[PresenceV2Proof, ...]:
+        """Return only fresh v2 proofs, sorted by server-roster ordinal.
+
+        Optional exact filters let a recorder bind its before/after server RPC
+        observation to this snapshot. A mismatch returns no evidence rather
+        than exposing an ambiguous or partially compatible mapping.
+        """
+
+        with self._lock:
+            if (
+                self._presence_v2_digest is None
+                or self._presence_v2_roster_count is None
+                or self._presence_v2_host_generations is None
+                or self._presence_v2_host_roster_fingerprint is None
+                or self._presence_v2_ambiguous_ordinals is None
+            ):
+                return ()
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            active = self._presence_v2_active
+            if active is None or now >= active.expires_at:
+                return ()
+            if (
+                ordered_roster_digest is not None
+                and (
+                    type(ordered_roster_digest) is not str
+                    or ordered_roster_digest != self._presence_v2_digest
+                )
+            ):
+                return ()
+            if (
+                roster_count is not None
+                and (
+                    type(roster_count) is not int
+                    or roster_count != self._presence_v2_roster_count
+                )
+            ):
+                return ()
+            if challenge is not None:
+                if type(challenge) is not str or not hmac.compare_digest(
+                    challenge, active.challenge
+                ):
+                    return ()
+            if (
+                challenge_epoch is not None
+                and (
+                    type(challenge_epoch) is not int
+                    or challenge_epoch != active.challenge_epoch
+                )
+            ):
+                return ()
+            return tuple(
+                active.by_ordinal[ordinal] for ordinal in sorted(active.by_ordinal)
+            )
+
+    def presence_v2_configured(self) -> bool:
+        """Return whether this runtime has an exact host roster installed."""
+
+        with self._lock:
+            return bool(
+                self._presence_v2_digest is not None
+                and self._presence_v2_roster_count is not None
+                and self._presence_v2_host_generations is not None
+                and self._presence_v2_host_roster_fingerprint is not None
+                and self._presence_v2_ambiguous_ordinals is not None
+            )
+
+    def recording_presence_missing_participant_ids(
+        self, *, capture_enabled_only: bool = False
+    ) -> tuple[str, ...]:
+        """Return enrolled owners missing from the fresh rollover snapshot.
+
+        This is readiness metadata only; it never turns an expired proof back
+        into recorder identity evidence.
+        """
+
+        if type(capture_enabled_only) is not bool:
+            raise ValueError("capture_enabled_only must be a boolean.")
+        with self._lock:
+            if (
+                self._presence_v2_digest is None
+                or self._presence_v2_roster_count is None
+                or self._presence_v2_host_generations is None
+                or self._presence_v2_host_roster_fingerprint is None
+                or self._presence_v2_ambiguous_ordinals is None
+            ):
+                return ()
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            active = self._presence_v2_active
+            if active is None:
+                return ()
+            required = (
+                active.required_capture_participants
+                if capture_enabled_only
+                else set(active.required_ordinals)
+            )
+            return tuple(sorted(required - set(active.by_participant)))
+
+    def presence_v2_capture_cursor(self) -> int:
+        """Return a monotonic in-memory cursor for accepted capture opt-ins."""
+
+        with self._lock:
+            return self._presence_v2_acceptance_sequence
+
+    def capture_enabled_participant_ids_since(self, cursor: int) -> tuple[str, ...]:
+        """Return participants that authenticated capture=true after a cursor."""
+
+        cursor = _presence_int(cursor, "capture_cursor")
+        with self._lock:
+            if cursor > self._presence_v2_acceptance_sequence:
+                raise ValueError("capture_cursor is newer than the registry.")
+            return tuple(
+                sorted(
+                    participant_id
+                    for participant_id, sequence in (
+                        self._presence_v2_last_capture_sequence.items()
+                    )
+                    if sequence > cursor
+                )
+            )
+
+    def current_capture_enabled_participant_ids(self) -> tuple[str, ...]:
+        """Union current active/pending capture opt-ins for take obligations.
+
+        A pending lease is deliberately excluded from recorder attribution
+        until it promotes atomically.  Its enrolled-peer capture preference is
+        still a conservative upload obligation, however, so a take beginning
+        during rollover cannot lose an opt-in that the host already accepted.
+        """
+
+        with self._lock:
+            if not self.presence_v2_configured():
+                return ()
+            now = self._presence_v2_now_locked()
+            self._advance_presence_v2_epochs_locked(now)
+            return tuple(
+                sorted(
+                    {
+                        proof.participant_id
+                        for epoch in (
+                            self._presence_v2_active,
+                            self._presence_v2_pending,
+                        )
+                        if epoch is not None and now < epoch.expires_at
+                        for proof in epoch.by_participant.values()
+                        if proof.capture_enabled
+                    }
+                )
+            )
+
+    def legacy_capture_enabled_participant_ids(self) -> tuple[str, ...]:
+        """Return v1 per-enrollment capture opt-ins without trusting channels."""
+
+        with self._lock:
+            return tuple(
+                sorted(
+                    record["participant_id"]
+                    for record in self._participants.values()
+                    if bool(record.get("capture_enabled", False))
+                )
+            )
 
     def participants(self) -> tuple[ParticipantEnrollment, ...]:
         """Return the internal enrollment inventory, including derived tokens.
@@ -1428,10 +2358,61 @@ class SessionPeerServer:
 
             def do_POST(self) -> None:  # noqa: N802
                 route = urlsplit(self.path).path
-                if route not in {"/v1/enroll", "/v1/presence"}:
+                if route not in {"/v1/enroll", "/v1/presence", "/v2/presence"}:
                     self._error(
                         HTTPStatus.NOT_FOUND, "not_found", "Unknown WebJam route."
                     )
+                    return
+                if route == "/v2/presence":
+                    try:
+                        participant_id = self._participant()
+                        payload = json.loads(self._body(maximum=MAX_JSON_BYTES))
+                        if not isinstance(payload, dict):
+                            raise ValueError("Presence body must be a JSON object.")
+                        if (
+                            type(payload.get("protocol_version")) is not int
+                            or payload.get("protocol_version") != 2
+                        ):
+                            raise ValueError("protocol_version must be 2.")
+                        capture_enabled = payload["capture_enabled"]
+                        if type(capture_enabled) is not bool:
+                            raise ValueError("capture_enabled must be a boolean.")
+                        proof = owner.registry.bind_presence_v2(
+                            participant_id,
+                            str(payload.get("display_name", "Musician")),
+                            ordered_roster_digest=payload["ordered_roster_digest"],
+                            roster_count=payload["roster_count"],
+                            self_ordinal=payload["self_ordinal"],
+                            process_generation=payload["process_generation"],
+                            rpc_connection_generation=payload[
+                                "rpc_connection_generation"
+                            ],
+                            audio_connection_generation=payload[
+                                "audio_connection_generation"
+                            ],
+                            challenge=payload["challenge"],
+                            challenge_epoch=payload["challenge_epoch"],
+                            topology_epoch=payload["topology_epoch"],
+                            presence_generation=payload["presence_generation"],
+                            capture_enabled=capture_enabled,
+                        )
+                    except TransferAuthenticationError as exc:
+                        self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
+                        return
+                    except TransferConflictError as exc:
+                        self._error(
+                            HTTPStatus.CONFLICT, "presence_conflict", str(exc)
+                        )
+                        return
+                    except (
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
+                        self._error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                        return
+                    self._json(HTTPStatus.OK, asdict(proof))
                     return
                 if route == "/v1/presence":
                     try:
@@ -1485,6 +2466,16 @@ class SessionPeerServer:
                     participant_id = self._participant()
                 except TransferAuthenticationError as exc:
                     self._error(HTTPStatus.UNAUTHORIZED, "unauthorized", str(exc))
+                    return
+                if parsed.path == "/v2/presence-challenge":
+                    try:
+                        challenge = owner.registry.current_presence_v2_challenge()
+                    except TransferConflictError as exc:
+                        self._error(
+                            HTTPStatus.CONFLICT, "presence_conflict", str(exc)
+                        )
+                        return
+                    self._json(HTTPStatus.OK, asdict(challenge))
                     return
                 if parsed.path == "/v1/state":
                     snapshot = owner.control.snapshot()
@@ -1758,6 +2749,74 @@ class SessionPeerClient:
             headers={"Content-Type": "application/json"},
         )
         return PresenceBinding(**payload)
+
+    def presence_v2_challenge(
+        self, enrollment: ParticipantEnrollment
+    ) -> PresenceV2Challenge:
+        payload = self._request(
+            "GET",
+            "/v2/presence-challenge",
+            token=enrollment.participant_token,
+            participant_id=enrollment.participant_id,
+        )
+        try:
+            return PresenceV2Challenge(**payload)
+        except (TypeError, ValueError) as exc:
+            raise SessionTransferError(
+                "The host returned an invalid recorder-presence challenge."
+            ) from exc
+
+    def bind_presence_v2(
+        self,
+        enrollment: ParticipantEnrollment,
+        *,
+        display_name: str,
+        ordered_roster_digest: str,
+        roster_count: int,
+        self_ordinal: int,
+        process_generation: int,
+        rpc_connection_generation: int,
+        audio_connection_generation: int,
+        challenge: str,
+        challenge_epoch: int,
+        topology_epoch: int,
+        presence_generation: int,
+        capture_enabled: bool,
+    ) -> PresenceV2Proof:
+        candidate = PresenceV2Proof(
+            participant_id=enrollment.participant_id,
+            display_name=display_name,
+            ordered_roster_digest=ordered_roster_digest,
+            roster_count=roster_count,
+            self_ordinal=self_ordinal,
+            process_generation=process_generation,
+            rpc_connection_generation=rpc_connection_generation,
+            audio_connection_generation=audio_connection_generation,
+            challenge=challenge,
+            challenge_epoch=challenge_epoch,
+            topology_epoch=topology_epoch,
+            presence_generation=presence_generation,
+            capture_enabled=capture_enabled,
+        )
+        payload = self._request(
+            "POST",
+            "/v2/presence",
+            token=enrollment.participant_token,
+            participant_id=enrollment.participant_id,
+            body=json.dumps(asdict(candidate), separators=(",", ":")).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            proof = PresenceV2Proof(**payload)
+        except (TypeError, ValueError) as exc:
+            raise SessionTransferError(
+                "The host returned an invalid recorder-presence proof."
+            ) from exc
+        if proof != candidate:
+            raise SessionTransferError(
+                "The host returned an inconsistent recorder-presence proof."
+            )
+        return proof
 
     def transfer_status(
         self,

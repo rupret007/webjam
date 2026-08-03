@@ -36,6 +36,25 @@ def test_reference_track_is_a_separate_real_client_with_independent_faders() -> 
     evidence: dict[str, object] = {}
 
     with harness:
+        identity = harness.certify_owned_client_roster_identity()
+        assert identity.roster_size == 3
+        assert {
+            client.local_self_channel_id for client in identity.owned_clients
+        } == {0}
+        assert {client.self_ordinal for client in identity.owned_clients} == {
+            0,
+            1,
+            2,
+        }
+        assert {
+            client.server_channel_id for client in identity.owned_clients
+        } == set(identity.server_channel_ids_by_ordinal)
+        assert all(
+            client.server_channel_id
+            == identity.server_channel_ids_by_ordinal[client.self_ordinal]
+            for client in identity.owned_clients
+        )
+
         started = harness.set_recording(True)
         assert started["enabled"] is True
 
@@ -106,6 +125,10 @@ def test_reference_track_is_a_separate_real_client_with_independent_faders() -> 
             "server_count": 1,
             "client_count": 3,
             "roster": tuple(sorted(harness.expected_client_names)),
+            "owned_rpc_self_ordinals_certified": tuple(
+                client.self_ordinal for client in identity.owned_clients
+            ),
+            "ordered_roster_digest": identity.common_roster_digest,
             "track_return_faders_zero_accepted": True,
             "independent_listener_faders_observed_at_jack_decoder": True,
             "reference_track_stem_verified": True,

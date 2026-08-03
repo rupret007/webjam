@@ -20,6 +20,7 @@ The boundary is deliberate:
 | `core/pocket_stage.py` | Strict mobile protocol, one-use capabilities, immutable paired projection, and semantic command/receipt contracts |
 | `services/pocket_stage_gateway.py` / `services/pocket_stage_tls.py` | Explicit private-Wi-Fi WSS listener and ephemeral pinned TLS identity, separate from the Local API |
 | `ios/` | XcodeGen app specification, native SwiftUI companion, strict Swift protocol/transport tests, and owner-device Personal Team workflow |
+| `core/jamulus_roster_identity.py`, `core/session_transfer*.py` | Process-bound ordered-roster observations, cooperative Presence v2 correlation, Local Original obligations, and resumable verified delivery |
 | Jamulus | Live devices, channels, buffer, jitter, quality, mix, and actual music connection |
 | Webex | Conversation/video meeting state and device controls |
 
@@ -304,6 +305,19 @@ exact profile match and new live proof.
 `RecordingCoordinator` owns host recorder state, storage readiness, take
 validation, recovery journals, and Local Originals handoff. Its work begins at
 Record time, not at music startup.
+
+Jamulus client channel IDs are local mixer coordinates: every client may see
+itself as channel zero, so those IDs never identify server recorder stems.
+Presence v2 instead binds a process/RPC/audio-generation-scoped ordered-roster
+digest to a short host challenge and server-row ordinal. The host's own ordinal
+is exact from its process-bound local-zero observation. A remote ordinal is a
+cooperative claim by an authenticated, invited WebJam peer—not cryptographic
+Jamulus identity. Identical full public profiles and detected collisions fail
+closed; duplicate names with otherwise distinct profiles remain valid. Legacy
+presence can preserve UI and Local Original delivery but is recorder-ineligible.
+Lease rollover, reconnect segments, capture obligations, privacy boundaries,
+and the trusted-invite residual risk are specified in
+[ADR 0009](docs/adr/0009-presence-v2-recorder-correlation.md).
 
 The Studio boundary is layered:
 

@@ -48,6 +48,10 @@ class ParticipantPresentation:
     # Durable peer enrollment identity; Jamulus channel_id and display name
     # are both transient and may change on reconnect.
     participant_id: str = ""
+    # Position in Jamulus's server-ordered roster. This is presentation
+    # metadata only; recording authority additionally requires the exact
+    # digest/generations and the host's fresh presence challenge.
+    roster_ordinal: int | None = None
 
 
 class ParticipantCard(QFrame):

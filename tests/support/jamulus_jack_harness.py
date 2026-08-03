@@ -13,6 +13,8 @@ test runs remain dependency-free.  The opt-in integration job installs
 from __future__ import annotations
 
 import base64
+import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -34,6 +36,13 @@ import numpy as np
 from core.process_socket_identity import (
     ProcessSocketIdentityError,
     exact_jamulus_client_udp_port,
+)
+from core.jamulus_roster_identity import (
+    JamulusCommonProfile,
+    JamulusRosterIdentityError,
+    client_common_profile,
+    ordered_common_roster_digest,
+    server_common_profile,
 )
 
 SAMPLE_RATE = 48_000
@@ -158,6 +167,41 @@ class _ClientRpcEndpoint:
     name: str
     port: int
     secret: str
+
+
+@dataclass(frozen=True)
+class OwnedClientRosterIdentity:
+    """Address-free mapping from one owned RPC endpoint to a server row."""
+
+    owned_client_index: int
+    local_self_channel_id: int
+    self_ordinal: int
+    server_channel_id: int
+
+
+@dataclass(frozen=True)
+class OwnedRosterIdentityCertification:
+    """Fresh ordered-roster proof across every private harness client RPC.
+
+    Only the canonical digest, row ordinals, and server channel IDs leave the
+    helper.  Server addresses and presentation profiles remain inside the
+    bounded comparison and therefore cannot become test evidence or logs.
+    """
+
+    common_roster_digest: str
+    server_channel_ids_by_ordinal: tuple[int, ...]
+    owned_clients: tuple[OwnedClientRosterIdentity, ...]
+
+    @property
+    def roster_size(self) -> int:
+        return len(self.server_channel_ids_by_ordinal)
+
+
+@dataclass(frozen=True)
+class _PrivateServerIdentityRoster:
+    profiles: tuple[JamulusCommonProfile, ...]
+    channel_ids: tuple[int, ...]
+    transaction_digest: str
 
 
 @dataclass(frozen=True)
@@ -1563,6 +1607,247 @@ class JamulusJackHarness:
         ):
             return None
         return tuple(clients)
+
+    @staticmethod
+    def _strict_roster_channel_id(value: object, *, surface: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise HarnessFailure(f"{surface} returned an invalid channel id")
+        return value
+
+    def _server_identity_roster(
+        self,
+    ) -> _PrivateServerIdentityRoster:
+        """Query one authenticated server roster without exposing addresses."""
+
+        if self.server_rpc is None:
+            raise HarnessFailure("authenticated server RPC is unavailable")
+        response = self.server_rpc.call("jamulusserver/getClients", {})
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise HarnessFailure("server returned an invalid identity roster")
+        rows = result.get("clients")
+        expected_count = len(self.client_rpc_endpoints)
+        if (
+            not isinstance(rows, list)
+            or result.get("connections") != expected_count
+            or len(rows) != expected_count
+        ):
+            raise HarnessFailure("server identity roster cardinality changed")
+
+        profiles: list[JamulusCommonProfile] = []
+        channel_ids: list[int] = []
+        private_transaction_rows: list[tuple[object, ...]] = []
+        try:
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise JamulusRosterIdentityError("server roster row is invalid")
+                profile = server_common_profile(row)
+                channel_id = self._strict_roster_channel_id(
+                    row.get("id"),
+                    surface="server roster",
+                )
+                channels = row.get("channels")
+                if (
+                    isinstance(channels, bool)
+                    or not isinstance(channels, int)
+                    or channels not in {1, 2}
+                ):
+                    raise HarnessFailure(
+                        "server identity roster returned invalid channel metadata"
+                    )
+                address = row.get("address")
+                if (
+                    not isinstance(address, str)
+                    or not address
+                    or len(address) > 512
+                    or any(character in address for character in ("\0", "\r", "\n"))
+                ):
+                    raise HarnessFailure(
+                        "server identity roster returned an invalid endpoint"
+                    )
+                host_text, separator, port_text = address.rpartition(":")
+                if (
+                    not separator
+                    or not port_text.isascii()
+                    or not port_text.isdigit()
+                ):
+                    raise HarnessFailure(
+                        "server identity roster returned an invalid endpoint"
+                    )
+                if host_text.startswith("[") and host_text.endswith("]"):
+                    host_text = host_text[1:-1]
+                try:
+                    host = ipaddress.ip_address(host_text)
+                    source_port = int(port_text)
+                except ValueError as exc:
+                    raise HarnessFailure(
+                        "server identity roster returned an invalid endpoint"
+                    ) from exc
+                if not host.is_loopback or not 1 <= source_port <= 65_535:
+                    raise HarnessFailure(
+                        "server identity roster returned a non-private endpoint"
+                    )
+
+                profiles.append(profile)
+                channel_ids.append(channel_id)
+                private_transaction_rows.append(
+                    (
+                        channel_id,
+                        str(host),
+                        source_port,
+                        channels,
+                        profile.canonical_values(),
+                    )
+                )
+        except JamulusRosterIdentityError as exc:
+            raise HarnessFailure("server identity roster was not canonical") from exc
+
+        ordered_ids = tuple(channel_ids)
+        if len(set(ordered_ids)) != len(ordered_ids):
+            raise HarnessFailure("server identity roster contains duplicate ids")
+        if ordered_ids != tuple(sorted(ordered_ids)):
+            raise HarnessFailure("server identity roster is not in channel order")
+        transaction_payload = json.dumps(
+            {
+                "domain": "webjam-real-jamulus-server-roster-challenge-v1",
+                "rows": private_transaction_rows,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return _PrivateServerIdentityRoster(
+            profiles=tuple(profiles),
+            channel_ids=ordered_ids,
+            transaction_digest=hashlib.sha256(transaction_payload).hexdigest(),
+        )
+
+    def _owned_client_identity_roster(
+        self,
+        owned_client_index: int,
+        endpoint: _ClientRpcEndpoint,
+        process: ManagedProcess,
+    ) -> tuple[tuple[JamulusCommonProfile, ...], int]:
+        """Query one exact private client RPC and return its sole self ordinal."""
+
+        process.ensure_running()
+        with RawRpc(endpoint.port, endpoint.secret) as rpc:
+            response = rpc.call("jamulusclient/getClientList", {})
+        process.ensure_running()
+        result = response.get("result")
+        if not isinstance(result, dict) or not isinstance(
+            result.get("clients"), list
+        ):
+            raise HarnessFailure(
+                f"owned client {owned_client_index} returned an invalid identity roster"
+            )
+        rows = result["clients"]
+        if len(rows) != len(self.client_rpc_endpoints):
+            raise HarnessFailure(
+                f"owned client {owned_client_index} roster cardinality changed"
+            )
+
+        profiles: list[JamulusCommonProfile] = []
+        local_ids: list[int] = []
+        try:
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise JamulusRosterIdentityError("client roster row is invalid")
+                profiles.append(client_common_profile(row))
+                local_ids.append(
+                    self._strict_roster_channel_id(
+                        row.get("id"),
+                        surface=f"owned client {owned_client_index} roster",
+                    )
+                )
+        except JamulusRosterIdentityError as exc:
+            raise HarnessFailure(
+                f"owned client {owned_client_index} identity roster was not canonical"
+            ) from exc
+
+        if len(set(local_ids)) != len(local_ids):
+            raise HarnessFailure(
+                f"owned client {owned_client_index} roster contains duplicate ids"
+            )
+        self_ordinals = [
+            ordinal for ordinal, local_id in enumerate(local_ids) if local_id == 0
+        ]
+        if len(self_ordinals) != 1:
+            raise HarnessFailure(
+                f"owned client {owned_client_index} did not prove one local self id"
+            )
+        return tuple(profiles), self_ordinals[0]
+
+    def certify_owned_client_roster_identity(
+        self,
+    ) -> OwnedRosterIdentityCertification:
+        """Translate client-local self IDs to exact server IDs by wire ordinal.
+
+        Pinned Jamulus 3.12.2/3.12.3 preserve ascending server-channel row
+        order in every client list while rewriting the numeric IDs into each
+        client's private mixer namespace.  This challenge reads the server
+        before and after every exact process-owned private RPC.  Any roster
+        change, profile mismatch, missing self row, or ambiguous ordinal fails
+        closed.  Display names and server-visible addresses never act as keys.
+        """
+
+        if not self.client_rpc_endpoints or (
+            len(self.client_rpc_endpoints) != len(self.client_processes)
+        ):
+            raise HarnessFailure("owned client RPC/process set is incomplete")
+
+        server_before = self._server_identity_roster()
+        expected_digest = ordered_common_roster_digest(server_before.profiles)
+        owned: list[OwnedClientRosterIdentity] = []
+        for owned_index, (endpoint, process) in enumerate(
+            zip(
+                self.client_rpc_endpoints,
+                self.client_processes,
+                strict=True,
+            )
+        ):
+            client_profiles, self_ordinal = self._owned_client_identity_roster(
+                owned_index,
+                endpoint,
+                process,
+            )
+            if client_profiles != server_before.profiles or (
+                ordered_common_roster_digest(client_profiles) != expected_digest
+            ):
+                raise HarnessFailure(
+                    f"owned client {owned_index} ordered roster did not match server"
+                )
+            owned.append(
+                OwnedClientRosterIdentity(
+                    owned_client_index=owned_index,
+                    local_self_channel_id=0,
+                    self_ordinal=self_ordinal,
+                    server_channel_id=server_before.channel_ids[self_ordinal],
+                )
+            )
+
+        server_after = self._server_identity_roster()
+        if (
+            server_after.profiles != server_before.profiles
+            or server_after.channel_ids != server_before.channel_ids
+            or server_after.transaction_digest != server_before.transaction_digest
+            or ordered_common_roster_digest(server_after.profiles) != expected_digest
+        ):
+            raise HarnessFailure("server identity roster changed during challenge")
+
+        self_ordinals = tuple(item.self_ordinal for item in owned)
+        if len(set(self_ordinals)) != len(self_ordinals) or set(self_ordinals) != set(
+            range(len(server_before.channel_ids))
+        ):
+            raise HarnessFailure("owned clients did not prove a roster-wide bijection")
+        mapped_server_ids = tuple(item.server_channel_id for item in owned)
+        if len(set(mapped_server_ids)) != len(mapped_server_ids):
+            raise HarnessFailure("owned clients mapped to duplicate server ids")
+
+        return OwnedRosterIdentityCertification(
+            common_roster_digest=expected_digest,
+            server_channel_ids_by_ordinal=server_before.channel_ids,
+            owned_clients=tuple(owned),
+        )
 
     def exact_owned_client_udp_ports(self) -> tuple[int, ...]:
         """Return one actual UDP source port per exact owned client process.

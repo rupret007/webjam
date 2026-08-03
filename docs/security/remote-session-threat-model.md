@@ -5,7 +5,8 @@
   host plus one guest. The profile remains loopback-only and is not a deployed
   public service.
 - Architecture: [ADR 0001](../adr/0001-remote-session-transport.md)
-- Last reviewed: 2026-07-21
+- Recorder correlation: [ADR 0009](../adr/0009-presence-v2-recorder-correlation.md)
+- Last reviewed: 2026-08-03
 
 This document defines the security and privacy boundary for the v3 remote
 session. It is an implementation and release gate, not evidence that a public
@@ -291,6 +292,7 @@ unbounded queue or blocking audio/control.
 | QUIC handshake or parser flood | Stateless retry, pending limits, deadlines, token buckets, strict lengths, fuzzing | Distributed DDoS cannot be eliminated |
 | Datagram replay, duplicate, reorder | QUIC protection plus app generation/sequence window | Loss and deliberate peer silence remain possible |
 | Malicious enrolled audio | Per-peer socket, direction/size/rate checks, host mute/revoke | An enrolled guest can send objectionable audio |
+| False recorder ordinal from an enrolled peer | Fresh ordered-roster challenge, exact host local-zero proof, full-profile ambiguity rejection, collision tombstones, and no v1 promotion | A modified invited peer can claim an otherwise-unclaimed unique row; remote ordinal is cooperative, not cryptographic Jamulus identity, so invites remain trusted-collaborator only |
 | Forged or cross-take media | Host grant, per-peer authorization, generation, offset, SHA/PCM checks | Authorized media still consumes its quota |
 | Path traversal or overwrite | UUID-derived names, private roots, no-follow/dirfd operations where available, conflict on existing final | Same-user filesystem tampering is residual |
 | Disk/CPU/bandwidth exhaustion | Declared/session quotas, free-space reserve, concurrency/rate/byte limits, bounded hashing | Legitimate long recordings may hit the pilot limit |

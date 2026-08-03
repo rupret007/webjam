@@ -23,6 +23,7 @@ from core.audio_engine import RealAudioEngine
 from core.jamulus_name import JamulusNameError, validate_jamulus_name
 from core.jamulus_protocol import JamulusProtocolAdapter
 from core.jamulus_rpc_client import (
+    JamulusOrderedRosterProof,
     JamulusRpcClient,
     JamulusRpcMonitorIdentity,
     JamulusRpcMonitorSnapshot,
@@ -38,6 +39,7 @@ __all__ = [
     "JamulusMessageType",
     "JamulusRpcMonitorIdentity",
     "JamulusRpcMonitorSnapshot",
+    "JamulusOrderedRosterProof",
     "create_jamulus_controller",
 ]
 
@@ -868,6 +870,26 @@ class JamulusController:
             process_generation=process_generation,
             process_id=process_id,
         )
+
+    def ordered_roster_proof_for(
+        self,
+        source: JamulusRpcMonitorIdentity,
+    ) -> JamulusOrderedRosterProof | None:
+        """Return exact ordered-roster evidence for a current RPC callback."""
+
+        if not self._rpc_event_source_is_current(source):
+            return None
+        return self.rpc_client.ordered_roster_proof_for(source)
+
+    def request_ordered_roster_refresh(
+        self,
+        source: JamulusRpcMonitorIdentity,
+    ) -> bool:
+        """Request a bounded fresh roster for the current native process."""
+
+        if not self._rpc_event_source_is_current(source):
+            return False
+        return self.rpc_client.request_ordered_roster_refresh(source)
 
     @staticmethod
     def _normalize_participant_name(name: object) -> str:
