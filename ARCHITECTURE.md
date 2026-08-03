@@ -124,11 +124,14 @@ credential, or raw exception crosses the boundary.
 
 Reference Track also separates source and route authority. A host can load,
 decode the first bounded block, and inspect a source while route capability is
-unavailable. Production refuses route capability before device scanning, so
-BlackHole setup and **Recheck Route** cannot unlock a downloaded v0.22.2
-package. The support projection exports allowlisted source
-format/rate/channel/duration and finite route state, never a source name or
-path.
+unavailable. The immutable v0.22.2 production backend refused route capability
+before device scanning, so BlackHole setup and **Recheck Route** cannot unlock
+that downloaded package. The current unreleased production factory instead
+derives prerequisite authority from an official, unambiguous 48-kHz BlackHole
+16ch/64ch route on the Mac. That machine check may make Play available; it
+does not start playback or bypass the exact live-process proofs at startup.
+The support projection exports allowlisted source format/rate/channel/duration
+and finite route state, never a source name or path.
 
 The retained controlled macOS pilot uses a separately owned Jamulus process,
 session-unique descriptor-pinned profile and RPC-secret files, and one global
@@ -137,8 +140,10 @@ socket inherited by the child preserves that claim if the parent exits.
 Playback authority requires fresh PID-bound CoreAudio proof for both primary
 and backing clients. Cleanup retains every owner and reports a retryable
 `cleanup_pending` state until the process, RPC, private files, and route lease
-are all proved retired. None of these source mechanisms unlock production
-before the physical pilot.
+are all proved retired. The production path remains fail-closed on absent,
+changed, or ambiguous evidence. Machine-derived route authority is not
+physical audibility, direct-monitor, independent-mix, or rehearsal proof;
+those acceptance gates remain **NOT RUN**.
 
 A future Webex Embedded App is described in
 [ADR 0007](docs/adr/0007-future-webex-embedded-app-companion.md). It is a

@@ -66,15 +66,17 @@ The main session rail keeps the everyday destinations visible:
 | Reference Track | Host-only song source and route panel; loading never starts playback |
 | Studio | Opens live completed-take review, or the current song workspace when WebJam was opened in Reference Studio |
 
+Studio is intentionally absent from More. Use the direct **Studio** control or
+Cmd/Ctrl+3 so there is one obvious route to the existing workspace.
+
 | Item | What it does |
 | --- | --- |
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Webex Controls | Routes to the same Conversation panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
 | Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
-| Reference Track… | Routes to the same host-only Track panel; source loading works independently while playback stays locked pending the physical macOS isolation pilot |
+| Reference Track… | Routes to the same host-only Track panel; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the jam |
-| Studio | Routes to the same existing Studio workspace; it does not create a second editor |
 | Notes | Opens session notes |
 | Band Check / Verify Sound | Observes an already-live session without restarting it |
 | Support | Creates a sanitized bundle only when you ask |
@@ -230,17 +232,19 @@ permission to route audio. Production refuses before scanning devices. There is
 no user or environment override, and installing BlackHole, running setup, or
 choosing **Recheck Route** cannot unlock downloaded v0.22.2.
 
-For controlled source-pilot work, the retained backend requires macOS 14.2 or
-later and one unambiguous BlackHole 16ch/64ch device at 48 kHz. It then checks
-both the owned primary and backing Jamulus PIDs, a session-unique private
-backing profile and secret, separate ports, authenticated RPC, connected
-roster, zero return faders, and combined route freshness. The primary must
-remain on its physical interface while the backing client proves the exact
-selected BlackHole device for input and output. One inherited lifecycle claim
-prevents another WebJam window from starting a competing 16ch/64ch Track while
-the first backing child survives. BlackHole 2ch and uncertain evidence are
-rejected. This constructor-only test seam is not enabled by production
-packages.
+In the current unreleased source, the production Mac backend derives initial
+route authority from the machine. It requires macOS 14.2 or later and one
+official, unambiguous BlackHole 16ch/64ch device at 48 kHz. Passing those
+read-only prerequisite checks may make Play available; choosing Play then
+checks both the owned primary and backing Jamulus PIDs, a session-unique
+private backing profile and secret, separate ports, authenticated RPC,
+connected roster, zero return faders, and combined route freshness. The
+primary must remain on its physical interface while the backing client proves
+the exact selected BlackHole device for input and output. One inherited
+lifecycle claim prevents another WebJam window from starting a competing
+16ch/64ch Track while the first backing child survives. BlackHole 2ch and
+uncertain evidence are rejected. The constructor override is test-only; users
+cannot bypass the production machine checks.
 
 If private process, RPC, profile, secret, or route cleanup cannot be proved,
 the panel reports cleanup pending. Choose **Stop** to retry. WebJam will not
@@ -252,11 +256,12 @@ buffering, jitter handling, and network delay. A server recording captures it
 as a separate participant stem. WebJam shows only the source filename; the
 folder path is never saved to settings or written to logs.
 
-Windows/Linux routing and physical two-endpoint macOS audibility are not yet
-certified. Device-switch truth, BlackHole exclusivity, independent mixes,
-no-direct-monitor proof, server-stem alignment, route removal, repeated
+Machine-derived route eligibility is not a claim that anyone can hear clean
+audio. Windows/Linux routing and physical two-endpoint macOS audibility are
+not yet certified. Device-switch truth, BlackHole exclusivity, independent
+mixes, no-direct-monitor proof, server-stem alignment, route removal, repeated
 teardown, and a long rehearsal remain **NOT RUN** until recorded against an
-exact controlled pilot build using the
+exact controlled source build using the
 [physical pilot](docs/plans/webjam-reference-track-macos-pilot.md).
 
 ## Recording

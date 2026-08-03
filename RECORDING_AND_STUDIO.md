@@ -45,9 +45,9 @@ synchronized or that an external editor has been tested.
 
 ## Studio
 
-Studio opens from the direct **Studio** action; **More → Studio** and
-Cmd/Ctrl+3 reach that same editor rather than creating another workspace. It is
-a Logic-like review workspace, not a Logic integration. Open a completed or
+Studio opens from the direct **Studio** action or Cmd/Ctrl+3; it is intentionally
+absent from More so there is one obvious route rather than a duplicate entry. It
+is a Logic-like review workspace, not a Logic integration. Open a completed or
 explicitly recovered schema-v2 take to use its multitrack review and Arrange
 workspace.
 

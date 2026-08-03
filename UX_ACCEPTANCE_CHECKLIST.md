@@ -85,14 +85,18 @@
 - [ ] First host Record offers shared-only or Local Originals.
 - [ ] Local Originals selection is clearly separate from Jamulus setup.
 - [ ] Studio playback output is shown only in Studio review.
-- [ ] Direct **Studio**, its More entry, and Cmd/Ctrl+3 reuse the existing
-      live-take/offline-project route and preserve a working return to Live.
+- [ ] Direct **Studio** and Cmd/Ctrl+3 reuse the existing
+      live-take/offline-project route and preserve a working return to Live;
+      Studio is intentionally absent from More.
 - [ ] A host can load and inspect WAV/WAVE, AIFF, or FLAC in **Reference Track** while
       route readiness is unavailable; MP3 is offered only when the packaged
       decoder proves support, and load decodes the first bounded audio block.
 - [ ] Source and route states remain distinct. **Recheck Route** starts no
-      playback, production locks before route scanning, and BlackHole setup or
-      Recheck cannot unlock a downloaded v0.22.2 package.
+      playback, and BlackHole setup or Recheck cannot unlock a downloaded
+      v0.22.2 package. In current source, Play may become available only after
+      the production Mac path certifies an official 48-kHz BlackHole 16ch/64ch
+      route; exact live isolation is still rechecked at startup and uncertainty
+      fails closed. This machine result is not physical audibility proof.
 - [ ] Reference Studio opens independently of Host/Join, retains the canonical
       trefoil/trinity mark, and never changes a Jamulus session or settings.
 - [ ] Studio feels like a compact multitrack workspace and does not claim

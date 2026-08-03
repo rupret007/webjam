@@ -271,17 +271,24 @@ variable, command-line switch, or UI override. Installing BlackHole, running its
 setup guidance, or choosing **Recheck Route** cannot unlock a downloaded
 v0.22.2 package.
 
-The retained source-pilot implementation is exercised only through an explicit
-constructor-only certification seam. It requires macOS 14.2 or later, an
-unambiguous 48-kHz BlackHole 16ch/64ch route, live PID-bound primary and backing
-route checks, session-unique descriptor-pinned profile/secret files, dedicated
-ports, private authenticated RPC, a connected roster, and zero return faders.
-One global WebJam lifecycle claim is inherited by the backing child so another
-WebJam process cannot start a competing Track while an orphan survives.
-Failed cleanup stays visible and retryable rather than allowing source
-replacement or shutdown. Lost or stale route proof emits silence and retires
-the backing client without ending the primary connection. These mechanisms are
-implementation evidence, not permission for a release package to play.
+The current unreleased source derives route authority on the Mac instead of
+requiring a constructor-only grant. An official, unambiguous 48-kHz BlackHole
+16ch/64ch route is necessary; when the production factory's read-only local
+checks certify that prerequisite, Play may become available. Choosing Play
+then requires fresh, PID-bound primary and backing route proof,
+session-unique descriptor-pinned profile/secret files, dedicated ports,
+private authenticated RPC, a connected roster, and zero return faders. Any
+missing, changed, or ambiguous evidence fails closed.
+
+The explicit constructor boolean remains a test-only seam; no setting,
+environment variable, command-line switch, or UI action can bypass the
+machine-derived checks. One global WebJam lifecycle claim is inherited by the
+backing child so another WebJam process cannot start a competing Track while
+an orphan survives. Failed cleanup stays visible and retryable rather than
+allowing source replacement or shutdown. Lost or stale route proof emits
+silence and retires the backing client without ending the primary connection.
+This is implementation and isolation evidence, not proof of physical
+audibility, independent mixes, or freedom from direct monitoring.
 
 This is **Jamulus-routed**, not latency eliminated. The track receives normal
 Jamulus buffering, jitter handling, and network latency like another musician.

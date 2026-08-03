@@ -136,9 +136,9 @@ Review at minimum:
   raw exceptions.
 - First Record offers shared-only versus Local Originals.
 - Studio output appears only in Studio review.
-- Direct **Studio**, its More entry, and Cmd/Ctrl+3 reuse the existing
-  live-take/offline-project route; direct **Reference Track** is host-only and routes to
-  the same panel as More → Reference Track.
+- Direct **Studio** and Cmd/Ctrl+3 reuse the existing live-take/offline-project
+  route; Studio is intentionally absent from More. Direct **Reference Track**
+  is host-only and routes to the same panel as More → Reference Track.
 - Reference Track source validation accepts real WAV/WAVE, AIFF, and FLAC;
   advertises MP3 only when the packaged decoder proves support; and safely
   rejects renamed/malformed files, symlinks, unsupported channels, oversized
@@ -146,8 +146,12 @@ Review at minimum:
   async completion without exposing paths.
 - A host may load and inspect a valid source while route certification is
   unavailable. Source/route status stays independent, Recheck Route starts no
-  playback, and production Play remains locked before route scanning. BlackHole
-  setup and **Recheck Route** cannot unlock downloaded v0.22.2.
+  playback, and BlackHole setup or **Recheck Route** cannot unlock downloaded
+  v0.22.2. In current source, production Play becomes eligible only when an
+  official 48-kHz BlackHole 16ch/64ch route passes machine-derived
+  certification; startup still requires exact live isolation evidence and
+  fails closed on uncertainty. Do not record that result as physical
+  audibility.
 - Controlled-pilot lifecycle tests prove unique descriptor-pinned profile and
   secret ownership, one global WebJam 16ch/64ch claim inherited by the backing
   child, exact live primary/backing CoreAudio routes, retryable startup

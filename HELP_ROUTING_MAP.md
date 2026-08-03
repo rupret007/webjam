@@ -11,8 +11,8 @@
 | “Why did Webex open a browser?” | Only **Join / Open Meeting** hands off the saved link. On macOS, **Show Webex App** re-verifies Cisco's app, then activates or launches that exact app with no URL or browser; Webex chooses its own screen. |
 | “Can WebJam mute Webex?” | No. On macOS, **Mute in Webex** shows the verified app so the musician can use Webex's own Mute control. WebJam never claims mute success or touches Jamulus. |
 | “Why is Show Webex App unavailable?” | Direct native activation requires verified publisher identity. Current Windows/Linux packages use **Join / Open Meeting** because that proof is unavailable there. |
-| “Where is Studio?” | Use the direct **Studio** action. Its More-menu alias reaches the same editor. |
-| “Why will my Reference Track not play?” | Source loading and playback permission are separate. Production locks Play before route scanning; installing BlackHole, running setup, or choosing **Recheck Route** cannot unlock downloaded v0.22.2. Loading still validates the file and decodes its first bounded block. |
+| “Where is Studio?” | Use the direct **Studio** action or Cmd/Ctrl+3. Studio is intentionally absent from More. |
+| “Why will my Reference Track not play?” | Source loading and playback permission are separate. Downloaded v0.22.2 locks Play before route scanning. Current source candidates enable it only after WebJam proves the isolated local BlackHole route; installing BlackHole, running setup, or choosing **Recheck Route** never bypasses that proof. Loading still validates the file and decodes its first bounded block. |
 | “Do I need recording setup to play?” | No. Recording is optional and appears only at Record time. |
 | “Where do I choose a Studio speaker?” | Open a take in Studio. Playback output is a Studio choice. |
 | “How do I combine another take?” | In Studio, select the musician's track, add a safely matched take lane, then Option/Alt-drag the range to comp. |

@@ -1,7 +1,7 @@
 # ADR 0005: Host-controlled Reference Track as a Jamulus participant
 
-- Status: Accepted; engine implemented, production playback locked pending
-  physical macOS certification
+- Status: Accepted; macOS capability is machine-derived and fail-closed;
+  physical acceptance remains pending
 - Date: 2026-07-27
 - Scope: Reference Track v1
 - Evidence status: Unit and synthetic integration coverage is present. Physical
@@ -55,30 +55,34 @@ backing client must use the exact selected BlackHole device for both directions.
 WebJam repeats the combined proof during playback and silences the callback
 whenever it is absent, changed, ambiguous, or stale.
 
-That proof is not enabled in production v0.22.2 wiring. A reported CoreAudio
+That proof was not enabled in production v0.22.2 wiring. A reported CoreAudio
 failure can return a process's output device for the input scope after an input
 switch. Jamulus 3.12.2 exposes no independent live sound-device RPC, and a
-saved profile is only a secondary consistency check. Until the exact physical
-pilot proves device-switch truth, BlackHole exclusivity, and no direct monitor,
-the production backend returns an unavailable capability and `prepare()`
-independently refuses all native work. Production capability refusal occurs
-before device scanning, so BlackHole setup and **Recheck Route** cannot unlock
-a downloaded v0.22.2 package.
+saved profile is only a secondary consistency check. The immutable v0.22.2
+backend therefore returned an unavailable capability before device scanning;
+BlackHole setup and **Recheck Route** cannot unlock a downloaded v0.22.2
+package.
 
-The certification seam is an explicit boolean constructor argument used only
-by controlled tests or an instrumented source pilot. Production construction
-leaves it false. No environment variable, setting, command-line option, or UI
-action can change it. Windows VB-CABLE/JACK and Linux JACK backends likewise
-stay unavailable until they receive equivalent physical evidence.
+The current unreleased source changes the capability policy, not the physical
+evidence ledger. Production construction derives prerequisite authority on the
+Mac: an official, unambiguous BlackHole 16ch/64ch route at 48 kHz may make Play
+available. Choosing Play still requires fresh, exact primary/backing PID route
+proof, private authenticated RPC, a connected roster, zero return faders, and
+unchanged isolation. Missing, stale, or ambiguous evidence emits silence and
+fails closed. The explicit boolean constructor argument remains a test-only
+override; production does not set it, and no environment variable, setting,
+command-line option, or UI action can bypass machine certification. Windows
+VB-CABLE/JACK and Linux JACK backends remain unavailable until equivalent
+implementations exist.
 
 The source pilot now uses a preallocated single-producer/single-consumer handoff.
 The callback performs no mutex acquisition, wait, source I/O, or new audio-buffer
 allocation; it pulls into caller-provided output and emits preallocated silence
 on underrun. That reviewed source boundary is still not physical scheduling or
-allocation proof. Before the production lock is removed, instrument callback
-timing and allocation behavior on real hardware under load (or obtain equivalent
-measured proof at a native callback boundary). Synthetic underrun tests alone do
-not certify callback scheduling.
+allocation proof. Before physical readiness is claimed, instrument callback
+timing and allocation behavior on real hardware under load (or obtain
+equivalent measured proof at a native callback boundary). Synthetic underrun
+tests alone do not certify callback scheduling.
 
 ## User controls
 
@@ -86,9 +90,10 @@ Source validation is intentionally independent from route authority. The host
 can load and inspect supported WAV/WAVE, AIFF, or FLAC while route capability
 is unavailable; MP3 is offered only when the packaged runtime proves decoder
 support. Loading decodes the first bounded audio block. Loading and **Recheck
-Route** never start playback. Production Play remains locked before route
-scanning until physical route and isolation evidence is accepted into a future
-release.
+Route** never start playback. In current source, the production Mac factory may
+make Play available only after it certifies an official, unambiguous 48-kHz
+BlackHole 16ch/64ch route. Choosing Play then performs the exact live isolation
+checks; route availability alone is not playback success.
 
 Once route evidence is certified, the host can play, pause, restart, seek while
 paused, set a loop range, apply bounded source trim, and add an audible
@@ -112,7 +117,7 @@ latency like another participant.
   orphaned backing child still holds that socket. This coordinates WebJam
   owners; it does not claim to exclude an unrelated same-user audio
   application.
-- In a controlled certified pilot, playback begins only after route identity,
+- On a machine-certified macOS route, playback begins only after route identity,
   separate-client ownership, RPC control, live PID-bound primary and backing
   route isolation, and zero return levels are proven. Saved profile device
   names are only a secondary consistency check. On macOS the verified
@@ -153,10 +158,11 @@ messages without raw paths, process arguments, secrets, or provider output.
 
 ## Consequences
 
-Once certified, every musician gets familiar per-participant level control and
-the host has one transport without a new network media plane. The cost is an
-additional client and strict virtual-route setup. This is not a substitute for
-synchronized local playback. The production lock cannot be removed until
-physical isolation, device switching, exclusivity, audibility, recording,
-teardown, and recovery evidence is recorded against an exact build and the
-evidence is reviewed.
+Once machine-certified, the design gives every musician familiar
+per-participant level control and the host one transport without a new network
+media plane. The cost is an additional client and strict virtual-route setup.
+This is not a substitute for synchronized local playback. Machine-derived
+permission to attempt playback is not physical acceptance: isolation, device
+switching, exclusivity, audibility, recording, teardown, and recovery evidence
+must still be recorded against an exact build and reviewed before those gates
+can be reported as passed.

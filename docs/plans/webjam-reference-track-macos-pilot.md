@@ -7,13 +7,12 @@ This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
-The v0.22.2 production factory intentionally keeps playback locked. Run this
-procedure only from a separately identified, instrumented source-pilot build
-whose internal test wiring explicitly constructs
-`MacOSBlackHoleReferenceBackend(physical_route_certified=True)`. Record that
-source diff and build hash with the evidence. Never add an environment
-variable, setting, command-line flag, or user-facing bypass to a downloadable
-package.
+The immutable v0.22.2 packages intentionally keep playback locked. Run this
+procedure only from a separately identified source candidate whose production
+factory proves the local BlackHole route on this Mac. Record the source commit
+and build hash with the evidence. Do not use the constructor's test-only
+`physical_route_certified` override, and never add an environment variable,
+setting, command-line flag, or user-facing bypass to a downloadable package.
 
 ## Exact evidence header
 
@@ -59,8 +58,8 @@ For every step, record PASS, FAIL, or NOT RUN plus a timestamp and observation.
 1. Open the direct **Reference Track** action as host, then confirm **More → Reference
    Track…** opens the same panel and a guest cannot open either route.
 2. Verify the panel keeps source and route states separate and names BlackHole
-   readiness without exposing a filesystem path. With the production route
-   still locked, load and inspect WAV/WAVE, AIFF, and FLAC one at a time.
+   readiness without exposing a filesystem path. Whether or not route proof is
+   currently available, load and inspect WAV/WAVE, AIFF, and FLAC one at a time.
    Exercise MP3 only when the packaged decoder advertises it. Reject malformed,
    renamed, symlinked, unsupported-channel, and oversized files safely.
 3. Choose **Recheck Route**. Require a bounded status refresh with no playback,
@@ -134,13 +133,16 @@ must be recorded separately.
 
 ## Promotion rule
 
-The macOS backend remains production-locked until every core and cleanup gate
-passes on two real Jamulus endpoints against the exact controlled-pilot hash,
-the reported CoreAudio switch case is independently closed, and BlackHole
-exclusive ownership is either proven in code or enforced by a reviewed setup.
-The callback's reviewed non-blocking, preallocated handoff must also pass the
-physical allocation and timing gate; a clean synthetic run alone is
-insufficient.
+The current macOS production factory may make Play available after
+machine-derived certification of an official 48-kHz BlackHole 16ch/64ch route,
+but that result must not be promoted or described as physical acceptance.
+Physical promotion still requires every core and cleanup gate to pass on two
+real Jamulus endpoints against the exact source-candidate hash, the reported
+CoreAudio switch case to be independently closed, and BlackHole exclusive
+ownership to be either proven in code or enforced by a reviewed setup. The
+callback's reviewed non-blocking, preallocated handoff must also pass the
+physical allocation and timing gate; a clean machine check or synthetic run
+alone is insufficient.
 Windows and Linux audibility remain **NOT RUN** until their own backends repeat
 the same physical evidence. A failed isolation, feedback, wrong participant,
 uncontrolled return, primary-client interruption, recording corruption, or
