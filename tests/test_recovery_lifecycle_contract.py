@@ -692,7 +692,11 @@ def test_explicit_start_clears_terminal_recovery_only_after_launch_acceptance(
         controller.audio.connection_timed_out = True
         controller.bridge.launch_jamulus = MagicMock(return_value=accepted)
 
-        controller._on_session_audio_requested()
+        with patch(
+            "webjam_qt.controllers.application_controller.sys.platform",
+            "darwin",
+        ):
+            controller._on_session_audio_requested()
 
         controller.bridge.launch_jamulus.assert_called_once_with(
             manual=True,
@@ -733,7 +737,14 @@ def test_remote_start_continuation_is_bound_to_its_exact_runtime(
         controller.bridge.launch_jamulus.assert_not_called()
         assert controller._reconnect_gave_up is True
 
-        assert controller._continue_startup_from_remote(authorized_source) is True
+        with patch(
+            "webjam_qt.controllers.application_controller.sys.platform",
+            "darwin",
+        ):
+            assert (
+                controller._continue_startup_from_remote(authorized_source)
+                is True
+            )
         controller.bridge.launch_jamulus.assert_called_once_with(
             manual=True,
             native_setup_timeout_seconds=600.0,
