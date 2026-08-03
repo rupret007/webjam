@@ -5001,6 +5001,10 @@ class BridgeService:
         # authenticated interaction. Give a newly published process one
         # bounded chance to start its monitor before unknown becomes stale.
         if process_started_at > 0.0:
+            # A launch worker can publish a new process after the caller has
+            # sampled ``now`` but before this exact process snapshot is read.
+            # Clamp that legitimate publication race to age zero; the grace
+            # remains bounded by the next observation from the shared clock.
             startup_age = max(0.0, now - process_started_at)
             if startup_age < RECONNECT_RPC_STARTUP_GRACE_SECONDS:
                 return JamulusRpcFreshness.STARTING, safe_age

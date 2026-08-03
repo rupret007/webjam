@@ -228,6 +228,17 @@ def test_unknown_rpc_gets_one_bounded_startup_grace() -> None:
     assert boundary.rpc_freshness is JamulusRpcFreshness.STALE
 
 
+def test_process_published_after_observation_sample_keeps_startup_grace() -> None:
+    bridge = _bridge()
+    bridge.jamulus_process = _process(130)
+    bridge._jamulus_process_started_at = 100.001
+
+    snapshot = bridge.jamulus_recovery_snapshot(now=100.0)
+
+    assert snapshot.process_alive is True
+    assert snapshot.rpc_freshness is JamulusRpcFreshness.STARTING
+
+
 def test_exact_generation_gets_longer_native_sound_setup_grace() -> None:
     bridge = _bridge()
     process = _process(111)
@@ -704,6 +715,27 @@ def test_fresh_live_process_preserves_history_until_acknowledged() -> None:
     )
 
 
+def test_process_published_after_tick_sample_is_not_force_restarted() -> None:
+    bridge = _bridge()
+    process = _process(118)
+    bridge.jamulus_launch_intended = True
+    _publish_recovery_process(
+        bridge,
+        process,
+        process_generation=14,
+        recovery_generation=0,
+        started_at=100.001,
+    )
+    bridge.launch_jamulus = MagicMock(return_value=True)
+
+    bridge._attempt_auto_reconnect_jamulus(now=100.0)
+
+    bridge.launch_jamulus.assert_not_called()
+    process.terminate.assert_not_called()
+    assert bridge.jamulus_reconnect_attempts == 0
+    assert bridge._jamulus_recovery_active is False
+
+
 @pytest.mark.parametrize(
     ("generation", "process_id"),
     [(6, 107), (7, 999)],
@@ -930,19 +962,23 @@ def test_force_restart_mutates_only_inside_queued_lifecycle_worker(
     bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
     bridge._is_rpc_port_in_use = MagicMock(return_value=True)
 
-    with patch("services.bridge_service.threading.Thread", _QueuedThread):
+    observed_at = 100.0 + RECONNECT_RPC_STARTUP_GRACE_SECONDS + 1.0
+    with (
+        patch("services.bridge_service.time.monotonic", return_value=observed_at),
+        patch("services.bridge_service.threading.Thread", _QueuedThread),
+    ):
         assert bridge.launch_jamulus(
             manual=False,
             reconnect=True,
             force_restart=True,
         )
 
-    old_process.terminate.assert_not_called()
-    bridge.jamulus_controller.stop.assert_not_called()
-    assert bridge.jamulus_process is old_process
-    bridge._is_rpc_port_in_use.assert_not_called()
+        old_process.terminate.assert_not_called()
+        bridge.jamulus_controller.stop.assert_not_called()
+        assert bridge.jamulus_process is old_process
+        bridge._is_rpc_port_in_use.assert_not_called()
 
-    _QueuedThread.targets.pop(0)()
+        _QueuedThread.targets.pop(0)()
 
     old_process.terminate.assert_called_once()
     bridge.jamulus_controller.stop.assert_called_once()
@@ -1217,11 +1253,16 @@ def test_failed_force_replacement_with_no_process_can_retry(
     bridge.find_jamulus = MagicMock(return_value="/usr/bin/jamulus")
     bridge._is_rpc_port_in_use = MagicMock(return_value=False)
 
-    assert bridge.launch_jamulus(
-        manual=False,
-        reconnect=True,
-        force_restart=True,
-    )
+    observed_at = 100.0 + RECONNECT_RPC_STARTUP_GRACE_SECONDS + 1.0
+    with patch(
+        "services.bridge_service.time.monotonic",
+        return_value=observed_at,
+    ):
+        assert bridge.launch_jamulus(
+            manual=False,
+            reconnect=True,
+            force_restart=True,
+        )
 
     assert popen.call_count == 3
     assert bridge.jamulus_process is None
