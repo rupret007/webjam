@@ -21,7 +21,7 @@ from typing import Any
 import zipfile
 
 from core.musician_guidance import GuidanceEvidence, GuidanceRecovery, GuidanceState
-from core.redaction import REDACTED, redact_text
+from core.redaction import REDACTED, redact_text, should_redact_name
 from core.session_conductor import (
     SessionConductorPhase,
     SessionPrimaryAction,
@@ -35,7 +35,218 @@ _MAX_TEXT_LENGTH = 2_000
 _MAX_RECORDS = 200
 _MAX_LOG_LINES = 500
 _MAX_LOG_BYTES = 64 * 1024
+_MAX_SUPPORT_TEXT_INPUT_CHARS = 16 * 1024
+_MAX_SUPPORT_LOG_INPUT_CHARS = 128 * 1024
+_MAX_SUPPORT_LOG_LINE_CHARS = 8 * 1024
+_MAX_SUPPORT_LOG_SEQUENCE_LINES = 1_000
+_MAX_SUPPORT_GENERAL_REDACTION_LINE_CHARS = 512
+_MAX_SUPPORT_GENERAL_REDACTION_TOTAL_CHARS = 4 * 1024
 _AUDIO_MAGIC = ("RIFF", "FORM", "fLaC", "OggS", "ID3", "caff")
+_REDACTED_PATH = "[redacted-path]"
+_REDACTED_OVERSIZE_TEXT = "[redacted-oversize-text]"
+_REDACTED_OVERSIZE_LOG = "[redacted-oversize-log]"
+_REDACTED_OVERSIZE_LOG_LINE = "[redacted-oversize-log-line]"
+
+# General diagnostics intentionally keep useful URL origins and paths after
+# applying their own scheme-specific privacy policy.  A support bundle has a
+# stricter contract: filesystem identities and musician-selected filenames do
+# not leave the machine.  Keep these expressions local to the bundle boundary
+# so ordinary user-facing errors are not made needlessly vague.
+_SUPPORT_URI_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9_])"
+    r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://[^\s'\"<>]+"
+)
+_SUPPORT_ROOTED_PATH_RE = re.compile(
+    r"(?ix)(?<![A-Za-z0-9_/\\])(?:"
+    r"(?:file|smb|afp|nfs|ftp|sftp):(?://)?[\\/]"
+    r"|[A-Z]:[\\/]"
+    r"|\\\\"
+    r"|\\\?\?\\"
+    r"|//"
+    r"|/(?!/)"
+    r"|\$(?:[A-Z_][A-Z0-9_]*|\{[A-Z_][A-Z0-9_]*\})[\\/]"
+    r"|%[A-Z_][A-Z0-9_]*%[\\/]"
+    r"|~(?:[^/\\\s]+)?[\\/]"
+    r"|\.\.?[\\/]"
+    r")"
+)
+_SUPPORT_EXTENSION_RE = re.compile(
+    r"(?i)\.(?P<extension>7z|[A-Za-z][A-Za-z0-9_-]{0,31})"
+    r"(?=$|[\\/\s,;:!?)}\]<>|\"'`\u2013\u2014\u201d\u2019\u2026\u3002]"
+    r"|\.(?=$|[\s,;:!?)}\]<>|\"'`\u2013\u2014\u201d\u2019\u2026\u3002]))"
+)
+_SUPPORT_PRIVATE_KEY_MARKER_RE = re.compile(
+    r"(?i)-----(?P<kind>BEGIN|END) [^-\r\n]*PRIVATE KEY-----"
+)
+_SUPPORT_ASSIGNMENT_PREFIX_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9_.-])"
+    r"(?P<key>[\"']?[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}[\"']?)"
+    r"[ \t]*[:=][ \t]*"
+)
+_SUPPORT_POSSIBLE_IPV4_RE = re.compile(r"(?:[0-9]{1,3}\.){3}[0-9]{1,3}")
+_SUPPORT_ENV_ASSIGNMENT_RE = re.compile(
+    r"(?i)^\s*(?:export\s+)?[A-Z][A-Z0-9_]{1,}\s*="
+)
+_SUPPORT_QUERY_SECRET_RE = re.compile(
+    r"(?i)[?&](?:secret|token|password|passphrase|credential|api[_-]?key|"
+    r"apikey|auth|authorization|code|invite|key|session|signature|sig|jwt|"
+    r"rpc[_-]?key)="
+)
+_SUPPORT_GENERAL_REDACTION_MARKERS = (
+    "api-key",
+    "api_key",
+    "apikey",
+    "auth-key",
+    "auth_key",
+    "authkey",
+    "authorization",
+    "basic ",
+    "bearer ",
+    "chat-message",
+    "chat_message",
+    "chatmessage",
+    "cookie",
+    "credential",
+    "device",
+    "digest ",
+    "display-name",
+    "display_name",
+    "displayname",
+    "dsn",
+    "email",
+    "eyj",
+    "full-name",
+    "full_name",
+    "fullname",
+    "invite",
+    "lyrics",
+    "musician",
+    "participant",
+    "passphrase",
+    "passwd",
+    "password",
+    "private key",
+    "private-key",
+    "private_key",
+    "private-notes",
+    "private_notes",
+    "privatekey",
+    "privatenotes",
+    "private_notes",
+    "rpc-",
+    "rpc_",
+    "rpcsecret",
+    "secret",
+    "serial",
+    "session title",
+    "session-notes",
+    "session-title",
+    "session_notes",
+    "session_title",
+    "sessionnotes",
+    "sessiontitle",
+    "token",
+    "transcript",
+    "uid",
+    "webex.com",
+    "webjam:",
+)
+_SUPPORT_FILE_EXTENSIONS = frozenset(
+    {
+        "7z",
+        "aac",
+        "aif",
+        "aifc",
+        "aiff",
+        "alac",
+        "als",
+        "app",
+        "band",
+        "bandproj",
+        "caf",
+        "caff",
+        "cpr",
+        "csv",
+        "db",
+        "dmg",
+        "exe",
+        "flac",
+        "flp",
+        "gz",
+        "ini",
+        "json",
+        "log",
+        "logic",
+        "logicx",
+        "m3u",
+        "m3u8",
+        "m4a",
+        "mid",
+        "midi",
+        "mp3",
+        "mp4",
+        "oga",
+        "ogg",
+        "opus",
+        "ptf",
+        "ptx",
+        "py",
+        "reaper",
+        "rpp",
+        "sqlite",
+        "studioone",
+        "tar",
+        "toml",
+        "txt",
+        "wav",
+        "wave",
+        "wma",
+        "xml",
+        "yaml",
+        "yml",
+        "zip",
+    }
+)
+_SUPPORT_SAFE_BARE_DOMAIN_SUFFIXES = frozenset(
+    {"ai", "app", "co", "com", "dev", "edu", "gov", "invalid", "io", "net", "org"}
+)
+_SUPPORT_NON_FILE_SLASH_PREFIXES = frozenset(
+    {"delete", "endpoint", "get", "head", "options", "patch", "post", "put", "ratio"}
+)
+_SUPPORT_FILESYSTEM_ROOT_NAMES = frozenset(
+    {
+        "applications",
+        "data",
+        "etc",
+        "home",
+        "library",
+        "media",
+        "mnt",
+        "opt",
+        "private",
+        "root",
+        "run",
+        "srv",
+        "tmp",
+        "users",
+        "usr",
+        "var",
+        "volumes",
+    }
+)
+_SUPPORT_DIAGNOSTIC_SUFFIX_PREFIXES = (
+    "decode ",
+    "denied",
+    "error ",
+    "failed",
+    "failure",
+    "invalid",
+    "missing",
+    "not ",
+    "permission ",
+    "refused",
+    "unavailable",
+)
 
 _ENGINE_FIELDS = frozenset(
     {
@@ -844,10 +1055,577 @@ def _safe_value(value: Any) -> Any:
     return None
 
 
+def _redact_support_multiline_secrets(text: str) -> str:
+    """Redact bounded multi-line secrets before selecting the log tail.
+
+    Tail selection must happen after this pass.  Otherwise a private-key or
+    quoted credential that starts just before the retained 500 lines loses its
+    opening marker and its body becomes indistinguishable from ordinary text.
+    These scanners preserve line breaks, advance monotonically, and fail closed
+    at end-of-input, so malformed blocks cannot trigger the lazy-dot searches
+    used by the general-purpose diagnostics redactor.
+    """
+
+    return _redact_support_multiline_assignments(
+        _redact_support_private_key_blocks(text)
+    )
+
+
+def _redact_support_private_key_blocks(text: str) -> str:
+    parts: list[str] = []
+    safe_start = 0
+    block_start: int | None = None
+    for marker in _SUPPORT_PRIVATE_KEY_MARKER_RE.finditer(text):
+        kind = marker.group("kind").upper()
+        if block_start is None and kind == "BEGIN":
+            block_start = marker.start()
+            continue
+        if block_start is None:
+            # The excerpt may itself begin in the middle of a key block.  An
+            # orphan END marker makes everything before it untrusted.
+            stop = marker.end()
+            parts.append(_redacted_secret_preserving_line_breaks(text[safe_start:stop]))
+            safe_start = stop
+            continue
+        if kind == "BEGIN":
+            # A nested/malformed BEGIN remains inside the fail-closed range.
+            continue
+        parts.append(text[safe_start:block_start])
+        stop = marker.end()
+        parts.append(
+            _redacted_secret_preserving_line_breaks(text[block_start:stop])
+        )
+        safe_start = stop
+        block_start = None
+
+    if block_start is not None:
+        parts.append(text[safe_start:block_start])
+        parts.append(_redacted_secret_preserving_line_breaks(text[block_start:]))
+        safe_start = len(text)
+    parts.append(text[safe_start:])
+    return "".join(parts)
+
+
+def _redact_support_multiline_assignments(text: str) -> str:
+    parts: list[str] = []
+    safe_start = 0
+    cursor = 0
+    while cursor < len(text):
+        match = _SUPPORT_ASSIGNMENT_PREFIX_RE.search(text, cursor)
+        if match is None:
+            break
+        key = match.group("key").strip("\"'")
+        if not should_redact_name(key):
+            cursor = match.end()
+            continue
+
+        value_start = match.end()
+        if value_start >= len(text):
+            parts.append(text[safe_start : match.start()])
+            parts.append(
+                _redacted_secret_preserving_line_breaks(
+                    text[match.start() : value_start]
+                )
+            )
+            safe_start = value_start
+            cursor = value_start
+            continue
+
+        quote = text[value_start] if text[value_start] in {"\"", "'"} else None
+        if quote is not None:
+            content_start = value_start + 1
+            closing = _find_unescaped_quote(text, content_start, quote)
+            stop = closing + 1 if closing is not None else len(text)
+            parts.append(text[safe_start : match.start()])
+            parts.append(
+                _redacted_secret_preserving_line_breaks(text[match.start() : stop])
+            )
+            safe_start = stop
+            cursor = stop
+            continue
+
+        if text[value_start] in "\r\n":
+            content_start = _next_nonempty_line_start(text, value_start)
+            if content_start is not None:
+                stop = _line_end(text, content_start)
+                parts.append(text[safe_start : match.start()])
+                parts.append(
+                    _redacted_secret_preserving_line_breaks(
+                        text[match.start() : stop]
+                    )
+                )
+                safe_start = stop
+                cursor = stop
+                continue
+
+        stop = value_start
+        while stop < len(text) and text[stop] not in "\r\n,;}]":
+            stop += 1
+        parts.append(text[safe_start : match.start()])
+        parts.append(
+            _redacted_secret_preserving_line_breaks(text[match.start() : stop])
+        )
+        safe_start = stop
+        cursor = stop
+
+    parts.append(text[safe_start:])
+    return "".join(parts)
+
+
+def _find_unescaped_quote(text: str, start: int, quote: str) -> int | None:
+    cursor = start
+    while cursor < len(text):
+        candidate = text.find(quote, cursor)
+        if candidate < 0:
+            return None
+        backslashes = 0
+        previous = candidate - 1
+        while previous >= start and text[previous] == "\\":
+            backslashes += 1
+            previous -= 1
+        if backslashes % 2 == 0:
+            return candidate
+        cursor = candidate + 1
+    return None
+
+
+def _next_nonempty_line_start(text: str, start: int) -> int | None:
+    cursor = start
+    while cursor < len(text):
+        if text.startswith("\r\n", cursor):
+            cursor += 2
+        elif text[cursor] in "\r\n":
+            cursor += 1
+        else:
+            break
+        line_end = _line_end(text, cursor)
+        first_content = cursor
+        while first_content < line_end and text[first_content] in " \t":
+            first_content += 1
+        if first_content < line_end:
+            return first_content
+        cursor = line_end
+    return None
+
+
+def _line_end(text: str, start: int) -> int:
+    cursor = start
+    while cursor < len(text) and text[cursor] not in "\r\n":
+        cursor += 1
+    return cursor
+
+
+def _redacted_secret_preserving_line_breaks(text: str) -> str:
+    return REDACTED + "".join(character for character in text if character in "\r\n")
+
+
+def _support_line_needs_general_redaction(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "@" in text
+        or "://" in text
+        or "::" in text
+        or text.count(":") >= 4
+        or _SUPPORT_POSSIBLE_IPV4_RE.search(text) is not None
+        or _SUPPORT_QUERY_SECRET_RE.search(text) is not None
+        or any(marker in lowered for marker in _SUPPORT_GENERAL_REDACTION_MARKERS)
+    )
+
+
+def _redact_general_support_lines(
+    lines: Sequence[str],
+    *,
+    overflow_marker: str = _REDACTED_OVERSIZE_LOG_LINE,
+) -> list[str]:
+    """Bound calls into the broad legacy redactor without skipping secrets."""
+
+    result: list[str] = []
+    redaction_chars = 0
+    for line in lines:
+        if _SUPPORT_ENV_ASSIGNMENT_RE.match(line):
+            result.append(REDACTED)
+            continue
+        if not _support_line_needs_general_redaction(line):
+            result.append(line)
+            continue
+        if (
+            len(line) > _MAX_SUPPORT_GENERAL_REDACTION_LINE_CHARS
+            or redaction_chars + len(line)
+            > _MAX_SUPPORT_GENERAL_REDACTION_TOTAL_CHARS
+        ):
+            result.append(overflow_marker)
+            continue
+        redaction_chars += len(line)
+        result.append(redact_text(line))
+    return result
+
+
+def _redact_support_fragment(text: str) -> str:
+    """Remove filesystem identities from one URL-free, single-line fragment.
+
+    The scanner advances past every range it recognizes.  It deliberately
+    avoids the repeated lazy-wildcard substitutions previously used here:
+    those became quadratic on an otherwise ordinary slash-heavy log line.
+    Ambiguous rooted paths consume the rest of the fragment rather than risk
+    guessing where a musician-selected directory name ends.
+    """
+
+    rooted_ranges = _rooted_path_ranges(text)
+    filename_ranges = _filename_ranges(text, excluded=rooted_ranges)
+    return _replace_support_ranges(
+        text, _merge_support_range_lists(rooted_ranges, filename_ranges)
+    )
+
+
+def _rooted_path_ranges(text: str) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    cursor = 0
+    while cursor < len(text):
+        match = _SUPPORT_ROOTED_PATH_RE.search(text, cursor)
+        if match is None:
+            break
+        start = match.start()
+        if _is_non_file_slash(text, start):
+            cursor = _slash_token_end(text, match.end())
+            continue
+        end = _rooted_path_end(text, start, match.end())
+        ranges.append((start, end))
+        cursor = max(end, match.end())
+    return ranges
+
+
+def _is_non_file_slash(text: str, start: int) -> bool:
+    if start >= len(text) or text[start] != "/":
+        return False
+    prefix = text[max(0, start - 32) : start].rstrip().lower()
+    word = prefix.rsplit(None, 1)[-1] if prefix else ""
+    if word not in _SUPPORT_NON_FILE_SLASH_PREFIXES:
+        return False
+    end = _slash_token_end(text, start + 1)
+    first_segment = text[start + 1 : end].split("/", 1)[0].lower()
+    if first_segment in _SUPPORT_FILESYSTEM_ROOT_NAMES:
+        return False
+    return not any(
+        match.group("extension").lower() in _SUPPORT_FILE_EXTENSIONS
+        for match in _SUPPORT_EXTENSION_RE.finditer(text, start, end)
+    )
+
+
+def _slash_token_end(text: str, start: int) -> int:
+    cursor = start
+    while cursor < len(text) and not text[cursor].isspace():
+        cursor += 1
+    return max(cursor, start)
+
+
+def _rooted_path_end(text: str, start: int, content_start: int) -> int:
+    quote = _opening_quote_before(text, start)
+    cursor = content_start
+    while cursor < len(text):
+        character = text[cursor]
+        if quote is not None:
+            if _is_closing_quote(text, cursor, quote):
+                return cursor
+            cursor += 1
+            continue
+        if character == ".":
+            extension = _SUPPORT_EXTENSION_RE.match(text, cursor)
+            if extension is not None:
+                # A bundle suffix such as ``WebJam.app/Contents`` is not the
+                # end of the path.  Continue until another extension, a clear
+                # diagnostic separator, a closing quote, or end-of-line.
+                if extension.end() >= len(text):
+                    return extension.end()
+                following = text[extension.end()]
+                if following in "/\\":
+                    cursor = extension.end()
+                    continue
+                if following.isspace():
+                    # Dots are legal inside a directory name, and paths in
+                    # diagnostics are commonly unquoted despite containing
+                    # spaces.  In that ambiguous case, keep scanning rather
+                    # than expose the remainder of a private directory.
+                    cursor = extension.end()
+                    continue
+                return extension.end()
+        if character == ":" and cursor + 1 < len(text):
+            suffix = text[cursor + 1 : cursor + 65].lstrip().lower()
+            if text[cursor + 1].isspace() and suffix.startswith(
+                _SUPPORT_DIAGNOSTIC_SUFFIX_PREFIXES
+            ):
+                return cursor
+        cursor += 1
+    return len(text)
+
+
+def _opening_quote_before(text: str, start: int) -> str | None:
+    if start <= 0:
+        return None
+    opener = text[start - 1]
+    pairs = {'"': '"', "'": "'", "`": "`", "\u201c": "\u201d", "\u2018": "\u2019"}
+    if opener not in pairs:
+        return None
+    if opener == "'" and start >= 2 and _is_word_character(text[start - 2]):
+        return None
+    return pairs[opener]
+
+
+def _is_closing_quote(text: str, cursor: int, quote: str) -> bool:
+    if text[cursor] != quote:
+        return False
+    if quote != "'":
+        return True
+    return cursor + 1 >= len(text) or not _is_word_character(text[cursor + 1])
+
+
+def _is_word_character(value: str) -> bool:
+    return value.isalnum() or value == "_"
+
+
+def _filename_ranges(
+    text: str, *, excluded: Sequence[tuple[int, int]]
+) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    quoted = _quoted_content_ranges(text)
+    quote_index = 0
+    excluded_index = 0
+
+    for match in _SUPPORT_EXTENSION_RE.finditer(text):
+        position = match.start()
+        while (
+            excluded_index < len(excluded) and excluded[excluded_index][1] <= position
+        ):
+            excluded_index += 1
+        if excluded_index < len(excluded):
+            excluded_start, excluded_end = excluded[excluded_index]
+            if excluded_start <= position < excluded_end:
+                continue
+
+        while quote_index < len(quoted) and quoted[quote_index][1] <= position:
+            quote_index += 1
+        quote_range: tuple[int, int] | None = None
+        if quote_index < len(quoted):
+            candidate = quoted[quote_index]
+            if candidate[0] <= position < candidate[1]:
+                quote_range = candidate
+
+        extension = match.group("extension").lower()
+        if (
+            quote_range is None
+            and extension not in _SUPPORT_FILE_EXTENSIONS
+            and _looks_like_safe_bare_hostname(text, match)
+        ):
+            continue
+
+        # Without a rooted path or explicit quote, the left edge of a filename
+        # containing spaces is inherently ambiguous.  Redacting from the start
+        # of this URL-free fragment is conservative and still preserves useful
+        # diagnostic text following the extension.
+        start = quote_range[0] if quote_range is not None else 0
+        end = match.end()
+        if ranges and start <= ranges[-1][1]:
+            ranges[-1] = (min(ranges[-1][0], start), max(ranges[-1][1], end))
+        else:
+            ranges.append((start, end))
+    return ranges
+
+
+def _quoted_content_ranges(text: str) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    pairs = {'"': '"', "'": "'", "`": "`", "\u201c": "\u201d", "\u2018": "\u2019"}
+    active_close: str | None = None
+    content_start = 0
+    for cursor, character in enumerate(text):
+        if active_close is not None:
+            if _is_closing_quote(text, cursor, active_close):
+                ranges.append((content_start, cursor))
+                active_close = None
+            continue
+        if character not in pairs:
+            continue
+        if character == "'" and cursor > 0 and _is_word_character(text[cursor - 1]):
+            continue
+        if cursor + 1 >= len(text) or text[cursor + 1].isspace():
+            continue
+        active_close = pairs[character]
+        content_start = cursor + 1
+    if active_close is not None:
+        ranges.append((content_start, len(text)))
+    return ranges
+
+
+def _looks_like_safe_bare_hostname(text: str, extension_match: re.Match[str]) -> bool:
+    extension = extension_match.group("extension").lower()
+    if extension not in _SUPPORT_SAFE_BARE_DOMAIN_SUFFIXES:
+        return False
+    start = extension_match.start()
+    scanned = 0
+    while start > 0 and text[start - 1] in (
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"
+    ):
+        start -= 1
+        scanned += 1
+        if scanned > 253:
+            return False
+    hostname = text[start : extension_match.end()].rstrip(".")
+    labels = hostname.split(".")
+    return len(labels) >= 2 and all(
+        label
+        and len(label) <= 63
+        and label[0].isalnum()
+        and label[-1].isalnum()
+        and all(character.isalnum() or character == "-" for character in label)
+        for label in labels
+    )
+
+
+def _merge_support_range_lists(
+    first: Sequence[tuple[int, int]], second: Sequence[tuple[int, int]]
+) -> list[tuple[int, int]]:
+    merged: list[tuple[int, int]] = []
+    first_index = 0
+    second_index = 0
+    while first_index < len(first) or second_index < len(second):
+        if second_index >= len(second) or (
+            first_index < len(first) and first[first_index] <= second[second_index]
+        ):
+            merged.append(first[first_index])
+            first_index += 1
+        else:
+            merged.append(second[second_index])
+            second_index += 1
+    return merged
+
+
+def _replace_support_ranges(text: str, ranges: Sequence[tuple[int, int]]) -> str:
+    if not ranges:
+        return text
+    merged: list[tuple[int, int]] = []
+    for start, end in ranges:
+        start = max(0, start)
+        end = min(len(text), end)
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    parts: list[str] = []
+    cursor = 0
+    for start, end in merged:
+        parts.append(text[cursor:start])
+        parts.append(_REDACTED_PATH)
+        cursor = end
+    parts.append(text[cursor:])
+    safe = "".join(parts)
+    while _REDACTED_PATH + _REDACTED_PATH in safe:
+        safe = safe.replace(_REDACTED_PATH + _REDACTED_PATH, _REDACTED_PATH)
+    return safe
+
+
+def _sanitize_support_uri(value: str, scheme: str) -> str:
+    trailing = ""
+    token = value
+    while token and token[-1] in ".,;!?)}":
+        trailing = token[-1] + trailing
+        token = token[:-1]
+    normalized_scheme = scheme.lower()
+    if normalized_scheme == "webjam":
+        return f"webjam://{REDACTED}{trailing}"
+    if normalized_scheme not in {"http", "https"}:
+        return f"{_REDACTED_PATH}{trailing}"
+
+    separator = token.find("://")
+    remainder = token[separator + 3 :] if separator >= 0 else ""
+    authority_end = len(remainder)
+    for delimiter in "/?#":
+        candidate = remainder.find(delimiter)
+        if candidate >= 0:
+            authority_end = min(authority_end, candidate)
+    authority = remainder[:authority_end]
+    detail = remainder[authority_end:]
+    if "@" in authority:
+        authority = authority.rsplit("@", 1)[-1]
+    if not authority:
+        authority = REDACTED
+    origin = f"{normalized_scheme}://{authority}"
+    if detail not in {"", "/"}:
+        origin = f"{origin}/{REDACTED}"
+    return origin + trailing
+
+
+def _redact_support_line(text: str) -> str:
+    parts: list[str] = []
+    previous_end = 0
+    for match in _SUPPORT_URI_RE.finditer(text):
+        parts.append(_redact_support_fragment(text[previous_end : match.start()]))
+        parts.append(_sanitize_support_uri(match.group(0), match.group("scheme")))
+        previous_end = match.end()
+    parts.append(_redact_support_fragment(text[previous_end:]))
+    safe = "".join(parts)
+    while _REDACTED_PATH + _REDACTED_PATH in safe:
+        safe = safe.replace(_REDACTED_PATH + _REDACTED_PATH, _REDACTED_PATH)
+    return safe
+
+
+def _redact_support_paths(text: str) -> str:
+    parts: list[str] = []
+    for line in text.splitlines(keepends=True):
+        body, ending = _support_line_parts(line)
+        parts.append(_redact_support_line(body))
+        parts.append(ending)
+    if not parts:
+        return _redact_support_line(text)
+    return "".join(parts)
+
+
+def _support_line_parts(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith(("\n", "\r")):
+        return line[:-1], line[-1]
+    return line, ""
+
+
+def _redact_support_text(value: Any) -> str:
+    """Apply shared secret redaction plus bundle-only path redaction.
+
+    URLs are segmented after :func:`redact_text` has applied the existing
+    Webex, invite, query-secret, and IP policies.  HTTP diagnostics retain only
+    their sanitized origin; path, query, and fragment components remain private.
+    Filesystem and other resource schemes are removed entirely.
+    """
+
+    raw = str(value if value is not None else "")
+    if len(raw) > _MAX_SUPPORT_TEXT_INPUT_CHARS:
+        return _REDACTED_OVERSIZE_TEXT
+    bounded = _redact_support_multiline_secrets(raw)
+    chunks = bounded.splitlines(keepends=True)
+    if not chunks:
+        chunks = [bounded]
+    bodies: list[str] = []
+    endings: list[str] = []
+    for chunk in chunks:
+        body, ending = _support_line_parts(chunk)
+        bodies.append(body)
+        endings.append(ending)
+    secret_safe = _redact_general_support_lines(
+        bodies,
+        overflow_marker=_REDACTED_OVERSIZE_TEXT,
+    )
+    return "".join(
+        _redact_support_line(body) + ending
+        for body, ending in zip(secret_safe, endings, strict=True)
+    )
+
+
 def _safe_text(value: Any) -> str:
     if value is None:
         return ""
-    return redact_text(str(value))[:_MAX_TEXT_LENGTH]
+    raw = str(value)
+    if len(raw) > _MAX_SUPPORT_TEXT_INPUT_CHARS:
+        return _REDACTED_OVERSIZE_TEXT
+    return _redact_support_text(raw)[:_MAX_TEXT_LENGTH]
 
 
 def _safe_number(value: Any) -> int | float | None:
@@ -900,12 +1678,52 @@ def _sanitize_logs(
         if isinstance(raw_content, str):
             text = raw_content
         elif isinstance(raw_content, Sequence):
-            text = "\n".join(str(line) for line in raw_content)
+            text = ""
+            try:
+                item_count = len(raw_content)
+            except (OverflowError, TypeError):
+                continue
+            if item_count > _MAX_SUPPORT_LOG_SEQUENCE_LINES:
+                text = _REDACTED_OVERSIZE_LOG
+                candidates: Sequence[Any] = ()
+            else:
+                candidates = raw_content
+            values: list[str] = []
+            total_chars = 0
+            for line in candidates:
+                value = str(line)
+                total_chars += len(value) + (1 if values else 0)
+                if total_chars > _MAX_SUPPORT_LOG_INPUT_CHARS:
+                    break
+                values.append(value)
+            if total_chars > _MAX_SUPPORT_LOG_INPUT_CHARS:
+                text = _REDACTED_OVERSIZE_LOG
+            elif candidates:
+                text = "\n".join(values)
         else:
             continue
         if not _looks_like_log_text(text):
             continue
-        lines = redact_text(text).splitlines()[-_MAX_LOG_LINES:]
+        if len(text) > _MAX_SUPPORT_LOG_INPUT_CHARS:
+            text = _REDACTED_OVERSIZE_LOG
+        text = _redact_support_multiline_secrets(text)
+        raw_lines = text.splitlines()[-_MAX_LOG_LINES:]
+        bounded_lines = [
+            (
+                _REDACTED_OVERSIZE_LOG_LINE
+                if len(line) > _MAX_SUPPORT_LOG_LINE_CHARS
+                else line
+            )
+            for line in raw_lines
+        ]
+        # Multi-line secret state was resolved before tail selection.  Apply
+        # the general redactor to each already-bounded line so none of its
+        # broad compatibility expressions can rescan a 128-KiB payload.  Path
+        # scanning remains line-local for the same reason.
+        lines = [
+            _redact_support_line(line)
+            for line in _redact_general_support_lines(bounded_lines)
+        ]
         payload = ("\n".join(lines).rstrip() + "\n").encode("utf-8")
         if len(payload) > _MAX_LOG_BYTES:
             payload = payload[-_MAX_LOG_BYTES:].decode(

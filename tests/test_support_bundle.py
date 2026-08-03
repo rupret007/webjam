@@ -9,6 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 import stat
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -223,6 +224,450 @@ class TestRecursiveRedaction(unittest.TestCase):
 
 
 class TestSupportArtifact(unittest.TestCase):
+    def test_free_text_removes_absolute_paths_and_private_filenames(self):
+        volume_path = "/Volumes/Band Archive/Private Unreleased Song.wav"
+        apostrophe_path = "/Volumes/Jeff's Band/Secret Rehearsal.wav"
+        private_path = "/private/tmp/WebJam Audit/Secret Session.aiff"
+        temporary_path = "/tmp/WebJam Test/Hidden Take.flac"
+        config_path = "/etc/webjam/private.ini"
+        application_path = "/Applications/WebJam Private.app/Contents/MacOS/WebJam"
+        windows_path = r"D:\Band Sessions\Private Mix.wav"
+        windows_forward_path = "E:/Band Sessions/Hidden Stem.flac"
+        unc_path = r"\\studio-nas\Jeff Private\Final Song.mp3"
+        home_path = "/Users/alice/Music/Home Secret.wav"
+        file_uri = "file:///Volumes/Band%20Archive/URI%20Secret.wav"
+
+        artifact = build_support_bundle(
+            SupportFacts(
+                engine_capabilities={
+                    "last_error": (
+                        f"route failed at {application_path}: error code 17"
+                    ),
+                },
+                recorder_health={
+                    "last_error": f"could not read {windows_path}",
+                },
+                errors=(
+                    {
+                        "component": "reference-track",
+                        "code": "DECODE_FAILED",
+                        "message": (
+                            "Failed to open Jeff's Private Demo Song.flac because "
+                            "the decoder refused it"
+                        ),
+                    },
+                ),
+                test_results=(
+                    {
+                        "name": "path-boundary",
+                        "status": "failed",
+                        "detail": f"retry {windows_forward_path}: unavailable",
+                    },
+                ),
+            ),
+            log_excerpts={
+                "webjam": (
+                    f"failed to read {volume_path}; next "
+                    f"\"{private_path}\", then '{temporary_path}'.\n"
+                    f"apostrophe {apostrophe_path}\n"
+                    f"config {config_path}: permission denied\n"
+                    f"network share {unc_path}!\n"
+                    f"home source {home_path}\n"
+                    f"file URI {file_uri}\n"
+                    "directories /tmp/private-directory and /etc/hidden-config\n"
+                    "source 'Jeff's Quoted Private Master.wav' was rejected\n"
+                    "project named Secret Arrangement.logicx was rejected\n"
+                    "source_name=Assigned Private Master.als; decode failed\n"
+                    "Standalone Secret Master.cpr\n"
+                ),
+            },
+            created_at=CREATED_AT,
+        )
+
+        archive_text = "\n".join(
+            artifact.read_archive_file(name).decode("utf-8")
+            for name in artifact.archive_files
+            if name.endswith((".txt", ".json", ".log"))
+        )
+        structured_text = json.dumps(artifact.structured_report)
+        combined = archive_text + structured_text
+        for private in (
+            volume_path,
+            "Band Archive",
+            "Private Unreleased Song.wav",
+            apostrophe_path,
+            "Jeff's Band",
+            "Secret Rehearsal.wav",
+            private_path,
+            "Secret Session.aiff",
+            temporary_path,
+            "Hidden Take.flac",
+            config_path,
+            application_path,
+            "WebJam Private.app",
+            windows_path,
+            "Private Mix.wav",
+            windows_forward_path,
+            "Hidden Stem.flac",
+            unc_path,
+            "Jeff Private",
+            home_path,
+            "Home Secret.wav",
+            file_uri,
+            "URI%20Secret.wav",
+            "Jeff's Private Demo Song.flac",
+            "Jeff's Quoted Private Master.wav",
+            "Secret Arrangement.logicx",
+            "Assigned Private Master.als",
+            "Standalone Secret Master.cpr",
+            "private-directory",
+            "hidden-config",
+        ):
+            self.assertNotIn(private, combined)
+
+        self.assertGreaterEqual(combined.count("[redacted-path]"), 12)
+        for useful in (
+            "error code 17",
+            "the decoder refused it",
+            "permission denied",
+            "unavailable",
+        ):
+            self.assertIn(useful, combined)
+
+    def test_path_scrubbing_preserves_safe_url_origins_only(self):
+        raw = (
+            "meeting "
+            "https://example.webex.com/meet/private-room?token=meeting-private\n"
+            "catalog "
+            "https://updates.example.invalid/releases/catalog.json"
+            "?signature=catalog-private\n"
+            "local http://192.168.1.7/assets/private-song.wav?token=private\n"
+            "invite webjam://join?v=1&host=10.0.0.5&token=invite-private\n"
+        )
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": raw},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        for private in (
+            "private-room",
+            "meeting-private",
+            "releases/catalog.json",
+            "catalog-private",
+            "192.168.1.7",
+            "private-song.wav",
+            "10.0.0.5",
+            "invite-private",
+        ):
+            self.assertNotIn(private, safe_log)
+        self.assertIn("https://example.webex.com/[redacted]", safe_log)
+        self.assertIn("https://updates.example.invalid/[redacted]", safe_log)
+        self.assertIn("http://[redacted-ip]/[redacted]", safe_log)
+        self.assertIn("webjam://[redacted]", safe_log)
+
+    def test_path_scrubbing_covers_adversarial_names_uris_and_windows_forms(self):
+        raw = (
+            "decoder rejected My Private Song.wav during probe\n"
+            "ffmpeg: My Other Secret Mix.flac: Invalid data\n"
+            r"windows $USERPROFILE\Music\Third Secret Song.wav failed"
+            "\n"
+            r"relative ..\Band\Fourth Private Song.aiff failed"
+            "\n"
+            r"extended \\?\C:\Band\Fourth-B Private Song.wav failed"
+            "\n"
+            "remote smb://studio-nas/Band%20Archive/Fifth%20Private.mp3\n"
+            "remote afp://studio-nas/Band%20Archive/Sixth%20Private.wav\n"
+            "remote sftp://studio-nas/Band%20Archive/Sixth-B%20Private.wav\n"
+            "url https://host.invalid/open?path="
+            "%2FVolumes%2FBand%20Archive%2FSeventh%20Private.wav\n"
+            "secret https://host.invalid/token/path-only-secret-value\n"
+            "GET https://host.invalid/ok,/Volumes/Eighth-Private.wav\n"
+            "curly \u201c/Volumes/Band Archive/Ninth Private.wav\u201d failed\n"
+            "unicode /Volumes/R\u00e9p\u00e9tition/\u79d8\u5bc6 Song.wav failed\n"
+            "source_name=Tenth Private Master.als; decode failed\n"
+            "project named Eleventh Private Arrangement.logicx was rejected\n"
+            "Standalone Twelfth Private Master.cpr\n"
+            "Unsupported Thirteenth Master.uncommonfmt was rejected\n"
+            "colon source:/tmp/Fourteenth Private Folder\n"
+            r"drive label:D:\Band\Fifteenth Private Folder"
+            "\n"
+            "dotted /Volumes/Project.v1 Masters/Sixteenth Private Folder\n"
+            "angle Seventeenth Private Song.wav>decode failed\n"
+            "pipe Eighteenth Private Song.wav|decode failed\n"
+            "dash Nineteenth Private Song.wav\u2014decode failed\n"
+        )
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": raw},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        for private in (
+            "My Private Song.wav",
+            "My Other Secret Mix.flac",
+            "Third Secret Song.wav",
+            "Fourth Private Song.aiff",
+            "Fourth-B Private Song.wav",
+            "studio-nas",
+            "Fifth%20Private.mp3",
+            "Sixth%20Private.wav",
+            "Sixth-B%20Private.wav",
+            "Seventh%20Private.wav",
+            "path-only-secret-value",
+            "Eighth-Private.wav",
+            "Ninth Private.wav",
+            "R\u00e9p\u00e9tition",
+            "\u79d8\u5bc6 Song.wav",
+            "Tenth Private Master.als",
+            "Eleventh Private Arrangement.logicx",
+            "Twelfth Private Master.cpr",
+            "Thirteenth Master.uncommonfmt",
+            "Fourteenth Private Folder",
+            "Fifteenth Private Folder",
+            "Project.v1 Masters",
+            "Sixteenth Private Folder",
+            "Seventeenth Private Song.wav",
+            "Eighteenth Private Song.wav",
+            "Nineteenth Private Song.wav",
+        ):
+            self.assertNotIn(private, safe_log)
+        self.assertIn("during probe", safe_log)
+        self.assertIn("Invalid data", safe_log)
+        self.assertIn("was rejected", safe_log)
+        self.assertGreaterEqual(safe_log.count("decode failed"), 3)
+        self.assertGreaterEqual(safe_log.count("[redacted-path]"), 10)
+
+    def test_path_scrubbing_does_not_corrupt_safe_diagnostics(self):
+        raw = (
+            "It's loading 'Secret Song.wav' and that's okay\n"
+            "Connecting to jamulus.io\n"
+            "read more at docs.example.com for details\n"
+            "GET /api/health returned HTTP 503\n"
+            "endpoint /v1/status: unavailable\n"
+            "ratio /foo/bar is invalid\n"
+            "Jamulus version 3.12.2; rate 48.0\n"
+        )
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": raw},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        self.assertNotIn("Secret Song.wav", safe_log)
+        for expected in (
+            "It's loading '[redacted-path]' and that's okay",
+            "Connecting to jamulus.io",
+            "read more at docs.example.com for details",
+            "GET /api/health returned HTTP 503",
+            "endpoint /v1/status: unavailable",
+            "ratio /foo/bar is invalid",
+            "Jamulus version 3.12.2; rate 48.0",
+        ):
+            self.assertIn(expected, safe_log)
+
+    def test_path_scrubbing_bounds_adversarial_log_work(self):
+        bounded_slash_heavy = "/a " * 2_700
+        slash_heavy = "/a " * ((128 * 1024) // 3)
+        oversized = "private My Never Visible Song.wav " + ("x" * 1024 * 1024)
+        bounded_safe_text = "x" * (16 * 1024)
+        bounded_sensitive_text = ("x" * (15 * 1024)) + " alice@example.com"
+        sensitive_heavy = "\n".join(
+            ("x" * 590) + " alice@example.com" for _ in range(200)
+        )
+
+        started = time.perf_counter()
+        artifact = build_support_bundle(
+            SupportFacts(
+                engine_capabilities={
+                    "backend": bounded_safe_text,
+                    "last_error": bounded_sensitive_text,
+                },
+                recorder_health={"last_error": oversized},
+            ),
+            log_excerpts={
+                "webjam": bounded_slash_heavy,
+                "jamulus": slash_heavy,
+                "jamulus_server": oversized,
+                "band_check": sensitive_heavy,
+            },
+            created_at=CREATED_AT,
+        )
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 2.0)
+        self.assertEqual(
+            artifact.read_archive_file("logs/webjam.log"),
+            b"[redacted-path]\n",
+        )
+        self.assertEqual(
+            artifact.read_archive_file("logs/jamulus.log"),
+            b"[redacted-oversize-log-line]\n",
+        )
+        self.assertEqual(
+            artifact.read_archive_file("logs/jamulus-server.log"),
+            b"[redacted-oversize-log]\n",
+        )
+        safe_band_check = artifact.read_archive_file("logs/band-check.log")
+        self.assertNotIn(b"alice@example.com", safe_band_check)
+        self.assertIn(b"[redacted-oversize-log-line]", safe_band_check)
+        archive_text = b"\n".join(
+            artifact.read_archive_file(name)
+            for name in artifact.archive_files
+            if name.endswith((".txt", ".json", ".log"))
+        ).decode("utf-8")
+        self.assertNotIn("My Never Visible Song.wav", archive_text)
+        self.assertEqual(
+            artifact.structured_report["audio"]["engine"]["last_error"],
+            "[redacted-oversize-text]",
+        )
+        self.assertEqual(
+            artifact.structured_report["audio"]["engine"]["backend"],
+            "x" * 2_000,
+        )
+        self.assertEqual(
+            artifact.structured_report["recorder"]["last_error"],
+            "[redacted-oversize-text]",
+        )
+
+    def test_multiline_credential_values_are_redacted_before_log_tail(self):
+        raw = (
+            'password="\nMULTILINE-PASSWORD-VALUE\n"\n'
+            "engine recovered after password rejection\n"
+            "rpc_secret=\nMULTILINE-RPC-VALUE\n"
+            "engine ready after RPC retry\n"
+            "access_token: '\nMULTILINE-TOKEN-VALUE\n'\n"
+            "diagnostics complete\n"
+            'api_key="\nUNCLOSED-KEY-VALUE'
+        )
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": raw},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        for private in (
+            "MULTILINE-PASSWORD-VALUE",
+            "MULTILINE-RPC-VALUE",
+            "MULTILINE-TOKEN-VALUE",
+            "UNCLOSED-KEY-VALUE",
+        ):
+            self.assertNotIn(private, safe_log)
+        for useful in (
+            "engine recovered after password rejection",
+            "engine ready after RPC retry",
+            "diagnostics complete",
+        ):
+            self.assertIn(useful, safe_log)
+        self.assertGreaterEqual(safe_log.count("[redacted]"), 4)
+
+    def test_private_key_crossing_tail_boundary_and_orphan_end_are_redacted(self):
+        key_lines = [f"SYNTHETIC-PRIVATE-KEY-LINE-{index:02d}" for index in range(27)]
+        lines = (
+            ["-----BEGIN PRIVATE KEY-----"]
+            + key_lines
+            + ["-----END PRIVATE KEY-----"]
+            + [f"ordinary-line-{index}" for index in range(472)]
+        )
+        self.assertEqual(len(lines), 501)
+
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={
+                "webjam": lines,
+                "jamulus": "\n".join(
+                    key_lines
+                    + ["-----END PRIVATE KEY-----", "engine still healthy"]
+                ),
+            },
+            created_at=CREATED_AT,
+        )
+
+        safe_webjam = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        safe_jamulus = artifact.read_archive_file("logs/jamulus.log").decode("utf-8")
+        for safe_log in (safe_webjam, safe_jamulus):
+            self.assertNotIn("SYNTHETIC-PRIVATE-KEY-LINE", safe_log)
+            self.assertNotIn("PRIVATE KEY-----", safe_log)
+        self.assertEqual(len(safe_webjam.splitlines()), 500)
+        self.assertIn("ordinary-line-471", safe_webjam)
+        self.assertIn("engine still healthy", safe_jamulus)
+
+    def test_unclosed_private_key_is_fail_closed_with_bounded_runtime(self):
+        malformed = "\n".join(
+            "-----BEGIN PRIVATE KEY-----" + ("A" * 220) for _ in range(500)
+        )
+        orphaned = "\n".join(
+            ("ORPHAN-KEY-MATERIAL-" + ("B" * 190) + "-----END PRIVATE KEY-----")
+            for _ in range(500)
+        )
+        self.assertLessEqual(len(malformed), 128 * 1024)
+        self.assertLessEqual(len(orphaned), 128 * 1024)
+
+        started = time.perf_counter()
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": malformed, "jamulus": orphaned},
+            created_at=CREATED_AT,
+        )
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(
+            artifact.read_archive_file("logs/webjam.log"),
+            b"[redacted]\n",
+        )
+        safe_jamulus = artifact.read_archive_file("logs/jamulus.log").decode("utf-8")
+        self.assertNotIn("ORPHAN-KEY-MATERIAL", safe_jamulus)
+        self.assertNotIn("PRIVATE KEY-----", safe_jamulus)
+        self.assertLessEqual(len(safe_jamulus.encode("utf-8")), 64 * 1024)
+
+    def test_log_tail_and_oversized_lines_are_bounded_as_whole_units(self):
+        lines = [f"bounded-line-{index}" for index in range(501)]
+        lines.insert(
+            250,
+            "Private Oversized Song.wav " + ("x" * (9 * 1024)),
+        )
+        lines[300:303] = [
+            "-----BEGIN PRIVATE KEY-----",
+            "cGVtLXByaXZhdGUtc3VwcG9ydC1idW5kbGU=",
+            "-----END PRIVATE KEY-----",
+        ]
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": lines},
+            created_at=CREATED_AT,
+        )
+
+        safe_log = artifact.read_archive_file("logs/webjam.log").decode("utf-8")
+        self.assertNotIn("bounded-line-0\n", safe_log)
+        self.assertNotIn("Private Oversized Song.wav", safe_log)
+        self.assertNotIn("cGVtLXByaXZhdGUtc3VwcG9ydC1idW5kbGU", safe_log)
+        self.assertIn("[redacted]", safe_log)
+        self.assertIn("[redacted-oversize-log-line]", safe_log)
+        self.assertIn("bounded-line-500", safe_log)
+        self.assertLessEqual(len(safe_log.splitlines()), 500)
+
+    def test_log_byte_cap_retains_only_complete_tail_lines(self):
+        lines = [f"bounded-{index:03d}-" + ("x" * 230) for index in range(500)]
+        artifact = build_support_bundle(
+            SupportFacts(),
+            log_excerpts={"webjam": lines},
+            created_at=CREATED_AT,
+        )
+
+        payload = artifact.read_archive_file("logs/webjam.log")
+        retained = payload.decode("utf-8").splitlines()
+        self.assertLessEqual(len(payload), 64 * 1024)
+        self.assertLessEqual(len(retained), 500)
+        self.assertNotIn(lines[0], retained)
+        self.assertEqual(retained[-1], lines[-1])
+        self.assertTrue(all(line in lines for line in retained))
+        self.assertTrue(payload.endswith(b"\n"))
+
     def test_jamulus_recovery_is_complete_bounded_and_path_free(self):
         recovery = {
             "generation": 12,
@@ -631,7 +1076,8 @@ class TestSupportArtifact(unittest.TestCase):
         self.assertNotIn("very-secret", encoded)
         self.assertNotIn("alice@example.com", encoded)
         self.assertNotIn("SERIAL-42", encoded)
-        self.assertIn("$HOME/Music", encoded)
+        self.assertIn("[redacted-path]", encoded)
+        self.assertNotIn("$HOME/Music", encoded)
 
         names = artifact.archive_files
         self.assertEqual(
