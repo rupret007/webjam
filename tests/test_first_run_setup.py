@@ -188,7 +188,20 @@ def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
     choose_host(dialog)
     dialog._primary.click()
     dialog._webex_url.setText("cisco.webex.com/meet/bandroom")
-    dialog._primary.click()
+    expected_runtime = Path(settings.config_file).parent / "host-runtime"
+    expected_secret = expected_runtime / "server.secret"
+    expected_recordings = expected_runtime / "recordings"
+    with (
+        patch(
+            "webjam_qt.windows.first_run_setup.hosted_server_secret_path",
+            return_value=expected_secret,
+        ),
+        patch(
+            "webjam_qt.windows.first_run_setup.hosted_server_recordings_dir",
+            return_value=expected_recordings,
+        ),
+    ):
+        dialog._primary.click()
     data = json.loads(Path(settings.config_file).read_text())
     assert data["host_server_enabled"] is True
     assert data["jamulus_server"] == "127.0.0.1"
@@ -197,7 +210,8 @@ def test_host_save_is_atomic_private_and_derives_defaults(qapp, settings):
     assert data["server_rpc_port"] == 22240
     assert "webex_audio_mode" not in data
     assert data["local_capture_enabled"] is False
-    assert "JamulusServer" in data["server_rpc_secret_file"]
+    assert Path(data["server_rpc_secret_file"]) == expected_secret
+    assert Path(data["takes_directory"]) == expected_recordings
     assert "/bundle/Jamulus" not in data["jamulus_candidates"]
     assert stat.S_IMODE(Path(settings.config_file).stat().st_mode) == 0o600
 

@@ -75,6 +75,20 @@ class TestSettingsDefaults(unittest.TestCase):
             path = jamulus_client_rpc_secret_path()
         self.assertEqual(path, Path("/home/tester/.webjam_jsonrpc_secret"))
 
+    def test_non_macos_host_runtime_paths_keep_legacy_locations(self):
+        from core.settings import (
+            hosted_server_recordings_dir,
+            hosted_server_secret_path,
+        )
+
+        with patch("core.settings.sys.platform", "linux"), patch(
+            "core.settings.Path.home", return_value=Path("/home/tester")
+        ):
+            secret = hosted_server_secret_path()
+            recordings = hosted_server_recordings_dir()
+        self.assertEqual(secret, Path("/home/tester/.webjam_server_rpc.secret"))
+        self.assertEqual(recordings, Path("/home/tester/WebJam Recordings"))
+
     def test_load_nonexistent_file_returns_defaults(self):
         s = load_settings("/tmp/nonexistent_webjam_config_test.json")
         self.assertEqual(s.jamulus_port, 22124)
