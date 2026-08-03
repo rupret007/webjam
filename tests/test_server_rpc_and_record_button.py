@@ -323,7 +323,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             )
         }
         first_claim = ReferenceTrackOwnershipClaim(
-            udp_port=51000,
+            udp_port=51042,
             process_id=1234,
             generation="1" * 32,
         )
@@ -338,13 +338,16 @@ class TestRecordButtonWiring(unittest.TestCase):
                 {
                     "id": 4,
                     "name": "Alice",
-                    "address": "127.0.0.1:50000",
+                    # A row at the configured allocation base is still the
+                    # musician; only the exact PID-owned offset can be the
+                    # Reference Track.
+                    "address": "127.0.0.1:51000",
                     "channels": 1,
                 },
                 {
                     "id": 9,
                     "name": "A musician may copy this name",
-                    "address": "127.0.0.1:51000",
+                    "address": "127.0.0.1:51042",
                     "channels": 1,
                 },
             ],
@@ -366,7 +369,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             by_kind = {item.source_kind: item for item in receipts}
             self.assertEqual(by_kind["musician"].participant_id, musician_id)
             self.assertEqual(by_kind["reference_track"].display_name, "WebJam Track")
-            self.assertNotIn("51000", repr(receipts))
+            self.assertNotIn("51042", repr(receipts))
 
             # Replacing the exact process/generation between context and
             # receipt invalidates the special binding even though the port
@@ -380,7 +383,7 @@ class TestRecordButtonWiring(unittest.TestCase):
             ):
                 stale_context = c.recording._roster_observation_context()
                 claim_holder[0] = ReferenceTrackOwnershipClaim(
-                    udp_port=51000,
+                    udp_port=51042,
                     process_id=5678,
                     generation="2" * 32,
                 )
@@ -861,6 +864,36 @@ class TestRecordButtonWiring(unittest.TestCase):
             receipts, errors = c.recording._recording_receipt_snapshot()
             self.assertEqual(receipts, ())
             self.assertTrue(any("every Jamulus roster" in item for item in errors))
+        finally:
+            with c.recording._receipt_condition:
+                c.recording._roster_poll_pending = None
+                c.recording._roster_poll_inflight = False
+                c.recording._receipt_condition.notify_all()
+            c.recording._take_id = ""
+
+    def test_roster_request_defers_native_reference_socket_proof_off_ui(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        c.recording._take_id = new_project_id()
+        c.recording._reset_session_evidence()
+        try:
+            with (
+                patch.object(
+                    c.recording,
+                    "_reference_recording_claim",
+                ) as claim,
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.threading.Thread"
+                ) as thread,
+            ):
+                c.recording.request_authenticated_roster_observation()
+
+            claim.assert_not_called()
+            thread.return_value.start.assert_called_once_with()
+            pending = c.recording._roster_poll_pending
+            self.assertIsNotNone(pending)
+            self.assertIsNone(pending.reference_claim)
         finally:
             with c.recording._receipt_condition:
                 c.recording._roster_poll_pending = None

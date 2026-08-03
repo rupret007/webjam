@@ -21,6 +21,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -29,6 +30,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
+
+from core.process_socket_identity import (
+    ProcessSocketIdentityError,
+    exact_jamulus_client_udp_port,
+)
 
 SAMPLE_RATE = 48_000
 JACK_BLOCK_SIZE = 128
@@ -1557,6 +1563,42 @@ class JamulusJackHarness:
         ):
             return None
         return tuple(clients)
+
+    def exact_owned_client_udp_ports(self) -> tuple[int, ...]:
+        """Return one actual UDP source port per exact owned client process.
+
+        Jamulus 3.12.x randomizes away from the command's ``--port`` base.
+        Linux certification therefore joins each child PID's descriptor inode
+        to ``/proc/<pid>/net/udp*`` and refuses missing or ambiguous proof.
+        The tuple follows ``_client_specs``/``client_processes`` order; names
+        and server-visible labels do not participate in ownership.
+        """
+
+        specs = self._client_specs()
+        if len(self.client_processes) != len(specs):
+            raise HarnessFailure("owned Jamulus client process set is incomplete")
+        ports: list[int] = []
+        for process, (_label, _name, udp_key, _rpc_key) in zip(
+            self.client_processes,
+            specs,
+            strict=True,
+        ):
+            process.ensure_running()
+            try:
+                port = exact_jamulus_client_udp_port(
+                    process.proc.pid,
+                    self.ports[udp_key],
+                    platform_name=sys.platform,
+                )
+            except ProcessSocketIdentityError as exc:
+                raise HarnessFailure(
+                    "an owned Jamulus client's exact UDP socket was not proved"
+                ) from exc
+            process.ensure_running()
+            ports.append(port)
+        if len(set(ports)) != len(ports):
+            raise HarnessFailure("owned Jamulus client UDP sockets are ambiguous")
+        return tuple(ports)
 
     def run_transport(
         self,

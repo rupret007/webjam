@@ -374,7 +374,11 @@ class RecordingCoordinator:
             if safe_note and safe_note not in self._recording_identity_errors:
                 self._recording_identity_errors.append(safe_note)
 
-    def _roster_observation_context(self) -> _RosterObservationContext | None:
+    def _roster_observation_context(
+        self,
+        *,
+        capture_reference_claim: bool = True,
+    ) -> _RosterObservationContext | None:
         take_id = str(self._take_id or "")
         if not take_id:
             return None
@@ -428,7 +432,11 @@ class RecordingCoordinator:
         return _RosterObservationContext(
             take_id=take_id,
             channel_bindings=tuple(bindings),
-            reference_claim=self._reference_recording_claim(),
+            reference_claim=(
+                self._reference_recording_claim()
+                if capture_reference_claim
+                else None
+            ),
         )
 
     def request_authenticated_roster_observation(
@@ -438,7 +446,10 @@ class RecordingCoordinator:
     ) -> None:
         """Coalesce a take-scoped authenticated server-roster receipt."""
 
-        context = self._roster_observation_context()
+        # Process-owned socket inspection is deliberately deferred to the
+        # receipt worker. Participant roster updates originate on the UI
+        # thread, and native process inspection must never stall that thread.
+        context = self._roster_observation_context(capture_reference_claim=False)
         if context is None:
             return
         with self._receipt_lock:
@@ -478,6 +489,10 @@ class RecordingCoordinator:
             try:
                 from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
 
+                context = replace(
+                    context,
+                    reference_claim=self._reference_recording_claim(),
+                )
                 secret_file = str(
                     self._c.settings.server_rpc_secret_file or ""
                 ).strip()

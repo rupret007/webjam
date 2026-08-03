@@ -59,6 +59,10 @@ from core.jamulus_child_environment import (
     JamulusChildEnvironmentError,
     sanitized_jamulus_child_environment,
 )
+from core.process_socket_identity import (
+    JAMULUS_CLIENT_MAX_BASE_PORT,
+    exact_jamulus_client_udp_port,
+)
 from core.reference_track import (
     REFERENCE_BLOCK_FRAMES,
     REFERENCE_MAX_DIAGNOSTIC_COUNTER,
@@ -1199,7 +1203,10 @@ def _default_port_allocator(kind: str, excluded: set[int]) -> int:
             port = int(probe.getsockname()[1])
         finally:
             probe.close()
-        if port not in excluded:
+        if (
+            port not in excluded
+            and (kind != "udp" or port <= JAMULUS_CLIENT_MAX_BASE_PORT)
+        ):
             return port
     raise ReferenceTrackError(
         "WebJam couldn't reserve a separate local port for Reference Track."
@@ -1308,12 +1315,13 @@ class _ReferenceRpcControl:
                 "Reference Track lost its private Jamulus control connection."
             ) from exc
 
-    def client_rows(self) -> tuple[tuple[int, int], ...]:
-        """Return validated ``(array_index, server_id)`` rows.
+    def client_rows(self) -> tuple[int, ...]:
+        """Return the ordered, validated client-local mixer channel IDs.
 
-        Jamulus calls the command parameter ``channelIndex`` literally: it is
-        the position in the current client array.  The row's ``id`` is a
-        separate server-assigned identity and can be sparse after reconnects.
+        Jamulus rewrites each server channel ID through ``FindClientChannel``
+        before publishing ``getClientList``.  The resulting IDs index the
+        client's local fader array and can contain gaps after disconnects;
+        their JSON array positions are not valid mixer identities.
         """
 
         result = self.call("jamulusclient/getClientList", {})
@@ -1328,9 +1336,9 @@ class _ReferenceRpcControl:
             raise ReferenceTrackError(
                 "Reference Track is waiting for its Jamulus participant to connect."
             )
-        rows: list[tuple[int, int]] = []
+        rows: list[int] = []
         seen_ids: set[int] = set()
-        for index, raw in enumerate(raw_clients):
+        for raw in raw_clients:
             if not isinstance(raw, Mapping):
                 raise ReferenceTrackError(
                     "Reference Track couldn't verify the Jamulus return mix."
@@ -1340,21 +1348,21 @@ class _ReferenceRpcControl:
                 raise ReferenceTrackError(
                     "Reference Track couldn't verify the Jamulus return mix."
                 )
-            channel_id = value
-            if channel_id < 0 or channel_id in seen_ids:
+            client_local_id = value
+            if client_local_id < 0 or client_local_id in seen_ids:
                 raise ReferenceTrackError(
                     "Reference Track couldn't verify the Jamulus return mix."
                 )
-            seen_ids.add(channel_id)
-            rows.append((index, channel_id))
+            seen_ids.add(client_local_id)
+            rows.append(client_local_id)
         return tuple(rows)
 
     def prove_all_faders_zero(self) -> int:
         rows = self.client_rows()
-        for channel_index, _server_id in rows:
+        for client_local_id in rows:
             result = self.call(
                 "jamulusclient/setFaderLevel",
-                {"channelIndex": channel_index, "level": 0},
+                {"channelIndex": client_local_id, "level": 0},
             )
             # The pinned Jamulus 3.12.2 JSON-RPC contract returns exact "ok".
             # Null, boolean, and the server-recorder token "acknowledged" are
@@ -1436,6 +1444,9 @@ class MacOSBlackHoleReferenceBackend:
         popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
         port_allocator: Callable[[str, set[int]], int] = _default_port_allocator,
         rpc_factory: Callable[[int, str], _ReferenceRpcControl] | None = None,
+        udp_port_resolver: Callable[[int, int], int] = (
+            exact_jamulus_client_udp_port
+        ),
         process_route_probe: CoreAudioProcessRouteProbe | None = None,
         home: Path | None = None,
         physical_route_certified: bool | None = None,
@@ -1465,6 +1476,7 @@ class MacOSBlackHoleReferenceBackend:
         self._rpc_factory = rpc_factory or (
             lambda port, secret: _ReferenceRpcControl(port, secret)
         )
+        self._udp_port_resolver = udp_port_resolver
         self._process_route_probe = (
             process_route_probe
             if process_route_probe is not None
@@ -1577,8 +1589,24 @@ class MacOSBlackHoleReferenceBackend:
                 int(context.primary_rpc_port),
             }
             udp_port = self._port_allocator("udp", excluded)
+            if (
+                isinstance(udp_port, bool)
+                or not 1 <= int(udp_port) <= JAMULUS_CLIENT_MAX_BASE_PORT
+            ):
+                raise ReferenceTrackError(
+                    "Reference Track couldn't reserve a safe Jamulus audio port."
+                )
+            udp_port = int(udp_port)
             excluded.add(udp_port)
             rpc_port = self._port_allocator("tcp", excluded)
+            if (
+                isinstance(rpc_port, bool)
+                or not 1 <= int(rpc_port) <= 65_535
+            ):
+                raise ReferenceTrackError(
+                    "Reference Track couldn't reserve a separate control port."
+                )
+            rpc_port = int(rpc_port)
             excluded.add(rpc_port)
             if len({udp_port, rpc_port, *excluded}) < 4:
                 raise ReferenceTrackError(
@@ -1890,6 +1918,7 @@ class MacOSBlackHoleReferenceBackend:
             route=route,
             process=process,
             udp_port=udp_port,
+            udp_port_resolver=self._udp_port_resolver,
             ownership_generation=ownership_generation,
             rpc=rpc,
             sounddevice_module=sounddevice_module,
@@ -2086,6 +2115,7 @@ class _MacReferenceSession:
         route: _BlackHoleRoute,
         process: subprocess.Popen,
         udp_port: int,
+        udp_port_resolver: Callable[[int, int], int],
         ownership_generation: str,
         rpc: _ReferenceRpcControl,
         sounddevice_module: object,
@@ -2099,6 +2129,7 @@ class _MacReferenceSession:
         self._route = route
         self._process = process
         self._udp_port = int(udp_port)
+        self._udp_port_resolver = udp_port_resolver
         self._ownership_generation = str(ownership_generation)
         self._rpc = rpc
         self._sounddevice = sounddevice_module
@@ -2134,16 +2165,46 @@ class _MacReferenceSession:
         """Bind recorder evidence to this exact live private process."""
 
         with self._lock:
-            if self._teardown_started or self._cleanup_complete:
+            if (
+                self._teardown_started
+                or self._cleanup_complete
+                or self._health_error
+                or self._realtime_fault
+                or not self._control_ready
+                or not self._combined_route_authorized
+            ):
                 return None
         try:
             if self._process.poll() is not None:
                 return None
             process_id = int(self._process.pid)
+            # Jamulus 3.12.x deliberately randomizes its client bind away from
+            # the configured --port base.  Resolve the real socket from the
+            # exact child process; the configured base is never ownership.
+            resolved_port = self._udp_port_resolver(process_id, self._udp_port)
+            if isinstance(resolved_port, bool):
+                return None
+            udp_port = int(resolved_port)
+            if not self._udp_port <= udp_port <= self._udp_port + 199:
+                return None
+            if self._process.poll() is not None:
+                return None
         except (AttributeError, TypeError, ValueError):
             return None
+        except Exception:  # noqa: BLE001 - native socket proof fails absent
+            return None
+        with self._lock:
+            if (
+                self._teardown_started
+                or self._cleanup_complete
+                or self._health_error
+                or self._realtime_fault
+                or not self._control_ready
+                or not self._combined_route_authorized
+            ):
+                return None
         return ReferenceTrackOwnershipClaim(
-            udp_port=self._udp_port,
+            udp_port=udp_port,
             process_id=process_id,
             generation=self._ownership_generation,
         )

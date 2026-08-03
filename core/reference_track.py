@@ -214,8 +214,10 @@ class ReferenceTrackLaunchContext:
 class ReferenceTrackOwnershipClaim:
     """Ephemeral process proof used only while finalizing a recording.
 
-    The private UDP port and process identity deliberately never appear in a
-    public snapshot, diagnostic, take manifest, or support bundle.
+    ``udp_port`` is the exact live socket proved to belong to ``process_id``;
+    it is not the Jamulus ``--port`` allocation base.  The private port and
+    process identity deliberately never appear in a public snapshot,
+    diagnostic, take manifest, or support bundle.
     """
 
     udp_port: int

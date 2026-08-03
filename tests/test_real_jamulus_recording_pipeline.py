@@ -260,13 +260,18 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             harness.CLIENT_A_NAME: str(uuid.uuid4()),
             harness.CLIENT_B_NAME: str(uuid.uuid4()),
         }
+        # The Jamulus --port arguments are allocation bases, not bound ports.
+        # Bind each authenticated roster address to the exact PID-owned UDP
+        # socket and require a bijection across the two private processes.
+        actual_owned_udp_ports = harness.exact_owned_client_udp_ports()
+        assert len(actual_owned_udp_ports) == 2
         owned_fixtures_by_udp_port = {
-            harness.ports["client_a_udp"]: (
+            actual_owned_udp_ports[0]: (
                 harness.CLIENT_A_NAME,
                 participant_ids[harness.CLIENT_A_NAME],
                 SPEC_A,
             ),
-            harness.ports["client_b_udp"]: (
+            actual_owned_udp_ports[1]: (
                 harness.CLIENT_B_NAME,
                 participant_ids[harness.CLIENT_B_NAME],
                 SPEC_B,
@@ -274,6 +279,7 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         }
         recording_receipts: list[RecorderClientReceipt] = []
         expected_by_participant_id = {}
+        observed_owned_udp_ports: set[int] = set()
         for raw_client, observation in zip(
             transport.server_clients, observations, strict=True
         ):
@@ -282,6 +288,8 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             assert separator and port_text.isdigit(), raw_client
             owned = owned_fixtures_by_udp_port.get(int(port_text))
             assert owned is not None, raw_client
+            assert int(port_text) not in observed_owned_udp_ports, raw_client
+            observed_owned_udp_ports.add(int(port_text))
             expected_name, participant_id, expected_spec = owned
             assert observation.display_name == expected_name
             expected_by_participant_id[participant_id] = (
@@ -296,6 +304,7 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
                 channels=observation.channels,
             ))
         assert len(recording_receipts) == 2
+        assert observed_owned_udp_ports == set(owned_fixtures_by_udp_port)
 
         # Jamulus's numeric suffix is startFrame + channel count.  Match each
         # WAV through the address-erased recorder-key digest from the receipt;

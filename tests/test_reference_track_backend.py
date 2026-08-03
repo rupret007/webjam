@@ -841,7 +841,7 @@ def test_capability_rejects_spoofed_custom_and_partial_blackhole_routes(
     )
 
 
-def test_zero_fader_proof_uses_array_positions_and_exact_pinned_result() -> None:
+def test_zero_fader_proof_uses_sparse_client_local_ids_and_exact_result() -> None:
     rpc = _ReferenceRpcControl(12345, "private")
     calls = []
 
@@ -858,11 +858,11 @@ def test_zero_fader_proof_uses_array_positions_and_exact_pinned_result() -> None
     ] == [
         (
             "jamulusclient/setFaderLevel",
-            {"channelIndex": 0, "level": 0},
+            {"channelIndex": 7, "level": 0},
         ),
         (
             "jamulusclient/setFaderLevel",
-            {"channelIndex": 1, "level": 0},
+            {"channelIndex": 2, "level": 0},
         ),
     ]
 
@@ -1001,6 +1001,61 @@ def test_gui_client_is_rejected_before_process_ports_or_files(
     assert not reference_track_runtime_directory(tmp_path).exists()
 
 
+def test_reference_track_rejects_port_base_that_cannot_fit_jamulus_retry_window(
+    tmp_path: Path,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    launches = []
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=lambda *args, **kwargs: launches.append((args, kwargs)),
+        port_allocator=lambda kind, _excluded: (
+            65_337 if kind == "udp" else 33_102
+        ),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="safe Jamulus audio port"):
+        backend.prepare(_context(binary))
+    assert launches == []
+    assert not reference_track_runtime_directory(tmp_path).exists()
+
+
+def test_default_udp_allocator_retries_ephemeral_base_above_safe_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ports = iter((65_400, 33_101))
+    probes = []
+
+    class Probe:
+        def __init__(self, *_args) -> None:
+            self.port = next(ports)
+            self.closed = False
+            probes.append(self)
+
+        def bind(self, _endpoint) -> None:
+            return None
+
+        def getsockname(self):
+            return ("127.0.0.1", self.port)
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(reference_backend.socket, "socket", Probe)
+
+    assert reference_backend._default_port_allocator("udp", set()) == 33_101
+    assert len(probes) == 2
+    assert all(probe.closed for probe in probes)
+
+
 @pytest.mark.parametrize("direction", ("input", "output"))
 def test_live_primary_blackhole_conflict_fails_before_binary_or_files(
     tmp_path: Path,
@@ -1082,6 +1137,7 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     popen_calls = []
     rpc_instances: list[_Rpc] = []
     ports = iter((33101, 33102))
+    resolved_udp_ports = [33142]
     regular_jamulus_dir = _legacy_jamulus_container_directory(tmp_path)
     regular_jamulus_dir.mkdir(parents=True)
     regular_profile = regular_jamulus_dir / "Jamulus.ini"
@@ -1096,6 +1152,13 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
         rpc_instances.append(rpc)
         return rpc
 
+    def resolve_udp_port(process_id: int, requested_port: int) -> int:
+        assert process_id == process.pid
+        assert requested_port == 33101
+        if not resolved_udp_ports:
+            raise RuntimeError("synthetic native inspection failure")
+        return resolved_udp_ports[0]
+
     backend = MacOSBlackHoleReferenceBackend(
         platform="darwin",
         scanner=lambda: _scan(_device()),
@@ -1105,6 +1168,9 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
         popen_factory=popen,
         port_allocator=lambda _kind, _excluded: next(ports),
         rpc_factory=rpc_factory,
+        # Jamulus uses 33101 only as its allocation base; this exact child
+        # bound 33142, proved by the production resolver seam.
+        udp_port_resolver=resolve_udp_port,
         home=tmp_path,
         physical_route_certified=True,
     )
@@ -1171,15 +1237,21 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert rpc_instances[0].port == 33102
     assert rpc_instances[0].connected == 0
     assert rpc_instances[0].proofs == 0
-    claim = session.recording_ownership_claim()
-    assert claim is not None
-    assert claim.udp_port == 33101
-    assert claim.process_id == process.pid
-    assert len(claim.generation) == 32
+    # A live PID alone is insufficient before authenticated control, zero
+    # returns, and both audio routes have been proved.
+    assert session.recording_ownership_claim() is None
 
     session.start(_fill_audio(0.125))
     assert rpc_instances[0].connected == 1
     assert rpc_instances[0].proofs >= 1
+    claim = session.recording_ownership_claim()
+    assert claim is not None
+    assert claim.udp_port == 33142
+    assert claim.process_id == process.pid
+    assert len(claim.generation) == 32
+    resolved_udp_ports.clear()
+    assert session.recording_ownership_claim() is None
+    resolved_udp_ports.append(33142)
     stream = sd.streams[-1]
     assert stream.started is True
     assert stream.kwargs["device"] == 0
