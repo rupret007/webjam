@@ -5036,6 +5036,16 @@ class ApplicationController(QObject):
             jamulus_participants,
             source_identity=source_identity,
         )
+        if local_session_proven and self.host_peer.active:
+            try:
+                self.host_peer.reconcile_presence_channels(
+                    int(person.channel_id) for person in jamulus_participants
+                )
+            except Exception:  # noqa: BLE001 - identity evidence fails absent
+                # Participant names and private peer details are deliberately
+                # omitted: a failed reconciliation must be diagnosable without
+                # leaking the band's roster.
+                LOGGER.error("Could not reconcile authenticated peer presence")
         # Bind only this process's authenticated local participant. The host
         # resolves remote channels from each joiner's signed presence update,
         # so duplicate or renamed display names never become identity keys.
@@ -5060,6 +5070,14 @@ class ApplicationController(QObject):
             durable = self.peer_participant_id_for_channel(channel_id)
             if durable:
                 presentation.participant_id = durable
+        # A process-authenticated primary roster change is the signal that a
+        # musician or the separately owned Reference Track may have joined.
+        # While a take is active, reduce the server's independently
+        # authenticated getClients row to an address-free recorder receipt.
+        if local_session_proven:
+            self.recording.request_authenticated_roster_observation(
+                exact_process_update=True
+            )
         self._update_pocket_roster_binding_epoch()
         self.window.recording_studio.set_live_participants(self.participants.values())
         self._update_session_hud()

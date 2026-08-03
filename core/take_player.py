@@ -2191,8 +2191,13 @@ class TakePlayer:
                         continue
                     try:
                         segment._reader = sf.SoundFile(str(segment.path))
-                    except Exception as exc:  # noqa: BLE001
-                        _logger.warning("can't open %s: %s", segment.path, exc)
+                    except Exception:  # noqa: BLE001
+                        # A legacy/native recorder filename can contain a
+                        # masked endpoint. Keep both it and backend exception
+                        # text out of logs and support bundles.
+                        _logger.warning(
+                            "A recorded segment could not be opened for playback."
+                        )
                         segment._reader = None
                 t._reader = t.segments[0]._reader if t.segments else None
                 t._eof = False

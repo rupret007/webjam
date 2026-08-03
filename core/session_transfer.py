@@ -41,7 +41,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, urlsplit
 
 from core.redaction import redact_text
@@ -508,15 +508,58 @@ class EnrollmentRegistry:
                 )
         return None
 
-    def participant_id_for_channel(self, channel_id: int) -> str | None:
+    def presence_for_channel(self, channel_id: int) -> PresenceBinding | None:
+        """Return one currently authenticated owner for a transient channel."""
+
         channel_id = int(channel_id)
+        if channel_id < 0:
+            raise ValueError("channel_id cannot be negative.")
         with self._lock:
             matches = [
-                record["participant_id"]
+                record
                 for record in self._participants.values()
                 if record.get("channel_id") == channel_id
             ]
-        return matches[0] if len(matches) == 1 else None
+            if len(matches) != 1:
+                return None
+            record = matches[0]
+            return PresenceBinding(
+                participant_id=record["participant_id"],
+                channel_id=channel_id,
+                display_name=record["display_name"],
+                generation=int(record.get("presence_generation", 0)),
+                capture_enabled=bool(record.get("capture_enabled", False)),
+            )
+
+    def reconcile_presence_channels(self, active_channel_ids: Iterable[int]) -> int:
+        """Retire bindings absent from one authenticated Jamulus roster.
+
+        A Jamulus channel number is transient and may later be reused by an
+        unrelated client.  Preserve the last authenticated generation as a
+        tombstone, but remove its live-channel claim until that participant
+        publishes a newer signed presence.
+        """
+
+        try:
+            active = {int(value) for value in active_channel_ids}
+        except (TypeError, ValueError) as exc:
+            raise ValueError("active channel IDs must be integers.") from exc
+        if any(value < 0 for value in active):
+            raise ValueError("active channel IDs cannot be negative.")
+        changed = 0
+        with self._lock:
+            for record in self._participants.values():
+                channel_id = record.get("channel_id")
+                if channel_id is not None and int(channel_id) not in active:
+                    record["channel_id"] = None
+                    changed += 1
+            if changed:
+                self._save()
+        return changed
+
+    def participant_id_for_channel(self, channel_id: int) -> str | None:
+        binding = self.presence_for_channel(channel_id)
+        return binding.participant_id if binding is not None else None
 
     def participants(self) -> tuple[ParticipantEnrollment, ...]:
         """Return the internal enrollment inventory, including derived tokens.

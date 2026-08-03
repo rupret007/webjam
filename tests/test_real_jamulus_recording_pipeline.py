@@ -27,8 +27,9 @@ from core.session_transfer import (
     TransferStore,
 )
 from core.take_library import (
+    RecorderClientReceipt,
     discover_takes,
-    server_track_channel_id,
+    recorder_client_observations,
     write_take_manifest,
 )
 from core.take_player import TakePlayer
@@ -336,12 +337,25 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         ]
         assert transfer_evidence["device_id_preserved"] is True
 
-        participant_names: dict[int, str] = {}
-        for name, path in by_name.items():
-            channel_id = server_track_channel_id(path.name)
-            assert channel_id is not None
-            participant_names[channel_id] = name
-        assert len(participant_names) == 2
+        observations = recorder_client_observations({
+            "connections": len(transport.server_clients),
+            "clients": list(transport.server_clients),
+        })
+        participant_ids = {
+            name: str(uuid.uuid4())
+            for name in (harness.CLIENT_A_NAME, harness.CLIENT_B_NAME)
+        }
+        recording_receipts = tuple(
+            RecorderClientReceipt(
+                server_channel_id=item.server_channel_id,
+                display_name=item.display_name,
+                participant_id=participant_ids[item.display_name],
+                recorder_key_sha256=item.recorder_key_sha256,
+                channels=item.channels,
+            )
+            for item in observations
+        )
+        assert len(recording_receipts) == 2
 
         validation = write_take_manifest(
             take_dir,
@@ -350,13 +364,13 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             local_started_utc=local_result.started_utc,
             local_duration_s=local_result.total_frames / SAMPLE_RATE,
             capture_errors=local_result.errors,
-            participant_names=participant_names,
             session_title="Real Jamulus Boundary Certification",
             app_version="integration",
             local_participant_name="Host Boundary Fixture",
             capture_device=local_result.capture_device,
             capture_gaps=local_result.gaps,
             local_total_frames=local_result.total_frames,
+            recording_receipts=recording_receipts,
         )
         assert validation.ok, validation.errors
         assert validation.take is not None
@@ -396,7 +410,9 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             assert segment.channels == 2
             source_path = take_dir / segment.path
             assert segment.frame_count == sf.info(source_path).frames
-            assert segment.sha256 == source_hashes[source_path]
+            assert segment.sha256 in {
+                source_hashes[path] for path in source_wavs
+            }
         for track in local_tracks:
             assert track.quality is SourceQuality.UNVERIFIED
             assert track.media_status is MediaStatus.AVAILABLE

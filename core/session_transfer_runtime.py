@@ -18,7 +18,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from core.network_invite import BandInvite, create_invite_link
 from core.session_transfer import (
@@ -561,6 +561,20 @@ class HostPeerSession:
         if self.registry is None:
             return None
         return self.registry.participant_id_for_channel(channel_id)
+
+    def presence_for_channel(self, channel_id: int) -> PresenceBinding | None:
+        """Return authenticated live-channel evidence, including generation."""
+
+        if self.registry is None:
+            return None
+        return self.registry.presence_for_channel(channel_id)
+
+    def reconcile_presence_channels(self, active_channel_ids: Iterable[int]) -> int:
+        """Retire peer bindings absent from the current primary roster."""
+
+        if self.registry is None:
+            return 0
+        return self.registry.reconcile_presence_channels(active_channel_ids)
 
     def begin_take(
         self, take_id: str, *, started_utc: str
@@ -1387,6 +1401,7 @@ class GuestPeerSession:
         self._desired_presence: tuple[int, str, bool] | None = None
         self._bound_presence: tuple[int, str, bool] | None = None
         self._presence_generation = 0
+        self._presence_observation_epoch = 0
         self._capture = None
         self._active_take_id = ""
         self._capture_started_config: tuple[int, int, int] | None = None
@@ -1480,8 +1495,14 @@ class GuestPeerSession:
             bool(self.capture_enabled()),
         )
         with self._lock:
-            if desired != self._desired_presence:
-                self._desired_presence = desired
+            self._desired_presence = desired
+            self._presence_observation_epoch += 1
+            # The host retires a binding as soon as this channel disappears
+            # from its process-authenticated Jamulus roster.  A subsequent
+            # roster appearance must therefore publish a fresh signed
+            # generation even when Jamulus happens to reuse the same channel,
+            # name, and capture preference.
+            self._bound_presence = None
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -1528,6 +1549,7 @@ class GuestPeerSession:
         with self._lock:
             desired = self._desired_presence
             bound = self._bound_presence
+            observation_epoch = self._presence_observation_epoch
         if desired is None or desired == bound:
             return
         self._presence_generation = max(time.time_ns(), self._presence_generation + 1)
@@ -1539,7 +1561,15 @@ class GuestPeerSession:
             capture_enabled=desired[2],
         )
         with self._lock:
-            self._bound_presence = desired
+            # A newer process-authenticated roster observation may have
+            # arrived while the signed request was in flight. In that case the
+            # completed request cannot satisfy the newer proof obligation;
+            # leave it pending so the next poll publishes another generation.
+            if (
+                self._presence_observation_epoch == observation_epoch
+                and self._desired_presence == desired
+            ):
+                self._bound_presence = desired
 
     def _new_capture(
         self,

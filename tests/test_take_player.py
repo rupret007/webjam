@@ -501,10 +501,11 @@ class TestSeekAndLevels(unittest.TestCase):
 class TestMissingFilesAreGraceful(unittest.TestCase):
     def test_missing_track_file_plays_silence(self):
         with tempfile.TemporaryDirectory() as d:
+            private_filename = "Alice-127_0_0_1_52000-0-1.wav"
             take = _Take(
                 tracks=[
                     _Track(
-                        path=Path(d) / "gone.wav",
+                        path=Path(d) / private_filename,
                         name="gone",
                         offset_s=0.0,
                         duration_s=0.5,
@@ -515,7 +516,12 @@ class TestMissingFilesAreGraceful(unittest.TestCase):
             player = TakePlayer(samplerate=RATE, blocksize=256, sink=CapturingSink())
             player.load(take)
             player._total_frames = int(0.3 * RATE)
-            player.play()  # must not raise
+            with self.assertLogs("webjam.take_player", level="WARNING") as logs:
+                player.play()  # must not raise
+            rendered = "\n".join(logs.output)
+            self.assertIn("recorded segment could not be opened", rendered)
+            self.assertNotIn(private_filename, rendered)
+            self.assertNotIn(d, rendered)
 
     def test_playback_open_failure_is_actionable_and_resets_state(self):
         class _FailingSink:

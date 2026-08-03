@@ -1171,6 +1171,11 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert rpc_instances[0].port == 33102
     assert rpc_instances[0].connected == 0
     assert rpc_instances[0].proofs == 0
+    claim = session.recording_ownership_claim()
+    assert claim is not None
+    assert claim.udp_port == 33101
+    assert claim.process_id == process.pid
+    assert len(claim.generation) == 32
 
     session.start(_fill_audio(0.125))
     assert rpc_instances[0].connected == 1
@@ -1211,6 +1216,7 @@ def test_owned_second_client_has_separate_profile_ports_secret_and_route(
     assert "audio fault" in session.health_error()
 
     session.stop()
+    assert session.recording_ownership_claim() is None
     assert stream.stopped is True
     assert stream.closed is True
     assert process.terminated == 1
@@ -1420,6 +1426,49 @@ def test_private_popen_os_error_cannot_leak_runtime_path_in_traceback(
     )
     assert str(tmp_path) not in formatted
     assert "synthetic private launch failure" not in formatted
+    assert backend.capability().reason_code == "ready"
+
+
+def test_ownership_generation_failure_before_spawn_cleans_private_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary = tmp_path / "Jamulus"
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    ports = iter((33151, 33152))
+    launches: list[tuple[object, ...]] = []
+    token_calls = 0
+
+    def token_hex(byte_count: int) -> str:
+        nonlocal token_calls
+        token_calls += 1
+        if token_calls == 2:
+            raise OSError("synthetic entropy failure")
+        return "a" * (byte_count * 2)
+
+    monkeypatch.setattr(reference_backend.secrets, "token_hex", token_hex)
+    backend = MacOSBlackHoleReferenceBackend(
+        platform="darwin",
+        scanner=lambda: _scan(_device()),
+        sounddevice_module=_SoundDevice(),
+        version_probe=lambda _binary: "3.12.2",
+        headless_client_probe=lambda _binary: True,
+        popen_factory=lambda *args, **kwargs: launches.append((args, kwargs)),
+        port_allocator=lambda _kind, _excluded: next(ports),
+        rpc_factory=lambda port, secret: _Rpc(port, secret),
+        home=tmp_path,
+        physical_route_certified=True,
+    )
+
+    with pytest.raises(Exception, match="prepare a safe Reference Track") as failure:
+        backend.prepare(_context(binary))
+
+    runtime = reference_track_runtime_directory(tmp_path)
+    assert launches == []
+    assert str(tmp_path) not in str(failure.value)
+    assert not runtime.exists() or not tuple(runtime.iterdir())
+    assert backend._pending_cleanup is None  # type: ignore[attr-defined]
     assert backend.capability().reason_code == "ready"
 
 

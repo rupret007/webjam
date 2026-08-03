@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 from pathlib import Path
+import re
 import stat
 import threading
 from typing import Callable, Protocol
@@ -210,6 +211,31 @@ class ReferenceTrackLaunchContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ReferenceTrackOwnershipClaim:
+    """Ephemeral process proof used only while finalizing a recording.
+
+    The private UDP port and process identity deliberately never appear in a
+    public snapshot, diagnostic, take manifest, or support bundle.
+    """
+
+    udp_port: int
+    process_id: int
+    generation: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.udp_port, bool) or not 1 <= int(self.udp_port) <= 65_535:
+            raise ValueError("udp_port must be between 1 and 65535")
+        if isinstance(self.process_id, bool) or int(self.process_id) <= 0:
+            raise ValueError("process_id must be a positive integer")
+        generation = str(self.generation or "").strip().lower()
+        if re.fullmatch(r"[0-9a-f]{32}", generation) is None:
+            raise ValueError("generation must be a private 128-bit token")
+        object.__setattr__(self, "udp_port", int(self.udp_port))
+        object.__setattr__(self, "process_id", int(self.process_id))
+        object.__setattr__(self, "generation", generation)
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceTrackSnapshot:
     state: ReferenceTrackState
     capability: ReferenceTrackCapability
@@ -372,6 +398,8 @@ class ReferenceAudioBridgeSession(Protocol):
     def start(self, pull_into: Callable[[np.ndarray], int]) -> None: ...
 
     def health_error(self) -> str: ...
+
+    def recording_ownership_claim(self) -> ReferenceTrackOwnershipClaim | None: ...
 
     def stop(self) -> None: ...
 
@@ -1227,6 +1255,27 @@ class ReferenceTrackController:
         )
         return diagnostics
 
+    def recording_ownership_claim(self) -> ReferenceTrackOwnershipClaim | None:
+        """Return a claim only while the exact backend session is published."""
+
+        with self._lock:
+            session = self._session
+        if session is None:
+            return None
+        reader = getattr(session, "recording_ownership_claim", None)
+        if not callable(reader):
+            return None
+        try:
+            claim = reader()
+        except Exception:  # noqa: BLE001 - private backend evidence boundary
+            return None
+        if claim is not None and not isinstance(claim, ReferenceTrackOwnershipClaim):
+            return None
+        with self._lock:
+            if self._session is not session:
+                return None
+        return claim
+
     def refresh_capability(
         self, audience_bridge_active: bool = False
     ) -> ReferenceTrackSnapshot:
@@ -1918,6 +1967,7 @@ __all__ = [
     "ReferenceTrackDecoder",
     "ReferenceTrackError",
     "ReferenceTrackLaunchContext",
+    "ReferenceTrackOwnershipClaim",
     "ReferenceTrackSnapshot",
     "ReferenceTrackSourceInfo",
     "ReferenceTrackState",

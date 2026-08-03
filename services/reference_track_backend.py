@@ -69,6 +69,7 @@ from core.reference_track import (
     ReferenceTrackCapability,
     ReferenceTrackError,
     ReferenceTrackLaunchContext,
+    ReferenceTrackOwnershipClaim,
 )
 from core.secure_runtime import (
     SecureRuntimeDirectory,
@@ -1784,6 +1785,7 @@ class MacOSBlackHoleReferenceBackend:
         adapter = Jamulus3122AudioRouteAdapter()
         owned_files: _ReferencePrivateFiles | None = None
         secret_value = ""
+        ownership_generation = ""
         process: subprocess.Popen | None = None
         rpc: _ReferenceRpcControl | None = None
         route_lease = _claim_blackhole_route(route.uid, home=self._home)
@@ -1793,6 +1795,10 @@ class MacOSBlackHoleReferenceBackend:
                 home=self._home,
             )
             secret_value = secrets.token_urlsafe(32)
+            # Generate every fallible ownership input before process spawn and
+            # within the cleanup guard. A failed entropy source must not leave
+            # a live second Jamulus client outside backend ownership.
+            ownership_generation = secrets.token_hex(16)
             owned_files.provision(adapter, profile, secret=secret_value)
             sounddevice_module = self._load_sounddevice()
             rpc = self._rpc_factory(rpc_port, secret_value)
@@ -1883,6 +1889,8 @@ class MacOSBlackHoleReferenceBackend:
         return _MacReferenceSession(
             route=route,
             process=process,
+            udp_port=udp_port,
+            ownership_generation=ownership_generation,
             rpc=rpc,
             sounddevice_module=sounddevice_module,
             route_proof=primary_route,
@@ -2077,6 +2085,8 @@ class _MacReferenceSession:
         *,
         route: _BlackHoleRoute,
         process: subprocess.Popen,
+        udp_port: int,
+        ownership_generation: str,
         rpc: _ReferenceRpcControl,
         sounddevice_module: object,
         route_proof: CoreAudioProcessRouteSnapshot,
@@ -2088,6 +2098,8 @@ class _MacReferenceSession:
     ) -> None:
         self._route = route
         self._process = process
+        self._udp_port = int(udp_port)
+        self._ownership_generation = str(ownership_generation)
         self._rpc = rpc
         self._sounddevice = sounddevice_module
         self._route_proof = route_proof
@@ -2117,6 +2129,24 @@ class _MacReferenceSession:
     @property
     def route_name(self) -> str:
         return self._route.name
+
+    def recording_ownership_claim(self) -> ReferenceTrackOwnershipClaim | None:
+        """Bind recorder evidence to this exact live private process."""
+
+        with self._lock:
+            if self._teardown_started or self._cleanup_complete:
+                return None
+        try:
+            if self._process.poll() is not None:
+                return None
+            process_id = int(self._process.pid)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return ReferenceTrackOwnershipClaim(
+            udp_port=self._udp_port,
+            process_id=process_id,
+            generation=self._ownership_generation,
+        )
 
     def start(self, pull_into: Callable[[np.ndarray], int]) -> None:
         if not callable(pull_into):

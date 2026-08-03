@@ -377,6 +377,84 @@ def test_authenticated_presence_keeps_duplicate_names_distinct_through_rename_an
     )
 
 
+def test_disappeared_channel_requires_a_new_authenticated_presence_generation(
+    peer,
+) -> None:
+    credentials, registry, _control, _transfers, server = peer
+    client = SessionPeerClient("127.0.0.1", server.address[1], credentials=credentials)
+    musician = client.enroll(_id(), "Alex")
+    first = client.bind_presence(
+        musician,
+        channel_id=4,
+        display_name="Alex",
+        generation=10,
+        capture_enabled=True,
+    )
+    assert registry.presence_for_channel(4) == first
+
+    assert registry.reconcile_presence_channels({7}) == 1
+    assert registry.presence_for_channel(4) is None
+    assert registry.participant_id_for_channel(4) is None
+    assert registry.presence_for_participant(musician.participant_id) is None
+
+    # Clearing a disappeared channel preserves generation 10 as a tombstone;
+    # replaying the old signed request cannot reclaim a reused channel.
+    with pytest.raises(SessionTransferError, match="generation"):
+        client.bind_presence(
+            musician,
+            channel_id=4,
+            display_name="Alex",
+            generation=10,
+            capture_enabled=True,
+        )
+
+    rebound = client.bind_presence(
+        musician,
+        channel_id=4,
+        display_name="Alex",
+        generation=11,
+        capture_enabled=True,
+    )
+    assert rebound.generation == 11
+    assert registry.presence_for_channel(4) == rebound
+
+
+def test_repeated_process_roster_observation_republishes_guest_presence(
+    tmp_path: Path,
+    peer,
+) -> None:
+    credentials, registry, _control, _transfers, server = peer
+    invite = BandInvite(
+        "127.0.0.1",
+        22124,
+        "Test",
+        credentials.session_id,
+        server.address[1],
+        credentials.invite_token,
+    )
+    guest = GuestPeerSession(
+        invite,
+        display_name="Alex",
+        takes_root=tmp_path / "guest",
+        installation_path=tmp_path / "installation.json",
+        capture_enabled=lambda: False,
+        capture_config=lambda: (0, 48_000, 128),
+    )
+    guest.observe_presence(4, "Alex")
+    guest.poll_once()
+    first = registry.presence_for_channel(4)
+    assert first is not None
+
+    # Even an identical roster card is a new process observation. This closes
+    # the race where the host retired channel 4 between two equal callbacks.
+    guest.observe_presence(4, "Alex")
+    guest.poll_once()
+    second = registry.presence_for_channel(4)
+    assert second is not None
+    assert second.participant_id == first.participant_id
+    assert second.generation > first.generation
+
+
 def test_guest_capture_starts_only_after_confirmed_state_survives_peer_outage_and_uploads(
     tmp_path: Path,
     peer,

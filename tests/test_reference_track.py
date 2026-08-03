@@ -20,6 +20,7 @@ from core.reference_track import (
     ReferenceTrackDecoder,
     ReferenceTrackError,
     ReferenceTrackLaunchContext,
+    ReferenceTrackOwnershipClaim,
     ReferenceTrackSnapshot,
     ReferenceTrackState,
     ReferenceTrackStream,
@@ -55,6 +56,7 @@ class _Session:
         self.started = 0
         self.stopped = 0
         self.stats: dict[str, object] = {}
+        self.claim: ReferenceTrackOwnershipClaim | None = None
 
     def start(self, pull) -> None:
         self.pull = pull
@@ -72,6 +74,9 @@ class _Session:
 
     def realtime_stats(self) -> dict[str, object]:
         return dict(self.stats)
+
+    def recording_ownership_claim(self) -> ReferenceTrackOwnershipClaim | None:
+        return self.claim
 
 
 class _Backend:
@@ -909,6 +914,8 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     assert backend.prepared == [_context()]
     assert "Jamulus-routed" in playing.warning
     assert "separate stem" in playing.warning
+    session.claim = ReferenceTrackOwnershipClaim(51000, 4321, "a" * 32)
+    assert controller.recording_ownership_claim() == session.claim
 
     paused = controller.pause()
     assert paused.state is ReferenceTrackState.PAUSED
@@ -921,6 +928,7 @@ def test_controller_full_lifecycle_is_host_only_ephemeral_and_clean(
     assert stopped.state is ReferenceTrackState.READY
     assert stopped.position_s == 0.0
     assert session.stopped == 1
+    assert controller.recording_ownership_claim() is None
     assert updates
 
     closed = controller.close()

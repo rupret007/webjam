@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import stat
 import threading
 import time
+import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
@@ -19,9 +22,15 @@ from PySide6.QtWidgets import QMessageBox
 
 from core.take_library import (
     EVIDENCE_ONLY_EXPORT_BLOCK_REASON,
+    RecorderClientReceipt,
+    RecorderRosterError,
+    RecordingStagingIdentity,
     TakeValidationResult,
     find_changed_take,
+    is_local_stem_name,
     load_take,
+    recording_staging_identity,
+    recorder_client_observations,
     snapshot_take_directories,
     write_take_manifest,
     wait_for_take_files_stable,
@@ -47,6 +56,7 @@ if TYPE_CHECKING:
     from webjam_qt.controllers.application_controller import ApplicationController
 
 LOGGER = logging.getLogger("webjam.qt.recording")
+_FINAL_RECEIPT_DRAIN_TIMEOUT_S = 5.0
 
 
 class RecorderPhase(str, Enum):
@@ -60,6 +70,14 @@ class RecorderPhase(str, Enum):
     NEEDS_ATTENTION = "needs_attention"
     STOP_FAILED = "stop_failed"
     ERROR = "error"
+
+
+class _PublishedTakeStatus(str, Enum):
+    """Bounded recovery lookup result; uncertainty never means absence."""
+
+    MATCH = "match"
+    ABSENT = "absent"
+    INDETERMINATE = "indeterminate"
 
 
 @dataclass(frozen=True)
@@ -80,6 +98,15 @@ class _ToggleAttempt:
 
     take_id: str
     target_armed: bool
+
+
+@dataclass(frozen=True)
+class _RosterObservationContext:
+    """One take-bound, address-free roster correlation request."""
+
+    take_id: str
+    channel_bindings: tuple[tuple[int, str, str, int], ...]
+    reference_claim: object | None
 
 
 class RecordingCoordinator:
@@ -112,6 +139,8 @@ class RecordingCoordinator:
         self._recovery_box = None
         self._local_capture = None
         self._stale_capture_scan_done = False
+        self._staged_take_scan_done = False
+        self._staged_media_take_ids: set[str] = set()
         # The validation worker, toggle-failure handler, and shutdown salvage
         # all hand off the capture; the lock makes the hand-off atomic so the
         # stream is finalized exactly once.
@@ -137,6 +166,32 @@ class RecordingCoordinator:
         self._evidence_journal_take_id = ""
         self._evidence_journal_failed = False
         self._stale_journal_scan_done = False
+        # Native recorder identity is captured only from the authenticated
+        # server RPC. Raw addresses are reduced to recorder-key digests inside
+        # the worker and never retained, logged, or serialized.
+        self._receipt_lock = threading.RLock()
+        self._receipt_condition = threading.Condition(self._receipt_lock)
+        self._receipt_observation_lock = threading.RLock()
+        self._recording_receipts: dict[
+            tuple[str, int], RecorderClientReceipt
+        ] = {}
+        self._recording_conflicted_keys: set[str] = set()
+        self._recording_unproven_keys: set[str] = set()
+        self._recording_digest_by_channel: dict[int, str] = {}
+        self._recording_channel_by_digest: dict[str, int] = {}
+        self._recording_identity_errors: list[str] = []
+        self._recording_identity_invalid = False
+        self._reference_participant_id = new_project_id()
+        self._roster_poll_inflight = False
+        self._roster_poll_pending: _RosterObservationContext | None = None
+        self._recording_receipts_finalizing_take_id = ""
+        self._recording_receipts_frozen_take_id = ""
+        # Session teardown may ask from either a worker or the UI thread. Once
+        # recorder stop is confirmed, keep the server/application alive until
+        # the ordinary take-validation owner has durably published the media.
+        self._shutdown_stop_lock = threading.Lock()
+        self._shutdown_validation_pending_take_id = ""
+        self._shutdown_validation_dispatch_take_id = ""
 
     def _take_local_capture(self):
         """Atomically claim the active capture (or None)."""
@@ -164,6 +219,10 @@ class RecordingCoordinator:
     def _retire_active_take(self, take_id: str) -> None:
         """Forget active ownership after a terminal validation/recovery path."""
 
+        if take_id and self._shutdown_validation_pending_take_id == take_id:
+            self._shutdown_validation_pending_take_id = ""
+        if take_id and self._shutdown_validation_dispatch_take_id == take_id:
+            self._shutdown_validation_dispatch_take_id = ""
         if take_id and self._take_id == take_id:
             self._take_id = ""
         if take_id and self._validation_take_id == take_id:
@@ -240,6 +299,8 @@ class RecordingCoordinator:
         # recording starts.  Clear only the prior operation bookkeeping; the
         # completed take itself remains available through ``last_validation``.
         self._validation_take_id = ""
+        self._shutdown_validation_pending_take_id = ""
+        self._shutdown_validation_dispatch_take_id = ""
         with self._evidence_lock:
             self._recording_started_utc = ""
             self._recording_ended_utc = ""
@@ -262,6 +323,528 @@ class RecordingCoordinator:
                 "recording_requested",
                 detail="Waiting for the band server to confirm recording.",
             )
+        with self._receipt_lock:
+            self._recording_receipts = {}
+            self._recording_conflicted_keys = set()
+            self._recording_unproven_keys = set()
+            self._recording_digest_by_channel = {}
+            self._recording_channel_by_digest = {}
+            self._recording_identity_errors = []
+            self._recording_identity_invalid = False
+            self._reference_participant_id = new_project_id()
+            self._roster_poll_pending = None
+            self._recording_receipts_finalizing_take_id = ""
+            self._recording_receipts_frozen_take_id = ""
+
+    @staticmethod
+    def _normalized_roster_name(value: object) -> str:
+        return " ".join(str(value or "").split())[:120]
+
+    def _reference_recording_claim(self):
+        controller = getattr(self._c, "_reference_track", None)
+        reader = getattr(controller, "recording_ownership_claim", None)
+        if not callable(reader):
+            return None
+        try:
+            return reader()
+        except Exception:  # noqa: BLE001 - private evidence fails absent
+            return None
+
+    def _invalidate_recording_identity(
+        self,
+        note: str,
+        *,
+        take_id: str | None = None,
+    ) -> None:
+        """Fail one take closed without retaining an unsafe attribution."""
+
+        expected_take = str(take_id or self._take_id or "")
+        if not expected_take:
+            return
+        with self._receipt_lock:
+            if (
+                expected_take != self._take_id
+                or expected_take == self._recording_receipts_frozen_take_id
+            ):
+                return
+            self._recording_identity_invalid = True
+            self._recording_receipts.clear()
+            self._recording_unproven_keys.clear()
+            safe_note = " ".join(str(note or "").split())[:240]
+            if safe_note and safe_note not in self._recording_identity_errors:
+                self._recording_identity_errors.append(safe_note)
+
+    def _roster_observation_context(self) -> _RosterObservationContext | None:
+        take_id = str(self._take_id or "")
+        if not take_id:
+            return None
+        try:
+            presentations = list(self._c.participants.values())
+        except (AttributeError, RuntimeError):
+            presentations = []
+        bindings: list[tuple[int, str, str, int]] = []
+        host_peer = getattr(self._c, "host_peer", None)
+        authenticated_host_registry = bool(
+            host_peer is not None and getattr(host_peer, "active", False)
+        )
+        for item in presentations:
+            try:
+                channel_id = int(getattr(item, "channel_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            name = self._normalized_roster_name(
+                getattr(item, "name", None) or getattr(item, "role", None)
+            )
+            # Only the private peer registry binds a Jamulus channel to a
+            # durable participant. ParticipantPresentation and the historical
+            # recording-start maps may contain generated or stale IDs after a
+            # channel is reused, so they are never identity evidence here.
+            durable = ""
+            generation = 0
+            if authenticated_host_registry:
+                try:
+                    presence = host_peer.presence_for_channel(channel_id)
+                    if presence is not None and int(presence.generation) > 0:
+                        durable = str(uuid.UUID(str(presence.participant_id)))
+                        generation = int(presence.generation)
+                        name = self._normalized_roster_name(presence.display_name)
+                except Exception:  # noqa: BLE001 - optional peer evidence
+                    durable = ""
+                    generation = 0
+            else:
+                # Compatibility seam for isolated tests and legacy extensions.
+                # Production hosted recordings always take the authenticated
+                # binding-and-generation branch above.
+                try:
+                    durable = str(
+                        self._c.peer_participant_id_for_channel(channel_id) or ""
+                    )
+                    durable = str(uuid.UUID(durable)) if durable else ""
+                except (TypeError, ValueError, AttributeError):
+                    durable = ""
+                except Exception:  # noqa: BLE001 - optional peer evidence
+                    durable = ""
+            bindings.append((channel_id, name, durable, generation))
+        return _RosterObservationContext(
+            take_id=take_id,
+            channel_bindings=tuple(bindings),
+            reference_claim=self._reference_recording_claim(),
+        )
+
+    def request_authenticated_roster_observation(
+        self,
+        *,
+        exact_process_update: bool = False,
+    ) -> None:
+        """Coalesce a take-scoped authenticated server-roster receipt."""
+
+        context = self._roster_observation_context()
+        if context is None:
+            return
+        with self._receipt_lock:
+            if context.take_id in {
+                self._recording_receipts_finalizing_take_id,
+                self._recording_receipts_frozen_take_id,
+            }:
+                return
+            self._roster_poll_pending = context
+            if self._roster_poll_inflight:
+                if exact_process_update:
+                    self._invalidate_recording_identity(
+                        "WebJam could not verify every Jamulus roster transition. "
+                        "Source audio was preserved for review.",
+                        take_id=context.take_id,
+                    )
+                return
+            self._roster_poll_inflight = True
+        threading.Thread(
+            target=self._roster_observation_worker,
+            daemon=True,
+            name="recording-roster-receipt",
+        ).start()
+
+    def _roster_observation_worker(self) -> None:
+        while True:
+            with self._receipt_lock:
+                context = self._roster_poll_pending
+                self._roster_poll_pending = None
+            if context is None:
+                with self._receipt_lock:
+                    if self._roster_poll_pending is None:
+                        self._roster_poll_inflight = False
+                        self._receipt_condition.notify_all()
+                        return
+                continue
+            try:
+                from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
+
+                secret_file = str(
+                    self._c.settings.server_rpc_secret_file or ""
+                ).strip()
+                secret = read_secret_file(secret_file)
+                with JamulusServerRpc(
+                    port=self._c.settings.server_rpc_port,
+                    secret=secret,
+                ) as rpc:
+                    payload = rpc.get_clients()
+                self._consume_authenticated_roster(payload, context)
+            except Exception:  # noqa: BLE001 - path-free fail-closed boundary
+                # Exception strings may include local paths or endpoints.
+                LOGGER.debug("Authenticated recording roster was unavailable")
+                self._invalidate_recording_identity(
+                    "An authenticated Jamulus recording roster check failed. "
+                    "Source audio was preserved for review.",
+                    take_id=context.take_id,
+                )
+
+    def _consume_authenticated_roster(
+        self,
+        payload: object,
+        context: _RosterObservationContext | None = None,
+        *,
+        allow_new_receipts: bool = True,
+    ) -> None:
+        """Reduce one authenticated roster to address-free take receipts."""
+
+        with self._receipt_observation_lock:
+            self._consume_authenticated_roster_serial(
+                payload,
+                context,
+                allow_new_receipts=allow_new_receipts,
+            )
+
+    def _consume_authenticated_roster_serial(
+        self,
+        payload: object,
+        context: _RosterObservationContext | None,
+        *,
+        allow_new_receipts: bool = True,
+    ) -> None:
+        """Serialized implementation used by workers and finalization."""
+
+        context = context or self._roster_observation_context()
+        if context is None or context.take_id != self._take_id:
+            return
+        with self._receipt_lock:
+            if context.take_id == self._recording_receipts_frozen_take_id:
+                return
+        from core.reference_track import (
+            REFERENCE_PARTICIPANT_NAME,
+            ReferenceTrackOwnershipClaim,
+        )
+
+        before = context.reference_claim
+        after = self._reference_recording_claim()
+        stable_reference = (
+            before
+            if isinstance(before, ReferenceTrackOwnershipClaim)
+            and before == after
+            else None
+        )
+        owned_port = stable_reference.udp_port if stable_reference is not None else None
+        try:
+            if not isinstance(payload, dict):
+                raise RecorderRosterError("server roster is invalid")
+            observations = recorder_client_observations(
+                payload,
+                owned_reference_udp_port=owned_port,
+            )
+        except RecorderRosterError as exc:
+            with self._receipt_lock:
+                if context.take_id != self._take_id:
+                    return
+                if exc.conflicted_keys:
+                    self._recording_conflicted_keys.update(exc.conflicted_keys)
+                    for digest in exc.conflicted_keys:
+                        for key in tuple(self._recording_receipts):
+                            if key[0] == digest:
+                                self._recording_receipts.pop(key, None)
+                        self._recording_unproven_keys.discard(digest)
+                else:
+                    self._recording_identity_invalid = True
+                    self._recording_receipts.clear()
+                    self._recording_unproven_keys.clear()
+                note = (
+                    "Authenticated Jamulus recording identity evidence was "
+                    "ambiguous. Source audio was preserved for review."
+                )
+                if note not in self._recording_identity_errors:
+                    self._recording_identity_errors.append(note)
+            return
+
+        # Recorder filenames identify a source by an address-derived digest,
+        # not by the transient Jamulus channel.  Bind both directions for this
+        # take so channel reuse and digest migration cannot silently inherit a
+        # previously proved musician.  Any transition permanently conflicts
+        # every involved digest and removes its earlier receipts.
+        topology_conflicts: set[str] = set()
+        with self._receipt_lock:
+            if context.take_id != self._take_id:
+                return
+            for observation in observations:
+                channel_id = observation.server_channel_id
+                digest = observation.recorder_key_sha256
+                prior_digest = self._recording_digest_by_channel.get(channel_id)
+                prior_channel = self._recording_channel_by_digest.get(digest)
+                if prior_digest and prior_digest != digest:
+                    topology_conflicts.update((prior_digest, digest))
+                if prior_channel is not None and prior_channel != channel_id:
+                    topology_conflicts.add(digest)
+                    destination_digest = self._recording_digest_by_channel.get(
+                        channel_id
+                    )
+                    if destination_digest:
+                        topology_conflicts.add(destination_digest)
+            if topology_conflicts:
+                self._recording_conflicted_keys.update(topology_conflicts)
+                for key in tuple(self._recording_receipts):
+                    if key[0] in topology_conflicts:
+                        self._recording_receipts.pop(key, None)
+                self._recording_unproven_keys.difference_update(topology_conflicts)
+                note = (
+                    "Authenticated Jamulus recording identity evidence "
+                    "conflicted. Source audio was preserved for review."
+                )
+                if note not in self._recording_identity_errors:
+                    self._recording_identity_errors.append(note)
+            for observation in observations:
+                digest = observation.recorder_key_sha256
+                if digest in self._recording_conflicted_keys:
+                    continue
+                self._recording_digest_by_channel.setdefault(
+                    observation.server_channel_id, digest
+                )
+                self._recording_channel_by_digest.setdefault(
+                    digest, observation.server_channel_id
+                )
+
+        before_bindings = {
+            channel_id: (name, participant_id, generation)
+            for channel_id, name, participant_id, generation in context.channel_bindings
+        }
+        after_context = self._roster_observation_context()
+        if after_context is None or after_context.take_id != context.take_id:
+            return
+        after_bindings = {
+            channel_id: (name, participant_id, generation)
+            for channel_id, name, participant_id, generation in after_context.channel_bindings
+        }
+        # A durable binding must agree on both sides of the authenticated
+        # getClients response. This closes the same-name channel-reuse race and
+        # also rejects a UI card whose old participant_id was never cleared.
+        stable_bindings = {
+            channel_id: value
+            for channel_id, value in before_bindings.items()
+            if value == after_bindings.get(channel_id) and value[1]
+        }
+        receipts: list[RecorderClientReceipt] = []
+        unproven_keys: set[str] = set()
+        for observation in observations:
+            if observation.matches_owned_reference and stable_reference is not None:
+                participant_id = self._reference_participant_id
+                display_name = REFERENCE_PARTICIPANT_NAME
+                source_kind = "reference_track"
+            else:
+                binding_name, candidate_id, _generation = stable_bindings.get(
+                    observation.server_channel_id, ("", "", 0)
+                )
+                participant_id = ""
+                if (
+                    self._normalized_roster_name(binding_name).casefold()
+                    == observation.display_name.casefold()
+                ):
+                    try:
+                        participant_id = str(uuid.UUID(str(candidate_id)))
+                    except (TypeError, ValueError, AttributeError):
+                        participant_id = ""
+                if not participant_id:
+                    unproven_keys.add(observation.recorder_key_sha256)
+                    continue
+                display_name = observation.display_name
+                source_kind = "musician"
+            receipts.append(RecorderClientReceipt(
+                server_channel_id=observation.server_channel_id,
+                display_name=display_name,
+                participant_id=participant_id,
+                recorder_key_sha256=observation.recorder_key_sha256,
+                channels=observation.channels,
+                source_kind=source_kind,
+            ))
+
+        with self._receipt_lock:
+            if context.take_id != self._take_id or self._recording_identity_invalid:
+                return
+            for digest in unproven_keys:
+                existing_keys = tuple(
+                    key for key in self._recording_receipts if key[0] == digest
+                )
+                if existing_keys:
+                    # Evidence that once resolved this recorder key no longer
+                    # has the same stable owner is a conflict, not permission
+                    # to keep the earlier attribution.
+                    self._recording_conflicted_keys.add(digest)
+                    for key in existing_keys:
+                        self._recording_receipts.pop(key, None)
+                    self._recording_unproven_keys.discard(digest)
+                    note = (
+                        "Authenticated Jamulus recording identity evidence "
+                        "conflicted. Source audio was preserved for review."
+                    )
+                    if note not in self._recording_identity_errors:
+                        self._recording_identity_errors.append(note)
+                elif (
+                    allow_new_receipts
+                    and digest not in self._recording_conflicted_keys
+                ):
+                    self._recording_unproven_keys.add(digest)
+            for receipt in receipts:
+                digest = receipt.recorder_key_sha256
+                if digest in self._recording_conflicted_keys:
+                    continue
+                same_digest = tuple(
+                    value
+                    for key, value in self._recording_receipts.items()
+                    if key[0] == digest
+                )
+                receipt_key = (digest, receipt.channels)
+                if digest in self._recording_unproven_keys:
+                    # Filenames do not contain the Jamulus channel ID. A later
+                    # stable binding therefore cannot retroactively prove who
+                    # owned media created while this recorder key was unbound.
+                    self._recording_conflicted_keys.add(digest)
+                    for key in tuple(self._recording_receipts):
+                        if key[0] == digest:
+                            self._recording_receipts.pop(key, None)
+                    self._recording_unproven_keys.discard(digest)
+                    note = (
+                        "Authenticated Jamulus recording identity evidence "
+                        "conflicted. Source audio was preserved for review."
+                    )
+                    if note not in self._recording_identity_errors:
+                        self._recording_identity_errors.append(note)
+                    continue
+                if any(
+                    existing.participant_id != receipt.participant_id
+                    or existing.source_kind != receipt.source_kind
+                    for existing in same_digest
+                ):
+                    self._recording_conflicted_keys.add(digest)
+                    for key in tuple(self._recording_receipts):
+                        if key[0] == digest:
+                            self._recording_receipts.pop(key, None)
+                    self._recording_unproven_keys.discard(digest)
+                    note = (
+                        "Authenticated Jamulus recording identity evidence "
+                        "conflicted. Source audio was preserved for review."
+                    )
+                    if note not in self._recording_identity_errors:
+                        self._recording_identity_errors.append(note)
+                    continue
+                if not allow_new_receipts and receipt_key not in self._recording_receipts:
+                    if same_digest:
+                        self._recording_conflicted_keys.add(digest)
+                        for key in tuple(self._recording_receipts):
+                            if key[0] == digest:
+                                self._recording_receipts.pop(key, None)
+                        note = (
+                            "Authenticated Jamulus recording identity evidence "
+                            "conflicted. Source audio was preserved for review."
+                        )
+                        if note not in self._recording_identity_errors:
+                            self._recording_identity_errors.append(note)
+                    # A source first seen only after Stop cannot retroactively
+                    # own finished media, but its mere presence also does not
+                    # taint an otherwise verified take. Any matching WAV still
+                    # has no receipt and is marked unverified by the manifest.
+                    continue
+                self._recording_receipts[receipt_key] = receipt
+                self._recording_unproven_keys.discard(digest)
+
+    def _recording_receipt_snapshot(
+        self,
+    ) -> tuple[tuple[RecorderClientReceipt, ...], tuple[str, ...]]:
+        with self._receipt_lock:
+            receipts = (
+                ()
+                if self._recording_identity_invalid
+                else tuple(self._recording_receipts.values())
+            )
+            errors = list(self._recording_identity_errors)
+            if self._recording_unproven_keys:
+                errors.append(
+                    "WebJam could not prove every Jamulus recording source. "
+                    "Source audio was preserved for review."
+                )
+            return receipts, tuple(errors)
+
+    def _final_recording_receipt_snapshot(
+        self,
+    ) -> tuple[tuple[RecorderClientReceipt, ...], tuple[str, ...]]:
+        """Drain, refresh, and freeze take-scoped identity before publication.
+
+        A recorder-state notification can start validation while an earlier
+        roster RPC or the stop worker is still in flight. Publication therefore
+        closes admission for new polls, drains the coalesced worker, performs
+        one final authenticated observation, and rejects every later result for
+        this take. Timeout/failure degrades to NEEDS_ATTENTION rather than
+        publishing an attribution from incomplete evidence.
+        """
+
+        take_id = str(self._take_id or "")
+        if not take_id:
+            return self._recording_receipt_snapshot()
+        timed_out = False
+        deadline = time.monotonic() + _FINAL_RECEIPT_DRAIN_TIMEOUT_S
+        with self._receipt_condition:
+            if self._recording_receipts_frozen_take_id == take_id:
+                return self._recording_receipt_snapshot()
+            self._recording_receipts_finalizing_take_id = take_id
+            while self._roster_poll_inflight:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    timed_out = True
+                    break
+                self._receipt_condition.wait(timeout=remaining)
+
+        with self._receipt_observation_lock:
+            if timed_out:
+                self._invalidate_recording_identity(
+                    "WebJam could not finish authenticated recording identity "
+                    "verification in time. Source audio was preserved for review.",
+                    take_id=take_id,
+                )
+            else:
+                try:
+                    from core.jamulus_server_rpc import (
+                        JamulusServerRpc,
+                        read_secret_file,
+                    )
+
+                    context = self._roster_observation_context()
+                    secret = read_secret_file(
+                        str(self._c.settings.server_rpc_secret_file or "").strip()
+                    )
+                    with JamulusServerRpc(
+                        port=self._c.settings.server_rpc_port,
+                        secret=secret,
+                    ) as rpc:
+                        payload = rpc.get_clients()
+                    self._consume_authenticated_roster_serial(
+                        payload,
+                        context,
+                        allow_new_receipts=False,
+                    )
+                except Exception:  # noqa: BLE001 - path-free fail-closed boundary
+                    self._invalidate_recording_identity(
+                        "WebJam could not complete the final authenticated "
+                        "recording roster check. Source audio was preserved "
+                        "for review.",
+                        take_id=take_id,
+                    )
+            with self._receipt_lock:
+                self._recording_receipts_frozen_take_id = take_id
+                self._recording_receipts_finalizing_take_id = ""
+        return self._recording_receipt_snapshot()
 
     def _current_session_evidence(self) -> SessionEvidence:
         """Return an immutable evidence snapshot for one manifest write."""
@@ -354,6 +937,19 @@ class RecordingCoordinator:
                     self._evidence_journal = None
                     self._evidence_journal_take_id = ""
 
+    def _retire_journal_for_exact_publication(
+        self, take_id: str
+    ) -> _PublishedTakeStatus:
+        """Retire evidence only after an exact durable schema-v2 publication."""
+
+        root = str(self._c.settings.takes_directory or "").strip()
+        if not root:
+            return _PublishedTakeStatus.INDETERMINATE
+        status = self._published_take_has_id(root, take_id)
+        if status is _PublishedTakeStatus.MATCH:
+            self._remove_evidence_journal_after_manifest()
+        return status
+
     def _recover_stale_evidence_journals_once(self) -> None:
         """Surface interrupted recordings without trusting journal contents."""
         if self._stale_journal_scan_done:
@@ -367,8 +963,52 @@ class RecordingCoordinator:
         except (OSError, RecordingManifestJournalError, ValueError):
             LOGGER.warning("Could not scan private recording recovery evidence.")
             return
+        active_take_ids = {
+            str(value)
+            for value in (self._take_id, self._validation_take_id)
+            if value
+        }
+        pending = len(scan.untrusted_entries)
         for item in scan.journals:
+            if item.take_id in active_take_ids:
+                continue
+            published_take = self._published_take_has_id(root, item.take_id)
+            if published_take is _PublishedTakeStatus.INDETERMINATE:
+                # An incomplete or changing bounded scan cannot prove the
+                # media is absent. Keep the checkpoint instead of publishing
+                # a contradictory zero-track recovery project.
+                pending += 1
+                LOGGER.warning(
+                    "Published-take recovery evidence could not be safely "
+                    "reconciled yet."
+                )
+                continue
+            if published_take is _PublishedTakeStatus.MATCH:
+                # A staged-media recovery may already have published the real
+                # take. Never create a contradictory zero-media project. A
+                # trusted linked checkpoint can be retired; an untrusted one
+                # remains as an explicit recovery cue without being parsed.
+                if item.trusted:
+                    try:
+                        RecordingManifestJournal(root).remove(item.take_id)
+                    except (OSError, RecordingManifestJournalError, ValueError):
+                        pending += 1
+                        LOGGER.warning(
+                            "Could not retire evidence already linked to a "
+                            "published take."
+                        )
+                else:
+                    pending += 1
+                continue
+            if item.take_id in self._staged_media_take_ids:
+                # A media-bearing staged folder still owns this journal, even
+                # when ambiguity or mutation made automatic recovery fail.
+                # Leave both intact instead of falsely claiming no media was
+                # preserved in a second project.
+                pending += 1
+                continue
             self._publish_recovered_evidence_journal(item, root)
+            pending += 1
         for issue in scan.untrusted_entries:
             # Untrusted directory entries are valid recovery cues, not recoverable
             # payload, so we keep the signal and continue. A dedicated project
@@ -377,7 +1017,6 @@ class RecordingCoordinator:
                 "Ignoring untrusted recording-evidence entry: %s", issue.error
             )
 
-        pending = len(scan.journals) + len(scan.untrusted_entries)
         if not pending:
             return
         noun = "recording" if pending == 1 else "recordings"
@@ -390,7 +1029,143 @@ class RecordingCoordinator:
             self._c.window.recording_studio.set_takes_directory(root)
             self._c.window.recording_studio.reload()
         except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
+            LOGGER.debug("Could not refresh Studio recovery inventory")
+
+    @staticmethod
+    def _published_take_has_id(root: str, take_id: str) -> _PublishedTakeStatus:
+        """Boundedly find a stable immediate-child schema-v2 project.
+
+        Malformed children are individually invalid and do not hide a later
+        valid project. I/O errors, mutation, or a truncated inventory are
+        different: they make absence unprovable, so callers retain the private
+        evidence journal and try again on a later launch.
+        """
+
+        maximum_bytes = 1024 * 1024
+
+        def fingerprint(value: os.stat_result) -> tuple[int, int, int, int, int]:
+            return (
+                int(value.st_dev),
+                int(value.st_ino),
+                int(value.st_mode),
+                int(value.st_size),
+                int(value.st_mtime_ns),
+            )
+
+        try:
+            canonical_id = str(uuid.UUID(str(take_id)))
+            root_path = Path(root).expanduser()
+        except (TypeError, ValueError, OSError):
+            return _PublishedTakeStatus.INDETERMINATE
+
+        uncertain = False
+        try:
+            for index, child in enumerate(root_path.iterdir()):
+                if index >= 512:
+                    return _PublishedTakeStatus.INDETERMINATE
+                try:
+                    child_before = child.lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    uncertain = True
+                    continue
+                if stat.S_ISLNK(child_before.st_mode) or not stat.S_ISDIR(
+                    child_before.st_mode
+                ):
+                    continue
+
+                manifest = child / "webjam-take.json"
+                try:
+                    manifest_before = manifest.lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    uncertain = True
+                    continue
+                if stat.S_ISLNK(manifest_before.st_mode) or not stat.S_ISREG(
+                    manifest_before.st_mode
+                ):
+                    continue
+                if manifest_before.st_size > maximum_bytes:
+                    continue
+
+                descriptor = -1
+                raw = b""
+                try:
+                    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                    flags |= getattr(os, "O_NOFOLLOW", 0)
+                    descriptor = os.open(manifest, flags)
+                    opened_before = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(opened_before.st_mode)
+                        or fingerprint(opened_before) != fingerprint(manifest_before)
+                    ):
+                        uncertain = True
+                        continue
+                    chunks: list[bytes] = []
+                    remaining = maximum_bytes + 1
+                    while remaining:
+                        chunk = os.read(descriptor, min(64 * 1024, remaining))
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        remaining -= len(chunk)
+                    raw = b"".join(chunks)
+                    opened_after = os.fstat(descriptor)
+                    if fingerprint(opened_after) != fingerprint(opened_before):
+                        uncertain = True
+                        continue
+                except FileNotFoundError:
+                    uncertain = True
+                    continue
+                except OSError:
+                    uncertain = True
+                    continue
+                finally:
+                    if descriptor >= 0:
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            uncertain = True
+
+                if len(raw) > maximum_bytes:
+                    uncertain = True
+                    continue
+                try:
+                    manifest_after = manifest.lstat()
+                    child_after = child.lstat()
+                except OSError:
+                    uncertain = True
+                    continue
+                if (
+                    fingerprint(manifest_after) != fingerprint(manifest_before)
+                    or fingerprint(child_after) != fingerprint(child_before)
+                ):
+                    uncertain = True
+                    continue
+
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                    if (
+                        not isinstance(payload, dict)
+                        or payload.get("schema_version") != 2
+                    ):
+                        continue
+                    from core.take_project import TakeProject
+
+                    project = TakeProject.from_dict(payload)
+                except (UnicodeError, ValueError, TypeError):
+                    continue
+                if project.take_id == canonical_id:
+                    return _PublishedTakeStatus.MATCH
+        except OSError:
+            return _PublishedTakeStatus.INDETERMINATE
+        return (
+            _PublishedTakeStatus.INDETERMINATE
+            if uncertain
+            else _PublishedTakeStatus.ABSENT
+        )
 
     def _publish_recovered_evidence_journal(self, item, root: str) -> None:
         """Publish interrupt-only evidence as a review-only recovery project."""
@@ -469,8 +1244,8 @@ class RecordingCoordinator:
                 local_durable_frames=0,
                 session_evidence=evidence,
             )
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not publish evidence-only recovery project.")
+        except Exception:  # noqa: BLE001 - recovery errors can contain private paths
+            LOGGER.error("Could not publish evidence-only recovery project.")
             return
 
         if result.manifest_path:
@@ -483,6 +1258,278 @@ class RecordingCoordinator:
 
     def recover_interrupted_recordings(self) -> None:
         """Run the bounded local-audio and evidence recovery discovery once."""
+        if self._recover_staged_server_takes_once():
+            # The staged-media worker owns ordering: it links and retires the
+            # exact private journal before ordinary journal recovery can
+            # publish a contradictory evidence-only project.
+            return
+        self._recover_stale_captures_once()
+        self._recover_stale_evidence_journals_once()
+
+    @staticmethod
+    def _recovery_path_fingerprint(
+        path: Path, *, directory: bool
+    ) -> tuple[int, int, int, int]:
+        info = path.lstat()
+        expected = stat.S_ISDIR if directory else stat.S_ISREG
+        if not expected(info.st_mode):
+            raise OSError("unsafe recovery entry")
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+
+    def _recover_staged_server_takes_once(self) -> bool:
+        """Finish address-free publication for interrupted Jamulus takes.
+
+        A process loss can happen after the private staging receipt is durable
+        but before every native recorder filename has been replaced.  Scan
+        immediate take folders once at startup, then hash and publish on a
+        worker so a long take cannot freeze the UI. The resulting project is
+        deliberately ``NEEDS_ATTENTION`` rather than guessing musician
+        identity.
+        """
+        if self._staged_take_scan_done:
+            return False
+        self._staged_take_scan_done = True
+        root_text = (self._c.settings.takes_directory or "").strip()
+        if not root_text:
+            return False
+        root = Path(root_text).expanduser()
+        try:
+            if not root.is_dir():
+                return False
+            candidates: list[
+                tuple[
+                    Path,
+                    tuple[int, int, int, int],
+                    tuple[int, int, int, int],
+                    RecordingStagingIdentity | None,
+                ]
+            ] = []
+            for index, child in enumerate(root.iterdir()):
+                if index >= 512:
+                    LOGGER.warning(
+                        "The interrupted-take recovery scan reached its safety limit."
+                    )
+                    break
+                if child.is_symlink():
+                    continue
+                marker = child / ".webjam-recording-staging.json"
+                try:
+                    child_fingerprint = self._recovery_path_fingerprint(
+                        child, directory=True
+                    )
+                    marker_fingerprint = self._recovery_path_fingerprint(
+                        marker, directory=False
+                    )
+                except OSError:
+                    continue
+                candidates.append(
+                    (
+                        child,
+                        child_fingerprint,
+                        marker_fingerprint,
+                        recording_staging_identity(child),
+                    )
+                )
+        except OSError:
+            LOGGER.warning("Could not scan for interrupted take publication.")
+            return False
+
+        if not candidates:
+            return False
+        identity_counts: dict[str, int] = {}
+        for _child, _directory, _marker, identity in candidates:
+            if identity is not None:
+                identity_counts[identity.take_id] = (
+                    identity_counts.get(identity.take_id, 0) + 1
+                )
+        conflicted_take_ids = {
+            take_id for take_id, count in identity_counts.items() if count > 1
+        }
+        self._staged_media_take_ids = set(identity_counts)
+        try:
+            threading.Thread(
+                target=self._recover_staged_server_takes_worker,
+                args=(tuple(candidates), root_text, frozenset(conflicted_take_ids)),
+                daemon=True,
+                name="take-publication-recovery",
+            ).start()
+        except Exception:  # noqa: BLE001 - generic, path-free boundary
+            LOGGER.warning("Could not start interrupted take recovery.")
+            return False
+        return True
+
+    def _recover_staged_server_takes_worker(
+        self,
+        candidates: tuple[
+            tuple[
+                Path,
+                tuple[int, int, int, int],
+                tuple[int, int, int, int],
+                RecordingStagingIdentity | None,
+            ],
+            ...,
+        ],
+        root_text: str,
+        conflicted_take_ids: frozenset[str],
+    ) -> None:
+        """Reconcile staged media off the UI thread, then resume startup."""
+
+        journal = RecordingManifestJournal(root_text)
+        recovered = 0
+        for (
+            candidate,
+            directory_fingerprint,
+            marker_fingerprint,
+            staged_identity,
+        ) in candidates:
+            try:
+                if (
+                    staged_identity is not None
+                    and staged_identity.take_id in conflicted_take_ids
+                ):
+                    continue
+                marker = candidate / ".webjam-recording-staging.json"
+                if self._recovery_path_fingerprint(
+                    candidate, directory=True
+                ) != directory_fingerprint or self._recovery_path_fingerprint(
+                    marker, directory=False
+                ) != marker_fingerprint:
+                    raise OSError("recovery entry changed")
+                wavs: list[Path] = []
+                for index, item in enumerate(candidate.iterdir()):
+                    if index >= 512:
+                        raise OSError("bounded inventory exceeded")
+                    if item.suffix.lower() == ".wav":
+                        self._recovery_path_fingerprint(item, directory=False)
+                        wavs.append(item)
+                server_tracks = sum(
+                    not is_local_stem_name(item.name) for item in wavs
+                )
+                local_stems = len(wavs) - server_tracks
+                if not wavs:
+                    continue
+
+                from webjam_qt import __version__
+
+                staging_identity = recording_staging_identity(candidate)
+                if staging_identity != staged_identity:
+                    raise OSError("recovery identity changed")
+                journal_result = (
+                    journal.load(staging_identity.take_id)
+                    if staging_identity is not None
+                    else None
+                )
+                recovery_note = (
+                    "Recording media publication resumed after an interrupted "
+                    "session; live musician identity could not be reauthenticated."
+                )
+                if journal_result is not None and journal_result.trusted:
+                    evidence = journal_result.evidence
+                else:
+                    evidence = SessionEvidence()
+                    if journal_result is not None:
+                        recovery_note = (
+                            "Recording media was recovered, but its private "
+                            "session checkpoint could not be safely read."
+                        )
+                evidence = replace(
+                    evidence,
+                    recovery_status=RecoveryStatus.NEEDS_ATTENTION,
+                    recovery_notes=tuple(dict.fromkeys(
+                        (*evidence.recovery_notes, recovery_note)
+                    )),
+                    timeline=tuple(dict.fromkeys((
+                        *evidence.timeline,
+                        SessionTimelineEvent(
+                            "recording_media_publication_recovered",
+                            detail=recovery_note,
+                        ),
+                    )).keys()),
+                )
+                result = write_take_manifest(
+                    candidate,
+                    expected_tracks=server_tracks,
+                    required_local_stems=local_stems,
+                    local_started_utc=evidence.started_utc,
+                    capture_errors=("Interrupted recording evidence recovered.",),
+                    recording_receipts=(),
+                    app_version=__version__,
+                    session_id=(
+                        staging_identity.session_id
+                        if staging_identity is not None
+                        else ""
+                    ),
+                    take_id=(
+                        staging_identity.take_id
+                        if staging_identity is not None
+                        else ""
+                    ),
+                    local_participant_id=evidence.host.participant_id,
+                    local_participant_name=(
+                        evidence.host.display_name or "Recovered host"
+                    ),
+                    session_evidence=evidence,
+                )
+                durable = bool(
+                    result.manifest_path is not None
+                    and result.take is not None
+                    and not marker.exists()
+                    and (
+                        staging_identity is None
+                        or result.take.take_id == staging_identity.take_id
+                    )
+                )
+                if durable:
+                    recovered += 1
+                    if (
+                        staging_identity is not None
+                        and journal_result is not None
+                        and journal_result.trusted
+                    ):
+                        try:
+                            journal.remove(staging_identity.take_id)
+                        except (
+                            OSError,
+                            RecordingManifestJournalError,
+                            ValueError,
+                        ):
+                            LOGGER.warning(
+                                "Could not retire linked recording evidence after "
+                                "media recovery."
+                            )
+            except Exception:  # noqa: BLE001 - path-free recovery boundary
+                LOGGER.warning(
+                    "An interrupted take could not be reconciled automatically."
+                )
+
+        self._c._ui_invoker.invoke(
+            lambda: self._finish_staged_server_take_recovery(
+                len(candidates), recovered, root_text
+            )
+        )
+
+    def _finish_staged_server_take_recovery(
+        self, candidate_count: int, recovered: int, root_text: str
+    ) -> None:
+        """Report worker results and continue ordered startup recovery."""
+
+        noun = "recording" if candidate_count == 1 else "recordings"
+        if recovered:
+            message = (
+                f"WebJam recovered interrupted {noun} without guessing musician "
+                "identity. Open Studio and review the preserved audio."
+            )
+        else:
+            message = (
+                f"WebJam found interrupted {noun} that still need review. "
+                "The source audio was left unchanged."
+            )
+        self._c.window.flash_message(message, ms=10000)
+        try:
+            self._c.window.recording_studio.set_takes_directory(root_text)
+            self._c.window.recording_studio.reload()
+        except Exception:  # noqa: BLE001
+            LOGGER.debug("Could not refresh Studio interrupted-take inventory")
         self._recover_stale_captures_once()
         self._recover_stale_evidence_journals_once()
 
@@ -630,8 +1677,12 @@ class RecordingCoordinator:
                 LOGGER.warning(
                     "Isolated host recovery is waiting for the writer to release."
                 )
-                for error in result.errors:
-                    LOGGER.warning("Capture salvage: %s", error)
+                if result.errors:
+                    LOGGER.warning(
+                        "Isolated host recovery reported %d capture issue%s.",
+                        len(result.errors),
+                        "" if len(result.errors) == 1 else "s",
+                    )
                 return None, result.errors
             published = self._publish_local_result_recovery(
                 result,
@@ -640,12 +1691,16 @@ class RecordingCoordinator:
             )
             if published is not None:
                 actual = published
-            LOGGER.info("Isolated host stems preserved in %s", actual)
-            for error in result.errors:
-                LOGGER.warning("Capture salvage: %s", error)
+            LOGGER.info("Isolated host stems were preserved for review.")
+            if result.errors:
+                LOGGER.warning(
+                    "Isolated host recovery reported %d capture issue%s.",
+                    len(result.errors),
+                    "" if len(result.errors) == 1 else "s",
+                )
             return actual, result.errors
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not salvage isolated host stems")
+        except Exception:  # noqa: BLE001 - capture errors can contain private paths
+            LOGGER.error("Could not salvage isolated host stems")
             capture.abort()
             return None, ()
 
@@ -720,22 +1775,46 @@ class RecordingCoordinator:
         return box.clickedButton() is quit_button
 
     def stop_server_recording_for_shutdown(self) -> bool:
-        """Synchronously stop recording and report whether tracks finalized.
+        """Stop the recorder, then report only durable take finalization.
 
         Quitting a hosting Mac takes the server down with it; stopping the
         recording first lets the server finalize every musician's track
-        instead of truncating the take mid-write. Bounded by the RPC client's
-        short timeouts so shutdown can never hang.
+        instead of truncating the take mid-write. A confirmed stop queues the
+        ordinary asynchronous take validator and returns ``False`` until that
+        owner retires the take, keeping the server alive in the meantime. The
+        synchronous portion is bounded by the RPC client's short timeouts.
         """
+        active_take_id = str(self._take_id or "")
+        if active_take_id and active_take_id == self._validation_take_id:
+            return False
+        if active_take_id and active_take_id == self._shutdown_validation_dispatch_take_id:
+            return False
+        if active_take_id and active_take_id == self._shutdown_validation_pending_take_id:
+            self._request_shutdown_take_validation(active_take_id)
+            return False
         if not (self._c._server_recording or self._c._recorder_armed):
             return True
-        secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
-        if not secret_file:
-            LOGGER.error(
-                "Hosted recording is active but no recorder secret is configured"
-            )
+        if not self._shutdown_stop_lock.acquire(blocking=False):
             return False
         try:
+            # Another teardown request may have completed while this caller
+            # was approaching the ownership boundary.
+            active_take_id = str(self._take_id or "")
+            if active_take_id and active_take_id == self._validation_take_id:
+                return False
+            if active_take_id and active_take_id == self._shutdown_validation_dispatch_take_id:
+                return False
+            if active_take_id and active_take_id == self._shutdown_validation_pending_take_id:
+                self._request_shutdown_take_validation(active_take_id)
+                return False
+            if not (self._c._server_recording or self._c._recorder_armed):
+                return True
+            secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
+            if not secret_file:
+                LOGGER.error(
+                    "Hosted recording is active but no recorder secret is configured"
+                )
+                return False
             from core.jamulus_server_rpc import JamulusServerRpc, read_secret_file
 
             secret = read_secret_file(secret_file)
@@ -751,11 +1830,11 @@ class RecordingCoordinator:
                     if not bool(rpc.get_recorder_status()["enabled"]):
                         self._c._recorder_armed = False
                         self._c._server_recording = False
-                        self._c.window.set_status_recording(False)
-                        if self._take_id:
+                        active_take_id = str(self._take_id or "")
+                        if active_take_id:
                             stopped_utc, newly_confirmed = (
                                 self._confirmed_recording_stopped(
-                                    unexpected=True,
+                                    unexpected=False,
                                     detail=(
                                         "WebJam stopped the recorder while the "
                                         "host was shutting down."
@@ -764,22 +1843,67 @@ class RecordingCoordinator:
                             )
                             if newly_confirmed:
                                 self._c.signal_peer_recording_stopped(
-                                    self._take_id,
+                                    active_take_id,
                                     stopped_utc=stopped_utc,
-                                    needs_attention=True,
-                                    message=(
-                                        "Host shutdown interrupted normal take "
-                                        "validation."
-                                    ),
                                 )
+                            self._shutdown_validation_pending_take_id = (
+                                active_take_id
+                            )
+                            self._request_shutdown_take_validation(active_take_id)
                         LOGGER.info("Hosted-server recording stopped and confirmed")
-                        return True
+                        # With an owned take, recorder stop is only the first
+                        # half of finalization. A retry may tear down services
+                        # after the normal validation path retires ownership.
+                        return not bool(active_take_id)
                     time.sleep(0.1)
             LOGGER.error("Hosted recorder stayed enabled after stop request")
             return False
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not stop hosted recording on shutdown")
+        except Exception:  # noqa: BLE001 - RPC errors can contain paths/endpoints
+            LOGGER.error("Could not stop hosted recording on shutdown")
             return False
+        finally:
+            self._shutdown_stop_lock.release()
+
+    def _request_shutdown_take_validation(self, take_id: str) -> None:
+        """Queue one retryable UI-thread validation lease for a stopped take."""
+
+        if (
+            not take_id
+            or take_id != self._take_id
+            or self._validation_take_id == take_id
+            or self._shutdown_validation_dispatch_take_id == take_id
+        ):
+            return
+        self._shutdown_validation_dispatch_take_id = take_id
+        try:
+            self._c._ui_invoker.invoke(
+                lambda expected_take_id=take_id: (
+                    self._finish_shutdown_recorder_stop_on_ui(expected_take_id)
+                )
+            )
+        except Exception:  # noqa: BLE001 - UI dispatch detail may be private
+            if self._shutdown_validation_dispatch_take_id == take_id:
+                self._shutdown_validation_dispatch_take_id = ""
+            LOGGER.error("Could not queue hosted take validation")
+
+    def _finish_shutdown_recorder_stop_on_ui(self, take_id: str) -> None:
+        """Hand a confirmed shutdown stop to the normal UI validation path."""
+
+        if not take_id or take_id != self._take_id:
+            if self._shutdown_validation_dispatch_take_id == take_id:
+                self._shutdown_validation_dispatch_take_id = ""
+            if self._shutdown_validation_pending_take_id == take_id:
+                self._shutdown_validation_pending_take_id = ""
+            return
+        self._c.window.set_status_recording(False)
+        try:
+            if self._validation_take_id == take_id:
+                self._set_phase(RecorderPhase.VALIDATING)
+                return
+            self._start_take_validation_once()
+        finally:
+            if self._shutdown_validation_dispatch_take_id == take_id:
+                self._shutdown_validation_dispatch_take_id = ""
 
     def on_audio_session_stopped(self) -> None:
         """Stop Audio ends this Mac's part in any in-flight recording.
@@ -822,6 +1946,17 @@ class RecordingCoordinator:
                 "Wait for the Studio export to finish before starting a new take. "
                 "The current recordings are safe.",
                 ms=6000,
+            )
+            return
+        pending_shutdown_take = str(
+            self._shutdown_validation_pending_take_id or ""
+        )
+        if pending_shutdown_take and pending_shutdown_take == self._take_id:
+            self._request_shutdown_take_validation(pending_shutdown_take)
+            self._c.window.flash_message(
+                "Finish publishing the previous take before starting another "
+                "recording.",
+                ms=7000,
             )
             return
         secret_file = (self._c.settings.server_rpc_secret_file or "").strip()
@@ -928,6 +2063,7 @@ class RecordingCoordinator:
             self._take_id = new_project_id()
             self._session_title = self._c.window.session_strip.current_title()
             self._reset_session_evidence()
+            self.request_authenticated_roster_observation()
             if not self._start_local_capture():
                 return
             if not self._create_evidence_journal():
@@ -1004,8 +2140,8 @@ class RecordingCoordinator:
             with self._capture_lock:
                 self._local_capture = capture
             return True
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("Isolated host capture preflight failed: %s", exc)
+        except Exception:  # noqa: BLE001 - device errors can contain private paths
+            LOGGER.warning("Isolated host capture preflight failed.")
             self._local_capture = None
             self._set_phase(RecorderPhase.ERROR)
             self._c._show_actionable_error(
@@ -1035,14 +2171,18 @@ class RecordingCoordinator:
             from core.local_capture import recover_stale_local_captures
 
             recovered = recover_stale_local_captures(root)
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Could not scan for abandoned local captures")
+        except Exception:  # noqa: BLE001 - recovery errors can contain private paths
+            LOGGER.error("Could not scan for abandoned local captures")
             return
         if not recovered:
             return
         for item in recovered:
-            LOGGER.warning("Recovered abandoned local capture in %s", item.recovery_dir)
             self._publish_recovered_local_capture(item, root)
+        LOGGER.warning(
+            "Recovered %d abandoned local capture%s for review.",
+            len(recovered),
+            "" if len(recovered) == 1 else "s",
+        )
         self._c.window.flash_message(
             "WebJam recovered unfinished local audio from an earlier session. "
             "Open Studio to review it.",
@@ -1051,8 +2191,8 @@ class RecordingCoordinator:
         try:
             self._c.window.recording_studio.set_takes_directory(root)
             self._c.window.recording_studio.reload()
-        except Exception:  # noqa: BLE001
-            LOGGER.debug("Could not refresh Studio recovery inventory", exc_info=True)
+        except Exception:  # noqa: BLE001 - UI errors can contain private paths
+            LOGGER.debug("Could not refresh Studio recovery inventory")
 
     def _publish_recovered_local_capture(self, item, root: str) -> None:
         """Turn recovered local media into a durable, review-only project.
@@ -1161,8 +2301,8 @@ class RecordingCoordinator:
                 local_durable_frames=durable_frames,
                 session_evidence=evidence,
             )
-        except Exception:  # noqa: BLE001 - media stays visible even if manifest fails
-            LOGGER.exception("Could not publish recovered local capture manifest")
+        except Exception:  # noqa: BLE001 - media stays visible; hide private paths
+            LOGGER.error("Could not publish recovered local capture manifest")
             return
 
         if (
@@ -1268,6 +2408,20 @@ class RecordingCoordinator:
             with JamulusServerRpc(
                 port=self._c.settings.server_rpc_port, secret=secret
             ) as rpc:
+                receipt_context = self._roster_observation_context()
+                try:
+                    self._consume_authenticated_roster(
+                        rpc.get_clients(), receipt_context
+                    )
+                except Exception:  # noqa: BLE001 - recorder control stays usable
+                    LOGGER.debug("Initial recording roster receipt was unavailable")
+                    self._invalidate_recording_identity(
+                        "An authenticated Jamulus recording roster check failed. "
+                        "Source audio was preserved for review.",
+                        take_id=(
+                            receipt_context.take_id if receipt_context else None
+                        ),
+                    )
                 acknowledged = (
                     rpc.start_recording() if target_armed else rpc.stop_recording()
                 )
@@ -1285,6 +2439,28 @@ class RecordingCoordinator:
                     time.sleep(0.25)
                 if armed != target_armed:
                     raise ServerRpcError("The recorder state did not change in time.")
+                final_receipt_context = self._roster_observation_context()
+                try:
+                    self._consume_authenticated_roster(
+                        rpc.get_clients(),
+                        final_receipt_context,
+                        # The pre-stop observation above may bind sources that
+                        # were actually present while recording. Once Stop is
+                        # acknowledged, a newly appearing recorder key cannot
+                        # retroactively own media from the finished take.
+                        allow_new_receipts=target_armed,
+                    )
+                except Exception:  # noqa: BLE001 - finalizer will mark missing proof
+                    LOGGER.debug("Final recording roster receipt was unavailable")
+                    self._invalidate_recording_identity(
+                        "An authenticated Jamulus recording roster check failed. "
+                        "Source audio was preserved for review.",
+                        take_id=(
+                            final_receipt_context.take_id
+                            if final_receipt_context
+                            else None
+                        ),
+                    )
             if callback_take_id is None:
                 self._c._ui_invoker.invoke(
                     lambda: self._c._apply_record_toggle_result(armed)
@@ -1296,6 +2472,11 @@ class RecordingCoordinator:
                     )
                 )
         except ServerRpcError as exc:
+            self._invalidate_recording_identity(
+                "The Jamulus recorder control check failed before recording "
+                "identity could be finalized. Source audio was preserved for review.",
+                take_id=callback_take_id,
+            )
             if callback_take_id is None:
                 self._c._ui_invoker.invoke(
                     lambda message=str(exc): self._c._apply_record_toggle_failure(
@@ -1309,7 +2490,14 @@ class RecordingCoordinator:
                     )
                 )
         except Exception:  # noqa: BLE001
-            LOGGER.exception("Record toggle failed unexpectedly")
+            # Secret-file and socket exceptions can contain private paths or
+            # endpoints. Keep the log path-free at this boundary.
+            LOGGER.error("Record toggle failed unexpectedly")
+            self._invalidate_recording_identity(
+                "The Jamulus recorder control check failed before recording "
+                "identity could be finalized. Source audio was preserved for review.",
+                take_id=callback_take_id,
+            )
             if callback_take_id is None:
                 self._c._ui_invoker.invoke(
                     lambda: self._c._apply_record_toggle_failure(
@@ -1347,10 +2535,11 @@ class RecordingCoordinator:
                 "Recording confirmed by the band server.",
                 ms=5000,
             )
+            self.request_authenticated_roster_observation()
             try:
                 self._c.metrics.increment("metric_recording_armed")
             except Exception:  # noqa: BLE001
-                LOGGER.debug("recording metric failed", exc_info=True)
+                LOGGER.debug("Recording metric update failed")
         else:
             if self._take_id:
                 stopped_utc, newly_confirmed = self._confirmed_recording_stopped()
@@ -1432,6 +2621,7 @@ class RecordingCoordinator:
                 "● Server is recording — every musician gets their own track.",
                 ms=5000,
             )
+            self.request_authenticated_roster_observation()
         else:
             if self._take_id:
                 stopped_utc, newly_confirmed = self._confirmed_recording_stopped(
@@ -1497,8 +2687,12 @@ class RecordingCoordinator:
 
     def _notify_recovered(self, recovered: Path, errors: tuple[str, ...]) -> None:
         """Offer a safe route to rescued tracks without rendering local paths."""
-        for error in errors:
-            LOGGER.warning("Recovered local capture needs review: %s", error)
+        if errors:
+            LOGGER.warning(
+                "Recovered local capture needs review after %d issue%s.",
+                len(errors),
+                "" if len(errors) == 1 else "s",
+            )
         if self._is_inside_takes_dir(recovered):
             self._c.window.flash_message(
                 "Audio stopped. Your isolated local tracks were saved. "
@@ -1558,6 +2752,17 @@ class RecordingCoordinator:
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             if recovered is not None:
                 self._notify_recovered(recovered, errors)
+            if (
+                active_take_id
+                and active_take_id == self._shutdown_validation_pending_take_id
+            ):
+                if self._validation_take_id == active_take_id:
+                    self._validation_take_id = ""
+                LOGGER.warning(
+                    "Hosted take publication remains unconfirmed because no "
+                    "Takes folder is configured; teardown is retained."
+                )
+                return
             self._retire_active_take(active_take_id)
             return
         threading.Thread(
@@ -1584,8 +2789,8 @@ class RecordingCoordinator:
         """Never leave the recorder UI stuck if validation itself fails."""
         try:
             result = self._build_take_validation(take_id=take_id)
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("Take validation failed unexpectedly")
+        except Exception:  # noqa: BLE001 - validation errors can contain private paths
+            LOGGER.error("Take validation failed unexpectedly")
             candidate = find_changed_take(
                 self._c.settings.takes_directory, self._before_takes
             )
@@ -1601,8 +2806,24 @@ class RecordingCoordinator:
                     *capture_errors,
                 ),
             )
+        publication_status: _PublishedTakeStatus | None = None
+        if (
+            take_id
+            and take_id == self._take_id
+            and take_id == self._shutdown_validation_pending_take_id
+        ):
+            root = str(self._c.settings.takes_directory or "").strip()
+            publication_status = (
+                self._published_take_has_id(root, take_id)
+                if root
+                else _PublishedTakeStatus.INDETERMINATE
+            )
         self._c._ui_invoker.invoke(
-            lambda: self._show_validation_result(result, take_id=take_id)
+            lambda: self._show_validation_result(
+                result,
+                take_id=take_id,
+                publication_status=publication_status,
+            )
         )
 
     def _build_take_validation(
@@ -1621,6 +2842,9 @@ class RecordingCoordinator:
         # concurrent shutdown salvage can still preserve the audio while we
         # are polling for the take directory.
         required_local = 1 if self._local_capture is not None else 0
+        recording_receipts, recording_identity_errors = (
+            self._final_recording_receipt_snapshot()
+        )
         if take_dir is None:
             self._mark_recording_recovery(
                 RecoveryStatus.NEEDS_ATTENTION,
@@ -1686,9 +2910,11 @@ class RecordingCoordinator:
                     local_total_frames=local_total_frames,
                     local_durable_frames=local_durable_frames,
                     session_evidence=self._current_session_evidence(),
+                    recording_receipts=recording_receipts,
+                    recording_identity_errors=recording_identity_errors,
                 )
                 if result.take is not None:
-                    self._remove_evidence_journal_after_manifest()
+                    self._retire_journal_for_exact_publication(active_take_id)
             else:
                 result = TakeValidationResult(
                     None,
@@ -1748,25 +2974,58 @@ class RecordingCoordinator:
                 local_total_frames=local_total_frames,
                 local_durable_frames=local_durable_frames,
                 session_evidence=self._current_session_evidence(),
+                recording_receipts=recording_receipts,
+                recording_identity_errors=recording_identity_errors,
             )
             if result.take is not None:
-                self._remove_evidence_journal_after_manifest()
+                self._retire_journal_for_exact_publication(active_take_id)
         return result
 
     def _show_validation_result(
-        self, result: TakeValidationResult, *, take_id: str | None = None
+        self,
+        result: TakeValidationResult,
+        *,
+        take_id: str | None = None,
+        publication_status: _PublishedTakeStatus | None = None,
     ) -> None:
         if take_id and take_id != self._take_id:
             LOGGER.debug("Ignoring validation result for a retired recording take")
             return
         completed_take_id = self._take_id if take_id is None else take_id
+        shutdown_pending = bool(
+            completed_take_id
+            and completed_take_id == self._shutdown_validation_pending_take_id
+        )
+        if shutdown_pending and publication_status is None:
+            root = str(self._c.settings.takes_directory or "").strip()
+            publication_status = (
+                self._published_take_has_id(root, completed_take_id)
+                if root
+                else _PublishedTakeStatus.INDETERMINATE
+            )
+        durable_shutdown_publication = bool(
+            not shutdown_pending
+            or publication_status is _PublishedTakeStatus.MATCH
+        )
         self.last_validation = result
-        self.last_completed_take = result.take.path if result.take else None
-        for warning in result.warnings:
-            LOGGER.warning("Take validation warning: %s", warning)
+        self.last_completed_take = (
+            result.take.path
+            if result.take is not None and durable_shutdown_publication
+            else None
+        )
+        if result.warnings:
+            LOGGER.warning(
+                "Take validation completed with %d warning%s.",
+                len(result.warnings),
+                "" if len(result.warnings) == 1 else "s",
+            )
         if not result.ok:
-            for error in result.errors:
-                LOGGER.warning("Take validation needs attention: %s", error)
+            if result.errors:
+                LOGGER.warning(
+                    "Take validation needs attention after %d issue%s.",
+                    len(result.errors),
+                    "" if len(result.errors) == 1 else "s",
+                )
             self._set_phase(RecorderPhase.NEEDS_ATTENTION)
             if result.take is None:
                 message = (
@@ -1789,11 +3048,34 @@ class RecordingCoordinator:
             result.take.path if result.take else None,
             result,
         )
-        if result.take is not None and completed_take_id and self._c.host_peer.active:
+        if (
+            result.take is not None
+            and completed_take_id
+            and durable_shutdown_publication
+            and self._c.host_peer.active
+        ):
             try:
                 self._c.host_peer.register_take(completed_take_id, result.take.path)
-            except Exception:  # noqa: BLE001
-                LOGGER.exception("Could not attach peer transfer inventory to take")
+            except Exception:  # noqa: BLE001 - transfer errors can contain private paths
+                LOGGER.error("Could not attach peer transfer inventory to take")
+        if shutdown_pending and not durable_shutdown_publication:
+            # Raw media may be loadable even though no exact schema-v2
+            # publication exists. Keep the take/journal/server ownership and
+            # release only this validation lease so Try Quit/End can retry.
+            if self._validation_take_id == completed_take_id:
+                self._validation_take_id = ""
+            self._set_phase(RecorderPhase.NEEDS_ATTENTION)
+            self._c.window.flash_message(
+                "Recording audio was preserved, but take publication is not "
+                "confirmed yet. Try finishing the session again.",
+                ms=10000,
+            )
+            LOGGER.warning(
+                "Hosted take publication remains unconfirmed; teardown is retained."
+            )
+            return
+        if shutdown_pending:
+            self._remove_evidence_journal_after_manifest()
         self._retire_active_take(completed_take_id)
 
     @staticmethod
