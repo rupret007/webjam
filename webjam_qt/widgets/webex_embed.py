@@ -90,8 +90,8 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setObjectName("GhostButton")
         # Name and description are refreshed with the label in
         # _sync_native_actions; a screen reader must announce the same thing
-        # the button says, and the label depends on the meeting state.
-        self._bring_forward_btn.setAccessibleName("Show Webex")
+        # the button says.
+        self._bring_forward_btn.setAccessibleName("Show Webex App")
         self._bring_forward_btn.setAccessibleDescription(
             "Brings Webex forward. No meeting link or browser is opened."
         )
@@ -125,7 +125,7 @@ class WebexEmbed(QFrame):
         )
         self._fallback_btn.setToolTip(
             "Open the configured meeting link once in Webex or your browser.\n"
-            "Use Show Meeting when it is already open."
+            "Use Show Webex App to bring the app forward without reopening the link."
         )
         self._fallback_btn.clicked.connect(self.open_meeting_requested.emit)
         self._fallback_btn.setEnabled(False)
@@ -384,7 +384,6 @@ class WebexEmbed(QFrame):
             )
         )
         self._sync_meeting_action()
-        # "Show Meeting" vs "Show Webex" depends on this same state.
         self._sync_native_actions()
 
     def set_launch_status(self, status: str) -> None:
@@ -459,15 +458,9 @@ class WebexEmbed(QFrame):
         )
 
     def _show_webex_label(self) -> str:
-        """Name what the musician gets, which depends on the meeting state.
+        """Name only the application activation WebJam can actually prove."""
 
-        With a meeting set up, raising Webex puts the call in front, so the
-        button says so. With no meeting yet there is nothing to show but the
-        app itself, and claiming otherwise would be a promise WebJam cannot
-        keep.
-        """
-
-        return "Show Meeting" if self._meeting_configured else "Show Webex"
+        return "Show Webex App"
 
     def _sync_native_actions(self) -> None:
         enabled = self._native_app_available and not self._native_action_busy

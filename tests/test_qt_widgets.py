@@ -1063,10 +1063,11 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("review completed session takes", body)
         self.assertIn("Choose <b>Webex Controls</b> to show Conversation", body)
         self.assertIn(
-            "<b>Show Meeting</b> brings the running Webex forward",
+            "<b>Show Webex App</b> brings the verified application forward",
             body,
         )
-        self.assertIn("only <b>Join / Open Meeting</b> opens", body)
+        self.assertIn("Webex chooses which of its windows is shown", body)
+        self.assertIn("Only <b>Join / Open Meeting</b> opens", body)
         self.assertIn("<b>Reference Track</b> to load", body)
         self.assertIn("Play stays locked until", body)
         self.assertNotIn("Multitrack Studio", body)

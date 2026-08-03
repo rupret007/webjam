@@ -108,8 +108,7 @@ def test_native_app_rescan_and_activation_busy_states_are_truthful():
     )
     assert embed.recheck_button().isHidden()
     assert embed.bring_forward_button().isEnabled()
-    # No meeting link saved yet, so only the app itself can be promised.
-    assert embed.bring_forward_button().text() == "Show Webex"
+    assert embed.bring_forward_button().text() == "Show Webex App"
 
     embed.set_native_action_busy(True)
     assert not embed.bring_forward_button().isEnabled()
@@ -246,8 +245,9 @@ def test_join_open_requires_a_configured_link_and_is_single_flight():
 
     embed.set_launch_status("Opening…")
     assert not embed.fallback_button().isEnabled()
-    # A meeting is configured above, so the button names the meeting.
-    assert embed.bring_forward_button().text() == "Show Meeting"
+    # A saved meeting link does not let activation promise which Webex window
+    # comes forward; only the application itself is named.
+    assert embed.bring_forward_button().text() == "Show Webex App"
 
     embed.set_launch_status("Opened externally")
     assert embed.fallback_button().isEnabled()
@@ -379,10 +379,8 @@ def test_app_status_rejects_unknown_state_and_drops_unsafe_version_copy():
 def test_show_webex_button_announces_what_it_displays() -> None:
     """A screen reader must say the same thing the button says.
 
-    The label became state-dependent -- "Show Meeting" once a meeting link
-    is saved, "Show Webex" when there is none -- while the accessible name
-    stayed a fixed string, so assistive tech announced a different action
-    from the one on screen.
+    A saved link must not change the label into a promise that application
+    activation can identify or raise Webex's meeting window.
     """
 
     embed = WebexEmbed()
@@ -394,11 +392,11 @@ def test_show_webex_button_announces_what_it_displays() -> None:
         )
         button = embed.bring_forward_button()
 
-        assert button.text() == "Show Webex"
+        assert button.text() == "Show Webex App"
         assert button.accessibleName() == button.text()
 
         embed.set_meeting_configured(True)
-        assert button.text() == "Show Meeting"
+        assert button.text() == "Show Webex App"
         assert button.accessibleName() == button.text()
 
         embed.set_native_action_busy(True)
