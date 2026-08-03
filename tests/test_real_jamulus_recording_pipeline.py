@@ -29,6 +29,7 @@ from core.session_transfer import (
 from core.take_library import (
     RecorderClientReceipt,
     discover_takes,
+    parse_jamulus_recording_filename,
     recorder_client_observations,
     write_take_manifest,
 )
@@ -242,31 +243,92 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         take_directories = {path.parent for path in source_wavs}
         assert len(take_directories) == 1
         take_dir = take_directories.pop()
+        native_recorder_names = tuple(path.name for path in source_wavs)
+        authenticated_source_addresses = tuple(
+            str(client.get("address", ""))
+            for client in transport.server_clients
+        )
 
-        by_name: dict[str, Path] = {}
-        for path in source_wavs:
-            if path.name.startswith(f"{harness.CLIENT_A_NAME}-"):
-                by_name[harness.CLIENT_A_NAME] = path
-            elif path.name.startswith(f"{harness.CLIENT_B_NAME}-"):
-                by_name[harness.CLIENT_B_NAME] = path
-        assert set(by_name) == {harness.CLIENT_A_NAME, harness.CLIENT_B_NAME}
-
-        source_metrics = {
-            harness.CLIENT_A_NAME: analyze_recorded_stem(
-                by_name[harness.CLIENT_A_NAME],
-                expected=SPEC_A,
-                forbidden_frequency_hz=SPEC_B.frequency_hz,
+        # Bind the authenticated recorder roster to the two exact client
+        # processes the harness owns.  Display names and filename prefixes are
+        # labels only: neither is allowed to decide which musician owns PCM.
+        observations = recorder_client_observations({
+            "connections": len(transport.server_clients),
+            "clients": list(transport.server_clients),
+        })
+        participant_ids = {
+            harness.CLIENT_A_NAME: str(uuid.uuid4()),
+            harness.CLIENT_B_NAME: str(uuid.uuid4()),
+        }
+        owned_fixtures_by_udp_port = {
+            harness.ports["client_a_udp"]: (
+                harness.CLIENT_A_NAME,
+                participant_ids[harness.CLIENT_A_NAME],
+                SPEC_A,
             ),
-            harness.CLIENT_B_NAME: analyze_recorded_stem(
-                by_name[harness.CLIENT_B_NAME],
-                expected=SPEC_B,
-                forbidden_frequency_hz=SPEC_A.frequency_hz,
+            harness.ports["client_b_udp"]: (
+                harness.CLIENT_B_NAME,
+                participant_ids[harness.CLIENT_B_NAME],
+                SPEC_B,
             ),
         }
-        for name, expected in (
-            (harness.CLIENT_A_NAME, SPEC_A),
-            (harness.CLIENT_B_NAME, SPEC_B),
+        recording_receipts: list[RecorderClientReceipt] = []
+        expected_by_participant_id = {}
+        for raw_client, observation in zip(
+            transport.server_clients, observations, strict=True
         ):
+            address = str(raw_client.get("address", ""))
+            _host, separator, port_text = address.rpartition(":")
+            assert separator and port_text.isdigit(), raw_client
+            owned = owned_fixtures_by_udp_port.get(int(port_text))
+            assert owned is not None, raw_client
+            expected_name, participant_id, expected_spec = owned
+            assert observation.display_name == expected_name
+            expected_by_participant_id[participant_id] = (
+                expected_name,
+                expected_spec,
+            )
+            recording_receipts.append(RecorderClientReceipt(
+                server_channel_id=observation.server_channel_id,
+                display_name=observation.display_name,
+                participant_id=participant_id,
+                recorder_key_sha256=observation.recorder_key_sha256,
+                channels=observation.channels,
+            ))
+        assert len(recording_receipts) == 2
+
+        # Jamulus's numeric suffix is startFrame + channel count.  Match each
+        # WAV through the address-erased recorder-key digest from the receipt;
+        # never reinterpret startFrame as a server channel ID or infer an
+        # owner from a musician-looking filename.
+        receipts_by_media_key = {
+            (receipt.recorder_key_sha256, receipt.channels): receipt
+            for receipt in recording_receipts
+        }
+        source_by_participant_id: dict[str, Path] = {}
+        for path in source_wavs:
+            parsed = parse_jamulus_recording_filename(path.name)
+            assert parsed is not None, path.name
+            receipt = receipts_by_media_key.get(
+                (parsed.recorder_key_sha256, parsed.channels)
+            )
+            assert receipt is not None, path.name
+            assert receipt.participant_id not in source_by_participant_id
+            source_by_participant_id[receipt.participant_id] = path
+        assert set(source_by_participant_id) == set(expected_by_participant_id)
+
+        source_metrics = {}
+        for participant_id, (name, expected) in expected_by_participant_id.items():
+            forbidden = (
+                SPEC_B.frequency_hz
+                if expected is SPEC_A
+                else SPEC_A.frequency_hz
+            )
+            source_metrics[name] = analyze_recorded_stem(
+                source_by_participant_id[participant_id],
+                expected=expected,
+                forbidden_frequency_hz=forbidden,
+            )
             assert_recorded_stem_metrics(
                 source_metrics[name],
                 expected=expected,
@@ -322,8 +384,13 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
                 expected_channels=1,
             )
 
-        all_source_files = (*source_wavs, *local_result.files)
-        source_hashes = {path: _sha256(path) for path in all_source_files}
+        server_hashes_by_participant_id = {
+            participant_id: _sha256(path)
+            for participant_id, path in source_by_participant_id.items()
+        }
+        local_source_hashes = {
+            path.name: _sha256(path) for path in local_result.files
+        }
         transfer_evidence = _exercise_resumable_http_transfer(
             harness.root,
             local_by_name["host-guitar.wav"],
@@ -332,30 +399,8 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
         assert transfer_evidence["final_bytes"] == local_by_name[
             "host-guitar.wav"
         ].stat().st_size
-        assert transfer_evidence["sha256"] == source_hashes[
-            local_by_name["host-guitar.wav"]
-        ]
+        assert transfer_evidence["sha256"] == local_source_hashes["host-guitar.wav"]
         assert transfer_evidence["device_id_preserved"] is True
-
-        observations = recorder_client_observations({
-            "connections": len(transport.server_clients),
-            "clients": list(transport.server_clients),
-        })
-        participant_ids = {
-            name: str(uuid.uuid4())
-            for name in (harness.CLIENT_A_NAME, harness.CLIENT_B_NAME)
-        }
-        recording_receipts = tuple(
-            RecorderClientReceipt(
-                server_channel_id=item.server_channel_id,
-                display_name=item.display_name,
-                participant_id=participant_ids[item.display_name],
-                recorder_key_sha256=item.recorder_key_sha256,
-                channels=item.channels,
-            )
-            for item in observations
-        )
-        assert len(recording_receipts) == 2
 
         validation = write_take_manifest(
             take_dir,
@@ -370,7 +415,7 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             capture_device=local_result.capture_device,
             capture_gaps=local_result.gaps,
             local_total_frames=local_result.total_frames,
-            recording_receipts=recording_receipts,
+            recording_receipts=tuple(recording_receipts),
         )
         assert validation.ok, validation.errors
         assert validation.take is not None
@@ -409,10 +454,17 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             assert segment.sample_rate == SAMPLE_RATE
             assert segment.channels == 2
             source_path = take_dir / segment.path
+            assert source_path.name.startswith("server-media-")
+            assert not any(
+                name in source_path.name
+                for name in (harness.CLIENT_A_NAME, harness.CLIENT_B_NAME)
+            )
             assert segment.frame_count == sf.info(source_path).frames
-            assert segment.sha256 in {
-                source_hashes[path] for path in source_wavs
-            }
+            assert track.participant_id in server_hashes_by_participant_id
+            assert (
+                segment.sha256
+                == server_hashes_by_participant_id[track.participant_id]
+            )
         for track in local_tracks:
             assert track.quality is SourceQuality.UNVERIFIED
             assert track.media_status is MediaStatus.AVAILABLE
@@ -423,7 +475,7 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
             assert segment.device_id == local_result.capture_device.device_id
             source_path = take_dir / segment.path
             assert segment.frame_count == local_result.total_frames
-            assert segment.sha256 == source_hashes[source_path]
+            assert segment.sha256 == local_source_hashes[source_path.name]
 
         discovered = [
             take
@@ -497,10 +549,28 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
 
         for evidence, exported_stem in zip(handoff["tracks"], export.stems):
             source_path = evidence["segments"][0]["path"]
-            expected = SPEC_A if (
-                source_path.startswith(harness.CLIENT_A_NAME)
-                or source_path == "host-guitar.wav"
-            ) else SPEC_B
+            assert evidence["output_filename"] == exported_stem.name
+            assert evidence["output_sha256"] == _sha256(exported_stem)
+            if evidence["source_type"] == "jamulus_server":
+                participant_id = evidence["participant_id"]
+                assert participant_id in expected_by_participant_id
+                assert source_path.startswith("server-media-")
+                assert not any(
+                    name in source_path
+                    for name in (harness.CLIENT_A_NAME, harness.CLIENT_B_NAME)
+                )
+                _name, expected = expected_by_participant_id[participant_id]
+                expected_source_hash = server_hashes_by_participant_id[
+                    participant_id
+                ]
+            else:
+                expected = {
+                    "host-guitar.wav": SPEC_A,
+                    "host-vocal.wav": SPEC_B,
+                }[source_path]
+                expected_source_hash = local_source_hashes[source_path]
+            assert evidence["segments"][0]["declared_sha256"] == expected_source_hash
+            assert evidence["segments"][0]["observed_sha256"] == expected_source_hash
             forbidden = (
                 SPEC_B.frequency_hz
                 if expected is SPEC_A
@@ -520,7 +590,30 @@ def test_real_server_stems_reach_studio_and_track_export_without_relabeling() ->
                 ),
             )
 
-        assert {path: _sha256(path) for path in all_source_files} == source_hashes
+        # Privacy staging intentionally renamed native recorder files. Their
+        # immutable content remains provably identical under opaque paths, and
+        # the explicitly named local originals remain in place unchanged.
+        assert all(not path.exists() for path in source_wavs)
+        assert {
+            track.participant_id: _sha256(take_dir / track.segments[0].path)
+            for track in server_tracks
+        } == server_hashes_by_participant_id
+        assert {
+            path.name: _sha256(path) for path in local_result.files
+        } == local_source_hashes
+        persisted_recording_evidence = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in take_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".json", ".lof", ".rpp"}
+        )
+        assert all(
+            native_name not in persisted_recording_evidence
+            for native_name in native_recorder_names
+        )
+        assert all(
+            address and address not in persisted_recording_evidence
+            for address in authenticated_source_addresses
+        )
         pipeline_evidence = {
             "sources": {
                 name: {
