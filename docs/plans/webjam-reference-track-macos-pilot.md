@@ -1,17 +1,18 @@
 # Reference Track macOS physical pilot
 
-> **Unreleased after v0.22.2:** callback and source-load details below describe
-> source changes not present in the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the callback and source-load changes
+> are part of this candidate and are absent from the immutable published
+> v0.22.2 packages. This pilot remains physical evidence, not a release claim.
 
 This runbook records the gates automation cannot prove. Do not convert a
 connection, moving meter, decoded waveform, process state, or server roster
 entry into an audibility result.
 
 The immutable v0.22.2 packages intentionally keep playback locked. Run this
-procedure only from a separately identified source candidate whose production
-factory proves the local BlackHole route on this Mac. Record the source commit
-and build hash with the evidence. Do not use the constructor's test-only
-`physical_route_certified` override, and never add an environment variable,
+procedure only from the separately identified v0.22.3 source candidate whose
+production factory proves the local BlackHole route on this Mac. Record the
+source commit and build hash with the evidence. Do not use the constructor's
+test-only `physical_route_certified` override, and never add an environment variable,
 setting, command-line flag, or user-facing bypass to a downloadable package.
 
 ## Exact evidence header

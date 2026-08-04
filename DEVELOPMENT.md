@@ -1,7 +1,8 @@
-# Developing WebJam v0.22.2
+# Developing WebJam v0.22.3
 
-> **Unreleased after v0.22.2:** this maintained development guide includes
-> behavior not present in the immutable published v0.22.2 assets.
+> **Pre-publication candidate:** this guide describes v0.22.3 source. The
+> immutable v0.22.2 release remains GitHub Latest until the exact v0.22.3
+> draft passes verified promotion.
 
 ## Local setup
 
@@ -18,7 +19,7 @@ Use the repository virtual environment:
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.2.
+`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.22.3.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -27,7 +28,7 @@ jitter settings.
 ## Pocket Stage developer preview
 
 Pocket Stage is owner-device development work, not a distributed or pre-signed
-iOS binary. The v0.22.2 Mac packages do include the generated, CI-compiled
+iOS binary. The v0.22.3 Mac packages include the generated, CI-compiled
 Xcode project and setup kit; physical installation and pairing remain
 owner-performed and **NOT RUN**. Run the focused desktop tests with:
 
@@ -155,12 +156,20 @@ forms, server fields, or technical diagnostics to Host/Join.
 
 ## Build and release hygiene
 
-The source tree reports `0.22.2`, and
+The source tree reports `0.22.3`. It is eligible only for an exact tag build,
+reviewable draft, and verified promotion. Until that completes,
 [`v0.22.2`](https://github.com/rupret007/webjam/releases/tag/v0.22.2) is the
 published non-prerelease GitHub **Latest** release, clearly labeled as an
 unsigned/unnotarized private test candidate. Published v0.20.0, v0.21.0,
-v0.22.0, and v0.22.1 tags and assets remain immutable historical evidence and
-must never be overwritten or served under a moved tag.
+v0.22.0, v0.22.1, and v0.22.2 tags and assets remain immutable historical
+evidence and must never be overwritten or served under a moved tag.
+
+The v0.22.3 locks select `cryptography` 50.0.0 for the three audited CVE
+remediations. Windows, Linux, and Apple-silicon macOS install exact upstream
+wheels. Intel macOS alone uses the reviewed, hash-locked native x86_64
+source-build helper with static OpenSSL 3.5.7 LTS because upstream removed the
+wheel for that target. Do not generalize that exception or replace it with an
+ambient compiler, OpenSSL, network resolver, or unverified wheel.
 
 The local source-bundle smoke command is:
 

@@ -27,7 +27,7 @@ exception.
 | `cffi` | `2.1.0` | Runtime | `MIT-0` | [project](https://github.com/python-cffi/cffi) |
 | `click` | `8.4.2` | Runtime | `BSD-3-Clause` | [project](https://github.com/pallets/click) |
 | `colorama` | `0.4.6` | Runtime | `BSD-3-Clause` | [project](https://github.com/tartley/colorama) |
-| `cryptography` | `48.0.1` | Runtime | `BSD-3-Clause` | [project](https://github.com/pyca/cryptography) |
+| `cryptography` | `50.0.0` | Runtime | `BSD-3-Clause` | [project](https://github.com/pyca/cryptography) |
 | `customtkinter` | `6.0.0` | Excluded | `MIT` | [project](https://github.com/TomSchimansky/CustomTkinter) |
 | `darkdetect` | `0.8.0` | Excluded | `BSD-3-Clause` | [project](https://github.com/albertosottile/darkdetect) |
 | `fastapi` | `0.139.2` | Runtime | `MIT` | [project](https://github.com/fastapi/fastapi) |
@@ -82,6 +82,17 @@ is retained from the wheel as `_soundfile_data/COPYING`.
 | `libogg` | not declared by wheel | `BSD-3-Clause` | No | [project](https://github.com/xiph/ogg) |
 | `libopus` | not declared by wheel | `BSD-3-Clause` | No | [project](https://github.com/xiph/opus) |
 | `libvorbis` | not declared by wheel | `BSD-3-Clause` | No | [project](https://github.com/xiph/vorbis) |
+
+## Platform-specific native payload
+
+The cryptography wheels statically embed target-specific OpenSSL
+builds. Intel macOS uses WebJam's separately reviewed 3.5.7 LTS
+source build; the other targets use upstream's reviewed 4.0.1 wheels.
+
+| Component | Version | Target(s) | Embedded by | License | Provenance |
+|---|---|---|---|---|---|
+| `openssl` | `4.0.1` | `linux-x64,macos-arm64,windows-x64` | `cryptography 50.0.0 upstream wheels` | `Apache-2.0` | `CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt` |
+| `openssl` | `3.5.7` | `macos-x64` | `cryptography 50.0.0` | `Apache-2.0` | `CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt` |
 
 ## MP3 capability
 

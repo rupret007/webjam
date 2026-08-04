@@ -1,12 +1,18 @@
-WebJam for Windows x64
-======================
+WebJam v0.22.3 for Windows x64
+==============================
 
-UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
-that are not in the immutable published v0.22.2 assets.
+PRE-PUBLICATION CANDIDATE: use only the exact v0.22.3 asset after its draft,
+checksum, and verified GitHub promotion gates pass. Physical audio, hardware,
+SmartScreen, publisher-signing, and managed-device gates remain NOT RUN unless
+the release evidence names this exact file and SHA-256.
 
 This package is an unsigned private test candidate. Verify its filename and
 published SHA-256 before running it. Windows SmartScreen or organizational
 policy may block it; WebJam does not bypass those controls.
+
+This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
+Windows wheel.
 
 This installer places WebJam in your Windows user profile. Installing or
 updating WebJam itself does not require administrator access.

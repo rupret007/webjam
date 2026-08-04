@@ -1,7 +1,8 @@
 # ADR 0003: Pocket Stage native iPhone companion
 
-> **Unreleased after v0.22.2:** the current menu label below is not present in
-> the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the current menu label is part of this
+> candidate and is absent from the immutable published v0.22.2 packages.
+> Physical owner-device installation and pairing remain **NOT RUN**.
 
 - Status: Accepted; owner-device developer-preview vertical slice implemented
 - Date: 2026-07-21

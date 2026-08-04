@@ -160,6 +160,27 @@ a = Analysis(
             "THIRD_PARTY_LICENSES",
         ),
         (
+            str(ROOT / "licenses" / "OPENSSL_LICENSE.txt"),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(
+                ROOT
+                / "packaging"
+                / "macos"
+                / "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"
+            ),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
+            str(
+                ROOT
+                / "packaging"
+                / "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"
+            ),
+            "THIRD_PARTY_LICENSES",
+        ),
+        (
             str(ROOT / "licenses" / "WEBSOCKETS_LICENSE.txt"),
             "THIRD_PARTY_LICENSES",
         ),

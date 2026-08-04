@@ -1,9 +1,10 @@
-# WebJam v0.22.2 unsigned private test candidate
+# WebJam v0.22.3 unsigned private test candidate
 
-> **Unreleased after v0.22.2:** this maintained source documentation includes
-> Webex activation and Reference Track loading changes that are not in the
-> immutable published v0.22.2 assets. The code version remains 0.22.2 until the
-> next release is cut.
+> **Pre-publication candidate:** this source reports v0.22.3. The immutable
+> published v0.22.2 release remains GitHub **Latest** until the exact v0.22.3
+> tag build, draft inventory, signed component catalog, and verified promotion
+> gates pass. Physical and credentialed gates remain **NOT RUN** unless exact
+> v0.22.3 asset evidence says otherwise.
 
 WebJam has two deliberately separate musician workflows:
 
@@ -43,9 +44,9 @@ trust.
 There is no WebJam input/output picker, server field, port field, or Band
 Check gate in Host/Join.
 
-## Bounded Jamulus recovery in the unreleased source
+## Bounded Jamulus recovery in the v0.22.3 candidate
 
-The source after v0.22.2 treats a running Jamulus process as necessary but not
+The v0.22.3 source treats a running Jamulus process as necessary but not
 sufficient recovery evidence. Each replacement is bound to the exact recovery
 generation, process generation, and process ID that WebJam launched. WebJam
 returns to Connected only after that same process has fresh authenticated RPC
@@ -62,13 +63,14 @@ process ID/liveness, finite RPC freshness category, and finite RPC age. It
 never includes the Jamulus profile path, RPC secret, invitation, meeting link,
 or raw exception.
 
-This recovery work is unreleased. GitHub **Latest** and the immutable
-downloadable assets remain **v0.22.2** until the v0.22.3 physical and release
-gates pass.
+This recovery work is part of the pre-publication v0.22.3 candidate. GitHub
+**Latest** and the immutable downloadable assets remain **v0.22.2** until the
+exact draft passes the automated release gates and verified promotion.
+Publication does not convert any physical gate to PASS.
 
 ## Jamulus updates without rebuilding WebJam
 
-WebJam v0.22.2 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
+WebJam v0.22.3 keeps its reviewed Jamulus 3.12.2 client, server, and isolated
 Reference Track companion as an offline fallback. In the background it checks
 a separately published, Ed25519-signed component catalog for Jamulus versions
 that have passed WebJam's exact routing, RPC, recording, and packaging
@@ -204,7 +206,7 @@ playhead, animation, audio, capture, or playback callbacks.
 
 ## Pocket Stage iPhone owner-device preview
 
-The v0.22.2 candidate retains the narrow Pocket Stage v1 vertical slice
+The v0.22.3 candidate retains the narrow Pocket Stage v1 vertical slice
 introduced in v0.19.0 for an owner's iPhone. On the desktop, choose
 **More → Use iPhone as Pocket Stage…** after both devices are on the same
 private Wi-Fi.
@@ -271,7 +273,7 @@ variable, command-line switch, or UI override. Installing BlackHole, running its
 setup guidance, or choosing **Recheck Route** cannot unlock a downloaded
 v0.22.2 package.
 
-The current unreleased source derives route authority on the Mac instead of
+The v0.22.3 candidate derives route authority on the Mac instead of
 requiring a constructor-only grant. An official, unambiguous 48-kHz BlackHole
 16ch/64ch route is necessary; when the production factory's read-only local
 checks certify that prerequisite, Play may become available. Choosing Play
@@ -377,7 +379,9 @@ credentials, device identifiers, raw paths, or notes.
 
 ## Published source and candidate state
 
-The source tree and GitHub **Latest** release both report **v0.22.2**. The
+The source tree reports **v0.22.3** as a pre-publication private test candidate.
+GitHub **Latest** remains **v0.22.2** until the exact v0.22.3 draft is verified
+and promoted. The
 [published release](https://github.com/rupret007/webjam/releases/tag/v0.22.2)
 is a non-prerelease explicitly titled as an unsigned private test candidate. It
 adds direct Live access to Webex,
@@ -397,6 +401,15 @@ silently replaced by this candidate. The v0.22.0 annotated tag and tagged bytes
 remain immutable. The published v0.22.1 tag, assets, and checksums likewise
 remain immutable; v0.22.2 is a new patch identity, never a moved tag or rebuilt
 v0.22.1 asset.
+
+v0.22.3 is likewise a new source and package identity. It upgrades
+`cryptography` to 50.0.0 to remediate CVE-2026-69247, CVE-2026-69248, and
+CVE-2026-69249. Windows, Linux, and Apple-silicon macOS use hash-locked
+upstream wheels. Because upstream no longer publishes an Intel macOS wheel,
+that target uses one documented, hash-locked native x86_64 source-build
+exception with static OpenSSL 3.5.7 LTS; CI verifies its official inputs,
+architecture, linkage, installed runtime, license evidence, and package
+inventory. No other target is permitted to use that exception.
 
 The v0.22.2 workflow built four targets from one source identity: Windows x64,
 Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac. The published release
@@ -467,7 +480,7 @@ Windows PC may still require IT approval even after valid publisher signing;
 candidate packages must never be described as production-trusted installers.
 
 Automated source and package checks are evidence for code and archive
-integrity—not a substitute for musicians hearing one another. For v0.22.2,
+integrity—not a substitute for musicians hearing one another. For v0.22.3,
 real two-Mac audio, physical interface disconnect/reconnect, sleep/wake,
 interruption and recording recovery, long-session operation, external-editor
 import of the evidence-rich session export, physical Reference Studio
@@ -478,7 +491,7 @@ promote a package or claim audibility.
 
 ## Guides
 
-- [v0.22.2 candidate notes and changelog](CHANGELOG.md)
+- [v0.22.3 candidate notes and changelog](CHANGELOG.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
 - [Musician guide](USER_GUIDE.md)

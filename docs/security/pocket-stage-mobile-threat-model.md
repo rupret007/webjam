@@ -1,7 +1,7 @@
 # Pocket Stage developer-preview threat model
 
-> **Unreleased after v0.22.2:** the current menu label below is not present in
-> the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the current menu label is part of this
+> candidate and is absent from the immutable published v0.22.2 packages.
 
 - Date: 2026-07-21
 - Applies to: implemented Pocket Stage v1 generated native-app vertical slice

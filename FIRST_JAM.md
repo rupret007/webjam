@@ -1,7 +1,8 @@
-# First Jam — WebJam v0.22.2
+# First Jam — WebJam v0.22.3
 
-> **Unreleased after v0.22.2:** these current instructions include source
-> behavior not present in the immutable published v0.22.2 packages.
+> **Pre-publication candidate:** these instructions describe v0.22.3. The
+> immutable v0.22.2 packages remain GitHub Latest until the exact v0.22.3
+> draft passes verified promotion. Physical rehearsal gates remain **NOT RUN**.
 
 ## Host
 

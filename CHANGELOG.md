@@ -4,7 +4,30 @@ All notable improvements and features for the WebJam music collaboration platfor
 
 ---
 
-## [Unreleased] — v0.22.3 Reference Track reliability candidate
+## [0.22.3] — 2026-08-03 security and reliability private test candidate
+
+### Release and dependency security
+
+- Upgraded the frozen runtime to `cryptography` 50.0.0, the first reviewed
+  version that remediates CVE-2026-69247, CVE-2026-69248, and
+  CVE-2026-69249 together. Windows, Linux, and Apple-silicon macOS consume
+  exact hash-locked upstream wheels.
+- Upstream no longer publishes an Intel macOS wheel. The Intel package uses
+  one documented, hash-locked native x86_64 source-build exception with a
+  privately staged static OpenSSL 3.5.7 LTS build. CI verifies the official
+  source archives, build inputs, resulting architecture, OpenSSL identity,
+  static linkage, installed runtime paths, license evidence, and final package
+  inventory. This exception does not loosen any other target to source builds.
+- v0.22.3 is prepared for an exact four-platform tag build and reviewable
+  GitHub draft. It is not published until tag CI, the exact sequence-4
+  Jamulus catalog for WebJam 0.22.3, frozen-package checks, checksums, and the
+  verified Latest-promotion workflow all pass.
+- The release remains an unsigned Windows and ad-hoc-signed, unnotarized
+  macOS private test candidate. Physical two-Mac audio, interface and hardware
+  recovery, sleep/wake, long-session, Reference Track audibility/isolation,
+  external-editor, SmartScreen, Gatekeeper, signing, and notarization gates
+  remain **NOT RUN** unless separately recorded against an exact v0.22.3
+  asset and SHA-256.
 
 ### Reference Track route ownership and cleanup
 
@@ -27,10 +50,9 @@ All notable improvements and features for the WebJam music collaboration platfor
   start, Stop, and Close are serialized inside the core controller so a late
   startup failure cannot be hidden by an earlier clean-close result.
 - These are source and machine-test improvements, not production
-  certification. The v0.22.3 candidate cannot be tagged or published until the
-  exact controlled-pilot build passes the two-endpoint audibility, independent
-  mix, no-direct-monitor, recording-stem, failure, 25-cycle, and 60-minute
-  physical gates.
+  certification. Two-endpoint audibility, independent mix, no-direct-monitor,
+  recording-stem, failure, 25-cycle, and 60-minute physical gates remain
+  **NOT RUN** for the private candidate and cannot be represented as PASS.
 
 ### Exact MP3 duration and end-of-song playback
 
@@ -84,9 +106,10 @@ All notable improvements and features for the WebJam music collaboration platfor
   maximum, in-flight/exhausted state, process ID/liveness, RPC freshness, and
   finite RPC age. Monotonic deadlines, paths, profiles, secrets, invitations,
   meeting links, and raw exceptions are excluded.
-- This remains unreleased source work. The immutable **Latest** GitHub release
-  and downloadable assets remain **v0.22.2** until every v0.22.3 physical and
-  release gate passes.
+- This work is part of the v0.22.3 pre-publication candidate. The immutable
+  **Latest** GitHub release and downloadable assets remain **v0.22.2** until
+  the exact v0.22.3 draft passes its release gates and verified promotion;
+  publication does not convert any remaining physical gate to PASS.
 
 ### Webex native-show reliability
 

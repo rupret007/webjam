@@ -1,12 +1,18 @@
-WEBJAM FOR LINUX x64
-====================
+WEBJAM v0.22.3 FOR LINUX x64
+=============================
 
-UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
-that are not in the immutable published v0.22.2 assets.
+PRE-PUBLICATION CANDIDATE: use only the exact v0.22.3 asset after its draft,
+checksum, and verified GitHub promotion gates pass. Physical audio, hardware,
+signed-install, and distribution-policy gates remain NOT RUN unless the
+release evidence names this exact file and SHA-256.
 
 This test build is certified only for 64-bit Ubuntu 22.04. Other Ubuntu
 versions and Linux distributions are not certified. Keep the entire WebJam
 folder together; the files under _internal are required at runtime.
+
+This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream Linux
+wheel.
 
 This is a portable ZIP, not a distro package. It does not install an
 application-menu entry, .desktop launcher, or system icon. Start the included

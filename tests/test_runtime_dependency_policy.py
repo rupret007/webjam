@@ -82,6 +82,128 @@ def test_every_runtime_distribution_is_attributed_in_both_artifacts() -> None:
             assert (package.name, version) in components
 
 
+def test_cryptography_floor_and_platform_openssl_inventory_are_exact() -> None:
+    inventory = validate_policy()
+    cryptography = next(
+        package for package in inventory.packages if package.name == "cryptography"
+    )
+    assert dict(cryptography.versions) == {
+        target: "50.0.0" for target in inventory.policy["targets"]
+    }
+
+    platform_components = inventory.policy["platform_bundled_native_components"]
+    assert platform_components == [
+        {
+            "name": "openssl",
+            "version": "4.0.1",
+            "license_expression": "Apache-2.0",
+            "homepage": "https://www.openssl-library.org/",
+            "targets": ["linux-x64", "macos-arm64", "windows-x64"],
+            "embedded_by": "cryptography 50.0.0 upstream wheels",
+            "source_sha256": (
+                "2db3f3a0d6ea4b59e1f094ace2c8cd536dffb87cdc39084c5afa1e6f7f37dd09"
+            ),
+            "provenance": "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
+        },
+        {
+            "name": "openssl",
+            "version": "3.5.7",
+            "license_expression": "Apache-2.0",
+            "homepage": "https://www.openssl-library.org/",
+            "targets": ["macos-x64"],
+            "embedded_by": "cryptography 50.0.0",
+            "source_sha256": (
+                "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8"
+            ),
+            "provenance": "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt",
+        }
+    ]
+
+    notice = render_notice(inventory)
+    for value in (
+        "Platform-specific native payload",
+        "`openssl`",
+        "`4.0.1`",
+        "`3.5.7`",
+        "`linux-x64,macos-arm64,windows-x64`",
+        "`macos-x64`",
+        "`cryptography 50.0.0 upstream wheels`",
+        "`cryptography 50.0.0`",
+        "`Apache-2.0`",
+        "`CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt`",
+        "`CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt`",
+    ):
+        assert value in notice
+
+    sbom = json.loads(render_sbom(inventory))
+    openssl = [
+        component
+        for component in sbom["components"]
+        if component["name"].lower() == "openssl"
+    ]
+    assert len(openssl) == 2
+    expected = {
+        "4.0.1": {
+            "bom-ref": (
+                "webjam:native:openssl@4.0.1?targets="
+                "linux-x64,macos-arm64,windows-x64"
+            ),
+            "webjam:targets": "linux-x64,macos-arm64,windows-x64",
+            "webjam:embedded-by": "cryptography 50.0.0 upstream wheels",
+            "webjam:source-sha256": (
+                "2db3f3a0d6ea4b59e1f094ace2c8cd536dffb87cdc39084c5afa1e6f7f37dd09"
+            ),
+            "webjam:provenance": "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
+        },
+        "3.5.7": {
+            "bom-ref": "webjam:native:openssl@3.5.7?targets=macos-x64",
+            "webjam:targets": "macos-x64",
+            "webjam:embedded-by": "cryptography 50.0.0",
+            "webjam:source-sha256": (
+                "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8"
+            ),
+            "webjam:provenance": "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt",
+        },
+    }
+    for component in openssl:
+        component_expected = expected[component["version"]]
+        assert component["bom-ref"] == component_expected["bom-ref"]
+        assert component["scope"] == "required"
+        assert component["licenses"] == [{"expression": "Apache-2.0"}]
+        assert {
+            item["name"]: item["value"] for item in component["properties"]
+        } == {
+            name: value
+            for name, value in component_expected.items()
+            if name != "bom-ref"
+        }
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        ("targets", [], "invalid targets"),
+        ("source_sha256", "0" * 63, "source SHA-256"),
+        ("provenance", "../unreviewed.txt", "unsafe provenance"),
+        ("license_expression", "GPL-3.0-only", "forbidden copyleft"),
+        ("version", "3.5.7", "identities must be unique"),
+    ],
+)
+def test_platform_native_component_policy_fails_closed(
+    tmp_path: Path,
+    field: str,
+    replacement: object,
+    message: str,
+) -> None:
+    policy = json.loads(DEFAULT_POLICY.read_text(encoding="utf-8"))
+    policy["platform_bundled_native_components"][0][field] = replacement
+    policy_path = tmp_path / "policy.json"
+    _write_policy(policy_path, policy)
+
+    with pytest.raises(PolicyError, match=message):
+        validate_policy(policy_path=policy_path)
+
+
 def test_unreviewed_locked_distribution_fails_closed(tmp_path: Path) -> None:
     lock_root = tmp_path / "requirements-lock"
     shutil.copytree(DEFAULT_LOCK_ROOT, lock_root)
@@ -204,6 +326,49 @@ def test_reviewed_soundfile_license_files_are_exact_wheel_evidence() -> None:
         ),
         ROOT / "licenses" / "SOUNDFILE_WHEEL_LICENSE_NOTES.md": (
             "35630e1f59b5c54b0bcbe2ec173bcf5a63b727a6e2f7834ca6d35a1af91a2b5f"
+        ),
+    }
+    for path, digest in expected.items():
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+
+
+def test_reviewed_cryptography_openssl_license_and_provenance_are_exact() -> None:
+    expected = {
+        ROOT / "licenses" / "OPENSSL_LICENSE.txt": (
+            "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+        ),
+        ROOT
+        / "packaging"
+        / "macos"
+        / "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt": (
+            "ccb4c67a88cda7e5ff3cea340bef12b2ca4e9035fd7a91e54123824b9672d52f"
+        ),
+        ROOT / "packaging" / "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt": (
+            "774757f50ed9ea59229b02906bdc6cf7fa23b883a37b1cda0dd1e0e18b292350"
+        ),
+    }
+    inventory = validate_policy()
+    evidence = {
+        item["path_suffix"]: item["sha256"]
+        for item in inventory.policy["packaged_license_evidence"]
+        if item["component"].startswith(
+            ("OpenSSL", "Intel cryptography", "cryptography upstream")
+        )
+    }
+    assert evidence == {
+        "THIRD_PARTY_LICENSES/OPENSSL_LICENSE.txt": expected[
+            ROOT / "licenses" / "OPENSSL_LICENSE.txt"
+        ],
+        "THIRD_PARTY_LICENSES/CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt": expected[
+            ROOT
+            / "packaging"
+            / "macos"
+            / "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"
+        ],
+        "THIRD_PARTY_LICENSES/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt": (
+            expected[
+                ROOT / "packaging" / "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"
+            ]
         ),
     }
     for path, digest in expected.items():
@@ -351,6 +516,9 @@ def test_pyinstaller_and_native_ci_package_generated_policy_artifacts() -> None:
         "runtime-dependency-policy.json",
         "SOUNDFILE_LICENSE.txt",
         "SOUNDFILE_WHEEL_LICENSE_NOTES.md",
+        "OPENSSL_LICENSE.txt",
+        "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt",
+        "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
     ):
         assert name in SPEC
     assert "tools/runtime_dependency_policy.py --check" in CI
@@ -365,5 +533,8 @@ def test_pyinstaller_and_native_ci_package_generated_policy_artifacts() -> None:
         "packaging/runtime-dependency-policy.json",
         "licenses/SOUNDFILE_LICENSE.txt",
         "licenses/SOUNDFILE_WHEEL_LICENSE_NOTES.md",
+        "licenses/OPENSSL_LICENSE.txt",
+        "packaging/macos/CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt",
+        "packaging/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
     ):
         assert f"{path} text eol=lf" in ATTRIBUTES

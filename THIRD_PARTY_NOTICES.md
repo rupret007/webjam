@@ -142,11 +142,22 @@ The Pocket Stage source and frozen-application specification use the following
 Python runtime packages. Versions are pinned in
 `requirements-lock/release-constraints.txt` and the target-specific hash locks:
 
-- [`cryptography` 48.0.1](https://github.com/pyca/cryptography) — ephemeral
+- [`cryptography` 50.0.0](https://github.com/pyca/cryptography) — ephemeral
   certificate/key creation and certificate serialization. License:
   [Apache License 2.0 OR BSD 3-Clause License](https://github.com/pyca/cryptography/blob/main/LICENSE);
   WebJam redistributes it under the verified BSD option copied from the pinned
   distribution at [`licenses/CRYPTOGRAPHY_LICENSE.txt`](licenses/CRYPTOGRAPHY_LICENSE.txt).
+  Upstream no longer publishes or tests Intel macOS wheels. The Intel package
+  therefore builds the same official 50.0.0 source archive in native x86_64 CI
+  under the explicit, hash-pinned contract recorded in
+  [`packaging/macos/CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt`](packaging/macos/CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt).
+  That WebJam-verified exception statically links OpenSSL 3.5.7 LTS from its
+  hash-verified source; OpenSSL is licensed under Apache License 2.0, with the
+  redistributed text at [`licenses/OPENSSL_LICENSE.txt`](licenses/OPENSSL_LICENSE.txt).
+  The reviewed Windows x64, Linux x64, and macOS arm64 upstream wheels instead
+  statically embed OpenSSL 4.0.1; their exact wheel hashes and inspected native
+  identities are recorded in
+  [`packaging/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt`](packaging/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt).
 - [`websockets` 16.1.1](https://github.com/python-websockets/websockets) —
   secure WebSocket runtime support used by the Pocket Stage gateway stack.
   License: [BSD 3-Clause License](https://github.com/python-websockets/websockets/blob/main/LICENSE),

@@ -1,7 +1,8 @@
-# WebJam v0.22.2 UX acceptance checklist
+# WebJam v0.22.3 UX acceptance checklist
 
-> **Unreleased after v0.22.2:** this maintained checklist includes source
-> behavior not present in the immutable published v0.22.2 packages.
+> **Pre-publication candidate:** this checklist describes v0.22.3. The
+> immutable v0.22.2 packages remain GitHub Latest until verified v0.22.3
+> promotion. Unperformed physical and platform-trust gates stay **NOT RUN**.
 
 ## Unified guidance
 
@@ -164,7 +165,7 @@
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] v0.22.2 remains a private test candidate until real-output guidance
+- [ ] v0.22.3 remains a private test candidate until real-output guidance
       review, Arrange/comp playback, physical Reference Studio playback and
       recording, external-editor import, signed clean installation, and
       platform trust gates have evidence; all currently remain **NOT RUN**.

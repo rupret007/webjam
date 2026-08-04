@@ -207,7 +207,7 @@ def test_catalog_proof_binds_envelope_payload_signer_and_asset_identity() -> Non
     assert "$matches[0].assets[0].size <= 0" in SMOKE_JOB
     assert "tools.verify_jamulus_component_catalog" in SMOKE_JOB
     assert "--webjam-version \"$VERSION\"" in SMOKE_JOB
-    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 3" in WORKFLOW_HEADER
+    assert "MINIMUM_COMPONENT_CATALOG_SEQUENCE: 4" in WORKFLOW_HEADER
     assert (
         '--minimum-sequence "$MINIMUM_COMPONENT_CATALOG_SEQUENCE"'
         in SMOKE_JOB
@@ -344,6 +344,12 @@ def test_latest_promotion_sets_and_independently_verifies_latest() -> None:
     assert "repos/$GITHUB_REPOSITORY/releases/latest" in PUBLISH_JOB
     assert ".draft == false" in PUBLISH_JOB
     assert ".prerelease == false" in PUBLISH_JOB
+    assert (
+        ".draft == false and .prerelease == false and .immutable == true"
+        in PUBLISH_JOB
+    )
+    assert "release-publish-response.json" in PUBLISH_JOB
+    assert PUBLISH_JOB.count(".immutable == true") == 2
     assert "{id,name,size,digest}" in PUBLISH_JOB
     assert "published-release-assets" in PUBLISH_JOB
     assert '"$RUNNER_TEMP/release-assets-before.sha256"' in PUBLISH_JOB
@@ -361,13 +367,13 @@ def test_catalog_verifier_uses_only_its_minimal_hash_locked_environment() -> Non
     assert 'pip install --disable-pip-version-check "cryptography' not in WORKFLOW
     assert re.findall(r"(?m)^([a-z0-9-]+)==([^ ]+) [\\]$", VERIFIER_LOCK) == [
         ("cffi", "2.1.0"),
-        ("cryptography", "48.0.1"),
+        ("cryptography", "50.0.0"),
         ("pycparser", "3.0"),
     ]
     hashes = re.findall(r"--hash=sha256:([0-9a-f]{64})", VERIFIER_LOCK)
     assert hashes == [
         "1e9f50d192a3e525b15a75ab5114e442d83d657b7ec29182a991bc9a88fd3a66",
-        "3752f2dbc8f07a30aad2932c986cea495b03bb554887828225da104f732852b6",
+        "b42a28c1844fd9de8f3f7d540e36b66f3a9c83fceac7170ebc7a6a19edd9dcae",
         "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
     ]
 

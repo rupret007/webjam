@@ -1,0 +1,6 @@
+# Minimal Python environment for the live Swift/WSS interoperability gate.
+cryptography==50.0.0
+fastapi==0.139.2
+pytest==9.0.3
+uvicorn==0.51.0
+websockets==16.1.1

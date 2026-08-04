@@ -2,8 +2,9 @@
 
 Status: **NOT RUN**
 
-> **Unreleased after v0.22.2:** this maintained worksheet uses source behavior
-> not present in the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** this worksheet exercises candidate
+> behavior absent from the immutable published v0.22.2 packages. Its external
+> Webex gate remains **NOT RUN** until exact package evidence is recorded.
 
 This worksheet validates WebJam's external Webex handoff without storing a
 Webex username, password, token, admin address, or private meeting path in the

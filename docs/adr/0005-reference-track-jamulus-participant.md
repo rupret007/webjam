@@ -8,8 +8,9 @@
   two-endpoint audibility, independent musician mixes, real server recording,
   route removal, and long-rehearsal behavior are **NOT RUN**.
 
-> **Unreleased after v0.22.2:** callback and source-load details below describe
-> source changes not present in the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the callback and source-load changes
+> below are part of this candidate and are absent from the immutable published
+> v0.22.2 packages. Physical audibility and isolation remain **NOT RUN**.
 
 ## Context
 
@@ -63,7 +64,7 @@ backend therefore returned an unavailable capability before device scanning;
 BlackHole setup and **Recheck Route** cannot unlock a downloaded v0.22.2
 package.
 
-The current unreleased source changes the capability policy, not the physical
+The v0.22.3 candidate changes the capability policy, not the physical
 evidence ledger. Production construction derives prerequisite authority on the
 Mac: an official, unambiguous BlackHole 16ch/64ch route at 48 kHz may make Play
 available. Choosing Play still requires fresh, exact primary/backing PID route

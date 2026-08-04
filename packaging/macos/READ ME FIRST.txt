@@ -1,11 +1,20 @@
-WEBJAM PRIVATE TEST CANDIDATE — PLEASE READ
+WEBJAM v0.22.3 PRIVATE TEST CANDIDATE — PLEASE READ
 
-UNRELEASED AFTER v0.22.2: this maintained package text describes source changes
-that are not in the immutable published v0.22.2 assets.
+PRE-PUBLICATION CANDIDATE: use only the exact v0.22.3 asset after its draft,
+checksum, and verified GitHub promotion gates pass. Physical audio, hardware,
+Gatekeeper, signing, and notarization gates remain NOT RUN unless the release
+evidence names this exact file and SHA-256.
 
 This WebJam build is ad-hoc signed and is NOT notarized or reviewed by Apple.
 Only install it if you downloaded it from the official WebJam GitHub release
 and the release checksum matches your download.
+
+This candidate upgrades cryptography to 50.0.0 for CVE-2026-69247,
+CVE-2026-69248, and CVE-2026-69249. Apple-silicon uses an exact hash-locked
+upstream wheel. Because upstream no longer publishes an Intel macOS wheel,
+the Intel build uses WebJam's documented, hash-locked native x86_64
+source-build exception with static OpenSSL 3.5.7 LTS; CI verifies its official
+inputs, architecture, linkage, runtime paths, licenses, and package inventory.
 
 Recommended installation
 ------------------------

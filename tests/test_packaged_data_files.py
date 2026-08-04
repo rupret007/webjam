@@ -54,6 +54,7 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertTrue((ROOT / "licenses" / "INTER_OFL.txt").is_file())
         for name in (
             "CRYPTOGRAPHY_LICENSE.txt",
+            "OPENSSL_LICENSE.txt",
             "WEBSOCKETS_LICENSE.txt",
             "SEGNO_LICENSE.txt",
             "JAMULUS_COPYING-r3_12_3.txt",
@@ -80,6 +81,36 @@ class TestPackagedDataFiles(unittest.TestCase):
             self.assertTrue((ROOT / "transport" / "licenses" / name).is_file())
         self.assertNotIn('sys.platform.startswith("linux")', SPEC)
         self.assertIn('"Jamulus"', SPEC)
+
+    def test_intel_cryptography_openssl_license_and_provenance_are_packaged(self):
+        license_path = ROOT / "licenses" / "OPENSSL_LICENSE.txt"
+        provenance_path = (
+            ROOT
+            / "packaging"
+            / "macos"
+            / "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"
+        )
+        upstream_provenance_path = (
+            ROOT / "packaging" / "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"
+        )
+        notice = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        provenance = provenance_path.read_text(encoding="utf-8")
+
+        self.assertTrue(license_path.is_file())
+        self.assertTrue(provenance_path.is_file())
+        self.assertTrue(upstream_provenance_path.is_file())
+        self.assertIn("Apache License", license_path.read_text(encoding="utf-8"))
+        self.assertIn("OpenSSL 3.5.7 LTS", notice)
+        self.assertIn("cryptography 50.0.0", provenance)
+        self.assertIn(
+            "OpenSSL 4.0.1",
+            upstream_provenance_path.read_text(encoding="utf-8"),
+        )
+        self.assertIn("native x86_64 CI", notice)
+        self.assertIn('"OPENSSL_LICENSE.txt"', SPEC)
+        self.assertIn('"CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"', SPEC)
+        self.assertIn('"CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"', SPEC)
+        self.assertIn('"THIRD_PARTY_LICENSES"', SPEC)
 
     def test_external_webex_build_excludes_retired_embedded_runtime(self):
         self.assertFalse((PKG / "webex_widget.html").exists())

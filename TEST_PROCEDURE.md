@@ -1,18 +1,23 @@
-# WebJam v0.22.2 source and physical test procedure
+# WebJam v0.22.3 source and physical test procedure
 
-> The source tree and published GitHub **Latest** release report v0.22.2.
-> **Unreleased after v0.22.2:** this maintained procedure includes source
-> behavior not present in the immutable published v0.22.2 packages. v0.22.2 CI
-> certifies the packaged Pocket Stage setup-kit inventory and unsigned compile;
-> physical installation and pairing remain **NOT RUN**, as do physical
-> standalone Reference Studio audio, external Webex behavior, and Reference
-> Track routing.
+> The source tree reports v0.22.3 as a pre-publication private test candidate.
+> The immutable published GitHub **Latest** release remains v0.22.2 until the
+> exact v0.22.3 draft passes its release and verified-promotion gates. Physical
+> Pocket Stage installation/pairing, standalone Reference Studio audio,
+> external Webex behavior, and Reference Track routing remain **NOT RUN**.
 
 ## Scope
 
 This procedure distinguishes automated source/package evidence from physical
 musician evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
+
+The v0.22.3 dependency gate pins `cryptography` 50.0.0 for
+CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
+Apple-silicon macOS use exact upstream wheels. Intel macOS uses only the
+documented, hash-locked native x86_64 source-build exception with static
+OpenSSL 3.5.7 LTS; its official inputs, architecture, linkage, runtime paths,
+license evidence, and final frozen package must all verify.
 
 ## Source gate
 
@@ -265,6 +270,35 @@ Mac model, architecture, and macOS version.
 - A fresh install and run should pass strict/deep outer and nested
   Jamulus/JamulusServer verification, transport checks, and a frozen Host smoke.
   Keep a rollback package on hand before installing this verified candidate.
+
+## v0.22.3 physical and credentialed ledger
+
+The source suite does not replace this ledger. Every item remains **NOT RUN**
+for v0.22.3 until a dated exact asset name, build ID, SHA-256, test environment,
+and evidence location are recorded. Draft creation or publication as a private
+candidate does not convert any row to PASS.
+
+| Gate | v0.22.3 status |
+| --- | --- |
+| Two Macs hear each other through physical Jamulus interfaces | **NOT RUN** |
+| Host/guest native setup and returning path on both Macs | **NOT RUN** |
+| Interface disconnect/reconnect while the session stays truthful | **NOT RUN** |
+| Sleep/wake and recoverable Jamulus interruption | **NOT RUN** |
+| Shared take, Local Originals, transfer, and host finalization | **NOT RUN** |
+| Long recording plus interruption/recovery with source hashes preserved | **NOT RUN** |
+| Studio Arrange playback, take-lane audition, and comp through real outputs | **NOT RUN** |
+| Reference Studio physical playback, recording, and latency calibration | **NOT RUN** |
+| Import edited/original stems, markers, and provenance in an external editor | **NOT RUN** |
+| macOS Show Webex App versus Join/Open action separation with real Webex | **NOT RUN** |
+| Webex optional behavior without duplicated or interrupted Jamulus music | **NOT RUN** |
+| Reference Track two-endpoint audibility, isolation, independent mix/stem, and teardown | **NOT RUN** |
+| Pocket Stage physical QR pairing, permissions, control, interruption, and accessibility | **NOT RUN** |
+| Signed clean install, quarantine/SmartScreen, trust, and notarization | **NOT RUN** |
+
+Use the dedicated
+[Reference Track macOS pilot](docs/plans/webjam-reference-track-macos-pilot.md)
+and [Pocket Stage plan](docs/plans/webjam-pocket-stage-v1.md) for those
+feature-specific gates.
 
 ## v0.22.2 physical and credentialed ledger
 

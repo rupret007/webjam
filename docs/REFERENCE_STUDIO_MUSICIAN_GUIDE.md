@@ -5,9 +5,10 @@ a backing track. It can open without a WebJam session, Webex, or Jamulus. Its
 local playback and recording choices do not change the device, buffer, mix, or
 connection owned by Jamulus.
 
-This guide describes the v0.22.2 private test candidate. Windows packages are
-unsigned. Mac packages are ad-hoc signed and unnotarized. Automated checks do
-not prove that a particular interface, driver, speaker, or headphone path is
+This guide describes the pre-publication v0.22.3 private test candidate.
+Windows packages are unsigned. Mac packages are ad-hoc signed and unnotarized.
+Automated checks do not prove that a particular interface, driver, speaker, or
+headphone path is
 audible; the physical hardware gates remain **NOT RUN** until recorded against
 the exact downloaded package hash.
 
@@ -148,8 +149,9 @@ clipped-sample count, and deterministic RMS dBFS. RMS is not an integrated-LUFS
 mastering measurement. Treat clipping as a reason to lower track, effect, send,
 or master gain and bounce again.
 
-MP3 bounce is intentionally absent from the v0.22.2 candidate. It appears only if a
-separate encoder adapter has passed the product's identity, output-decoding,
+MP3 bounce is intentionally absent from the v0.22.3 candidate. It appears only
+if a separate encoder adapter has passed the product's identity,
+output-decoding,
 and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 
 ## Reference Studio versus other WebJam audio
@@ -164,6 +166,29 @@ and license-policy self-tests. Use WAV or FLAC for a lossless handoff.
 Do not route Reference Studio into Jamulus by assumption. A future explicit
 feature would need to prove ownership, feedback isolation, return-fader state,
 and teardown. The standalone workflow makes no such claim.
+
+## v0.22.3 pre-publication candidate checklist
+
+The v0.22.3 source is eligible for an exact tag build and reviewable draft; it
+is not a published download until the checksums, signed sequence-4 Jamulus
+catalog for exact WebJam 0.22.3, frozen-package gates, and verified promotion
+pass. Its required draft inventory is:
+
+- `WebJam-v0.22.3-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.3-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.3-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.3-SHA256SUMS.txt`
+
+The checksum manifest covers the other seven files, not itself. Windows is
+unsigned; both Mac architectures are ad-hoc signed and unnotarized. Physical
+Reference Studio input/output, latency, recovery, external-editor, hardware,
+SmartScreen, Gatekeeper, signing, and notarization gates remain **NOT RUN**.
+
+## Historical v0.22.2 record
 
 ## Candidate download checklist
 

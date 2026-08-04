@@ -1,9 +1,9 @@
 # Desktop release runbook
 
-> **Unreleased after v0.22.2:** current workflow facts in this maintained
-> runbook may describe source changes not present in the immutable published
-> v0.22.2 assets. The historical v0.22.2 release record below remains unchanged
-> release evidence.
+> **v0.22.3 pre-publication candidate:** current workflow facts describe the
+> next exact draft. The immutable published v0.22.2 assets remain GitHub Latest
+> until verified v0.22.3 promotion. The historical v0.22.2 release record below
+> remains unchanged release evidence.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
 Actions `build-desktop` matrix is the authoritative source builder. Version
@@ -546,3 +546,74 @@ Verified WebJam Release** for v0.22.2. Independently prove that GitHub
 `/releases/latest` reports v0.22.2 as a published non-prerelease with exactly
 the seven packages plus checksum manifest. Never publish the draft directly
 from the web page.
+
+### v0.22.3 security and reliability candidate — pre-publication record
+
+v0.22.3 is a new patch identity after immutable v0.22.2. Never move, replace,
+rebuild, delete, or retag v0.22.2 or any earlier published release. The source
+is eligible for an exact annotated tag build and reviewable draft; it is not a
+published release until every automated package, catalog, checksum,
+provenance, and verified-promotion gate below passes.
+
+This candidate upgrades `cryptography` to 50.0.0, remediating
+CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
+Apple-silicon macOS use exact hash-locked upstream wheels. Upstream no longer
+publishes an Intel macOS wheel, so Intel macOS has one reviewed native x86_64
+source-build exception. It consumes only the official hash-locked
+`cryptography` source and build inputs, builds a private static OpenSSL 3.5.7
+LTS prefix from its verified source, and proves architecture, OpenSSL identity,
+static linkage, installed runtime paths, license evidence, and final frozen
+inventory. No other target or dependency may use that exception.
+
+The exact v0.22.3 draft inventory is:
+
+- `WebJam-v0.22.3-windows-x64-UNSIGNED-TEST-ONLY-setup.exe`
+- `WebJam-windows-x64-UNSIGNED-TEST-ONLY.zip`
+- `WebJam-v0.22.3-macos-arm64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-arm64-ADHOC-TEST-ONLY.zip`
+- `WebJam-v0.22.3-macos-x64-ADHOC-TEST-ONLY.dmg`
+- `WebJam-macos-x64-ADHOC-TEST-ONLY.zip`
+- `WebJam-linux-x64.zip`
+- `WebJam-v0.22.3-SHA256SUMS.txt`
+
+The checksum manifest must contain exactly seven entries for the other seven
+files and must not list itself. The release title is exactly
+`WebJam v0.22.3 — unsigned private test candidate.` The opening notes must
+state that Windows is unsigned, macOS is ad-hoc signed and unnotarized, this is
+not a production-trusted release, and remaining physical and credentialed
+gates are **NOT RUN**. No Apple Developer account or notarization result is
+claimed.
+
+Before tag CI creates the draft, require repository immutable releases to be
+enabled. Draft status is the only period in which assets and notes may still
+be assembled. Final promotion must prove the published release reports
+`immutable=true`, `draft=false`, `prerelease=false`, exact tag `v0.22.3`, and
+the exact eight-asset inventory above through both the tag endpoint and
+`/releases/latest`.
+
+The Jamulus catalog is a separate, public non-Latest prerelease. Starting from
+the independently verified public sequence 3 for exact WebJam 0.22.2, generate
+and publish exactly one signature-valid sequence 4 catalog for exact WebJam
+0.22.3 without moving the stable `jamulus-components-v1` tag. Independently
+redownload those public bytes, bind their GitHub digest plus envelope, payload,
+and signer SHA-256 values, and run the fixed-URL frozen probe against every
+exact desktop target. Sequence 3 cannot authorize v0.22.3, and different
+sequence-4 bytes are equivocation.
+
+Only after the four native tag packages, exact architectures and metadata,
+embedded Jamulus inventories/checksums, signed catalog, TLS behavior,
+redaction, package launches, and checksum manifest pass may a maintainer run
+**Publish Verified WebJam Release** for `v0.22.3`. The publisher must discover
+the unique successful tag-CI run dynamically and must not accept manually
+entered run, artifact, size, or digest identities.
+
+Publishing this explicitly untrusted private candidate does not convert
+physical evidence to PASS. Two-Mac audibility, physical interface
+disconnect/reconnect, sleep/wake, interruption and recording recovery,
+long-session use, Presence-v2 recorder correlation, Reference Track
+audibility/isolation, Reference Studio physical input/output and latency,
+external-editor import, real Webex join/focus behavior, Pocket Stage physical
+pairing, SmartScreen, Gatekeeper, publisher signing, Developer ID,
+notarization, and managed-device policy remain **NOT RUN** until dated evidence
+names an exact v0.22.3 asset, build ID, SHA-256, environment, and evidence
+location.

@@ -24,6 +24,16 @@ POCKET_STAGE_OPEN = POCKET_STAGE_OPEN_PATH.read_text(encoding="utf-8")
 WINDOWS_CERTIFICATE_PATH = ROOT / "packaging" / "windows" / "release-certificate.ps1"
 WINDOWS_CERTIFICATE = WINDOWS_CERTIFICATE_PATH.read_text(encoding="utf-8")
 RELEASE_LOCK_ROOT = ROOT / "requirements-lock"
+REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+RELEASE_CONSTRAINTS = (
+    RELEASE_LOCK_ROOT / "release-constraints.txt"
+).read_text(encoding="utf-8")
+POCKET_STAGE_INTEGRATION_LOCK = (
+    RELEASE_LOCK_ROOT / "pocket-stage-integration-macos-arm64.txt"
+).read_text(encoding="utf-8")
+POCKET_STAGE_INTEGRATION_INPUT = (
+    RELEASE_LOCK_ROOT / "pocket-stage-integration-macos-arm64.in"
+).read_text(encoding="utf-8")
 LINUX_README = (ROOT / "packaging" / "linux" / "README-LINUX.txt").read_text(
     encoding="utf-8"
 )
@@ -60,7 +70,7 @@ def test_current_candidate_identity_cannot_be_confused_with_latest_old_release()
     match = re.search(r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$', VERSION_SOURCE, re.M)
     assert match is not None
     version = match.group(1)
-    assert version == "0.22.2"
+    assert version == "0.22.3"
     assert PROJECT_README.startswith(f"# WebJam v{version} unsigned private test candidate")
     assert f"## [{version}]" in CHANGELOG
     assert "v0.20.0 history must not be moved" in PROJECT_README
@@ -327,7 +337,7 @@ def test_windows_runner_exercises_certificate_and_private_key_cleanup() -> None:
     assert "webjam-release-certificate-thumbprints.txt" in build
 
 
-def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> None:
+def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exception() -> None:
     build = _workflow_job("build-desktop")
     expected_python = {
         "windows-x64": "3.11.9",
@@ -342,12 +352,25 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
         "linux-x64": "83.0.0",
     }
     assert 'python-version: "${{ matrix.python }}"' in build
+    assert "Install hash-locked pip bootstrap" in build
+    assert "Install binary-only native dependencies" in build
+    assert "if: matrix.target != 'macos-x64'" in build
     assert "--require-hashes --only-binary=:all:" in build
     assert "--force-reinstall --require-hashes" in build
     assert "requirements-lock/${{ matrix.target }}.txt" in build
+    intel_step = _workflow_step(
+        "Install verified Intel macOS source-build dependencies"
+    )
+    assert "if: matrix.target == 'macos-x64'" in intel_step
+    assert "packaging/macos/install-macos-x64-dependencies.sh" in intel_step
+    assert 'WEBJAM_BUILD_PYTHON="$(command -v python)"' in intel_step
+    assert "pip install" not in intel_step
+    assert "macos-x64-cryptography-build.txt" not in intel_step
     assert "python -m pip check" in build
     assert "python -VV" in build
     assert "python -m pip freeze --all" in build
+    assert build.count("packaging/macos/verify-cryptography-x64-runtime.sh") == 2
+    assert "Reverify Intel cryptography after final ZIP packaging" in build
     assert "Verify macOS PyInstaller pkg_resources compatibility" in build
     assert 'version("setuptools") == "81.0.0"' in build
     assert 'hasattr(pkg_resources, "NullProvider")' in build
@@ -359,6 +382,8 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
         contents = lock.read_text(encoding="utf-8")
         assert lock.is_file()
         assert "--hash=sha256:" in contents
+        assert contents.count("cryptography==50.0.0 \\") == 1
+        assert "cryptography==48.0.1" not in contents
         assert "pyinstaller-hooks-contrib==2026.6" in contents
         assert f"setuptools=={expected_setuptools[target]}" in contents
         assert not re.search(r"(?m)^[A-Za-z0-9_.-]+\s*[~<>!]", contents)
@@ -367,14 +392,94 @@ def test_native_release_build_uses_exact_hashed_binary_dependency_locks() -> Non
     assert "--hash=sha256:" in bootstrap
 
 
+def test_cryptography_release_floor_remediates_all_three_audit_findings() -> None:
+    assert re.search(r"(?m)^cryptography>=50\.0\.0$", REQUIREMENTS)
+    assert re.search(r"(?m)^cryptography==50\.0\.0$", RELEASE_CONSTRAINTS)
+    assert "cryptography>=46.0.0" not in REQUIREMENTS
+    assert "cryptography==48.0.1" not in RELEASE_CONSTRAINTS
+
+    release = _workflow_job("release")
+    assert "Security remediation" in release
+    assert "cryptography to 50.0.0" in release
+    for cve in (
+        "CVE-2026-69247",
+        "CVE-2026-69248",
+        "CVE-2026-69249",
+    ):
+        assert cve in release
+    assert "static OpenSSL 3.5.7 LTS" in release
+
+
 def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> None:
-    test_job = _workflow_job("test")
-    assert "Audit native release dependency locks" in test_job
-    assert "for target in windows-x64 linux-x64" in test_job
-    assert "for target in macos-x64 macos-arm64" in test_job
-    assert "--disable-pip --no-deps" in test_job
-    assert "--ignore-vuln PYSEC-2026-3447" in test_job
-    assert "GHSA-h35f-9h28-mq5c affects sdist creation" in test_job
+    audit = _workflow_step("Audit native release dependency locks")
+    assert "for target in windows-x64 linux-x64" in audit
+    assert "for target in macos-x64 macos-arm64" in audit
+    for auxiliary_lock in (
+        "component-catalog-verifier-linux-x64.txt",
+        "pocket-stage-integration-macos-arm64.txt",
+        "macos-x64-cryptography-build.txt",
+    ):
+        assert auxiliary_lock in audit
+    assert "--disable-pip --no-deps" in audit
+    assert "--ignore-vuln PYSEC-2026-3447" in audit
+    assert "GHSA-h35f-9h28-mq5c affects sdist creation" in audit
+
+
+def test_pocket_stage_integration_uses_its_complete_hash_locked_environment() -> None:
+    step = _workflow_step(
+        "Prove Swift URLSession against the live pinned-WSS gateway"
+    )
+    assert "--require-hashes --only-binary=:all:" in step
+    assert "requirements-lock/pocket-stage-integration-macos-arm64.txt" in step
+    assert "python3 -m pip check" in step
+    assert '"cryptography==50.0.0"' not in step
+    direct = {
+        "cryptography": "50.0.0",
+        "fastapi": "0.139.2",
+        "pytest": "9.0.3",
+        "uvicorn": "0.51.0",
+        "websockets": "16.1.1",
+    }
+    assert dict(
+        re.findall(
+            r"(?m)^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+!-]+)$",
+            POCKET_STAGE_INTEGRATION_INPUT,
+        )
+    ) == direct
+    expected = {
+        "annotated-doc": "0.0.4",
+        "annotated-types": "0.7.0",
+        "anyio": "4.14.2",
+        "cffi": "2.1.0",
+        "click": "8.4.2",
+        **direct,
+        "h11": "0.16.0",
+        "idna": "3.18",
+        "iniconfig": "2.3.0",
+        "packaging": "26.2",
+        "pluggy": "1.6.0",
+        "pycparser": "3.0",
+        "pydantic": "2.13.4",
+        "pydantic-core": "2.46.4",
+        "pygments": "2.20.0",
+        "starlette": "1.3.1",
+        "typing-extensions": "4.16.0",
+        "typing-inspection": "0.4.2",
+    }
+    locked = {}
+    for line in POCKET_STAGE_INTEGRATION_LOCK.splitlines():
+        if re.fullmatch(r"[A-Za-z0-9_.-]+==[A-Za-z0-9_.+!-]+ \\", line):
+            name, version = line[:-2].split("==", 1)
+            locked[name] = version
+    assert locked == expected
+    for package, version in expected.items():
+        match = re.search(
+            rf"(?ms)^{re.escape(package)}=={re.escape(version)} \\\n"
+            rf"(?P<body>.*?)(?=^[A-Za-z0-9_.-]+==|\Z)",
+            POCKET_STAGE_INTEGRATION_LOCK,
+        )
+        assert match is not None, package
+        assert "--hash=sha256:" in match.group("body"), package
 
 
 def test_source_job_is_bounded_and_runs_required_environment_gates() -> None:
@@ -575,6 +680,10 @@ def test_release_refuses_every_existing_draft_or_published_match() -> None:
         "      - name: Refuse any existing draft or published release\n", 1
     )[1].split("\n      - name:", 1)[0]
     assert "gh api" in probe
+    assert "repos/$GITHUB_REPOSITORY/immutable-releases" in probe
+    assert "immutable-release-policy.json" in probe
+    assert ".enabled == true" in probe
+    assert "Repository immutable releases must be enabled" in probe
     assert "--paginate" in probe
     assert "--slurp" in probe
     assert "repos/$GITHUB_REPOSITORY/releases?per_page=100" in probe
@@ -582,6 +691,7 @@ def test_release_refuses_every_existing_draft_or_published_match() -> None:
     assert "draft or published release already uses" in probe
     assert "releases/tags/$GITHUB_REF_NAME" not in probe
     assert "|| true" not in probe
+    assert probe.index("immutable-releases") < probe.index("releases?per_page=100")
 
 
 def test_linux_release_claims_only_the_certified_ubuntu_target() -> None:

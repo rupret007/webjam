@@ -1,7 +1,8 @@
-# WebJam architecture — v0.22.2
+# WebJam architecture — v0.22.3
 
-> **Unreleased after v0.22.2:** this maintained architecture document includes
-> source changes not present in the immutable published v0.22.2 assets.
+> **Pre-publication candidate:** this document describes v0.22.3 source. The
+> immutable v0.22.2 assets remain GitHub Latest until the exact v0.22.3 draft
+> passes verified promotion. Remaining physical gates stay **NOT RUN**.
 
 ## Product boundary
 
@@ -199,11 +200,22 @@ participants into session-local slots. Neither surface receives notes, titles,
 musician names, channel IDs, invitations, addresses, device names, paths,
 tokens, credentials, or raw exceptions.
 
-No model SDK or cloud assistant is part of v0.22.2. A future model-assisted
+No model SDK or cloud assistant is part of v0.22.3. A future model-assisted
 creative feature may be considered only as explicit opt-in, off the real-time
 path, read-only, privacy-gated, unable to issue session commands or create
 operational facts, and visibly labeled as a suggestion. The deterministic
 offline path must remain available.
+
+## Frozen dependency boundary
+
+v0.22.3 pins `cryptography` 50.0.0 to remediate CVE-2026-69247,
+CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and Apple-silicon macOS
+use exact upstream wheels. Intel macOS has one explicit native x86_64
+source-build exception because upstream removed that wheel: WebJam verifies
+the official source archives and build locks, statically links its private
+OpenSSL 3.5.7 LTS input, and proves architecture, linkage, runtime paths,
+license evidence, and frozen-package inventory. That exception is not a
+general permission to resolve or build source dependencies during packaging.
 
 ## Pocket Stage developer-preview boundary
 

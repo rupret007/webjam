@@ -1,18 +1,20 @@
 # WebJam, simply
 
-> **Unreleased after v0.22.2:** this maintained source guide includes fixes that
-> are not in the immutable published v0.22.2 downloads. The code version is
-> still 0.22.2 pending the next release.
+> **Pre-publication candidate:** this source guide describes v0.22.3. The
+> immutable published v0.22.2 downloads remain GitHub **Latest** until the
+> exact v0.22.3 draft passes its release and verified-promotion gates.
 
 WebJam helps a band start playing together. It keeps the session, invite, and
 recordings organized. Jamulus handles the music. Webex is optional for talking
 or video.
 
-Current source candidate: **v0.22.2 unsigned private test candidate**. That
-same version is the published GitHub **Latest** release. Its four-platform
-release covers Windows, Ubuntu 22.04, Intel Mac, and Apple-silicon Mac
-packages. Windows is unsigned; Mac packages are ad-hoc signed and not
-notarized.
+Current source candidate: **v0.22.3 unsigned private test candidate**. Its
+four-platform draft covers Windows, Ubuntu 22.04, Intel Mac, and
+Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
+signed and not notarized. v0.22.3 upgrades `cryptography` to 50.0.0 for three
+audited CVE fixes. Intel macOS uses the one documented, hash-locked native
+x86_64 source-build exception because upstream no longer publishes that wheel;
+the other targets remain hash-locked to upstream wheels.
 The Mac downloads use drag-to-Applications as the primary path and include
 optional verified Terminal helpers, including a separately labeled advanced
 helper that removes quarantine from WebJam only.
@@ -97,4 +99,5 @@ Waveforms load in the background and recorded gaps remain silence. Studio
 autosaves choices to a separate file; a failed save keeps the edit pending and
 the recorded take safe. Real two-Mac output, hardware interruption/recovery,
 external-editor import, physical Reference Studio audio, and signed-install
-gates are **NOT RUN** for v0.22.2.
+gates are **NOT RUN** for v0.22.3. Publishing a private candidate does not
+convert them to PASS.

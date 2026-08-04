@@ -4,8 +4,9 @@
 - Date: 2026-07-29
 - Scope: Optional Webex conversation/video companion
 
-> **Unreleased after v0.22.2:** the current-decision text includes source
-> behavior not present in the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the current decision is part of this
+> candidate and is absent from the immutable published v0.22.2 packages.
+> External Webex behavior remains a separate physical gate.
 
 ## Context
 

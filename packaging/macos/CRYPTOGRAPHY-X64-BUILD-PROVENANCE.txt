@@ -1,0 +1,48 @@
+WebJam Intel macOS cryptography build provenance
+================================================
+
+Scope
+-----
+This record applies only to WebJam's Intel macOS (x86_64) private-test
+candidate. Starting with cryptography 49.0.0, upstream no longer publishes or
+tests Intel macOS wheels. WebJam therefore builds cryptography 50.0.0 from its
+official source distribution on the native macos-15-intel GitHub runner. This
+is a WebJam-verified compatibility path, not an upstream support claim.
+
+Reviewed inputs
+---------------
+- cryptography 50.0.0 source distribution
+  SHA-256: eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9
+- maturin 1.14.1 from the hash-locked Intel build-tool lock
+- Rust 1.88.0 channel manifest
+  SHA-256: 431b7c5c0b9a511d8e31d29b378bbc74124e8521f14beb92d3a5a5f7e7e55449
+- OpenSSL 3.5.7 LTS source archive
+  SHA-256: a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8
+
+Build and verification contract
+-------------------------------
+- Python is exactly 3.11.9 and the build host is native x86_64 macOS.
+- PEP 517 build isolation is disabled only after all build tools are installed
+  into a disposable build virtual environment from
+  requirements-lock/macos-x64-cryptography-build.txt with hashes, no
+  dependencies, and binary-only enforcement. These tools never enter the
+  application environment.
+- The hash-verified cryptography source contains Cargo.lock. CI performs one
+  `cargo fetch --locked`; Cargo checksum-verifies every registry crate named by
+  that reviewed lock before network access is disabled for the actual build.
+- OpenSSL is built from the reviewed source as a private, module-free, static
+  x86_64 prefix. Both static libraries are architecture-checked; Homebrew and
+  runner-provided OpenSSL libraries are not used.
+- PEP 517 materializes exactly one Intel-only cryptography wheel with build
+  isolation and network access disabled. CI validates its safe ZIP inventory,
+  project/version metadata, compatibility tag, RECORD hashes and sizes,
+  license files, and sole native extension before installation.
+- CI binds the generated wheel's SHA-256 into a temporary runtime lock. Every
+  other runtime wheel is downloaded under the original checked-in hashes, and
+  the complete application environment is installed offline and binary-only.
+- CI verifies cryptography and OpenSSL runtime versions, cryptographic signing
+  and certificate operations, exact x86_64 Mach-O architecture, static OpenSSL
+  linkage, absence of build-machine runtime paths, pip consistency, absence of
+  build-only Maturin, the frozen app, and the freshly extracted final ZIP.
+
+The executable contract is packaging/macos/install-macos-x64-dependencies.sh.

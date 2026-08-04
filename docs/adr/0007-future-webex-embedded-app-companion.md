@@ -4,8 +4,9 @@
 - Date: 2026-07-28
 - Scope: Optional in-meeting companion surface
 
-> **Unreleased after v0.22.2:** current desktop labels and activation behavior
-> below are not present in the immutable published v0.22.2 packages.
+> **v0.22.3 pre-publication boundary:** the current desktop labels and
+> activation behavior are part of this candidate and are absent from the
+> immutable published v0.22.2 packages.
 
 ## Context
 

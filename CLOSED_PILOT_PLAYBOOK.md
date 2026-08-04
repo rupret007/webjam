@@ -1,11 +1,11 @@
 # WebJam closed-pilot handoff
 
-> **Unreleased after v0.22.2:** this maintained pilot uses source behavior not
-> present in the immutable published v0.22.2 packages.
+> **Pre-publication candidate:** this pilot describes v0.22.3. The immutable
+> v0.22.2 packages remain GitHub Latest until verified v0.22.3 promotion.
 
-The current v0.22.2 private test candidate is immutable. The unreleased source
-is intended to validate a simple live rehearsal, session-arranging, and
-standalone Reference Studio experience:
+The current v0.22.3 private test candidate is pending its exact tag build,
+draft verification, and promotion. It is intended to validate a simple live
+rehearsal, session-arranging, and standalone Reference Studio experience:
 
 1. Host or Join.
 2. Native Jamulus sound setup; WebJam moves into the session automatically

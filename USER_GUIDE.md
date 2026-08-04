@@ -1,7 +1,8 @@
-# WebJam musician guide — v0.22.2
+# WebJam musician guide — v0.22.3
 
-> **Unreleased after v0.22.2:** this maintained guide includes source behavior
-> not present in the immutable published v0.22.2 packages.
+> **Pre-publication candidate:** this guide describes v0.22.3. The immutable
+> v0.22.2 packages remain GitHub Latest until the exact v0.22.3 draft passes
+> verified promotion. Physical and platform-trust gates remain **NOT RUN**.
 
 ## Follow the current guide
 
@@ -143,7 +144,7 @@ value Jamulus would silently shorten.
 ## Use iPhone as Pocket Stage — developer preview
 
 Pocket Stage is currently an owner-device Xcode developer preview, not a
-pre-signed iPhone binary. A published v0.22.2 Mac DMG or ZIP includes **Pocket
+pre-signed iPhone binary. A v0.22.3 Mac DMG or ZIP includes **Pocket
 Stage iPhone Setup** with the exact generated, CI-compiled Xcode project and
 an optional **Open Pocket Stage in Xcode.command** convenience helper. Open
 `WebJamPocketStage.xcodeproj` directly; if its file association fails, use
@@ -303,7 +304,7 @@ and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
 manifest changed instead of guessing. Importing that package in an external
 editor is still a separate physical workflow gate; it is **NOT RUN** for the
-v0.22.2 source tree.
+v0.22.3 source tree.
 
 Edited Studio packages require the secure descriptor-relative export available
 on macOS/Linux. On Windows, Studio instead labels the action **Export Aligned

@@ -1,0 +1,29 @@
+WebJam cryptography 50.0.0 upstream-wheel provenance
+====================================================
+
+Scope
+-----
+This record covers the upstream cryptography 50.0.0 binary wheels selected by
+WebJam's Windows x64, Linux x64, and Apple-silicon macOS release locks. The
+official wheels statically embed OpenSSL 4.0.1. Intel macOS uses the separately
+documented WebJam source build and OpenSSL 3.5.7 LTS instead.
+
+Reviewed release wheels
+-----------------------
+- macOS arm64 CPython 3.11 abi3
+  SHA-256: 031e2d5dd4bb9caa3ca9c82e5a197fd8ae680232cee62603d1a813f3f07e3d03
+- Linux manylinux_2_34 x86_64 CPython 3.11 abi3
+  SHA-256: 82148ec5bddac30b51a5b3c1945075f896fa022cb93f8e4a01e9f6ee95292c5f
+- Windows amd64 CPython 3.11 abi3
+  SHA-256: bd1c592e4d5974f0d08d4888e432157adba757c66da0246918e43677fafa2d30
+
+Each hash is selected by the target-specific WebJam release lock. Inspection
+of each wheel's native cryptography extension reports "OpenSSL 4.0.1 9 Jun
+2026". Upstream cryptography documents that its macOS, Windows, and Linux
+binary distributions statically link OpenSSL.
+
+OpenSSL 4.0.1 source release SHA-256:
+2db3f3a0d6ea4b59e1f094ace2c8cd536dffb87cdc39084c5afa1e6f7f37dd09
+
+OpenSSL is licensed under Apache License 2.0. The redistributed license is
+OPENSSL_LICENSE.txt.

@@ -1,7 +1,7 @@
-# WebJam help routing — v0.22.2
+# WebJam help routing — v0.22.3
 
-> **Unreleased after v0.22.2:** current answers include source changes not
-> present in the immutable published v0.22.2 packages.
+> **Pre-publication candidate:** these answers describe v0.22.3. The immutable
+> v0.22.2 packages remain GitHub Latest until verified v0.22.3 promotion.
 
 | Musician says | Answer / action |
 | --- | --- |

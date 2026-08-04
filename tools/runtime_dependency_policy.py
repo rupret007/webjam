@@ -261,6 +261,71 @@ def validate_policy(
             allowed_ids=allowed_ids,
         )
 
+    platform_components = policy.get("platform_bundled_native_components")
+    if not isinstance(platform_components, list) or not platform_components:
+        raise PolicyError("platform native component inventory must be non-empty")
+    platform_identities: set[tuple[str, str]] = set()
+    for entry in platform_components:
+        if not isinstance(entry, dict):
+            raise PolicyError("platform native component entries must be objects")
+        name = entry.get("name")
+        version = entry.get("version")
+        expression = entry.get("license_expression")
+        homepage = entry.get("homepage")
+        component_targets = entry.get("targets")
+        embedded_by = entry.get("embedded_by")
+        source_sha256 = entry.get("source_sha256")
+        provenance = entry.get("provenance")
+        if not isinstance(name, str) or not name:
+            raise PolicyError("platform native component names must be non-empty")
+        if not isinstance(version, str) or not version:
+            raise PolicyError(f"platform native component {name!r} lacks a version")
+        identity = (name, version)
+        if identity in platform_identities:
+            raise PolicyError("platform native component identities must be unique")
+        platform_identities.add(identity)
+        if not isinstance(expression, str) or not expression:
+            raise PolicyError(
+                f"platform native component {name!r} lacks a license expression"
+            )
+        if not isinstance(homepage, str) or not homepage.startswith("https://"):
+            raise PolicyError(
+                f"platform native component {name!r} lacks an HTTPS attribution"
+            )
+        if (
+            not isinstance(component_targets, list)
+            or not component_targets
+            or any(item not in targets for item in component_targets)
+            or len(set(component_targets)) != len(component_targets)
+        ):
+            raise PolicyError(
+                f"platform native component {name!r} has invalid targets"
+            )
+        if not isinstance(embedded_by, str) or not embedded_by:
+            raise PolicyError(
+                f"platform native component {name!r} lacks its embedding owner"
+            )
+        if (
+            not isinstance(source_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", source_sha256) is None
+        ):
+            raise PolicyError(
+                f"platform native component {name!r} lacks source SHA-256"
+            )
+        if (
+            not isinstance(provenance, str)
+            or not provenance
+            or Path(provenance).name != provenance
+        ):
+            raise PolicyError(
+                f"platform native component {name!r} has unsafe provenance"
+            )
+        _validate_runtime_license(
+            component=name,
+            expression=expression,
+            allowed_ids=allowed_ids,
+        )
+
     mp3 = policy.get("mp3_capability")
     if not isinstance(mp3, dict):
         raise PolicyError("mp3_capability policy must be an object")
@@ -407,6 +472,27 @@ def render_notice(inventory: RuntimeInventory) -> str:
     lines.extend(
         [
             "",
+            "## Platform-specific native payload",
+            "",
+            "The cryptography wheels statically embed target-specific OpenSSL",
+            "builds. Intel macOS uses WebJam's separately reviewed 3.5.7 LTS",
+            "source build; the other targets use upstream's reviewed 4.0.1 wheels.",
+            "",
+            "| Component | Version | Target(s) | Embedded by | License | Provenance |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+    for entry in policy["platform_bundled_native_components"]:
+        lines.append(
+            "| "
+            f"`{entry['name']}` | `{entry['version']}` | "
+            f"`{','.join(entry['targets'])}` | `{entry['embedded_by']}` | "
+            f"`{entry['license_expression']}` | `{entry['provenance']}` |"
+        )
+
+    lines.extend(
+        [
+            "",
             "## MP3 capability",
             "",
             "WebJam does not ship FFmpeg or a separate MP3 executable. MP3 import",
@@ -492,6 +578,41 @@ def render_sbom(inventory: RuntimeInventory) -> str:
         }
         if entry.get("version"):
             component["version"] = entry["version"]
+        components.append(component)
+
+    for entry in policy["platform_bundled_native_components"]:
+        component = {
+            "type": "library",
+            "bom-ref": (
+                f"webjam:native:{entry['name']}@{entry['version']}"
+                f"?targets={','.join(entry['targets'])}"
+            ),
+            "name": entry["name"],
+            "version": entry["version"],
+            "scope": "required",
+            "licenses": [{"expression": entry["license_expression"]}],
+            "externalReferences": [
+                {"type": "website", "url": entry["homepage"]}
+            ],
+            "properties": [
+                {
+                    "name": "webjam:targets",
+                    "value": ",".join(entry["targets"]),
+                },
+                {
+                    "name": "webjam:embedded-by",
+                    "value": entry["embedded_by"],
+                },
+                {
+                    "name": "webjam:source-sha256",
+                    "value": entry["source_sha256"],
+                },
+                {
+                    "name": "webjam:provenance",
+                    "value": entry["provenance"],
+                },
+            ],
+        }
         components.append(component)
 
     document = {

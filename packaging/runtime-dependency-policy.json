@@ -274,6 +274,34 @@
       "mp3": false
     }
   ],
+  "platform_bundled_native_components": [
+    {
+      "name": "openssl",
+      "version": "4.0.1",
+      "license_expression": "Apache-2.0",
+      "homepage": "https://www.openssl-library.org/",
+      "targets": [
+        "linux-x64",
+        "macos-arm64",
+        "windows-x64"
+      ],
+      "embedded_by": "cryptography 50.0.0 upstream wheels",
+      "source_sha256": "2db3f3a0d6ea4b59e1f094ace2c8cd536dffb87cdc39084c5afa1e6f7f37dd09",
+      "provenance": "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"
+    },
+    {
+      "name": "openssl",
+      "version": "3.5.7",
+      "license_expression": "Apache-2.0",
+      "homepage": "https://www.openssl-library.org/",
+      "targets": [
+        "macos-x64"
+      ],
+      "embedded_by": "cryptography 50.0.0",
+      "source_sha256": "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8",
+      "provenance": "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"
+    }
+  ],
   "mp3_capability": {
     "import": {
       "availability": "runtime-probed",
@@ -310,6 +338,21 @@
       "component": "SoundFile BSD-3-Clause",
       "path_suffix": "THIRD_PARTY_LICENSES/SOUNDFILE_LICENSE.txt",
       "sha256": "0dd2e411fed553ba891845077e5a32c5b726d1bbc46ff31a2118ae1ccf816752"
+    },
+    {
+      "component": "OpenSSL 3.5.7 Apache-2.0",
+      "path_suffix": "THIRD_PARTY_LICENSES/OPENSSL_LICENSE.txt",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+    },
+    {
+      "component": "Intel cryptography source-build provenance",
+      "path_suffix": "THIRD_PARTY_LICENSES/CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt",
+      "sha256": "ccb4c67a88cda7e5ff3cea340bef12b2ca4e9035fd7a91e54123824b9672d52f"
+    },
+    {
+      "component": "cryptography upstream-wheel OpenSSL provenance",
+      "path_suffix": "THIRD_PARTY_LICENSES/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
+      "sha256": "774757f50ed9ea59229b02906bdc6cf7fa23b883a37b1cda0dd1e0e18b292350"
     }
   ]
 }

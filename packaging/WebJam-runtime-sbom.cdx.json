@@ -171,7 +171,7 @@
       "version": "0.4.6"
     },
     {
-      "bom-ref": "pkg:pypi/cryptography@48.0.1",
+      "bom-ref": "pkg:pypi/cryptography@50.0.0",
       "externalReferences": [
         {
           "type": "website",
@@ -190,9 +190,9 @@
           "value": "linux-x64,macos-arm64,macos-x64,windows-x64"
         }
       ],
-      "purl": "pkg:pypi/cryptography@48.0.1",
+      "purl": "pkg:pypi/cryptography@50.0.0",
       "type": "library",
-      "version": "48.0.1"
+      "version": "50.0.0"
     },
     {
       "bom-ref": "pkg:pypi/fastapi@0.139.2",
@@ -527,6 +527,78 @@
       "purl": "pkg:pypi/numpy@2.4.6",
       "type": "library",
       "version": "2.4.6"
+    },
+    {
+      "bom-ref": "webjam:native:openssl@3.5.7?targets=macos-x64",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.openssl-library.org/"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "openssl",
+      "properties": [
+        {
+          "name": "webjam:targets",
+          "value": "macos-x64"
+        },
+        {
+          "name": "webjam:embedded-by",
+          "value": "cryptography 50.0.0"
+        },
+        {
+          "name": "webjam:source-sha256",
+          "value": "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8"
+        },
+        {
+          "name": "webjam:provenance",
+          "value": "CRYPTOGRAPHY-X64-BUILD-PROVENANCE.txt"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "3.5.7"
+    },
+    {
+      "bom-ref": "webjam:native:openssl@4.0.1?targets=linux-x64,macos-arm64,windows-x64",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.openssl-library.org/"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "openssl",
+      "properties": [
+        {
+          "name": "webjam:targets",
+          "value": "linux-x64,macos-arm64,windows-x64"
+        },
+        {
+          "name": "webjam:embedded-by",
+          "value": "cryptography 50.0.0 upstream wheels"
+        },
+        {
+          "name": "webjam:source-sha256",
+          "value": "2db3f3a0d6ea4b59e1f094ace2c8cd536dffb87cdc39084c5afa1e6f7f37dd09"
+        },
+        {
+          "name": "webjam:provenance",
+          "value": "CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt"
+        }
+      ],
+      "scope": "required",
+      "type": "library",
+      "version": "4.0.1"
     },
     {
       "bom-ref": "pkg:pypi/packaging@26.2",
@@ -1011,11 +1083,11 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "pkg:generic/webjam@0.22.2",
+      "bom-ref": "pkg:generic/webjam@0.22.3",
       "name": "WebJam",
-      "purl": "pkg:generic/webjam@0.22.2",
+      "purl": "pkg:generic/webjam@0.22.3",
       "type": "application",
-      "version": "0.22.2"
+      "version": "0.22.3"
     },
     "properties": [
       {
